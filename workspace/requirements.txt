@@ -1,0 +1,4 @@
+pyyaml>=6.0
+python-socketio[client,asyncio]>=5.11.0
+tornado>=6.4.0
+dorna2>=0.1.0   # (replace with actual version / pip install path)
