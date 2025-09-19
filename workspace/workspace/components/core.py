@@ -149,8 +149,13 @@ class Core:
         }
         robot_A5_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [35.0, 0.0, 60.0, 0.0, 0.0, 0.0],
+            "output": [-29.0, 0.0, 60.0, 0.0, -90.0, 0.0],
         }
+        robot_flange_anchors = {
+            "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "output": [0, 0.0, 6.0, 0.0, 0, 0.0],
+        }
+
 
         self.robot_A0 = Solid(name="robot_A0", type="robot_A0", anchors=robot_A0_anchors, component=self.name)
         self.robot_A1 = Solid(name="robot_A1", type="robot_A1", anchors=robot_A1_anchors, component=self.name)
@@ -158,6 +163,7 @@ class Core:
         self.robot_A3 = Solid(name="robot_A3", type="robot_A3", anchors=robot_A3_anchors, component=self.name)
         self.robot_A4 = Solid(name="robot_A4", type="robot_A4", anchors=robot_A4_anchors, component=self.name)
         self.robot_A5 = Solid(name="robot_A5", type="robot_A5", anchors=robot_A5_anchors, component=self.name)
+        self.robot_flange = Solid(name="robot_flange", type="robot_flange", anchors=robot_flange_anchors, component=self.name)
 
 
         self.assembly["robot_A0"] = self.robot_A0
@@ -166,16 +172,33 @@ class Core:
         self.assembly["robot_A3"] = self.robot_A3
         self.assembly["robot_A4"] = self.robot_A4
         self.assembly["robot_A5"] = self.robot_A5
+        self.assembly["robot_flange"] = self.robot_flange
 
         # chain robot links via anchors (static zero joints to start)
         
         self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])
-
         self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # done
+
+
+        # we check if there is tool changer
+        # self.has_tool_changer = cfg.get("has_tool_changer", False)
+        # if self.has_tool_changer:
+        #     tool_changer_anchors = {
+        #         "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        #         "output": [0.0, 0.0, 60.0, 0.0, 0.0, 0.0],
+        #     }
+        #     self.tool_changer = Solid(name="tool_changer", type="tool_changer", anchors=tool_changer_anchors, component=self.name)
+        #     self.assembly["tool_changer"] = self.tool_changer
+        #     self.tool_changer.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+
+
+
 
     # -------------------------------------------------------------------------
     # live joint update
@@ -200,8 +223,9 @@ class Core:
         self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[0]])
         self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[1]])
         self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[2]])
-        self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, -joints[3]])
+        self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[3]])
         self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, -joints[4]])
+        self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[5]])
 
 
 
