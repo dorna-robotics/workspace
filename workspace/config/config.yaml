@@ -4,13 +4,14 @@ core:
   ip: "192.168.254.104"
   aux_axis: 6
   rail_offset: 100
+  has_tool_changer: true
 
-SBS_adaptor_1:
-  type: SBS_adaptor
+SBS_adapter_1:
+  type: SBS_adapter
   attach:
     parent_name: core
     parent_solid: plate_2
-    child_solid: SBS_adaptor
+    child_solid: SBS_adapter
     parent_anchor: E5
     child_anchor: hole_0
 
@@ -19,8 +20,8 @@ SBS_adaptor_1:
 microplate_1:
   type: microplate
   attach:
-    parent_name: SBS_adaptor_1
-    parent_solid: SBS_adaptor
+    parent_name: SBS_adapter_1
+    parent_solid: SBS_adapter
     child_solid: microplate
     parent_anchor: center
     child_anchor: center
