@@ -24,8 +24,6 @@ microplate_1:
     child_solid: microplate
     parent_anchor: center
     child_anchor: center
-
-
 microtube_A1:
   type: microtube
   attach:
