@@ -185,18 +185,16 @@ class Core:
         self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         # done
 
-
         # we check if there is tool changer
-        # self.has_tool_changer = cfg.get("has_tool_changer", False)
-        # if self.has_tool_changer:
-        #     tool_changer_anchors = {
-        #         "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #         "output": [0.0, 0.0, 60.0, 0.0, 0.0, 0.0],
-        #     }
-        #     self.tool_changer = Solid(name="tool_changer", type="tool_changer", anchors=tool_changer_anchors, component=self.name)
-        #     self.assembly["tool_changer"] = self.tool_changer
-        #     self.tool_changer.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-
+        self.has_toolchanger = cfg.get("has_toolchanger", False)
+        if self.has_toolchanger:
+            toolchanger_robot_side_anchors = {
+            "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "output": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
+            }
+            self.toolchanger_robot_side = Solid(name="toolchanger_robot_side", type="toolchanger_robot_side", anchors=toolchanger_robot_side_anchors, component=self.name)
+            self.assembly["toolchanger_robot_side"] = self.toolchanger_robot_side
+            self.toolchanger_robot_side.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
 
 
 
