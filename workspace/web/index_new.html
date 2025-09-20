@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Dorna Lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin:0; height:100%; overflow:hidden; background:#f2f7fb;}
+  </style>
+
+  <!-- Import map for Three.js (latest) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+    import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+
+    // --- Scene ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#f2f7fb");
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100000);
+    camera.up.set(0,0,1);
+    camera.position.set(1600, 600, 800);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.8;
+    document.body.appendChild(renderer.domElement);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = false;
+    //controls.dampingFactor = 0.05;
+    controls.target.set(0,0,0);
+    controls.minDistance = 5;
+    controls.maxDistance = 50000;
+
+    // --- Environment Map (HDRI for lighting only, rotated) ---
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+
+    new RGBELoader().load("unfinished_office_4k.hdr", (texture) => {
+      const envScene = new THREE.Scene();
+      const envMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
+      const envGeo = new THREE.SphereGeometry(100, 64, 64);
+      const envMesh = new THREE.Mesh(envGeo, envMaterial);
+      envMesh.rotation.x = Math.PI / 2;
+      envScene.add(envMesh);
+
+      const envMap = pmrem.fromScene(envScene).texture;
+      scene.environment = envMap;
+      scene.environmentIntensity = 0.1;
+    });
+
+    // --- Grid ---
+    function makeRectGrid(width, height, step, major, colorMinor=0xaaaaaa, colorMajor=0xdddddd) {
+      const geom = new THREE.BufferGeometry();
+      const verts = [], colors = [];
+      const halfW = width/2, halfH = height/2;
+      const cMinor = new THREE.Color(colorMinor), cMajor = new THREE.Color(colorMajor);
+
+      for (let x=-halfW; x<=halfW+1e-6; x+=step) {
+        const c = Math.abs(x%major)<1e-6 ? cMajor : cMinor;
+        verts.push(x,-halfH,0, x,halfH,0);
+        colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+      }
+      for (let y=-halfH; y<=halfH+1e-6; y+=step) {
+        const c = Math.abs(y%major)<1e-6 ? cMajor : cMinor;
+        verts.push(-halfW,y,0, halfW,y,0);
+        colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+      }
+      geom.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
+      geom.setAttribute("color", new THREE.Float32BufferAttribute(colors,3));
+      // toneMapped:false ensures the grid ignores HDR tone mapping and stays bright
+      return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors:true, toneMapped:false }));
+    }
+    scene.add(makeRectGrid(3000, 1000, 50, 500));
+
+    // --- Axes ---
+    function axisLine(start,end,color) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.Float32BufferAttribute([start.x,start.y,start.z,end.x,end.y,end.z],3));
+      return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, toneMapped:false }));
+    }
+    scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(1500,0,0), 0xff0000)); // X
+    scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(0,500,0), 0x00ff00)); // Y
+    scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,500), 0x0000ff)); // Z
+
+    // --- Lights ---
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x222244, 0.3);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+    dir.position.set(1200, 900, 1500);
+    scene.add(dir);
+
+    // --- GLTF loader & object management ---
+    const gltfLoader = new GLTFLoader();
+    const objectsByName = new Map();
+
+    function base64ToArrayBuffer(b64) {
+      const bin = atob(b64), len = bin.length;
+      const bytes = new Uint8Array(len);
+      for (let i=0; i<len; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes.buffer;
+    }
+
+    function rodriguesDegToQuaternion(rx,ry,rz) {
+      const ang = Math.hypot(rx,ry,rz);
+      if (ang===0) return new THREE.Quaternion();
+      const ax=rx/ang, ay=ry/ang, az=rz/ang;
+      const q=new THREE.Quaternion();
+      q.setFromAxisAngle(new THREE.Vector3(ax,ay,az), ang*Math.PI/180);
+      return q;
+    }
+
+    function upsertObject(name,spec) {
+      if (spec.delete) {
+        const prev=objectsByName.get(name);
+        if(prev){ scene.remove(prev); objectsByName.delete(name); }
+        return;
+      }
+      let root=objectsByName.get(name);
+      if(!root){ root=new THREE.Group(); root.name=name; scene.add(root); objectsByName.set(name,root); }
+
+      if (spec.meshUrl && root.children.length===0) {
+        gltfLoader.load(spec.meshUrl, (gltf)=>{ root.add(gltf.scene); });
+      }
+      if (spec.mesh) {
+        const buf=base64ToArrayBuffer(spec.mesh);
+        gltfLoader.parse(buf,"",(gltf)=>{
+          while(root.children.length) root.remove(root.children[0]);
+          root.add(gltf.scene);
+        });
+      }
+      if (Array.isArray(spec.pose) && spec.pose.length===6) {
+        const [x,y,z,rx,ry,rz]=spec.pose;
+        root.position.set(x,y,z);
+        root.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
+      }
+      if(typeof spec.visible==="boolean") root.visible=spec.visible;
+    }
+
+    // Socket.IO hookup
+    const socket = io({ path: "/socket.io/" });
+    socket.on("scene_update", (payload)=>{
+      if(!payload||typeof payload!=="object") return;
+      for(const [n,s] of Object.entries(payload)) upsertObject(n,s||{});
+    });
+
+    // Animate
+    function animate() {
+      controls.update();
+      renderer.render(scene,camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    window.addEventListener("resize", ()=>{
+      camera.aspect=window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth,window.innerHeight);
+    });
+  </script>
+</body>
+</html>
