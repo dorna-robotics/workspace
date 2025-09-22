@@ -3,8 +3,8 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("microtube")
-class microtube:
+@register("MicroTube")
+class MicroTube:
     """
     the tube
     """

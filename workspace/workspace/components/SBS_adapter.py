@@ -3,8 +3,8 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("SBS_adapter")
-class SBS_adapter:
+@register("SBSAdapter")
+class SBSAdapter:
     """
     the SBS adapter
     """

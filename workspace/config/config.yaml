@@ -5,6 +5,7 @@ core:
   aux_axis: 6
   rail_offset: 100
   has_toolchanger: True 
+  toolchanger_output: 0
 
 SBS_adapter_1:
   type: SBS_adapter

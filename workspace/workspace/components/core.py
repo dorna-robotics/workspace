@@ -20,6 +20,7 @@ class Core:
         self.robot_ip = cfg.get("ip")
         self.aux_axis = cfg.get("aux_axis", 6)
         self.rail_offset = cfg.get("rail_offset", 0)
+        self.toolchanger_output = cfg.get("toolchanger_output", 0)
 
         # optional robot API hookup
         self.robot_api = None
@@ -225,7 +226,12 @@ class Core:
         self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, -joints[4]])
         self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[5]])
 
-
+    def simulation(self, on: bool = True):
+        """
+        user will call robot api calls through core.robot_api()
+        if simulation mode is on, the robot api will exctue certaion functions in simulation mode
+        """
+        self._simulation_mode = on
 
 
 
@@ -233,3 +239,25 @@ class Core:
 
         if self.robot_api:
             self.robot_api.close()
+
+
+class SimulationAPI:
+    def __init__(self):
+        self.joints = [0,0,0,0,0,0] 
+        
+
+    def jmove(self, joint, vel=None, accel=None, jerk=None):
+        # for now lets just do simple move
+        cur_joints = self.joints[:]
+        final_joints = joint
+
+
+
+
+        pass
+
+    def lmove(self, joint, vel=None, accel=None, jerk=None):
+        pass
+
+
+
