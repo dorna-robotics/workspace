@@ -3,7 +3,7 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("Microplate")
+@register("microplate")
 class Microplate:
     """
     the microplate

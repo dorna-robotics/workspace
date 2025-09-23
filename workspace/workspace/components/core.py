@@ -1,7 +1,8 @@
 # workspace/components/core.py
 from dorna2 import Solid, Dorna
 from workspace.components.factory import register
-
+import math
+import time
 
 @register("core")
 class Core:
@@ -23,10 +24,14 @@ class Core:
         self.toolchanger_output = cfg.get("toolchanger_output", 0)
 
         # optional robot API hookup
+
+        
+        self._simulation_mode = False
         self.robot_api = None
         if self.robot_ip:
             try:
-                self.robot_api = Dorna()
+                self.dorna = Dorna()
+                self.robot_api = self.dorna
                 self.robot_api.connect(self.robot_ip)
             except Exception:
                 # keep going without a live robot
@@ -212,7 +217,7 @@ class Core:
             return
 
         try:
-            joints = self.robot_api.joint()  # expect list/tuple of 5 floats
+            joints = self.robot_api.joint()  # expect list/tuple of 8 floats
         except Exception:
             return
 
@@ -231,33 +236,319 @@ class Core:
         user will call robot api calls through core.robot_api()
         if simulation mode is on, the robot api will exctue certaion functions in simulation mode
         """
-        self._simulation_mode = on
+        if self._simulation_mode == True and on == True:
+            pass
+        elif self._simulation_mode == False and on == False:
+            pass
+        elif self._simulation_mode == True and on == False:
+            self._simulation_mode = False
+            self.robot_api = self.dorna
+        elif self._simulation_mode == False and on == True:
+            simulation_api = SimulationAPI(joints = self.robot_api.joint())
+            self.robot_api = simulation_api
 
+        
 
 
     def stop(self):
 
-        if self.robot_api:
-            self.robot_api.close()
+        if self.dorna:
+            self.dorna.close()
 
 
 class SimulationAPI:
-    def __init__(self):
-        self.joints = [0,0,0,0,0,0] 
-        
+    def __init__(self, joints=[0,0,0,0,0,0,0,0]):
+        self.joints = joints 
+        self.FREQ = 100000
+        self.INTERP_FREQ=120
 
-    def jmove(self, joint, vel=None, accel=None, jerk=None):
-        # for now lets just do simple move
-        cur_joints = self.joints[:]
-        final_joints = joint
+    def joint(self):
+        return self.joints
+    
+    def solve_third_degree(self,a, b, c, d):
+        """
+        Solve a cubic a*t^3 + b*t^2 + c*t + d = 0
+        Return sorted list of real roots (like C++ version).
+        """
+        results = []
+        if abs(a) < 1e-15:  # quadratic or linear
+            delta = c * c - 4.0 * b * d
+            if delta < 0:
+                return []
+            root1 = (-c + math.sqrt(delta)) / (2.0 * b)
+            root2 = (-c - math.sqrt(delta)) / (2.0 * b)
+            results = [root1, root2] if root1 <= root2 else [root2, root1]
+            return results
+
+        PI = math.pi
+        p = (b * b - 3.0 * a * c) / (9.0 * a * a)
+        q = (9.0 * a * b * c - 27.0 * a * a * d - 2.0 * b * b * b) / (54.0 * a * a * a)
+        offset = b / (3.0 * a)
+        discriminant = p * p * p - q * q
+
+        if discriminant > 0:  # three real roots
+            theta = math.acos(q / (p * math.sqrt(p)))
+            r = 2.0 * math.sqrt(p)
+            for i in range(3):
+                results.append(r * math.cos((theta + 2.0 * i * PI) / 3.0) - offset)
+            results.sort()
+            return results
+        else:  # one real root
+            gamma1 = math.copysign(abs(q + math.sqrt(-discriminant)) ** (1.0 / 3.0), q + math.sqrt(-discriminant))
+            gamma2 = math.copysign(abs(q - math.sqrt(-discriminant)) ** (1.0 / 3.0), q - math.sqrt(-discriminant))
+            root = gamma1 + gamma2 - offset
+            return [root]
+
+    def sign(self,x):
+        return -1.0 if x < 0 else (1.0 if x > 0 else 0.0)
+
+    def create_profile(self,jerk, accel, vel, d):
+        """
+        Stop-stop motion profile (S-curve) generator.
+        Inputs:
+            jerk, accel, vel : max jerk/accel/vel (user-specified)
+            d                : target displacement
+
+        Returns dict with:
+            ticks : list of integer ticks per segment
+            jerks : list of jerk values per segment (same length as ticks)
+            j_peak, a_peak, v_peak, d_total
+        """
+
+        jerk /= (self.FREQ * self.FREQ * self.FREQ)
+        accel /= (self.FREQ * self.FREQ)
+        vel   /= self.FREQ
+
+        resolutionFactor = 1000.0
+
+        jerk  *= resolutionFactor
+        accel *= resolutionFactor
+        vel   *= resolutionFactor
+        d     *= resolutionFactor 
+
+        vInitial = 0.0
+        aInitial = 0.0
+
+        # Step 1: t1 candidates
+        t1_a = math.floor(accel / jerk) if jerk > 0 else 0
+        t1_v = math.floor(math.sqrt(abs(vel - vInitial) / jerk)) if jerk > 0 else 0
+
+        roots = self.solve_third_degree(self.sign(vel - vInitial) * 2.0 * jerk, 0.0, 4.0 * vInitial, -d)
+        if vel >= vInitial:
+            t1_d = math.floor(max(roots) if roots else 0)
+        else:
+            if len(roots) <= 1:
+                t1_d = math.floor(math.sqrt((2.0 * vInitial) / (3.0 * jerk)))
+            else:
+                t1_d = math.floor(roots[1])
+
+        t1 = max(min(t1_a, t1_v, t1_d), 0)
+
+        # Step 2: handle t1 == 0
+        if t1 == 0:
+            return {
+                "ticks": [],
+                "jerks": [],
+                "j_peak": 0.0,
+                "a_peak": 0.0,
+                "v_peak": 0.0,
+                "d_total": 0.0
+            }
+
+        # Step 3: t2
+        t2 = 0
+        if t1_a <= min(t1_v, t1_d):
+            t2_v = math.floor((abs(vel - vInitial) / (jerk * t1)) - t1)
+
+            roots = self.solve_third_degree(
+                0.0,
+                self.sign(vel - vInitial) * jerk * t1,
+                self.sign(vel - vInitial) * 3.0 * jerk * t1 * t1 + 2.0 * vInitial,
+                self.sign(vel - vInitial) * 2.0 * jerk * t1 * t1 * t1 + 4.0 * vInitial * t1 - d
+            )
+            if vel >= vInitial:
+                t2_d = math.floor(max(roots) if roots else 0)
+            else:
+                if len(roots) <= 1:
+                    t2_d = math.floor(math.sqrt((-3.0 * jerk * t1 * t1 + 2.0 * vInitial) / (2.0 * jerk * t1)))
+                else:
+                    t2_d = math.floor(roots[0])
+
+            t2 = max(min(t2_v, t2_d), 0)
+
+        # Step 4: t4 and j_m
+        denom = self.sign(vel - vInitial) * jerk * t1 * (t1 + t2) + vInitial
+        t4 = math.ceil((d - (2.0 * t1 + t2) * (2.0 * vInitial + self.sign(vel - vInitial) * jerk * t1 * (t1 + t2))) / denom) if denom != 0 else 0
+        t4 = max(t4, 0)
+
+        denom_j = t1 * (t1 + t2) * (2.0 * t1 + t2 + t4)
+        j_m = (d - vInitial * (4.0 * t1 + 2.0 * t2 + t4)) / denom_j if denom_j != 0 else 0.0
+
+        a_m = j_m * t1
+        v_m = a_m * (t1 + t2) + vInitial
+        d_m = (v_m - vInitial) * (2.0 * t1 + t2 + t4) + vInitial * (4.0 * t1 + 2.0 * t2 + t4)
+
+        # Step 5: assemble profile
+        ticks = []
+        jerks = []
+
+        def push(seg_ticks, seg_jerk):
+            n = int(round(seg_ticks))
+            if n > 0:
+                ticks.append(n)
+                jerks.append(seg_jerk)
+
+        push(t1,  j_m)
+        push(t2,  0.0)
+        push(t1, -j_m)
+        push(t4,  0.0)
+        push(t1, -j_m)
+        push(t2,  0.0)
+        push(t1,  j_m)
+
+        # Scale back to user units
+        j_scale = 1.0 / resolutionFactor
+        a_scale = 1.0 / resolutionFactor
+        v_scale = 1.0 / resolutionFactor
+        d_scale = 1.0 / resolutionFactor
+
+        return {
+            "ticks": ticks,
+            "jerks": [j * j_scale for j in jerks],
+            "j_peak": j_m * j_scale,
+            "a_peak": a_m * a_scale,
+            "v_peak": v_m * v_scale,
+            "d_total": d_m * d_scale,
+            "t_total": sum(ticks) / self.FREQ   
+        }
+
+
+    def traverse(self,jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=0):
+        """
+        Closed-form state (q, v, a) at tick n (integer) 
+        for a piecewise-constant jerk profile.
+
+        Args:
+            J: list of jerks [j0, j1, ..., j_{K-1}]
+            N: list of durations [n0, n1, ..., n_{K-1}]
+            q0, v0, a0: initial position, velocity, acceleration
+            n: tick index (integer)
+
+        Returns:
+            (q, v, a) at tick n
+        """
+
+        n = int(round(t * self.FREQ))
+
+        # convert to floats/ints
+        jerks = [float(j) for j in jerks]
+        ticks = [int(x) for x in ticks]
+        q0, v0, a0 = float(q0), float(v0), float(a0)
+
+        # cumulative tick starts
+        T = [0]
+        for nn in ticks:
+            T.append(T[-1] + nn)
+        total = T[-1]
+
+        # prefix states at segment starts
+        A = [a0]
+        V = [v0]
+        Q = [q0]
+        for j, nn in zip(jerks, ticks):
+            A_s, V_s, Q_s = A[-1], V[-1], Q[-1]
+            A.append(A_s + j * nn)
+            V.append(V_s + nn * A_s + 0.5 * j * nn * (nn - 1))
+            Q.append(Q_s + nn * V_s + 0.5 * A_s * nn * (nn - 1) + (j/6.0) * nn * (nn - 1) * (nn - 2))
+
+        # clamp n to valid range
+        if n <= 0:
+            return (q0, v0, a0)
+        if n >= total:
+            return (Q[-1], V[-1], A[-1])
+
+        # find segment s with T[s] <= n < T[s+1]
+        s = 0
+        while not (T[s] <= n < T[s+1]):
+            s += 1
+
+        # ticks into segment
+        m = n - T[s]
+        j = jerks[s]
+        A_s, V_s, Q_s = A[s], V[s], Q[s]
+
+        # closed-form updates
+        a = A_s + m * j
+        v = V_s + m * A_s + 0.5 * j * m * (m - 1)
+        q = Q_s + m * V_s + 0.5 * A_s * m * (m - 1) + (j/6.0) * m * (m - 1) * (m - 2)
+        return (q, v, a)
+    
 
 
 
+    def jmove(self, joint, vel=100, accel=1000, jerk=4000):
+        """
+        Move from current joint vector to `joint` using an S-curve distance profile.
+        Interpolates joint updates at `interp_freq` Hz (default 120).
 
-        pass
+        Returns:
+            -1 : if any error happens
+            2 : if successful
+        """
 
-    def lmove(self, joint, vel=None, accel=None, jerk=None):
-        pass
+        try:
+            # --- Setup start/goal
+            cur = list(self.joints[:])
+            tgt = list(joint)
+            delta = [t - c for c, t in zip(cur, tgt)]
+            d = math.sqrt(sum(di * di for di in delta))
+            if d <= 0.0:
+                return 2  # nothing to do
+
+
+            # --- Build profile
+            prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+            jerks = prof.get("jerks", [])
+            ticks = prof.get("ticks", [])
+            t_total = prof.get("t_total", 0.0)
+
+            if t_total <= 0.0 or not ticks:
+                return 2
+
+            # --- Interpolation timing
+            dt = 1.0 / float(self.INTERP_FREQ)
+            t0 = time.perf_counter()
+            step = 0
+
+            try:
+                while True:
+                    now = time.perf_counter()
+                    elapsed = now - t0
+                    if elapsed >= t_total:
+                        break
+
+                    # scalar motion state at this time
+                    q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+                    s = max(0.0, min(q / d, 1.0))
+
+                    # update joints
+                    self.joints = [c + s * di for c, di in zip(cur, delta)]
+
+                    # sleep until next interpolation tick
+                    step += 1
+                    next_tick_time = t0 + step * dt
+                    sleep_for = next_tick_time - time.perf_counter()
+                    if sleep_for > 0:
+                        time.sleep(sleep_for)
+
+            finally:
+                # ensure exact final value
+                self.joints = tgt[:]
+
+            return 2  # success
+
+        except Exception:
+            return -1  # any unexpected error
 
 
 

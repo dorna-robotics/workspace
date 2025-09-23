@@ -3,7 +3,7 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("ToolRack")
+@register("tool_rack")
 class ToolRack:
     """
     the tool rack

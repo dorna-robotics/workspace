@@ -3,7 +3,7 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("MicrotubeGripper")
+@register("microtube_gripper")
 class MicrotubeGripper:
     """
     the microtube gripper
