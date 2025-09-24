@@ -233,21 +233,38 @@ class Core:
 
     def simulation(self, on: bool = True):
         """
-        user will call robot api calls through core.robot_api()
-        if simulation mode is on, the robot api will exctue certaion functions in simulation mode
+        Switch between simulation and real robot API.
+        user will call robot api calls through self.robot_api
         """
-        if self._simulation_mode == True and on == True:
-            pass
-        elif self._simulation_mode == False and on == False:
-            pass
-        elif self._simulation_mode == True and on == False:
+        if self._simulation_mode and on:
+            # already in simulation
+            return
+        elif not self._simulation_mode and not on:
+            # already in normal mode
+            return
+        elif self._simulation_mode and not on:
+            # switch to real robot
             self._simulation_mode = False
             self.robot_api = self.dorna
-        elif self._simulation_mode == False and on == True:
-            simulation_api = SimulationAPI(joints = self.robot_api.joint())
-            self.robot_api = simulation_api
+            print("Switched to real robot API")
+        elif not self._simulation_mode and on:
+            # switch to simulation
+            self._simulation_mode = True
+            self.robot_api = SimulationAPI(joints=self.robot_api.joint())
+            print("Switched to simulation API")
 
         
+    def IK(self, pose):
+        # this function gets the pose of the desired pose in the world and returns the joints values corresponding to it
+        # this very much depends on the rail and robot conditions with respect to each other
+        # also the length of the rail
+        # all conditions are checked here
+        # this function will return None if no solution is found. Otherwise, it will return the solution based on user input.
+        kinematic.set_tcp_xyzabc(tool)
+        all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)
+        kinematic.set_tcp_xyzabc([0, 0, 0, 0, 0, 0])
+
+        pass
 
 
     def stop(self):
