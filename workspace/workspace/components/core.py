@@ -22,16 +22,17 @@ class Core:
         self.aux_axis = cfg.get("aux_axis", 6)
         self.rail_offset = cfg.get("rail_offset", 0)
         self.toolchanger_output = cfg.get("toolchanger_output", 0)
+        self.rail_min = -1000.0
+        self.rail_max = 1000.0
 
         # optional robot API hookup
 
         
         self._simulation_mode = False
-        self.robot_api = None
+        self.dorna = Dorna()
+        self.robot_api = self.dorna
         if self.robot_ip:
             try:
-                self.dorna = Dorna()
-                self.robot_api = self.dorna
                 self.robot_api.connect(self.robot_ip)
             except Exception:
                 # keep going without a live robot
@@ -62,6 +63,7 @@ class Core:
         # --------- rail base
         rail_base_500mm_anchors = {
         "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
         "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
         "hole_1": [400, 37.5, 0.0, 0.0, 0.0, 0.0],
         "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
@@ -222,7 +224,7 @@ class Core:
             return
 
 
-        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="center", child_anchor="center", offset =[joints[self.aux_axis],0,82,0,0,0])
+        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="carriage", child_anchor="center", offset =[joints[self.aux_axis],0,0,0,0,0])
 
         self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[0]])
         self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[1]])
@@ -254,17 +256,134 @@ class Core:
             print("Switched to simulation API")
 
         
-    def IK(self, pose):
-        # this function gets the pose of the desired pose in the world and returns the joints values corresponding to it
-        # this very much depends on the rail and robot conditions with respect to each other
-        # also the length of the rail
-        # all conditions are checked here
-        # this function will return None if no solution is found. Otherwise, it will return the solution based on user input.
-        kinematic.set_tcp_xyzabc(tool)
-        all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)
-        kinematic.set_tcp_xyzabc([0, 0, 0, 0, 0, 0])
+    def IK(self, solid, anchor, offset=[0,0,0,0,0,0], base_distance=250.0,
+        rail_step=10.0, rail_span=2):
+        """
+        Returns: (full_joints_or_none, status_code)
+        - full_joints_or_none : list[float] length 8 on success; None on failure
+            (copy of current joints with j0..j5 from IK and rail updated)
+        - status_code :
+                2  -> success
+            -1  -> rail failure (no rail satisfies the distance within [self.rmin, self.rmax])
+            -2  -> IK solver raised errors on all attempts
+            -3  -> IK ran but returned no solutions for all attempts
+        """
+        # we find the rail value so the base of the robot and the desired pose in the space are at base_distance.
+        # we find the inverse kinematics based on the pose with respect to the base of the robot.
+        # we allow for a little movement of the rail to find better solution.
+        # rail frame is at its center of the rail_base
+        # assumptions
+        # rail has a frame (normally middle of the back bracket.)
+        # rail base has an anchor, which is called carriage anchor. 
+        # rail carriage frame (located at its center), in the frame of the base is located carriage anchor + offset = [joints[self.aux_axis],0,0,0,0,0]
+        # the user input will be a solid, an anchor point in that solide, and offset with respect to that anchor.
+        # the function, first finds the rail options with that provide the base distance.
+        # it picks the value of the rail which is closer to the current rail value, which is determined from cur_joint 
+        # then it solves the inverse kinematics and find only acceptable solutions, and within those acceptable solutions the closest to the cur_joint
+        # we do this process for few other values of the rails + and - of the current rail values and within all found solutions, we find the one with minimum joint distance of the current joint
+        # this is to avoid singularities and odd solutions of the current base position.
+        # for this function, we use         all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)        
 
-        pass
+        # Refresh all poses/frames
+        self.update_pose()
+
+        # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
+        def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
+            dx, dy, dz = px - c0x, py - c0y, pz - c0z
+            rhs = d*d - (dy*dy + dz*dz)
+            if rhs < 0.0:
+                return []
+            root = (rhs ** 0.5) if rhs > 0.0 else 0.0
+            cand = [dx - root, dx + root] if root > 0.0 else [dx]
+            return [r for r in cand if rmin <= r <= rmax]
+
+        # Live joints & indices
+        cur = list(self.robot_api.joint())   # expect length 8
+        aux = self.aux_axis
+        r_cur = cur[aux]
+        rmin, rmax = self.rail_min, self.rail_max
+
+        # Target pose in rail_base (used only to compute rail candidates)
+        px, py, pz, rx, ry, rz = solid.pose(anchor=anchor, in_frame=self.rail_base, offset=offset)
+
+        # r=0 origin on rail_base (carriage anchor)
+        c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
+
+        # Exact-distance rails; if none, return rail failure
+        candidates = rail_solutions(px, py, pz, c0x, c0y, c0z, base_distance, rmin, rmax)
+        if not candidates:
+            return (None, -1)
+
+        # r0: exact-distance candidate closest to current rail
+        r0 = min(candidates, key=lambda r: abs(r - r_cur))
+
+        # Neighborhood ONLY around r0 (clamped & deduped)
+        R = {r0 + k * rail_step for k in range(-rail_span, rail_span + 1)}
+        R = {min(max(r, rmin), rmax) for r in R}
+
+        # Joint-space distance to current joints: ONLY j1..j5 (ignore j0 and rail)
+        def joint_distance(q):
+            s = 0.0
+            for i in (1, 2, 3, 4, 5):
+                d = q[i] - cur[i]
+                s += d * d
+            return s ** 0.5
+
+        best = None  # (dist, full_q)
+        attempted = False
+        errors_only = True
+
+        # lets create a temprory solid representing the base of the 
+        tmp_rail_carriage = Solid(name="tmp", type="rail_carriage", anchors=self.rail_carriage.anchors)
+        tmp_robot_A0 = Solid(name="tmp", type="robot_A0", anchors=self.rail_carriage.anchors)
+
+
+
+
+        for r in sorted(R, key=lambda rr: abs(rr - r0)):
+            # Pose relative to ROBOT BASE
+            pose_in_robot = list(solid.pose(anchor=anchor, in_frame=self.robot_A0, offset=offset))
+
+            # Seed: arm-only initial joints (j0..j5)
+            init_arm = [cur[i] for i in range(6)]
+
+            print("pose_in_robot = ",pose_in_robot)
+
+
+            # Solve IK with error guard
+            attempted = True
+            try:
+                sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
+                errors_only = False
+            except Exception:
+                  continue
+
+            if sols is None or len(sols) == 0:
+                continue
+
+            for arm_sol in sols:  # each is a NumPy vector of length 6
+                q = list(cur)     # start from live joints
+                for i in range(6):        # overwrite j0..j5
+                    q[i] = float(arm_sol[i])
+                q[aux] = r               # set rail
+
+                jd = joint_distance(q)
+                if (best is None) or (jd < best[0]):
+                    best = (jd, q)
+
+        if best:
+            return (best[1], 2)
+
+        # No solution found across all candidates
+        if attempted and errors_only:
+            return (None, -2)
+        else:
+            return (None, -3)
+
+        #kinematic.set_tcp_xyzabc(tool)
+        #all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)
+        #kinematic.set_tcp_xyzabc([0, 0, 0, 0, 0, 0])
+
 
 
     def stop(self):
