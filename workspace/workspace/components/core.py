@@ -1,5 +1,5 @@
 # workspace/components/core.py
-from dorna2 import Solid, Dorna
+from dorna2 import Solid, Dorna, Pose
 from workspace.components.factory import register
 import math
 import time
@@ -18,7 +18,7 @@ class Core:
 
         # ---- read config ----
         self.preset = cfg.get("preset", "core500")
-        self.robot_ip = cfg.get("ip")
+        self.robot_ip = cfg.get("ip",'0.0.0.0')
         self.aux_axis = cfg.get("aux_axis", 6)
         self.rail_offset = cfg.get("rail_offset", 0)
         self.toolchanger_output = cfg.get("toolchanger_output", 0)
@@ -30,13 +30,14 @@ class Core:
         
         self._simulation_mode = False
         self.dorna = Dorna()
-        self.robot_api = self.dorna
-        if self.robot_ip:
-            try:
-                self.robot_api.connect(self.robot_ip)
-            except Exception:
-                # keep going without a live robot
-                self.robot_api = None
+        if self.dorna.connect(self.robot_ip):
+                self.robot_api = self.dorna
+        else:
+                self.robot_api = SimulationAPI()
+                self._simulation_mode = False
+
+
+
 
 
         # now we buiild all anchors for the following items:
@@ -333,22 +334,27 @@ class Core:
         attempted = False
         errors_only = True
 
-        # lets create a temprory solid representing the base of the 
-        tmp_rail_carriage = Solid(name="tmp", type="rail_carriage", anchors=self.rail_carriage.anchors)
-        tmp_robot_A0 = Solid(name="tmp", type="robot_A0", anchors=self.rail_carriage.anchors)
-
-
+        # first we find the pose of the robot base frame in the rail base
+        robot_pose_in_rail_base = self.robot_A0.pose(anchor="input", in_frame=self.rail_base)
 
 
         for r in sorted(R, key=lambda rr: abs(rr - r0)):
             # Pose relative to ROBOT BASE
-            pose_in_robot = list(solid.pose(anchor=anchor, in_frame=self.robot_A0, offset=offset))
+            # now we update robot pose in rail base
+            updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
+            updated_robot_pose_in_rail_base[0] = r
+
+            # now we find this new pose in the world
+            # we want to translate from rail base to world base
+            robot_pose_object = Pose(pose=updated_robot_pose_in_rail_base, parent=self.rail_base)
+
+
+
+
+            pose_in_robot = solid.pose(anchor=anchor, in_frame=robot_pose_object, offset=offset)
 
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
-
-            print("pose_in_robot = ",pose_in_robot)
-
 
             # Solve IK with error guard
             attempted = True
