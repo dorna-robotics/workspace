@@ -1,7 +1,9 @@
 # workspace/components/core.py
-from dorna2 import Solid, Dorna, Pose
+from dorna2 import Solid, Dorna
+import dorna2.pose
 from workspace.components.factory import register
 import math
+import numpy as np
 import time
 
 @register("core")
@@ -102,7 +104,6 @@ class Core:
                     name=name,
                     type="fixture_plate",           # matches static/CAD/fixture_plate.glb
                     anchors=plate_anchors,
-                    parent=None,                    # world-relative
                     component = self.name,
                     pose=[x, y, 0.0, 0.0, 0.0, 0.0] # place in world
                 )
@@ -335,24 +336,30 @@ class Core:
         errors_only = True
 
         # first we find the pose of the robot base frame in the rail base
-        robot_pose_in_rail_base = self.robot_A0.pose(anchor="input", in_frame=self.rail_base)
-
+        robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
 
         for r in sorted(R, key=lambda rr: abs(rr - r0)):
+
             # Pose relative to ROBOT BASE
             # now we update robot pose in rail base
             updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
-            updated_robot_pose_in_rail_base[0] = r
+            updated_robot_pose_in_rail_base[0] = r-r_cur + robot_pose_in_rail_base[0]
 
-            # now we find this new pose in the world
-            # we want to translate from rail base to world base
-            robot_pose_object = Pose(pose=updated_robot_pose_in_rail_base, parent=self.rail_base)
+            # now we find update robot pose in world base
+            updated_robot_pose_in_world_base = self.rail_base.pose(pose=updated_robot_pose_in_rail_base)
 
+            # now we calculate the transfer matrix for this pose
+            T_robot = np.array(dorna2.pose.xyzabc_to_T(updated_robot_pose_in_world_base))
+            inv_T_robot = np.linalg.inv(T_robot)
 
+            # now we find the pose of the object in the world frame
+            object_pose_in_world = solid.pose(anchor=anchor, offset=offset)
+            T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
 
-
-            pose_in_robot = solid.pose(anchor=anchor, in_frame=robot_pose_object, offset=offset)
-
+            # now we find the pose of the object in the robot frame
+            T_object_in_robot = inv_T_robot @ T_object
+            pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
+            print("Testing rail r =", r, "=> pose_in_robot =", pose_in_robot)
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
 

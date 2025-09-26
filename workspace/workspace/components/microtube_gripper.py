@@ -23,7 +23,7 @@ class MicrotubeGripper:
 
             anchors_tc = {}
             anchors_tc["tool_connection"] = [0,0,0,0,0,0]
-            anchors_tc["toolchanger_connection"]=[0,0,-13,180,0,0]
+            anchors_tc["toolchanger_connection"]=[0,0,-13,0,0,0]
             anchors_tc["tool_rack_connection"] = [0,0,1.5,0,0,0]
             self.assembly["toolchanger_tool_side"] = Solid(name="toolchanger_tool_side", type="toolchanger_tool_side", anchors=anchors_tc, component=self.name)
             self.assembly["microtube_gripper"].attach_to(parent=self.assembly["toolchanger_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=[0, 0, 0, 0, 0, 0])

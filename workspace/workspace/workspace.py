@@ -58,7 +58,7 @@ class Workspace:
         seen = set()
         for comp in self.components.values():
             for solid in comp.assembly.values():
-                if solid.parent is None and id(solid) not in seen:
+                if solid.parent["parent_solid"] is None and id(solid) not in seen:
                     seen.add(id(solid))
                     roots.append(solid)
 
@@ -69,8 +69,9 @@ class Workspace:
             node, T_parent = stack.pop()
             T_world = T_parent @ node.local["T"]
             world_T[id(node)] = T_world
-            for child in node.children:
-                stack.append((child, T_world))
+            for child_list in node.children.values():
+                for entry in child_list:
+                    stack.append((entry["child_solid"], T_world))
 
         # build name->pose dict
         poses = {}

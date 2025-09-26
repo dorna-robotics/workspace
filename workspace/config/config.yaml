@@ -1,7 +1,7 @@
 core:
   type: core
   preset: core500
-  ip: "192.168.254.104"
+  ip: "192.168.254.106"
   aux_axis: 6
   rail_offset: 100
   has_toolchanger: True 
