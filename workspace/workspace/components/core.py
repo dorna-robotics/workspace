@@ -131,7 +131,7 @@ class Core:
 
         robot_A0_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [0.0, 0.0, 131.0, 0.0, 0.0, 0.0],
+            "output": [0.0, 0.0, 131.0, 0.0, 0.0, 90.0],
             "0": [35.0, 50.0, 0.0, 0.0, 0.0, 0.0],
             "1": [35.0, -50.0, 0.0, 0.0, 0.0, 0.0],
             "2": [-15.0, 50.0, 0.0, 0.0, 0.0, 0.0],
@@ -143,27 +143,27 @@ class Core:
         }
         robot_A1_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [80.0, 36.0, 99.01829, 90.0, 0.0, 0.0],
+            "output": [36.0, -80.0, 99.01829,0, -90.0, 0.0],
         }
         robot_A2_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [210.0, 0.0, 4.8, 0.0, 0.0, 0.0],
+            "output": [0, -210, 4.8, 0.0, 0.0, 0.0],
         }
         robot_A3_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [29.0, 0.0, 72.0, 0.0, 90.0, 0.0],
+            "output": [0.0, -29, 73.0, 90.0, 0, 0.0],
         }
         robot_A4_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [29.0, 0.0, 146.0, 0.0, 89.9999, 0.0],
+            "output": [0, -29, 146.0, 90.0, 0, 0.0],
         }
         robot_A5_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [-29.0, 0.0, 60.0, 0.0, -90.0, 0.0],
+            "output": [0, 29, 60.0, -90, 0, 0.0],
         }
         robot_flange_anchors = {
-            "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [0, 0.0, 6.0, 0.0, 0, 0.0],
+            "input": [0.0, 0.0, -6.0, 0.0, 0.0, 0.0],
+            "output": [0, 0.0, 0.0, 0.0, 0, 0.0],
         }
 
 
@@ -201,6 +201,7 @@ class Core:
             toolchanger_robot_side_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "output": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
+            "toolchanger_connection": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0]
             }
             self.toolchanger_robot_side = Solid(name="toolchanger_robot_side", type="toolchanger_robot_side", anchors=toolchanger_robot_side_anchors, component=self.name)
             self.assembly["toolchanger_robot_side"] = self.toolchanger_robot_side
@@ -258,7 +259,7 @@ class Core:
             print("Switched to simulation API")
 
         
-    def IK(self, solid, anchor, offset=[0,0,0,0,0,0], base_distance=250.0,
+    def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=250.0,
         rail_step=10.0, rail_span=2):
         """
         Returns: (full_joints_or_none, status_code)
@@ -291,9 +292,10 @@ class Core:
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
-            dx, dy, dz = px - c0x, py - c0y, pz - c0z
+            dx, dy, dz = px, py - c0y, pz - c0z
             rhs = d*d - (dy*dy + dz*dz)
             if rhs < 0.0:
+                print("No rail solution found: rhs<0")
                 return []
             root = (rhs ** 0.5) if rhs > 0.0 else 0.0
             cand = [dx - root, dx + root] if root > 0.0 else [dx]
@@ -306,7 +308,7 @@ class Core:
         rmin, rmax = self.rail_min, self.rail_max
 
         # Target pose in rail_base (used only to compute rail candidates)
-        px, py, pz, rx, ry, rz = solid.pose(anchor=anchor, in_frame=self.rail_base, offset=offset)
+        px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
 
         # r=0 origin on rail_base (carriage anchor)
         c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
@@ -340,6 +342,9 @@ class Core:
 
         for r in sorted(R, key=lambda rr: abs(rr - r0)):
 
+
+            print(f"Trying rail at r={r:.1f}mm (cur {r_cur:.1f})")
+
             # Pose relative to ROBOT BASE
             # now we update robot pose in rail base
             updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
@@ -353,23 +358,33 @@ class Core:
             inv_T_robot = np.linalg.inv(T_robot)
 
             # now we find the pose of the object in the world frame
-            object_pose_in_world = solid.pose(anchor=anchor, offset=offset)
+            object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
             T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
 
             # now we find the pose of the object in the robot frame
             T_object_in_robot = inv_T_robot @ T_object
             pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
-            print("Testing rail r =", r, "=> pose_in_robot =", pose_in_robot)
+            print("pose in robot:", pose_in_robot)
+
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
 
             # Solve IK with error guard
             attempted = True
             try:
-                sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
                 errors_only = False
-            except Exception:
-                  continue
+                tool_pose = [0,0,0,0,0,0]
+                if tool_solid and tool_anchor:
+                    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+                self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+                sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
+                print(sols)
+            
+            except Exception as e:
+                print("IK solver raised an exception:", repr(e))
+                continue
+
 
             if sols is None or len(sols) == 0:
                 continue
@@ -393,9 +408,6 @@ class Core:
         else:
             return (None, -3)
 
-        #kinematic.set_tcp_xyzabc(tool)
-        #all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)
-        #kinematic.set_tcp_xyzabc([0, 0, 0, 0, 0, 0])
 
 
 

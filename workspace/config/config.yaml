@@ -12,7 +12,7 @@ SBS_adapter_1:
   attach:
     parent_name: core
     parent_solid: plate_2
-    parent_anchor: F5
+    parent_anchor: B5
     child_solid: SBS_adapter
     child_anchor: hole_0
 
@@ -31,7 +31,7 @@ SBS_adapter_2:
   attach:
     parent_name: core
     parent_solid: plate_2
-    parent_anchor: F12
+    parent_anchor: B12
     child_solid: SBS_adapter
     child_anchor: hole_0
 
