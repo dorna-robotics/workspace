@@ -38,23 +38,50 @@ class Display:
         self._inflight = False
         self._pending = None
 
-        # (optional) last payload size to skip redundant huge frames
         self._last_size = 0
 
     # ---------- public utilities ----------
     def set_fps(self, fps:int):
-        """Change streaming FPS on the fly."""
         with self._state_lock:
             self.fps = max(1, int(fps))
             self._period = 1.0 / self.fps
 
     def send_snapshot(self):
-        """Force a full snapshot now."""
         self._emit_update(self._build_snapshot())
+
+    # ---------- helpers ----------
+    def _extract_anchors(self, solid):
+        """
+        Return a JSON-serializable anchors dict:
+            { "name": [x, y, z, rx_deg, ry_deg, rz_deg], ... }
+        If nothing found, return None.
+        """
+        candidates = [
+            getattr(solid, "anchors", None),
+            getattr(solid, "anchor_dict", None),
+            getattr(solid, "anchor", None),
+        ]
+        src = None
+        for c in candidates:
+            if isinstance(c, dict) and c:
+                src = c
+                break
+        if not src:
+            return None
+
+        out = {}
+        for k, v in src.items():
+            if isinstance(v, (list, tuple)) and len(v) == 6:
+                try:
+                    out[k] = [float(v[0]), float(v[1]), float(v[2]),
+                              float(v[3]), float(v[4]), float(v[5])]
+                except Exception:
+                    continue
+        return out or None
 
     # ---------- payload builders ----------
     def _build_snapshot(self):
-        """meshUrl + pose + visible for each solid."""
+        """meshUrl + pose + visible (+ anchors, names) for each solid."""
         try:
             poses = self.workspace.compute_world_poses()
         except Exception:
@@ -62,22 +89,29 @@ class Display:
 
         batch = {}
         try:
-            # Walk components (need solid.type or solid.name)
             for comp_name, comp in getattr(self.workspace, "components", {}).items():
                 assembly = getattr(comp, "assembly", {}) or {}
                 for solid_name, solid in assembly.items():
                     key = f"{comp_name}_{solid_name}"
                     pose = poses.get(key, [[1,0,0,0],[0,1,0,0],[0,0,1,0]])  # fallback identity-ish
                     mesh_id = getattr(solid, "type", getattr(solid, "name", solid_name))
-                    batch[key] = {
+
+                    item = {
                         "meshUrl": f"/static/CAD/{mesh_id}.glb",
                         "pose": pose,
                         "visible": True,
+                        # NEW: names so UI can label/decorate
+                        "componentName": comp_name,
+                        "solidName": solid_name,
                     }
-        except Exception:
-            # If anything goes wrong, return what we have (or empty dict)
-            pass
 
+                    anchors = self._extract_anchors(solid)
+                    if anchors:
+                        item["anchors"] = anchors
+
+                    batch[key] = item
+        except Exception:
+            pass
         return batch
 
     def _build_pose_frame(self):
@@ -86,17 +120,12 @@ class Display:
             poses = self.workspace.compute_world_poses()
         except Exception:
             poses = {}
-
         return {name: {"pose": p, "visible": True} for name, p in poses.items()}
 
     # ---------- emit / loop ----------
     def _emit_update(self, payload: dict):
-        if not payload:
+        if not payload or not self.sio.connected:
             return
-        if not self.sio.connected:
-            return
-
-        # (optional) micro-opt: skip if payload size identical to last large full snapshot
         try:
             encoded = json.dumps(payload)
         except Exception:
@@ -104,7 +133,6 @@ class Display:
 
         with self._state_lock:
             if self._inflight:
-                # coalesce to most recent
                 self._pending = payload
                 return
             self._inflight = True
@@ -118,22 +146,18 @@ class Display:
                 self._emit_update(next_payload)
 
         self._last_size = len(encoded)
-        # Avoid passing unsupported kwargs (e.g., compress) — rely on server defaults
         self.sio.emit("upstream_update", payload, callback=ack_cb)
 
     def _run(self):
-        # Drift-resistant frame timer
         period = self._period
         next_t = time.perf_counter()
         while not self._stop_event.is_set():
             try:
                 self._emit_update(self._build_pose_frame())
             except Exception:
-                # Don’t let one bad frame kill the thread
                 pass
 
             next_t += period
-            # If we’re far behind (system sleep, GC pause etc), reset the schedule
             now = time.perf_counter()
             delay = next_t - now
             if delay < -period:
@@ -141,24 +165,24 @@ class Display:
                 delay = period
             if delay > 0:
                 time.sleep(delay)
-            # pick up any fps changes
             period = self._period
 
     # ---------- lifecycle ----------
     def start(self):
-        # Already running?
         if self._thread and self._thread.is_alive():
             return
-
-        # Try to connect (websocket preferred)
         try:
-            self.sio.connect(self.SERVER, transports=["websocket"], wait=True, wait_timeout=5,socketio_path="/socket.io/")
+            self.sio.connect(
+                self.SERVER,
+                transports=["websocket"],
+                wait=True,
+                wait_timeout=5,
+                socketio_path="/socket.io/",
+            )
         except Exception:
             return
 
-        # Only start loop if we actually connected
         if not self._connected_evt.wait(timeout=2.0):
-            # Give up cleanly if connect didn’t happen
             try:
                 self.sio.disconnect()
             except Exception:
@@ -174,7 +198,6 @@ class Display:
         t = self._thread
         self._thread = None
         if t and t.is_alive():
-            # Don’t hang forever on exit
             t.join(timeout=2.0)
         try:
             self.sio.disconnect()

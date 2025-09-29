@@ -4,17 +4,12 @@
   <meta charset="utf-8" />
   <title>Dorna Lab</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- Light no-cache hints (harmless in prod too) -->
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-
   <style>
     html, body { margin:0; height:100%; overflow:hidden; background:#f2f7fb;}
   </style>
-
-  <!-- Import map for Three.js -->
   <script type="importmap">
   {
     "imports": {
@@ -32,44 +27,29 @@
     import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
     import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 
-    // ---------------- version + cache-busting ----------------
+    // -------- cache-busting --------
     function versioned(url) {
       const v = (window.__CONFIG_VERSION__ || Date.now());
       const sep = url.includes("?") ? "&" : "?";
       return `${url}${sep}v=${v}`;
     }
-
-    // Boot after we fetch a server-side version (falls back to Date.now on failure)
     async function getVersion() {
       try {
         const r = await fetch("/config_version", { cache: "no-store" });
         const j = await r.json();
         window.__CONFIG_VERSION__ = j?.version || String(Date.now());
-      } catch {
-        window.__CONFIG_VERSION__ = String(Date.now());
-      }
+      } catch { window.__CONFIG_VERSION__ = String(Date.now()); }
     }
 
-    // ---------------- app ----------------
     async function boot() {
-      // --- Edge config ---
-      const EDGE = {
-        color: 0x000000,
-        opacity: 1.0,
-        width: 1,
-        thresholdAngle: 30
-      };
-
-      // --- Scene ---
+      // --- Scene / Camera / Renderer ---
       const scene = new THREE.Scene();
       scene.background = new THREE.Color("#f2f7fb");
 
-      // Camera
       const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100000);
       camera.up.set(0,0,1);
       camera.position.set(1600, 600, 800);
 
-      // Renderer
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -78,93 +58,64 @@
       renderer.toneMappingExposure = 0.8;
       document.body.appendChild(renderer.domElement);
 
-      // Controls
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = false;
       controls.target.set(0,0,0);
       controls.minDistance = 5;
       controls.maxDistance = 50000;
 
-      // --- Environment Map (HDRI lighting only, rotated) ---
+      // --- Environment (HDR) ---
       const pmrem = new THREE.PMREMGenerator(renderer);
       pmrem.compileEquirectangularShader();
+      new RGBELoader().load(versioned("unfinished_office_4k.hdr"), (texture) => {
+        const envScene = new THREE.Scene();
+        const envMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
+        const envGeo = new THREE.SphereGeometry(100, 64, 64);
+        const envMesh = new THREE.Mesh(envGeo, envMaterial);
+        envMesh.rotation.x = Math.PI / 2;
+        envScene.add(envMesh);
+        scene.environment = pmrem.fromScene(envScene).texture;
+        scene.environmentIntensity = 0.1;
+      });
 
-      new RGBELoader().load(
-        versioned("unfinished_office_4k.hdr"),
-        (texture) => {
-          const envScene = new THREE.Scene();
-          const envMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
-          const envGeo = new THREE.SphereGeometry(100, 64, 64);
-          const envMesh = new THREE.Mesh(envGeo, envMaterial);
-          envMesh.rotation.x = Math.PI / 2;
-          envScene.add(envMesh);
-
-          const envMap = pmrem.fromScene(envScene).texture;
-          scene.environment = envMap;
-          scene.environmentIntensity = 0.1;
-        }
-      );
-
-      // --- Edge overlay helper ---
+      // --- Helpers (edges/grid/axes) ---
       function addEdgeOverlay(node) {
         node.traverse(obj => {
           if (!obj.isMesh) return;
-          const geom = obj.geometry;
-
-          // Restore original material if we replaced before
-          if (!obj.userData.__originalMat) {
-            obj.userData.__originalMat = obj.material;
-          }
+          if (!obj.userData.__originalMat) obj.userData.__originalMat = obj.material;
           obj.material = obj.userData.__originalMat;
-
-          // Remove old edges
           if (obj.userData.__edgeLines) {
             obj.remove(obj.userData.__edgeLines);
             obj.userData.__edgeLines.geometry.dispose();
             obj.userData.__edgeLines.material.dispose();
             obj.userData.__edgeLines = null;
           }
-
-          // Add new edges
-          const edgesGeo = new THREE.EdgesGeometry(geom, EDGE.thresholdAngle);
-          const edgesMat = new THREE.LineBasicMaterial({
-            color: EDGE.color,
-            opacity: EDGE.opacity,
-            transparent: EDGE.opacity < 1.0,
-            linewidth: EDGE.width,
-            toneMapped: false
-          });
+          const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 30);
+          const edgesMat = new THREE.LineBasicMaterial({ color: 0x000000, toneMapped:false });
           const edgeLines = new THREE.LineSegments(edgesGeo, edgesMat);
-          edgeLines.renderOrder = 999;
+          edgeLines.renderOrder = 10;
           obj.add(edgeLines);
           obj.userData.__edgeLines = edgeLines;
         });
       }
-
-      // --- Grid ---
       function makeRectGrid(width, height, step, major, colorMinor=0xaaaaaa, colorMajor=0xdddddd) {
         const geom = new THREE.BufferGeometry();
         const verts = [], colors = [];
         const halfW = width/2, halfH = height/2;
         const cMinor = new THREE.Color(colorMinor), cMajor = new THREE.Color(colorMajor);
-
         for (let x=-halfW; x<=halfW+1e-6; x+=step) {
           const c = Math.abs(x%major)<1e-6 ? cMajor : cMinor;
-          verts.push(x,-halfH,0, x,halfH,0);
-          colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+          verts.push(x,-halfH,0, x,halfH,0); colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
         }
         for (let y=-halfH; y<=halfH+1e-6; y+=step) {
           const c = Math.abs(y%major)<1e-6 ? cMajor : cMinor;
-          verts.push(-halfW,y,0, halfW,y,0);
-          colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+          verts.push(-halfW,y,0, halfW,y,0); colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
         }
         geom.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
         geom.setAttribute("color", new THREE.Float32BufferAttribute(colors,3));
         return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors:true, toneMapped:false }));
       }
       scene.add(makeRectGrid(3000, 1000, 50, 500));
-
-      // --- Axes ---
       function axisLine(start,end,color) {
         const geom = new THREE.BufferGeometry();
         geom.setAttribute("position", new THREE.Float32BufferAttribute([start.x,start.y,start.z,end.x,end.y,end.z],3));
@@ -175,13 +126,12 @@
       scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,500), 0x0000ff));
 
       // --- Lights ---
-      const hemi = new THREE.HemisphereLight(0xffffff, 0x222244, 0.3);
-      scene.add(hemi);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 0.3));
       const dir = new THREE.DirectionalLight(0xffffff, 0.6);
       dir.position.set(1200, 900, 1500);
       scene.add(dir);
 
-      // --- GLTF loader & object management ---
+      // --- GLTF + object management ---
       const gltfLoader = new GLTFLoader();
       const objectsByName = new Map();
 
@@ -191,7 +141,6 @@
         for (let i=0; i<len; i++) bytes[i] = bin.charCodeAt(i);
         return bytes.buffer;
       }
-
       function rodriguesDegToQuaternion(rx,ry,rz) {
         const ang = Math.hypot(rx,ry,rz);
         if (ang===0) return new THREE.Quaternion();
@@ -201,28 +150,257 @@
         return q;
       }
 
+      // ===== Picking + sticky anchor gizmos =====
+      const raycaster = new THREE.Raycaster();
+      const pointer   = new THREE.Vector2();
+      const pickableMeshes = new Set();    // MESHES ONLY
+
+      // Active binding:
+      // {
+      //   obj,
+      //   items: [{name,pLocal,qLocal,axes,label}],
+      //   compLabel, solidLabel
+      // }
+      let activeAnchors = null;
+
+      const anchorsLayer = new THREE.Group();
+      anchorsLayer.frustumCulled = false;
+      scene.add(anchorsLayer);
+
+      function forceDoubleSide(node){
+        node.traverse(o=>{
+          if (o.isMesh) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
+          }
+        });
+      }
+
+      // Sprites
+      function makeTextSprite(text, fontPx=72, bg="#000", fg="#fff", alpha=0.7, pad=10, bold=true) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.font = `${bold?'bold ':''}${fontPx}px sans-serif`;
+        const metrics = ctx.measureText(text);
+        canvas.width  = Math.ceil(metrics.width + pad*2);
+        canvas.height = Math.ceil(fontPx + pad*2);
+        ctx.font = `${bold?'bold ':''}${fontPx}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = bg;
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = fg;
+        ctx.fillText(text, pad, pad);
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+        const spr = new THREE.Sprite(mat);
+        const scale = 0.1;
+        spr.scale.set(canvas.width*scale, canvas.height*scale, 1);
+        spr.renderOrder = 999;
+        spr.frustumCulled = false;
+        return spr;
+      }
+
+      function makeAxesHelperAlwaysOnTop(size){
+        const axes = new THREE.AxesHelper(size);
+        axes.traverse(child=>{
+          if (child.material && child.material.isMaterial) {
+            child.material.depthTest = false;
+            child.renderOrder = 999;
+          }
+        });
+        axes.renderOrder = 999;
+        axes.frustumCulled = false;
+        return axes;
+      }
+
+      function clearAnchors() {
+        if (activeAnchors) {
+          activeAnchors.items.forEach(it => {
+            anchorsLayer.remove(it.axes);
+            anchorsLayer.remove(it.label);
+          });
+          if (activeAnchors.compLabel) anchorsLayer.remove(activeAnchors.compLabel);
+          if (activeAnchors.solidLabel) anchorsLayer.remove(activeAnchors.solidLabel);
+        }
+        activeAnchors = null;
+      }
+
+      function buildAnchorsFor(obj) {
+        clearAnchors();
+        const anchors = obj.userData?.anchors || {};
+        if (!anchors || Object.keys(anchors).length === 0) return;
+
+        const items = [];
+        for (const [name, arr] of Object.entries(anchors)) {
+          if (!Array.isArray(arr) || arr.length !== 6) continue;
+          const [ax, ay, az, rx, ry, rz] = arr;
+          const pLocal = new THREE.Vector3(ax, ay, az);
+          const qLocal = rodriguesDegToQuaternion(rx, ry, rz);
+
+          const size = 18;
+          const axes = makeAxesHelperAlwaysOnTop(size);
+          const label = makeTextSprite(name, 90, "#000", "#fff", 0.65);
+
+          anchorsLayer.add(axes);
+          anchorsLayer.add(label);
+
+          items.push({ name, pLocal, qLocal, axes, label });
+        }
+
+        // Main badges: component (blue) and solid (gold)
+        const comp = obj.userData?.componentName || "(component)";
+        const solid = obj.userData?.solidName || "(solid)";
+
+        const compLabel = makeTextSprite(comp, 100, "#0b3d91", "#ffffff", 0.85, 12, true);     // deep blue / white
+        const solidLabel = makeTextSprite(solid, 84, "#8a6d00", "#fff3cd", 0.9, 10, false);     // gold / cream
+
+        anchorsLayer.add(compLabel);
+        anchorsLayer.add(solidLabel);
+
+        activeAnchors = { obj, items, compLabel, solidLabel };
+        updateAnchorsNow(); // position once immediately
+      }
+
+      function updateAnchorsNow() {
+        if (!activeAnchors) return;
+        const { obj, items, compLabel, solidLabel } = activeAnchors;
+        if (!obj.parent) { clearAnchors(); return; }
+
+        // Update per-anchor gizmos
+        const objWorldQ = new THREE.Quaternion();
+        obj.getWorldQuaternion(objWorldQ);
+
+        for (const it of items) {
+          const pWorld = obj.localToWorld(it.pLocal.clone());
+          const qWorld = objWorldQ.clone().multiply(it.qLocal);
+          it.axes.position.copy(pWorld);
+          it.axes.quaternion.copy(qWorld);
+          it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,22));
+        }
+
+        // Position the badges above the object's current bounding box top
+        const box = new THREE.Box3().setFromObject(obj);
+        if (isFinite(box.min.x) && isFinite(box.max.x)) {
+          const topCenter = new THREE.Vector3(
+            (box.min.x + box.max.x) * 0.5,
+            (box.min.y + box.max.y) * 0.5,
+            box.max.z
+          );
+          // offset upward so badges are above the object
+          const up = new THREE.Vector3(0,0,1);
+          const compPos = topCenter.clone().addScaledVector(up, 70);
+          const solidPos = topCenter.clone().addScaledVector(up, 40);
+          if (compLabel) compLabel.position.copy(compPos);
+          if (solidLabel) solidLabel.position.copy(solidPos);
+        }
+      }
+
+      function setPointerFromEvent(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+        pointer.y = ((event.clientY - rect.top)  / rect.height) * -2 + 1;
+      }
+
+      function pickFirstMesh() {
+        raycaster.setFromCamera(pointer, camera);
+        const targets = pickableMeshes.size ? Array.from(pickableMeshes) : scene.children;
+        const hits = raycaster.intersectObjects(targets, true);
+        if (!hits.length) return null;
+        for (const h of hits) if (h.object?.isMesh) return h;
+        return hits[0];
+      }
+
+      // ---- Quick-click filter (left button only) ----
+      const CLICK_MS = 250;
+      const CLICK_PX = 6;
+      let downInfo = null; // {button,x,y,time}
+
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        downInfo = { button: e.button, x: e.clientX, y: e.clientY, time: performance.now() };
+        // Right click clears (and suppress menu)
+        if (e.button === 2) {
+          e.preventDefault();
+          clearAnchors();
+        }
+      });
+
+      renderer.domElement.addEventListener('pointerup', (e) => {
+        if (!downInfo) return;
+        const dt = performance.now() - downInfo.time;
+        const dx = Math.abs(e.clientX - downInfo.x);
+        const dy = Math.abs(e.clientY - downInfo.y);
+        const moved = (dx > CLICK_PX || dy > CLICK_PX);
+
+        if (downInfo.button === 0 && e.button === 0 && dt <= CLICK_MS && !moved) {
+          setPointerFromEvent(e);
+          const hit = pickFirstMesh();
+          if (hit && hit.object?.isMesh) {
+            let node = hit.object;
+            while (node && !node.userData?.anchors && node !== scene) node = node.parent;
+            if (node && node.userData?.anchors) buildAnchorsFor(node);
+          }
+        }
+        downInfo = null;
+      });
+
+      // Right-click context menu off
+      renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Hover cursor (meshes only)
+      renderer.domElement.addEventListener('pointermove', (e) => {
+        setPointerFromEvent(e);
+        const hit = pickFirstMesh();
+        renderer.domElement.style.cursor = (hit && hit.object?.isMesh) ? 'pointer' : 'default';
+      });
+
+      function registerPickables(node){
+        node.traverse(o => { if (o.isMesh) pickableMeshes.add(o); });
+      }
+
+      // --- upsert pipeline ---
       function upsertObject(name,spec) {
         if (spec.delete) {
           const prev=objectsByName.get(name);
-          if(prev){ scene.remove(prev); objectsByName.delete(name); }
+          if(prev){
+            if (activeAnchors && (activeAnchors.obj === prev || prev.isAncestorOf?.(activeAnchors.obj))) {
+              clearAnchors();
+            }
+            prev.traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+            scene.remove(prev); objectsByName.delete(name);
+          }
           return;
         }
         let root=objectsByName.get(name);
         if(!root){ root=new THREE.Group(); root.name=name; scene.add(root); objectsByName.set(name,root); }
 
         if (spec.meshUrl && root.children.length===0) {
-          // cache-busted GLB load
           gltfLoader.load(versioned(spec.meshUrl), (gltf)=>{ 
             addEdgeOverlay(gltf.scene);
-            root.add(gltf.scene); 
+            gltf.scene.traverse(o => { if (o.isMesh) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
+            }});
+            root.add(gltf.scene);
+            registerPickables(gltf.scene);
           });
         }
         if (spec.mesh) {
           const buf=base64ToArrayBuffer(spec.mesh);
           gltfLoader.parse(buf,"",(gltf)=>{
-            while(root.children.length) root.remove(root.children[0]);
+            while(root.children.length) {
+              root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+              root.remove(root.children[0]);
+            }
             addEdgeOverlay(gltf.scene);
+            gltf.scene.traverse(o => { if (o.isMesh) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
+            }});
             root.add(gltf.scene);
+            registerPickables(gltf.scene);
           });
         }
         if (Array.isArray(spec.pose) && spec.pose.length===6) {
@@ -231,24 +409,26 @@
           root.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
         }
         if(typeof spec.visible==="boolean") root.visible=spec.visible;
+
+        if (spec.anchors && typeof spec.anchors === 'object') {
+          root.userData.anchors = spec.anchors;
+        }
+        // NEW: store names for labels
+        if (spec.componentName) root.userData.componentName = spec.componentName;
+        if (spec.solidName)     root.userData.solidName     = spec.solidName;
       }
 
-      // Socket.IO hookup (fresh connection each load)
-      const socket = io({
-        path: "/socket.io/",
-        transports: ["websocket"],
-        forceNew: true,
-        timeout: 10000
-      });
-
+      // --- Socket.IO hookup ---
+      const socket = io({ path: "/socket.io/", transports: ["websocket"], forceNew: true, timeout: 10000 });
       socket.on("scene_update", (payload)=>{
         if(!payload||typeof payload!=="object") return;
         for(const [n,s] of Object.entries(payload)) upsertObject(n,s||{});
       });
 
-      // Animate
+      // --- Animate (keep anchors & badges sticky) ---
       function animate() {
         controls.update();
+        updateAnchorsNow();
         renderer.render(scene,camera);
         requestAnimationFrame(animate);
       }
@@ -259,9 +439,8 @@
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth,window.innerHeight);
       });
-    } // end boot()
+    } // boot
 
-    // start
     await getVersion();
     boot();
   </script>

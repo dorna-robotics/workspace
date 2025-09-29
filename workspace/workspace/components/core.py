@@ -343,7 +343,6 @@ class Core:
         for r in sorted(R, key=lambda rr: abs(rr - r0)):
 
 
-            print(f"Trying rail at r={r:.1f}mm (cur {r_cur:.1f})")
 
             # Pose relative to ROBOT BASE
             # now we update robot pose in rail base
@@ -364,7 +363,6 @@ class Core:
             # now we find the pose of the object in the robot frame
             T_object_in_robot = inv_T_robot @ T_object
             pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
-            print("pose in robot:", pose_in_robot)
 
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
@@ -379,7 +377,9 @@ class Core:
 
                 self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
                 sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-                print(sols)
+                print(f"IK solver found {len(sols)} solutions for rail={r:.2f}")
+                print("pose_in_robot:", pose_in_robot)
+                print("sols:", sols)
             
             except Exception as e:
                 print("IK solver raised an exception:", repr(e))
