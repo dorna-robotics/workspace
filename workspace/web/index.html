@@ -13,8 +13,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
     }
   }
   </script>
@@ -53,9 +53,9 @@
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.outputEncoding = THREE.sRGBEncoding;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 0.8;
+      renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ modern Three.js color space
+      renderer.toneMapping = THREE.ReinhardToneMapping;
+      renderer.toneMappingExposure = 1.2;
       document.body.appendChild(renderer.domElement);
 
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -127,7 +127,7 @@
 
       // --- Lights ---
       scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 0.3));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+      const dir = new THREE.DirectionalLight(0xffffff, 1.0);
       dir.position.set(1200, 900, 1500);
       scene.add(dir);
 
@@ -156,27 +156,13 @@
       const pickableMeshes = new Set();    // MESHES ONLY
 
       // Active binding:
-      // {
-      //   obj,
-      //   items: [{name,pLocal,qLocal,axes,label}],
-      //   compLabel, solidLabel
-      // }
+      // { obj, items: [{name,pLocal,qLocal,axes,label}], compLabel, solidLabel }
       let activeAnchors = null;
 
       const anchorsLayer = new THREE.Group();
       anchorsLayer.frustumCulled = false;
       scene.add(anchorsLayer);
 
-      function forceDoubleSide(node){
-        node.traverse(o=>{
-          if (o.isMesh) {
-            const mats = Array.isArray(o.material) ? o.material : [o.material];
-            mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
-          }
-        });
-      }
-
-      // Sprites
       function makeTextSprite(text, fontPx=72, bg="#000", fg="#fff", alpha=0.7, pad=10, bold=true) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -194,6 +180,7 @@
         ctx.fillStyle = fg;
         ctx.fillText(text, pad, pad);
         const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace; // ✅ correct sprite colors
         const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
         const spr = new THREE.Sprite(mat);
         const scale = 0.1;
@@ -254,8 +241,8 @@
         const comp = obj.userData?.componentName || "(component)";
         const solid = obj.userData?.solidName || "(solid)";
 
-        const compLabel = makeTextSprite(comp, 100, "#0b3d91", "#ffffff", 0.85, 12, true);     // deep blue / white
-        const solidLabel = makeTextSprite(solid, 84, "#8a6d00", "#fff3cd", 0.9, 10, false);     // gold / cream
+        const compLabel = makeTextSprite(comp, 100, "#0b3d91", "#ffffff", 0.85, 12, true);
+        const solidLabel = makeTextSprite(solid, 84, "#8a6d00", "#fff3cd", 0.9, 10, false);
 
         anchorsLayer.add(compLabel);
         anchorsLayer.add(solidLabel);
@@ -269,7 +256,6 @@
         const { obj, items, compLabel, solidLabel } = activeAnchors;
         if (!obj.parent) { clearAnchors(); return; }
 
-        // Update per-anchor gizmos
         const objWorldQ = new THREE.Quaternion();
         obj.getWorldQuaternion(objWorldQ);
 
@@ -281,7 +267,6 @@
           it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,22));
         }
 
-        // Position the badges above the object's current bounding box top
         const box = new THREE.Box3().setFromObject(obj);
         if (isFinite(box.min.x) && isFinite(box.max.x)) {
           const topCenter = new THREE.Vector3(
@@ -289,7 +274,6 @@
             (box.min.y + box.max.y) * 0.5,
             box.max.z
           );
-          // offset upward so badges are above the object
           const up = new THREE.Vector3(0,0,1);
           const compPos = topCenter.clone().addScaledVector(up, 70);
           const solidPos = topCenter.clone().addScaledVector(up, 40);
@@ -320,7 +304,6 @@
 
       renderer.domElement.addEventListener('pointerdown', (e) => {
         downInfo = { button: e.button, x: e.clientX, y: e.clientY, time: performance.now() };
-        // Right click clears (and suppress menu)
         if (e.button === 2) {
           e.preventDefault();
           clearAnchors();
@@ -346,10 +329,8 @@
         downInfo = null;
       });
 
-      // Right-click context menu off
       renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      // Hover cursor (meshes only)
       renderer.domElement.addEventListener('pointermove', (e) => {
         setPointerFromEvent(e);
         const hit = pickFirstMesh();
@@ -413,7 +394,6 @@
         if (spec.anchors && typeof spec.anchors === 'object') {
           root.userData.anchors = spec.anchors;
         }
-        // NEW: store names for labels
         if (spec.componentName) root.userData.componentName = spec.componentName;
         if (spec.solidName)     root.userData.solidName     = spec.solidName;
       }

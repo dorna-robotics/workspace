@@ -36,6 +36,8 @@ class Microplate:
         if self.full:
             microtube_anchors = {}
             microtube_anchors["center"] = [0,0,0,0,0,0]
+            microtube_anchors["gripping_point"] = [0,0,45,0,0,0]
+
             for r_idx, r in enumerate(rows):
                 for c in cols:
                     self.assembly[f"microtube_{r}{c}"] = Solid(name=f"microtube_{r}{c}", type="microtube", anchors=microtube_anchors, component=self.name)

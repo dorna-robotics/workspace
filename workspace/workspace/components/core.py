@@ -334,8 +334,6 @@ class Core:
             return s ** 0.5
 
         best = None  # (dist, full_q)
-        attempted = False
-        errors_only = True
 
         # first we find the pose of the robot base frame in the rail base
         robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
@@ -367,24 +365,18 @@ class Core:
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
 
-            # Solve IK with error guard
-            attempted = True
-            try:
-                errors_only = False
-                tool_pose = [0,0,0,0,0,0]
-                if tool_solid and tool_anchor:
-                    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
-                self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-                sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-                print(f"IK solver found {len(sols)} solutions for rail={r:.2f}")
-                print("pose_in_robot:", pose_in_robot)
-                print("sols:", sols)
-            
-            except Exception as e:
-                print("IK solver raised an exception:", repr(e))
-                continue
 
+            tool_pose = [0,0,0,0,0,0]
+            if tool_solid and tool_anchor:
+                tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+            self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+            pose_in_robot[3] += 0.001  # to avoid singularity
+            pose_in_robot[4] += 0.001  # to avoid singularity
+            pose_in_robot[5] += 0.001  # to avoid singularity
+            sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
+                
 
             if sols is None or len(sols) == 0:
                 continue
@@ -401,13 +393,9 @@ class Core:
 
         if best:
             return (best[1], 2)
-
-        # No solution found across all candidates
-        if attempted and errors_only:
-            return (None, -2)
+        
         else:
-            return (None, -3)
-
+            return(None, -2)
 
 
 
