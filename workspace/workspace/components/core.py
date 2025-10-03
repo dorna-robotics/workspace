@@ -24,8 +24,8 @@ class Core:
         self.aux_axis = cfg.get("aux_axis", 6)
         self.rail_offset = cfg.get("rail_offset", 0)
         self.toolchanger_output = cfg.get("toolchanger_output", 0)
-        self.rail_min = -1000.0
-        self.rail_max = 1000.0
+        self.rail_min = -100.0
+        self.rail_max = 400.0
 
         # optional robot API hookup
 
@@ -372,9 +372,9 @@ class Core:
                 tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
             self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-            pose_in_robot[3] += 0.001  # to avoid singularity
-            pose_in_robot[4] += 0.001  # to avoid singularity
-            pose_in_robot[5] += 0.001  # to avoid singularity
+            pose_in_robot[3] += 0.01  # to avoid singularity
+            pose_in_robot[4] += 0.01  # to avoid singularity
+            pose_in_robot[5] += 0.01  # to avoid singularity
             sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
                 
 
@@ -701,3 +701,341 @@ class SimulationAPI:
 
 
 
+
+    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0]):
+        """
+        Move from current joint vector to `joint` using an S-curve distance profile.
+        Interpolates joint updates at `interp_freq` Hz (default 120).
+
+        Returns:
+            -1 : if any error happens
+            2 : if successful
+        """
+        PI  = np.pi
+        PI2 = np.pi / 2.0
+
+        DotnaTA_DH = {
+            "a":     np.array([0.0, 80.0, 210.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
+            "d":     np.array([230.018, 0.0, 0.0, 41.80, 175.0, -89.0, 35.0], dtype=float),
+            "alpha": np.array([0.0, PI2, 0.0, PI2, PI2, PI2, 0.0], dtype=float),
+            "delta": np.array([0.0, 0.0, 0.0, PI2, PI, PI, 0.0], dtype=float),
+            "limit_n": np.array([-185.0, -150.0, -160.0, -175.0, -185.0, -180.0], dtype=float),
+            "limit_p": np.array([ 175.0,  210.0,  200.0,  185.0,  175.0,  180.0], dtype=float),
+        }
+
+        def T_i(joint, i):
+            delta = DotnaTA_DH["delta"][i]
+            alpha = DotnaTA_DH["alpha"][i]
+            ai    = DotnaTA_DH["a"][i]
+            di    = DotnaTA_DH["d"][i]
+
+            ct = np.cos(joint + delta)
+            st = np.sin(joint + delta)
+            ca = np.cos(alpha)
+            sa = np.sin(alpha)
+
+            res = np.array([
+                [ ct,     -st * ca,  st * sa,  ai * ct],
+                [ st,      ct * ca, -ct * sa,  ai * st],
+                [ 0.0,          sa,       ca,      di ],
+                [ 0.0,         0.0,      0.0,     1.0 ]
+            ], dtype=float)
+
+            return res
+
+        def solve_cs_equation(aa, bb, cc, i):
+            # solving equation: aa + bb*cos(theta) + cc*sin(theta) = 0
+            delta = cc * cc * (-aa * aa + bb * bb + cc * cc)
+            if delta < 0:
+                return None
+            if bb == 0.0 and cc == 0.0:
+                return None
+            if bb == 0.0:
+                s1 = -aa / cc
+                if abs(s1) > 1.0:
+                    return None
+                c1 = np.sqrt(1.0 - s1 * s1)
+                if i == 1:
+                    c1 = -c1
+                return c1, s1
+            if cc == 0.0:
+                c1 = -aa / bb
+                if abs(c1) > 1.0:
+                    return None
+                s1 = np.sqrt(1.0 - c1 * c1)
+                if i == 1:
+                    s1 = -s1
+                return c1, s1
+
+            if i == 0:
+                c1 = (-aa * bb + np.sqrt(delta)) / (bb * bb + cc * cc)
+            else:
+                c1 = (-aa * bb - np.sqrt(delta)) / (bb * bb + cc * cc)
+
+            s1 = -(aa + bb * c1) / cc
+            return c1, s1
+
+
+        def clamp(x, lo, hi):
+            return lo if x < lo else hi if x > hi else x
+
+        def _wrap_to_limits(q, qmin, qmax):
+            # shift by 2π until within [qmin, qmax)
+            two_pi = 2.0 * np.pi
+            while q >= qmax:
+                q -= two_pi
+            while q < qmin:
+                q += two_pi
+            return q
+
+
+        def _angle_distance(a, b):
+            # shortest angular distance between angles a and b (radians)
+            d = a - b
+            d = (d + np.pi) % (2.0 * np.pi) - np.pi
+            return d
+
+        def _joint_space_distance(q, qref):
+            # simple Euclidean norm of wrapped angular differences over 6 joints
+            diffs = [_angle_distance(q[k], qref[k]) for k in range(6)]
+            return float(np.linalg.norm(diffs))
+
+
+
+        def xyzj_to_joints(xyzj, curJoints, tool_pose):
+            
+            T_tool = dorna2.pose.xyzabc_to_T(tool_pose)
+            T345 = np.eye(4)
+            temp1 = None
+            temp2 = None
+
+            xyz = np.array([xyzj[0], xyzj[1], xyzj[2]], dtype=float)
+            j345 = np.deg2rad([xyzj[3], xyzj[4], xyzj[5]])
+
+            for i in range(4, 8):
+                if i < 7:
+                    temp1 = T_i(j345[i - 4], i)
+                else:
+                    temp1 = T_tool
+                temp2 = T345.copy()
+                T345 = temp2 @ temp1
+
+            lx = T345[0, 3]
+            ly = T345[2, 3]
+            lz = T345[1, 3]
+            lxy = np.sqrt(lx * lx + ly * ly)
+
+            j0 = 0.0
+            j1 = 0.0
+            j2 = 0.0
+            j3 = j345[0]
+            j4 = j345[1]
+            j5 = j345[2]
+
+            a2 = DotnaTA_DH["a"][1]
+            a3 = DotnaTA_DH["a"][2]
+            d1 = DotnaTA_DH["d"][0]
+            d4 = DotnaTA_DH["d"][3]
+            d5 = DotnaTA_DH["d"][4]
+            d6 = DotnaTA_DH["d"][5]
+            d7 = DotnaTA_DH["d"][6]
+
+            jointMin_ = np.deg2rad(DotnaTA_DH["limit_n"][:6])
+            jointMax_ = np.deg2rad(DotnaTA_DH["limit_p"][:6])
+
+            num_res = 0
+            res = []
+
+            rhoxyz = float(np.hypot(xyz[0], xyz[1]))
+            nz = xyz[2] - d1
+            lz = T345[1, 3] + d4
+
+            T00, T01, T02, T03 = T_tool[0, 0], T_tool[0, 1], T_tool[0, 2], T_tool[0, 3]
+            T10, T11, T12, T13 = T_tool[1, 0], T_tool[1, 1], T_tool[1, 2], T_tool[1, 3]
+            T20, T21, T22, T23 = T_tool[2, 0], T_tool[2, 1], T_tool[2, 2], T_tool[2, 3]
+
+            for idx_j0 in range(2):
+                for idx_j2 in range(2):
+                    j0 = np.arctan2(xyz[1], xyz[0])
+
+                    if abs(rhoxyz) < abs(lz):
+                        continue
+                    nxy = np.sqrt(rhoxyz * rhoxyz - lz * lz)
+
+                    dj0 = np.arctan2(lz, nxy)
+
+                    if (idx_j0 % 2) == 0:
+                        j0 += dj0
+                    else:
+                        j0 += -dj0 + np.pi
+
+                    j0 = _wrap_to_limits(j0, jointMin_[0], jointMax_[0])
+
+                    if idx_j0 != 0:
+                        nxy = -nxy
+
+                    nxy += -a2
+                    dis = float(np.hypot(nxy, nz))
+
+                    if dis > a3 + lxy + 1e-5:
+                        continue
+
+                    j1 = np.arctan2(nz, nxy)
+                    arg = (a3 * a3 + dis * dis - lxy * lxy) / (2.0 * a3 * dis)
+                    phi = np.arccos(clamp(arg, -1.0, 1.0))
+
+                    if idx_j2 == 0:
+                        j1 += phi
+                    else:
+                        j1 += -phi
+
+                    j1 = _wrap_to_limits(j1, jointMin_[1], jointMax_[1])
+
+                    for idx_j3 in range(2):
+                        cj2_sj2 = solve_cs_equation(
+                            d1 + a3 * np.sin(j1) - xyz[2],
+                            np.sin(j1) * (d5 + (d7 + T23) * np.cos(j4) - T03 * np.cos(j5) * np.sin(j4) + T13 * np.sin(j4) * np.sin(j5))
+                            + np.cos(j1) * (-np.sin(j3) * (d6 + T13 * np.cos(j5) + T03 * np.sin(j5))
+                            + np.cos(j3) * (T03 * np.cos(j4) * np.cos(j5) + (d7 + T23) * np.sin(j4) - T13 * np.cos(j4) * np.sin(j5))),
+                            np.cos(j1) * (d5 + (d7 + T23) * np.cos(j4) - T03 * np.cos(j5) * np.sin(j4) + T13 * np.sin(j4) * np.sin(j5))
+                            + np.sin(j1) * (np.sin(j3) * (d6 + T13 * np.cos(j5) + T03 * np.sin(j5))
+                            - np.cos(j3) * (T03 * np.cos(j4) * np.cos(j5) + (d7 + T23) * np.sin(j4) - T13 * np.cos(j4) * np.sin(j5))),
+                            idx_j3
+                        )
+
+                        if cj2_sj2 is None:
+                            continue
+
+                        cj2, sj2 = cj2_sj2
+                        j2 = np.arctan2(sj2, cj2)
+                        j2 = _wrap_to_limits(j2, jointMin_[2], jointMax_[2])
+
+                        res.append([j0, j1, j2, j3, j4, j5])
+                        num_res += 1
+
+            best_ans_idx = -1
+            best_ans_dis = 1e9
+
+            current_joint = np.deg2rad([
+                curJoints[0], curJoints[1], curJoints[2],
+                curJoints[3], curJoints[4], curJoints[5]
+            ])
+
+            for i in range(num_res):
+
+                self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+                xyz = self.dorna.kinematic.fw(np.rad2deg(res[i]))
+                T = dorna2.pose.xyzabc_to_T(xyz)
+
+
+                res_xyz = np.array([T[0, 3] - xyz[0], T[1, 3] - xyz[1], T[2, 3] - xyz[2]], dtype=float)
+                l = float(res_xyz @ res_xyz)
+                if l > 1e-4:
+                    continue
+
+                dis_to_current = _joint_space_distance(res[i], current_joint)
+
+                if dis_to_current < best_ans_dis and (current_joint[2] - 0.03) * res[i][2] > 0.0:
+                    best_ans_idx = i
+                    best_ans_dis = dis_to_current
+
+            if best_ans_idx == -1:
+                return None
+            if best_ans_dis > 0.1:
+                return None
+
+            out = np.zeros(8, dtype=float)
+            out[:6] = np.rad2deg(res[best_ans_idx][:6])
+            out[6] = xyzj[6]
+            out[7] = xyzj[7]
+            return out
+
+        
+
+        try:
+            # --- Setup start/goal
+            cur_joints = list(self.joints[:])
+            tgt_joints = list(joint)
+
+            print("Current Joints:", cur_joints)
+            print("Target  Joints:", tgt_joints)
+
+            # first we set the tool
+            tool_pose = [0,0,0,0,0,0]
+            if tool_solid and tool_anchor:
+                tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+            print("Tool Pose:", tool_pose)
+
+            #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+            cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
+            print("Current XYZ:", cur_xyz)
+
+            tgt_xyz = self.dorna.kinematic.fw(tgt_joints[0:6])
+
+            print("Target  XYZ:", tgt_xyz)
+
+
+            # now we form xyz joint vectors
+            cur_xyz_joints = [cur_xyz[0], cur_xyz[1], cur_xyz[2], cur_joints[3], cur_joints[4], cur_joints[5], cur_joints[6], cur_joints[7]]
+            tgt_xyz_joints = [tgt_xyz[0], tgt_xyz[1], tgt_xyz[2], tgt_joints[3], tgt_joints[4], tgt_joints[5], tgt_joints[6], tgt_joints[7]]
+
+            delta = [t - c for c, t in zip(cur_xyz_joints, tgt_xyz_joints)]
+            d = math.sqrt(sum(di * di for di in delta))
+            if d <= 0.0:
+                return 2  # nothing to do
+
+
+            # --- Build profile
+            prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+            jerks = prof.get("jerks", [])
+            ticks = prof.get("ticks", [])
+            t_total = prof.get("t_total", 0.0)
+
+            if t_total <= 0.0 or not ticks:
+                return 2
+
+            # --- Interpolation timing
+            dt = 1.0 / float(self.INTERP_FREQ)
+            t0 = time.perf_counter()
+            step = 0
+
+            try:
+                while True:
+                    now = time.perf_counter()
+                    elapsed = now - t0
+                    if elapsed >= t_total:
+                        break
+
+                    # scalar motion state at this time
+                    q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+                    s = max(0.0, min(q / d, 1.0))
+
+                    # update joints
+                    xyz_joints = [c + s * di for c, di in zip(cur_xyz_joints, delta)]
+                    self.joints = xyzj_to_joints(xyz_joints, self.joints, tool_pose)
+                    if self.joints is None:
+                        
+                        print("Inverse kinematics failed during lmove")
+                        return -1  # inverse kinematics failure
+
+                    # now we find joints based on xyzjoints
+
+
+
+                    # sleep until next interpolation tick
+                    step += 1
+                    next_tick_time = t0 + step * dt
+                    sleep_for = next_tick_time - time.perf_counter()
+                    if sleep_for > 0:
+                        time.sleep(sleep_for)
+
+            finally:
+                # ensure exact final value
+                self.joints = xyzj_to_joints(tgt_xyz_joints, self.joints, tool_pose)
+
+            return 2  # success
+
+        except Exception as e:
+            print("Unexpected error during lmove", e)
+            return -1  # any unexpected error
