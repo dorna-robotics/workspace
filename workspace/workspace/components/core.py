@@ -221,11 +221,7 @@ class Core:
         if self.robot_api is None:
             return
 
-        try:
-            joints = self.robot_api.joint()  # expect list/tuple of 8 floats
-        except Exception:
-            return
-
+        joints = self.robot_api.joint()  # expect list/tuple of 8 floats
 
         self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="carriage", child_anchor="center", offset =[joints[self.aux_axis],0,0,0,0,0])
 
@@ -410,6 +406,7 @@ class SimulationAPI:
         self.joints = joints 
         self.FREQ = 100000
         self.INTERP_FREQ=120
+        self.dorna = Dorna()
 
     def joint(self):
         return self.joints
@@ -645,59 +642,52 @@ class SimulationAPI:
             2 : if successful
         """
 
-        try:
-            # --- Setup start/goal
-            cur = list(self.joints[:])
-            tgt = list(joint)
-            delta = [t - c for c, t in zip(cur, tgt)]
-            d = math.sqrt(sum(di * di for di in delta))
-            if d <= 0.0:
-                return 2  # nothing to do
+        # --- Setup start/goal
+        cur = list(self.joints[:])
+        tgt = list(joint)
+        delta = [t - c for c, t in zip(cur, tgt)]
+        d = math.sqrt(sum(di * di for di in delta))
+        if d <= 0.0:
+            return 2  # nothing to do
 
 
-            # --- Build profile
-            prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
-            jerks = prof.get("jerks", [])
-            ticks = prof.get("ticks", [])
-            t_total = prof.get("t_total", 0.0)
+        # --- Build profile
+        prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+        jerks = prof.get("jerks", [])
+        ticks = prof.get("ticks", [])
+        t_total = prof.get("t_total", 0.0)
 
-            if t_total <= 0.0 or not ticks:
-                return 2
+        if t_total <= 0.0 or not ticks:
+            return 2
 
-            # --- Interpolation timing
-            dt = 1.0 / float(self.INTERP_FREQ)
-            t0 = time.perf_counter()
-            step = 0
+        # --- Interpolation timing
+        dt = 1.0 / float(self.INTERP_FREQ)
+        t0 = time.perf_counter()
+        step = 0
+        while True:
+            now = time.perf_counter()
+            elapsed = now - t0
+            if elapsed >= t_total:
+                break
 
-            try:
-                while True:
-                    now = time.perf_counter()
-                    elapsed = now - t0
-                    if elapsed >= t_total:
-                        break
+            # scalar motion state at this time
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            s = max(0.0, min(q / d, 1.0))
 
-                    # scalar motion state at this time
-                    q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
-                    s = max(0.0, min(q / d, 1.0))
+            # update joints
+            self.joints = [c + s * di for c, di in zip(cur, delta)]
 
-                    # update joints
-                    self.joints = [c + s * di for c, di in zip(cur, delta)]
+            # sleep until next interpolation tick
+            step += 1
+            next_tick_time = t0 + step * dt
+            sleep_for = next_tick_time - time.perf_counter()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
-                    # sleep until next interpolation tick
-                    step += 1
-                    next_tick_time = t0 + step * dt
-                    sleep_for = next_tick_time - time.perf_counter()
-                    if sleep_for > 0:
-                        time.sleep(sleep_for)
+        self.joints = tgt[:]
 
-            finally:
-                # ensure exact final value
-                self.joints = tgt[:]
+        return 2  # success
 
-            return 2  # success
-
-        except Exception:
-            return -1  # any unexpected error
 
 
 
@@ -746,6 +736,7 @@ class SimulationAPI:
         def solve_cs_equation(aa, bb, cc, i):
             # solving equation: aa + bb*cos(theta) + cc*sin(theta) = 0
             delta = cc * cc * (-aa * aa + bb * bb + cc * cc)
+            
             if delta < 0:
                 return None
             if bb == 0.0 and cc == 0.0:
@@ -773,6 +764,8 @@ class SimulationAPI:
                 c1 = (-aa * bb - np.sqrt(delta)) / (bb * bb + cc * cc)
 
             s1 = -(aa + bb * c1) / cc
+            
+            print(f"c1={c1} s1={s1}")
             return c1, s1
 
 
@@ -850,9 +843,10 @@ class SimulationAPI:
             nz = xyz[2] - d1
             lz = T345[1, 3] + d4
 
-            T00, T01, T02, T03 = T_tool[0, 0], T_tool[0, 1], T_tool[0, 2], T_tool[0, 3]
-            T10, T11, T12, T13 = T_tool[1, 0], T_tool[1, 1], T_tool[1, 2], T_tool[1, 3]
-            T20, T21, T22, T23 = T_tool[2, 0], T_tool[2, 1], T_tool[2, 2], T_tool[2, 3]
+
+            T00, T01, T02, T03 = T_tool[0][0], T_tool[0][1], T_tool[0][2], T_tool[0][3]
+            T10, T11, T12, T13 = T_tool[1][0], T_tool[1][1], T_tool[1][2], T_tool[1][3]
+            T20, T21, T22, T23 = T_tool[2][0], T_tool[2][1], T_tool[2][2], T_tool[2][3]
 
             for idx_j0 in range(2):
                 for idx_j2 in range(2):
@@ -928,7 +922,7 @@ class SimulationAPI:
                 T = dorna2.pose.xyzabc_to_T(xyz)
 
 
-                res_xyz = np.array([T[0, 3] - xyz[0], T[1, 3] - xyz[1], T[2, 3] - xyz[2]], dtype=float)
+                res_xyz = np.array([T[0][3] - xyz[0], T[1][3] - xyz[1], T[2][3] - xyz[2]], dtype=float)
                 l = float(res_xyz @ res_xyz)
                 if l > 1e-4:
                     continue
@@ -941,101 +935,112 @@ class SimulationAPI:
 
             if best_ans_idx == -1:
                 return None
-            if best_ans_dis > 0.1:
-                return None
+            # if best_ans_dis > 0.1:
+            #     print("Inverse kinematics solution too far from current joints:", best_ans_dis)
+            #     return None
+
+            if best_ans_dis > 0.12:
+                print("IK best distance:", best_ans_dis)
 
             out = np.zeros(8, dtype=float)
             out[:6] = np.rad2deg(res[best_ans_idx][:6])
             out[6] = xyzj[6]
             out[7] = xyzj[7]
+
+            # we do a sanity check on the ouput.
+            # first we find the x,y,z of the output joints
+            self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+            fk = self.dorna.kinematic.fw(out[:6])
+            dx = fk[0] - xyzj[0]
+            dy = fk[1] - xyzj[1]
+            dz = fk[2] - xyzj[2]
+            err = math.sqrt(dx*dx + dy*dy + dz*dz)
+            if err < 0.00001:
+                print("Inverse kinematics solution error too large:", err)
+
             return out
 
-        
-
-        try:
-            # --- Setup start/goal
-            cur_joints = list(self.joints[:])
-            tgt_joints = list(joint)
-
-            print("Current Joints:", cur_joints)
-            print("Target  Joints:", tgt_joints)
-
-            # first we set the tool
-            tool_pose = [0,0,0,0,0,0]
-            if tool_solid and tool_anchor:
-                tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
-
-            print("Tool Pose:", tool_pose)
-
-            #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-            cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
-            print("Current XYZ:", cur_xyz)
-
-            tgt_xyz = self.dorna.kinematic.fw(tgt_joints[0:6])
-
-            print("Target  XYZ:", tgt_xyz)
-
-
-            # now we form xyz joint vectors
-            cur_xyz_joints = [cur_xyz[0], cur_xyz[1], cur_xyz[2], cur_joints[3], cur_joints[4], cur_joints[5], cur_joints[6], cur_joints[7]]
-            tgt_xyz_joints = [tgt_xyz[0], tgt_xyz[1], tgt_xyz[2], tgt_joints[3], tgt_joints[4], tgt_joints[5], tgt_joints[6], tgt_joints[7]]
-
-            delta = [t - c for c, t in zip(cur_xyz_joints, tgt_xyz_joints)]
-            d = math.sqrt(sum(di * di for di in delta))
-            if d <= 0.0:
-                return 2  # nothing to do
-
-
-            # --- Build profile
-            prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
-            jerks = prof.get("jerks", [])
-            ticks = prof.get("ticks", [])
-            t_total = prof.get("t_total", 0.0)
-
-            if t_total <= 0.0 or not ticks:
-                return 2
-
-            # --- Interpolation timing
-            dt = 1.0 / float(self.INTERP_FREQ)
-            t0 = time.perf_counter()
-            step = 0
-
-            try:
-                while True:
-                    now = time.perf_counter()
-                    elapsed = now - t0
-                    if elapsed >= t_total:
-                        break
-
-                    # scalar motion state at this time
-                    q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
-                    s = max(0.0, min(q / d, 1.0))
-
-                    # update joints
-                    xyz_joints = [c + s * di for c, di in zip(cur_xyz_joints, delta)]
-                    self.joints = xyzj_to_joints(xyz_joints, self.joints, tool_pose)
-                    if self.joints is None:
-                        
-                        print("Inverse kinematics failed during lmove")
-                        return -1  # inverse kinematics failure
-
-                    # now we find joints based on xyzjoints
 
 
 
-                    # sleep until next interpolation tick
-                    step += 1
-                    next_tick_time = t0 + step * dt
-                    sleep_for = next_tick_time - time.perf_counter()
-                    if sleep_for > 0:
-                        time.sleep(sleep_for)
+        # --- Setup start/goal
+        cur_joints = list(self.joints[:])
+        tgt_joints = list(joint)
 
-            finally:
-                # ensure exact final value
-                self.joints = xyzj_to_joints(tgt_xyz_joints, self.joints, tool_pose)
+        # first we set the tool
+        tool_pose = [0,0,0,0,0,0]
+        if tool_solid and tool_anchor:
+            tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
-            return 2  # success
 
-        except Exception as e:
-            print("Unexpected error during lmove", e)
-            return -1  # any unexpected error
+        #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+        cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
+
+        tgt_xyz = self.dorna.kinematic.fw(tgt_joints[0:6])
+
+
+
+        # now we form xyz joint vectors
+        cur_xyz_joints = [cur_xyz[0], cur_xyz[1], cur_xyz[2], cur_joints[3], cur_joints[4], cur_joints[5], cur_joints[6], cur_joints[7]]
+        tgt_xyz_joints = [tgt_xyz[0], tgt_xyz[1], tgt_xyz[2], tgt_joints[3], tgt_joints[4], tgt_joints[5], tgt_joints[6], tgt_joints[7]]
+
+        delta = [t - c for c, t in zip(cur_xyz_joints, tgt_xyz_joints)]
+        d = math.sqrt(sum(di * di for di in delta))
+        if d <= 0.0:
+            return 2  # nothing to do
+
+
+        # --- Build profile
+        prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+        jerks = prof.get("jerks", [])
+        ticks = prof.get("ticks", [])
+        t_total = prof.get("t_total", 0.0)
+
+        if t_total <= 0.0 or not ticks:
+            return 2
+
+        # --- Interpolation timing
+        dt = 1.0 / float(self.INTERP_FREQ)
+        t0 = time.perf_counter()
+        step = 0
+
+
+        while True:
+            now = time.perf_counter()
+            elapsed = now - t0
+            if elapsed >= t_total:
+                break
+
+            # scalar motion state at this time
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            s = max(0.0, min(q / d, 1.0))
+
+            # update joints
+            xyz_joints = [c + s * di for c, di in zip(cur_xyz_joints, delta)]
+            J = xyzj_to_joints(xyz_joints, self.joints, tool_pose)
+
+            
+            if J is None:
+                
+                print("Inverse kinematics failed during lmove")
+                print("xyzj_to_joints failed", xyz_joints)
+                print("cur joints:", self.joints)
+                print("tool pose:", tool_pose)
+                return -1  # inverse kinematics failure
+            else:
+                self.joints = J
+
+
+
+            # sleep until next interpolation tick
+            step += 1
+            next_tick_time = t0 + step * dt
+            sleep_for = next_tick_time - time.perf_counter()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+
+        # ensure exact final value
+        self.joints = tgt_joints
+        return 2  # success
+
