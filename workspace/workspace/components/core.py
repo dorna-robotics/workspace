@@ -765,7 +765,6 @@ class SimulationAPI:
 
             s1 = -(aa + bb * c1) / cc
             
-            print(f"c1={c1} s1={s1}")
             return c1, s1
 
 
@@ -918,11 +917,9 @@ class SimulationAPI:
             for i in range(num_res):
 
                 self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-                xyz = self.dorna.kinematic.fw(np.rad2deg(res[i]))
-                T = dorna2.pose.xyzabc_to_T(xyz)
+                xyz_tmp = self.dorna.kinematic.fw(np.rad2deg(res[i]))
 
-
-                res_xyz = np.array([T[0][3] - xyz[0], T[1][3] - xyz[1], T[2][3] - xyz[2]], dtype=float)
+                res_xyz = np.array([xyz_tmp[0] - xyz[0], xyz_tmp[1] - xyz[1], xyz_tmp[2] - xyz[2]], dtype=float)
                 l = float(res_xyz @ res_xyz)
                 if l > 1e-4:
                     continue
@@ -935,12 +932,7 @@ class SimulationAPI:
 
             if best_ans_idx == -1:
                 return None
-            # if best_ans_dis > 0.1:
-            #     print("Inverse kinematics solution too far from current joints:", best_ans_dis)
-            #     return None
 
-            if best_ans_dis > 0.12:
-                print("IK best distance:", best_ans_dis)
 
             out = np.zeros(8, dtype=float)
             out[:6] = np.rad2deg(res[best_ans_idx][:6])
@@ -955,8 +947,7 @@ class SimulationAPI:
             dy = fk[1] - xyzj[1]
             dz = fk[2] - xyzj[2]
             err = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if err < 0.00001:
-                print("Inverse kinematics solution error too large:", err)
+
 
             return out
 
@@ -1022,10 +1013,6 @@ class SimulationAPI:
             
             if J is None:
                 
-                print("Inverse kinematics failed during lmove")
-                print("xyzj_to_joints failed", xyz_joints)
-                print("cur joints:", self.joints)
-                print("tool pose:", tool_pose)
                 return -1  # inverse kinematics failure
             else:
                 self.joints = J
