@@ -3,7 +3,12 @@ from workspace.components.core import Core
 from workspace.components.tool_rack import ToolRack
 from workspace import Workspace
 
-def change_tool(core: Core, tool_rack: ToolRack, workspace: Workspace):
+class ChangeTool:
+    def __init__(self, core: Core, tool_rack: ToolRack, workspace: Workspace):
+        self.core = core
+        self.tool_rack = tool_rack
+        self.workspace = workspace
+
     """
     Approaches the tool rack and activates the tool changer
     to pick up a new tool.

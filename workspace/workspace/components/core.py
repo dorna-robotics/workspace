@@ -4,6 +4,8 @@ import dorna2.pose
 from workspace.components.factory import register
 import math
 import numpy as np
+from path_planning import Planner
+
 import time
 
 @register("core")
@@ -24,8 +26,11 @@ class Core:
         self.aux_axis = cfg.get("aux_axis", 6)
         self.rail_offset = cfg.get("rail_offset", 0)
         self.toolchanger_output = cfg.get("toolchanger_output", 0)
-        self.rail_min = -100.0
+        self.rail_min = -80.0
         self.rail_max = 400.0
+
+        self.planner = Planner()
+
 
         # optional robot API hookup
 
@@ -295,7 +300,7 @@ class Core:
                 return []
             root = (rhs ** 0.5) if rhs > 0.0 else 0.0
             cand = [dx - root, dx + root] if root > 0.0 else [dx]
-            return [r for r in cand if rmin <= r <= rmax]
+            return cand 
 
         # Live joints & indices
         cur = list(self.robot_api.joint())   # expect length 8
@@ -368,9 +373,9 @@ class Core:
                 tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
             self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-            pose_in_robot[3] += 0.01  # to avoid singularity
-            pose_in_robot[4] += 0.01  # to avoid singularity
-            pose_in_robot[5] += 0.01  # to avoid singularity
+            # pose_in_robot[3] += 0.01  # to avoid singularity
+            # pose_in_robot[4] += 0.01  # to avoid singularity
+            # pose_in_robot[5] += 0.01  # to avoid singularity
             sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
                 
 
@@ -378,6 +383,10 @@ class Core:
                 continue
 
             for arm_sol in sols:  # each is a NumPy vector of length 6
+                col_res = self.planner.check_collision(arm_sol)
+                if len(col_res) > 0:
+                    # collision detected, skip
+                    continue
                 q = list(cur)     # start from live joints
                 for i in range(6):        # overwrite j0..j5
                     q[i] = float(arm_sol[i])
