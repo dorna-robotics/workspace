@@ -1,4 +1,4 @@
-# workspace/components/core.py
+# workspace/components/microplate.py
 from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 

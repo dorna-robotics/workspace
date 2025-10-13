@@ -1,4 +1,4 @@
-# workspace/components/core.py
+# workspace/components/tool_rack.py
 from dorna2 import Solid, Dorna
 from dorna2 import pose
 from workspace.components.factory import register

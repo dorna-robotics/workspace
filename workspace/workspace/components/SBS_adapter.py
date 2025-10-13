@@ -1,4 +1,4 @@
-# workspace/components/core.py
+# workspace/components/SBS_adapter.py
 from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 

@@ -21,13 +21,57 @@ class Core:
         self.assembly = {}
 
         # ---- read config ----
-        self.preset = cfg.get("preset", "core500")
+
+        # -------- rail
+        self.has_rail = cfg.get("has_rail", True)
+        self.rail_type = cfg.get("rail_type", "rail_hd_500mm")
+        self.rail_axis = cfg.get("rail_axis", 6)  # 6 or 7
+        self.rail_offset = cfg.get("rail_offset", 0)  # this is the value of the rail when it homes.
+        if self.rail_type == "rail_hd_500mm":
+            self.rail_min = -80.0
+            self.rail_max = 420.0
+        elif self.rail_type == "rail_hd_1000mm":
+            self.rail_min = -80.0
+            self.rail_max = 920.0
+        elif self.rail_type == "rail_hd_2000mm":
+            self.rail_min = -80.0
+            self.rail_max = 1920.0
+        else:
+            raise ValueError(f"Unsupported rail type: {self.rail_type}")
+        
+        # ------- camera
+        self.has_camera = cfg.get("has_camera", False)
+        self.camera_ip = cfg.get("camera_ip", "0.0.0.0")
+
+
+        # -------- robot
         self.robot_ip = cfg.get("ip",'0.0.0.0')
-        self.aux_axis = cfg.get("aux_axis", 6)
-        self.rail_offset = cfg.get("rail_offset", 0)
-        self.toolchanger_output = cfg.get("toolchanger_output", 0)
-        self.rail_min = -80.0
-        self.rail_max = 400.0
+
+
+
+
+        # -------- toolchanger
+        self.has_toolchanger = cfg.get("has_toolchanger", False)
+        self.toolchanger_output = cfg.get("toolchanger_output", 0)  # the output pin that controls the toolchanger
+
+
+
+
+
+        # self.preset = cfg.get("preset", "core500")
+        # self.aux_axis = cfg.get("aux_axis", 6)
+        # self.rail_offset = cfg.get("rail_offset", 0)
+        # self.toolchanger_output = cfg.get("toolchanger_output", 0)
+        # self.rail_min = -80.0
+        # self.rail_max = 400.0
+
+
+
+
+
+
+
+
 
         self.planner = Planner()
 
@@ -41,35 +85,35 @@ class Core:
                 self.robot_api = self.dorna
         else:
                 self.robot_api = SimulationAPI()
-                self._simulation_mode = False
+                self._simulation_mode = True
 
 
 
 
 
-        # now we buiild all anchors for the following items:
-        # --------- plate
-        plate_anchors = {}
-        # 10 x 20 grid (A..J, 1..20), 25mm pitch, + convenience anchors
-        plate_x_start = -237.5
-        plate_y_start = 112.5
-        plate_pitch = 25.0
-        rows = [chr(c) for c in range(ord("A"), ord("J") + 1)]  # A..J
-        cols = range(1, 21)  # 1..20
-        for r_idx, r in enumerate(rows):
-            y = plate_y_start - r_idx * plate_pitch
-            for c in cols:
-                x = plate_x_start + (c - 1) * plate_pitch
-                plate_anchors[f"{r}{c}"] = [x, y, 7.0, 0.0, 0.0, 0.0]
-        plate_anchors["corner_0"] = [-250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
-        plate_anchors["corner_1"] = [250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
-        plate_anchors["corner_2"] = [250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
-        plate_anchors["corner_3"] = [-250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
-        plate_anchors["center"] = [0.0, 0.0, 7.0, 0.0, 0.0, 0.0]
+
+        # # --------- plate
+        # plate_anchors = {}
+        # # 10 x 20 grid (A..J, 1..20), 25mm pitch, + convenience anchors
+        # plate_x_start = -237.5
+        # plate_y_start = 112.5
+        # plate_pitch = 25.0
+        # rows = [chr(c) for c in range(ord("A"), ord("J") + 1)]  # A..J
+        # cols = range(1, 21)  # 1..20
+        # for r_idx, r in enumerate(rows):
+        #     y = plate_y_start - r_idx * plate_pitch
+        #     for c in cols:
+        #         x = plate_x_start + (c - 1) * plate_pitch
+        #         plate_anchors[f"{r}{c}"] = [x, y, 7.0, 0.0, 0.0, 0.0]
+        # plate_anchors["corner_0"] = [-250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
+        # plate_anchors["corner_1"] = [250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
+        # plate_anchors["corner_2"] = [250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
+        # plate_anchors["corner_3"] = [-250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
+        # plate_anchors["center"] = [0.0, 0.0, 7.0, 0.0, 0.0, 0.0]
 
 
         # --------- rail base
-        rail_base_500mm_anchors = {
+        rail_hd_500mm_base_anchors = {
         "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
         "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
@@ -77,10 +121,11 @@ class Core:
         "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
         "hole_3": [0, -37.5, 0.0, 0.0, 0.0, 0.0],
         }
+        # we can later add 1000mm and 2000mm rail bases
 
 
         # --------- rail carriage
-        rail_carriage_anchors = {
+        rail_hd_carriage_anchors = {
             "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "hole_0": [-50.0, 50.0, 0.0, 0.0, 0.0, 0.0],
             "hole_1": [50.0, 50.0, 0.0, 0.0, 0.0, 0.0],
@@ -89,50 +134,53 @@ class Core:
         }
 
 
-        if self.preset == "core500":
-            # we add 6 plates
-            # world-space placement centers to keep the 3x2 array centered
+        # if self.preset == "core500":
+        #     # we add 6 plates
+        #     # world-space placement centers to keep the 3x2 array centered
             
-            PLATE_W = 500.0  # along X
-            PLATE_H = 250.0  # along Y
-            world_centers = {
-                "plate_0": (-PLATE_W / 2, +PLATE_H),   # top-left
-                "plate_1": (-PLATE_W / 2, 0.0),        # mid-left
-                "plate_2": (-PLATE_W / 2, -PLATE_H),   # bot-left
-                "plate_3": (PLATE_W / 2, +PLATE_H),    # top-right
-                "plate_4": (PLATE_W / 2, 0.0),         # mid-right
-                "plate_5": (PLATE_W / 2, -PLATE_H),    # bot-right
-            }
+        #     PLATE_W = 500.0  # along X
+        #     PLATE_H = 250.0  # along Y
+        #     world_centers = {
+        #         "plate_0": (-PLATE_W / 2, +PLATE_H),   # top-left
+        #         "plate_1": (-PLATE_W / 2, 0.0),        # mid-left
+        #         "plate_2": (-PLATE_W / 2, -PLATE_H),   # bot-left
+        #         "plate_3": (PLATE_W / 2, +PLATE_H),    # top-right
+        #         "plate_4": (PLATE_W / 2, 0.0),         # mid-right
+        #         "plate_5": (PLATE_W / 2, -PLATE_H),    # bot-right
+        #     }
 
-            for name, (x, y) in world_centers.items():
-                self.assembly[name] = Solid(
-                    name=name,
-                    type="fixture_plate",           # matches static/CAD/fixture_plate.glb
-                    anchors=plate_anchors,
-                    component = self.name,
-                    pose=[x, y, 0.0, 0.0, 0.0, 0.0] # place in world
-                )
-            self.plate_0 = self.assembly["plate_0"]
-            self.plate_1 = self.assembly["plate_1"]
-            self.plate_2 = self.assembly["plate_2"]
-            self.plate_3 = self.assembly["plate_3"]
-            self.plate_4 = self.assembly["plate_4"]
-            self.plate_5 = self.assembly["plate_5"]
+        #     for name, (x, y) in world_centers.items():
+        #         self.assembly[name] = Solid(
+        #             name=name,
+        #             type="fixture_plate",           # matches static/CAD/fixture_plate.glb
+        #             anchors=plate_anchors,
+        #             component = self.name,
+        #             pose=[x, y, 0.0, 0.0, 0.0, 0.0] # place in world
+        #         )
+        #     self.plate_0 = self.assembly["plate_0"]
+        #     self.plate_1 = self.assembly["plate_1"]
+        #     self.plate_2 = self.assembly["plate_2"]
+        #     self.plate_3 = self.assembly["plate_3"]
+        #     self.plate_4 = self.assembly["plate_4"]
+        #     self.plate_5 = self.assembly["plate_5"]
 
 
-            # next we add 500mm rail base
-            self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_base_500mm", anchors=rail_base_500mm_anchors, component = self.name)
-            self.assembly["rail_base"] = self.rail_base
-        else:
-            raise ValueError(f"Unsupported core preset: {self.preset}")
+        # next we add the rail base depending on the type of the rail
+        if self.has_rail:
+            if self.rail_type == "rail_hd_500mm":
+                self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_hd_500mm_base_anchors, component = self.name)
+                self.assembly["rail_base"] = self.rail_base
+                self.rail_carriage = Solid(name="rail_carriage", type="rail_hd_carriage", anchors=rail_hd_carriage_anchors, component = self.name)
+                self.assembly["rail_carriage"] =  self.rail_carriage
+             
+            else:
+                # rail type is not supported
+                raise ValueError(f"Unsupported rail type: {self.rail_type}")
 
+
+        # self.rail_base.attach_to(parent=self.plate_1, parent_anchor='D10', child_anchor= 'hole_0', offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         
-
-        self.rail_base.attach_to(parent=self.plate_1, parent_anchor='D10', child_anchor= 'hole_0', offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        
-        self.rail_carriage = Solid(name="rail_carriage", type="rail_carriage", anchors=rail_carriage_anchors, component = self.name)
-        self.assembly["rail_carriage"] =  self.rail_carriage
-        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="center", child_anchor="center", offset =[0,0,82,0,0,0])
+        # self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="center", child_anchor="center", offset =[0,0,82,0,0,0])
 
         robot_A0_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -189,19 +237,19 @@ class Core:
         self.assembly["robot_A5"] = self.robot_A5
         self.assembly["robot_flange"] = self.robot_flange
 
-        # chain robot links via anchors (static zero joints to start)
+        # # chain robot links via anchors (static zero joints to start)
         
-        self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+        # self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
         # done
 
         # we check if there is tool changer
-        self.has_toolchanger = cfg.get("has_toolchanger", False)
+        # self.has_toolchanger = cfg.get("has_toolchanger", False)
         if self.has_toolchanger:
             toolchanger_robot_side_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -213,6 +261,14 @@ class Core:
             self.toolchanger_robot_side.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
 
 
+        # now we just need to attach robot_A0 to the rail carriage
+        if self.has_rail:
+            att = cfg.get("robot_attachment")
+            if att:
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_base_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
+            else:
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])    
+ 
 
     # -------------------------------------------------------------------------
     # live joint update
@@ -228,7 +284,7 @@ class Core:
 
         joints = self.robot_api.joint()  # expect list/tuple of 8 floats
 
-        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="carriage", child_anchor="center", offset =[joints[self.aux_axis],0,0,0,0,0])
+        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="carriage", child_anchor="center", offset =[joints[self.rail_axis],0,0,0,0,0])
 
         self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[0]])
         self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[1]])
@@ -259,9 +315,13 @@ class Core:
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
             print("Switched to simulation API")
 
-        
+
+
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=250.0,
-        rail_step=10.0, rail_span=2):
+        rail_step=10.0, rail_span=0, ref_joints=None):
+
+
+
         """
         Returns: (full_joints_or_none, status_code)
         - full_joints_or_none : list[float] length 8 on success; None on failure
@@ -290,117 +350,187 @@ class Core:
 
         # Refresh all poses/frames
         self.update_pose()
+        # Live joints & indices
+        if ref_joints is not None:
+            cur = list(ref_joints)
+        else:
+            cur = list(self.robot_api.joint())   # expect length 8
+
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
             dx, dy, dz = px, py - c0y, pz - c0z
             rhs = d*d - (dy*dy + dz*dz)
             if rhs < 0.0:
-                print("No rail solution found: rhs<0")
                 return []
-            root = (rhs ** 0.5) if rhs > 0.0 else 0.0
-            cand = [dx - root, dx + root] if root > 0.0 else [dx]
-            return cand 
+            root = (rhs ** 0.5)
+            R = [] 
+            # we start by the smaller rail value. If it is out of range then we consider the larger rail value
+            if dx - root >= rmin and dx - root <= rmax:
+                # now we check all steps and make sure they are in range
+                for k in range(-rail_span, rail_span + 1):
+                    r = dx - root + k * rail_step
+                    if r >= rmin and r <= rmax:
+                        R.append(r)
 
-        # Live joints & indices
-        cur = list(self.robot_api.joint())   # expect length 8
-        aux = self.aux_axis
-        r_cur = cur[aux]
-        rmin, rmax = self.rail_min, self.rail_max
+            elif dx + root >= rmin and dx + root <= rmax:
+                for k in range(-rail_span, rail_span + 1):
+                    r = dx + root + k * rail_step
+                    if r >= rmin and r <= rmax:
+                        R.append(r)
+            return R    
+                    
 
-        # Target pose in rail_base (used only to compute rail candidates)
-        px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
-
-        # r=0 origin on rail_base (carriage anchor)
-        c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
-
-        # Exact-distance rails; if none, return rail failure
-        candidates = rail_solutions(px, py, pz, c0x, c0y, c0z, base_distance, rmin, rmax)
-        if not candidates:
-            return (None, -1)
-
-        # r0: exact-distance candidate closest to current rail
-        r0 = min(candidates, key=lambda r: abs(r - r_cur))
-
-        # Neighborhood ONLY around r0 (clamped & deduped)
-        R = {r0 + k * rail_step for k in range(-rail_span, rail_span + 1)}
-        R = {min(max(r, rmin), rmax) for r in R}
-
-        # Joint-space distance to current joints: ONLY j1..j5 (ignore j0 and rail)
         def joint_distance(q):
             s = 0.0
-            for i in (1, 2, 3, 4, 5):
+            for i in (0,1, 2, 3, 4, 5):
                 d = q[i] - cur[i]
                 s += d * d
             return s ** 0.5
 
-        best = None  # (dist, full_q)
-
-        # first we find the pose of the robot base frame in the rail base
-        robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
-
-        for r in sorted(R, key=lambda rr: abs(rr - r0)):
 
 
+        
+        # now there are two cases, with rail and without rail
+        if not self.has_rail:
 
-            # Pose relative to ROBOT BASE
-            # now we update robot pose in rail base
-            updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
-            updated_robot_pose_in_rail_base[0] = r-r_cur + robot_pose_in_rail_base[0]
-
-            # now we find update robot pose in world base
-            updated_robot_pose_in_world_base = self.rail_base.pose(pose=updated_robot_pose_in_rail_base)
-
-            # now we calculate the transfer matrix for this pose
-            T_robot = np.array(dorna2.pose.xyzabc_to_T(updated_robot_pose_in_world_base))
-            inv_T_robot = np.linalg.inv(T_robot)
-
-            # now we find the pose of the object in the world frame
-            object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
-            T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
-
-            # now we find the pose of the object in the robot frame
-            T_object_in_robot = inv_T_robot @ T_object
-            pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
-
+            # we find the pose of the target in the robot frame
+            pose_in_robot = target_solid.pose(anchor=target_anchor, in_frame=self.robot_A0, offset=target_offset)
             # Seed: arm-only initial joints (j0..j5)
             init_arm = [cur[i] for i in range(6)]
-
-
 
             tool_pose = [0,0,0,0,0,0]
             if tool_solid and tool_anchor:
                 tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
             self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
-            # pose_in_robot[3] += 0.01  # to avoid singularity
-            # pose_in_robot[4] += 0.01  # to avoid singularity
-            # pose_in_robot[5] += 0.01  # to avoid singularity
             sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-                
-
             if sols is None or len(sols) == 0:
-                continue
-
+                return (None, -2)
+            
+            best = None                         
             for arm_sol in sols:  # each is a NumPy vector of length 6
-                col_res = self.planner.check_collision(arm_sol)
+                joint_sol = list(cur)     # start from live joints
+                for i in range(6):        # overwrite j0..j5
+                    joint_sol[i] = float(arm_sol[i])
+                col_res = self.planner.check_collision(joint_sol)
                 if len(col_res) > 0:
                     # collision detected, skip
                     continue
-                q = list(cur)     # start from live joints
-                for i in range(6):        # overwrite j0..j5
-                    q[i] = float(arm_sol[i])
-                q[aux] = r               # set rail
-
-                jd = joint_distance(q)
+                jd = joint_distance(joint_sol)
                 if (best is None) or (jd < best[0]):
-                    best = (jd, q)
-
-        if best:
-            return (best[1], 2)
+                    best = (jd, joint_sol)
+            if best:
+                return (best[1], 2)
         
+            else:
+                return (None, -2)
+
+
+        # --- with rail: find rail candidates
         else:
-            return(None, -2)
+        
+
+            aux = self.rail_axis
+            r_cur = cur[aux]
+            rmin, rmax = self.rail_min, self.rail_max
+
+            # Target pose in rail_base (used only to compute rail candidates)
+            px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
+
+            # r=0 origin on rail_base (carriage anchor)
+            c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
+
+            # Exact-distance rails; if none, return rail failure
+            R = rail_solutions(px, py, pz, c0x, c0y, c0z, base_distance, rmin, rmax)
+            if not R:
+                return (None, -1)
+
+            # # r0: exact-distance candidate closest to current rail
+            # r0 = min(candidates, key=lambda r: abs(r - r_cur))
+
+            # # Neighborhood ONLY around r0 (clamped & deduped)
+            # R = {r0 + k * rail_step for k in range(-rail_span, rail_span + 1)}
+            # R = {min(max(r, rmin), rmax) for r in R}
+
+
+
+            best = None  # (dist, full_q)
+
+            # first we find the pose of the robot base frame in the rail base
+            robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
+
+            #for r in sorted(R, key=lambda rr: abs(rr - r0)):
+            for r in R:
+                # Pose relative to ROBOT BASE
+                # now we update robot pose in rail base
+                updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
+                updated_robot_pose_in_rail_base[0] = r-r_cur + robot_pose_in_rail_base[0]
+
+                # now we find update robot pose in world base
+                updated_robot_pose_in_world_base = self.rail_base.pose(pose=updated_robot_pose_in_rail_base)
+
+                # now we calculate the transfer matrix for this pose
+                T_robot = np.array(dorna2.pose.xyzabc_to_T(updated_robot_pose_in_world_base))
+                inv_T_robot = np.linalg.inv(T_robot)
+
+                # now we find the pose of the object in the world frame
+                object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
+                T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
+
+                # now we find the pose of the object in the robot frame
+                T_object_in_robot = inv_T_robot @ T_object
+                pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
+
+                # Seed: arm-only initial joints (j0..j5)
+                init_arm = [cur[i] for i in range(6)]
+
+
+
+                tool_pose = [0,0,0,0,0,0]
+                if tool_solid and tool_anchor:
+                    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+                self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+                # pose_in_robot[3] += 0.01  # to avoid singularity
+                # pose_in_robot[4] += 0.01  # to avoid singularity
+                # pose_in_robot[5] += 0.01  # to avoid singularity
+                sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
+                    
+
+                if sols is None or len(sols) == 0:
+                    continue
+
+                for arm_sol in sols:  # each is a NumPy vector of length 6
+                    # col_res = self.planner.check_collision(arm_sol)
+                    # if len(col_res) > 0:
+                    #     # collision detected, skip
+                    #     continue
+                    # q = list(cur)     # start from live joints
+                    # for i in range(6):        # overwrite j0..j5
+                    #     q[i] = float(arm_sol[i])
+                    # q[aux] = r               # set rail
+
+                    # jd = joint_distance(q)
+                    # if (best is None) or (jd < best[0]):
+                    #     best = (jd, q)
+                    joint_sol = list(cur)     # start from live joints
+                    for i in range(6):        # overwrite j0..j5
+                        joint_sol[i] = float(arm_sol[i])
+                    joint_sol[aux] = r               # set rail
+                    col_res = self.planner.check_collision(joint_sol)
+                    if len(col_res) > 0:
+                        # collision detected, skip
+                        continue
+                    jd = joint_distance(joint_sol)
+                    if (best is None) or (jd < best[0]):
+                        best = (jd, joint_sol)
+
+            if best:
+                return (best[1], 2)
+            
+            else:
+                return(None, -2)
 
 
 
