@@ -16,6 +16,8 @@ class MicroTube:
 
         anchors = {}
         anchors["center"] = [0,0,0,0,0,0]
+        anchors["gripping_point"] = [0,0,42,180,0,0]
+
 
 
         self.assembly["microtube"] = Solid(name="microtube", type="microtube", anchors=anchors, component=self.name)

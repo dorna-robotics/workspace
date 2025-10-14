@@ -21,8 +21,8 @@ class ChangeTool:
 
 
         # first we assign the reference joints
-        J,C = core.IK(target_solid=tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-50,0,0,0], base_distance=self.base_distance,
-        rail_step=5.0, rail_span=2,tool_solid=core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],ref_joints=[0,0,0,0,0,0,0,0])
+        J,C = core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-50,0,0,0], base_distance=self.base_distance,
+        rail_step=5.0, rail_span=2,tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],ref_joints=[0,0,0,0,0,0,0,0])
         if C == 2:
             self.ref_joints = J
         else:
