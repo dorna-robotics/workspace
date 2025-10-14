@@ -1,0 +1,93 @@
+core:
+  type: core
+  has_rail: False
+  ip: "192.168.254.106"
+  has_toolchanger: True 
+  toolchanger_output: 0
+  attach:
+    parent_name: plate_1
+    parent_solid: plate
+    parent_anchor: G12
+    child_solid: robot_A0
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, -90]
+
+plate_1:
+  type: plate
+
+plate_2:
+  type: plate
+  attach:
+    parent_name: plate_1
+    parent_solid: plate
+    parent_anchor: corner_3
+    child_solid: plate
+    child_anchor: corner_0
+
+SBS_adapter_1:
+  type: SBS_adapter
+  attach:
+    parent_name: plate_2
+    parent_solid: plate
+    parent_anchor: D2
+    child_solid: SBS_adapter
+    child_anchor: hole_0
+
+microplate_1:
+  type: microplate
+  full: True
+  attach:
+    parent_name: SBS_adapter_1
+    parent_solid: SBS_adapter
+    parent_anchor: center
+    child_solid: microplate
+    child_anchor: center
+
+SBS_adapter_2:
+  type: SBS_adapter
+  attach:
+    parent_name: plate_2
+    parent_solid: plate
+    parent_anchor: D8
+    child_solid: SBS_adapter
+    child_anchor: hole_0
+
+microplate_2:
+  type: microplate
+  full: False
+  attach:
+    parent_name: SBS_adapter_2
+    parent_solid: SBS_adapter
+    parent_anchor: center
+    child_solid: microplate
+    child_anchor: center
+
+tool_rack_1:
+  type: tool_rack
+  attach:
+    parent_name: plate_2
+    parent_solid: plate
+    parent_anchor: H14
+    child_solid: tool_rack
+    child_anchor: center
+
+microtube_gripper_1:
+  type: microtube_gripper
+  has_toolchanger: True 
+  attach:
+    parent_name: tool_rack_1
+    parent_solid: tool_rack
+    parent_anchor: tool_connection
+    child_solid: toolchanger_tool_side
+    child_anchor: tool_rack_connection
+
+
+tool_rack_2:
+  type: tool_rack
+  attach:
+    parent_name: plate_2
+    parent_solid: plate
+    parent_anchor: C18
+    child_solid: tool_rack
+    child_anchor: center
+    offset: [0,0,0,0,0,90]

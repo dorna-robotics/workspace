@@ -1,18 +1,12 @@
-# workspace/recipes/change_tool.py
+# workspace/recipes/handle_microtube.py
 
 class ChangeTool:
-    def __init__(self, workspace, core, tool_rack, speed_factor=0.5):
+    def __init__(self, workspace, core, microplate, speed_factor=0.5):
         self.ws = workspace
         self.core = core
-        self.tool_rack = tool_rack
-        self.tool = None
+        self.microplate = microplate
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 250
-        self.retract_distance = 50
-        self.retract_height_without_tool = 50
-        self.retract_height_with_tool = 80
-        self.release_height = 2
 
         # first we check if the robot has a tool changer
         if core.has_toolchanger is False:

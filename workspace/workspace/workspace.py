@@ -11,8 +11,8 @@ from dorna2.pose import T_to_xyzabc
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
         comp_cfgs = yaml.safe_load(Path(config_path).read_text())
-        if "core" not in comp_cfgs:
-            raise ValueError("config must include a top-level 'core' component.")
+        # if "core" not in comp_cfgs:
+        #     raise ValueError("config must include a top-level 'core' component.")
 
         # 1) build components
         self.components = {}

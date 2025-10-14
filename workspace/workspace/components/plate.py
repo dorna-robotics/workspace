@@ -3,10 +3,10 @@ from dorna2 import Solid, Dorna
 from workspace.components.factory import register
 
 
-@register("microtube_gripper")
+@register("plate")
 class Plate:
     """
-    the microtube gripper
+    the plate
     """
 
     def __init__(self, name: str, cfg: dict):

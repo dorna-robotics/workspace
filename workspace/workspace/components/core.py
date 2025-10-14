@@ -185,14 +185,14 @@ class Core:
         robot_A0_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "output": [0.0, 0.0, 131.0, 0.0, 0.0, 90.0],
-            "0": [35.0, 50.0, 0.0, 0.0, 0.0, 0.0],
-            "1": [35.0, -50.0, 0.0, 0.0, 0.0, 0.0],
-            "2": [-15.0, 50.0, 0.0, 0.0, 0.0, 0.0],
-            "3": [-15.0, -50.0, 0.0, 0.0, 0.0, 0.0],
-            "4": [-65.0, 50.0, 0.0, 0.0, 0.0, 0.0],
-            "5": [-65.0, -50.0, 0.0, 0.0, 0.0, 0.0],
-            "6": [-115.0, 50.0, 0.0, 0.0, 0.0, 0.0],
-            "7": [-115.0, -50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_0": [35.0, 50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_1": [35.0, -50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_2": [-15.0, 50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_3": [-15.0, -50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_4": [-65.0, 50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_5": [-65.0, -50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_6": [-115.0, 50.0, 0.0, 0.0, 0.0, 0.0],
+            "hole_7": [-115.0, -50.0, 0.0, 0.0, 0.0, 0.0],
         }
         robot_A1_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -284,7 +284,8 @@ class Core:
 
         joints = self.robot_api.joint()  # expect list/tuple of 8 floats
 
-        self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="carriage", child_anchor="center", offset =[joints[self.rail_axis],0,0,0,0,0])
+        if self.has_rail:
+            self.rail_carriage.attach_to(parent=self.rail_base, parent_anchor="carriage", child_anchor="center", offset=[joints[self.rail_axis], 0, 0, 0, 0, 0])
 
         self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[0]])
         self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[1]])
@@ -413,7 +414,8 @@ class Core:
                 joint_sol = list(cur)     # start from live joints
                 for i in range(6):        # overwrite j0..j5
                     joint_sol[i] = float(arm_sol[i])
-                col_res = self.planner.check_collision(joint_sol)
+                
+                col_res = self.planner.check_collision(arm_sol)
                 if len(col_res) > 0:
                     # collision detected, skip
                     continue
@@ -518,7 +520,7 @@ class Core:
                     for i in range(6):        # overwrite j0..j5
                         joint_sol[i] = float(arm_sol[i])
                     joint_sol[aux] = r               # set rail
-                    col_res = self.planner.check_collision(joint_sol)
+                    col_res = self.planner.check_collision(arm_sol)
                     if len(col_res) > 0:
                         # collision detected, skip
                         continue
