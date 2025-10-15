@@ -7,18 +7,18 @@ class HandleMicrotube:
         self.microplate = microplate
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 250
+        self.base_distance = 350
         self.clearance_height = 200
 
 
         # first we assign the reference joints
         # the reference joints will be on top of the microplate center at 150mm height
-        J,C = core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor="center", target_offset=[0,0,self.clearance_height,0,0,0], base_distance=self.base_distance,
+        J,C = core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor="center", target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
         rail_step=5.0, rail_span=2,ref_joints=[0,0,0,0,0,0,0,0])
         if C == 2:
             self.ref_joints = J
         else:
-            print("Could not find a valid reference pose to approach the tool rack")
+            print("Could not find a valid reference pose to approach the microplate")
             return
         
 
@@ -68,6 +68,19 @@ class HandleMicrotube:
         if tube is None:
             print(f"No tube found in position {index}, cannot pick tube")
             return False
+        
+        
+        # we check if there is tube in the gripper already
+        existing_tube = None
+        for child in tool.assembly["microtube_gripper"].children["gripping_point"]:
+            solid = child["child_solid"]
+            existing_tube = self.ws.components[solid.component]
+            continue
+        if existing_tube is not None:
+            print("There is already a tube in the gripper, cannot pick another tube")
+            return False
+            
+
 
         # we go to clearance height on top of the tube
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
@@ -92,6 +105,8 @@ class HandleMicrotube:
             print("Could not find a valid pose to go down to the tube")
             return False
 
+
+            
         #self.core.robot_api.jmove(self.ref_joints, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
         # next we verify there is a tool to pick
         # close the gripper
@@ -100,14 +115,14 @@ class HandleMicrotube:
         tube.assembly["microtube"].attach_to(parent=tool.assembly["microtube_gripper"], parent_anchor="gripping_point", child_anchor="gripping_point")
 
         # # we go back to clearance height
-        # J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-        #                     ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+        J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
+                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
 
-        # if C == 2:
-        #     self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
-        # else:
-        #     print("Could not find a valid pose to go back to clearance height")
-        #     return False
+        if C == 2:
+            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+        else:
+            print("Could not find a valid pose to go back to clearance height")
+            return False
 
         return True
     def place_tube(self,index):
@@ -126,3 +141,62 @@ class HandleMicrotube:
             print("No tool attached to robot, cannot place tool")
             return False
         
+
+        # we check if there is tube in the gripper already
+        existing_tube = None
+        for child in tool.assembly["microtube_gripper"].children["gripping_point"]:
+            solid = child["child_solid"]
+            existing_tube = self.ws.components[solid.component]
+            continue
+        if existing_tube is None:
+            print("There is no tube in the gripper, cannot place tube")
+            return False
+        
+        # now we check if there is a tube in the target position
+        target_tube = None
+        for child in self.microplate.assembly["microplate"].children[index]:
+            solid = child["child_solid"]
+            target_tube = self.ws.components[solid.component]
+            continue
+        if target_tube is not None:
+            print(f"There is already a tube in position {index}, cannot place another tube")
+            return False
+        
+
+
+        # we go to clearance height on top of the tube
+        J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
+                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+        if C == 2:
+            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+        else:
+            print("Could not find a valid pose to go to clearance height")
+            return False
+        
+        # we go down to the position to place the tube
+        # at this position, the center of the tube will be at the index anchor
+        J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,0,0,0,0], base_distance=self.base_distance,
+                            tool_solid=existing_tube.assembly["microtube"], tool_anchor="center", tool_offset=[0,0,0,0,0,0],
+                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+        if C == 2:
+            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+        else:
+            print("Could not find a valid pose to go down to place the tube")
+            return False
+        
+        # open the gripper
+        # detach the tube from the gripper
+        existing_tube.assembly["microtube"].attach_to(parent=self.microplate.assembly["microplate"], parent_anchor=index, child_anchor="center")
+
+        # now we go back to clearance height
+        J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
+                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+        if C == 2:
+            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+        else:
+            print("Could not find a valid pose to go back to clearance height")
+            return False
+        return True
+    
+
+    

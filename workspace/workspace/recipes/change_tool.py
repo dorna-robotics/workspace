@@ -8,7 +8,7 @@ class ChangeTool:
         self.tool = None
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 250
+        self.base_distance = 360
         self.retract_distance = 50
         self.retract_height_without_tool = 50
         self.retract_height_with_tool = 80
@@ -27,6 +27,7 @@ class ChangeTool:
             self.ref_joints = J
         else:
             print("Could not find a valid reference pose to approach the tool rack")
+            print("C=",C)
             return
 
         # next we check if there is a tool already attached
@@ -89,7 +90,7 @@ class ChangeTool:
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
         else:
-            print("Could not find a valid pose to go up")
+            print("Could not find a valid pose to go up1")
             return False
 
         # next we go back a little
@@ -110,7 +111,8 @@ class ChangeTool:
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
         else:
-            print("Could not find a valid pose to go up")
+            print("Could not find a valid pose to go up2")
+            print("C=",C)
             return False
         
         return True

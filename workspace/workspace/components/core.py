@@ -265,9 +265,9 @@ class Core:
         if self.has_rail:
             att = cfg.get("robot_attachment")
             if att:
-                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_base_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_base_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","hole_0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
             else:
-                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])    
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="hole_0", offset=[0, 0, 0, 0, 0, 0])   
  
 
     # -------------------------------------------------------------------------
@@ -279,6 +279,10 @@ class Core:
         If a Dorna robot connection exists, update A1..A5 relative rotations
         by attaching each link with a Z-rotation equal to the corresponding joint angle.
         """
+
+
+
+
         if self.robot_api is None:
             return
 
@@ -358,6 +362,11 @@ class Core:
             cur = list(self.robot_api.joint())   # expect length 8
 
 
+        actual_current_joints = self.robot_api.joint()
+        aux = self.rail_axis
+        r_cur = actual_current_joints[aux]
+
+
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
             dx, dy, dz = px, py - c0y, pz - c0z
@@ -433,12 +442,12 @@ class Core:
         else:
         
 
-            aux = self.rail_axis
-            r_cur = cur[aux]
+
             rmin, rmax = self.rail_min, self.rail_max
 
             # Target pose in rail_base (used only to compute rail candidates)
-            px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
+            #px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
+            px, py, pz, rx, ry, rz = target_solid.pose(in_frame=self.rail_base)
 
             # r=0 origin on rail_base (carriage anchor)
             c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
@@ -458,6 +467,8 @@ class Core:
 
 
             best = None  # (dist, full_q)
+
+
 
             # first we find the pose of the robot base frame in the rail base
             robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
@@ -498,9 +509,18 @@ class Core:
                 # pose_in_robot[4] += 0.01  # to avoid singularity
                 # pose_in_robot[5] += 0.01  # to avoid singularity
                 sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-                    
 
+ 
                 if sols is None or len(sols) == 0:
+                    print("----------")
+                    print("rail", r)
+                    print("r_cur", r_cur)
+                    print("pose_in_robot", pose_in_robot)
+                    print("robot_pose_in_rail_base", robot_pose_in_rail_base)
+                    print(" updated_robot_pose_in_rail_base", updated_robot_pose_in_rail_base)
+                    print("updated_robot_pose_in_world_base", updated_robot_pose_in_world_base)
+                    print("current joints of the robot",self.robot_api.joint())
+                    print("init_arm", init_arm)
                     continue
 
                 for arm_sol in sols:  # each is a NumPy vector of length 6
