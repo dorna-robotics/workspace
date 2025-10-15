@@ -7,10 +7,14 @@ core:
   attach:
     parent_name: plate_1
     parent_solid: plate
-    parent_anchor: C10
+    parent_anchor: E10
     child_solid: rail_base
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 0]
+  robot_attach:
+    rail_carriage_anchor: hole_2
+    robot_A0_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, -90]
 
 plate_1:
   type: plate

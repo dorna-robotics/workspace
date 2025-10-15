@@ -1,14 +1,17 @@
 # workspace/recipes/change_tool.py
 
 class ChangeTool:
-    def __init__(self, workspace, core, tool_rack, speed_factor=0.5):
+    def __init__(self, workspace, core, tool_rack, speed_factor=0.5,left_approach=True,base_distance=350,rail_step=5.0,rail_span=2):
         self.ws = workspace
         self.core = core
         self.tool_rack = tool_rack
         self.tool = None
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 360
+        self.left_approach = left_approach
+        self.base_distance = base_distance
+        self.rail_step = rail_step
+        self.rail_span = rail_span
         self.retract_distance = 50
         self.retract_height_without_tool = 50
         self.retract_height_with_tool = 80
@@ -22,7 +25,7 @@ class ChangeTool:
 
         # first we assign the reference joints
         J,C = core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-50,0,0,0], base_distance=self.base_distance,
-        rail_step=5.0, rail_span=2,tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],ref_joints=[0,0,0,0,0,0,0,0])
+        rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],ref_joints=[0,0,0,0,0,0,0,0])
         if C == 2:
             self.ref_joints = J
         else:
@@ -59,16 +62,16 @@ class ChangeTool:
         tool = self.tool
 
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-self.retract_height_without_tool,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,
-        rail_step=5.0, rail_span=2,ref_joints=self.ref_joints)
+        rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
 
         if C == 2:
-            self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
+            self.core.robot_api.jmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
         else:
             print("Could not find a valid approach pose to the tool")
             return False
         
         # next we go down to the tool
-        J,C = self.core.IK(target_solid=tool.assembly["toolchanger_tool_side"], target_anchor="toolchanger_connection", target_offset=[0,0,0,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,rail_step=5.0, rail_span=2,ref_joints=self.ref_joints)
+        J,C = self.core.IK(target_solid=tool.assembly["toolchanger_tool_side"], target_anchor="toolchanger_connection", target_offset=[0,0,0,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,rail_step=self.rail_step, rail_span=self.rail_span,left_approach=self.left_approach,ref_joints=self.ref_joints)
 
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
@@ -83,7 +86,7 @@ class ChangeTool:
 
         # next we go up a little
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-self.release_height,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
 
 
 
@@ -95,7 +98,7 @@ class ChangeTool:
 
         # next we go back a little
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[-self.retract_distance,0,-self.release_height,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
 
 
         if C == 2:
@@ -106,7 +109,7 @@ class ChangeTool:
 
         # now we go up
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[-self.retract_distance,0,-self.retract_height_with_tool,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
 
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
@@ -140,9 +143,9 @@ class ChangeTool:
         
         # we start from back and up
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[-self.retract_distance,0,-self.retract_height_with_tool,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
         if C == 2:
-            self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
+            self.core.robot_api.jmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
         else:   
             print("Could not find a valid pose to start placing the tool")
             return False
@@ -150,7 +153,7 @@ class ChangeTool:
 
         # next we go down to the release height
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[-self.retract_distance,0,-self.release_height,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
 
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
@@ -160,7 +163,7 @@ class ChangeTool:
         
         # now we go to the tool rack
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-self.release_height,0,0,0], tool_solid=tool.assembly["toolchanger_tool_side"], tool_anchor="tool_rack_connection", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2, base_distance=self.base_distance)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, base_distance=self.base_distance, left_approach=self.left_approach)
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)
         else:
@@ -168,8 +171,8 @@ class ChangeTool:
             return False
 
 
-        # now we place the tool into the rack        
-        J,C = self.core.IK(target_solid=tool.assembly["toolchanger_tool_side"], target_anchor="toolchanger_connection", target_offset=[0,0,0,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,rail_step=5.0, rail_span=2,ref_joints=self.ref_joints)
+        # now we place the tool into the rack
+        J,C = self.core.IK(target_solid=tool.assembly["toolchanger_tool_side"], target_anchor="toolchanger_connection", target_offset=[0,0,0,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach, ref_joints=self.ref_joints)
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor,accel=5000*self.speed_factor,jerk=50000*self.speed_factor)   
         else:
@@ -182,7 +185,7 @@ class ChangeTool:
 
 
         J,C = self.core.IK(target_solid=self.tool_rack.assembly["tool_rack"], target_anchor="tool_connection", target_offset=[0,0,-self.retract_height_without_tool,0,0,0], tool_solid=self.core.toolchanger_robot_side, tool_anchor="toolchanger_connection", tool_offset=[0,0,0,0,0,0],base_distance=self.base_distance,
-        rail_step=5.0, rail_span=2,ref_joints=self.ref_joints)
+        rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach, ref_joints=self.ref_joints)
 
 
         if C == 2:

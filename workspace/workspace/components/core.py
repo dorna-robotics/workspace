@@ -263,9 +263,9 @@ class Core:
 
         # now we just need to attach robot_A0 to the rail carriage
         if self.has_rail:
-            att = cfg.get("robot_attachment")
+            att = cfg.get("robot_attach")
             if att:
-                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_base_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","hole_0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_carriage_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","hole_0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
             else:
                 self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="hole_0", offset=[0, 0, 0, 0, 0, 0])   
  
@@ -323,7 +323,7 @@ class Core:
 
 
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=250.0,
-        rail_step=10.0, rail_span=0, ref_joints=None):
+        rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
 
 
 
@@ -356,34 +356,34 @@ class Core:
         # Refresh all poses/frames
         self.update_pose()
         # Live joints & indices
-        if ref_joints is not None:
-            cur = list(ref_joints)
-        else:
-            cur = list(self.robot_api.joint())   # expect length 8
-
-
-        actual_current_joints = self.robot_api.joint()
+        cur = list(self.robot_api.joint())   # expect length 8
         aux = self.rail_axis
-        r_cur = actual_current_joints[aux]
+        r_cur = cur[aux]
+
+        if ref_joints is None:
+            ref_joints = list(cur)
 
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
             dx, dy, dz = px, py - c0y, pz - c0z
+            
+            # we do not condider z difference only x and y
+            dz = 0
             rhs = d*d - (dy*dy + dz*dz)
             if rhs < 0.0:
                 return []
             root = (rhs ** 0.5)
             R = [] 
             # we start by the smaller rail value. If it is out of range then we consider the larger rail value
-            if dx - root >= rmin and dx - root <= rmax:
-                # now we check all steps and make sure they are in range
+            
+            if left_approach:
                 for k in range(-rail_span, rail_span + 1):
                     r = dx - root + k * rail_step
                     if r >= rmin and r <= rmax:
                         R.append(r)
-
-            elif dx + root >= rmin and dx + root <= rmax:
+            
+            else:
                 for k in range(-rail_span, rail_span + 1):
                     r = dx + root + k * rail_step
                     if r >= rmin and r <= rmax:
@@ -394,7 +394,7 @@ class Core:
         def joint_distance(q):
             s = 0.0
             for i in (0,1, 2, 3, 4, 5):
-                d = q[i] - cur[i]
+                d = q[i] - ref_joints[i]
                 s += d * d
             return s ** 0.5
 
@@ -446,8 +446,7 @@ class Core:
             rmin, rmax = self.rail_min, self.rail_max
 
             # Target pose in rail_base (used only to compute rail candidates)
-            #px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
-            px, py, pz, rx, ry, rz = target_solid.pose(in_frame=self.rail_base)
+            px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
 
             # r=0 origin on rail_base (carriage anchor)
             c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
@@ -496,7 +495,7 @@ class Core:
                 pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
 
                 # Seed: arm-only initial joints (j0..j5)
-                init_arm = [cur[i] for i in range(6)]
+                init_arm = [ref_joints[i] for i in range(6)]
 
 
 
@@ -512,35 +511,15 @@ class Core:
 
  
                 if sols is None or len(sols) == 0:
-                    print("----------")
-                    print("rail", r)
-                    print("r_cur", r_cur)
-                    print("pose_in_robot", pose_in_robot)
-                    print("robot_pose_in_rail_base", robot_pose_in_rail_base)
-                    print(" updated_robot_pose_in_rail_base", updated_robot_pose_in_rail_base)
-                    print("updated_robot_pose_in_world_base", updated_robot_pose_in_world_base)
-                    print("current joints of the robot",self.robot_api.joint())
-                    print("init_arm", init_arm)
                     continue
 
                 for arm_sol in sols:  # each is a NumPy vector of length 6
-                    # col_res = self.planner.check_collision(arm_sol)
-                    # if len(col_res) > 0:
-                    #     # collision detected, skip
-                    #     continue
-                    # q = list(cur)     # start from live joints
-                    # for i in range(6):        # overwrite j0..j5
-                    #     q[i] = float(arm_sol[i])
-                    # q[aux] = r               # set rail
-
-                    # jd = joint_distance(q)
-                    # if (best is None) or (jd < best[0]):
-                    #     best = (jd, q)
-                    joint_sol = list(cur)     # start from live joints
+                    joint_sol = list(ref_joints)     # start from live joints
                     for i in range(6):        # overwrite j0..j5
                         joint_sol[i] = float(arm_sol[i])
                     joint_sol[aux] = r               # set rail
                     col_res = self.planner.check_collision(arm_sol)
+
                     if len(col_res) > 0:
                         # collision detected, skip
                         continue
@@ -549,6 +528,7 @@ class Core:
                         best = (jd, joint_sol)
 
             if best:
+
                 return (best[1], 2)
             
             else:

@@ -1,20 +1,23 @@
 # workspace/recipes/handle_microtube.py
 
 class HandleMicrotube:
-    def __init__(self, workspace, core, microplate, speed_factor=0.5):
+    def __init__(self, workspace, core, microplate, speed_factor=0.5,left_approach=True,base_distance=350,rail_step=5.0,rail_span=2):
         self.ws = workspace
         self.core = core
         self.microplate = microplate
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 350
-        self.clearance_height = 200
+        self.left_approach = left_approach
+        self.base_distance = base_distance
+        self.rail_step = rail_step
+        self.rail_span = rail_span
+        self.clearance_height = 150  # mm above the microplate
 
 
         # first we assign the reference joints
         # the reference joints will be on top of the microplate center at 150mm height
         J,C = core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor="center", target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-        rail_step=5.0, rail_span=2,ref_joints=[0,0,0,0,0,0,0,0])
+        rail_step=self.rail_step, rail_span=self.rail_span,ref_joints=[0,0,0,0,0,0,0,0],left_approach=self.left_approach)
         if C == 2:
             self.ref_joints = J
         else:
@@ -84,10 +87,10 @@ class HandleMicrotube:
 
         # we go to clearance height on top of the tube
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
 
         if C == 2:
-            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+            self.core.robot_api.jmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
         else:
             print("Could not find a valid pose to go to clearance height")
             return False
@@ -97,7 +100,7 @@ class HandleMicrotube:
         # we go down to the tube
         # this move will be to the tube and using the tool
         J,C = self.core.IK(target_solid=tube.assembly["microtube"], target_anchor="gripping_point", target_offset=[0,0,0,0,0,0], tool_solid=tool.assembly["microtube_gripper"], tool_anchor="gripping_point", tool_offset=[0,0,0,0,0,0], base_distance=self.base_distance,
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
 
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
@@ -116,7 +119,7 @@ class HandleMicrotube:
 
         # # we go back to clearance height
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
 
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
@@ -166,9 +169,9 @@ class HandleMicrotube:
 
         # we go to clearance height on top of the tube
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
         if C == 2:
-            self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
+            self.core.robot_api.jmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
         else:
             print("Could not find a valid pose to go to clearance height")
             return False
@@ -177,7 +180,7 @@ class HandleMicrotube:
         # at this position, the center of the tube will be at the index anchor
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,0,0,0,0], base_distance=self.base_distance,
                             tool_solid=existing_tube.assembly["microtube"], tool_anchor="center", tool_offset=[0,0,0,0,0,0],
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
         else:
@@ -190,7 +193,7 @@ class HandleMicrotube:
 
         # now we go back to clearance height
         J,C = self.core.IK(target_solid=self.microplate.assembly["microplate"], target_anchor=index, target_offset=[0,0,self.clearance_height,180,0,0], base_distance=self.base_distance,
-                            ref_joints=self.ref_joints, rail_step=5.0, rail_span=2)
+                            ref_joints=self.ref_joints, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach)
         if C == 2:
             self.core.robot_api.lmove(J, vel=200*self.speed_factor, accel=5000*self.speed_factor, jerk=50000*self.speed_factor)
         else:
