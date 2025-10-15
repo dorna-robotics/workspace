@@ -446,8 +446,10 @@ class Core:
             rmin, rmax = self.rail_min, self.rail_max
 
             # Target pose in rail_base (used only to compute rail candidates)
-            #px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
-            px, py, pz, rx, ry, rz = target_solid.pose(in_frame=self.rail_base)
+            px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
+            
+            #px, py, pz, rx, ry, rz = target_solid.pose(in_frame=self.rail_base)
+            print("target in rail base", px, py, pz)
 
             # r=0 origin on rail_base (carriage anchor)
             c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")

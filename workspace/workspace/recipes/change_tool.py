@@ -8,7 +8,7 @@ class ChangeTool:
         self.tool = None
         self.ref_joints = None
         self.speed_factor = speed_factor
-        self.base_distance = 360
+        self.base_distance = 350
         self.retract_distance = 50
         self.retract_height_without_tool = 50
         self.retract_height_with_tool = 80
