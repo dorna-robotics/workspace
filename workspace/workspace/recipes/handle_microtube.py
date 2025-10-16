@@ -11,7 +11,7 @@ class HandleMicrotube:
         self.base_distance = base_distance
         self.rail_step = rail_step
         self.rail_span = rail_span
-        self.clearance_height = 150  # mm above the microplate
+        self.clearance_height = 180  # mm above the microplate
 
 
         # first we assign the reference joints

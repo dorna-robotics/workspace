@@ -54,25 +54,6 @@ class Core:
         self.has_toolchanger = cfg.get("has_toolchanger", False)
         self.toolchanger_output = cfg.get("toolchanger_output", 0)  # the output pin that controls the toolchanger
 
-
-
-
-
-        # self.preset = cfg.get("preset", "core500")
-        # self.aux_axis = cfg.get("aux_axis", 6)
-        # self.rail_offset = cfg.get("rail_offset", 0)
-        # self.toolchanger_output = cfg.get("toolchanger_output", 0)
-        # self.rail_min = -80.0
-        # self.rail_max = 400.0
-
-
-
-
-
-
-
-
-
         self.planner = Planner()
 
 
@@ -86,30 +67,6 @@ class Core:
         else:
                 self.robot_api = SimulationAPI()
                 self._simulation_mode = True
-
-
-
-
-
-
-        # # --------- plate
-        # plate_anchors = {}
-        # # 10 x 20 grid (A..J, 1..20), 25mm pitch, + convenience anchors
-        # plate_x_start = -237.5
-        # plate_y_start = 112.5
-        # plate_pitch = 25.0
-        # rows = [chr(c) for c in range(ord("A"), ord("J") + 1)]  # A..J
-        # cols = range(1, 21)  # 1..20
-        # for r_idx, r in enumerate(rows):
-        #     y = plate_y_start - r_idx * plate_pitch
-        #     for c in cols:
-        #         x = plate_x_start + (c - 1) * plate_pitch
-        #         plate_anchors[f"{r}{c}"] = [x, y, 7.0, 0.0, 0.0, 0.0]
-        # plate_anchors["corner_0"] = [-250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
-        # plate_anchors["corner_1"] = [250.0, 125.0, 7.0, 0.0, 0.0, 0.0]
-        # plate_anchors["corner_2"] = [250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
-        # plate_anchors["corner_3"] = [-250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
-        # plate_anchors["center"] = [0.0, 0.0, 7.0, 0.0, 0.0, 0.0]
 
 
         # --------- rail base
@@ -134,37 +91,6 @@ class Core:
         }
 
 
-        # if self.preset == "core500":
-        #     # we add 6 plates
-        #     # world-space placement centers to keep the 3x2 array centered
-            
-        #     PLATE_W = 500.0  # along X
-        #     PLATE_H = 250.0  # along Y
-        #     world_centers = {
-        #         "plate_0": (-PLATE_W / 2, +PLATE_H),   # top-left
-        #         "plate_1": (-PLATE_W / 2, 0.0),        # mid-left
-        #         "plate_2": (-PLATE_W / 2, -PLATE_H),   # bot-left
-        #         "plate_3": (PLATE_W / 2, +PLATE_H),    # top-right
-        #         "plate_4": (PLATE_W / 2, 0.0),         # mid-right
-        #         "plate_5": (PLATE_W / 2, -PLATE_H),    # bot-right
-        #     }
-
-        #     for name, (x, y) in world_centers.items():
-        #         self.assembly[name] = Solid(
-        #             name=name,
-        #             type="fixture_plate",           # matches static/CAD/fixture_plate.glb
-        #             anchors=plate_anchors,
-        #             component = self.name,
-        #             pose=[x, y, 0.0, 0.0, 0.0, 0.0] # place in world
-        #         )
-        #     self.plate_0 = self.assembly["plate_0"]
-        #     self.plate_1 = self.assembly["plate_1"]
-        #     self.plate_2 = self.assembly["plate_2"]
-        #     self.plate_3 = self.assembly["plate_3"]
-        #     self.plate_4 = self.assembly["plate_4"]
-        #     self.plate_5 = self.assembly["plate_5"]
-
-
         # next we add the rail base depending on the type of the rail
         if self.has_rail:
             if self.rail_type == "rail_hd_500mm":
@@ -177,10 +103,6 @@ class Core:
                 # rail type is not supported
                 raise ValueError(f"Unsupported rail type: {self.rail_type}")
 
-
-        # self.rail_base.attach_to(parent=self.plate_1, parent_anchor='D10', child_anchor= 'hole_0', offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        
-        # self.rail_carriage.attach_to(parent =self.rail_base, parent_anchor="center", child_anchor="center", offset =[0,0,82,0,0,0])
 
         robot_A0_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -237,19 +159,7 @@ class Core:
         self.assembly["robot_A5"] = self.robot_A5
         self.assembly["robot_flange"] = self.robot_flange
 
-        # # chain robot links via anchors (static zero joints to start)
-        
-        # self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="0", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
-        # done
-
         # we check if there is tool changer
-        # self.has_toolchanger = cfg.get("has_toolchanger", False)
         if self.has_toolchanger:
             toolchanger_robot_side_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
