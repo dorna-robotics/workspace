@@ -9,9 +9,10 @@ class SBSAdapter:
     the SBS adapter
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "SBS_adapter"
+        self.workspace = workspace
         self.assembly = {}
 
         anchors = {}

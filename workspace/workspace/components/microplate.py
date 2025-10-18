@@ -9,9 +9,10 @@ class Microplate:
     the microplate
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "microplate"
+        self.workspace = workspace
         self.assembly = {}
         self.full = cfg.get("full", False)
 

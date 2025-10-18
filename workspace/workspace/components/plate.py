@@ -1,5 +1,6 @@
 # workspace/components/plate.py
 from dorna2 import Solid, Dorna
+from workspace import workspace
 from workspace.components.factory import register
 
 
@@ -9,9 +10,10 @@ class Plate:
     the plate
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "plate"
+        self.workspace = workspace
         self.assembly = {}
         # --------- plate
         plate_anchors = {}

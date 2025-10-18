@@ -9,9 +9,10 @@ class MicrotubeGripper:
     the microtube gripper
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "microtube_gripper"
+        self.workspace = workspace
         self.assembly = {}
 
         anchors = {}

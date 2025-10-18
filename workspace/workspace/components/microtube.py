@@ -9,9 +9,10 @@ class MicroTube:
     the tube
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "microtube"
+        self.workspace = workspace
         self.assembly = {}
 
         anchors = {}

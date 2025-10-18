@@ -15,9 +15,11 @@ class Core:
     Internal attachments are determined by the preset (e.g., 'core500').
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
+        
         self.name = name
         self.type = "core"
+        self.workspace = workspace
         self.assembly = {}
 
         # ---- read config ----

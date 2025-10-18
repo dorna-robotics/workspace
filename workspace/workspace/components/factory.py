@@ -18,7 +18,7 @@ def register(type_name: str):
     return decorator
 
 
-def create_component(name: str, cfg: dict):
+def create_component(name: str, cfg: dict, workspace):
     """
     Factory function: creates a component from its config dict.
     Config dict must contain "type".
@@ -31,4 +31,4 @@ def create_component(name: str, cfg: dict):
     if cls is None:
         raise ValueError(f"Unknown component type '{type_name}' for '{name}'")
 
-    return cls(name, cfg)
+    return cls(name, cfg, workspace)

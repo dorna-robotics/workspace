@@ -17,7 +17,7 @@ class Workspace:
         # 1) build components
         self.components = {}
         for name, ccfg in comp_cfgs.items():
-            self.components[name] = comp_factory.create_component(name, ccfg)
+            self.components[name] = comp_factory.create_component(name, ccfg, self)
 
         # 2) perform attachments (child-side offset)
         for child_name, ccfg in comp_cfgs.items():

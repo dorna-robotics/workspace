@@ -10,9 +10,10 @@ class ToolRack:
     the tool rack
     """
 
-    def __init__(self, name: str, cfg: dict):
+    def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
         self.type = "tool_rack"
+        self.workspace = workspace
         self.assembly = {}
 
         anchors = {}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workspace"
+version = "0.1.0"
+description = "Dorna Robotics Workspace SDK — modular platform for robot control, simulation, and visualization."
+authors = [{ name = "Dorna Robotics", email = "support@dorna.ai" }]
+readme = "README.md"
+requires-python = ">=3.8"
+
+dependencies = [
+  "numpy",              # used in core.py and SimulationAPI
+  "pyyaml",             # Workspace likely loads config.yaml
+  "python-socketio",    # display.py client + server.py
+  "websocket-client",   # ensures WS transport for the python-socketio client
+  "tornado",            # server.py (AsyncServer with Tornado)
+  "dorna2"
+]
+
+[tool.setuptools.packages.find]
+include = ["workspace*"]
