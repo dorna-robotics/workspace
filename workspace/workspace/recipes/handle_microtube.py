@@ -12,7 +12,7 @@ class HandleMicrotube:
         self.rail_step = rail_step
         self.rail_span = rail_span
         self.clearance_height = 180  # mm above the microplate
-
+       
 
         # first we assign the reference joints
         # the reference joints will be on top of the microplate center at 150mm height
@@ -41,9 +41,6 @@ class HandleMicrotube:
                 continue
         
         return tool
-
-
-
 
     def pick_tube(self,index):
 
@@ -201,5 +198,21 @@ class HandleMicrotube:
             return False
         return True
     
+    def calibrate():
 
-    
+        # # here we move to different key points and record the calibration
+        # J1 = 
+        # core.calibration.record_point(core.name, J1, msg="Move to position 1 and press Enter to record calibration point.")
+
+        # J2 =
+        # core.calibration.record_point(core.name, J2, msg="Move to position 2 and press Enter to record calibration point.")
+
+        # J3 =
+        # core.calibration.record_point(core.name, J3, msg="Move to position 3 and press Enter to record calibration point.")
+        
+        # we go on top of four corners with the gripper first to the clearance height and then down to the tube position while the tube is open
+        # then the user will adjust the tube position manually and press enter to record the calibration point
+        # the 4 indices are A1, A12, H1, H12
+        
+        pass
+

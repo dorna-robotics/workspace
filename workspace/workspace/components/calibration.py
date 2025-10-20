@@ -5,8 +5,11 @@ from pathlib import Path
 import numpy as np
 
 class Calibration:
-    def __init__(self, name: str):
-        self.file_path = Path.cwd() / f"{name}.json"
+    def __init__(self, core):
+
+        self.core = core
+        self.name = core.name
+        self.file_path = Path.cwd() / f"{self.name}.json"
 
         if self.file_path.exists():
             # Load existing calibration file
@@ -66,7 +69,7 @@ class Calibration:
     def _save(self):
         """Writes the whole calibration_data to file."""
         with open(self.file_path, "w") as f:
-            json.dump(self.calibration_data, f, indent=2)
+            json.dump(self.calibration_data, f, indent=2, separators=(',', ': '))
 
     def interpolate_corrected(self, name, raw_values, threshold=1e-3):
         """
@@ -100,7 +103,7 @@ class Calibration:
         corrected = q + interp_err
         return list(float(x) for x in corrected)
  
-    def record_point(self, name, raw_values, core, msg, threshold=1e-3):
+    def record_point(self, name, raw_values, msg, threshold=1e-3):
         """
         Show msg, wait for Enter, read corrected joints from core's API,
         and record (raw -> corrected) under a name inferred from the core.
@@ -109,7 +112,7 @@ class Calibration:
         input("Press Enter to record...")
 
         # Read current joints from core API
-        corrected_values = core.robot_api.joint()
+        corrected_values = self.core.robot_api.joint()
 
         self.add_point(name, raw_values, corrected_values, threshold=threshold)
         print(f"Recorded calibration point for '{name}':")

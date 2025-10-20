@@ -5,6 +5,8 @@ from workspace.components.factory import register
 import math
 import numpy as np
 from path_planning import Planner
+from workspace.components.calibration import Calibration
+
 
 import time
 
@@ -49,7 +51,8 @@ class Core:
         # -------- robot
         self.robot_ip = cfg.get("ip",'0.0.0.0')
 
-
+        # -------- calibration
+        self.calibration = Calibration(self)
 
 
         # -------- toolchanger
