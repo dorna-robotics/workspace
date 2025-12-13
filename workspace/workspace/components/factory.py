@@ -7,13 +7,18 @@ _registry: dict[str, type] = {}
 def register(type_name: str):
     """
     Class decorator to register a component type.
-    Usage:
-        @register("decapper")
-        class Decapper:
-            ...
+    Backward compatible:
+    - sets cls._registered_type = type_name
+    - older classes (registered before change) still work without it
     """
     def decorator(cls):
         _registry[type_name] = cls
+
+        # NEW behavior (safe):
+        # attach the type to the class if not already set
+        if not hasattr(cls, "_registered_type"):
+            cls._registered_type = type_name
+
         return cls
     return decorator
 

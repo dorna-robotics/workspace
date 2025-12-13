@@ -38,7 +38,9 @@
         const r = await fetch("/config_version", { cache: "no-store" });
         const j = await r.json();
         window.__CONFIG_VERSION__ = j?.version || String(Date.now());
-      } catch { window.__CONFIG_VERSION__ = String(Date.now()); }
+      } catch {
+        window.__CONFIG_VERSION__ = String(Date.now());
+      }
     }
 
     async function boot() {
@@ -46,14 +48,19 @@
       const scene = new THREE.Scene();
       scene.background = new THREE.Color("#f2f7fb");
 
-      const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100000);
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100000
+      );
       camera.up.set(0,0,1);
       camera.position.set(1600, 600, 800);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ modern Three.js color space
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ReinhardToneMapping;
       renderer.toneMappingExposure = 1.2;
       document.body.appendChild(renderer.domElement);
@@ -67,9 +74,12 @@
       // --- Environment (HDR) ---
       const pmrem = new THREE.PMREMGenerator(renderer);
       pmrem.compileEquirectangularShader();
-      new RGBELoader().load(versioned("unfinished_office_4k.hdr"), (texture) => {
+      new RGBELoader().load(versioned("light.hdr"), (texture) => {
         const envScene = new THREE.Scene();
-        const envMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
+        const envMaterial = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.BackSide
+        });
         const envGeo = new THREE.SphereGeometry(100, 64, 64);
         const envMesh = new THREE.Mesh(envGeo, envMaterial);
         envMesh.rotation.x = Math.PI / 2;
@@ -78,52 +88,63 @@
         scene.environmentIntensity = 0.1;
       });
 
-      // --- Helpers (edges/grid/axes) ---
-      function addEdgeOverlay(node) {
-        node.traverse(obj => {
-          if (!obj.isMesh) return;
-          if (!obj.userData.__originalMat) obj.userData.__originalMat = obj.material;
-          obj.material = obj.userData.__originalMat;
-          if (obj.userData.__edgeLines) {
-            obj.remove(obj.userData.__edgeLines);
-            obj.userData.__edgeLines.geometry.dispose();
-            obj.userData.__edgeLines.material.dispose();
-            obj.userData.__edgeLines = null;
-          }
-          const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 30);
-          const edgesMat = new THREE.LineBasicMaterial({ color: 0x000000, toneMapped:false });
-          const edgeLines = new THREE.LineSegments(edgesGeo, edgesMat);
-          edgeLines.renderOrder = 10;
-          obj.add(edgeLines);
-          obj.userData.__edgeLines = edgeLines;
-        });
-      }
-      function makeRectGrid(width, height, step, major, colorMinor=0xaaaaaa, colorMajor=0xdddddd) {
+      // --- Helpers (grid/axes) ---
+      function makeRectGrid(width, height, step, major,
+                            colorMinor = 0xaaaaaa,
+                            colorMajor = 0xdddddd) {
         const geom = new THREE.BufferGeometry();
-        const verts = [], colors = [];
-        const halfW = width/2, halfH = height/2;
-        const cMinor = new THREE.Color(colorMinor), cMajor = new THREE.Color(colorMajor);
-        for (let x=-halfW; x<=halfW+1e-6; x+=step) {
-          const c = Math.abs(x%major)<1e-6 ? cMajor : cMinor;
-          verts.push(x,-halfH,0, x,halfH,0); colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+        const verts = [];
+        const colors = [];
+        const halfW = width / 2;
+        const halfH = height / 2;
+        const cMinor = new THREE.Color(colorMinor);
+        const cMajor = new THREE.Color(colorMajor);
+
+        for (let x = -halfW; x <= halfW + 1e-6; x += step) {
+          const c = Math.abs(x % major) < 1e-6 ? cMajor : cMinor;
+          verts.push(x, -halfH, 0,  x, halfH, 0);
+          colors.push(c.r, c.g, c.b,  c.r, c.g, c.b);
         }
-        for (let y=-halfH; y<=halfH+1e-6; y+=step) {
-          const c = Math.abs(y%major)<1e-6 ? cMajor : cMinor;
-          verts.push(-halfW,y,0, halfW,y,0); colors.push(c.r,c.g,c.b, c.r,c.g,c.b);
+        for (let y = -halfH; y <= halfH + 1e-6; y += step) {
+          const c = Math.abs(y % major) < 1e-6 ? cMajor : cMinor;
+          verts.push(-halfW, y, 0,  halfW, y, 0);
+          colors.push(c.r, c.g, c.b,  c.r, c.g, c.b);
         }
-        geom.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
-        geom.setAttribute("color", new THREE.Float32BufferAttribute(colors,3));
-        return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors:true, toneMapped:false }));
+
+        geom.setAttribute("position",
+          new THREE.Float32BufferAttribute(verts, 3));
+        geom.setAttribute("color",
+          new THREE.Float32BufferAttribute(colors, 3));
+
+        return new THREE.LineSegments(
+          geom,
+          new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false })
+        );
       }
+
+      // grid: 3000 x 1000 (per your setting)
       scene.add(makeRectGrid(3000, 1000, 50, 500));
-      function axisLine(start,end,color) {
+
+      function axisLine(start, end, color) {
         const geom = new THREE.BufferGeometry();
-        geom.setAttribute("position", new THREE.Float32BufferAttribute([start.x,start.y,start.z,end.x,end.y,end.z],3));
-        return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, toneMapped:false }));
+        geom.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(
+            [start.x, start.y, start.z, end.x, end.y, end.z],
+            3
+          )
+        );
+        return new THREE.Line(
+          geom,
+          new THREE.LineBasicMaterial({ color, toneMapped: false })
+        );
       }
-      scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(1500,0,0), 0xff0000));
-      scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(0,500,0), 0x00ff00));
-      scene.add(axisLine(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,500), 0x0000ff));
+      scene.add(axisLine(new THREE.Vector3(0,0,0),
+                         new THREE.Vector3(1500,0,0), 0xff0000));
+      scene.add(axisLine(new THREE.Vector3(0,0,0),
+                         new THREE.Vector3(0,500,0), 0x00ff00));
+      scene.add(axisLine(new THREE.Vector3(0,0,0),
+                         new THREE.Vector3(0,0,500), 0x0000ff));
 
       // --- Lights ---
       scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 0.3));
@@ -136,63 +157,87 @@
       const objectsByName = new Map();
 
       function base64ToArrayBuffer(b64) {
-        const bin = atob(b64), len = bin.length;
+        const bin = atob(b64);
+        const len = bin.length;
         const bytes = new Uint8Array(len);
-        for (let i=0; i<len; i++) bytes[i] = bin.charCodeAt(i);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = bin.charCodeAt(i);
+        }
         return bytes.buffer;
       }
-      function rodriguesDegToQuaternion(rx,ry,rz) {
-        const ang = Math.hypot(rx,ry,rz);
-        if (ang===0) return new THREE.Quaternion();
-        const ax=rx/ang, ay=ry/ang, az=rz/ang;
-        const q=new THREE.Quaternion();
-        q.setFromAxisAngle(new THREE.Vector3(ax,ay,az), ang*Math.PI/180);
+
+      function rodriguesDegToQuaternion(rx, ry, rz) {
+        const ang = Math.hypot(rx, ry, rz);
+        if (ang === 0) return new THREE.Quaternion();
+        const ax = rx / ang;
+        const ay = ry / ang;
+        const az = rz / ang;
+        const q = new THREE.Quaternion();
+        q.setFromAxisAngle(new THREE.Vector3(ax, ay, az), ang * Math.PI / 180);
         return q;
       }
 
       // ===== Picking + sticky anchor gizmos =====
       const raycaster = new THREE.Raycaster();
       const pointer   = new THREE.Vector2();
-      const pickableMeshes = new Set();    // MESHES ONLY
+      const pickableMeshes = new Set();    // only meshes
 
       // Active binding:
-      // { obj, items: [{name,pLocal,qLocal,axes,label}], compLabel, solidLabel }
+      // { obj, items: [{name,pLocal,qLocal,axes,label}] }
       let activeAnchors = null;
 
       const anchorsLayer = new THREE.Group();
       anchorsLayer.frustumCulled = false;
       scene.add(anchorsLayer);
 
-      function makeTextSprite(text, fontPx=72, bg="#000", fg="#fff", alpha=0.7, pad=10, bold=true) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        ctx.font = `${bold?'bold ':''}${fontPx}px sans-serif`;
+      function makeTextSprite(
+        text,
+        fontPx = 72,
+        bg = "#000",
+        fg = "#fff",
+        alpha = 0.7,
+        pad = 10,
+        bold = true
+      ) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        ctx.font = `${bold ? "bold " : ""}${fontPx}px sans-serif`;
         const metrics = ctx.measureText(text);
-        canvas.width  = Math.ceil(metrics.width + pad*2);
-        canvas.height = Math.ceil(fontPx + pad*2);
-        ctx.font = `${bold?'bold ':''}${fontPx}px sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
+        canvas.width  = Math.ceil(metrics.width + pad * 2);
+        canvas.height = Math.ceil(fontPx + pad * 2);
+
+        ctx.font = `${bold ? "bold " : ""}${fontPx}px sans-serif`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+
         ctx.fillStyle = bg;
         ctx.globalAlpha = alpha;
         ctx.fillRect(0,0,canvas.width,canvas.height);
+
         ctx.globalAlpha = 1.0;
         ctx.fillStyle = fg;
         ctx.fillText(text, pad, pad);
+
         const tex = new THREE.CanvasTexture(canvas);
-        tex.colorSpace = THREE.SRGBColorSpace; // ✅ correct sprite colors
-        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const mat = new THREE.SpriteMaterial({
+          map: tex,
+          depthTest: false
+        });
         const spr = new THREE.Sprite(mat);
+
         const scale = 0.1;
-        spr.scale.set(canvas.width*scale, canvas.height*scale, 1);
+        spr.scale.set(canvas.width * scale, canvas.height * scale, 1);
         spr.renderOrder = 999;
         spr.frustumCulled = false;
         return spr;
       }
 
-      function makeAxesHelperAlwaysOnTop(size){
+      function makeAxesHelperAlwaysOnTop(size) {
         const axes = new THREE.AxesHelper(size);
-        axes.traverse(child=>{
+        axes.traverse(child => {
           if (child.material && child.material.isMaterial) {
             child.material.depthTest = false;
             child.renderOrder = 999;
@@ -203,18 +248,23 @@
         return axes;
       }
 
+      // ---- CLEAR ANCHORS (updated: also hides bottom-left UI) ----
       function clearAnchors() {
         if (activeAnchors) {
           activeAnchors.items.forEach(it => {
             anchorsLayer.remove(it.axes);
-            anchorsLayer.remove(it.label);
+            if (it.label) anchorsLayer.remove(it.label);
           });
-          if (activeAnchors.compLabel) anchorsLayer.remove(activeAnchors.compLabel);
-          if (activeAnchors.solidLabel) anchorsLayer.remove(activeAnchors.solidLabel);
         }
         activeAnchors = null;
+
+        const bar = document.getElementById("infoBar");
+        if (bar) {
+          bar.style.display = "none";
+        }
       }
 
+      // ---- BUILD ANCHORS (updated: uses bottom-left UI for Name/Type/Solid) ----
       function buildAnchorsFor(obj) {
         clearAnchors();
         const anchors = obj.userData?.anchors || {};
@@ -237,24 +287,34 @@
           items.push({ name, pLocal, qLocal, axes, label });
         }
 
-        // Main badges: component (blue) and solid (gold)
-        const comp = obj.userData?.componentName || "(component)";
-        const solid = obj.userData?.solidName || "(solid)";
+        // Extract data
+        const comp  = obj.userData?.componentName || "--";
+        const type  = obj.userData?.typeName      || obj.userData?.type || "--";
+        const solid = obj.userData?.solidName     || "--";
 
-        const compLabel = makeTextSprite(comp, 100, "#0b3d91", "#ffffff", 0.85, 12, true);
-        const solidLabel = makeTextSprite(solid, 84, "#8a6d00", "#fff3cd", 0.9, 10, false);
+        // Update bottom-left display
+        const bar = document.getElementById("infoBar");
+        const nameEl  = document.getElementById("infoName");
+        const typeEl  = document.getElementById("infoType");
+        const solidEl = document.getElementById("infoSolid");
 
-        anchorsLayer.add(compLabel);
-        anchorsLayer.add(solidLabel);
+        if (nameEl)  nameEl.textContent  = `Name: ${comp}`;
+        if (typeEl)  typeEl.textContent  = `Type: ${type}`;
+        if (solidEl) solidEl.textContent = `Solid: ${solid}`;
+        if (bar)     bar.style.display   = "flex";
 
-        activeAnchors = { obj, items, compLabel, solidLabel };
-        updateAnchorsNow(); // position once immediately
+        activeAnchors = { obj, items };
+        updateAnchorsNow(); // position immediately once
       }
 
+      // ---- UPDATE ANCHORS (updated: no 3D comp/solid labels anymore) ----
       function updateAnchorsNow() {
         if (!activeAnchors) return;
-        const { obj, items, compLabel, solidLabel } = activeAnchors;
-        if (!obj.parent) { clearAnchors(); return; }
+        const { obj, items } = activeAnchors;
+        if (!obj.parent) {
+          clearAnchors();
+          return;
+        }
 
         const objWorldQ = new THREE.Quaternion();
         obj.getWorldQuaternion(objWorldQ);
@@ -264,21 +324,9 @@
           const qWorld = objWorldQ.clone().multiply(it.qLocal);
           it.axes.position.copy(pWorld);
           it.axes.quaternion.copy(qWorld);
-          it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,22));
-        }
-
-        const box = new THREE.Box3().setFromObject(obj);
-        if (isFinite(box.min.x) && isFinite(box.max.x)) {
-          const topCenter = new THREE.Vector3(
-            (box.min.x + box.max.x) * 0.5,
-            (box.min.y + box.max.y) * 0.5,
-            box.max.z
-          );
-          const up = new THREE.Vector3(0,0,1);
-          const compPos = topCenter.clone().addScaledVector(up, 70);
-          const solidPos = topCenter.clone().addScaledVector(up, 40);
-          if (compLabel) compLabel.position.copy(compPos);
-          if (solidLabel) solidLabel.position.copy(solidPos);
+          if (it.label) {
+            it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,22));
+          }
         }
       }
 
@@ -290,10 +338,14 @@
 
       function pickFirstMesh() {
         raycaster.setFromCamera(pointer, camera);
-        const targets = pickableMeshes.size ? Array.from(pickableMeshes) : scene.children;
+        const targets = pickableMeshes.size
+          ? Array.from(pickableMeshes)
+          : scene.children;
         const hits = raycaster.intersectObjects(targets, true);
         if (!hits.length) return null;
-        for (const h of hits) if (h.object?.isMesh) return h;
+        for (const h of hits) {
+          if (h.object?.isMesh) return h;
+        }
         return hits[0];
       }
 
@@ -302,127 +354,254 @@
       const CLICK_PX = 6;
       let downInfo = null; // {button,x,y,time}
 
-      renderer.domElement.addEventListener('pointerdown', (e) => {
-        downInfo = { button: e.button, x: e.clientX, y: e.clientY, time: performance.now() };
+      renderer.domElement.addEventListener("pointerdown", (e) => {
+        downInfo = {
+          button: e.button,
+          x: e.clientX,
+          y: e.clientY,
+          time: performance.now()
+        };
         if (e.button === 2) {
           e.preventDefault();
           clearAnchors();
         }
       });
 
-      renderer.domElement.addEventListener('pointerup', (e) => {
+      renderer.domElement.addEventListener("pointerup", (e) => {
         if (!downInfo) return;
         const dt = performance.now() - downInfo.time;
         const dx = Math.abs(e.clientX - downInfo.x);
         const dy = Math.abs(e.clientY - downInfo.y);
         const moved = (dx > CLICK_PX || dy > CLICK_PX);
 
-        if (downInfo.button === 0 && e.button === 0 && dt <= CLICK_MS && !moved) {
+        if (downInfo.button === 0 &&
+            e.button === 0 &&
+            dt <= CLICK_MS &&
+            !moved) {
           setPointerFromEvent(e);
           const hit = pickFirstMesh();
           if (hit && hit.object?.isMesh) {
             let node = hit.object;
-            while (node && !node.userData?.anchors && node !== scene) node = node.parent;
-            if (node && node.userData?.anchors) buildAnchorsFor(node);
+            while (node && !node.userData?.anchors && node !== scene) {
+              node = node.parent;
+            }
+            if (node && node.userData?.anchors) {
+              buildAnchorsFor(node);
+            }
           }
         }
         downInfo = null;
       });
 
-      renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-
-      renderer.domElement.addEventListener('pointermove', (e) => {
-        setPointerFromEvent(e);
-        const hit = pickFirstMesh();
-        renderer.domElement.style.cursor = (hit && hit.object?.isMesh) ? 'pointer' : 'default';
+      renderer.domElement.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
       });
 
-      function registerPickables(node){
-        node.traverse(o => { if (o.isMesh) pickableMeshes.add(o); });
+      renderer.domElement.addEventListener("pointermove", (e) => {
+        setPointerFromEvent(e);
+        const hit = pickFirstMesh();
+        renderer.domElement.style.cursor =
+          (hit && hit.object?.isMesh) ? "pointer" : "default";
+      });
+
+      function registerPickables(node) {
+        node.traverse(o => {
+          if (o.isMesh) pickableMeshes.add(o);
+        });
       }
 
       // --- upsert pipeline ---
-      function upsertObject(name,spec) {
+      function upsertObject(name, spec) {
         if (spec.delete) {
-          const prev=objectsByName.get(name);
-          if(prev){
-            if (activeAnchors && (activeAnchors.obj === prev || prev.isAncestorOf?.(activeAnchors.obj))) {
+          const prev = objectsByName.get(name);
+          if (prev) {
+            if (activeAnchors &&
+                (activeAnchors.obj === prev ||
+                 (prev.isAncestorOf && prev.isAncestorOf(activeAnchors.obj)))) {
               clearAnchors();
             }
-            prev.traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
-            scene.remove(prev); objectsByName.delete(name);
+            prev.traverse(o => {
+              if (o.isMesh) pickableMeshes.delete(o);
+            });
+            scene.remove(prev);
+            objectsByName.delete(name);
           }
           return;
         }
-        let root=objectsByName.get(name);
-        if(!root){ root=new THREE.Group(); root.name=name; scene.add(root); objectsByName.set(name,root); }
 
-        if (spec.meshUrl && root.children.length===0) {
-          gltfLoader.load(versioned(spec.meshUrl), (gltf)=>{ 
-            addEdgeOverlay(gltf.scene);
-            gltf.scene.traverse(o => { if (o.isMesh) {
-              const mats = Array.isArray(o.material) ? o.material : [o.material];
-              mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
-            }});
-            root.add(gltf.scene);
-            registerPickables(gltf.scene);
-          });
+        let root = objectsByName.get(name);
+        if (!root) {
+          root = new THREE.Group();
+          root.name = name;
+          scene.add(root);
+          objectsByName.set(name, root);
         }
-        if (spec.mesh) {
-          const buf=base64ToArrayBuffer(spec.mesh);
-          gltfLoader.parse(buf,"",(gltf)=>{
-            while(root.children.length) {
-              root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+
+        // Load by meshUrl if provided (first snapshot from Display)
+        if (spec.meshUrl) {
+          if (!root.userData.meshUrl ||
+              root.userData.meshUrl !== spec.meshUrl) {
+            root.userData.meshUrl = spec.meshUrl;
+
+            // clear old children
+            while (root.children.length) {
+              root.children[0].traverse(o => {
+                if (o.isMesh) pickableMeshes.delete(o);
+              });
               root.remove(root.children[0]);
             }
-            addEdgeOverlay(gltf.scene);
-            gltf.scene.traverse(o => { if (o.isMesh) {
-              const mats = Array.isArray(o.material) ? o.material : [o.material];
-              mats.forEach(m => { if (m && 'side' in m) m.side = THREE.DoubleSide; });
-            }});
-            root.add(gltf.scene);
-            registerPickables(gltf.scene);
-          });
-        }
-        if (Array.isArray(spec.pose) && spec.pose.length===6) {
-          const [x,y,z,rx,ry,rz]=spec.pose;
-          root.position.set(x,y,z);
-          root.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
-        }
-        if(typeof spec.visible==="boolean") root.visible=spec.visible;
 
-        if (spec.anchors && typeof spec.anchors === 'object') {
+            gltfLoader.load(
+              versioned(spec.meshUrl),
+              (gltf) => {
+                gltf.scene.traverse(o => {
+                  if (o.isMesh) {
+                    const mats = Array.isArray(o.material)
+                      ? o.material
+                      : [o.material];
+                    mats.forEach(m => {
+                      if (m && "side" in m) m.side = THREE.DoubleSide;
+                    });
+                  }
+                });
+                root.add(gltf.scene);
+                registerPickables(gltf.scene);
+              },
+              undefined,
+              () => { /* ignore errors for now */ }
+            );
+          }
+        }
+
+        // Also support optional base64 GLB "mesh" (not used by current Display)
+        if (spec.mesh) {
+          const buf = base64ToArrayBuffer(spec.mesh);
+          gltfLoader.parse(
+            buf,
+            "",
+            (gltf) => {
+              while (root.children.length) {
+                root.children[0].traverse(o => {
+                  if (o.isMesh) pickableMeshes.delete(o);
+                });
+                root.remove(root.children[0]);
+              }
+              gltf.scene.traverse(o => {
+                if (o.isMesh) {
+                  const mats = Array.isArray(o.material)
+                    ? o.material
+                    : [o.material];
+                  mats.forEach(m => {
+                    if (m && "side" in m) m.side = THREE.DoubleSide;
+                  });
+                }
+              });
+              root.add(gltf.scene);
+              registerPickables(gltf.scene);
+            },
+            () => { /* ignore parse errors */ }
+          );
+        }
+
+        if (Array.isArray(spec.pose) && spec.pose.length === 6) {
+          const [x, y, z, rx, ry, rz] = spec.pose;
+          root.position.set(x, y, z);
+          root.quaternion.copy(rodriguesDegToQuaternion(rx, ry, rz));
+        }
+
+        if (typeof spec.visible === "boolean") {
+          root.visible = spec.visible;
+        }
+
+        if (spec.anchors && typeof spec.anchors === "object") {
           root.userData.anchors = spec.anchors;
         }
-        if (spec.componentName) root.userData.componentName = spec.componentName;
-        if (spec.solidName)     root.userData.solidName     = spec.solidName;
+        if (spec.componentName) {
+          root.userData.componentName = spec.componentName;
+        }
+        if (spec.solidName) {
+          root.userData.solidName = spec.solidName;
+        }
+        // NEW: store type/typeName so the UI can display it
+        if (spec.typeName) {
+          root.userData.typeName = spec.typeName;
+        }
+        if (spec.type) {
+          root.userData.typeName = spec.type;
+        }
       }
 
       // --- Socket.IO hookup ---
-      const socket = io({ path: "/socket.io/", transports: ["websocket"], forceNew: true, timeout: 10000 });
-      socket.on("scene_update", (payload)=>{
-        if(!payload||typeof payload!=="object") return;
-        for(const [n,s] of Object.entries(payload)) upsertObject(n,s||{});
+      const socket = io({
+        path: "/socket.io/",
+        transports: ["websocket"],
+        forceNew: true,
+        timeout: 10000
+      });
+
+      socket.on("scene_update", (payload) => {
+        if (!payload || typeof payload !== "object") return;
+        for (const [n, s] of Object.entries(payload)) {
+          upsertObject(n, s || {});
+        }
       });
 
       // --- Animate (keep anchors & badges sticky) ---
       function animate() {
         controls.update();
         updateAnchorsNow();
-        renderer.render(scene,camera);
+        renderer.render(scene, camera);
         requestAnimationFrame(animate);
       }
       animate();
 
-      window.addEventListener("resize", ()=>{
-        camera.aspect=window.innerWidth/window.innerHeight;
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth,window.innerHeight);
+        renderer.setSize(window.innerWidth, window.innerHeight);
       });
     } // boot
 
     await getVersion();
     boot();
   </script>
+
+  <!-- Modern minimal bottom-left info bar, hidden by default -->
+  <div id="infoBar">
+    <span id="infoName"  class="infoLabel"></span>
+    <span id="infoType"  class="infoLabel"></span>
+    <span id="infoSolid" class="infoLabel"></span>
+  </div>
+
+  <style>
+    #infoBar {
+      position: fixed;
+      bottom: 18px;
+      left: 22px;
+      display: none;             /* hidden until selected */
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      padding: 0;
+      gap: 0;                     /* boxes connect tightly */
+      z-index: 999999;
+      background: none;           /* ← remove gray background */
+    }
+
+    .infoLabel {
+      padding: 6px 14px;
+      margin: 0;
+      border-radius: 0;           /* ← sharp corners */
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    /* Sharp, modern colored pills */
+    #infoName  { background: #0b3d91; }   /* Blue */
+    #infoType  { background: #4d8f00; }   /* Green */
+    #infoSolid { background: #8a6d00; }   /* Gold */
+  </style>
+
 </body>
 </html>
