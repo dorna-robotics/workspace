@@ -379,9 +379,10 @@ class Core:
                     
 
         def joint_distance(q):
+            weight = [1, 1, 1, 1, 1, 0.25]
             s = 0.0
-            for i in (0,1, 2, 3, 4, 5):
-                d = q[i] - ref_joints[i]
+            for i in (0, 1, 2, 3, 4, 5):
+                d = weight[i] * (q[i] - ref_joints[i])
                 s += d * d
             return s ** 0.5
 

@@ -6,7 +6,7 @@ from workspace.components.gripper.gripper import Gripper
 class TubeGripper4Finger(Gripper):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 60, 0, 0, 0]}},
+                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 65, 0, 0, 0], "top": [0, 0, 69.5, 0, 0, 0]}},
                 has_toolchanger = False,
                 offset=[0, 0, 0, 0, 0, 0],
                 enable=[],

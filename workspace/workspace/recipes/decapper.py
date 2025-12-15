@@ -1,16 +1,16 @@
 import numpy as np
 import workspace.recipes.util as util
-from workspace.recipes.handle_plate import HandlePlate
+from workspace.recipes.plate import Plate
 
 
-class HandleDecapper(HandlePlate):
+class Decapper(Plate):
     def __init__(self, workspace, core, 
         container, # component
         solid_name = None,
         anchor = "place",
         rotation = 340,
-        clearance = 20,
-        clearance_offset = [0, 0, 180, 180, 0, 0],
+        padding=50,
+        gap=2,
         ref_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         speed_factor=0.5,
         left_approach=True,
@@ -30,8 +30,8 @@ class HandleDecapper(HandlePlate):
             solid_name=solid_name,
             anchor=anchor,
             rotation=rotation,
-            clearance=clearance,
-            clearance_offset=clearance_offset,
+            padding=padding,
+            gap=gap,
             ref_joints=ref_joints,
             speed_factor=speed_factor,
             left_approach=left_approach,
@@ -77,7 +77,9 @@ class HandleDecapper(HandlePlate):
             print(f"No item found in position {index}")
             return False
         component_child = self.ws.components[solid_child.component]
-        
+
+        cap_height = np.linalg.norm(np.array(solid_child.pose("center")[0:3]) - np.array(solid_child.pose("top")[0:3]))
+
         # pick
         if not self.pick_from(index="place", container=component_parent, approach=approach, exit=False, **kwargs):
             print("Not able to pick")
@@ -123,7 +125,7 @@ class HandleDecapper(HandlePlate):
                 else:
                     if exit:
                         # IK go up
-                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -self.clearance, 0, 0, 0],
+                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -self.gap-cap_height, 0, 0, 0],
                                             tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
                                             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
                         if C != 2:
@@ -179,9 +181,14 @@ class HandleDecapper(HandlePlate):
 
         # place
         height_init = component_load.twist * component_load.pitch / 360
-        height_cap = np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))
-
-        if not self.place_in(index=index, container=component_index, offset=[0, 0, height_cap+height_init, 180, 0, 0], approach=approach, exit=False, **kwargs):
+        
+        # ???
+        #height_cap = np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))
+        # total tube height
+        height = np.linalg.norm(np.array(solid_index.pose("place")[0:3]) - np.array(solid_index.pose("center")[0:3])) + \
+                    np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))   
+        # offset=[0, 0, height_cap+height_init, 0, 0, 0] ???
+        if not self.place_in(index=index, container=component_index, offset=[0, 0, height_init, 0, 0, 0], approach=approach, exit=False, **kwargs):
             print("Not able to place")
             return False
             
@@ -225,7 +232,7 @@ class HandleDecapper(HandlePlate):
                 else:
                     if exit:
                         # IK go up
-                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -self.clearance, 0, 0, 0],
+                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -height-self.gap, 0, 0, 0],
                                             tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
                                             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
                         if C != 2:

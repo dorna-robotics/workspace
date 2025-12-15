@@ -3,7 +3,7 @@ from dorna2 import Solid
 class Gripper:
     def __init__(self, name: str, workspace,
             type=None,
-            anchors = {"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0]}},
+            anchors = {"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
             has_toolchanger = False,
             tool_connection=[0,0,0,0,0,0],
             toolchanger_connection=[0,0,-13,0,0,0],
