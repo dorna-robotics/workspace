@@ -80,6 +80,8 @@ class Workspace:
                 key = f"{comp_name}_{solid_name}"
                 T = world_T.get(id(solid), solid.local["T"])  # fallback if orphan
                 poses[key] = T_to_xyzabc(T)
+
+
         return poses
 
 

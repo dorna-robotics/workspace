@@ -19,6 +19,28 @@ core:
 plate_1:
   type: plate
 
+
+cap_feeder:
+  type: cap_feeder
+  attach:
+    parent_name: plate_1
+    parent_solid: plate
+    parent_anchor: A1
+    child_solid: cap_feeder
+    child_anchor: center
+    offset: [0,0,0,0,0,180]
+
+
+mm:
+  type: microtube
+  attach:
+    parent_name: cap_feeder
+    parent_solid: cap_feeder
+    parent_anchor: pick
+    child_solid: microtube
+    child_anchor: center
+
+
 plate_2:
   type: plate
   attach:
