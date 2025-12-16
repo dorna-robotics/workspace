@@ -9,14 +9,12 @@ from dorna2 import Solid
 class Feeder:
     def __init__(self, name: str, workspace,
             type=None,
-            anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "pick":[0, 0, 0, 0, 0, 0]}}, 
-            height=0, # clearance height
+            anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}}, 
             **kwargs
             ):
         self.name = name
         self.workspace = workspace
         self.type = type
-        self.height = height
         # assembly
         self.assembly = {
             k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors

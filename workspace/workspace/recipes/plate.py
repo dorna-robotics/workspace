@@ -108,17 +108,20 @@ class Plate:
         # height
         height = np.linalg.norm(np.array(load_list[0].pose("center")[0:3]) - np.array(load_list[-1].pose("top")[0:3]))
 
+        # height_container
+        height_container = np.linalg.norm(np.array(container.assembly[self.solid_name].pose("top")[0:3]) - np.array(container.assembly[self.solid_name].pose("place")[0:3]))
+
         # approach
         approach_path = []
         if approach:
             height_tool = np.linalg.norm(np.array(tool.assembly[next(iter(tool.assembly))].pose("tcp")[0:3]) - np.array(tool.assembly[next(iter(tool.assembly))].pose("top")[0:3]))
-            approach_path = [[0, 0, height+self.padding, 0, 0, 0], [0, 0, height+height_tool+self.gap, 0, 0, 0]]
-
+            approach_path = [[0, 0, max(height,height_container) + self.padding, 0, 0, 0], 
+                            [0, 0, height+height_tool+self.gap, 0, 0, 0]]
         # exit
         exit_path = []
         if exit:
-            height_top = np.linalg.norm(np.array(container.assembly[self.solid_name].pose("top")[0:3]) - np.array(container.assembly[self.solid_name].pose("place")[0:3]))
-            exit_path = [[0, 0, height_top+self.gap, 0, 0, 0], [0, 0, height+self.padding, 0, 0, 0]]
+            exit_path = [[0, 0, height_container+self.gap, 0, 0, 0], 
+                        [0, 0, max(height,height_container)+self.padding, 0, 0, 0]]
             
         # disable and enable
         if hasattr(container, "enable"):
@@ -203,16 +206,19 @@ class Plate:
         # height
         height = np.linalg.norm(np.array(load_list[0].pose("center")[0:3]) - np.array(load_list[-1].pose("top")[0:3]))
 
+        # height_container
+        height_container = np.linalg.norm(np.array(container.assembly[self.solid_name].pose("top")[0:3]) - np.array(container.assembly[self.solid_name].pose("place")[0:3]))
+
         # approach
         approach_path = []
         if approach:
-            height_top = np.linalg.norm(np.array(container.assembly[self.solid_name].pose("top")[2]) - np.array(container.assembly[self.solid_name].pose("place")[2]))
-            approach_path = [[0, 0, height+self.padding, 0, 0, 0], [0, 0, height_top+self.gap, 0, 0, 0]]
+            approach_path = [[0, 0, max(height, height_container)+self.padding, 0, 0, 0], 
+                            [0, 0, height_container+self.gap, 0, 0, 0]]
 
         # exit
         exit_path = []
         if exit:
-            exit_path = [[0, 0, height+self.padding, 0, 0, 0]]
+            exit_path = [[0, 0, max(height, height_container)+self.padding, 0, 0, 0]]
 
         # disable and enable
         if hasattr(container, "enable"):

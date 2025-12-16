@@ -4,10 +4,9 @@ from workspace.components.feeder.feeder import Feeder
 
 @register("capfeeder_autosampler_2ml")
 class FeederCap2ml(Feeder):
-
+    # height = 50
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "pick":[0, -12.23473 , 152.56783, -45, 0, 0]}},
-                height=50,
+                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -12.23473 , 152.56783, -45, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
                 **kwargs
         ):
 
@@ -18,6 +17,5 @@ class FeederCap2ml(Feeder):
             workspace=workspace,
             type=type,
             anchors=anchors,
-            height=height,
             **kwargs
         )
