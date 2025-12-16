@@ -1,12 +1,12 @@
 # workspace/components/__init__.py
 """
-Auto-import all component modules in this package so their
-@register decorators run and they get added to the factory.
+Auto-import all component modules in this package (recursively)
+so their @register decorators run and they get added to the factory.
 """
 
 import pkgutil
 import importlib
 
-# Dynamically import every submodule in this package
-for loader, module_name, is_pkg in pkgutil.iter_modules(__path__):
-    importlib.import_module(f"{__name__}.{module_name}")
+# Walk over all submodules and subpackages under this package
+for finder, module_name, ispkg in pkgutil.walk_packages(__path__, prefix=__name__ + "."):
+    importlib.import_module(module_name)

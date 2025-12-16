@@ -1,55 +1,87 @@
 # workspace/display.py
-import time, json, threading
+import time
+import json
+import threading
 import socketio
+
 
 class Display:
     def __init__(self, workspace, server_url="http://127.0.0.1:5000", fps=60, debug=False):
+        """
+        Non-blocking display:
+        - Does NOT block Workspace.__init__()
+        - Connects to server in a background thread
+        - Sends pose frames with backpressure (ACK-based)
+        """
         self.workspace = workspace
         self.SERVER = server_url
+
+        # target FPS for pose sending
         self.fps = max(1, int(fps))
         self._period = 1.0 / self.fps
 
+        # threading / state
         self._thread = None
         self._stop_event = threading.Event()
-        self._state_lock = threading.RLock()   # protects _inflight/_pending
+        self._state_lock = threading.RLock()  # protects _inflight/_pending
 
-        self.sio = socketio.Client(
-            reconnection=True,
-            logger=bool(debug),
-            engineio_logger=bool(debug)
-        )
-        self._connected_evt = threading.Event()
-
-        @self.sio.event
-        def connect():
-            self._connected_evt.set()
-            # full snapshot on (re)connect
-            self._emit_update(self._build_snapshot())
-
-        @self.sio.event
-        def disconnect():
-            self._connected_evt.clear()
-
-        @self.sio.on("request_snapshot")
-        def _on_request_snapshot(_data=None):
-            self._emit_update(self._build_snapshot())
-
-        # ACK/backpressure state
+        # backpressure
         self._inflight = False
         self._pending = None
 
-        self._last_size = 0
+        # socket.io client
+        self.sio = socketio.Client(
+            reconnection=True,
+            logger=bool(debug),
+            engineio_logger=bool(debug),
+        )
 
-    # ---------- public utilities ----------
-    def set_fps(self, fps:int):
+        # ------------------------
+        # SOCKET.IO EVENT HANDLERS
+        # ------------------------
+        @self.sio.event
+        def connect():
+            print("[Display] socket.io connected")
+            # On connect: send a full snapshot once
+            try:
+                snap = self._build_snapshot()
+                print(f"[Display] sending initial snapshot ({len(snap)} items)")
+                self._emit_update(snap)
+            except Exception as e:
+                print("[Display] error building initial snapshot:", e)
+
+        @self.sio.event
+        def disconnect():
+            print("[Display] socket.io disconnected")
+
+        # server can call "request_snapshot" with or without payload
+        @self.sio.on("request_snapshot")
+        def _req_snap(_data=None):
+            try:
+                snap = self._build_snapshot()
+                self._emit_update(snap)
+            except Exception as e:
+                print("[Display] error in request_snapshot:", e)
+
+    # ----------------------------------------------------
+    # Public utilities
+    # ----------------------------------------------------
+    def set_fps(self, fps: int):
         with self._state_lock:
             self.fps = max(1, int(fps))
             self._period = 1.0 / self.fps
 
     def send_snapshot(self):
-        self._emit_update(self._build_snapshot())
+        """Force a full snapshot send (manual)."""
+        try:
+            snap = self._build_snapshot()
+            self._emit_update(snap)
+        except Exception as e:
+            print("[Display] error in send_snapshot:", e)
 
-    # ---------- helpers ----------
+    # ----------------------------------------------------
+    # Payload builders
+    # ----------------------------------------------------
     def _extract_anchors(self, solid):
         """
         Return a JSON-serializable anchors dict:
@@ -73,18 +105,20 @@ class Display:
         for k, v in src.items():
             if isinstance(v, (list, tuple)) and len(v) == 6:
                 try:
-                    out[k] = [float(v[0]), float(v[1]), float(v[2]),
-                              float(v[3]), float(v[4]), float(v[5])]
+                    out[k] = [
+                        float(v[0]), float(v[1]), float(v[2]),
+                        float(v[3]), float(v[4]), float(v[5]),
+                    ]
                 except Exception:
                     continue
         return out or None
 
-    # ---------- payload builders ----------
     def _build_snapshot(self):
         """meshUrl + pose + visible (+ anchors, names) for each solid."""
         try:
             poses = self.workspace.compute_world_poses()
-        except Exception:
+        except Exception as e:
+            print("[Display] compute_world_poses() failed in snapshot:", e)
             poses = {}
 
         batch = {}
@@ -93,16 +127,16 @@ class Display:
                 assembly = getattr(comp, "assembly", {}) or {}
                 for solid_name, solid in assembly.items():
                     key = f"{comp_name}_{solid_name}"
-                    pose = poses.get(key, [[1,0,0,0],[0,1,0,0],[0,0,1,0]])  # fallback identity-ish
+                    pose = poses.get(key, [0, 0, 0, 0, 0, 0])  # fallback
                     mesh_id = getattr(solid, "type", getattr(solid, "name", solid_name))
 
                     item = {
                         "meshUrl": f"/static/CAD/{mesh_id}.glb",
                         "pose": pose,
                         "visible": True,
-                        # NEW: names so UI can label/decorate
                         "componentName": comp_name,
                         "solidName": solid_name,
+                        "type": getattr(solid, "type", None),   # ← ADD THIS
                     }
 
                     anchors = self._extract_anchors(solid)
@@ -110,90 +144,127 @@ class Display:
                         item["anchors"] = anchors
 
                     batch[key] = item
-        except Exception:
-            pass
+        except Exception as e:
+            print("[Display] error building snapshot batch:", e)
         return batch
 
     def _build_pose_frame(self):
-        """pose + visible only (lightweight per-frame)."""
+        """Only pose + visible; DO NOT delete meshUrl."""
         try:
             poses = self.workspace.compute_world_poses()
-        except Exception:
+        except Exception as e:
+            print("[Display] compute_world_poses() failed in frame:", e)
             poses = {}
-        return {name: {"pose": p, "visible": True} for name, p in poses.items()}
 
-    # ---------- emit / loop ----------
+        out = {}
+        for name, p in poses.items():
+            out[name] = {
+                "pose": p,
+                # DO NOT send meshUrl
+                # DO NOT send componentName / solidName
+                "visible": True
+            }
+        return out
+    # ----------------------------------------------------
+    # Emit with backpressure
+    # ----------------------------------------------------
     def _emit_update(self, payload: dict):
-        if not payload or not self.sio.connected:
+        if not payload:
             return
+        if not self.sio.connected:
+            # No connection yet; drop silently
+            return
+
         try:
+            # ensure JSON serializable / small
             encoded = json.dumps(payload)
-        except Exception:
+        except Exception as e:
+            print("[Display] json.dumps failed:", e)
             return
 
         with self._state_lock:
             if self._inflight:
+                # Replace any previous pending update
                 self._pending = payload
                 return
             self._inflight = True
 
         def ack_cb(_ok=None):
+            # Called by socket.io when server handler (upstream_update) returns
             with self._state_lock:
                 self._inflight = False
                 next_payload = self._pending
                 self._pending = None
             if next_payload is not None:
+                # Immediately send the latest pending
                 self._emit_update(next_payload)
 
-        self._last_size = len(encoded)
         self.sio.emit("upstream_update", payload, callback=ack_cb)
 
-    def _run(self):
-        period = self._period
+    # ----------------------------------------------------
+    # Main loop
+    # ----------------------------------------------------
+    def _loop(self):
+        """Background loop: send pose-only frames at target FPS."""
+        print(f"[Display] Running at {self.fps} fps")
         next_t = time.perf_counter()
+        period = self._period
+
         while not self._stop_event.is_set():
             try:
-                self._emit_update(self._build_pose_frame())
-            except Exception:
-                pass
+                if not self._inflight and self.sio.connected:
+                    frame = self._build_pose_frame()
+                    self._emit_update(frame)
+            except Exception as e:
+                print("[Display] error in main loop:", e)
 
             next_t += period
-            now = time.perf_counter()
-            delay = next_t - now
+            delay = next_t - time.perf_counter()
+
             if delay < -period:
-                next_t = now + period
+                # we fell behind; reset schedule
+                next_t = time.perf_counter() + period
                 delay = period
             if delay > 0:
                 time.sleep(delay)
-            period = self._period
 
-    # ---------- lifecycle ----------
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        try:
-            self.sio.connect(
-                self.SERVER,
-                transports=["websocket"],
-                wait=True,
-                wait_timeout=5,
-                socketio_path="/socket.io/",
-            )
-        except Exception:
-            return
-
-        if not self._connected_evt.wait(timeout=2.0):
+    def _connect_bg(self):
+        """Connect to socket.io in a background thread (non-blocking)."""
+        while not self._stop_event.is_set():
             try:
-                self.sio.disconnect()
-            except Exception:
-                pass
-            return
+                # transports only here, NOT in Client()
+                self.sio.connect(
+                    self.SERVER,
+                    transports=["websocket"],
+                    socketio_path="/socket.io/",
+                )
+                # If connect succeeds, break; reconnection is handled by the client
+                return
+            except Exception as e:
+                print("[Display] connect failed, retrying in 2s:", e)
+                time.sleep(2.0)
 
+    # ----------------------------------------------------
+    # Lifecycle
+    # ----------------------------------------------------
+    def start(self):
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+
+        # Connect socket first
+        threading.Thread(target=self._connect_bg, daemon=True).start()
+
+        # Delay frame loop so snapshot can send first
+        time.sleep(0.2)
+
+        # Send snapshot explicitly
+        self.send_snapshot()
+
+        # Now start pose updates
+        self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self):
+        """Cleanly stop background threads and close any resources."""
         self._stop_event.set()
         t = self._thread
         self._thread = None

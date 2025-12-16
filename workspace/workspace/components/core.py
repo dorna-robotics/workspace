@@ -60,6 +60,11 @@ class Core:
         self.toolchanger_output = cfg.get("toolchanger_output", 0)  # the output pin that controls the toolchanger
 
         self.planner = Planner()
+        # --- scene dirty tracking & last joints (for Workspace optimization)
+        self._last_joints = None
+        # Workspace will look at this flag; initialize as dirty so first frame recomputes
+        if hasattr(self.workspace, "_scene_dirty"):
+            self.workspace._scene_dirty = True
 
 
         # optional robot API hookup
@@ -188,31 +193,98 @@ class Core:
     # -------------------------------------------------------------------------
     # live joint update
     # -------------------------------------------------------------------------
-
+    # -------------------------------------------------------------------------
+    # live joint update (event-driven / dirty-aware)
+    # -------------------------------------------------------------------------
     def update_pose(self):
         """
-        If a Dorna robot connection exists, update A1..A5 relative rotations
-        by attaching each link with a Z-rotation equal to the corresponding joint angle.
+        If a robot API connection exists, update link poses ONLY when joints change.
+        When joints change, mark the Workspace scene as dirty so compute_world_poses()
+        knows it must recompute the world transforms.
         """
-
-
-
 
         if self.robot_api is None:
             return
 
-        joints = self.robot_api.joint()  # expect list/tuple of 8 floats
+        # Read joints (expect 8 floats, but we just treat as sequence)
+        joints_raw = self.robot_api.joint()
+        try:
+            joints = list(joints_raw)
+        except TypeError:
+            joints = joints_raw
 
+        if not joints:
+            return
+
+        # --- Detect if anything actually moved ---
+        moved = False
+        if self._last_joints is None:
+            moved = True
+        else:
+            # you can tighten epsilon if you want
+            eps = 1e-4
+            for a, b in zip(joints, self._last_joints):
+                if abs(a - b) > eps:
+                    moved = True
+                    break
+
+        if not moved:
+            # Joints unchanged -> no geometry change -> don't touch scene
+            return
+
+        # Update cached joints
+        self._last_joints = joints
+
+        # Mark scene dirty so Workspace knows transforms must be recomputed
+        if hasattr(self.workspace, "_scene_dirty"):
+            self.workspace._scene_dirty = True
+
+        # --- Apply new joint values to kinematic chain as before ---
         if self.has_rail:
-            self.rail_carriage.attach_to(parent=self.rail_base, parent_anchor="carriage", child_anchor="center", offset=[joints[self.rail_axis], 0, 0, 0, 0, 0])
+            self.rail_carriage.attach_to(
+                parent=self.rail_base,
+                parent_anchor="carriage",
+                child_anchor="center",
+                offset=[joints[self.rail_axis], 0, 0, 0, 0, 0],
+            )
 
-        self.robot_A1.attach_to(parent=self.robot_A0, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[0]])
-        self.robot_A2.attach_to(parent=self.robot_A1, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[1]])
-        self.robot_A3.attach_to(parent=self.robot_A2, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[2]])
-        self.robot_A4.attach_to(parent=self.robot_A3, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[3]])
-        self.robot_A5.attach_to(parent=self.robot_A4, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, -joints[4]])
-        self.robot_flange.attach_to(parent=self.robot_A5, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, joints[5]])
-
+        self.robot_A1.attach_to(
+            parent=self.robot_A0,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, joints[0]],
+        )
+        self.robot_A2.attach_to(
+            parent=self.robot_A1,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, joints[1]],
+        )
+        self.robot_A3.attach_to(
+            parent=self.robot_A2,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, joints[2]],
+        )
+        self.robot_A4.attach_to(
+            parent=self.robot_A3,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, joints[3]],
+        )
+        self.robot_A5.attach_to(
+            parent=self.robot_A4,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, -joints[4]],
+        )
+        self.robot_flange.attach_to(
+            parent=self.robot_A5,
+            parent_anchor="output",
+            child_anchor="input",
+            offset=[0, 0, 0, 0, 0, joints[5]],
+        )
+    
     def simulation(self, on: bool = True):
         """
         Switch between simulation and real robot API.
@@ -307,9 +379,10 @@ class Core:
                     
 
         def joint_distance(q):
+            weight = [1, 1, 1, 1, 1, 0.25]
             s = 0.0
-            for i in (0,1, 2, 3, 4, 5):
-                d = q[i] - ref_joints[i]
+            for i in (0, 1, 2, 3, 4, 5):
+                d = weight[i] * (q[i] - ref_joints[i])
                 s += d * d
             return s ** 0.5
 
@@ -465,7 +538,7 @@ class SimulationAPI:
         self.dorna = Dorna()
 
     def joint(self):
-        return self.joints
+        return self.joints[:]
     
     def solve_third_degree(self,a, b, c, d):
         """
@@ -1086,4 +1159,17 @@ class SimulationAPI:
         # ensure exact final value
         self.joints = tgt_joints
         return 2  # success
+    
 
+    # sleep
+    def sleep(self, val=0):
+        time.sleep(val)
+        return 2
+    
+    # output
+    def output(self, index=None, val=None, config=None):
+        if config is not None:
+            for c in config:
+                if len(c) > 2 and c[2] > 0:
+                    self.sleep(c[2])
+        return True

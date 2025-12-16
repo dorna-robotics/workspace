@@ -4,15 +4,15 @@ from workspace import workspace
 from workspace.components.factory import register
 
 
-@register("plate")
-class Plate:
+@register("fixture_plate")
+class FixturePlate:
     """
     the plate
     """
 
     def __init__(self, name: str, cfg: dict, workspace):
         self.name = name
-        self.type = "plate"
+        self.type = "fixture_plate"
         self.workspace = workspace
         self.assembly = {}
         # --------- plate
@@ -34,6 +34,6 @@ class Plate:
         plate_anchors["corner_3"] = [-250.0, -125.0, 7.0, 0.0, 0.0, 0.0]
         plate_anchors["center"] = [0.0, 0.0, 7.0, 0.0, 0.0, 0.0]
 
-        self.assembly["plate"] = Solid(name="plate", type="plate", anchors=plate_anchors, component=self.name)
+        self.assembly["fixture_plate"] = Solid(type="fixture_plate", anchors=plate_anchors, component=self.name)
         
         
