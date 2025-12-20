@@ -182,12 +182,10 @@ class Decapper(Plate):
         # place
         height_init = component_load.twist * component_load.pitch / 360
         
-        # ???
-        #height_cap = np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))
         # total tube height
         height = np.linalg.norm(np.array(solid_index.pose("place")[0:3]) - np.array(solid_index.pose("center")[0:3])) + \
                     np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))   
-        # offset=[0, 0, height_cap+height_init, 0, 0, 0] ???
+
         if not self.place_in(index=index, container=component_index, offset=[0, 0, height_init, 0, 0, 0], approach=approach, exit=False, **kwargs):
             print("Not able to place")
             return False

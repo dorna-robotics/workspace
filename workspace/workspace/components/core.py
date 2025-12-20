@@ -1,4 +1,5 @@
 # workspace/components/core.py
+from camera import Camera
 from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
@@ -43,11 +44,6 @@ class Core:
         else:
             raise ValueError(f"Unsupported rail type: {self.rail_type}")
         
-        # ------- camera
-        self.has_camera = cfg.get("has_camera", False)
-        self.camera_ip = cfg.get("camera_ip", "0.0.0.0")
-
-
         # -------- robot
         self.robot_ip = cfg.get("ip",'0.0.0.0')
 
@@ -68,15 +64,28 @@ class Core:
 
 
         # optional robot API hookup
-
-        
-        self._simulation_mode = False
+        self._simulation_mode = cfg.get("simulation", True)
         self.dorna = Dorna()
-        if self.dorna.connect(self.robot_ip):
+        if not self._simulation_mode and self.dorna.connect(self.robot_ip):
                 self.robot_api = self.dorna
+                self._simulation_mode = False
         else:
                 self.robot_api = SimulationAPI()
                 self._simulation_mode = True
+
+        # ------- camera
+        self.has_camera = cfg.get("has_camera", False)
+        self.camera_serial_number = cfg.get("camera_serial_number", "")
+        self.camera_K = cfg.get("camera_K", None)
+        self.camera_D = cfg.get("camera_D", None)
+        self.camera_native_res = cfg.get("camera_native_res", None)
+        
+        # camera api
+        self.camera = None
+        if not self._simulation_mode and self.has_camera:
+            # init camera
+            self.camera = Camera()
+            self.camera.connect(serial_number=self.camera_serial_number, K=self.camera_K, D=self.camera_D, native_res=self.camera_native_res)
 
 
         # --------- rail base
@@ -525,9 +534,13 @@ class Core:
 
 
     def stop(self):
-
+        # robot
         if self.dorna:
             self.dorna.close()
+        
+        # camera
+        if self.camera:
+            self.camera.close()
 
 
 class SimulationAPI:

@@ -16,6 +16,7 @@ dependencies = [
   "python-socketio",    # display.py client + server.py
   "websocket-client",   # ensures WS transport for the python-socketio client
   "tornado",            # server.py (AsyncServer with Tornado)
+  "Jinja2,
 ]
 
 [tool.setuptools.packages.find]
