@@ -5,7 +5,8 @@ from workspace.components.gripper.gripper import Gripper
 class SBS_gripper_width(Gripper):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 68.5, 0, 0, 0]}},
+                #anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 68.5, 0, 0, 0]}},
+                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41, 0, 0, 0], "top": [119, 0, 56, 0, 0, 0]}},
                 has_toolchanger = False,
                 offset=[0, 0, 0, 0, 0, 0],
                 enable=[],

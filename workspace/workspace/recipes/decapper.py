@@ -20,6 +20,7 @@ class Decapper(Plate):
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
         motion="lmove",
+        pose_ref=None,
         **kwargs
         ):
 
@@ -41,6 +42,7 @@ class Decapper(Plate):
             jmove_vaj=jmove_vaj,
             lmove_vaj=lmove_vaj,
             motion=motion,
+            pose_ref=pose_ref,
             **kwargs
         )
 
