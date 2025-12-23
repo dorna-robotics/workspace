@@ -3,7 +3,7 @@
 # includes handy functions that are frequently used in recipes
 
 class Recipe:
-    def __init__(self, workspace, core, speed_factor=0.5,left_approach=True,base_distance=350,rail_step=5.0,rail_span=2):
+    def __init__(self, workspace, core, component, speed_factor=0.5,left_approach=True,base_distance=350,rail_step=5.0,rail_span=2):
         self.ws = workspace
         self.core = core
         self.tool = None
@@ -25,6 +25,14 @@ class Recipe:
             return
         
 
-    def calibrate(self, solid, ):
-        # when the use
+    def calibrate(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0]):
+        # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot 
+        # to the target anchor and offset using tool attached to the robot. Then the user click on a button to approve the calibration point
+        # then the user moves the robot out and then the robot motors are turned on
+        # the tool anchor and offset will match target anchor by the user. 
+        # the robot will move to target_offset in the beginning
+
+        
+
+
 
