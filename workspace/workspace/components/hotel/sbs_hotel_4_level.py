@@ -6,7 +6,7 @@ from workspace.components.hotel.hotel import Hotel
 class SBSHotel4Level(Hotel):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0]}},
+                anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0]}},
                 level=4,
                 shape=[150, 100, 76],
                 **kwargs

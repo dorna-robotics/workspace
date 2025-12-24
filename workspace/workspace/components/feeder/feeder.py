@@ -9,7 +9,7 @@ from dorna2 import Solid
 class Feeder:
     def __init__(self, name: str, workspace,
             type=None,
-            anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}}, 
+            anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}}, 
             **kwargs
             ):
         self.name = name

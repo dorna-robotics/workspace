@@ -8,7 +8,7 @@ class Inspection:
 
     def __init__(self, name: str, workspace,
             type=None,
-            anchors={"solid_0":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+            anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
             serial_number="",
             stream= {"width":848, "height":480, "fps":15},
             K= None,
