@@ -65,10 +65,7 @@ class Recipe:
         else:
             print("could not find a valid reference joint to approach the container")
             return
-
         
-
-
 
     # return the solid attached to an specific anchor
     def solid_attached_to_anchor(self, solid, anchor):        
@@ -469,7 +466,7 @@ class Recipe:
 
         # the joint recording from the user
         corrected_values = self.core.robot_api.joint()
-# now we find the raw values by solving IK
+        # now we find the raw values by solving IK
         # note target_offset is all zeros because we want to exactly match the anchor point
         raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset, base_distance=None)
         if C == 2:
