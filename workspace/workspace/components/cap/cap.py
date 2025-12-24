@@ -5,13 +5,9 @@ height is the top
 from dorna2 import Solid
 
 class Cap:
-    """
-    the tube_cap
-    """
-
     def __init__(self, name: str, workspace,
             type=None,
-            anchors={"solid_0":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
+            anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
             cap_type="screw", # "snap" or "screw"
             twist=720,
             pitch=2,

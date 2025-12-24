@@ -5,7 +5,7 @@ from workspace.components.cap.cap import Cap
 class CapAutosampler2ml(Cap):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
+                anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
                 cap_type="screw",
                 twist=390,
                 pitch=1,

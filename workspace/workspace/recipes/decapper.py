@@ -1,101 +1,89 @@
 import numpy as np
-import workspace.recipes.util as util
-from workspace.recipes.plate import Plate
+from dorna2 import pose as dorna_pose
+from workspace.recipes.recipe import Recipe
 
 
-class Decapper(Plate):
-    def __init__(self, workspace, core, 
-        container, # component
-        solid_name = None,
-        anchor = "place",
-        rotation = 340,
-        padding=50,
-        gap=2,
-        ref_joints = [0, 0, 0, 0, 0, 0, 0, 0],
-        speed_factor=0.5,
+class Decapper(Recipe):
+    def __init__(self, workspace, core, component,
+        # ref joints
+        target_solid_name="body",
+        target_anchor="place",
+        target_offset=[0, 0, 50, 0, 180, 0],
+        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
+        # IK
         left_approach=True,
         base_distance=350,
         rail_step=5.0,
-        rail_span=2,
+        rail_span=2,        
+        # motion
+        motion_type="lmove",
+        speed_factor=0.5,
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
-        motion="lmove",
-        pose_ref=None,
         **kwargs
         ):
 
         super().__init__(
-            workspace=workspace,
+            workspace=workspace, 
             core=core,
-            container=container,
-            solid_name=solid_name,
-            anchor=anchor,
-            rotation=rotation,
-            padding=padding,
-            gap=gap,
-            ref_joints=ref_joints,
-            speed_factor=speed_factor,
+            component=component,
+            target_solid_name=target_solid_name,
+            target_anchor=target_anchor,
+            target_offset=target_offset,
+            initial_joints=initial_joints,
+            # IK
             left_approach=left_approach,
             base_distance=base_distance,
             rail_step=rail_step,
-            rail_span=rail_span,
+            rail_span=rail_span,        
+            # motion
+            motion_type=motion_type,
+            speed_factor=speed_factor,
             jmove_vaj=jmove_vaj,
             lmove_vaj=lmove_vaj,
-            motion=motion,
-            pose_ref=pose_ref,
             **kwargs
         )
 
 
-    def decap(self, index=None, approach=True, exit=True, **kwargs):
-        # index
-        index = index or self.anchor
-
-        # assign kwargs
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-        
-        # ref joints
-        if self.ref_joints is None:
-            print("No reference joints defined")
+    def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, rotation=340, **kwargs):        
+        # pick parameters
+        motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=False, attachment=False, padding=padding, gap=gap, **kwargs)
+        if not motion_prm:
             return False
+
+        # adjust io in motion prm 
+        motion_prm["output_config"] = []
+
+        # tube and cap
+        if len(motion_prm["load_list"]) != 2:
+            print(f"No tube and cap found in position {anchor}")
         
+        # cap
+        solid_cap = motion_prm["load_list"][1]
+        component_cap = self.workspace.components[solid_cap.component]
+
+        # height cap
+        height_cap = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                from_frame=solid_cap.pose("center"),
+                                to_frame=solid_cap.pose("top"))[2])
+
         # tool
-        tool = util.tool(self.ws, self.core)
-        if tool is None:
-            print("No tool attached to the robot")
-            return False
-        
-        # we check if there is an item in the index
-        solid_parent = util.solid_attached_to_anchor(self.container.assembly[self.solid_name], index)
-        if solid_parent is None:
-            print(f"No item found in position {index}")
-            return False
-        component_parent = self.ws.components[solid_parent.component]
-
-        #cehck if two solids or not
-        solid_child = util.solid_attached_to_anchor(solid_parent, "place")
-        if solid_child is None:
-            print(f"No item found in position {index}")
-            return False
-        component_child = self.ws.components[solid_child.component]
-
-        cap_height = np.linalg.norm(np.array(solid_child.pose("center")[0:3]) - np.array(solid_child.pose("top")[0:3]))
+        tool = motion_prm["tool"]
 
         # pick
-        if not self.pick_from(index="place", container=component_parent, approach=approach, exit=False, **kwargs):
+        if not self.touch(**motion_prm):
             print("Not able to pick")
             return False
-
+        
         # decapping
-        if component_child.cap_type == "screw":
+        if component_cap.cap_type == "screw":
             # chunks
-            twist_chunks = lambda t: ([t % self.rotation] if t % self.rotation else []) + [self.rotation] * (t // self.rotation)
-            chunks = [0] + twist_chunks(component_child.twist)
+            twist_chunks = lambda t: ([t % rotation] if t % rotation else []) + [rotation] * (t // rotation)
+            chunks = [0] + twist_chunks(component_cap.twist)
             joint_list = []
             z_offset = 0
             for chunk in chunks:
-                z_offset += - component_child.pitch * chunk / self.rotation
+                z_offset += - component_cap.pitch * chunk / rotation
                 # inverse kinematic
                 J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, z_offset, 0, 0, 0],
                                     tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
@@ -105,7 +93,7 @@ class Decapper(Plate):
                     return False
                 
                 # end joint
-                J[5] = self.rotation/2 - chunk
+                J[5] = rotation/2 - chunk
                 joint_list.append(J[:])
             
             # move, startting from rotation/2
@@ -116,7 +104,7 @@ class Decapper(Plate):
                     
                     # go to start
                     J_start = joint_list[i][:]
-                    J_start[5] = -self.rotation/2
+                    J_start[5] = -rotation/2
                     self.core.robot_api.jmove(J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
 
                     # enable gripper
@@ -127,7 +115,7 @@ class Decapper(Plate):
                 else:
                     if exit:
                         # IK go up
-                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -self.gap-cap_height, 0, 0, 0],
+                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -gap-height_cap, 0, 0, 0],
                                             tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
                                             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
                         if C != 2:
@@ -138,69 +126,71 @@ class Decapper(Plate):
                         self.core.robot_api.lmove(J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
         
         # attach
-        solid_child.attach_to(parent=tool.assembly[next(iter(tool.assembly))],
+        solid_cap.attach_to(parent=tool.assembly[next(iter(tool.assembly))],
                             parent_anchor="tcp",
                             child_anchor="top",
                             offset_frame="parent",
-                            offset=[0, 0, 0, 180, 0, 0])
+                            offset=[0, 0, 0, 0, 180, 0])
     
         return True
 
 
-    
-    def cap(self, index=None, approach=True, exit=True, **kwargs):
-        # index
-        index = index or self.anchor
-        
-        # assign kwargs
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-        
+    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, rotation=340, **kwargs):        
         # ref joints
         if self.ref_joints is None:
             print("No reference joints defined")
             return False
         
         # tool
-        tool = util.tool(self.ws, self.core)
+        tool = self.tool()
         if tool is None:
             print("No tool attached to the robot")
             return False
 
-        # item in tool
-        solid_load = util.solid_attached_to_tool(tool)
-        if solid_load is None:
+        # cap in tool
+        solid_cap = self.solid_attached_to_tool(tool)
+        if solid_cap is None:
             print("No item in the gripper")
             return False
-        component_load = self.ws.components[solid_load.component]
+        component_cap = self.workspace.components[solid_cap.component]
         
-        # item in the index
-        solid_index = util.solid_attached_to_anchor(self.container.assembly[self.solid_name], index)
-        if solid_index is None:
-            print(f"No item found in position {index}")
+        # tube in the anchor
+        solid_tube = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
+        if solid_tube is None:
+            print(f"No item found in position {anchor}")
             return False
-        component_index = self.ws.components[solid_index.component]
+        component_tube = self.workspace.components[solid_tube.component]
 
         # place
-        height_init = component_load.twist * component_load.pitch / 360
+        height_init = component_cap.twist * component_cap.pitch / 360
         
-        # total tube height
-        height = np.linalg.norm(np.array(solid_index.pose("place")[0:3]) - np.array(solid_index.pose("center")[0:3])) + \
-                    np.linalg.norm(np.array(solid_load.pose("center")[0:3]) - np.array(solid_load.pose("top")[0:3]))   
+        # height_cap
+        height_cap = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                from_frame=solid_cap.pose("center"),
+                                to_frame=solid_cap.pose("top"))[2])
 
-        if not self.place_in(index=index, container=component_index, offset=[0, 0, height_init, 0, 0, 0], approach=approach, exit=False, **kwargs):
+        # height tube
+        height_tube = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                from_frame=solid_tube.pose("center"),
+                                to_frame=solid_tube.pose("top"))[2])
+   
+        # total height
+        height_total = height_tube + height_cap
+
+        # place
+        if not self.place_in(anchor=anchor, solid_name="body", component=component_tube, offset=[0, 0, height_init, 0, 0, 0], approach=approach, exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, **kwargs):
             print("Not able to place")
             return False
             
         # capping
-        if component_load.cap_type == "screw":
+        if component_cap.cap_type == "screw":
             # chunks
-            twist_chunks = lambda t: ([t % self.rotation] if t % self.rotation else []) + [self.rotation] * (t // self.rotation)
-            chunks = [0] + twist_chunks(component_load.twist)[::-1]
+            twist_chunks = lambda t: ([t % rotation] if t % rotation else []) + [rotation] * (t // rotation)
+            chunks = [0] + twist_chunks(component_cap.twist)[::-1]
             joint_list = []
             z_offset = 0
             for chunk in chunks:
-                z_offset += component_load.pitch * chunk / self.rotation
+                z_offset += component_cap.pitch * chunk / rotation
                 # inverse kinematic
                 J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, z_offset, 0, 0, 0],
                                     tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
@@ -210,7 +200,7 @@ class Decapper(Plate):
                     return False
                 
                 # end joint
-                J[5] = -self.rotation/2 + chunk
+                J[5] = -rotation/2 + chunk
                 joint_list.append(J[:])
             
             # move, startting from -rotation/2
@@ -221,7 +211,7 @@ class Decapper(Plate):
                     
                     # go to start
                     J_start = joint_list[i][:]
-                    J_start[5] = -self.rotation/2
+                    J_start[5] = -rotation/2
                     self.core.robot_api.jmove(J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
 
                     # enable gripper
@@ -232,7 +222,7 @@ class Decapper(Plate):
                 else:
                     if exit:
                         # IK go up
-                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -height-self.gap, 0, 0, 0],
+                        J,C = self.core.IK(target_solid=tool.assembly[next(iter(tool.assembly))], target_anchor="tcp", target_offset=[0, 0, -height_total-gap, 0, 0, 0],
                                             tool_solid=tool.assembly[next(iter(tool.assembly))], tool_anchor="tcp", tool_offset=[0, 0, 0, 0, 0, 0],
                                             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
                         if C != 2:
@@ -243,10 +233,8 @@ class Decapper(Plate):
                         self.core.robot_api.lmove(J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
 
         # attach cap to body
-        solid_load.attach_to(parent=solid_index,
+        solid_cap.attach_to(parent=solid_tube,
                             parent_anchor="place",
-                            child_anchor="center",)
+                            child_anchor="center")
     
         return True
-
-

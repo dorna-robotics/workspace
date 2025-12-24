@@ -6,10 +6,7 @@ from workspace.components.adapter.adapter import Adapter
 class SBSAdapter(Adapter):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0],
-                        "front":[0, 0, 4.5, 0, 0, 180], "back":[0, 0, 4.5, 0, 0, 0]},},
-                height=19,
-                heaight_seat=3,
+                anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0]}},
                 **kwargs
         ):
 
@@ -20,7 +17,5 @@ class SBSAdapter(Adapter):
             workspace=workspace,
             type=type,
             anchors=anchors,
-            height=height,
-            heaight_seat=heaight_seat,
             **kwargs
         )

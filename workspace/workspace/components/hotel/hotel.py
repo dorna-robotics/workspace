@@ -6,13 +6,9 @@ from dorna2 import Solid
 from dorna2 import Pose
 
 class Hotel:
-    """
-    the tube_cap
-    """
-
     def __init__(self, name: str, workspace,
             type=None,
-            anchors={"solid_0":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+            anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
             level=4,
             shape = [150, 100, 52],
             **kwargs
@@ -26,14 +22,14 @@ class Hotel:
         # anchors
         p = Pose(anchors=anchors[next(iter(anchors))])
 
-        hotel_anchor = {"center": [0, 0, 0, 0, 0, 0]}
+        # levels
         for i in range(level):
             # center
-            hotel_anchor[f"center_{i}"] = p.pose("center", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            anchors[next(iter(anchors))][f"center_{i}"] = p.pose("center", offset=[0, 0, i*self.shape[2], 0, 0, 0])
             # top
-            hotel_anchor[f"top_{i}"] = p.pose("top", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            anchors[next(iter(anchors))][f"top_{i}"] = p.pose("top", offset=[0, 0, i*self.shape[2], 0, 0, 0])
             #place
-            hotel_anchor[f"place_{i}"] = p.pose("place", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            anchors[next(iter(anchors))][f"place_{i}"] = p.pose("place", offset=[0, 0, i*self.shape[2], 0, 0, 0])
         self.assembly = {
-            k: Solid(type=self.type, anchors=hotel_anchor, component=self.name) for k in anchors
+            k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors
         }

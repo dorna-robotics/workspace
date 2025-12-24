@@ -5,7 +5,7 @@ from workspace.components.plate.plate import Plate
 class PlateAutosampler2ml(Plate):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 5, 0, 0, 0], "top": [0, 0, 25.5, 0, 0, 0]}},
+                anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 5, 0, 0, 0], "top": [0, 0, 25.5, 0, 0, 0]}},
                 offset=[0, 0],
                 pitch=[14, 14],
                 rvec_safe=[0, 0, 45],

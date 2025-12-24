@@ -6,7 +6,7 @@ from workspace.components.feeder.feeder import Feeder
 class FeederCap2ml(Feeder):
     # height = 50
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -12.23473 , 152.56783, -45, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
+                anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -12.23473 , 152.56783, -45, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
                 **kwargs
         ):
 

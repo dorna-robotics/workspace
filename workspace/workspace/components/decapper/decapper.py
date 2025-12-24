@@ -5,7 +5,7 @@ from dorna2 import Solid
 class Decapper:
     def __init__(self, name: str, cfg: dict, workspace,
             anchors = {
-                "solid_0": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 0], "top":[0, 0, 55, 0, 0, 0]},
+                "body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 0], "top":[0, 0, 55, 0, 0, 0]},
                 },
             height=0,
             enable=[0, 0],

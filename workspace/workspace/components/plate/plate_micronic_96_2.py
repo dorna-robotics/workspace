@@ -5,7 +5,7 @@ from workspace.components.plate.plate import Plate
 class PlateMicronic962(Plate):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
+                anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
                 offset=[0, 0],
                 pitch=[9, 9],
                 rvec_safe=[0, 0, 0],

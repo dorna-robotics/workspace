@@ -6,7 +6,7 @@ from workspace.components.inspection.inspection import Inspection
 class HorizontalInspectionStation(Inspection):
 
     def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"solid_0":{"center":[0, 0, 0, 0, 0, 0],
+                anchors={"body":{"center":[0, 0, 0, 0, 0, 0],
                                     "camera": [0, 0, 8, 0, 0, 0], 
                                     "place":[0, 0, 0, 0, 0, 0]}},
                 serial_number="",
