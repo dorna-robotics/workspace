@@ -50,7 +50,7 @@ class Core:
         # -------- calibration
         axis_mask = [1,1,1,1,1,1,0,0]
         axis_mask[self.rail_axis] = 1
-        self.calibration = Calibration(self.name, )
+        self.calibration = Calibration(self.name, axis_mask)
 
 
         # -------- toolchanger

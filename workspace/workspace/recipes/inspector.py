@@ -1,4 +1,4 @@
-import numpy as np
+from copy import deepcopy
 from dorna_vision import Detection
 from workspace.recipes.recipe import Recipe
 
@@ -15,7 +15,7 @@ det_preset = {
 result = []
 """
 class FixedInspector(Recipe):
-    def __init__(self, workspace, core, component,
+    DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
         target_anchor="place",
@@ -31,30 +31,22 @@ class FixedInspector(Recipe):
         speed_factor=0.5,
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
-        # detection
-        detection_preset = {},
-        **kwargs
-        ):
+
+    )
+
+    def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
+        # parent defaults
+        prm = deepcopy(Recipe.DEFAULTS)
+        # child defaults
+        prm.update(self.DEFAULTS)
+        # user defaults
+        prm.update(kwargs)
 
         super().__init__(
-            workspace=workspace, 
+            workspace=workspace,
             core=core,
             component=component,
-            target_solid_name=target_solid_name,
-            target_anchor=target_anchor,
-            target_offset=target_offset,
-            initial_joints=initial_joints,
-            # IK
-            left_approach=left_approach,
-            base_distance=base_distance,
-            rail_step=rail_step,
-            rail_span=rail_span,        
-            # motion
-            motion_type=motion_type,
-            speed_factor=speed_factor,
-            jmove_vaj=jmove_vaj,
-            lmove_vaj=lmove_vaj,
-            **kwargs
+            **prm
         )
 
         # detection_preset
@@ -111,13 +103,11 @@ class FixedInspector(Recipe):
 
 
 class MobileInspector:
-    def __init__(self, workspace, core, component,
-        detection_preset = {},
-        **kwargs
-        ):
+    def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
 
         self.workspace = workspace
         self.core = core
+        self.component = component
 
         # detection_preset
         self.detection_preset = detection_preset

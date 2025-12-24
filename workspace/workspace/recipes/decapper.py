@@ -1,10 +1,10 @@
-import numpy as np
+from copy import deepcopy
 from dorna2 import pose as dorna_pose
 from workspace.recipes.recipe import Recipe
 
 
 class Decapper(Recipe):
-    def __init__(self, workspace, core, component,
+    DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
         target_anchor="place",
@@ -20,28 +20,21 @@ class Decapper(Recipe):
         speed_factor=0.5,
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
-        **kwargs
-        ):
+    )
+
+    def __init__(self, workspace, core, component, **kwargs):
+        # parent defaults
+        prm = deepcopy(Recipe.DEFAULTS)
+        # child defaults
+        prm.update(self.DEFAULTS)
+        # user defaults
+        prm.update(kwargs)
 
         super().__init__(
-            workspace=workspace, 
+            workspace=workspace,
             core=core,
             component=component,
-            target_solid_name=target_solid_name,
-            target_anchor=target_anchor,
-            target_offset=target_offset,
-            initial_joints=initial_joints,
-            # IK
-            left_approach=left_approach,
-            base_distance=base_distance,
-            rail_step=rail_step,
-            rail_span=rail_span,        
-            # motion
-            motion_type=motion_type,
-            speed_factor=speed_factor,
-            jmove_vaj=jmove_vaj,
-            lmove_vaj=lmove_vaj,
-            **kwargs
+            **prm
         )
 
 

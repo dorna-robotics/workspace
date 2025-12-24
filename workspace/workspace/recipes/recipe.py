@@ -1,7 +1,8 @@
+from copy import deepcopy
 from dorna2 import pose as dorna_pose
 
 class Recipe:
-    def __init__(self, workspace, core, component,
+    DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
         target_anchor="center",
@@ -23,50 +24,73 @@ class Recipe:
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],
-        **kwargs
-        ):
-        
+    )
+
+    def __init__(self, workspace, core, component, **kwargs):
+        # copy defaults
+        prm = deepcopy(self.DEFAULTS)
+        # user overrides
+        prm.update(kwargs)
+
         # init
         self.workspace = workspace
         self.core = core
         self.component = component
         
         # IK
-        self.left_approach = left_approach
-        self.base_distance = base_distance
-        self.rail_step = rail_step
-        self.rail_span = rail_span     
+        self.left_approach = prm["left_approach"]
+        self.base_distance = prm["base_distance"]
+        self.rail_step = prm["rail_step"]
+        self.rail_span = prm["rail_span"]     
 
         # motion
-        self.motion_type = motion_type
-        self.speed_factor = speed_factor
-        self.jmove_vaj = jmove_vaj
-        self.lmove_vaj = lmove_vaj 
+        self.motion_type = prm["motion_type"]
+        self.speed_factor = prm["speed_factor"]
+        self.jmove_vaj = prm["jmove_vaj"]
+        self.lmove_vaj = prm["lmove_vaj"] 
 
         # calibration
-        self.calibration_targets = calibration_targets
-        self.calibration_target_offset = calibration_target_offset
-        self.calibration_tool_solid_name = calibration_tool_solid_name
-        self.calibration_tool_anchor = calibration_tool_anchor
-        self.calibration_tool_offset = calibration_tool_offset
+        self.calibration_targets = prm["calibration_targets"]
+        self.calibration_target_offset = prm["calibration_target_offset"]
+        self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
+        self.calibration_tool_anchor = prm["calibration_tool_anchor"]
+        self.calibration_tool_offset = prm["calibration_tool_offset"]
 
         # find the reference joints used later for every IK
         J,C = self.core.IK(
-                    target_solid=self.component.assembly[target_solid_name], 
-                    target_anchor=target_anchor, 
-                    target_offset=target_offset,
+                    target_solid=self.component.assembly[prm["target_solid_name"]], 
+                    target_anchor=prm["target_anchor"],
+                    target_offset=prm["target_offset"],
                     base_distance=self.base_distance,
                     rail_step=self.rail_step, 
                     rail_span=self.rail_span,
-                    ref_joints=initial_joints,
+                    ref_joints=prm["initial_joints"],
                     left_approach=self.left_approach)
         if C == 2:
             self.ref_joints = J
         else:
             print("could not find a valid reference joint to approach the container")
             return
-        
 
+
+    # return the current tool
+    def tool_attached_to_the_robot(self):
+        tool = None
+        if self.core.has_toolchanger:
+            for child in self.core.toolchanger_robot_side.children["toolchanger_connection"]:
+                solid = child["child_solid"]
+                tool = self.workspace.components[solid.component]
+                continue
+
+        else:
+            for child in self.core.robot_flange.children["output"]:
+                solid = child["child_solid"]
+                tool = self.workspace.components[solid.component]
+                continue
+        
+        return tool
+    
+    
     # return the solid attached to an specific anchor
     def solid_attached_to_anchor(self, solid, anchor):        
         try:
@@ -76,6 +100,14 @@ class Recipe:
             pass
         return None
 
+
+    # return the first solid attached to the tool given
+    def solid_attached_to_tool(tool):        
+        # we check if there is component in the gripper already
+        for child in tool.assembly[next(iter(tool.assembly))].children["tcp"]:
+            return child["child_solid"]
+        return None
+    
 
     # touch a point
     def touch(self,
@@ -437,13 +469,11 @@ class Recipe:
         return self.touch(**place_prm)
 
 
-    """
     # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot 
     # to the target anchor and offset using tool attached to the robot. Then the user click on a button to approve the calibration point
     # then the user moves the robot out and then the robot motors are turned on
     # the tool anchor and offset will match target anchor by the user. 
     # the robot will move to target_offset in the beginning
-    """
     def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):        
         # first we find the solutions for the target:
         J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=target_offset, tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
