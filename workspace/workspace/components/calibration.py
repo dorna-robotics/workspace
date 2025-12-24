@@ -4,117 +4,127 @@ import json
 from pathlib import Path
 import numpy as np
 
-class Calibration:
-    def __init__(self, core):
 
-        self.core = core
-        self.name = core.name
+class Calibration:
+    def __init__(self, name: str, axis_mask):
+        """
+        name: calibration file name will be <name>.json in Path.cwd()
+        axis_mask: length-8 iterable of 0/1. 1 => axis participates, 0 => ignored.
+        """
+        self.name = str(name)
         self.file_path = Path.cwd() / f"{self.name}.json"
 
+        mask = np.array(list(axis_mask), dtype=int).reshape(-1)
+        if mask.size != 8:
+            raise ValueError(f"axis_mask must be length 8, got {mask.size}")
+        if not np.all((mask == 0) | (mask == 1)):
+            raise ValueError("axis_mask must contain only 0/1 values")
+
+        self._active = mask.astype(bool)
+
         if self.file_path.exists():
-            # Load existing calibration file
             with open(self.file_path, "r") as f:
                 self.calibration_data = json.load(f)
         else:
-            # File does not exist — just start empty, no file creation
-            self.calibration_data = {}
+            self.calibration_data = []
 
-    def add_point(self, name, raw_values, corrected_values, threshold=1e-3):
+    def _mask_for_storage(self, values):
+        """Force inactive axes to 0 for storing and masked-space computations."""
+        v = np.array(values, dtype=float)
+        if v.size != 8:
+            raise ValueError(f"values must be length 8, got {v.size}")
+        v[~self._active] = 0.0
+        return v
+
+    def add_point(self, raw_values, corrected_values, threshold=1e-3):
         """
-        Adds or updates a calibration point for a given name.
-        Replaces an existing point if raw_values are close.
+        Adds or updates a calibration point.
+        Replaces an existing point if raw_values are close (active axes only).
+        Inactive axes are stored as 0 in both raw and corrected.
         """
-        # Ensure sub-dictionary exists
-        if name not in self.calibration_data:
-            self.calibration_data[name] = []
+        raw_arr = self._mask_for_storage(raw_values)
+        corr_arr = self._mask_for_storage(corrected_values)
 
-        # Convert to numpy for distance check
-        raw_arr = np.array(raw_values, dtype=float)
-
-        # Look for existing close point
         updated = False
-        for i, entry in enumerate(self.calibration_data[name]):
-            if np.linalg.norm(np.array(entry["raw"]) - raw_arr) < threshold:
-                self.calibration_data[name][i] = {"raw": raw_values, "corrected": corrected_values}
+        for i, entry in enumerate(self.calibration_data):
+            entry_raw = np.array(entry["raw"], dtype=float)
+            # compare only on active axes
+            if np.linalg.norm(entry_raw[self._active] - raw_arr[self._active]) < threshold:
+                self.calibration_data[i] = {
+                    "raw": raw_arr.tolist(),
+                    "corrected": corr_arr.tolist(),
+                }
                 updated = True
                 break
 
-        # Add new point if none found
         if not updated:
-            self.calibration_data[name].append({"raw": raw_values, "corrected": corrected_values})
-            self._save()
+            self.calibration_data.append({
+                "raw": raw_arr.tolist(),
+                "corrected": corr_arr.tolist(),
+            })
 
-    def clear_point(self, name, raw_values, threshold=1e-3):
-        """Removes one point (if close) from a given name."""
-        if name not in self.calibration_data:
-            return
-        raw_arr = np.array(raw_values, dtype=float)
-        self.calibration_data[name] = [
-            p for p in self.calibration_data[name]
-            if np.linalg.norm(np.array(p["raw"]) - raw_arr) >= threshold
-        ]
         self._save()
 
-    def clear_name(self, name):
-        """Removes all calibration points under a given name."""
-        if name in self.calibration_data:
-            del self.calibration_data[name]
-            self._save()
+    def clear_point(self, raw_values, threshold=1e-3):
+        """Removes one point (if close) using active axes only."""
+        if not self.calibration_data:
+            return
+
+        raw_arr = self._mask_for_storage(raw_values)
+
+        kept = []
+        for p in self.calibration_data:
+            p_raw = np.array(p["raw"], dtype=float)
+            if np.linalg.norm(p_raw[self._active] - raw_arr[self._active]) >= threshold:
+                kept.append(p)
+
+        self.calibration_data = kept
+        self._save()
 
     def clear_all(self):
-        """Clears all calibration data."""
-        self.calibration_data = {}
+        self.calibration_data = []
         self._save()
 
     def _save(self):
-        """Writes the whole calibration_data to file."""
         with open(self.file_path, "w") as f:
-            json.dump(self.calibration_data, f, indent=2, separators=(',', ': '))
+            json.dump(self.calibration_data, f, indent=2, separators=(",", ": "))
 
-    def interpolate_corrected(self, name, raw_values, threshold=1e-3):
+    def interpolate(self, raw_values, threshold=1e-3, power=2.0):
         """
-        Inverse-distance interpolation of correction for a given name.
-        Interpolate errors first, then add to raw_values.
+        Inverse-distance interpolation on active axes only.
+        - Inactive axes in the output are returned exactly equal to raw_values.
         """
-        pts = self.calibration_data.get(name, [])
-        if not pts:
-            return list(float(x) for x in raw_values)  # no data → no correction
+        raw_in = np.array(raw_values, dtype=float)
+        if raw_in.size != 8:
+            raise ValueError(f"raw_values must be length 8, got {raw_in.size}")
 
-        q = np.array(raw_values, dtype=float)
+        if not self.calibration_data:
+            return [float(x) for x in raw_in]
 
-        # Build arrays of raw points and their error vectors (corrected - raw)
-        raw_mat = np.array([p["raw"] for p in pts], dtype=float)
-        err_mat = np.array([np.array(p["corrected"], dtype=float) - np.array(p["raw"], dtype=float) for p in pts])
+        # Query in masked space (inactive set to 0 for distance/interp)
+        q = raw_in.copy()
+        q[~self._active] = 0.0
 
-        # Distances to query
-        d = np.linalg.norm(raw_mat - q, axis=1)
+        raw_mat = np.array([p["raw"] for p in self.calibration_data], dtype=float)        # already masked
+        corr_mat = np.array([p["corrected"] for p in self.calibration_data], dtype=float) # already masked
+        err_mat = corr_mat - raw_mat
 
-        # If an exact/near match exists, return that corrected directly
-        i_min = np.argmin(d)
+        # distances on active dims only
+        d = np.linalg.norm(raw_mat[:, self._active] - q[self._active], axis=1)
+
+        i_min = int(np.argmin(d))
         if d[i_min] < threshold:
-            return list(float(x) for x in np.array(pts[i_min]["corrected"]))
+            out = corr_mat[i_min].copy()
+        else:
+            w = 1.0 / np.power(d, power)
+            w_sum = float(w.sum())
+            if w_sum <= 0.0 or not np.isfinite(w_sum):
+                out = q.copy()
+            else:
+                w /= w_sum
+                interp_err = (w[:, None] * err_mat).sum(axis=0)
+                out = q + interp_err
 
-        # Inverse-distance weights
-        w = 1.0 / (np.power(d, 2))
-        w /= w.sum()
-
-        # Interpolate error, then add to raw
-        interp_err = (w[:, None] * err_mat).sum(axis=0)
-        corrected = q + interp_err
-        return list(float(x) for x in corrected)
- 
-    def record_point(self, name, raw_values, msg, threshold=1e-3):
-        """
-        Show msg, wait for Enter, read corrected joints from core's API,
-        and record (raw -> corrected) under a name inferred from the core.
-        """
-        print(msg)
-        input("Press Enter to record...")
-
-        # Read current joints from core API
-        corrected_values = self.core.robot_api.joint()
-
-        self.add_point(name, raw_values, corrected_values, threshold=threshold)
-        print(f"Recorded calibration point for '{name}':")
-        print(f"  Raw:       {raw_values}")
-        print(f"  Corrected: {corrected_values}")
+        # Inactive axes must equal the original raw input
+        out[~self._active] = raw_in[~self._active]
+        return [float(x) for x in out]

@@ -48,7 +48,9 @@ class Core:
         self.robot_ip = cfg.get("ip",'0.0.0.0')
 
         # -------- calibration
-        self.calibration = Calibration(self)
+        axis_mask = [1,1,1,1,1,1,0,0]
+        axis_mask[self.rail_axis] = 1
+        self.calibration = Calibration(self.name, )
 
 
         # -------- toolchanger
@@ -318,8 +320,8 @@ class Core:
 
 
 
-    def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=250.0,
-        rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
+    def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
+         rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
 
 
 
@@ -347,7 +349,11 @@ class Core:
         # then it solves the inverse kinematics and find only acceptable solutions, and within those acceptable solutions the closest to the cur_joint
         # we do this process for few other values of the rails + and - of the current rail values and within all found solutions, we find the one with minimum joint distance of the current joint
         # this is to avoid singularities and odd solutions of the current base position.
-        # for this function, we use         all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)        
+        # for this function, we use         all_sol = kinematic.inv(pose_in_robot, init_joint, True, freedom=None)
+        # 
+        # 
+        # If base distance is not given (None), the rail value will be set to the current rail value.
+        # It is very helpful for calibration methods        
 
         # Refresh all poses/frames
         self.update_pose()
@@ -437,19 +443,25 @@ class Core:
 
         # --- with rail: find rail candidates
         else:
-        
+
+            if base_distance is not None:
+                rmin, rmax = self.rail_min, self.rail_max
+
+                # Target pose in rail_base (used only to compute rail candidates)
+                px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
+
+                # r=0 origin on rail_base (carriage anchor)
+                c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
+
+                # Exact-distance rails; if none, return rail failure
+                R = rail_solutions(px, py, pz, c0x, c0y, c0z, base_distance, rmin, rmax)
+
+            
+            else:
+                # if rail is given, the candidate rail will be that value
+                R = [r_cur]
 
 
-            rmin, rmax = self.rail_min, self.rail_max
-
-            # Target pose in rail_base (used only to compute rail candidates)
-            px, py, pz, rx, ry, rz = target_solid.pose(anchor=target_anchor, in_frame=self.rail_base, offset=target_offset)
-
-            # r=0 origin on rail_base (carriage anchor)
-            c0x, c0y, c0z, _, _, _ = self.rail_base.pose(anchor="carriage")
-
-            # Exact-distance rails; if none, return rail failure
-            R = rail_solutions(px, py, pz, c0x, c0y, c0z, base_distance, rmin, rmax)
             if not R:
                 return (None, -1)
 
