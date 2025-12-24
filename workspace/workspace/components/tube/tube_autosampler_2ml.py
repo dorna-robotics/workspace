@@ -1,5 +1,5 @@
 from workspace.components.factory import register
-from workspace.workspace.components.tube.tube import Tube
+from workspace.components.tube.tube import Tube
 
 @register("tube_autosampler_2ml")
 class TubeAutosampler2ml(Tube):
