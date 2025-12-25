@@ -17,6 +17,7 @@ dependencies = [
   "websocket-client",   # ensures WS transport for the python-socketio client
   "tornado",            # server.py (AsyncServer with Tornado)
   "Jinja2,
+  "mergedeep",
 ]
 
 [tool.setuptools.packages.find]

@@ -2,12 +2,15 @@ core:
   type: core
   simulation: True
   has_rail: True
+  has_tool_changer: True
   ip: "192.168.254.106"
-  has_toolchanger: True 
-  toolchanger_output: 0
+  tool_changer:
+    present: True
+    attach: [] 
+    detach: []
   attach:
     parent_name: fixture_plate_1
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: E10
     child_solid: rail_base
     child_anchor: hole_0
@@ -24,65 +27,65 @@ fixture_plate_2:
   type: fixture_plate
   attach:
     parent_name: fixture_plate_1
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: corner_3
-    child_solid: fixture_plate
+    child_solid: body
     child_anchor: corner_0
 
 fixture_plate_3:
   type: fixture_plate
   attach:
     parent_name: fixture_plate_1
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: corner_1
-    child_solid: fixture_plate
+    child_solid: body
     child_anchor: corner_0
 
 fixture_plate_4:
   type: fixture_plate
   attach:
     parent_name: fixture_plate_1
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: corner_2
-    child_solid: fixture_plate
+    child_solid: body
     child_anchor: corner_0
 
 fixture_plate_5:
   type: fixture_plate
   attach:
     parent_name: fixture_plate_1
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: corner_1
-    child_solid: fixture_plate
+    child_solid: body
     child_anchor: corner_2
 
 fixture_plate_6:
   type: fixture_plate
   attach:
     parent_name: fixture_plate_3
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: corner_1
-    child_solid: fixture_plate
+    child_solid: body
     child_anchor: corner_2
 
 tool_rack_1:
   type: tool_rack
   attach:
     parent_name: fixture_plate_3
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: E19
-    child_solid: tool_rack
+    child_solid: body
     child_anchor: center
     offset: [0,0,0,0,0,90]
 
 gripper_1:
   type: tube_gripper_4_finger
-  has_toolchanger: True 
+  has_tool_changer: True 
   attach:
     parent_name: tool_rack_1
-    parent_solid: tool_rack
-    parent_anchor: tool_connection
-    child_solid: toolchanger_tool_side
+    parent_solid: body
+    parent_anchor: place
+    child_solid: tool_changer_tool_side
     child_anchor: tool_rack_connection
 
 
@@ -90,7 +93,7 @@ sbs_adapter_1:
   type: sbs_adapter
   attach:
     parent_name: fixture_plate_4
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: F8
     child_solid: body
     child_anchor: center
@@ -133,7 +136,7 @@ sbs_adapter_2:
   type: sbs_adapter
   attach:
     parent_name: fixture_plate_4
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: F2
     child_solid: body
     child_anchor: center
@@ -152,7 +155,7 @@ decapper_1:
   type: decapper
   attach:
     parent_name: fixture_plate_2
-    parent_solid: fixture_plate
+    parent_solid: body
     parent_anchor: F16
     child_solid: body
     child_anchor: center

@@ -1,4 +1,5 @@
 from copy import deepcopy
+from mergedeep import merge
 from dorna_vision import Detection
 from workspace.recipes.recipe import Recipe
 
@@ -31,16 +32,20 @@ class FixedInspector(Recipe):
         speed_factor=0.5,
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
-
+        # calibration
+        calibration=True,
+        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_tool_solid_name="body",
+        calibration_tool_anchor="tcp",
+        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
-        # parent defaults
-        prm = deepcopy(Recipe.DEFAULTS)
-        # child defaults
-        prm.update(self.DEFAULTS)
-        # user defaults
-        prm.update(kwargs)
+        # prm
+        prm = deepcopy(Recipe.DEFAULTS) # default
+        merge(prm, self.DEFAULTS) # self
+        merge(prm, kwargs) # kwargs
 
         super().__init__(
             workspace=workspace,
@@ -93,7 +98,7 @@ class FixedInspector(Recipe):
         new_joint["j5"] = (new_joint["j5"] + rotation + 175) % 350 - 175
 
         # motion
-        self.core.robot_api.jmove(new_joint, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+        self.core.robot_api.jmove(joint=new_joint, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
 
         # sleep
         self.core.robot_api.sleep(0.1)

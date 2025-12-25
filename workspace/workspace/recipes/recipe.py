@@ -1,4 +1,5 @@
 from copy import deepcopy
+from mergedeep import merge
 from dorna2 import pose as dorna_pose
 
 class Recipe:
@@ -19,6 +20,7 @@ class Recipe:
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
         # calibration
+        calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
         calibration_target_offset=[0, 0, -30, 0, 0, 0],
         calibration_tool_solid_name="body",
@@ -27,10 +29,9 @@ class Recipe:
     )
 
     def __init__(self, workspace, core, component, **kwargs):
-        # copy defaults
-        prm = deepcopy(self.DEFAULTS)
-        # user overrides
-        prm.update(kwargs)
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, kwargs) # self
 
         # init
         self.workspace = workspace
@@ -50,6 +51,7 @@ class Recipe:
         self.lmove_vaj = prm["lmove_vaj"] 
 
         # calibration
+        self.calibration = prm["calibration"]
         self.calibration_targets = prm["calibration_targets"]
         self.calibration_target_offset = prm["calibration_target_offset"]
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
@@ -76,8 +78,8 @@ class Recipe:
     # return the current tool
     def tool_attached_to_the_robot(self):
         tool = None
-        if self.core.has_toolchanger:
-            for child in self.core.toolchanger_robot_side.children["toolchanger_connection"]:
+        if self.core.has_tool_changer:
+            for child in self.core.tool_changer_robot_side.children["tool_changer_connection"]:
                 solid = child["child_solid"]
                 tool = self.workspace.components[solid.component]
                 continue
@@ -112,15 +114,16 @@ class Recipe:
     # touch a point
     def touch(self,
             target_solid, target_anchor, target_offset=[0, 0, 0, 0, 0, 0],
-            output_init=[],
+            output_approach=[],
             approach_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             approach_path = [],
-            output_config=[],
+            output_touch=[],
             actions=[],
             sleep=0,
             attach=[None, {"parent":None, "parent_anchor":None, "child_anchor":None, "offset":[0, 0, 0, 0, 0, 0], "offset_frame":"parent"}],
             exit_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             exit_path = [],
+            output_exit=[],
             **kwargs,
             ):
         # vaj_map
@@ -130,9 +133,9 @@ class Recipe:
         }
 
         """
-        output_init
+        output_approach
         """
-        self.core.robot_api.output(config=output_init)
+        self.core.robot_api.output(config=output_approach)
 
 
         """
@@ -144,10 +147,14 @@ class Recipe:
                                 tool_solid=approach_tool["solid"], tool_anchor=approach_tool["anchor"], tool_offset=approach_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)
             if C == 2:
+                # calibration
+                if self.calibration:
+                    J = self.core.calibration.interpolate(J[:])
+
                 if i == 0: # first motion jmove
-                    self.core.robot_api.jmove(J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
                 else: # rest are all based on the user motion command  
-                    getattr(self.core.robot_api, self.motion_type)(J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
             else:
                 print("Could not find a valid pose to approach")
                 return False
@@ -155,7 +162,7 @@ class Recipe:
         """
         output_config
         """
-        self.core.robot_api.output(config=output_config)
+        self.core.robot_api.output(config=output_touch)
 
         """
         actions, sleep
@@ -178,11 +185,21 @@ class Recipe:
                                 tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
             if C == 2:
-                getattr(self.core.robot_api, self.motion_type)(J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)    
+                # calibration
+                if self.calibration:
+                    J = self.core.calibration.interpolate(J[:])
+
+                # motion
+                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)    
             else:
                 print("Could not find a valid pose to approach")
                 return False
-        
+
+        """
+        output_exit
+        """
+        self.core.robot_api.output(config=output_exit)
+
         return True
 
     
@@ -271,8 +288,9 @@ class Recipe:
         """
         output config
         """
-        output_init = []
-        output_config = []
+        output_approach = []
+        output_touch = []
+        output_exit = []
         if trigger_io:
             # enable component setting
             enable = list(getattr(component, "enable", []))
@@ -281,8 +299,8 @@ class Recipe:
             disable = list(getattr(component, "disable", []))
             
             # output config
-            output_init = tool.disable + enable
-            output_config = tool.enable + disable
+            output_approach = tool.disable + enable
+            output_touch = tool.enable + disable
 
         """
         run attachment
@@ -300,15 +318,16 @@ class Recipe:
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
             "target_offset": offset or [0, 0, height_load, 0, 0, 0],
-            "output_init": output_init,
+            "output_approach": output_approach,
             "approach_tool": {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]},
             "approach_path": approach_path,
-            "output_config": output_config,
+            "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
             "exit_path": exit_path,
+            "output_exit": output_exit,
             "height_tool": height_tool,
             "height_load": height_load,
             "height_container": height_container,
@@ -413,8 +432,9 @@ class Recipe:
         output config
         """
         # output init
-        output_init = []
-        output_config = []
+        output_approach = []
+        output_touch = []
+        output_exit = []
         if trigger_io:
             # enable component setting
             enable = list(getattr(component, "enable", []))
@@ -423,8 +443,8 @@ class Recipe:
             disable = list(getattr(component, "disable", []))
             
             # output config
-            output_init = tool.enable + disable
-            output_config = tool.disable + enable
+            output_approach = tool.enable + disable
+            output_touch = tool.disable + enable
 
         """
         run attachment
@@ -442,15 +462,16 @@ class Recipe:
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
             "target_offset": offset or [0, 0, 0, 0, 0, 0],
-            "output_init": output_init,
+            "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
-            "output_config": output_config,
+            "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
             "exit_path": exit_path,
+            "output_exit": output_exit,
             "height_tool": height_tool,
             "height_load": height_load,
             "height_container": height_container,
@@ -480,7 +501,7 @@ class Recipe:
             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
 
         if C == 2:
-            self.core.robot_api.jmove(J, vel=self.jmove_vaj[0]*self.speed_factor,accel=self.jmove_vaj[1]*self.speed_factor,jerk=self.jmove_vaj[2]*self.speed_factor)
+            self.core.robot_api.jmove(joint=J, vel=self.jmove_vaj[0]*self.speed_factor,accel=self.jmove_vaj[1]*self.speed_factor,jerk=self.jmove_vaj[2]*self.speed_factor)
         else:
             print("Could not find a valid approach to the calibration point")
             return False

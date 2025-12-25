@@ -1,69 +1,64 @@
+from copy import deepcopy
+from mergedeep import merge
 from dorna2 import Solid
 from camera import Camera
 
 class Inspection:
-    """
-    the tube_cap
-    """
+    DEFAULTS = dict(
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+        camera_cfg={
+            "stream": {"width":848, "height":480, "fps":15},
+            "K": None,
+            "D": None,
+            "mode": "bgrd", 
+            "filter": {}, 
+            "exposure": None,
+            "native_res": None,
+        },
+        # cfg
+        camera_serial_number="",
+        simulation=True,
+    )
 
-    def __init__(self, name: str, workspace,
-            type=None,
-            anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
-            serial_number="",
-            stream= {"width":848, "height":480, "fps":15},
-            K= None,
-            D= None,
-            mode="bgrd", 
-            filter={}, 
-            exposure=None,
-            native_res=None,
-            simulation=True,
-            **kwargs
-            ):
+    def __init__(self, name: str, workspace, type=None, **kwargs):
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, kwargs) # self
 
+        # init
         self.name = name
-        self.type = type
         self.workspace = workspace
+        self.type = type
 
-        # solid
+        # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
         }
-
-        # camera parameter
-        self.serial_number = serial_number
-        self.stream = stream
-        self.K = K
-        self.D = D
-        self.native_res = native_res
-        self.mode = mode
-        self.exposure = exposure
-        self.filter=filter
         
         # simulation
-        self.simulation = simulation
+        self.simulation = prm["simulation"]
 
-        # connect
+        # camera parameter
+        self.camera_cfg = prm["camera_cfg"]
+        self.camera_serial_number = prm["camera_serial_number"]
+
+        # initialize the camera
         self.camera = None
         if not self.simulation:
             # init camera
             self.camera = Camera()
-            self._connect()
+            self.connect()
             
 
-    # connect to the robot
-    def _connect(self):
-        return self.camera.connect(
-            serial_number=self.serial_number,
-            stream=self.stream,
-            K=self.K,
-            D=self.D,
-            native_res=self.native_res,
-            mode=self.mode,
-            exposure=self.exposure,
-            filter=self.filter
-        )
+    # connect to the camera
+    def connect(self):
+        if self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
+            print("camera connected")
+            return True
+        print("can not connect to the camera")
+        return False
 
 
-    def _close(self):
+    # close the camera
+    def close(self):
         return self.camera.close()

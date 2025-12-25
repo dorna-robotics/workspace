@@ -1,26 +1,30 @@
+from copy import deepcopy
+from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.cap.cap import Cap
 
+
 @register("cap_autosampler_2ml")
 class CapAutosampler2ml(Cap):
+    DEFAULTS = dict(
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
+        cap_type="screw",
+        twist=390,
+        pitch=1,
+    )
 
-    def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
-                cap_type="screw",
-                twist=390,
-                pitch=1,
-                **kwargs
-        ):
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        # prm
+        prm = deepcopy(Cap.DEFAULTS) # default
+        merge(prm, self.DEFAULTS) # self
+        merge(prm, cfg) # cfg
+        merge(prm, kwargs) # kwargs
         
-        type = getattr(self.__class__, "_registered_type", cfg.get("type"))
+        # update type
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
+
         super().__init__(
             name=name,
-            cfg=cfg,
             workspace=workspace,
-            type=type,
-            anchors=anchors,
-            cap_type=cap_type,
-            twist=twist,
-            pitch=pitch,
-            **kwargs
+            **prm
         )

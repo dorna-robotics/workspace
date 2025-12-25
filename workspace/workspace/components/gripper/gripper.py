@@ -1,39 +1,47 @@
+from copy import deepcopy
+from mergedeep import merge
 from dorna2 import Solid
 
 class Gripper:
-    def __init__(self, name: str, workspace,
-            type=None,
-            anchors = {"solid_0": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
-            has_toolchanger = False,
-            tool_connection=[0,0,0,0,0,0],
-            toolchanger_connection=[0,0,-13,0,0,0],
-            tool_rack_connection=[0,0,1.5,0,0,0],
-            offset=[0, 0, 0, 0, 0, 0],
-            enable=[],
-            disable=[],
-            **kwargs
-            ):
+    DEFAULTS = dict(
+        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
+        tool_connection=[0,0,0,0,0,0],
+        tool_changer_connection=[0,0,-13,0,0,0],
+        tool_rack_connection=[0,0,1.5,0,0,0],
+        offset=[0, 0, 0, 0, 0, 0],
+        #cfg
+        has_tool_changer = False,
+        output_enable=[[None, None, 0]],
+        output_disable=[[None, None, 0]],
+    )
+
+    def __init__(self, name: str, workspace, type=None, **kwargs):
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, kwargs) # kwargs
+
+        # init
         self.name = name
-        self.type = type
         self.workspace = workspace
+        self.type = type
         
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
         }
 
         # has tool changer
-        self.has_toolchanger = has_toolchanger
-        if self.has_toolchanger:
-            self.assembly["toolchanger_tool_side"] = Solid(type="toolchanger_tool_side", 
+        self.has_tool_changer = prm["has_tool_changer"]
+        if self.has_tool_changer:
+            self.assembly["tool_changer_tool_side"] = Solid(type="tool_changer_tool_side", 
                                                     anchors= {
-                                                        "tool_connection": tool_connection,
-                                                        "toolchanger_connection": toolchanger_connection,
-                                                        "tool_rack_connection": tool_rack_connection}, 
+                                                        "tool_connection": prm["tool_connection"],
+                                                        "tool_changer_connection": prm["tool_changer_connection"],
+                                                        "tool_rack_connection": prm["tool_rack_connection"]},
                                                     component=self.name)
-            self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["toolchanger_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=offset)
+            self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["tool_changer_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=prm["offset"])
         
         # enable and disable
-        self.enable = enable
-        self.disable = disable
+        self.enable = prm["output_enable"]
+        self.disable = prm["output_disable"]
 

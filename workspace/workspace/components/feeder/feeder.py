@@ -1,21 +1,23 @@
-"""
-center is the bottom of the feeder where it touches the plate
-pick is the place where the center anchor of the cap sits on
-height_wall is the clearance height of the wall of the feeder  starts from the pick and goes up to the edge of the wall
-"""
-
+from copy import deepcopy
+from mergedeep import merge
 from dorna2 import Solid
 
+
 class Feeder:
-    def __init__(self, name: str, workspace,
-            type=None,
-            anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}}, 
-            **kwargs
-            ):
+    DEFAULTS = dict(
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}}, 
+    )
+    def __init__(self, name: str, workspace, type=None, **kwargs):
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, kwargs) # self
+
+        # init
         self.name = name
         self.workspace = workspace
         self.type = type
+
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
         }

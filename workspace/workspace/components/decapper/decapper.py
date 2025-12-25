@@ -1,28 +1,37 @@
+from copy import deepcopy
+from mergedeep import merge
 from workspace.components.factory import register
 from dorna2 import Solid
 
+
 @register("decapper")
 class Decapper:
-    def __init__(self, name: str, cfg: dict, workspace,
-            anchors = {
-                "body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 0], "top":[0, 0, 55, 0, 0, 0]},
-                },
-            height=0,
-            enable=[0, 0],
-            **kwargs
-            ):
+    DEFAULTS = dict(
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 0], "top":[0, 0, 55, 0, 0, 0]},},
+        # cfg
+        output_enable = [[None, None, 0.1]], # [[pin, index, time]]
+        output_disable = [[None, None, 0.1]], # [[pin, index, time]]
+    )
+
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, cfg) # cfg
+        merge(prm, kwargs) # kwargs
+
+        # update type
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
+
+        # init
         self.name = name
-        self.type = getattr(self.__class__, "_registered_type", cfg.get("type"))
         self.workspace = workspace
+        self.type = prm["type"]
         
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=anchors[k], component=self.name) for k in anchors
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
         }
-        
-        # height
-        self.height = height
-        
+
         # open and close
-        self.enable = [[cfg.get("enable", enable)[0], cfg.get("enable", enable)[1], 0.25]]
-        self.disable = [[cfg.get("enable", enable)[0], int(not cfg.get("enable", enable)[1]), 0.25]]
+        self.enable = prm["output_enable"]
+        self.disable = prm["output_disable"]

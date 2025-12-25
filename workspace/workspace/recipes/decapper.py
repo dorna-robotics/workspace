@@ -1,4 +1,5 @@
 from copy import deepcopy
+from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from workspace.recipes.recipe import Recipe
 
@@ -20,15 +21,20 @@ class Decapper(Recipe):
         speed_factor=0.5,
         jmove_vaj=[200, 5000, 50000],
         lmove_vaj=[200, 5000, 50000],
+        # calibration
+        calibration=True,
+        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_tool_solid_name="body",
+        calibration_tool_anchor="tcp",
+        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, **kwargs):
-        # parent defaults
-        prm = deepcopy(Recipe.DEFAULTS)
-        # child defaults
-        prm.update(self.DEFAULTS)
-        # user defaults
-        prm.update(kwargs)
+        # prm
+        prm = deepcopy(Recipe.DEFAULTS) # default
+        merge(prm, self.DEFAULTS) # self
+        merge(prm, kwargs) # kwargs
 
         super().__init__(
             workspace=workspace,
@@ -85,6 +91,10 @@ class Decapper(Recipe):
                     print("Could not find valid joints to decap")
                     return False
                 
+                # calibration
+                if self.calibration:
+                    J = self.core.calibration.interpolate(J[:])
+
                 # end joint
                 J[5] = rotation/2 - chunk
                 joint_list.append(J[:])
@@ -98,13 +108,13 @@ class Decapper(Recipe):
                     # go to start
                     J_start = joint_list[i][:]
                     J_start[5] = -rotation/2
-                    self.core.robot_api.jmove(J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
 
                     # enable gripper
                     self.core.robot_api.output(config=tool.enable)
 
                     # uncap
-                    self.core.robot_api.lmove(joint_list[i+1], vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
                 else:
                     if exit:
                         # IK go up
@@ -114,9 +124,13 @@ class Decapper(Recipe):
                         if C != 2:
                             print("Could not find valid joints to decap")
                             return False
-                        
+
+                        # calibration
+                        if self.calibration:
+                            J = self.core.calibration.interpolate(J[:])
+
                         # go up
-                        self.core.robot_api.lmove(J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
+                        self.core.robot_api.lmove(joint=J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
         
         # attach
         solid_cap.attach_to(parent=tool.assembly[next(iter(tool.assembly))],
@@ -191,7 +205,11 @@ class Decapper(Recipe):
                 if C != 2:
                     print("Could not find valid joints to cap")
                     return False
-                
+
+                # calibration
+                if self.calibration:
+                    J = self.core.calibration.interpolate(J[:])
+
                 # end joint
                 J[5] = -rotation/2 + chunk
                 joint_list.append(J[:])
@@ -205,13 +223,13 @@ class Decapper(Recipe):
                     # go to start
                     J_start = joint_list[i][:]
                     J_start[5] = -rotation/2
-                    self.core.robot_api.jmove(J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
 
                     # enable gripper
                     self.core.robot_api.output(config=tool.enable)
 
                     # cap
-                    self.core.robot_api.lmove(joint_list[i+1], vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
                 else:
                     if exit:
                         # IK go up
@@ -221,9 +239,13 @@ class Decapper(Recipe):
                         if C != 2:
                             print("Could not find valid joints to decap")
                             return False
-                        
+
+                        # calibration
+                        if self.calibration:
+                            J = self.core.calibration.interpolate(J[:])
+
                         # go up
-                        self.core.robot_api.lmove(J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
+                        self.core.robot_api.lmove(joint=J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
 
         # attach cap to body
         solid_cap.attach_to(parent=solid_tube,

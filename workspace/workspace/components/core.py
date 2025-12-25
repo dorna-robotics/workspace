@@ -1,10 +1,13 @@
 # workspace/components/core.py
+from copy import deepcopy
+from mergedeep import merge
+import math
+import numpy as np
+
 from camera import Camera
 from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
-import math
-import numpy as np
 from path_planning import Planner
 from workspace.components.calibration import Calibration
 
@@ -17,46 +20,73 @@ class Core:
     Core component: robot (A0..A5), rail (base + carriage), and plates (plate_0..plate_5).
     Internal attachments are determined by the preset (e.g., 'core500').
     """
+    DEFAULTS = dict(
+        simulation = True,
+        ip = "127.0.0.1",
+        has_rail = True,
+        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
+        has_camera = True,
+        camera_serial_number = "",
+        camera_cfg = {
+            "stream": {"width":848, "height":480, "fps":15},
+            "K": None,
+            "D": None,
+            "mode": "bgrd", 
+            "filter": {}, 
+            "exposure": None,
+            "native_res": None,
+        },
+        has_tool_changer = True,
+        tool_changer_output = [[None, None, 0]], # attach signal
+    )
 
-    def __init__(self, name: str, cfg: dict, workspace):
+
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        # prm
+        prm = deepcopy(self.DEFAULTS) # default
+        merge(prm, cfg) # config
+        merge(prm, kwargs) # kwargs
         
+        # type
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", prm.get("type")))
+
+        # init
         self.name = name
-        self.type = "core"
         self.workspace = workspace
+        self.type = prm["type"]
+
+        # assembly
         self.assembly = {}
 
-        # ---- read config ----
-
         # -------- rail
-        self.has_rail = cfg.get("has_rail", True)
-        self.rail_type = cfg.get("rail_type", "rail_hd_500mm")
-        self.rail_axis = cfg.get("rail_axis", 6)  # 6 or 7
-        self.rail_offset = cfg.get("rail_offset", 0)  # this is the value of the rail when it homes.
-        if self.rail_type == "rail_hd_500mm":
+        self.has_rail = prm["has_rail"]
+        self.rail_cfg = prm["rail_cfg"]
+        if self.rail_cfg["type"] == "rail_hd_500mm":
             self.rail_min = -80.0
             self.rail_max = 420.0
-        elif self.rail_type == "rail_hd_1000mm":
+        elif self.rail_cfg["type"] == "rail_hd_1000mm":
             self.rail_min = -80.0
             self.rail_max = 920.0
-        elif self.rail_type == "rail_hd_2000mm":
+        elif self.rail_cfg["type"] == "rail_hd_2000mm":
             self.rail_min = -80.0
             self.rail_max = 1920.0
         else:
-            raise ValueError(f"Unsupported rail type: {self.rail_type}")
+            raise ValueError(f"Unsupported rail type: {self.rail_cfg['type']}")
         
         # -------- robot
-        self.robot_ip = cfg.get("ip",'0.0.0.0')
+        self.robot_ip = prm["ip"]
 
         # -------- calibration
         axis_mask = [1,1,1,1,1,1,0,0]
-        axis_mask[self.rail_axis] = 1
+        axis_mask[self.rail_cfg["axis"]] = 1
         self.calibration = Calibration(self.name, axis_mask)
 
 
-        # -------- toolchanger
-        self.has_toolchanger = cfg.get("has_toolchanger", False)
-        self.toolchanger_output = cfg.get("toolchanger_output", 0)  # the output pin that controls the toolchanger
+        # -------- tool_changer
+        self.has_tool_changer = prm["has_tool_changer"]
+        self.tool_changer_output = prm["tool_changer_output"]
 
+        # planner
         self.planner = Planner()
         # --- scene dirty tracking & last joints (for Workspace optimization)
         self._last_joints = None
@@ -66,28 +96,25 @@ class Core:
 
 
         # optional robot API hookup
-        self._simulation_mode = cfg.get("simulation", True)
+        self._simulation_mode = prm["simulation"]
         self.dorna = Dorna()
         if not self._simulation_mode and self.dorna.connect(self.robot_ip):
                 self.robot_api = self.dorna
-                self._simulation_mode = False
         else:
                 self.robot_api = SimulationAPI()
                 self._simulation_mode = True
 
         # ------- camera
-        self.has_camera = cfg.get("has_camera", False)
-        self.camera_serial_number = cfg.get("camera_serial_number", "")
-        self.camera_K = cfg.get("camera_K", None)
-        self.camera_D = cfg.get("camera_D", None)
-        self.camera_native_res = cfg.get("camera_native_res", None)
+        self.has_camera = prm["has_camera"]
+        self.camera_serial_number = prm["camera_serial_number"]
+        self.camera_cfg = prm["camera_cfg"]
         
         # camera api
         self.camera = None
         if not self._simulation_mode and self.has_camera:
             # init camera
             self.camera = Camera()
-            self.camera.connect(serial_number=self.camera_serial_number, K=self.camera_K, D=self.camera_D, native_res=self.camera_native_res)
+            self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
 
 
         # --------- rail base
@@ -114,7 +141,7 @@ class Core:
 
         # next we add the rail base depending on the type of the rail
         if self.has_rail:
-            if self.rail_type == "rail_hd_500mm":
+            if self.rail_cfg["type"] == "rail_hd_500mm":
                 self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_hd_500mm_base_anchors, component = self.name)
                 self.assembly["rail_base"] = self.rail_base
                 self.rail_carriage = Solid(name="rail_carriage", type="rail_hd_carriage", anchors=rail_hd_carriage_anchors, component = self.name)
@@ -122,7 +149,7 @@ class Core:
              
             else:
                 # rail type is not supported
-                raise ValueError(f"Unsupported rail type: {self.rail_type}")
+                raise ValueError(f"Unsupported rail type: {self.rail_cfg['type']}")
 
 
         robot_A0_anchors = {
@@ -181,15 +208,16 @@ class Core:
         self.assembly["robot_flange"] = self.robot_flange
 
         # we check if there is tool changer
-        if self.has_toolchanger:
-            toolchanger_robot_side_anchors = {
+        if self.has_tool_changer:
+            tool_changer_robot_side_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "output": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
-            "toolchanger_connection": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0]
+            "tool_changer_connection": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
+            "top": [0.0, 0.0, 34.0, 0.0, 0.0, 0.0]
             }
-            self.toolchanger_robot_side = Solid(name="toolchanger_robot_side", type="toolchanger_robot_side", anchors=toolchanger_robot_side_anchors, component=self.name)
-            self.assembly["toolchanger_robot_side"] = self.toolchanger_robot_side
-            self.toolchanger_robot_side.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
+            self.tool_changer_robot_side = Solid(name="tool_changer_robot_side", type="tool_changer_robot_side", anchors=tool_changer_robot_side_anchors, component=self.name)
+            self.assembly["tool_changer_robot_side"] = self.tool_changer_robot_side
+            self.tool_changer_robot_side.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
 
 
         # now we just need to attach robot_A0 to the rail carriage
@@ -256,7 +284,7 @@ class Core:
                 parent=self.rail_base,
                 parent_anchor="carriage",
                 child_anchor="center",
-                offset=[joints[self.rail_axis], 0, 0, 0, 0, 0],
+                offset=[joints[self.rail_cfg["axis"]], 0, 0, 0, 0, 0],
             )
 
         self.robot_A1.attach_to(
@@ -359,7 +387,7 @@ class Core:
         self.update_pose()
         # Live joints & indices
         cur = list(self.robot_api.joint())   # expect length 8
-        aux = self.rail_axis
+        aux = self.rail_cfg["axis"]
         r_cur = cur[aux]
 
         if ref_joints is None:

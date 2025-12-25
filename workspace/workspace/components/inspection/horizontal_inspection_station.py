@@ -1,55 +1,36 @@
+from copy import deepcopy
+from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.inspection.inspection import Inspection
 
 
 @register("horizontal_inspection_station")
 class HorizontalInspectionStation(Inspection):
+    DEFAULTS = dict(
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+        camera = {
+            "stream": {"width":848, "height":480, "fps":15},
+            "K": None,
+            "D": None,
+            "mode": "bgrd", 
+            "filter": {}, 
+            "exposure": None,
+            "native_res": None,
+        },
+        # cfg
+        camera_serial_number="",
+        simulation=True,
+    )
 
-    def __init__(self, name: str, cfg: dict, workspace,
-                anchors={"body":{"center":[0, 0, 0, 0, 0, 0],
-                                    "camera": [0, 0, 8, 0, 0, 0], 
-                                    "place":[0, 0, 0, 0, 0, 0]}},
-                serial_number="",
-                stream= {"width":848, "height":480, "fps":15},
-                K= None,
-                D= None,
-                mode="bgrd", 
-                filter={}, 
-                exposure=None,
-                native_res=None,
-                simulation=True,
-                **kwargs
-        ):
-
-        # type
-        type = getattr(self.__class__, "_registered_type", cfg.get("type"))
-
-        # camera config
-        serial_number = cfg.get("serial_number", serial_number)
-        stream = cfg.get("stream", stream)
-        K = cfg.get("K", K)
-        D = cfg.get("D", D)
-        mode = cfg.get("mode", mode)
-        filter = cfg.get("filter", filter)
-        exposure = cfg.get("exposure", exposure)
-        native_res = cfg.get("native_res", native_res)
-
-        # simulation
-        simulation = cfg.get("simulation", simulation)
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        # prm
+        prm = deepcopy(Inspection.DEFAULTS) # default
+        merge(prm, self.DEFAULTS) # self
+        merge(prm, cfg) # cfg
+        merge(prm, kwargs) # kwargs
         
-        super().__init__(
-            name=name,
-            workspace=workspace,
-            type=type,
-            anchors=anchors,
-            serial_number=serial_number,
-            stream= stream,
-            K= K,
-            D= D,
-            mode=mode, 
-            filter=filter, 
-            exposure=exposure,
-            native_res=native_res,
-            simulation=simulation,
-            **kwargs
-        )
+        # type
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", prm.get("type")))
+        
+        # init
+        super().__init__(name=name, workspace=workspace, **prm)
