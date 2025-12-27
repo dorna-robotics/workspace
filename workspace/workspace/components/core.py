@@ -400,7 +400,8 @@ class Core:
             
             # we do not condider z difference only x and y
             dz = 0
-            rhs = d*d - (dy*dy + dz*dz)
+            #rhs = d*d - (dy*dy + dz*dz)
+            rhs = d*d - (dz*dz)
             if rhs < 0.0:
                 return []
             root = (rhs ** 0.5)

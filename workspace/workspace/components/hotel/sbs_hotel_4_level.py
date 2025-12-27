@@ -9,7 +9,7 @@ class SBSHotel4Level(Hotel):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0]}},
         shape=[150, 100, 76],
-        level=4,
+        level=3,
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):

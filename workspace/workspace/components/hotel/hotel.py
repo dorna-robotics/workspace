@@ -7,7 +7,7 @@ class Hotel:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
         shape = [150, 100, 52],
-        level=4,
+        level=3,
     )
 
     def __init__(self, name: str, workspace, type=None, **kwargs):
@@ -28,11 +28,11 @@ class Hotel:
         # levels
         for i in range(prm["level"]):
             # center
-            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
             # top
-            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
             #place
-            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, i*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
         
         # assembly
         self.assembly = {

@@ -6,6 +6,7 @@ from dorna2 import Solid
 class Plate:
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
+        #collision_box = {"body":[[[x,y,z,a,b,c], [lx, ly, lz]]]}
         offset= [0, 0],
         pitch=[9, 9],
         rvec_safe = [0, 0, 45],

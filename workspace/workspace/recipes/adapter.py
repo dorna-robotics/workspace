@@ -66,7 +66,7 @@ class Adapter(Recipe):
 
             # update exit
             motion_prm["exit_path"] = [[10, 0, motion_prm["height_load"], 0, 0, 0], 
-                        [0, 0, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0]]
+                        [0, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0]]
 
             # run touch
             return self.touch(**motion_prm)

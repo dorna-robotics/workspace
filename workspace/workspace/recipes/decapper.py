@@ -149,7 +149,7 @@ class Decapper(Recipe):
             return False
         
         # tool
-        tool = self.tool()
+        tool = self.tool_attached_to_the_robot()
         if tool is None:
             print("No tool attached to the robot")
             return False

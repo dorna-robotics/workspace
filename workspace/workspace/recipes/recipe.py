@@ -104,7 +104,7 @@ class Recipe:
 
 
     # return the first solid attached to the tool given
-    def solid_attached_to_tool(tool):        
+    def solid_attached_to_tool(self, tool):        
         # we check if there is component in the gripper already
         for child in tool.assembly[next(iter(tool.assembly))].children["tcp"]:
             return child["child_solid"]
@@ -174,7 +174,8 @@ class Recipe:
         """
         attach
         """
-        attach[0].attach_to(**attach[1])
+        if attach[0] is not None:
+            attach[0].attach_to(**attach[1])
 
         """
         exit
