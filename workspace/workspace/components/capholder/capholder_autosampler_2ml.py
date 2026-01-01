@@ -8,6 +8,10 @@ from workspace.components.plate.plate import Plate
 class CapholderAutosampler2ml(Plate):
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 3.84, 0.0, 0.0, 0.0], "scale":[130.5, 88.6, 8.66]}#[xyzabc] , [lx,ly,lz]
+        ]},
         offset=[0, 0],
         pitch=[14, 14],
         rvec_safe=[0, 0, 45],

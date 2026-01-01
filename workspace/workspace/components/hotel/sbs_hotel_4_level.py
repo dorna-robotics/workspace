@@ -8,6 +8,14 @@ from workspace.components.hotel.hotel import Hotel
 class SBSHotel4Level(Hotel):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[-89.44, 0.0, 118.89, 0.0, 0.0, 0.0], "scale":[25.9, 25.9, 241.39]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 4.20, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]},
+                {"pose":[0.0, 0.0, 79.8, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]},
+                {"pose":[0.0, 0.0, 156.6, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]},
+                {"pose":[0.0, 0.0, 231.4, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]}
+        ]},
         shape=[150, 100, 76],
         level=3,
     )

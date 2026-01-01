@@ -7,7 +7,7 @@ import numpy as np
 from workspace.display import Display
 from workspace.components import factory as comp_factory
 from dorna2.pose import T_to_xyzabc
-
+from dorna2.pose import xyzabc_to_T
 
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
@@ -46,6 +46,102 @@ class Workspace:
         # 3) start Display (it will pull poses from compute_world_poses())
         self.display = Display(self)
         self.display.start()
+
+
+    def compute_collision_boxes(self):
+        """
+        Returns a flat list of all active collision boxes in the WORLD frame.
+        """
+        collision_results = []
+
+        # ======================================================================
+        # PHASE 1: FULL KINEMATIC UPDATE (Same as before)
+        # ======================================================================
+        for comp in self.components.values():
+            if hasattr(comp, "update_pose"):
+                comp.update_pose()
+
+        roots = []
+        seen = set()
+        for comp in self.components.values():
+            for solid in comp.assembly.values():
+                if solid.parent["parent_solid"] is None and id(solid) not in seen:
+                    seen.add(id(solid))
+                    roots.append(solid)
+
+        stack = []
+        for root in roots:
+            stack.append((root, np.eye(4)))
+
+        while stack:
+            node, T_parent = stack.pop()
+            T_world = T_parent @ node.local["T"]
+            node._world_T = T_world
+            for child_list in node.children.values():
+                for entry in child_list:
+                    stack.append((entry["child_solid"], T_world))
+
+        # ======================================================================
+        # PHASE 2: EXTRACT COLLISION DATA (Robust Lookup)
+        # ======================================================================
+        
+        for comp_name, comp in self.components.items():
+            
+
+            # FILTER 1: Component Name Pruning
+            safe_comp_name = str(comp_name) if comp_name else ""
+            if safe_comp_name.startswith("robot"):
+                continue
+
+            # FILTER 2: Find collision data (The Robust Part)
+            c_box_data = None
+            
+            # A. Try direct attribute (e.g. self.collision_box)
+            if hasattr(comp, "collision_box"):
+                c_box_data = comp.collision_box
+            
+            # B. Try 'config' dictionary (common pattern)
+            if c_box_data is None and hasattr(comp, "config") and isinstance(comp.config, dict):
+                c_box_data = comp.config.get("collision_box")
+
+            # C. Try 'cfg' dictionary (input arg name)
+            if c_box_data is None and hasattr(comp, "cfg") and isinstance(comp.cfg, dict):
+                c_box_data = comp.cfg.get("collision_box")
+
+            # D. Last resort: Try class defaults directly (if static)
+            if c_box_data is None and hasattr(comp, "DEFAULTS"):
+                 c_box_data = comp.DEFAULTS.get("collision_box")
+
+            # If still nothing, skip this component
+            if not c_box_data:
+                continue
+
+            # Iterate: Key = Solid Name, Value = List of Boxes
+            for solid_name, boxes in c_box_data.items():
+                
+                solid = comp.assembly.get(solid_name)
+                
+                if solid is None:
+                    continue
+                
+                T_solid_world = solid._world_T
+
+                for box in boxes:
+                    # 1. Box Local -> Matrix
+                    T_box_local = xyzabc_to_T(box["pose"])
+
+                    # 2. Transform to World
+                    T_box_world = T_solid_world @ T_box_local
+
+                    # 3. Matrix -> World Pose
+                    world_pose = T_to_xyzabc(T_box_world)
+
+                    collision_results.append({
+                        "pose": world_pose,
+                        "scale": box["scale"]
+                    })
+
+        return collision_results
 
     # ---------- pose calculation (the only thing Display needs) ----------
     def compute_world_poses(self):

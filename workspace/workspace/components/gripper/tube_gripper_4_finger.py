@@ -8,6 +8,11 @@ from workspace.components.gripper.gripper import Gripper
 class TubeGripper4Finger(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 65, 0, 0, 0], "top": [0, 0, 69.5, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 27.733, 0.0, 0.0, 0.0], "scale":[46.87, 46.87, 56.52]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 57.142, 0.0, 0.0, 0.0], "scale":[21.74, 21.74, 26.21]}
+        ]},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

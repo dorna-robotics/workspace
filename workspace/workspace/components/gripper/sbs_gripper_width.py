@@ -7,6 +7,12 @@ from workspace.components.gripper.gripper import Gripper
 class SBS_gripper_width(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41, 0, 0, 0], "top": [119, 0, 56, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 20.72, 0.0, 0.0, 0.0], "scale":[44.51, 73.53, 46.06]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[48.10, 49.69, 46.84, 0.0, 0.0, 0.0], "scale":[125.44, 37.44, 22.57]},
+                {"pose":[48.10, -49.69, 46.84, 0.0, 0.0, 0.0], "scale":[125.44, 37.44, 22.57]}
+        ]},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

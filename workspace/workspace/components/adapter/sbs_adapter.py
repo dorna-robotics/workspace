@@ -8,6 +8,10 @@ from workspace.components.adapter.adapter import Adapter
 class SBSAdapter(Adapter):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0]}},
+        collision_box= 
+            {"body":[
+                {"pose":[0.0, 0.0, 4.182, 0.0, 0.0, 0.0], "scale":[151.18, 101.12, 9.2]}#[xyzabc] , [lx,ly,lz]
+        ]}
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):
