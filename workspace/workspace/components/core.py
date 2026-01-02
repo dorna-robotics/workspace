@@ -88,6 +88,12 @@ class Core:
 
         # planner
         self.planner = Planner()
+
+        self.planner.update(
+            aux_dir=[[1, 0, 0], [0, 0, 0]],
+            aux_limit=[[self.rail_min, self.rail_max], [-1,1]],
+        )
+
         # --- scene dirty tracking & last joints (for Workspace optimization)
         self._last_joints = None
         # Workspace will look at this flag; initialize as dirty so first frame recomputes
@@ -101,7 +107,7 @@ class Core:
         if not self._simulation_mode and self.dorna.connect(self.robot_ip):
                 self.robot_api = self.dorna
         else:
-                self.robot_api = SimulationAPI(core=self)
+                self.robot_api = SimulationAPI()
                 self._simulation_mode = True
 
         # ------- camera
@@ -583,14 +589,139 @@ class Core:
         if self.camera:
             self.camera.close()
 
+    def jmove_no_collision(self, joint, vel=100, accel=1000, jerk=4000):
+        print("jmove_no_collision called")
+        """
+        Collision-aware joint move:
+        - Build collision scene from workspace boxes
+        - Update planner with scene/base_in_world/aux_dir/aux_limit
+        - Plan from current joints -> target `joint`
+        - Execute the returned waypoint list via repeated jmove()
+
+        Returns:
+            2  success
+            -1 planning failure / empty path
+            otherwise: whatever robot_api.jmove returns if it fails
+        """
+
+        # -------------------------
+        # Build collision scene
+        # -------------------------
+        scene = []
+        if hasattr(self.workspace, "compute_collision_boxes"):
+            col_boxes = self.workspace.compute_collision_boxes() or []
+            for box in col_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    scene.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+        # -------------------------
+        # Planner update args
+        # -------------------------
+        # base_in_world is derived from the rail_base pose in world coordinates.
+        # If no rail exists, fall back to robot_A0 (robot base link).
+        base_solid = self.rail_base
+
+        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+
+        self.planner.update(
+            scene=scene,
+            base_in_world=list(base_in_world)
+        )
+
+        # -------------------------
+        # Plan and execute
+        # -------------------------
+        start_full = list(self.robot_api.joint())
+        goal = list(joint)
+
+        # planner.plan(start, goal): start should match goal dimensionality
+        start = start_full[:len(goal)]
+
+        start_time = time.perf_counter()
+        
+        res = self.planner.plan(start, goal)
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        print(f"Operation finished in {execution_time:.4f} seconds")
+        
+        #print(res)
+
+        if res is None or len(res) == 0:
+            return -1
+
+        # Execute waypoint list using jmove() calls
+        cur_full = start_full
+        for wp in res:
+            wp = list(wp)
+
+            # Keep any extra axes (e.g., rail/other) unchanged unless planner provided them
+            wp_full = list(cur_full)
+            for i, v in enumerate(wp):
+                if i < len(wp_full):
+                    wp_full[i] = float(v)
+                else:
+                    wp_full.append(float(v))
+
+            # Call robot_api.jmove with motion params when supported
+            try:
+                out = self.robot_api.jmove(wp_full, vel=vel, accel=accel, jerk=jerk)
+            except TypeError:
+                out = self.robot_api.jmove(wp_full)
+
+            if out not in (2, True, None):
+                return out
+
+            cur_full = wp_full
+
+        return 2
+
+    def check_collision(self, j):
+        scene = []
+        if hasattr(self.workspace, "compute_collision_boxes"):
+            col_boxes = self.workspace.compute_collision_boxes() or []
+            for box in col_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    scene.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+        # -------------------------
+        # Planner update args
+        # -------------------------
+        # base_in_world is derived from the rail_base pose in world coordinates.
+        # If no rail exists, fall back to robot_A0 (robot base link).
+        base_solid = self.rail_base
+
+        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+
+        self.planner.update(
+            scene=scene,
+            base_in_world=list(base_in_world)
+        )
+
+        return self.planner.check_collision(j)
+
+
 
 class SimulationAPI:
-    def __init__(self, joints=[0,0,0,0,0,0,0,0], core=None):
+    def __init__(self, joints=[0,0,0,0,0,0,0,0]):
         self.joints = joints 
         self.FREQ = 100000
         self.INTERP_FREQ=120
         self.dorna = Dorna()
-        self.core = core
 
     def joint(self):
         return self.joints[:]
@@ -813,107 +944,6 @@ class SimulationAPI:
         q = Q_s + m * V_s + 0.5 * A_s * m * (m - 1) + (j/6.0) * m * (m - 1) * (m - 2)
         return (q, v, a)
     
-
-    def jmove_no_collision(self, joint, vel=100, accel=1000, jerk=4000):
-        print("jmove_no_collision called")
-        """
-        Collision-aware joint move:
-        - Build collision scene from workspace boxes
-        - Update planner with scene/base_in_world/aux_dir/aux_limit
-        - Plan from current joints -> target `joint`
-        - Execute the returned waypoint list via repeated jmove()
-
-        Returns:
-            2  success
-            -1 planning failure / empty path
-            otherwise: whatever robot_api.jmove returns if it fails
-        """
-
-        # -------------------------
-        # Build collision scene
-        # -------------------------
-        scene = []
-        if hasattr(self.core.workspace, "compute_collision_boxes"):
-            col_boxes = self.core.workspace.compute_collision_boxes() or []
-            for box in col_boxes:
-                try:
-                    pose = box["pose"]
-                    scale = box["scale"]
-                    scene.append(
-                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
-                    )
-                except Exception:
-                    # If a malformed box slips through, skip it rather than failing the whole move
-                    continue
-
-        # -------------------------
-        # Planner update args
-        # -------------------------
-        # base_in_world is derived from the rail_base pose in world coordinates.
-        # If no rail exists, fall back to robot_A0 (robot base link).
-        base_solid = self.core.rail_base
-
-        base_in_world = list( self.core.rail_base.pose(anchor="carriage"))
-
-        aux_dir = [[1, 0, 0], [0, 0, 0]]
-        aux_limit = [[self.core.rail_min, self.core.rail_max], [-1,1]]
-
-    
-
-        self.core.planner.update(
-            scene=scene,
-            base_in_world=list(base_in_world),
-            aux_dir=aux_dir,
-            aux_limit=aux_limit,
-        )
-
-        # -------------------------
-        # Plan and execute
-        # -------------------------
-        start_full = list(self.joint())
-        goal = list(joint)
-
-        # planner.plan(start, goal): start should match goal dimensionality
-        start = start_full[:len(goal)]
-
-        start_time = time.perf_counter()
-        
-        res = self.core.planner.plan(start, goal)
-
-        end_time = time.perf_counter()
-        execution_time = end_time - start_time
-        print(f"Operation finished in {execution_time:.4f} seconds")
-        
-        #print(res)
-
-        if res is None or len(res) == 0:
-            return -1
-
-        # Execute waypoint list using jmove() calls
-        cur_full = start_full
-        for wp in res:
-            wp = list(wp)
-
-            # Keep any extra axes (e.g., rail/other) unchanged unless planner provided them
-            wp_full = list(cur_full)
-            for i, v in enumerate(wp):
-                if i < len(wp_full):
-                    wp_full[i] = float(v)
-                else:
-                    wp_full.append(float(v))
-
-            # Call robot_api.jmove with motion params when supported
-            try:
-                out = self.jmove(wp_full, vel=vel, accel=accel, jerk=jerk)
-            except TypeError:
-                out = self.jmove(wp_full)
-
-            if out not in (2, True, None):
-                return out
-
-            cur_full = wp_full
-
-        return 2
 
 
 
