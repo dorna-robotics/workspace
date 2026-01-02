@@ -152,7 +152,9 @@ class Recipe:
                     J = self.core.calibration.interpolate(J[:])
 
                 if i == 0: # first motion jmove
-                    self.core.robot_api.jmove_no_collision(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+                    #self.core.robot_api.jmove_no_collision(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+
                 else: # rest are all based on the user motion command  
                     getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
             else:
