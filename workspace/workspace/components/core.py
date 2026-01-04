@@ -589,8 +589,10 @@ class Core:
         if self.camera:
             self.camera.close()
 
-    def jmove_no_collision(self, joint, vel=100, accel=1000, jerk=4000):
-        print("jmove_no_collision called")
+    def motion_plan(self, joint):
+
+        print("Motion planner called")
+
         """
         Collision-aware joint move:
         - Build collision scene from workspace boxes
@@ -608,13 +610,25 @@ class Core:
         # Build collision scene
         # -------------------------
         scene = []
+        tool = []
         if hasattr(self.workspace, "compute_collision_boxes"):
-            col_boxes = self.workspace.compute_collision_boxes() or []
-            for box in col_boxes:
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            for box in world_boxes:
                 try:
                     pose = box["pose"]
                     scale = box["scale"]
                     scene.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+            for box in tool_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    tool.append(
                         Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
                     )
                 except Exception:
@@ -632,8 +646,10 @@ class Core:
 
         self.planner.update(
             scene=scene,
+            gripper=tool,
             base_in_world=list(base_in_world)
         )
+
 
         # -------------------------
         # Plan and execute
@@ -654,40 +670,16 @@ class Core:
         
         #print(res)
 
-        if res is None or len(res) == 0:
-            return -1
+        return res
 
-        # Execute waypoint list using jmove() calls
-        cur_full = start_full
-        for wp in res:
-            wp = list(wp)
 
-            # Keep any extra axes (e.g., rail/other) unchanged unless planner provided them
-            wp_full = list(cur_full)
-            for i, v in enumerate(wp):
-                if i < len(wp_full):
-                    wp_full[i] = float(v)
-                else:
-                    wp_full.append(float(v))
-
-            # Call robot_api.jmove with motion params when supported
-            try:
-                out = self.robot_api.jmove(wp_full, vel=vel, accel=accel, jerk=jerk)
-            except TypeError:
-                out = self.robot_api.jmove(wp_full)
-
-            if out not in (2, True, None):
-                return out
-
-            cur_full = wp_full
-
-        return 2
 
     def check_collision(self, j):
         scene = []
+        tool = []
         if hasattr(self.workspace, "compute_collision_boxes"):
-            col_boxes = self.workspace.compute_collision_boxes() or []
-            for box in col_boxes:
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            for box in world_boxes:
                 try:
                     pose = box["pose"]
                     scale = box["scale"]
@@ -698,6 +690,18 @@ class Core:
                     # If a malformed box slips through, skip it rather than failing the whole move
                     continue
 
+            for box in tool_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    tool.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+
         # -------------------------
         # Planner update args
         # -------------------------
@@ -706,9 +710,11 @@ class Core:
         base_solid = self.rail_base
 
         base_in_world = list( self.rail_base.pose(anchor="carriage"))
-
+        print("scene: ",scene)
+        print("gripper:",gripper)
         self.planner.update(
             scene=scene,
+            gripper=tool,
             base_in_world=list(base_in_world)
         )
 
@@ -1004,7 +1010,37 @@ class SimulationAPI:
         return 2  # success
 
 
+    def jmove_multi_point(self, points, vel=100, accel=1000, jerk=4000):
 
+
+        if points is None or len(points) == 0:
+            return -1
+
+        # Execute waypoint list using jmove() calls
+        cur_full = list(self.joint())
+        for wp in points:
+            wp = list(wp)
+
+            # Keep any extra axes (e.g., rail/other) unchanged unless planner provided them
+            wp_full = list(cur_full)
+            for i, v in enumerate(wp):
+                if i < len(wp_full):
+                    wp_full[i] = float(v)
+                else:
+                    wp_full.append(float(v))
+
+            # Call robot_api.jmove with motion params when supported
+            try:
+                out = self.jmove(wp_full, vel=vel, accel=accel, jerk=jerk)
+            except TypeError:
+                out = self.jmove(wp_full)
+
+            if out not in (2, True, None):
+                return out
+
+            cur_full = wp_full
+
+        return 2
 
 
     def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0]):
