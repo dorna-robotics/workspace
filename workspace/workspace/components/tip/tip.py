@@ -3,11 +3,11 @@ from mergedeep import merge
 from dorna2 import Solid
 
 
-class Printer:
+class Tip:
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 42, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0]},
-        },
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 42, 0, 0, 0]},
+        }
     )
 
     def __init__(self, name: str, workspace, type=None, **kwargs):
