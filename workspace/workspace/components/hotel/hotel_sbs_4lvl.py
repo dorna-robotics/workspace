@@ -4,8 +4,8 @@ from workspace.components.factory import register
 from workspace.components.hotel.hotel import Hotel
 
 
-@register("sbs_hotel_4_level")
-class SBSHotel4Level(Hotel):
+@register("hotel_sbs_4lvl")
+class HotelSBS4lvl(Hotel):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0]}},
         collision_box = 
@@ -16,8 +16,8 @@ class SBSHotel4Level(Hotel):
                 {"pose":[0.0, 0.0, 156.6, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]},
                 {"pose":[0.0, 0.0, 231.4, 0.0, 0.0, 0.0], "scale":[155.6, 103.5, 9.25]}
         ]},
-        shape=[150, 100, 76],
-        level=3,
+        size=[150, 100, 76],
+        level=4,
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):

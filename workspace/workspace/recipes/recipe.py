@@ -172,11 +172,11 @@ class Recipe:
         self.core.robot_api.output(config=output_touch)
 
         """
-        actions, sleep
+        sleep, actions
         """
+        self.core.robot_api.sleep(sleep)
         for func, args, kwargs in actions:
             func(*args, **kwargs)
-        self.core.robot_api.sleep(sleep)
 
         """
         attach
@@ -212,7 +212,7 @@ class Recipe:
 
     
     # pick from specific anchor in the given solid
-    def pick_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, **kwargs):
+    def pick_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, **kwargs):
         """
         assign kwargs
         """
@@ -330,7 +330,7 @@ class Recipe:
             "approach_tool": {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
-            "actions": [],
+            "actions": actions,
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
@@ -345,9 +345,9 @@ class Recipe:
 
 
     # run pick with motion
-    def pick_from(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2,**kwargs):
+    def pick_from(self, anchor, solid_name="body", component=None, offset=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2,**kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not pick_prm:
             return False
         # touch
@@ -355,7 +355,7 @@ class Recipe:
 
 
     # place the load in an specific anchor of the given solid
-    def place_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
         """
         assign kwargs
         """
@@ -474,7 +474,7 @@ class Recipe:
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
-            "actions": [],
+            "actions": actions,
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
@@ -488,9 +488,9 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
         # place parameters
-        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=[], exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
         if not place_prm:
             return False
         

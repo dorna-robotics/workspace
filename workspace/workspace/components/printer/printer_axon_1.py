@@ -3,7 +3,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.printer.printer import Printer
-from workspace.components.printer.cab_axon_wrapper import CabAxon
+from workspace.workspace.components.printer.cab_wrapper import Cab
 
 
 @register("printer_axon_1")
@@ -37,7 +37,7 @@ class PrinterAxon1(Printer):
         self.device = None
         if not self.simulation:
             # init camera
-            self.device = CabAxon(ip=prm["ip"], simulation=self.simulation)
+            self.device = Cab(ip=prm["ip"], simulation=self.simulation)
 
 
     def _place_offset(self, radius):

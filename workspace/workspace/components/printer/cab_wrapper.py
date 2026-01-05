@@ -67,7 +67,7 @@ class ElementSpec:
     js_params: Tuple[float, ...]
 
 
-class CabAxon:
+class Cab:
     def __init__(
         self,
         ip: str = "192.168.100.12",
@@ -443,7 +443,7 @@ class CabAxon:
 
 ### Example usage
 if __name__ == "__main__":
-    p = CabAxon(ip="192.168.100.12", simulation=False, dryrun_cycle_s=1.5)
+    p = Cab(ip="192.168.100.12", simulation=False, dryrun_cycle_s=1.5)
     p.set_label(width_in=1.50, length_in=1.00, gap_in=0.12, ptype="l1")
 
     print("1) real print")

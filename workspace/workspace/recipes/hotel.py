@@ -53,14 +53,14 @@ class Hotel(Recipe):
             return False
 
         # update approach
-        motion_prm["approach_path"] = [[self.component.shape[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0], 
+        motion_prm["approach_path"] = [[self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0], 
                         [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
                         [padding, 0, motion_prm["height_load"], 0, 0, 0]]
 
         # update exit
         motion_prm["exit_path"] = [[0, 0, motion_prm["height_container"] + gap, 0, 0, 0], 
                     [0, 0, motion_prm["height_container"] + padding, 0, 0, 0], 
-                    [self.component.shape[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]
+                    [self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]
 
         # run touch
         return self.touch(**motion_prm)
@@ -76,13 +76,13 @@ class Hotel(Recipe):
                 return False
 
             # update approach
-            motion_prm["approach_path"] = [[self.component.shape[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0], 
+            motion_prm["approach_path"] = [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0], 
                             [0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
                             [0, 0, motion_prm["height_container"] + gap, 0, 0, 0]]
 
             # update exit
             motion_prm["exit_path"] = [[padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0], 
-                        [self.component.shape[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]
+                        [self.component.size[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]
 
             # run touch
             return self.touch(**motion_prm)
