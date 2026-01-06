@@ -7,14 +7,19 @@ from workspace.components.feeder.feeder import Feeder
 @register("capfeeder_autosampler_2ml")
 class FeederCap2ml(Feeder):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -12.23473 , 152.56783, -45, 0, 0], "top": [0, -12.23473 , 160.56783, -45, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -12.23473 , 152.56783, -45, 0, 0], "top": [0, -12.23473 , 160.56783, -45, 0, 0],
+                "hole_0":[50, 12.5, 0, 0, 0, 0], "holde_1": [-50, 12.5, 0, 0, 0, 0], "holse_2": [-50, -12.5, 0, 0, 0, 0], "holde_3": [50, -12.5, 0, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 1.84, 0.0, 0.0, 0.0], "scale":[115.74, 40.02, 12.813]},#[xyzabc] , [lx,ly,lz]
                 {"pose":[0.0, -11.5, 35.5, 0.0, 0.0, 0.0], "scale":[74.67, 131.5, 74.97]},
                 {"pose":[0.0, 13.38, 75.61, 45.0, 0.0, 0.0], "scale":[77.27, 59.59, 77.89]},
                 {"pose":[0.0, 62.83, 121.75, 45.0, 0.0, 0.0], "scale":[215.14, 215.14, 71.75]}
-        ]}
+        ]},
+        # cfg
+        axis = 7,
+        num_slots = 16,
+        vaj=[300, 4000, 10000],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

@@ -7,7 +7,8 @@ from workspace.components.factory import register
 @register("tool_rack")
 class ToolRack:
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 153, 127.27922061357856, -127.27922061357854, 0]}},
+        anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 153, 127.27922061357856, -127.27922061357854, 0],
+            "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 3.24, 0.0, 0.0, 0.0], "scale":[66.0, 66.0, 5.95]},#[xyzabc] , [lx,ly,lz]

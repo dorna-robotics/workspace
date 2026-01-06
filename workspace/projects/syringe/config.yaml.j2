@@ -11,7 +11,7 @@ core:
   attach:
     parent_name: fixture_plate_1
     parent_solid: body
-    parent_anchor: E10
+    parent_anchor: D10
     child_solid: rail_base
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 0]
@@ -55,9 +55,9 @@ tool_rack_0:
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: B19
+    parent_anchor: A18
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
 gripper_0:
@@ -76,9 +76,9 @@ tool_rack_1:
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: E19
+    parent_anchor: D18
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
 gripper_1:
@@ -97,9 +97,9 @@ tool_rack_2:
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: J19
+    parent_anchor: I18
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
 gripper_2:
@@ -118,14 +118,14 @@ hotel_0:
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: H16
+    parent_anchor: G18
     child_solid: body
-    child_anchor: center
-    offset: [0, 0, 0, 0, 0, 180]
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 90]
 
-{% for level in range(3) %}
+{% for level in range(4) %}
 microplate_{{ level }}:
-  type: plate_autosampler_2ml
+  type: rack_autosampler_2ml
   attach:
     parent_name: hotel_0
     parent_solid: body
@@ -162,30 +162,30 @@ feeder:
   attach:
     parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: F7
+    parent_anchor: F5
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 180]
 
 
 sbs_adapter_0:
-  type: sbs_adapter
+  type: adapter_plate_sbs
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: G8
+    parent_anchor: E7
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
 sbs_adapter_1:
-  type: sbs_adapter
+  type: adapter_plate_sbs
   attach:
-    parent_name: fixture_plate_4
+    parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: G3
+    parent_anchor: E17
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
 capholder:
@@ -201,11 +201,11 @@ capholder:
 syringe_dispence_0:
   type: syringe_dispense_arm
   attach:
-    parent_name: fixture_plate_2
+    parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: H16
+    parent_anchor: G1
     child_solid: body
-    child_anchor: center
+    child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
 decapper_0:

@@ -7,7 +7,7 @@ class Hotel(Recipe):
     DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
-        target_anchor="center",
+        target_anchor="place_0",
         target_offset=[0, 0, 10, 0, 180, 0],
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK

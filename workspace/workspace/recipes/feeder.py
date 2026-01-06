@@ -40,3 +40,31 @@ class Feeder(Recipe):
             component=component,
             **prm
         )
+
+    
+    # mix: mix the feeder for certain turns and shift the slots
+    def mix(self, turn=3, shift_slot=3, vaj=[300, 4000, 10000], **kwargs):
+        # current joint
+        current_joint = self.core.robot_api.joint()
+
+        # new_joint
+        new_joint = current_joint[:]
+        new_joint[f"j{self.component.axis}"] += 360*turn + shift_slot*(360/self.component.num_slots)
+
+        # motion
+        self.core.robot_api.jmove(joint=new_joint, vel=self.component.vaj[0], accel=self.component.vaj[1], jerk=self.component.vaj[2])
+        return True
+
+
+    # roate the feeder to move to the nth slot from the current
+    def move(self, step=1, **kwargs):
+        # current joint
+        current_joint = self.core.robot_api.joint()
+
+        # new_joint
+        new_joint = current_joint[:]
+        new_joint[f"j{self.component.axis}"] += step*(360/self.component.num_slots)
+
+        # motion
+        self.core.robot_api.jmove(joint=new_joint, vel=self.component.vaj[0], accel=self.component.vaj[1], jerk=self.component.vaj[2])
+        return True

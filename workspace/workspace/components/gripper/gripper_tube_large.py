@@ -7,7 +7,7 @@ from workspace.components.gripper.gripper import Gripper
 @register("gripper_tube_large")
 class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 52, 0, 0, 0], "top": [0, 0, 59.5, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 52, 0, 0, 0], "tip": [0, 0, 59.5, 0, 0, 0]}},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

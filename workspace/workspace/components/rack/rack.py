@@ -3,7 +3,7 @@ from mergedeep import merge
 from dorna2 import Solid
 
 
-class Plate:
+class Rack:
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
         #collision_box = {"body":[[[x,y,z,a,b,c], [lx, ly, lz]]]}

@@ -7,7 +7,7 @@ from workspace.components.gripper.gripper import Gripper
 @register("suction_gripper")
 class SuctionGripper(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 126.51, 0, 0, 0],  "top":[0, 0, 126.51, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 126.51, 0, 0, 0],  "tip":[0, 0, 126.51, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 3.3282, 0.0, 0.0, 0.0], "scale":[45.0, 45.0, 8.66]},#[xyzabc] , [lx,ly,lz]

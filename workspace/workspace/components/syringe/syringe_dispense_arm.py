@@ -7,7 +7,8 @@ from workspace.components.syringe.arm import Arm
 @register("syringe_dispense_arm")
 class SuctionGripper(Arm):
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [75, 0, 0, 0, 0, 0]}},
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [75, 0, 0, 0, 0, 0],
+                "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 4.15, 0.0, 0.0, 0.0], "scale":[67.93, 67.93, 10.724]},   #[xyzabc] , [lx,ly,lz]

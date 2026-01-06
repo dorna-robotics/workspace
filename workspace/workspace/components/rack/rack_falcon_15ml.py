@@ -1,10 +1,10 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.plate.plate import Plate
+from workspace.components.rack.rack import Rack
 
-@register("plate_falcon_15ml")
-class PlateFalcon15ml(Plate):
+@register("rack_falcon_15ml")
+class RackFalcon15ml(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.4, 0, 0, 0], "top": [0, 0, 78, 0, 0, 0]}},
         offset=[0, 0],
@@ -16,7 +16,7 @@ class PlateFalcon15ml(Plate):
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(Plate.DEFAULTS) # default
+        prm = deepcopy(Rack.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs

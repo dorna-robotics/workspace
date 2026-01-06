@@ -4,7 +4,7 @@ from dorna2 import Solid
 
 class Gripper:
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
+        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "tip": [0, 0, 0, 0, 0, 0]}},
         tool_connection=[0,0,0,0,0,0],
         tool_changer_connection=[0,0,-13,0,0,0],
         tool_rack_connection=[0,0,1.5,0,0,0],

@@ -196,14 +196,15 @@ class Recipe:
 
                 if i == 0 and approach_path: # first motion of the approach 
                     #create the path
-                    points = self.core.motion_plan(joint=J)
-                    if len(points)==0:
-                        print("No proper path was found")
-                        return False
-                    else:
-                        #run the path
-                        self.core.robot_api.jmove_multi_point(points, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
-                
+                    #points = self.core.motion_plan(joint=J)
+                    #if len(points)==0:
+                    #    print("No proper path was found")
+                    #    return False
+                    
+                    #run the path
+                    #self.core.robot_api.jmove_multi_point(points, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+
                 else: # rest are all based on the user motion command  
                     getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
             else:
@@ -257,7 +258,7 @@ class Recipe:
     
     # pick from specific anchor in the given solid and component
     # always locate the object in the anchor, and go for that
-    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_top_z_offset=0, **kwargs):
+    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         """
         assign kwargs
         """
@@ -312,8 +313,8 @@ class Recipe:
         """
         height tool
         """
-        height_tool = abs(dorna_pose.transform_pose([0, 0, tool_top_z_offset - tool_tcp_z_offset, 0, 0, 0], 
-                                from_frame=tool.assembly[next(iter(tool.assembly))].pose("top"),
+        height_tool = abs(dorna_pose.transform_pose([0, 0, tool_tip_z_offset - tool_tcp_z_offset, 0, 0, 0], 
+                                from_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"),
                                 to_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"))[2])
 
 
@@ -406,9 +407,9 @@ class Recipe:
 
 
     # run pick with motion
-    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_top_z_offset=0, **kwargs):
+    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_top_z_offset=tool_top_z_offset, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         if not pick_prm:
             return False
         # touch
@@ -472,7 +473,7 @@ class Recipe:
         """
         height_tool = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
                                 from_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"),
-                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("top"))[2])
+                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"))[2])
 
         """
         pose_offset
@@ -545,7 +546,7 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
         # place parameters
         place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
         if not place_prm:
