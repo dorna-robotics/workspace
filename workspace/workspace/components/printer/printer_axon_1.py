@@ -3,7 +3,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.printer.printer import Printer
-from workspace.workspace.components.printer.cab_wrapper import Cab
+from workspace.components.printer.cab_wrapper import Cab
 
 
 @register("printer_axon_1")

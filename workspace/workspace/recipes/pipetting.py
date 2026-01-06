@@ -74,29 +74,31 @@ class PipettingSite(Recipe):
 
 
     # go on top of the source, and go down for the amount
+    # anchor of the rack, plate or the item, look for the tube there
     def immerse(self, anchor="place", depth=0, approach=True):
         pass
 
-
-    def retract(self, anchor="out"):
+    # given the component, go on top of the source
+    # anchor of the rack, plate or the item, look for the tube there
+    def retract(self, anchor="place"):
         pass
 
 
-    def aspirate(self, volume_ul, speed=200):
+    def aspirate(self, volume, speed=200):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
         
-        return pipette.device.aspirate(volume_ul, speed)
+        return pipette.device.aspirate(volume, speed)
 
 
-    def dispense(self, volume_ul, speed=500, blowout=False):
+    def dispense(self, volume, speed=500, blowout=False):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
         
-        return pipette.device.dispense(volume_ul, speed, blowout)
+        return pipette.device.dispense(volume, speed, blowout)
 
 
