@@ -205,8 +205,9 @@ class Recipe:
                     #self.core.robot_api.jmove_multi_point(points, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
                     self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
 
-                else: # rest are all based on the user motion command  
+                else: # rest are all based on the user motion command 
                     getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+
             else:
                 print("Could not find a valid pose to approach")
                 return False
@@ -243,7 +244,8 @@ class Recipe:
                     J = self.core.calibration.interpolate(J[:])
 
                 # motion
-                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)    
+                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)
+            
             else:
                 print("Could not find a valid pose to approach")
                 return False

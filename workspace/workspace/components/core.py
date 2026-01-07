@@ -25,7 +25,7 @@ class Core:
         ip = "127.0.0.1",
         has_rail = True,
         rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
-        has_camera = True,
+        has_camera = False,
         camera_serial_number = "",
         camera_cfg = {
             "stream": {"width":848, "height":480, "fps":15},
@@ -241,6 +241,7 @@ class Core:
     # -------------------------------------------------------------------------
     # live joint update (event-driven / dirty-aware)
     # -------------------------------------------------------------------------
+    
     def update_pose(self):
         """
         If a robot API connection exists, update link poses ONLY when joints change.
@@ -330,6 +331,8 @@ class Core:
             offset=[0, 0, 0, 0, 0, joints[5]],
         )
     
+
+
     def simulation(self, on: bool = True):
         """
         Switch between simulation and real robot API.
@@ -1043,7 +1046,7 @@ class SimulationAPI:
         return 2
 
 
-    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0]):
+    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0]):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
         Interpolates joint updates at `interp_freq` Hz (default 120).
@@ -1310,9 +1313,9 @@ class SimulationAPI:
         tgt_joints = list(joint)
 
         # first we set the tool
-        tool_pose = [0,0,0,0,0,0]
-        if tool_solid and tool_anchor:
-            tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+        #tool_pose = [0,0,0,0,0,0]
+        #if tool_solid and tool_anchor:
+        #    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
 
         #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
