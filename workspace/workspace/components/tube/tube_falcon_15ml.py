@@ -3,16 +3,13 @@ from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.tube.tube import Tube
 
-@register("tube_autosampler_2ml")
-class TubeAutosampler2ml(Tube):
+@register("tube_falcon_15ml")
+class TubeFalcon15ml(Tube):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 32, 0, 0, 0], "place":[0, 0, 28, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 119, 0, 0, 0], "place":[0, 0, 109.5, 0, 0, 0]},
         },
-        #collision_box = 
-        #    {"body":[
-        #        {"pose":[0.0, 0.0, 16.213, 0.0, 0.0, 0.0], "scale":[11.90, 11.90, 35.73]}#[xyzabc] , [lx,ly,lz]
-        #]},
+        size = [16.85, 16.85, 119], # [dx, dy, dz]
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm

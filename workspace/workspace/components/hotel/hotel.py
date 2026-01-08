@@ -6,7 +6,7 @@ from dorna2 import Pose
 class Hotel:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
-        shape = [150, 100, 52],
+        size = [150, 100, 52],
         level=3,
     )
 
@@ -21,18 +21,18 @@ class Hotel:
         self.type = type
 
         # dim
-        self.shape = prm["shape"]
+        self.size = prm["size"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
 
         # levels
         for i in range(prm["level"]):
             # center
-            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
             # top
-            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
             #place
-            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.shape[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
         
         # assembly
         self.assembly = {

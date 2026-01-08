@@ -1,5 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
+from collections import deque
 from dorna2 import pose as dorna_pose
 
 class Recipe:
@@ -91,8 +92,16 @@ class Recipe:
                 continue
         
         return tool
-    
-    
+
+
+    # return the first solid attached to the tool given
+    def solid_attached_to_tool(self, tool):        
+        # we check if there is component in the gripper already
+        for child in tool.assembly[next(iter(tool.assembly))].children["tcp"]:
+            return child["child_solid"]
+        return None
+
+
     # return the solid attached to an specific anchor
     def solid_attached_to_anchor(self, solid, anchor):        
         try:
@@ -102,14 +111,48 @@ class Recipe:
             pass
         return None
 
+    # run bfs to return the fist solid with the given anchor name, including the initial solid
+    def solid_with_anchor(self, initial_solid, anchor):
+        queue = deque([initial_solid])
+        visited = set()
 
-    # return the first solid attached to the tool given
-    def solid_attached_to_tool(self, tool):        
-        # we check if there is component in the gripper already
-        for child in tool.assembly[next(iter(tool.assembly))].children["tcp"]:
-            return child["child_solid"]
+        while queue:
+            solid = queue.popleft()
+
+            if solid in visited:
+                continue
+            visited.add(solid)
+
+            # check current layer node
+            if anchor in solid.anchors:
+                return solid
+
+            # enqueue next layer
+            for links in solid.children.values():
+                for link in links:
+                    queue.append(link["child_solid"])
+
         return None
-    
+
+    # find the chchilderen of the parent attached to its anchor, and going down
+    def solid_hierarchy(self, parent_solid, parent_anchor, connection_anchor="place"):
+        # initialize load list
+        load_list = []
+
+        # we check if there is an item in the index
+        first_child = self.solid_attached_to_anchor(parent_solid, parent_anchor)
+        if first_child is None:
+            return load_list
+
+        # find all the items attached to the tool
+        load_list = [first_child]
+        while True:
+            child = self.solid_attached_to_anchor(load_list[-1], connection_anchor)
+            if child is not None:
+                load_list.append(child)
+            else:
+                return load_list
+
 
     # touch a point
     def touch(self,
@@ -151,10 +194,22 @@ class Recipe:
                 if self.calibration:
                     J = self.core.calibration.interpolate(J[:])
 
-                if i == 0: # first motion jmove
-                    self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
-                else: # rest are all based on the user motion command  
+                if i == 0 and approach_path: # first motion of the approach
+                    if self.core.has_motion_plan: # run path planing 
+                        #create the path
+                        points = self.core.motion_plan(joint=J)
+                        if len(points)==0:
+                            print("No proper path was found")
+                            return False
+                        
+                        #run the path
+                        self.core.robot_api.jmove_multi_point(points, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+                    else: # no path planing
+                        self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
+
+                else: # rest are all based on the user motion command 
                     getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+
             else:
                 print("Could not find a valid pose to approach")
                 return False
@@ -165,11 +220,11 @@ class Recipe:
         self.core.robot_api.output(config=output_touch)
 
         """
-        actions, sleep
+        sleep, actions
         """
+        self.core.robot_api.sleep(sleep)
         for func, args, kwargs in actions:
             func(*args, **kwargs)
-        self.core.robot_api.sleep(sleep)
 
         """
         attach
@@ -191,7 +246,8 @@ class Recipe:
                     J = self.core.calibration.interpolate(J[:])
 
                 # motion
-                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)    
+                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)
+            
             else:
                 print("Could not find a valid pose to approach")
                 return False
@@ -204,8 +260,9 @@ class Recipe:
         return True
 
     
-    # pick from specific anchor in the given solid
-    def pick_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, **kwargs):
+    # pick from specific anchor in the given solid and component
+    # always locate the object in the anchor, and go for that
+    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         """
         assign kwargs
         """
@@ -216,6 +273,9 @@ class Recipe:
         component
         """
         component = component or self.component
+        # adjust the component to make sure anchor exists
+        #_solid = self.solid_with_anchor(initial_solid=component.assembly[solid_name], anchor=anchor)
+        #component = self.workspace.components[_solid.component]  
         
         """
         ref joints
@@ -235,19 +295,10 @@ class Recipe:
         """
         find the hierarchy of the items attached to the anchor
         """
-        # we check if there is an item in the index
-        load_list = [self.solid_attached_to_anchor(component.assembly[solid_name], anchor)]
-        if load_list[-1] is None:
+        load_list = self.solid_hierarchy(parent_solid=component.assembly[solid_name], parent_anchor=anchor, connection_anchor="place")
+        if not load_list:
             print(f"no item found in position {anchor}")
             return False
-
-        # find all the items attached to the tool
-        while True:
-            child = self.solid_attached_to_anchor(load_list[-1], "place")
-            if child is not None:
-                load_list.append(child)
-            else:
-                break
 
         """
         height load
@@ -266,25 +317,47 @@ class Recipe:
         """
         height tool
         """
-        height_tool = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
-                                from_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"),
-                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("top"))[2])
+        height_tool = abs(dorna_pose.transform_pose([0, 0, tool_tip_z_offset - tool_tcp_z_offset, 0, 0, 0], 
+                                from_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"),
+                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"))[2])
+
+
+        """
+        pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
+        """
+        pose_offset = dorna_pose.Pose(
+                        dorna_pose.transform_pose(
+                            [0, 0, 0, 0, 0, 0], 
+                            from_frame=load_list[0].pose("center"),
+                            to_frame=component.assembly[solid_name].pose(anchor)
+        ))
+
+
+
+        """
+        target_offset
+        """
+        _target_offset = [0, 0, height_load, 0, 0, 0]
+        target_offset = pose_offset.pose(offset=_target_offset)
 
         """
         approach path
         """
         approach_path = []
         if approach:
-            approach_path = [[0, 0, max(height_load,height_container) + padding, 0, 0, 0], 
+            _approach_path = [[0, 0, max(height_load,height_container) + padding, 0, 0, 0], 
                             [0, 0, height_load+height_tool+gap, 0, 0, 0]]
+            approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
         
         """
         exit path
         """
         exit_path = []
         if exit:
-            exit_path = [[0, 0, height_container+gap, 0, 0, 0], 
+            _exit_path = [[0, 0, height_container+gap, 0, 0, 0], 
                         [0, 0, max(height_load,height_container)+padding, 0, 0, 0]]
+            exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
+
             
         """
         output config
@@ -307,9 +380,9 @@ class Recipe:
         run attachment
         """
         attach = [None, {"parent":None, "parent_anchor":None, "child_anchor":None, "offset":[0, 0, 0, 0, 0, 0], "offset_frame":"parent"}]
-        exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]}
+        exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, tool_tcp_z_offset, 0, 180, 0]}
         if attachment:
-            attach = [load_list[0], {"parent": tool.assembly[next(iter(tool.assembly))], "parent_anchor":"tcp", "child_anchor":"center", "offset": [0, 0, height_load, 0, 180, 0], "offset_frame": "parent"}]
+            attach = [load_list[0], {"parent": tool.assembly[next(iter(tool.assembly))], "parent_anchor":"tcp", "child_anchor":"center", "offset": [0, 0, height_load+tool_tcp_z_offset, 0, 180, 0], "offset_frame": "parent"}]
             exit_tool = {"solid": load_list[0], "anchor": "center", "offset":[0, 0, 0, 0, 0, 0]}
 
         """
@@ -318,12 +391,12 @@ class Recipe:
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": offset or [0, 0, height_load, 0, 0, 0],
+            "target_offset": target_offset,
             "output_approach": output_approach,
-            "approach_tool": {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]},
+            "approach_tool": {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, tool_tcp_z_offset, 0, 180, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
-            "actions": [],
+            "actions": actions,
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
@@ -338,17 +411,17 @@ class Recipe:
 
 
     # run pick with motion
-    def pick_from(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2,**kwargs):
+    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         if not pick_prm:
             return False
         # touch
         return self.touch(**pick_prm)
 
 
-    # place the load in an specific anchor of the given solid
-    def place_setting(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    # place the load in an specific anchor of the given solid and component, with the given offset
+    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
         """
         assign kwargs
         """
@@ -376,13 +449,6 @@ class Recipe:
             return False
 
         """
-        we check if there is an item in the anchor
-        """
-        if self.solid_attached_to_anchor(component.assembly[solid_name], anchor) is not None:
-            print(f"there is already an item in position {anchor}")
-            return False
-
-        """
         find the hierarchy of the items attached to the tool
         """
         # item in tool
@@ -392,12 +458,7 @@ class Recipe:
             return False
         
         # find all the items attached to the tool
-        while True:
-            child = self.solid_attached_to_anchor(load_list[-1], "place")
-            if child is not None:
-                load_list.append(child)
-            else:
-                break
+        load_list += self.solid_hierarchy(parent_solid=load_list[0], parent_anchor="place", connection_anchor="place")
 
         """
         height load
@@ -407,27 +468,34 @@ class Recipe:
                                 to_frame=load_list[-1].pose("top"))[2])
 
         """height_container"""
-        height_container = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
-                                from_frame=component.assembly[solid_name].pose("top"),
-                                to_frame=component.assembly[solid_name].pose("place"))[2])
+        height_container = max(-dorna_pose.transform_pose(offset, 
+                                from_frame= component.assembly[solid_name].pose(anchor),
+                                to_frame=component.assembly[solid_name].pose("top"))[2], 0)
 
         """
         height tool
         """
         height_tool = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
                                 from_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"),
-                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("top"))[2])
+                                to_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"))[2])
+
+        """
+        pose_offset
+        """
+        pose_offset = dorna_pose.Pose(pose=offset)
 
         """approach path"""
         approach_path = []
         if approach:
-            approach_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0], 
+            _approach_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0], 
                             [0, 0, height_container+gap, 0, 0, 0]]
+            approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
 
         """exit path"""
         exit_path = []
         if exit:
-            exit_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0]]
+            _exit_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0]]
+            exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
 
         """
         output config
@@ -453,7 +521,7 @@ class Recipe:
         attach = [None, {"parent":None, "parent_anchor":None, "child_anchor":None, "offset":[0, 0, 0, 0, 0, 0], "offset_frame":"parent"}]
         exit_tool = {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]}
         if attachment:
-            attach = [load_list[0], {"parent": component.assembly[solid_name], "parent_anchor":anchor, "child_anchor":load_anchor, "offset": [0, 0, 0, 0, 0, 0], "offset_frame": "child"}]
+            attach = [load_list[0], {"parent": component.assembly[solid_name], "parent_anchor":anchor, "child_anchor":load_anchor, "offset": offset, "offset_frame": "parent"}]
             exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]}
 
         """
@@ -462,12 +530,12 @@ class Recipe:
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": offset or [0, 0, 0, 0, 0, 0],
+            "target_offset": offset,
             "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
-            "actions": [],
+            "actions": actions,
             "sleep": 0.1,
             "attach": attach,
             "exit_tool": exit_tool,
@@ -481,9 +549,9 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=None, approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
         # place parameters
-        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
         if not place_prm:
             return False
         

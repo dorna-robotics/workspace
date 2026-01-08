@@ -16,6 +16,10 @@ class FixturePlate:
                 "corner_2": [250.0, -125.0, 7.0, 0.0, 0.0, 0.0],
                 "corner_3": [-250.0, -125.0, 7.0, 0.0, 0.0, 0.0],
         }},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 3.5, 0.0, 0.0, 0.0], "scale":[500.0, 250.0, 7.0]}#[xyzabc] , [lx,ly,lz]
+        ]},
         rows = [chr(c) for c in range(ord("A"), ord("J") + 1)],  # A..J
         cols = range(1, 21),  # 1..20
         x_start = -237.5,

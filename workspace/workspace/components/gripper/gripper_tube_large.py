@@ -4,17 +4,10 @@ from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
 
 
-@register("suction_gripper")
-class SuctionGripper(Gripper):
+@register("gripper_tube_large")
+class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 126.51, 0, 0, 0],  "tip":[0, 0, 126.51, 0, 0, 0]}},
-        collision_box = 
-            {"body":[
-                {"pose":[0.0, 0.0, 3.3282, 0.0, 0.0, 0.0], "scale":[45.0, 45.0, 8.66]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 0.0, 26.50, 0.0, 0.0, 0.0], "scale":[12.57, 44.33, 37.19]},
-                {"pose":[0.0, 0.0, 76.731, 0.0, 0.0, 0.0], "scale":[12.74, 12.74, 69.42]},
-                {"pose":[0.0, 0.0, 119.68, 0.0, 0.0, 0.0], "scale":[22.65, 22.65, 19.68]}
-        ]},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 52, 0, 0, 0], "tip": [0, 0, 59.5, 0, 0, 0]}},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

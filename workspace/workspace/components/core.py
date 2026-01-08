@@ -4,7 +4,6 @@ from mergedeep import merge
 import math
 import numpy as np
 
-from camera import Camera
 from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
@@ -25,7 +24,7 @@ class Core:
         ip = "127.0.0.1",
         has_rail = True,
         rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
-        has_camera = True,
+        has_camera = False,
         camera_serial_number = "",
         camera_cfg = {
             "stream": {"width":848, "height":480, "fps":15},
@@ -38,6 +37,7 @@ class Core:
         },
         has_tool_changer = True,
         tool_changer_output = [[None, None, 0]], # attach signal
+        has_motion_plan = False, # enable or disable path planing
     )
 
 
@@ -88,6 +88,12 @@ class Core:
 
         # planner
         self.planner = Planner()
+
+        self.planner.update(
+            aux_dir=[[1, 0, 0], [0, 0, 0]],
+            aux_limit=[[self.rail_min, self.rail_max], [-1,1]],
+        )
+
         # --- scene dirty tracking & last joints (for Workspace optimization)
         self._last_joints = None
         # Workspace will look at this flag; initialize as dirty so first frame recomputes
@@ -112,10 +118,17 @@ class Core:
         # camera api
         self.camera = None
         if not self._simulation_mode and self.has_camera:
-            # init camera
-            self.camera = Camera()
-            self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+            try:
+                # import
+                from camera import Camera
+                # init camera
+                self.camera = Camera()
+                self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+            except Exception as e:
+                print(f"[Camera disabled] {e}")
 
+        # --------- motion_planning
+        self.has_motion_plan = prm["has_motion_plan"]
 
         # --------- rail base
         rail_hd_500mm_base_anchors = {
@@ -235,6 +248,7 @@ class Core:
     # -------------------------------------------------------------------------
     # live joint update (event-driven / dirty-aware)
     # -------------------------------------------------------------------------
+    
     def update_pose(self):
         """
         If a robot API connection exists, update link poses ONLY when joints change.
@@ -324,6 +338,8 @@ class Core:
             offset=[0, 0, 0, 0, 0, joints[5]],
         )
     
+
+
     def simulation(self, on: bool = True):
         """
         Switch between simulation and real robot API.
@@ -400,7 +416,7 @@ class Core:
             
             # we do not condider z difference only x and y
             dz = 0
-            #rhs = d*d - (dy*dy + dz*dz)
+            #rhs = d*d - (dy*dy + dz*dz) #???
             rhs = d*d - (dz*dz)
             if rhs < 0.0:
                 return []
@@ -582,6 +598,138 @@ class Core:
         # camera
         if self.camera:
             self.camera.close()
+
+    def motion_plan(self, joint):
+
+        print("Motion planner called")
+
+        """
+        Collision-aware joint move:
+        - Build collision scene from workspace boxes
+        - Update planner with scene/base_in_world/aux_dir/aux_limit
+        - Plan from current joints -> target `joint`
+        - Execute the returned waypoint list via repeated jmove()
+
+        Returns:
+            2  success
+            -1 planning failure / empty path
+            otherwise: whatever robot_api.jmove returns if it fails
+        """
+
+        # -------------------------
+        # Build collision scene
+        # -------------------------
+        scene = []
+        tool = []
+        if hasattr(self.workspace, "compute_collision_boxes"):
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            for box in world_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    scene.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+            for box in tool_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    tool.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+        # -------------------------
+        # Planner update args
+        # -------------------------
+        # base_in_world is derived from the rail_base pose in world coordinates.
+        # If no rail exists, fall back to robot_A0 (robot base link).
+        base_solid = self.rail_base
+
+        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+
+        self.planner.update(
+            scene=scene,
+            gripper=tool,
+            base_in_world=list(base_in_world)
+        )
+
+
+        # -------------------------
+        # Plan and execute
+        # -------------------------
+        start_full = list(self.robot_api.joint())
+        goal = list(joint)
+
+        # planner.plan(start, goal): start should match goal dimensionality
+        start = start_full[:len(goal)]
+
+        start_time = time.perf_counter()
+        
+        res = self.planner.plan(start, goal)
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        print(f"Operation finished in {execution_time:.4f} seconds")
+        
+        #print(res)
+
+        return res
+
+
+
+    def check_collision(self, j):
+        scene = []
+        tool = []
+        if hasattr(self.workspace, "compute_collision_boxes"):
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            for box in world_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    scene.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+            for box in tool_boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    tool.append(
+                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+
+
+        # -------------------------
+        # Planner update args
+        # -------------------------
+        # base_in_world is derived from the rail_base pose in world coordinates.
+        # If no rail exists, fall back to robot_A0 (robot base link).
+        base_solid = self.rail_base
+
+        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+        print("scene: ",scene)
+        print("gripper:",gripper)
+        self.planner.update(
+            scene=scene,
+            gripper=tool,
+            base_in_world=list(base_in_world)
+        )
+
+        return self.planner.check_collision(j)
+
 
 
 class SimulationAPI:
@@ -872,10 +1020,40 @@ class SimulationAPI:
         return 2  # success
 
 
+    def jmove_multi_point(self, points, vel=100, accel=1000, jerk=4000):
 
 
+        if points is None or len(points) == 0:
+            return -1
 
-    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0]):
+        # Execute waypoint list using jmove() calls
+        cur_full = list(self.joint())
+        for wp in points:
+            wp = list(wp)
+
+            # Keep any extra axes (e.g., rail/other) unchanged unless planner provided them
+            wp_full = list(cur_full)
+            for i, v in enumerate(wp):
+                if i < len(wp_full):
+                    wp_full[i] = float(v)
+                else:
+                    wp_full.append(float(v))
+
+            # Call robot_api.jmove with motion params when supported
+            try:
+                out = self.jmove(wp_full, vel=vel, accel=accel, jerk=jerk)
+            except TypeError:
+                out = self.jmove(wp_full)
+
+            if out not in (2, True, None):
+                return out
+
+            cur_full = wp_full
+
+        return 2
+
+
+    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0]):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
         Interpolates joint updates at `interp_freq` Hz (default 120).
@@ -1142,9 +1320,9 @@ class SimulationAPI:
         tgt_joints = list(joint)
 
         # first we set the tool
-        tool_pose = [0,0,0,0,0,0]
-        if tool_solid and tool_anchor:
-            tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+        #tool_pose = [0,0,0,0,0,0]
+        #if tool_solid and tool_anchor:
+        #    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
 
         #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)

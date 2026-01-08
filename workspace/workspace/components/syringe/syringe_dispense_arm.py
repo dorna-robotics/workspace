@@ -7,7 +7,16 @@ from workspace.components.syringe.arm import Arm
 @register("syringe_dispense_arm")
 class SuctionGripper(Arm):
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [75, 0, 0, 0, 0, 0]}},
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [75, 0, 0, 0, 0, 0],
+                "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 4.15, 0.0, 0.0, 0.0], "scale":[67.93, 67.93, 10.724]},   #[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 39.19, 0.0, 0.0, 0.0], "scale":[44.7, 44.7, 71.38]},
+                {"pose":[0.0, 0.0, 90.15, 0.0, 0.0, 0.0], "scale":[18.3, 18.3, 33.56]},
+                {"pose":[38.49, 0.0, 100.24, 0.0, 0.0, 0.0], "scale":[93.62, 18.31, 11.25]},
+                {"pose":[75.40, 0.0 , 70.72, 0.0, 0.0, 0.0], "scale":[8.67, 8.67, 83.10]}
+        ]},
         # cfg
         output_enable = [[None, None, 0.1]], # [[pin, index, time]]
         output_disable = [[None, None, 0.1]], # [[pin, index, time]]

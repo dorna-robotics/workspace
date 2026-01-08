@@ -7,7 +7,7 @@ import numpy as np
 from workspace.display import Display
 from workspace.components import factory as comp_factory
 from dorna2.pose import T_to_xyzabc
-
+from dorna2.pose import xyzabc_to_T
 
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
@@ -46,6 +46,134 @@ class Workspace:
         # 3) start Display (it will pull poses from compute_world_poses())
         self.display = Display(self)
         self.display.start()
+
+
+    def compute_collision_boxes(self):
+        """
+        Returns two lists:
+        1) collision_world: boxes in WORLD frame for everything not downstream of robot_flange
+        2) collision_flange: boxes in FLANGE frame for anything downstream of robot_flange
+        """
+        collision_world = []
+        collision_flange = []
+
+        # ======================================================================
+        # PHASE 1: FULL KINEMATIC UPDATE (same as before): compute solid._world_T
+        # ======================================================================
+        for comp in self.components.values():
+            if hasattr(comp, "update_pose"):
+                comp.update_pose()
+
+        roots = []
+        seen = set()
+        for comp in self.components.values():
+            for solid in comp.assembly.values():
+                if solid.parent["parent_solid"] is None and id(solid) not in seen:
+                    seen.add(id(solid))
+                    roots.append(solid)
+
+        stack = []
+        for root in roots:
+            stack.append((root, np.eye(4)))
+
+        while stack:
+            node, T_parent = stack.pop()
+            T_world = T_parent @ node.local["T"]
+            node._world_T = T_world
+            for child_list in node.children.values():
+                for entry in child_list:
+                    stack.append((entry["child_solid"], T_world))
+
+        # ======================================================================
+        # Helpers for flange filtering / relative poses
+        # ======================================================================
+        def _parent_solid(s):
+            if s is None:
+                return None
+            if hasattr(s, "parent") and isinstance(s.parent, dict):
+                return s.parent.get("parent_solid", None)
+            return None
+
+        core_comp = self.components.get("core", None)
+        robot_flange = None
+        if core_comp is not None and hasattr(core_comp, "assembly") and isinstance(core_comp.assembly, dict):
+            # Expecting the solid name used in your debug output: "robot_flange"
+            robot_flange = core_comp.assembly.get("robot_flange", None)
+
+        T_flange_world = getattr(robot_flange, "_world_T", None) if robot_flange is not None else None
+        T_world_flange = np.linalg.inv(T_flange_world) if T_flange_world is not None else None
+
+        def _is_downstream_of_flange(solid, max_hops=200):
+            """
+            True iff walking parents reaches robot_flange.
+            NOTE: starting from parent means the flange itself is NOT counted as downstream.
+            """
+            if robot_flange is None:
+                return False
+
+            cur = _parent_solid(solid)
+            seen_ids = set()
+            for _ in range(max_hops):
+                if cur is None:
+                    return False
+                if cur is robot_flange:
+                    return True
+                cid = id(cur)
+                if cid in seen_ids:
+                    return False
+                seen_ids.add(cid)
+                cur = _parent_solid(cur)
+            return False
+
+        # ======================================================================
+        # PHASE 2: EXTRACT COLLISION DATA
+        # ======================================================================
+        for comp_name, comp in self.components.items():
+            # Keep your original pruning rule
+            safe_comp_name = str(comp_name) if comp_name else ""
+            if safe_comp_name.startswith("robot"):
+                continue
+
+            # Robust collision_box lookup (same as before)
+            c_box_data = None
+            if hasattr(comp, "collision_box"):
+                c_box_data = comp.collision_box
+            if c_box_data is None and hasattr(comp, "config") and isinstance(comp.config, dict):
+                c_box_data = comp.config.get("collision_box")
+            if c_box_data is None and hasattr(comp, "cfg") and isinstance(comp.cfg, dict):
+                c_box_data = comp.cfg.get("collision_box")
+            if c_box_data is None and hasattr(comp, "DEFAULTS"):
+                c_box_data = comp.DEFAULTS.get("collision_box")
+
+            if not c_box_data:
+                continue
+
+            for solid_name, boxes in c_box_data.items():
+                solid = comp.assembly.get(solid_name)
+                if solid is None:
+                    continue
+
+                T_solid_world = getattr(solid, "_world_T", None)
+                if T_solid_world is None:
+                    continue
+
+                downstream = _is_downstream_of_flange(solid)
+
+                for box in boxes:
+                    T_box_local = xyzabc_to_T(box["pose"])
+                    T_box_world = T_solid_world @ T_box_local
+
+                    if downstream and (T_world_flange is not None):
+                        # Pose in flange frame: T_flange^-1 * T_box_world
+                        T_box_flange = T_world_flange @ T_box_world
+                        pose_out = T_to_xyzabc(T_box_flange)
+                        collision_flange.append({"pose": pose_out, "scale": box["scale"]})
+                    else:
+                        # Pose in world frame (old behavior)
+                        pose_out = T_to_xyzabc(T_box_world)
+                        collision_world.append({"pose": pose_out, "scale": box["scale"]})
+
+        return collision_world, collision_flange
 
     # ---------- pose calculation (the only thing Display needs) ----------
     def compute_world_poses(self):

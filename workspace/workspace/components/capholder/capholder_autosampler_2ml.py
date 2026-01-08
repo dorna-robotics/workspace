@@ -1,13 +1,17 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.plate.plate import Plate
+from workspace.components.rack.rack import Rack
 
 
 @register("capholder_autosampler_2ml")
-class CapholderAutosampler2ml(Plate):
+class CapholderAutosampler2ml(Rack):
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
+        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 3.5, 0, 0, 0], "top": [0, 0, 7, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 3.84, 0.0, 0.0, 0.0], "scale":[130.5, 88.6, 8.66]}#[xyzabc] , [lx,ly,lz]
+        ]},
         offset=[0, 0],
         pitch=[14, 14],
         rvec_safe=[0, 0, 45],
@@ -17,7 +21,7 @@ class CapholderAutosampler2ml(Plate):
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(Plate.DEFAULTS) # default
+        prm = deepcopy(Rack.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs

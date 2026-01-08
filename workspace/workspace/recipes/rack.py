@@ -2,7 +2,10 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
 
-class Feeder(Recipe):
+"""
+component: is the adapter plate for the rack
+"""
+class Rack(Recipe):
     DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
@@ -11,7 +14,7 @@ class Feeder(Recipe):
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=250,
+        base_distance=350,
         rail_step=5.0,
         rail_span=10,        
         # motion
@@ -40,31 +43,25 @@ class Feeder(Recipe):
             component=component,
             **prm
         )
+        
 
-    
-    # mix: mix the feeder for certain turns and shift the slots
-    def mix(self, turn=3, shift_slot=3, vaj=[300, 4000, 10000], **kwargs):
-        # current joint
-        current_joint = self.core.robot_api.joint()
-
-        # new_joint
-        new_joint = current_joint[:]
-        new_joint[f"j{self.component.axis}"] += 360*turn + shift_slot*(360/self.component.num_slots)
+    def pick_from(self, anchor, **kwargs):
+        # find plate component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        self.core.robot_api.jmove(joint=new_joint, vel=self.component.vaj[0], accel=self.component.vaj[1], jerk=self.component.vaj[2])
-        return True
+        return super().pick_from(anchor, solid_name=solid_name, component=component, **kwargs)
+   
+             
 
-
-    # roate the feeder to move to the nth slot from the current
-    def move(self, step=1, **kwargs):
-        # current joint
-        current_joint = self.core.robot_api.joint()
-
-        # new_joint
-        new_joint = current_joint[:]
-        new_joint[f"j{self.component.axis}"] += step*(360/self.component.num_slots)
+    def place_in(self, anchor, **kwargs):
+        # find plate component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        self.core.robot_api.jmove(joint=new_joint, vel=self.component.vaj[0], accel=self.component.vaj[1], jerk=self.component.vaj[2])
-        return True
+        return super().place_in(anchor, solid_name=solid_name, component=component, **kwargs)
+

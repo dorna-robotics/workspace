@@ -2,17 +2,15 @@ from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
 
-class Gripper:
+class Pipettor:
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "tip": [0, 0, 0, 0, 0, 0]}},
+        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
         tool_connection=[0,0,0,0,0,0],
         tool_changer_connection=[0,0,-13,0,0,0],
         tool_rack_connection=[0,0,1.5,0,0,0],
         offset=[0, 0, 0, 0, 0, 0],
         #cfg
-        has_tool_changer = False,
-        output_enable=[[None, None, 0]],
-        output_disable=[[None, None, 0]],
+        has_tool_changer = True,
     )
 
     def __init__(self, name: str, workspace, type=None, **kwargs):
@@ -40,8 +38,8 @@ class Gripper:
                                                         "tool_rack_connection": prm["tool_rack_connection"]},
                                                     component=self.name)
             self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["tool_changer_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=prm["offset"])
-        
-        # enable and disable
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
 
+
+        # enable and disable
+        self.enable = [[None, None, 0]]
+        self.disable = [[None, None, 0]]
