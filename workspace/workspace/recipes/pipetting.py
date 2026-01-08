@@ -1,7 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
-from dorna2 import pose as dorna_pose
 
 
 class PipettingSite(Recipe):

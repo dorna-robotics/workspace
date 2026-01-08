@@ -38,6 +38,7 @@ class Core:
         },
         has_tool_changer = True,
         tool_changer_output = [[None, None, 0]], # attach signal
+        motion_planning = False, # enable or disable path planing
     )
 
 
@@ -122,6 +123,8 @@ class Core:
             self.camera = Camera()
             self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
 
+        # --------- motion_planning
+        self.motion_planning = prm["motion_planning"]
 
         # --------- rail base
         rail_hd_500mm_base_anchors = {
