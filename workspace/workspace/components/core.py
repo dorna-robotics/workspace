@@ -105,6 +105,7 @@ class Core:
         self._simulation_mode = prm["simulation"]
         self.dorna = Dorna()
         if not self._simulation_mode and self.dorna.connect(self.robot_ip):
+                print("robot connected")
                 self.robot_api = self.dorna
         else:
                 self.robot_api = SimulationAPI()
@@ -124,8 +125,9 @@ class Core:
                 # init camera
                 self.camera = Camera()
                 self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+                print("camera enabled")
             except Exception as e:
-                print(f"[Camera disabled] {e}")
+                print(f"[camera disabled] {e}")
 
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
