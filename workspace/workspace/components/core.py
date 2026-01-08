@@ -117,7 +117,7 @@ class Core:
             self.robot_api = self.dorna
         else:
             self.robot_api = SimulationAPI()
-            print("🔵 simulation api enabled")
+            print("🟢 simulation api enabled")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
