@@ -614,7 +614,7 @@ class Recipe:
             # first we check if the error between calibrated point and the raw point is not too large only for robot joints.
             for i in range(6):        # compare only robot joints j0..j5
                 if abs(corrected_values[i] - raw_values[i]) > 5: # if the error is more than 10 degrees we stop the calibration
-                    print("🔴 calibration error is too large. Please try again")
+                    print("🟡 calibration error is too large. Please try again")
                     return False
             # if the error is small we save the calibration point
             self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
