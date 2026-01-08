@@ -213,7 +213,7 @@ class Recipe:
                         path_tool = dict(approach_tool)
                         tool_pose = [0,0,0,0,0,0]
                         if path_tool["solid"] and path_tool["anchor"]:
-                            tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.robot_flange, offset=path_tool["offset"])
+                            tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.core.robot_flange, offset=path_tool["offset"])
 
                         # lmove with tool_pose
                         getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
@@ -263,7 +263,7 @@ class Recipe:
                     path_tool = dict(exit_tool)
                     tool_pose = [0,0,0,0,0,0]
                     if path_tool["solid"] and path_tool["anchor"]:
-                        tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.robot_flange, offset=path_tool["offset"])
+                        tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.core.robot_flange, offset=path_tool["offset"])
 
                     # lmove with tool_pose
                     getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
