@@ -1326,11 +1326,6 @@ class SimulationAPI:
         tgt_joints = list(joint)
 
         # first we set the tool
-        #tool_pose = [0,0,0,0,0,0]
-        #if tool_solid and tool_anchor:
-        #    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
-
-
         self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
         cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
 
