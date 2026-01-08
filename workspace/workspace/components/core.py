@@ -104,12 +104,18 @@ class Core:
         # optional robot API hookup
         self._simulation_mode = prm["simulation"]
         self.dorna = Dorna()
-        if not self._simulation_mode and self.dorna.connect(self.robot_ip):
-                print("robot connected")
+        if not self._simulation_mode:
+            if self.dorna.connect(self.robot_ip):
+                print("✅ robot connected")
                 self.robot_api = self.dorna
-        else:
-                self.robot_api = SimulationAPI()
+            else:
+                print("❌ robot connection failed")
                 self._simulation_mode = True
+        # switch to the simulation api
+        if self._simulation_mode:
+            self.robot_api = SimulationAPI()
+            self._simulation_mode = True
+            print("🔵 simulation api activated")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
@@ -125,9 +131,9 @@ class Core:
                 # init camera
                 self.camera = Camera()
                 self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
-                print("camera enabled")
+                print("✅ camera connected")
             except Exception as e:
-                print(f"[camera disabled] {e}")
+                print(f"❌ camera connection failed: {e}")
 
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
@@ -722,8 +728,6 @@ class Core:
         base_solid = self.rail_base
 
         base_in_world = list( self.rail_base.pose(anchor="carriage"))
-        print("scene: ",scene)
-        print("gripper:",gripper)
         self.planner.update(
             scene=scene,
             gripper=tool,
