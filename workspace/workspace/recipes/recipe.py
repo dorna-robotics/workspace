@@ -195,7 +195,7 @@ class Recipe:
                     J = self.core.calibration.interpolate(J[:])
 
                 if i == 0 and approach_path: # first motion of the approach
-                    if self.core.motion_planning: # run path planing 
+                    if self.core.has_motion_plan: # run path planing 
                         #create the path
                         points = self.core.motion_plan(joint=J)
                         if len(points)==0:
