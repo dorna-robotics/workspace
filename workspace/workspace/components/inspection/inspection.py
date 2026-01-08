@@ -1,7 +1,7 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
-from camera import Camera
+
 
 class Inspection:
     DEFAULTS = dict(
@@ -45,9 +45,13 @@ class Inspection:
         # initialize the camera
         self.camera = None
         if not self.simulation:
-            # init camera
-            self.camera = Camera()
-            self.connect()
+            try:
+                from camera import Camera
+                # init camera
+                self.camera = Camera()
+                self.connect()
+            except Exception as ex:
+                print(f"[Camera disabled] {e}")
             
 
     # connect to the camera
@@ -61,4 +65,5 @@ class Inspection:
 
     # close the camera
     def close(self):
-        return self.camera.close()
+        if self.camera is not None:
+            return self.camera.close()

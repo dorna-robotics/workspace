@@ -57,9 +57,12 @@ class FixedInspector(Recipe):
         # detection_preset
         self.detection_preset = detection_preset
 
-        # init detections
-        self.detection = Detection(camera=self.component.camera, robot=None, **self.detection_preset)
-        
+        try:
+            from dorna_vision import Detection
+            # init detections
+            self.detection = Detection(camera=self.component.camera, robot=None, **self.detection_preset)
+        except Exception as ex:
+            print(f"[Detection disabled] {e}")
 
     """
     present the robot to the insepction component
@@ -118,8 +121,13 @@ class MobileInspector:
         self.detection_preset = detection_preset
 
         # init detections
-        self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, **self.detection_preset)
-        
+        try:
+            from dorna_vision import Detection
+            # init detections
+            self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, **self.detection_preset)
+        except Exception as ex:
+            print(f"[Detection disabled] {e}")
+
     
     """
     run detection
