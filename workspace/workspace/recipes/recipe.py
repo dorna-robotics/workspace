@@ -72,7 +72,7 @@ class Recipe:
         if C == 2:
             self.ref_joints = J
         else:
-            print("could not find a valid reference joint to approach the container")
+            print("🔴 could not find a valid reference joint to approach the container")
             return
 
 
@@ -199,7 +199,7 @@ class Recipe:
                         #create the path
                         points = self.core.motion_plan(joint=J)
                         if len(points)==0:
-                            print("No proper path was found")
+                            print("🔴 [error] no proper path was found")
                             return False
                         
                         #run the path
@@ -207,11 +207,23 @@ class Recipe:
                     else: # no path planing
                         self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
 
-                else: # rest are all based on the user motion command 
-                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+                else: # rest are all based on the user motion command
+                    if self.motion_type == "lmove": # run lmove
+                        # set the tool
+                        path_tool = dict(approach_tool)
+                        tool_pose = [0,0,0,0,0,0]
+                        if path_tool["solid"] and path_tool["anchor"]:
+                            tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.robot_flange, offset=path_tool["offset"])
+
+                        # lmove with tool_pose
+                        getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
+
+                    elif self.motion_type == "jmove": # run jmove
+                        getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+
 
             else:
-                print("Could not find a valid pose to approach")
+                print("🔴 could not find a valid pose to approach")
                 return False
         
         """
@@ -246,10 +258,21 @@ class Recipe:
                     J = self.core.calibration.interpolate(J[:])
 
                 # motion
-                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)
+                if self.motion_type == "lmove": # run lmove
+                    # set the tool
+                    path_tool = dict(exit_tool)
+                    tool_pose = [0,0,0,0,0,0]
+                    if path_tool["solid"] and path_tool["anchor"]:
+                        tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.robot_flange, offset=path_tool["offset"])
+
+                    # lmove with tool_pose
+                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
+
+                elif self.motion_type == "jmove": # run jmove
+                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
             
             else:
-                print("Could not find a valid pose to approach")
+                print("🔴 could not find a valid pose to approach")
                 return False
 
         """
@@ -273,15 +296,12 @@ class Recipe:
         component
         """
         component = component or self.component
-        # adjust the component to make sure anchor exists
-        #_solid = self.solid_with_anchor(initial_solid=component.assembly[solid_name], anchor=anchor)
-        #component = self.workspace.components[_solid.component]  
         
         """
         ref joints
         """
         if self.ref_joints is None:
-            print("no reference joints defined")
+            print("🔴 no reference joints defined")
             return False
         
         """
@@ -289,7 +309,7 @@ class Recipe:
         """
         tool = self.tool_attached_to_the_robot()
         if tool is None:
-            print("no tool attached to the robot")
+            print("🔴 no tool attached to the robot")
             return False
         
         """
@@ -297,7 +317,7 @@ class Recipe:
         """
         load_list = self.solid_hierarchy(parent_solid=component.assembly[solid_name], parent_anchor=anchor, connection_anchor="place")
         if not load_list:
-            print(f"no item found in position {anchor}")
+            print(f"🔴 no item found in position {anchor}")
             return False
 
         """
@@ -437,7 +457,7 @@ class Recipe:
         ref joints
         """
         if self.ref_joints is None:
-            print("no reference joints defined")
+            print("🔴 no reference joints defined")
             return False
 
         """
@@ -445,7 +465,7 @@ class Recipe:
         """
         tool = self.tool_attached_to_the_robot()
         if tool is None:
-            print("no tool attached to the robot")
+            print("🔴 no tool attached to the robot")
             return False
 
         """
@@ -454,7 +474,7 @@ class Recipe:
         # item in tool
         load_list = [self.solid_attached_to_tool(tool)]
         if load_list[-1] is None:
-            print("no item in the gripper")
+            print("🔴 no item in the gripper")
             return False
         
         # find all the items attached to the tool
@@ -572,7 +592,7 @@ class Recipe:
         if C == 2:
             self.core.robot_api.jmove(joint=J, vel=self.jmove_vaj[0]*self.speed_factor,accel=self.jmove_vaj[1]*self.speed_factor,jerk=self.jmove_vaj[2]*self.speed_factor)
         else:
-            print("Could not find a valid approach to the calibration point")
+            print("🔴 could not find a valid approach to the calibration point")
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
@@ -594,21 +614,21 @@ class Recipe:
             # first we check if the error between calibrated point and the raw point is not too large only for robot joints.
             for i in range(6):        # compare only robot joints j0..j5
                 if abs(corrected_values[i] - raw_values[i]) > 5: # if the error is more than 10 degrees we stop the calibration
-                    print("Calibration error is too large. Please try again")
+                    print("🔴 calibration error is too large. Please try again")
                     return False
             # if the error is small we save the calibration point
             self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
             # we also print the raw and corrected values for the user to see
-            print("Raw values:", raw_values)
-            print("Corrected values:", corrected_values)
+            print("raw values:", raw_values)
+            print("corrected values:", corrected_values)
             # now we turn the motors on again
 
         else:
-            print("Could not find a valid solution for the calibration point")
+            print("🔴 could not find a valid solution for the calibration point")
             return False     
         
         # now we ask the user to move the robot out of the calibration point
-        input("Move the robot out of the calibration point and when ready press enter...")
+        input("move the robot out of the calibration point and when ready press enter...")
         # now we turn the motors on again
         self.core.robot_api.motor(1)
         return True
