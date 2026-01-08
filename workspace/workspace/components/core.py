@@ -4,7 +4,6 @@ from mergedeep import merge
 import math
 import numpy as np
 
-from camera import Camera
 from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
@@ -119,9 +118,14 @@ class Core:
         # camera api
         self.camera = None
         if not self._simulation_mode and self.has_camera:
-            # init camera
-            self.camera = Camera()
-            self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+            try:
+                # import
+                from camera import Camera
+                # init camera
+                self.camera = Camera()
+                self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+            except Exception as e:
+                print(f"[Camera disabled] {e}")
 
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
