@@ -1325,7 +1325,7 @@ class SimulationAPI:
         #    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
 
-        #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+        self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
         cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
 
         tgt_xyz = self.dorna.kinematic.fw(tgt_joints[0:6])
