@@ -596,13 +596,13 @@ class Recipe:
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
-        input("Hold the robot by hand and when ready press enter...")
+        input("🔵 hold the robot by hand and when ready press enter...")
 
         # next we release the motor
         self.core.robot_api.motor(0)
 
         # now ask user to align the robot to the calibration point
-        input("Take the robot to the calibration point and when ready press enter...")
+        input("🔵 take the robot to the calibration point and when ready press enter...")
 
         # the joint recording from the user
         corrected_values = self.core.robot_api.joint()
