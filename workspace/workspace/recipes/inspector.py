@@ -1,6 +1,5 @@
 from copy import deepcopy
 from mergedeep import merge
-from dorna_vision import Detection
 from workspace.recipes.recipe import Recipe
 
 """
