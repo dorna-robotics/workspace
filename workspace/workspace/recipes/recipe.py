@@ -637,7 +637,7 @@ class Recipe:
     # this method goes over all calibration anchors and calibrates them
     def calibrate(self):
         # first we find the tool attached to the robot
-        tool = self.tool()
+        tool = self.tool_attached_to_the_robot()
 
         # now we find the solid that will be used for calibration
         tool_solid = tool.assembly[self.calibration_tool_solid_name]
@@ -647,5 +647,5 @@ class Recipe:
             calibration_target_solid = self.component.assembly[solid]
 
             # now we go over all the calibration anchors and calibrate them
-            for anchor in self.self.calibration_targets[solid]:
+            for anchor in self.calibration_targets[solid]:
                 self.calibrate_anchor(target_solid=calibration_target_solid, target_anchor=anchor, target_offset=self.calibration_target_offset, tool_solid=tool_solid, tool_anchor=self.calibration_tool_anchor, tool_offset=self.calibration_tool_offset)

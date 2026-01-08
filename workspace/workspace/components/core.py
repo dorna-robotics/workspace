@@ -21,7 +21,7 @@ class Core:
     """
     DEFAULTS = dict(
         simulation = True,
-        ip = "127.0.0.1",
+        ip = "",
         has_rail = True,
         rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
         has_camera = False,
@@ -62,8 +62,8 @@ class Core:
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
-            self.rail_min = -80.0
-            self.rail_max = 420.0
+            self.rail_min = -75.0
+            self.rail_max = 400.0
         elif self.rail_cfg["type"] == "rail_hd_1000mm":
             self.rail_min = -80.0
             self.rail_max = 920.0
@@ -100,22 +100,24 @@ class Core:
         if hasattr(self.workspace, "_scene_dirty"):
             self.workspace._scene_dirty = True
 
-
-        # optional robot API hookup
+        # connect to the robot
         self._simulation_mode = prm["simulation"]
         self.dorna = Dorna()
-        if not self._simulation_mode:
+        if self.robot_ip:
             if self.dorna.connect(self.robot_ip):
                 print("✅ robot connected")
-                self.robot_api = self.dorna
             else:
+                # simulation get activated
                 print("❌ robot connection failed")
                 self._simulation_mode = True
-        # switch to the simulation api
-        if self._simulation_mode:
+
+        # optional robot API hookup
+        if not self._simulation_mode:
+            print("🟡 simulation api disabled")
+            self.robot_api = self.dorna
+        else:
             self.robot_api = SimulationAPI()
-            self._simulation_mode = True
-            print("🔵 simulation api activated")
+            print("🔵 simulation api enabled")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
@@ -1314,11 +1316,7 @@ class SimulationAPI:
             dy = fk[1] - xyzj[1]
             dz = fk[2] - xyzj[2]
             err = math.sqrt(dx*dx + dy*dy + dz*dz)
-
-
             return out
-
-
 
 
         # --- Setup start/goal
