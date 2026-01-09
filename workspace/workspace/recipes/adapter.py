@@ -12,14 +12,14 @@ class Adapter(Recipe):
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=300,
+        base_distance=200,
         rail_step=5,
         rail_span=10,        
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        jmove_vaj=[200, 1000, 5000],
+        lmove_vaj=[200, 1000, 5000],
         # calibration
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}

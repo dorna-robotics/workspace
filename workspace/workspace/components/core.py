@@ -1404,3 +1404,7 @@ class SimulationAPI:
                 if len(c) > 2 and c[2] > 0:
                     self.sleep(c[2])
         return True
+    
+    # motor
+    def motor(self, val=None):
+        return True

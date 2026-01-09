@@ -3,7 +3,7 @@ core:
   simulation: True
   has_rail: True
   has_tool_changer: True
-  ip: "192.168.254.106"
+  ip: ""
   tool_changer:
     present: True
     attach: [] 
@@ -162,7 +162,7 @@ feeder:
   attach:
     parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: F5
+    parent_anchor: E4
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 180]
@@ -173,7 +173,7 @@ sbs_adapter_0:
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: E7
+    parent_anchor: E5
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
@@ -183,7 +183,7 @@ sbs_adapter_1:
   attach:
     parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: E17
+    parent_anchor: E16
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
@@ -203,10 +203,10 @@ syringe_dispence_0:
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: G1
+    parent_anchor: C3
     child_solid: body
     child_anchor: hole_0
-    offset: [0, 0, 0, 0, 0, 90]
+    offset: [0, 0, 0, 0, 0, -90]
 
 decapper_0:
   type: decapper

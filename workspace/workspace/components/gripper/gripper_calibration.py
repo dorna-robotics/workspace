@@ -4,10 +4,10 @@ from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
 
 
-@register("gripper_tube_large")
+@register("gripper_calibration")
 class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 48, 0, 0, 0], "tip": [0, 0, 59.5, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 6.5, 166.2983158520316, -68.88301782571617, 0], "tip": [0, 0, 12.5, 0, 0, -45]}},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

@@ -14,18 +14,18 @@ class Rack(Recipe):
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=350,
+        base_distance=200,
         rail_step=5.0,
         rail_span=10,        
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        jmove_vaj=[200, 1000, 5000],
+        lmove_vaj=[200, 1000, 5000],
         # calibration
         calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_target_offset=[0, 0, 30, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],

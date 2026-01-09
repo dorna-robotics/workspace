@@ -18,8 +18,8 @@ class Recipe:
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        jmove_vaj=[200, 1000, 5000],
+        lmove_vaj=[200, 1000, 5000],
         # calibration
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
@@ -596,13 +596,13 @@ class Recipe:
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
-        input("🔵 hold the robot by hand and when ready press enter...")
+        input("hold the robot by hand and when ready press enter...")
 
         # next we release the motor
         self.core.robot_api.motor(0)
 
         # now ask user to align the robot to the calibration point
-        input("🔵 take the robot to the calibration point and when ready press enter...")
+        input("take the robot to the calibration point and when ready press enter...")
 
         # the joint recording from the user
         corrected_values = self.core.robot_api.joint()
@@ -614,7 +614,9 @@ class Recipe:
             # first we check if the error between calibrated point and the raw point is not too large only for robot joints.
             for i in range(6):        # compare only robot joints j0..j5
                 if abs(corrected_values[i] - raw_values[i]) > 5: # if the error is more than 10 degrees we stop the calibration
-                    print("🟡 calibration error is too large. Please try again")
+                    input("🟡 calibration error is too large. Please try again. Move the robot out of the calibration point and when done press enter...")
+                    self.core.robot_api.motor(1)
+
                     return False
             # if the error is small we save the calibration point
             self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
@@ -624,7 +626,8 @@ class Recipe:
             # now we turn the motors on again
 
         else:
-            print("🔴 could not find a valid solution for the calibration point")
+            input("🔴 could not find a valid solution for the calibration point. Move the robot out of the calibration point and when done press enter...")
+            self.core.robot_api.motor(1)            
             return False     
         
         # now we ask the user to move the robot out of the calibration point
