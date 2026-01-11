@@ -23,7 +23,7 @@ class Recipe:
         # calibration
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_target_offset=[0, 0, -20, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],
@@ -638,17 +638,19 @@ class Recipe:
 
 
     # this method goes over all calibration anchors and calibrates them
-    def calibrate(self):
+    def calibrate(self, calibration_targets={}):
         # first we find the tool attached to the robot
         tool = self.tool_attached_to_the_robot()
 
         # now we find the solid that will be used for calibration
         tool_solid = tool.assembly[self.calibration_tool_solid_name]
 
+        # calibration targets
+        _calibration_targets = calibration_targets or self.calibration_targets
         # now we loop over the solids that will be used for calibration
-        for solid in self.calibration_targets:
+        for solid in _calibration_targets:
             calibration_target_solid = self.component.assembly[solid]
 
             # now we go over all the calibration anchors and calibrate them
-            for anchor in self.calibration_targets[solid]:
+            for anchor in _calibration_targets[solid]:
                 self.calibrate_anchor(target_solid=calibration_target_solid, target_anchor=anchor, target_offset=self.calibration_target_offset, tool_solid=tool_solid, tool_anchor=self.calibration_tool_anchor, tool_offset=self.calibration_tool_offset)

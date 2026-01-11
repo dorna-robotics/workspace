@@ -55,13 +55,13 @@ tool_rack_0:
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: A18
+    parent_anchor: A17
     child_solid: body
     child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
 gripper_0:
-  type: tube_gripper_4_finger
+  type: gripper_calibration
   has_tool_changer: True 
   attach:
     parent_name: tool_rack_0
@@ -76,87 +76,33 @@ tool_rack_1:
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: D18
+    parent_anchor: E17
     child_solid: body
     child_anchor: hole_0
     offset: [0,0,0,0,0,90]
-
-gripper_1:
-  type: suction_gripper
-  has_tool_changer: True 
-  attach:
-    parent_name: tool_rack_1
-    parent_solid: body
-    parent_anchor: place
-    child_solid: tool_changer_tool_side
-    child_anchor: tool_rack_connection
-
 
 tool_rack_2:
   type: tool_rack
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
-    parent_anchor: I18
+    parent_anchor: J17
     child_solid: body
     child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
-gripper_2:
-  type: sbs_gripper_width
-  has_tool_changer: True 
-  attach:
-    parent_name: tool_rack_2
-    parent_solid: body
-    parent_anchor: place
-    child_solid: tool_changer_tool_side
-    child_anchor: tool_rack_connection
 
-{# hotel storage #}
 hotel_0:
-  type: hotel_sbs_4lvl
+  type: hotel_sbs_52h_4lvl
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: G18
+    parent_anchor: G14
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
-{% for level in range(4) %}
-microplate_{{ level }}:
-  type: rack_autosampler_2ml
-  attach:
-    parent_name: hotel_0
-    parent_solid: body
-    parent_anchor: place_{{ level }}
-    child_solid: body
-    child_anchor: center
 
-{% for r in "ABCDEF" %}
-{% for c in range(1, 9) %}
-tube_{{ level }}_{{ r }}{{ c }}:
-  type: tube_autosampler_2ml
-  attach:
-    parent_name: microplate_{{ level }}
-    parent_solid: body
-    parent_anchor: {{ r }}{{ c }}
-    child_solid: body
-    child_anchor: center
-cap_{{level}}_{{ r }}{{ c }}:
-  type: cap_autosampler_2ml
-  attach:
-    parent_name: feeder
-    parent_solid: body
-    parent_anchor: place
-    child_solid: body
-    child_anchor: center
-{% endfor %}
-{% endfor %}
-{% endfor %}
-
-
-{# feeder#}
 feeder:
   type: capfeeder_autosampler_2ml
   attach:

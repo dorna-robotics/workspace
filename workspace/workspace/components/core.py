@@ -572,7 +572,6 @@ class Core:
                 # pose_in_robot[4] += 0.01  # to avoid singularity
                 # pose_in_robot[5] += 0.01  # to avoid singularity
                 sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-
  
                 if sols is None or len(sols) == 0:
                     continue

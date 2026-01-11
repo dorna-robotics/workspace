@@ -5,7 +5,7 @@ from workspace.components.gripper.gripper import Gripper
 
 
 @register("gripper_calibration")
-class GripperTubeLarge(Gripper):
+class GripperCalibration(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 6.5, 166.2983158520316, -68.88301782571617, 0], "tip": [0, 0, 12.5, 0, 0, -45]}},
         #cfg
