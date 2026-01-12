@@ -11,16 +11,27 @@ from dorna2.pose import xyzabc_to_T
 
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
-        #comp_cfgs = yaml.safe_load(Path(config_path).read_text())
-        text = Path(config_path).read_text()
 
-        # If extension is .j2, or if Jinja syntax appears inside:
-        if config_path.endswith(".j2") or "{%" in text or "{{" in text:
-            text = Template(text).render()
+        # --- normalize to list ---
+        if isinstance(config_path, (str, Path)):
+            paths = [config_path]
+        elif isinstance(config_path, (list, tuple)):
+            paths = config_path
+        else:
+            raise TypeError("config_path must be a str, Path, or list of them")
 
-        comp_cfgs = yaml.safe_load(text)
-        # if "core" not in comp_cfgs:
-        #     raise ValueError("config must include a top-level 'core' component.")
+        comp_cfgs = {}
+
+        # --- load + merge configs in order ---
+        for path in paths:
+            text = Path(path).read_text()
+
+            if str(path).endswith(".j2") or "{%" in text or "{{" in text:
+                text = Template(text).render()
+
+            cfg = yaml.safe_load(text) or {}
+            comp_cfgs.update(cfg)   # later files override earlier ones
+
 
         # 1) build components
         self.components = {}

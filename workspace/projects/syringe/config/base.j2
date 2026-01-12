@@ -3,11 +3,11 @@ core:
   simulation: True
   has_rail: True
   has_tool_changer: True
-  ip: ""
+  ip: "192.168.254.88"
   tool_changer:
     present: True
-    attach: [] 
-    detach: []
+    attach: [[7, 0, 0.25]] 
+    detach: [[7, 1, 0.25]]
   attach:
     parent_name: fixture_plate_1
     parent_solid: body
@@ -60,17 +60,6 @@ tool_rack_0:
     child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
-gripper_0:
-  type: gripper_calibration
-  has_tool_changer: True 
-  attach:
-    parent_name: tool_rack_0
-    parent_solid: body
-    parent_anchor: place
-    child_solid: tool_changer_tool_side
-    child_anchor: tool_rack_connection
-
-
 tool_rack_1:
   type: tool_rack
   attach:
@@ -91,7 +80,6 @@ tool_rack_2:
     child_anchor: hole_0
     offset: [0,0,0,0,0,90]
 
-
 hotel_0:
   type: hotel_sbs_52h_4lvl
   attach:
@@ -101,7 +89,6 @@ hotel_0:
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
-
 
 feeder:
   type: capfeeder_autosampler_2ml
@@ -134,16 +121,6 @@ sbs_adapter_1:
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
-capholder:
-  type: capholder_autosampler_2ml
-  attach:
-    parent_name: sbs_adapter_1
-    parent_solid: body
-    parent_anchor: place
-    child_solid: body
-    child_anchor: center
-
-
 syringe_dispence_0:
   type: syringe_dispense_arm
   attach:
@@ -163,4 +140,3 @@ decapper_0:
     child_solid: body
     child_anchor: center
     offset: [0, 0, 0, 0, 0, 180]
-

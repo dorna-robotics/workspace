@@ -117,7 +117,7 @@ class Core:
             self.robot_api = self.dorna
         else:
             self.robot_api = SimulationAPI()
-            print("🟢 simulation api enabled")
+            print("🔵 simulation api enabled")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
@@ -408,7 +408,6 @@ class Core:
         # 
         # If base distance is not given (None), the rail value will be set to the current rail value.
         # It is very helpful for calibration methods        
-
         # Refresh all poses/frames
         self.update_pose()
         # Live joints & indices
@@ -418,7 +417,6 @@ class Core:
 
         if ref_joints is None:
             ref_joints = list(cur)
-
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
@@ -577,7 +575,7 @@ class Core:
                     continue
 
                 for arm_sol in sols:  # each is a NumPy vector of length 6
-                    joint_sol = list(ref_joints)     # start from live joints
+                    joint_sol = list(cur)     # start from live joints
                     for i in range(6):        # overwrite j0..j5
                         joint_sol[i] = float(arm_sol[i])
                     joint_sol[aux] = r               # set rail

@@ -3,7 +3,7 @@ from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from workspace.recipes.recipe import Recipe
 
-class ToolChanger(Recipe):
+class ToolRack(Recipe):
     DEFAULTS = dict(
         # ref joints
         target_solid_name="body",
@@ -18,11 +18,11 @@ class ToolChanger(Recipe):
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        jmove_vaj=[200, 1000, 5000],
+        lmove_vaj=[200, 1000, 5000],
         # calibration
         calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
         calibration_target_offset=[0, 0, 20, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",

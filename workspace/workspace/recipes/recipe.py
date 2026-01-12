@@ -441,7 +441,7 @@ class Recipe:
 
 
     # place the load in an specific anchor of the given solid and component, with the given offset
-    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity=1, **kwargs):
         """
         assign kwargs
         """
@@ -544,13 +544,18 @@ class Recipe:
             attach = [load_list[0], {"parent": component.assembly[solid_name], "parent_anchor":anchor, "child_anchor":load_anchor, "offset": offset, "offset_frame": "parent"}]
             exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]}
 
+        # add gravity compensation
+        if gravity > 0:
+            target_offset = offset[:]
+            target_offset[2] += gravity
+
         """
         return
         """
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": offset,
+            "target_offset": target_offset,
             "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
@@ -569,9 +574,9 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity=1, **kwargs):
         # place parameters
-        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity=gravity,**kwargs)
         if not place_prm:
             return False
         
@@ -584,11 +589,13 @@ class Recipe:
     # then the user moves the robot out and then the robot motors are turned on
     # the tool anchor and offset will match target anchor by the user. 
     # the robot will move to target_offset in the beginning
-    def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):        
+    def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):
+        # initialize
+        success = False
+
         # first we find the solutions for the target:
         J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=target_offset, tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
-
         if C == 2:
             self.core.robot_api.jmove(joint=J, vel=self.jmove_vaj[0]*self.speed_factor,accel=self.jmove_vaj[1]*self.speed_factor,jerk=self.jmove_vaj[2]*self.speed_factor)
         else:
@@ -596,14 +603,14 @@ class Recipe:
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
-        input("hold the robot by hand and when ready press enter...")
+        input("1- ✋ hold the robot by hand...")
 
         # next we release the motor
         self.core.robot_api.motor(0)
 
         # now ask user to align the robot to the calibration point
-        input("take the robot to the calibration point and when ready press enter...")
-
+        input("2- 🎯 take the robot to the calibration point...")
+        
         # the joint recording from the user
         corrected_values = self.core.robot_api.joint()
         # now we find the raw values by solving IK
@@ -616,10 +623,10 @@ class Recipe:
                 if abs(corrected_values[i] - raw_values[i]) > 5: # if the error is more than 10 degrees we stop the calibration
                     input("🟡 calibration error is too large. Please try again. Move the robot out of the calibration point and when done press enter...")
                     self.core.robot_api.motor(1)
-
                     return False
+                
             # if the error is small we save the calibration point
-            self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
+            success = True
             # we also print the raw and corrected values for the user to see
             print("raw values:", raw_values)
             print("corrected values:", corrected_values)
@@ -631,9 +638,16 @@ class Recipe:
             return False     
         
         # now we ask the user to move the robot out of the calibration point
-        input("move the robot out of the calibration point and when ready press enter...")
+        input("3- ⬆️ take the robot out of the calibration point...")
         # now we turn the motors on again
         self.core.robot_api.motor(1)
+
+        # success
+        if success:
+            val = input("🔵 press enter to save the calibration point...")
+            if val == "":
+                self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
+
         return True
 
 
