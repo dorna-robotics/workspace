@@ -13,18 +13,18 @@ class Decapper(Recipe):
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=200,
+        base_distance=50,
         rail_step=5.0,
         rail_span=2,        
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        jmove_vaj=[100, 600, 3000],
+        lmove_vaj=[300, 1000, 5000],
         # calibration
         calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_targets={"body": ["clb_0", "clb_1"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_target_offset=[0, 0, 20, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],

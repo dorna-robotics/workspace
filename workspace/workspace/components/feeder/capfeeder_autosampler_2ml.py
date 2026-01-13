@@ -8,7 +8,8 @@ from workspace.components.feeder.feeder import Feeder
 class FeederCap2ml(Feeder):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -20.569 , 171.66, -45, 0, 0], "top": [0, 87.972 , 147.972, -45, 0, 0],
-                "hole_0":[50, 12.5, 0, 0, 0, 0], "hole_1": [-50, 12.5, 0, 0, 0, 0], "hole_2": [-50, -12.5, 0, 0, 0, 0], "hole_3": [50, -12.5, 0, 0, 0, 0]}},
+                "hole_0":[50, 12.5, 0, 0, 0, 0], "hole_1": [-50, 12.5, 0, 0, 0, 0], "hole_2": [-50, -12.5, 0, 0, 0, 0], "hole_3": [50, -12.5, 0, 0, 0, 0],
+                "clb_0": [0, 21.15, 134.89, -45, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 1.84, 0.0, 0.0, 0.0], "scale":[115.74, 40.02, 12.813]},#[xyzabc] , [lx,ly,lz]

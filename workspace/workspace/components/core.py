@@ -36,7 +36,8 @@ class Core:
             "native_res": None,
         },
         has_tool_changer = True,
-        tool_changer_output = [[None, None, 0]], # attach signal
+        tool_changer_output_down = [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]], # attach signal
+        tool_changer_output_up = [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]], # detach signal
         has_motion_plan = False, # enable or disable path planing
     )
 
@@ -84,7 +85,8 @@ class Core:
 
         # -------- tool_changer
         self.has_tool_changer = prm["has_tool_changer"]
-        self.tool_changer_output = prm["tool_changer_output"]
+        self.tool_changer_output_down = prm["tool_changer_output_down"]
+        self.tool_changer_output_up = prm["tool_changer_output_up"]
 
         # planner
         self.planner = Planner()

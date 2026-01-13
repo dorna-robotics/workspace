@@ -14,14 +14,12 @@ class Rack(Recipe):
         initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=200,
-        rail_step=5.0,
-        rail_span=10,        
+        base_distance=50,
         # motion
         motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        speed_factor=3,
+        jmove_vaj=[100, 600, 3000],
+        lmove_vaj=[300, 1000, 5000],
         # calibration
         calibration=True,
         calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}

@@ -5,28 +5,14 @@ from workspace.recipes.recipe import Recipe
 
 class ToolRack(Recipe):
     DEFAULTS = dict(
-        # ref joints
-        target_solid_name="body",
-        target_anchor="place",
-        target_offset=[0, 0, 50, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
-        left_approach=True,
-        base_distance=350,
-        rail_step=5.0,
         rail_span=2,        
         # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        speed_factor=1,
+        jmove_vaj=[100, 600, 3000],
+        lmove_vaj=[150, 500, 2500],
         # calibration
-        calibration=True,
         calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, 20, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -70,12 +56,12 @@ class ToolRack(Recipe):
                                                         to_frame=tool.pose("tool_rack_connection"))[2])
         
         # output approach
-        output_approach = self.core.tool_changer_output[:]
+        output_approach = self.core.tool_changer_output_up[:]
         output_approach[0][1] = int(not output_approach[0][1]) # change it for detach
 
         # output touch
-        output_touch = self.core.tool_changer_output[:]
-        
+        output_touch = self.core.tool_changer_output_down[:]
+
         # motion prm
         motion_prm ={
             "target_solid": self.component.assembly[solid_name],
@@ -133,22 +119,18 @@ class ToolRack(Recipe):
                                                         from_frame=tool.pose("tool_changer_connection"),
                                                         to_frame=tool.pose("tool_rack_connection"))[2])
 
-        # output approach
-        output_approach = self.core.tool_changer_output[:]
 
         # output touch
-        output_touch = self.core.tool_changer_output[:]
-        output_touch[0][1] = int(not output_touch[0][1]) # change it for detach
+        output_touch = self.core.tool_changer_output_up[:]
 
         # output exit
-        output_exit = self.core.tool_changer_output[:]
+        output_exit = self.core.tool_changer_output_down[:]
 
         # motion prm
         motion_prm ={
             "target_solid": self.component.assembly[solid_name],
             "target_anchor": anchor, 
             "target_offset": [0, 0, -height_offset, 0, 0, 0],
-            "output_approach": output_approach,
             "approach_tool": {"solid": tool, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path":[
                                 [-padding,0,-padding-height_offset,0,0,0],

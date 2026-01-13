@@ -13,17 +13,17 @@ class Recipe:
         # IK
         left_approach=True,
         base_distance=350,
-        rail_step=5.0,
-        rail_span=10,        
+        rail_step=0,
+        rail_span=0,        
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        jmove_vaj=[100, 600, 3000],
+        lmove_vaj=[300, 1000, 5000],
         # calibration
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -20, 0, 0, 0],
+        calibration_target_offset=[0, 0, 20, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],
@@ -615,7 +615,8 @@ class Recipe:
         corrected_values = self.core.robot_api.joint()
         # now we find the raw values by solving IK
         # note target_offset is all zeros because we want to exactly match the anchor point
-        raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset, base_distance=None)
+        raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
+                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
         if C == 2:
             # we found a solution now we need to save it.
             # first we check if the error between calibrated point and the raw point is not too large only for robot joints.
