@@ -1,3 +1,4 @@
+> Sadegh Tabatabaei:
 # workspace/components/calibration.py
 
 import json
@@ -6,10 +7,15 @@ import numpy as np
 
 
 class Calibration:
-    def __init__(self, name: str, axis_mask):
+    def init(self, name: str, axis_mask):
         """
         name: calibration file name will be <name>.json in Path.cwd()
         axis_mask: length-8 iterable of 0/1. 1 => axis participates, 0 => ignored.
+
+        calibration_data format:
+          {
+            "recipe_name": [ {"raw":[...],"corrected":[...]}, ... ]
+          }
         """
         self.name = str(name)
         self.file_path = Path.cwd() / f"{self.name}.json"
@@ -26,7 +32,7 @@ class Calibration:
             with open(self.file_path, "r") as f:
                 self.calibration_data = json.load(f)
         else:
-            self.calibration_data = []
+            self.calibration_data = {}
 
     def _mask_for_storage(self, values):
         """Force inactive axes to 0 for storing and masked-space computations."""
@@ -36,21 +42,25 @@ class Calibration:
         v[~self._active] = 0.0
         return v
 
-    def add_point(self, raw_values, corrected_values, threshold=1e-3):
+    def add_point(self, raw_values, corrected_values, threshold=1e-3, dict_name="default"):
         """
-        Adds or updates a calibration point.
+        Adds or updates a calibration point in calibration_data[dict_name].
         Replaces an existing point if raw_values are close (active axes only).
         Inactive axes are stored as 0 in both raw and corrected.
         """
+        dict_name = str(dict_name)
+
         raw_arr = self._mask_for_storage(raw_values)
         corr_arr = self._mask_for_storage(corrected_values)
 
+        if dict_name not in self.calibration_data:
+            self.calibration_data[dict_name] = []
+
         updated = False
-        for i, entry in enumerate(self.calibration_data):
+        for i, entry in enumerate(self.calibration_data[dict_name]):
             entry_raw = np.array(entry["raw"], dtype=float)
-            # compare only on active axes
             if np.linalg.norm(entry_raw[self._active] - raw_arr[self._active]) < threshold:
-                self.calibration_data[i] = {
+                self.calibration_data[dict_name][i] = {
                     "raw": raw_arr.tolist(),
                     "corrected": corr_arr.tolist(),
                 }
@@ -58,55 +68,68 @@ class Calibration:
                 break
 
         if not updated:
-            self.calibration_data.append({
+            self.calibration_data[dict_name].append({
                 "raw": raw_arr.tolist(),
                 "corrected": corr_arr.tolist(),
             })
 
         self._save()
 
-    def clear_point(self, raw_values, threshold=1e-3):
-        """Removes one point (if close) using active axes only."""
-        if not self.calibration_data:
+    def clear_point(self, raw_values, threshold=1e-3, dict_name="default"):
+        """Removes one point (if close) in calibration_data[dict_name] using active axes only."""
+        dict_name = str(dict_name)
+
+        if dict_name not in self.calibration_data or not self.calibration_data[dict_name]:
             return
 
         raw_arr = self._mask_for_storage(raw_values)
 
         kept = []
-        for p in self.calibration_data:
+        for p in self.calibration_data[dict_name]:
             p_raw = np.array(p["raw"], dtype=float)
             if np.linalg.norm(p_raw[self._active] - raw_arr[self._active]) >= threshold:
                 kept.append(p)
 
-        self.calibration_data = kept
+        self.calibration_data[dict_name] = kept
         self._save()
 
-    def clear_all(self):
-        self.calibration_data = []
+    def clear_all(self, dict_name=None):
+        """
+        If dict_name is provided, clears only that dict.
+        If dict_name is None, clears all dictionaries.
+        """
+        if dict_name is None:
+            self.calibration_data = {}
+        else:
+            dict_name = str(dict_name)
+            self.calibration_data[dict_name] = []
         self._save()
 
     def _save(self):
         with open(self.file_path, "w") as f:
             json.dump(self.calibration_data, f, indent=2, separators=(",", ": "))
 
-    def interpolate(self, raw_values, threshold=1e-3, power=2.0):
+> Sadegh Tabatabaei:
+def interpolate(self, raw_values, threshold=1e-3, power=2.0, dict_name="default"):
         """
-        Inverse-distance interpolation on active axes only.
+        Inverse-distance interpolation on active axes only, using calibration_data[dict_name].
         - Inactive axes in the output are returned exactly equal to raw_values.
         """
+        dict_name = str(dict_name)
+
         raw_in = np.array(raw_values, dtype=float)
         if raw_in.size != 8:
             raise ValueError(f"raw_values must be length 8, got {raw_in.size}")
 
-        if not self.calibration_data:
+        if dict_name not in self.calibration_data or not self.calibration_data[dict_name]:
             return [float(x) for x in raw_in]
 
         # Query in masked space (inactive set to 0 for distance/interp)
         q = raw_in.copy()
         q[~self._active] = 0.0
 
-        raw_mat = np.array([p["raw"] for p in self.calibration_data], dtype=float)        # already masked
-        corr_mat = np.array([p["corrected"] for p in self.calibration_data], dtype=float) # already masked
+        raw_mat = np.array([p["raw"] for p in self.calibration_data[dict_name]], dtype=float)
+        corr_mat = np.array([p["corrected"] for p in self.calibration_data[dict_name]], dtype=float)
         err_mat = corr_mat - raw_mat
 
         # distances on active dims only

@@ -197,7 +197,7 @@ class Recipe:
             if C == 2:
                 # calibration
                 if self.calibration:
-                    J = self.core.calibration.interpolate(J[:])
+                    J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
 
                 if i == 0 and approach_path: # first motion of the approach
                     if self.core.has_motion_plan: # run path planing 
@@ -260,7 +260,7 @@ class Recipe:
             if C == 2:
                 # calibration
                 if self.calibration:
-                    J = self.core.calibration.interpolate(J[:])
+                    J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
 
                 # motion
                 if self.motion_type == "lmove": # run lmove
@@ -652,7 +652,7 @@ class Recipe:
         if success:
             val = input("🔵 press enter to save the calibration point...")
             if val == "":
-                self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
+                self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3, dict_name=self.calibration_name)
 
         return True
 
