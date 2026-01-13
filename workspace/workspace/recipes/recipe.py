@@ -21,6 +21,7 @@ class Recipe:
         jmove_vaj=[100, 600, 3000],
         lmove_vaj=[300, 1000, 5000],
         # calibration
+        calibration_name=None,
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
         calibration_target_offset=[0, 0, 20, 0, 0, 0],
@@ -58,6 +59,10 @@ class Recipe:
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
         self.calibration_tool_anchor = prm["calibration_tool_anchor"]
         self.calibration_tool_offset = prm["calibration_tool_offset"]
+        # calibration name initi
+        if prm["calibration_name"] is None:
+            self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
+
 
         # find the reference joints used later for every IK
         J,C = self.core.IK(
