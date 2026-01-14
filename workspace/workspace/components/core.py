@@ -449,7 +449,7 @@ class Core:
                     
 
         def joint_distance(q):
-            weight = [1, 1, 1, 1, 1, 0.25]
+            weight = [1, 1, 1, 4, 1, 0.25]
             s = 0.0
             for i in (0, 1, 2, 3, 4, 5):
                 d = weight[i] * (q[i] - ref_joints[i])
@@ -582,7 +582,6 @@ class Core:
                         joint_sol[i] = float(arm_sol[i])
                     joint_sol[aux] = r               # set rail
                     col_res = self.planner.check_collision(arm_sol)
-
                     if len(col_res) > 0:
                         # collision detected, skip
                         continue

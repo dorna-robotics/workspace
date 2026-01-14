@@ -197,8 +197,10 @@ class Recipe:
             if C == 2:
                 # calibration
                 if self.calibration:
+                    print("no clb: ", J[:])
                     J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
-
+                    print("ye clb:", J[:])
+                    print("################")
                 if i == 0 and approach_path: # first motion of the approach
                     if self.core.has_motion_plan: # run path planing 
                         #create the path
@@ -260,8 +262,10 @@ class Recipe:
             if C == 2:
                 # calibration
                 if self.calibration:
+                    print("no clb: ", J[:])
                     J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
-
+                    print("ye clb:", J[:])
+                    print("################")
                 # motion
                 if self.motion_type == "lmove": # run lmove
                     # set the tool
@@ -537,8 +541,8 @@ class Recipe:
             disable = list(getattr(component, "disable", []))
             
             # output config
-            output_approach = tool.enable + disable
-            output_touch = tool.disable + enable
+            output_approach = disable + tool.enable
+            output_touch = enable + tool.disable
 
         """
         run attachment
@@ -550,8 +554,8 @@ class Recipe:
             exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]}
 
         # add gravity compensation
+        target_offset = offset[:]
         if gravity_offset > 0:
-            target_offset = offset[:]
             target_offset[2] += gravity_offset
 
         """

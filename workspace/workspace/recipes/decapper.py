@@ -6,28 +6,10 @@ from workspace.recipes.recipe import Recipe
 
 class Decapper(Recipe):
     DEFAULTS = dict(
-        # ref joints
-        target_solid_name="body",
-        target_anchor="place",
-        target_offset=[0, 0, 50, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
-        left_approach=True,
         base_distance=50,
-        rail_step=5.0,
-        rail_span=2,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[100, 600, 3000],
-        lmove_vaj=[300, 1000, 5000],
         # calibration
-        calibration=True,
         calibration_targets={"body": ["clb_0", "clb_1"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, 20, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -42,6 +24,14 @@ class Decapper(Recipe):
             component=component,
             **prm
         )
+
+
+    def place_tube(self, approach=True, exit=True):
+        return self.place_in(anchor="place", approach=approach, exit=exit, gravity_offset=0)
+
+
+    def pick_tube(self, approach=True, exit=True):
+        return self.pick_from(anchor="place", approach=approach, exit=exit)
 
 
     def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, rotation=340, **kwargs):        
@@ -193,7 +183,7 @@ class Decapper(Recipe):
         if component_cap.cap_type == "screw":
             # chunks
             twist_chunks = lambda t: ([t % rotation] if t % rotation else []) + [rotation] * (t // rotation)
-            chunks = [0] + twist_chunks(component_cap.twist)[::-1]
+            chunks = [0] + twist_chunks(int(component_cap.twist))[::-1]
             joint_list = []
             z_offset = 0
             for chunk in chunks:

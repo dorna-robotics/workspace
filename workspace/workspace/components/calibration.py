@@ -1,13 +1,10 @@
-> Sadegh Tabatabaei:
-# workspace/components/calibration.py
-
 import json
 from pathlib import Path
 import numpy as np
 
 
 class Calibration:
-    def init(self, name: str, axis_mask):
+    def __init__(self, name: str, axis_mask):
         """
         name: calibration file name will be <name>.json in Path.cwd()
         axis_mask: length-8 iterable of 0/1. 1 => axis participates, 0 => ignored.
@@ -109,45 +106,46 @@ class Calibration:
         with open(self.file_path, "w") as f:
             json.dump(self.calibration_data, f, indent=2, separators=(",", ": "))
 
-> Sadegh Tabatabaei:
-def interpolate(self, raw_values, threshold=1e-3, power=2.0, dict_name="default"):
-        """
-        Inverse-distance interpolation on active axes only, using calibration_data[dict_name].
-        - Inactive axes in the output are returned exactly equal to raw_values.
-        """
-        dict_name = str(dict_name)
 
-        raw_in = np.array(raw_values, dtype=float)
-        if raw_in.size != 8:
-            raise ValueError(f"raw_values must be length 8, got {raw_in.size}")
+    def interpolate(self, raw_values, threshold=1e-3, power=2.0, dict_name="default"):
+            """
+            Inverse-distance interpolation on active axes only, using calibration_data[dict_name].
+            - Inactive axes in the output are returned exactly equal to raw_values.
+            """
+            dict_name = str(dict_name)
 
-        if dict_name not in self.calibration_data or not self.calibration_data[dict_name]:
-            return [float(x) for x in raw_in]
+            raw_in = np.array(raw_values, dtype=float)
+            if raw_in.size != 8:
+                raise ValueError(f"raw_values must be length 8, got {raw_in.size}")
 
-        # Query in masked space (inactive set to 0 for distance/interp)
-        q = raw_in.copy()
-        q[~self._active] = 0.0
+            if dict_name not in self.calibration_data or not self.calibration_data[dict_name]:
+                return [float(x) for x in raw_in]
 
-        raw_mat = np.array([p["raw"] for p in self.calibration_data[dict_name]], dtype=float)
-        corr_mat = np.array([p["corrected"] for p in self.calibration_data[dict_name]], dtype=float)
-        err_mat = corr_mat - raw_mat
+            # Query in masked space (inactive set to 0 for distance/interp)
+            q = raw_in.copy()
+            q[~self._active] = 0.0
 
-        # distances on active dims only
-        d = np.linalg.norm(raw_mat[:, self._active] - q[self._active], axis=1)
+            raw_mat = np.array([p["raw"] for p in self.calibration_data[dict_name]], dtype=float)
+            corr_mat = np.array([p["corrected"] for p in self.calibration_data[dict_name]], dtype=float)
+            err_mat = corr_mat - raw_mat
 
-        i_min = int(np.argmin(d))
-        if d[i_min] < threshold:
-            out = corr_mat[i_min].copy()
-        else:
-            w = 1.0 / np.power(d, power)
-            w_sum = float(w.sum())
-            if w_sum <= 0.0 or not np.isfinite(w_sum):
-                out = q.copy()
+            # distances on active dims only
+            d = np.linalg.norm(raw_mat[:, self._active] - q[self._active], axis=1)
+
+            i_min = int(np.argmin(d))
+            if d[i_min] < threshold:
+                out = corr_mat[i_min].copy()
             else:
-                w /= w_sum
-                interp_err = (w[:, None] * err_mat).sum(axis=0)
-                out = q + interp_err
+                w = 1.0 / np.power(d, power)
+                w_sum = float(w.sum())
+                if w_sum <= 0.0 or not np.isfinite(w_sum):
+                    out = q.copy()
+                else:
+                    w /= w_sum
+                    print("weights:", w)  # Debug line to show weights
+                    interp_err = (w[:, None] * err_mat).sum(axis=0)
+                    out = q + interp_err
 
-        # Inactive axes must equal the original raw input
-        out[~self._active] = raw_in[~self._active]
-        return [float(x) for x in out]
+            # Inactive axes must equal the original raw input
+            out[~self._active] = raw_in[~self._active]
+            return [float(x) for x in out]
