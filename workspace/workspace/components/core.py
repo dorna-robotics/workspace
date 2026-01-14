@@ -78,10 +78,10 @@ class Core:
         self.robot_ip = prm["ip"]
 
         # -------- calibration
-        axis_mask = [1,1,1,1,1,1,0,0]
-        axis_mask[self.rail_cfg["axis"]] = 1
-        self.calibration = Calibration(self.name, axis_mask)
-
+        # axis_mask = [1,1,1,1,1,1,0,0]
+        # axis_mask[self.rail_cfg["axis"]] = 1
+        # self.calibration = Calibration(self.name, axis_mask)
+        self.calibration = Calibration(self.name)
 
         # -------- tool_changer
         self.has_tool_changer = prm["has_tool_changer"]

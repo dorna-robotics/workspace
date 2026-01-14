@@ -621,7 +621,16 @@ class Recipe:
         input("2- 🎯 take the robot to the calibration point...")
         
         # the joint recording from the user
-        corrected_values = self.core.robot_api.joint()
+        corrected_joint_values = self.core.robot_api.joint()
+        
+        # now we need to convert the corrected values to corrected xyz in world frame
+        corrected_xyz_values = tool_solid.pose(anchor=tool_anchor, offset=tool_offset)
+
+        raw_xyz_values = target_solid.pose(anchor=target_anchor, offset=[0,0,0,0,0,0])
+
+
+        """
+
         # now we find the raw values by solving IK
         # note target_offset is all zeros because we want to exactly match the anchor point
         raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
@@ -646,17 +655,22 @@ class Recipe:
             input("🔴 could not find a valid solution for the calibration point. Move the robot out of the calibration point and when done press enter...")
             self.core.robot_api.motor(1)            
             return False     
-        
+        """
         # now we ask the user to move the robot out of the calibration point
         input("3- ⬆️ take the robot out of the calibration point...")
         # now we turn the motors on again
         self.core.robot_api.motor(1)
+
+        self.core.calibration.add_point(raw_xyz_values, corrected_xyz_values, threshold=1e-3, dict_name=self.calibration_name)
+
+        """
 
         # success
         if success:
             val = input("🔵 press enter to save the calibration point...")
             if val == "":
                 self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3, dict_name=self.calibration_name)
+        """
 
         return True
 
