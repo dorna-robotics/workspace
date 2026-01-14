@@ -2,6 +2,7 @@ from copy import deepcopy
 from mergedeep import merge
 from collections import deque
 from dorna2 import pose as dorna_pose
+from dorna2 import Pose
 
 class Recipe:
     DEFAULTS = dict(
@@ -191,16 +192,22 @@ class Recipe:
         """
         path = list(approach_path+[target_offset])
         for i in range(len(path)):
+            # calibration
+            if self.calibration:
+                # target_pose in the world frame
+                pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
+                # interpolate pose
+                corrected_pose_frame = Pose(self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                # anchor frame
+                anchor_frame = Pose(target_solid.pose(anchor=target_anchor))
+                # corrected in anchor frame
+                path[i] = corrected_pose_frame.pose(anchor=anchor_frame, in_frame=anchor_frame)
+            
+            # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
-                                tool_solid=approach_tool["solid"], tool_anchor=approach_tool["anchor"], tool_offset=approach_tool["offset"],
-                                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)
+                                tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
+                                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
             if C == 2:
-                # calibration
-                if self.calibration:
-                    print("no clb: ", J[:])
-                    J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
-                    print("ye clb:", J[:])
-                    print("################")
                 if i == 0 and approach_path: # first motion of the approach
                     if self.core.has_motion_plan: # run path planing 
                         #create the path
@@ -256,16 +263,22 @@ class Recipe:
         """
         path = list(exit_path)
         for i in range(len(path)):
+            # calibration
+            if self.calibration:
+                # target_pose in the world frame
+                pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
+                # interpolate pose
+                corrected_pose_frame = Pose(self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                # anchor frame
+                anchor_frame = Pose(target_solid.pose(anchor=target_anchor))
+                # corrected in anchor frame
+                path[i] = corrected_pose_frame.pose(anchor=anchor_frame, in_frame=anchor_frame)
+            
+            # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
                                 tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
             if C == 2:
-                # calibration
-                if self.calibration:
-                    print("no clb: ", J[:])
-                    J = self.core.calibration.interpolate(J[:], dict_name=self.calibration_name)
-                    print("ye clb:", J[:])
-                    print("################")
                 # motion
                 if self.motion_type == "lmove": # run lmove
                     # set the tool
