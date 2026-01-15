@@ -9,9 +9,14 @@ class Calibration:
         """
         name: calibration file name will be <name>.json in Path.cwd()
 
-        calibration_data format:
+        File format:
           {
-            "recipe_name": [ {"raw":[...],"corrected":[...]}, ... ]
+            "data": {
+              "recipe_name": [ {"raw":[...],"corrected":[...]}, ... ]
+            },
+            "delta": {
+              "recipe_name": [dx, dy, dz]
+            }
           }
 
         Pose format (len=6):
@@ -22,9 +27,19 @@ class Calibration:
 
         if self.file_path.exists():
             with open(self.file_path, "r") as f:
-                self.calibration_data = json.load(f)
+                obj = json.load(f)
+
+            # minimal backward support:
+            # - if file is old style { "recipe": [points], ... }, treat that as data
+            if isinstance(obj, dict) and "data" in obj:
+                self.calibration_data = obj.get("data", {}) or {}
+                self.calibration_delta = obj.get("delta", {}) or {}
+            else:
+                self.calibration_data = obj if isinstance(obj, dict) else {}
+                self.calibration_delta = {}
         else:
             self.calibration_data = {}
+            self.calibration_delta = {}
 
     def _as_pose6(self, values, name="values"):
         v = np.array(values, dtype=float)
@@ -32,9 +47,39 @@ class Calibration:
             raise ValueError(f"{name} must be length 6, got {v.size}")
         return v
 
+    def _as_vec3(self, values, name="values"):
+        v = np.array(values, dtype=float)
+        if v.size != 3:
+            raise ValueError(f"{name} must be length 3, got {v.size}")
+        return v
+
     def _save(self):
+        obj = {
+            "data": self.calibration_data,
+            "delta": self.calibration_delta,
+        }
         with open(self.file_path, "w") as f:
-            json.dump(self.calibration_data, f, indent=2, separators=(",", ": "))
+            json.dump(obj, f, indent=2, separators=(",", ": "))
+
+    def set_delta(self, delta_xyz, dict_name="default"):
+        """
+        Set per-recipe delta [dx,dy,dz] which is added to XYZ during interpolation.
+        """
+        dict_name = str(dict_name)
+        d = self._as_vec3(delta_xyz, "delta_xyz")
+        self.calibration_delta[dict_name] = [float(d[0]), float(d[1]), float(d[2])]
+        self._save()
+
+    def get_delta(self, dict_name="default"):
+        """
+        Get per-recipe delta [dx,dy,dz]. Defaults to [0,0,0].
+        """
+        dict_name = str(dict_name)
+        d = self.calibration_delta.get(dict_name, [0.0, 0.0, 0.0])
+        v = np.array(d, dtype=float).reshape(-1)
+        if v.size != 3:
+            return [0.0, 0.0, 0.0]
+        return [float(v[0]), float(v[1]), float(v[2])]
 
     def add_point(self, raw_values, corrected_values, threshold=1e-3, dict_name="default"):
         """
@@ -89,13 +134,16 @@ class Calibration:
     def clear_all(self, dict_name=None):
         """
         If dict_name is provided, clears only that dict.
-        If dict_name is None, clears all dictionaries.
+        If dict_name is None, clears all dictionaries AND deltas.
         """
         if dict_name is None:
             self.calibration_data = {}
+            self.calibration_delta = {}
         else:
             dict_name = str(dict_name)
             self.calibration_data[dict_name] = []
+            if dict_name in self.calibration_delta:
+                self.calibration_delta[dict_name] = [0.0, 0.0, 0.0]
         self._save()
 
     # -------------------- pose helpers (quaternion) --------------------
@@ -152,15 +200,8 @@ class Calibration:
         """
         Inverse-distance interpolation in XYZ, plus quaternion/SLERP for orientation.
 
-        Input/Output pose: [x,y,z,a,b,c] where [a,b,c] is rotation vector in degrees.
-
-        Method:
-          - weights based on distance in XYZ between query raw pose and stored raw poses
-          - position correction uses weighted average of (corr_xyz - raw_xyz)
-          - orientation correction uses weighted blend of delta quaternions:
-                dq_i = q_corr_i * inv(q_raw_i)
-            then apply:
-                q_out = dq_blend * q_query
+        Also applies per-recipe delta_xyz at the end:
+            out_xyz += [dx,dy,dz]
         """
         dict_name = str(dict_name)
 
@@ -168,6 +209,10 @@ class Calibration:
 
         if dict_name not in self.calibration_data or not self.calibration_data[dict_name]:
             return [float(x) for x in raw_in]
+
+        delta_xyz = np.array(self.calibration_delta.get(dict_name, [0.0, 0.0, 0.0]), dtype=float).reshape(-1)
+        if delta_xyz.size != 3:
+            delta_xyz = np.array([0.0, 0.0, 0.0], dtype=float)
 
         raw_mat = np.array([p["raw"] for p in self.calibration_data[dict_name]], dtype=float)
         corr_mat = np.array([p["corrected"] for p in self.calibration_data[dict_name]], dtype=float)
@@ -179,6 +224,7 @@ class Calibration:
         i_min = int(np.argmin(d))
         if d[i_min] < threshold:
             out = corr_mat[i_min].copy()
+            out[:3] = out[:3] + delta_xyz
             return [float(x) for x in out]
 
         w = 1.0 / np.power(d, power)
@@ -192,6 +238,9 @@ class Calibration:
         err_xyz = corr_mat[:, :3] - raw_mat[:, :3]
         interp_err_xyz = (w[:, None] * err_xyz).sum(axis=0)
         out_xyz = q_xyz + interp_err_xyz
+
+        # apply per-recipe delta in XYZ (mechanical / gravity correction)
+        out_xyz = out_xyz + delta_xyz
 
         # --- orientation: blend delta quaternions with SLERP ---
         q_query = self._abc_to_quat(raw_in[3:6].tolist())
@@ -218,4 +267,4 @@ class Calibration:
         out = np.array([out_xyz[0], out_xyz[1], out_xyz[2], out_abc[0], out_abc[1], out_abc[2]], dtype=float)
 
         #return [float(x) for x in out]
-        return [float(x) for x in out[0:3]]+raw_values[3:6]
+        return [float(x) for x in out[0:3]] + raw_values[3:6]
