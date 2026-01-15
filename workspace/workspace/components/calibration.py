@@ -85,6 +85,7 @@ class Calibration:
         """
         Adds or updates a calibration point in calibration_data[dict_name].
         Replaces an existing point if raw_values are close (6D Euclidean norm).
+        Also ensures calibration_delta[dict_name] exists with default [0,0,0].
         """
         dict_name = str(dict_name)
 
@@ -93,6 +94,7 @@ class Calibration:
 
         if dict_name not in self.calibration_data:
             self.calibration_data[dict_name] = []
+            self.calibration_delta[dict_name] = [0.0, 0.0, 0.0]
 
         updated = False
         for i, entry in enumerate(self.calibration_data[dict_name]):
@@ -133,7 +135,7 @@ class Calibration:
 
     def clear_all(self, dict_name=None):
         """
-        If dict_name is provided, clears only that dict.
+        If dict_name is provided, clears only that dict and resets its delta to [0,0,0].
         If dict_name is None, clears all dictionaries AND deltas.
         """
         if dict_name is None:
@@ -142,8 +144,7 @@ class Calibration:
         else:
             dict_name = str(dict_name)
             self.calibration_data[dict_name] = []
-            if dict_name in self.calibration_delta:
-                self.calibration_delta[dict_name] = [0.0, 0.0, 0.0]
+            self.calibration_delta[dict_name] = [0.0, 0.0, 0.0]
         self._save()
 
     # -------------------- pose helpers (quaternion) --------------------
