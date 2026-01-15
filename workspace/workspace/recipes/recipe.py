@@ -396,7 +396,7 @@ class Recipe:
         """
         exit_path = []
         if exit:
-            _exit_path = [[0, 0, height_container+gap, 0, 0, 0], 
+            _exit_path = [ 
                         [0, 0, max(height_load,height_container)+padding, 0, 0, 0]]
             exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
 
