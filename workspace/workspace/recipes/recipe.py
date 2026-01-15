@@ -25,7 +25,7 @@ class Recipe:
         calibration_name=None,
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, 20, 0, 0, 0],
+        calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],
@@ -197,15 +197,15 @@ class Recipe:
                 # target_pose in the world frame
                 pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
                 # interpolate pose
-                corrected_pose_frame = Pose(self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
                 # anchor frame
-                anchor_frame = Pose(target_solid.pose(anchor=target_anchor))
+                anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
                 # corrected in anchor frame
-                path[i] = corrected_pose_frame.pose(anchor=anchor_frame, in_frame=anchor_frame)
+                path[i] = corrected_pose_frame.pose(in_frame=anchor_frame)
             
             # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
-                                tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
+                                tool_solid=approach_tool["solid"], tool_anchor=approach_tool["anchor"], tool_offset=approach_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
             if C == 2:
                 if i == 0 and approach_path: # first motion of the approach
@@ -268,11 +268,11 @@ class Recipe:
                 # target_pose in the world frame
                 pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
                 # interpolate pose
-                corrected_pose_frame = Pose(self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
                 # anchor frame
-                anchor_frame = Pose(target_solid.pose(anchor=target_anchor))
+                anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
                 # corrected in anchor frame
-                path[i] = corrected_pose_frame.pose(anchor=anchor_frame, in_frame=anchor_frame)
+                path[i] = corrected_pose_frame.pose(in_frame=anchor_frame)
             
             # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
@@ -409,15 +409,14 @@ class Recipe:
         output_exit = []
         if trigger_io:
             # enable component setting
-            enable = list(getattr(component, "enable", []))
+            enable = list(getattr(component, "output_enable", []))
             
             # disable component setting
-            disable = list(getattr(component, "disable", []))
+            disable = list(getattr(component, "output_disable", []))
             
             # output config
-            output_approach = tool.disable + enable
-            output_touch = tool.enable + disable
-
+            output_approach = tool.output_disable + enable
+            output_touch = tool.output_enable + disable
         """
         run attachment
         """
@@ -548,15 +547,14 @@ class Recipe:
         output_exit = []
         if trigger_io:
             # enable component setting
-            enable = list(getattr(component, "enable", []))
+            enable = list(getattr(component, "output_enable", []))
             
             # disable component setting
-            disable = list(getattr(component, "disable", []))
+            disable = list(getattr(component, "output_disable", []))
             
             # output config
-            output_approach = disable + tool.enable
-            output_touch = enable + tool.disable
-
+            output_approach = disable + tool.output_enable
+            output_touch = enable + tool.output_disable
         """
         run attachment
         """
@@ -625,10 +623,10 @@ class Recipe:
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
-        input("1- ✋ hold the robot by hand...")
+        #input("1- ✋ hold the robot by hand...")
 
         # next we release the motor
-        self.core.robot_api.motor(0)
+        #self.core.robot_api.motor(0)
 
         # now ask user to align the robot to the calibration point
         input("2- 🎯 take the robot to the calibration point...")
@@ -672,7 +670,7 @@ class Recipe:
         # now we ask the user to move the robot out of the calibration point
         input("3- ⬆️ take the robot out of the calibration point...")
         # now we turn the motors on again
-        self.core.robot_api.motor(1)
+        #self.core.robot_api.motor(1)
 
         self.core.calibration.add_point(raw_xyz_values, corrected_xyz_values, threshold=1e-3, dict_name=self.calibration_name)
 

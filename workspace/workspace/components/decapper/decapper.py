@@ -39,5 +39,8 @@ class Decapper:
         }
 
         # open and close
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
+        self.output_enable = prm["output_enable"]
+        self.output_disable = prm["output_disable"]
+
+        # io state
+        self.output_state = None

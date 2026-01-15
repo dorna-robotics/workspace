@@ -187,7 +187,6 @@ class Calibration:
             return [float(x) for x in raw_in]
 
         w = w / w_sum
-        print("weights:", w)  # Debug line to show weights
 
         # --- position: apply weighted correction in xyz ---
         err_xyz = corr_mat[:, :3] - raw_mat[:, :3]
@@ -217,4 +216,6 @@ class Calibration:
         out_abc = self._quat_to_abc(q_out)
 
         out = np.array([out_xyz[0], out_xyz[1], out_xyz[2], out_abc[0], out_abc[1], out_abc[2]], dtype=float)
-        return [float(x) for x in out]
+
+        #return [float(x) for x in out]
+        return [float(x) for x in out[0:3]]+raw_values[3:6]
