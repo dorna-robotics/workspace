@@ -35,7 +35,12 @@ class Core:
             "exposure": None,
             "native_res": None,
         },
-        has_tool_changer = True,
+        camera_mount = {
+            "type": "dorna_ta_j4_1",
+            "T": [46.5174596, 32.0776662, -4.24772615, -0.27547989, 0.27691881, 89.6939516],
+            "ej": [0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        has_tool_changer = True, 
         tool_changer_output_down = [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]], # attach signal
         tool_changer_output_up = [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]], # detach signal
         has_motion_plan = False, # enable or disable path planing
@@ -78,9 +83,6 @@ class Core:
         self.robot_ip = prm["ip"]
 
         # -------- calibration
-        # axis_mask = [1,1,1,1,1,1,0,0]
-        # axis_mask[self.rail_cfg["axis"]] = 1
-        # self.calibration = Calibration(self.name, axis_mask)
         self.calibration = Calibration(self.name)
 
         # -------- tool_changer
@@ -128,7 +130,8 @@ class Core:
         
         # camera api
         self.camera = None
-        if not self._simulation_mode and self.has_camera:
+        # connect to the camera
+        if self.has_camera and self.camera_serial_number :
             try:
                 # import
                 from camera import Camera
@@ -137,8 +140,11 @@ class Core:
                 self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
                 print("✅ camera connected")
             except Exception as e:
+                self.camera = None
                 print(f"❌ camera connection failed: {e}")
 
+        # camera mount
+        self.camera_mount = prm["camera_mount"]
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
 
@@ -1059,7 +1065,7 @@ class SimulationAPI:
         return 2
 
 
-    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0]):
+    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0], **kwargs):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
         Interpolates joint updates at `interp_freq` Hz (default 120).

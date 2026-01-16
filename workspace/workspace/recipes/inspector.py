@@ -110,11 +110,10 @@ class FixedInspector(Recipe):
 
 
 class MobileInspector:
-    def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
+    def __init__(self, workspace, core, detection_preset = {}, **kwargs):
 
         self.workspace = workspace
         self.core = core
-        self.component = component
 
         # detection_preset
         self.detection_preset = detection_preset
@@ -123,15 +122,25 @@ class MobileInspector:
         try:
             from dorna_vision import Detection
             # init detections
-            self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, **self.detection_preset)
+            self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, camera_mount=self.core.camera_mount, **self.detection_preset)
         except Exception as ex:
-            print(f"[Detection disabled] {e}")
+            print(self.detection_preset)
+            print(f"[Detection disabled] {ex}")
 
     
     """
     run detection
     """
     def detect(self, retval=[], **kwargs):
-        if not self.component.simulation:
-            retval = {d:self.detection[d].run() for d in self.detection}
+        if not self.core._simulation_mode:
+            # ensure Detection always points to the current robot API
+            if self.detection.robot is not self.core.robot_api:
+                self.detection.robot = self.core.robot_api
+                # refresh cached camera mount (depends on robot.config)
+                self.detection.camera_mount = self.detection.set_camera_mount(
+                    self.detection.camera_mount_label
+                )
+
+            retval = self.detection.run(**kwargs)
         return retval
+

@@ -1,11 +1,18 @@
+import json
+
 from workspace.recipes.tool_rack import ToolRack
 from workspace.recipes.hotel import Hotel
 from workspace.recipes.adapter import Adapter
 from workspace.recipes.feeder import Feeder
 from workspace.recipes.rack import Rack
 from workspace.recipes.decapper import Decapper
+from workspace.recipes.inspector import MobileInspector
 
 def create_recipes(workspace, core):
+    # read detection preset
+    detection_preset = json.load(open("config/detection_preset.json"))
+    
+
     return {
         "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_2"], left_approach=True),
         "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_1"], left_approach=True),
@@ -21,4 +28,5 @@ def create_recipes(workspace, core):
         "feeder": Feeder(workspace, core, workspace.components["feeder"], left_approach=False),
 
         "decapper": Decapper(workspace, core, workspace.components["decapper_0"], base_distance=50),
+        "inspector": MobileInspector(workspace, core, detection_preset=detection_preset["cap"])
     }

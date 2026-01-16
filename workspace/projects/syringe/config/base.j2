@@ -1,13 +1,11 @@
 core:
   type: core
   simulation: True
+  ip: "192.168.254.88"
   has_rail: True
   has_tool_changer: True
-  ip: "192.168.254.88"
-  tool_changer:
-    present: True
-    attach: [[7, 0, 0.25]] 
-    detach: [[7, 1, 0.25]]
+  has_camera: True
+  camera_serial_number: "218622272001"
   attach:
     parent_name: fixture_plate_1
     parent_solid: body

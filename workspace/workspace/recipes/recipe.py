@@ -1,4 +1,5 @@
 from copy import deepcopy
+from json import tool
 from mergedeep import merge
 from collections import deque
 from dorna2 import pose as dorna_pose
@@ -190,7 +191,11 @@ class Recipe:
         """
         approach
         """
-        path = list(approach_path+[target_offset])
+        if target_offset is None:
+            path = approach_path[:]
+        else:
+            path = approach_path[:] + [target_offset]
+        
         for i in range(len(path)):
             # calibration
             if self.calibration:
@@ -304,10 +309,11 @@ class Recipe:
 
         return True
 
+
     
     # pick from specific anchor in the given solid and component
     # always locate the object in the anchor, and go for that
-    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):        
         """
         assign kwargs
         """
@@ -603,6 +609,18 @@ class Recipe:
         # touch
         return self.touch(**place_prm)
 
+
+    def above(self, anchor, solid_name="body", component=None, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        # pick parameters
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=True, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        if not pick_prm:
+            return False
+        # update
+        pick_prm["target_offset"] = None
+        pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
+        # touch
+        return self.touch(**pick_prm)
+ 
 
     # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot 
     # to the target anchor and offset using tool attached to the robot. Then the user click on a button to approve the calibration point
