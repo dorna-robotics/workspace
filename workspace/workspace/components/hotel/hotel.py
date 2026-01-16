@@ -24,9 +24,9 @@ class Hotel:
         self.size = prm["size"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
-
         # levels
-        for i in range(prm["level"]):
+        self.level = prm["level"]
+        for i in range(self.level):
             # center
             prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
             # top

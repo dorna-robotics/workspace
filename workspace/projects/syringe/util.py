@@ -18,7 +18,7 @@ def create_recipes(workspace, core):
         "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_1"], left_approach=True),
         "tool_rack_0": ToolRack(workspace, core, workspace.components["tool_rack_0"], left_approach=True),
 
-        "hotel": Hotel(workspace, core, workspace.components["hotel_0"], left_approach=True, base_distance=50),
+        "hotel": Hotel(workspace, core, workspace.components["hotel_0"], left_approach=True, base_distance=150),
 
         "cap_holder": Rack(workspace, core, workspace.components["sbs_adapter_1"], left_approach=False, base_distance=50),
         "sbs_plate": Rack(workspace, core, workspace.components["sbs_adapter_0"], base_distance=50),

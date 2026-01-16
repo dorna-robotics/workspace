@@ -9,7 +9,7 @@ gripper_0:
     child_anchor: tool_rack_connection
 
 gripper_1:
-  type: gripper_calibration_vertical
+  type: gripper_sbs_width
   has_tool_changer: True 
   attach:
     parent_name: tool_rack_1
@@ -70,3 +70,12 @@ cap_{{ index }}_{{ r }}{{ c }}:
 {% endfor %}
 {% endfor %}
 {% endfor %}
+
+microplate_hotel:
+  type: rack_autosampler_2ml
+  attach:
+    parent_name: hotel_0
+    parent_solid: body
+    parent_anchor: place_3
+    child_solid: body
+    child_anchor: center

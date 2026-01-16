@@ -10,6 +10,19 @@ class Feeder(Recipe):
         base_distance=100,
         # calibration
         calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        # index_list
+        index_list = [
+            [0, {"limit": {"center": {"width": [378, 398], "height": [304, 324], "inv": 0}}}],
+            [1, {"limit": {"center": {"width": [417, 438], "height": [271, 291], "inv": 0}}}],
+            [-1, {"limit": {"center": {"width": [329, 349], "height": [318, 338], "inv": 0}}}],
+            [2, {"limit": {"center": {"width": [442, 462], "height": [226, 246], "inv": 0}}}],
+            [-2, {"limit": {"center": {"width": [276, 296], "height": [311, 331], "inv": 0}}}],
+        ],
+        # mix
+        vaj_mix = [200, 600, 3000],
+        thr_dir = 10000,
+        pick_offset = 0,
+        shift_steps = 21,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -26,37 +39,43 @@ class Feeder(Recipe):
         )
 
         # mix sign
-        self.mix_sign = 1
+        self.mix_dir = 1
 
-    #???
+        # index list
+        self.index_list = prm["index_list"]
+        # mix
+        self.vaj_mix = prm["vaj_mix"]
+        self.thr_dir = prm["thr_dir"]
+        self.pick_offset = prm["pick_offset"]
+        self.shift_steps = prm["shift_steps"]
+
+
     # mix: mix the feeder for certain turns and shift the slots
-    def mix(self, turn=1, shift_slot=5, vaj=[200, 600, 3000], direction_thr=10000, **kwargs):
+    def mix(self, **kwargs):
         # current joint
         current_joint = self.core.robot_api.joint()
 
         # new_joint
         new_joint = current_joint[:]
         # change the direction if necessary
-        if abs(new_joint[self.component.axis]) > direction_thr:
-            self.mix_sign = -1 * self.mix_sign
+        if abs(new_joint[self.component.axis]) > self.thr_dir:
+            self.mix_dir = -1 * self.mix_dir
         
-        new_joint[self.component.axis] += self.mix_sign*(360*turn + shift_slot*(360/self.component.num_slots))
-
-        # motion
-        return self.core.robot_api.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+        return self.roate_in_step(step=self.mix_dir*self.shift_steps, **kwargs)
 
 
     # roate the feeder to move to the nth slot from the current
-    def move(self, step=1, vaj=[200, 600, 3000], **kwargs):
+    def roate_in_step(self, step=1, **kwargs):
         # current joint
         current_joint = self.core.robot_api.joint()
 
         # new_joint
-        new_joint = current_joint[:]
-        new_joint[self.component.axis] += step*(360/self.component.num_slots)
+        new_joint = current_joint[:] # init
+        current_steps = int((new_joint[self.component.axis] - self.pick_offset)*(self.component.num_slots/360)) # current steps
+        new_joint[self.component.axis] = (step+current_steps)*(360/self.component.num_slots)+self.pick_offset # make sure they are aligned
 
         # motion
-        return self.core.robot_api.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+        return self.core.robot_api.jmove(joint=new_joint, vel=self.vaj_mix[0], accel=self.vaj_mix[1], jerk=self.vaj_mix[2])
     
 
     def pick(self, anchor="place", solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=25, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
@@ -73,23 +92,21 @@ class Feeder(Recipe):
     # if yes, present that position to the pick position of the feeder
     # index_list contains a lsit of indices to check, each element is a index(step) and its preset
     """
-    def present_cap(self, inspector, index_list=[], **kwargs):
+    def present_cap(self, inspector, **kwargs):
         # empty index list
-        if not index_list:
+        if not self.index_list:
             return False
-        
         # loop over index list
-        for step, preset in index_list:
+        for step, preset in self.index_list:
             # object exists
             if inspector.detect(**preset, **kwargs):
                 # move the feeder to that position
-                return self.move(step=step)
+                return self.roate_in_step(step=step)
         
         # mix
         self.mix()
-        
         # run recursively
-        return self.present_cap(inspector=inspector, index_list=index_list, **kwargs)
+        return self.present_cap(inspector=inspector, **kwargs)
 
 
 

@@ -3,8 +3,8 @@ from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
 
-@register("sbs_gripper_width")
-class SBS_gripper_width(Gripper):
+@register("gripper_sbs_width")
+class gripperSBSWidth(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41, 0, 0, 0], "tip": [119, 0, 56, 0, 0, 0]}},
         collision_box = 
@@ -15,8 +15,8 @@ class SBS_gripper_width(Gripper):
         ]},
         #cfg
         has_tool_changer = False,
-        output_enable=[[None, None, 0]],
-        output_disable=[[None, None, 0]],
+        output_enable=[[0, 0, 0], [1, 0, 0.1]],
+        output_disable=[[1, 1, 0.5], [0, 1, 0.75], [0, 0, 0.1]],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

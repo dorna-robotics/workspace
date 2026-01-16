@@ -6,27 +6,16 @@ from workspace.recipes.recipe import Recipe
 class Hotel(Recipe):
     DEFAULTS = dict(
         # ref joints
-        target_solid_name="body",
         target_anchor="clb_0",
         target_offset=[0, 0, 10, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
-        base_distance=50,
-        rail_step=10,
-        rail_span=20,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        base_distance=150,
+        rail_step=20, #10
+        rail_span=5, # 5    
         # calibration
         calibration=True,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, 20, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -35,6 +24,13 @@ class Hotel(Recipe):
         merge(prm, self.DEFAULTS) # self
         merge(prm, kwargs) # kwargs
 
+        # adjust calibration
+        prm["calibration_targets"] = {
+            k: [s for s in component.assembly[k].anchors if s.startswith("clb_")]
+            for k in component.assembly
+        }
+
+        # super init
         super().__init__(
             workspace=workspace,
             core=core,

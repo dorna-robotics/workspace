@@ -7,7 +7,7 @@ from workspace.components.gripper.gripper import Gripper
 @register("gripper_calibration_horizontal")
 class GripperCalibrationHorizontal(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 40, 10.5, 90, 0, 0], "tip": [0, 45, 10.5, -90, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[60, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551], "tip": [66, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551]}},
         #cfg
         has_tool_changer = True,
         output_enable=[[None, None, 0]],
