@@ -10,11 +10,19 @@ from workspace.components.printer.cab_wrapper import Cab
 class PrinterAxon1(Printer):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 93.5, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 93.5, 0, 0, 0],
+            "hole_0": [200, 50, 0, 0, 0, 0], "hole_1": [-200, 50, 0, 0, 0, 0], "hole_2": [-200, -50, 0, 0, 0, 0], "hole_3": [200, -50, 0, 0, 0, 0],
+            "clb_0": [210.865, 41, 107, 0, 0, 0]},
         },
         # cfg
-        ip="127.0.0.1",
+        ip="",
         simulation=True,
+        label_cfg={
+            "width_in": 1.5,
+            "length_in": 1,
+            "gap_in": 0.12,
+            "ptype": "l1"
+        },
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -33,11 +41,19 @@ class PrinterAxon1(Printer):
         # simulation
         self.simulation = prm["simulation"]
 
+        # ip
+        self.ip = prm["ip"]
+
+        # label cfg
+        self.label_cfg = prm["label_cfg"]
+
         # printer
         self.device = None
-        if not self.simulation:
+        if self.ip:
             # init camera
-            self.device = Cab(ip=prm["ip"], simulation=self.simulation)
+            self.device = Cab(ip=self.ip)
+            # set label
+            self.device.set_label(**self.label_cfg)
 
 
     def _place_offset(self, radius):

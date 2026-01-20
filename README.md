@@ -1,3 +1,8 @@
+# Remote access
+```
+ssh -p 52022 <device_username>@<your_public_ip>
+```
+
 # Server
 ```bash
 cd /home/dorna/Downloads/workspace/workspace

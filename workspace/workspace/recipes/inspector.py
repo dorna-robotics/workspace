@@ -17,27 +17,7 @@ result = []
 class FixedInspector(Recipe):
     DEFAULTS = dict(
         # ref joints
-        target_solid_name="body",
         target_anchor="place",
-        target_offset=[0, 0, 50, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
-        # IK
-        left_approach=True,
-        base_distance=350,
-        rail_step=5.0,
-        rail_span=10,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
-        # calibration
-        calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
@@ -61,22 +41,24 @@ class FixedInspector(Recipe):
             # init detections
             self.detection = Detection(camera=self.component.camera, robot=None, **self.detection_preset)
         except Exception as ex:
-            print(f"[Detection disabled] {e}")
+            self.detection
+            print(f"[Detection disabled] {ex}")
 
     """
     present the robot to the insepction component
     """
-    def present(self, **kwargs):
+    def present(self, approach=True, padding=50, load_anchor="center", **kwargs):
         return self.place_in(
             anchor="place",
             solid_name="body",
-            approach=True,
+            approach=approach,
             exit=False,
             attachment=False, 
             trigger_io=False,
-            padding=50,
+            padding=padding,
             gap=2,
-            load_anchor="center", 
+            load_anchor=load_anchor,
+            gravity_offset=0, 
             **kwargs)
 
     
@@ -84,29 +66,15 @@ class FixedInspector(Recipe):
     run detection
     """
     def detect(self, retval=[], **kwargs):
-        if not self.component.simulation:
-            retval = {d:self.detection[d].run() for d in self.detection}
+        if not self.component.simulation and self.detection is not None:
+            retval = self.detection.run(**kwargs)
         return retval
 
     """
     rotate j5
     """
     def rotate(self, rotation=90, **kwargs):
-        # current joint
-        current_joint = self.core.robot_api.joint()
-
-        # new_joint
-        new_joint = current_joint[:]
-        new_joint["j5"] = (new_joint["j5"] + rotation + 175) % 350 - 175
-
-        # motion
-        self.core.robot_api.jmove(joint=new_joint, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
-
-        # sleep
-        self.core.robot_api.sleep(0.1)
-
-        return True
-
+        return super.rotaterotate(rotation=rotation, joint="j5", **kwargs)
 
 
 class MobileInspector:
@@ -124,7 +92,7 @@ class MobileInspector:
             # init detections
             self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, camera_mount=self.core.camera_mount, **self.detection_preset)
         except Exception as ex:
-            print(self.detection_preset)
+            self.detection = None
             print(f"[Detection disabled] {ex}")
 
     
@@ -132,15 +100,10 @@ class MobileInspector:
     run detection
     """
     def detect(self, retval=[], **kwargs):
-        if not self.core._simulation_mode:
+        if not self.core._simulation_mode and self.detection is not None:
             # ensure Detection always points to the current robot API
             if self.detection.robot is not self.core.robot_api:
                 self.detection.robot = self.core.robot_api
-                # refresh cached camera mount (depends on robot.config)
-                self.detection.camera_mount = self.detection.set_camera_mount(
-                    self.detection.camera_mount_label
-                )
 
             retval = self.detection.run(**kwargs)
         return retval
-

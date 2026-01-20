@@ -9,11 +9,9 @@ class Keyto:
         self,
         port: Optional[str] = None,
         baud: int = 38400,
-        simulation: bool = False,
     ):
         self.port = port
         self.baud = baud
-        self.simulation = simulation
 
         self.ser: Optional[serial.Serial] = None
 
@@ -25,8 +23,6 @@ class Keyto:
     # ==================================================
 
     def is_connected(self) -> bool:
-        if self.simulation:
-            return True
         return self.ser is not None and self.ser.is_open
 
     def connect(self) -> bool:
@@ -38,9 +34,6 @@ class Keyto:
         4) Fail cleanly
         On success, initialize() is called exactly once.
         """
-        if self.simulation:
-            return True
-
         if self.is_connected():
             return True
 
@@ -100,9 +93,6 @@ class Keyto:
     # ==================================================
 
     def _send(self, cmd: str) -> str:
-        if self.simulation:
-            return "1<0"
-
         if not self.is_connected():
             return ""
 
@@ -115,9 +105,6 @@ class Keyto:
             return ""
 
     def _wait_until_idle(self, timeout: float = 15.0) -> bool:
-        if self.simulation:
-            return True
-
         start = time.time()
         while time.time() - start < timeout:
             if "1<0" in self._send("1>?"):
@@ -130,26 +117,14 @@ class Keyto:
     # ==================================================
 
     def has_tip(self) -> bool:
-        if self.simulation:
-            return True
         resp = self._send("1>Rr3")
         return "12:1" in resp
-
-
-    def has_no_tip(self) -> bool:
-        if self.simulation:
-            return True
-        resp = self._send("1>Rr3")
-        return "12:1" not in resp
 
 
     def initialize(self, speed: int = 16000) -> bool:
         """
         Mode 1 = Home only
         """
-        if self.simulation:
-            return True
-
         res = self._send(f"1>It{speed},100,1")
         if "1<2" in res:
             return self._wait_until_idle()
@@ -160,9 +135,6 @@ class Keyto:
         """
         Mode 0 = Home + Eject
         """
-        if self.simulation:
-            return True
-
         res = self._send(f"1>It{speed},100,0")
         if "1<2" in res:
             return self._wait_until_idle()
@@ -170,9 +142,6 @@ class Keyto:
 
 
     def aspirate(self, volume_ul: float, speed: int = 200) -> bool:
-        if self.simulation:
-            return True
-
         steps = int(volume_ul * self.liquid_steps_per_ul)
         res = self._send(f"1>Ia{steps},{speed},10")
         return "1<2" in res and self._wait_until_idle()
@@ -184,9 +153,6 @@ class Keyto:
         speed: int = 500,
         blowout: bool = False,
     ) -> bool:
-        if self.simulation:
-            return True
-
         steps = int(volume_ul * self.liquid_steps_per_ul)
         stop_spd = 500 if blowout else 10
         res = self._send(f"1>Da{steps},0,{speed},{stop_spd}")

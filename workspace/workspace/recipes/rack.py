@@ -28,7 +28,7 @@ class Rack(Recipe):
         
 
     def pick_from(self, anchor, **kwargs):
-        # find plate component
+        # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
@@ -39,7 +39,7 @@ class Rack(Recipe):
              
 
     def place_in(self, anchor, **kwargs):
-        # find plate component
+        # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)

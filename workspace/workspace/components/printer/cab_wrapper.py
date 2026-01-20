@@ -73,7 +73,6 @@ class Cab:
         ip: str = "192.168.100.12",
         port: int = 9100,
         timeout_s: float = 5.0,
-        simulation: bool = False,
         label: Optional[LabelSpec] = None,
         settings: Optional[PrintSettings] = None,
         autorun_delay_s: float = 0.10,
@@ -85,9 +84,6 @@ class Cab:
         self.ip = ip
         self.port = int(port)
         self.timeout_s = float(timeout_s)
-
-        # Simulation can be toggled later with set_simulation()
-        self.simulation = bool(simulation)
 
         self.label = label or LabelSpec()
         self.settings = settings or PrintSettings()
@@ -107,24 +103,6 @@ class Cab:
             CodeType.DATAMATRIX: ElementSpec("Barcode1", 0.4461, 0.2796, 0, "datamatrix", (0.0558,)),
         }
 
-    # -------------------------
-    # NEW: runtime simulation toggle
-    # -------------------------
-    def set_simulation(self, enabled: bool) -> None:
-        """
-        Turn simulation on/off at runtime.
-
-        - When enabled=True:
-            * All atomic functions return True (or safe dummy values)
-            * No TCP connections are attempted
-        - When enabled=False:
-            * Real network I/O is used again immediately
-
-        This lets robotics code flip between “dry testing” and “real hardware” without
-        rebuilding a new object.
-        """
-        self.simulation = bool(enabled)
-        self.last_result = PrintResult(True, f"set_simulation({self.simulation})")
 
     # -------------------------
     # Configuration methods
@@ -169,9 +147,6 @@ class Cab:
     # Atomic comm checks
     # -------------------------
     def is_reachable(self) -> bool:
-        if self.simulation:
-            self.last_result = PrintResult(True, "(SIM) is_reachable=True")
-            return True
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(self.timeout_s)
@@ -183,24 +158,15 @@ class Cab:
             return False
 
     def get_escs(self) -> Optional[str]:
-        if self.simulation:
-            return "Y-000000N"
         return self._query_raw(ESC + b"s")
 
     def get_esca(self) -> Optional[str]:
-        if self.simulation:
-            return "I00000"
         return self._query_raw(ESC + b"a")
 
     def get_escj(self) -> Optional[str]:
-        if self.simulation:
-            return "SIM_JOB"
         return self._query_raw(ESC + b"j")
 
     def can_query(self) -> bool:
-        if self.simulation:
-            self.last_result = PrintResult(True, "(SIM) can_query=True")
-            return True
         r = self.get_escs()
         if r is None:
             self.last_result = PrintResult(False, "can_query=False (no ESCs reply)")
@@ -240,10 +206,6 @@ class Cab:
     # Waiting / gating
     # -------------------------
     def wait_ready(self, timeout_s: Optional[float] = None) -> bool:
-        if self.simulation:
-            self.last_result = PrintResult(True, "(SIM) wait_ready=True", verified=True, verify_method="SIM")
-            return True
-
         tout = self.ready_timeout_s if timeout_s is None else float(timeout_s)
         t0 = time.time()
         last_s = None
@@ -275,10 +237,6 @@ class Cab:
         return False
 
     def wait_print_done(self, job_id: str, timeout_s: Optional[float] = None) -> bool:
-        if self.simulation:
-            self.last_result = PrintResult(True, "(SIM) wait_print_done=True", job_id=job_id, verified=True, verify_method="SIM", escj=job_id)
-            return True
-
         tout = self.print_timeout_s if timeout_s is None else float(timeout_s)
         t0 = time.time()
 
@@ -361,10 +319,6 @@ class Cab:
     def dry_run_spin(self, count: int = 1) -> bool:
         count = max(1, int(count))
 
-        if self.simulation:
-            self.last_result = PrintResult(True, f"(SIM) dry_run_spin=True x{count}", verified=True, verify_method="SIM")
-            return True
-
         if not self.wait_ready():
             return False
 
@@ -392,10 +346,6 @@ class Cab:
         return True
 
     def print_one(self, code_type: CodeType, data: str, *, autorun: bool = True, verify: bool = True) -> bool:
-        if self.simulation:
-            self.last_result = PrintResult(True, f"(SIM) print_one=True {code_type.value}", job_id="SIM_JOB", verified=True, verify_method="SIM")
-            return True
-
         element = self._elements.get(code_type)
         if element is None:
             self.last_result = PrintResult(False, f"print_one=False (unknown CodeType {code_type})")
@@ -443,16 +393,12 @@ class Cab:
 
 ### Example usage
 if __name__ == "__main__":
-    p = Cab(ip="192.168.100.12", simulation=False, dryrun_cycle_s=1.5)
+    p = Cab(ip="192.168.100.12", dryrun_cycle_s=1.5)
     p.set_label(width_in=1.50, length_in=1.00, gap_in=0.12, ptype="l1")
 
     print("1) real print")
     print(p.print_qr("TUBE_000123", autorun=True, verify=True), p.last_result)
 
-    # print("2) flip into simulation mid-run")
-    # p.set_simulation(True)
-    # print(p.dry_run_spin(3), p.last_result)  # will instantly return True in SIM
-
-    # print("3) flip back to real hardware")
-    # p.set_simulation(False)
-    # print(p.dry_run_spin(2), p.last_result)
+    # dry run
+    #faking the print
+    # p.dry_run_spin(count=1)

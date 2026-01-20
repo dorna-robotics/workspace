@@ -612,7 +612,7 @@ class Recipe:
 
     def above(self, anchor, solid_name="body", component=None, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=True, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         if not pick_prm:
             return False
         # update
@@ -621,6 +621,21 @@ class Recipe:
         # touch
         return self.touch(**pick_prm)
  
+
+    def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
+        # current joint
+        current_joint = self.core.robot_api.joint()
+
+        # new_joint
+        new_joint = current_joint[:]
+        new_joint[joint] = (new_joint[joint] + rotation + limit[1]) % abs(limit[1]-limit[0]) + limit[0]
+
+        # motion
+        self.core.robot_api.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+
+        # sleep
+        return self.core.robot_api.sleep(0.1)
+
 
     # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot 
     # to the target anchor and offset using tool attached to the robot. Then the user click on a button to approve the calibration point

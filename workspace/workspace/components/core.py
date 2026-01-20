@@ -109,25 +109,28 @@ class Core:
         self.dorna = Dorna()
         if self.robot_ip:
             if self.dorna.connect(self.robot_ip):
-                print("✅ robot connected")
+                print(f"✅ 🤖 robot {self.name} connected")
             else:
                 # simulation get activated
-                print("❌ robot connection failed")
+                print(f"❌ 🤖 robot {self.name} connection failed")
                 self._simulation_mode = True
 
         # optional robot API hookup
         if not self._simulation_mode:
-            print("🟡 simulation api disabled")
+            print("🟡 🕹️ simulation api disabled")
             self.robot_api = self.dorna
         else:
             self.robot_api = SimulationAPI()
-            print("🔵 simulation api enabled")
+            print("🔵 🕹️ simulation api enabled")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
         self.camera_serial_number = prm["camera_serial_number"]
         self.camera_cfg = prm["camera_cfg"]
         
+        # camera mount
+        self.camera_mount = prm["camera_mount"]
+
         # camera api
         self.camera = None
         # connect to the camera
@@ -137,14 +140,18 @@ class Core:
                 from camera import Camera
                 # init camera
                 self.camera = Camera()
-                self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
-                print("✅ camera connected")
+                if not self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
+                    self.camera = None
             except Exception as e:
+                print(f"camera connection failed {e}")
                 self.camera = None
-                print(f"❌ camera connection failed: {e}")
-
-        # camera mount
-        self.camera_mount = prm["camera_mount"]
+            
+            # connection status
+            if self.camera is not None:
+                print(f"✅ 📷 camera {self.name} connected")
+            else:
+                print(f"❌ 📷 camera {self.name} connection failed")
+        
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
 
@@ -373,12 +380,12 @@ class Core:
             # switch to real robot
             self._simulation_mode = False
             self.robot_api = self.dorna
-            print("Switched to real robot API")
+            print("🟡 🕹️ simulation api disabled")
         elif not self._simulation_mode and on:
             # switch to simulation
             self._simulation_mode = True
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
-            print("Switched to simulation API")
+            print("🔵 🕹️ simulation api enabled")
 
 
 
@@ -615,7 +622,7 @@ class Core:
 
     def motion_plan(self, joint):
 
-        print("Motion planner called")
+        print("motion planner called")
 
         """
         Collision-aware joint move:
@@ -690,7 +697,7 @@ class Core:
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
-        print(f"Operation finished in {execution_time:.4f} seconds")
+        print(f"operation finished in {execution_time:.4f} seconds")
         
         #print(res)
 
