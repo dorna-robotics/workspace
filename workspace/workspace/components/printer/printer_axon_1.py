@@ -77,5 +77,3 @@ class PrinterAxon1(Printer):
         return dorna_pose.transform_pose(offset_in_no_rotation, 
                                 from_frame=place_no_rotation,
                                 to_frame=self.assembly[next(iter(self.assembly))].pose("place"))
-
-    
