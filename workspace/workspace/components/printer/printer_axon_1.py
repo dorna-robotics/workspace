@@ -11,7 +11,7 @@ from dorna2 import pose as dorna_pose
 class PrinterAxon1(Printer):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 83.1-25, 0, 0, -45],
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 83.1-25, 0, 0, 135],
             "hole_0": [200, 50, 0, 0, 0, 0], "hole_1": [-200, 50, 0, 0, 0, 0], "hole_2": [-200, -50, 0, 0, 0, 0], "hole_3": [200, -50, 0, 0, 0, 0],
             "clb_0": [210.865, 41, 107, 0, 0, -90]},
         },
@@ -68,12 +68,15 @@ class PrinterAxon1(Printer):
         # place_no_rotation
         place_no_rotation = self.assembly[next(iter(self.assembly))].pose("place")[0:3] + self.assembly[next(iter(self.assembly))].anchors["center"][3:6]
 
+        # place
+        place = self.assembly[next(iter(self.assembly))].pose("place")
+
         # offset in no rotation
         offset_in_no_rotation = [np.cos(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
                             np.sin(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
-                            0, 0, 0, 0] 
+                            0] + place[3:6]
 
         # offset in place
         return dorna_pose.transform_pose(offset_in_no_rotation, 
                                 from_frame=place_no_rotation,
-                                to_frame=self.assembly[next(iter(self.assembly))].pose("place"))
+                                to_frame=place)

@@ -29,7 +29,7 @@ rack_falcon:
     child_anchor: center
 
 
-{% for r in "ABCD" %}
+{% for r in "AB" %}
 {% for c in range(1, 6) %}
 falcon_{{ r }}{{ c }}:
   type: tube_falcon_15ml
@@ -39,14 +39,20 @@ falcon_{{ r }}{{ c }}:
     parent_anchor: {{ r }}{{ c }}
     child_solid: body
     child_anchor: center
+{% endfor %}
+{% endfor %}
+
+{% for r in "CD" %}
+{% for c in range(1, 6) %}
 cap_{{ r }}{{ c }}:
   type: cap_falcon_15ml
   attach:
-    parent_name: falcon_{{ r }}{{ c }}
+    parent_name: rack_falcon
     parent_solid: body
-    parent_anchor: place
+    parent_anchor: {{ r }}{{ c }}
     child_solid: body
     child_anchor: center
+    offset: [0, 0, 111, 0, 0, 0]
 {% endfor %}
 {% endfor %}
 

@@ -374,7 +374,7 @@ class Recipe:
         pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
         """
         pose_offset = dorna_pose.Pose(
-                        dorna_pose.transform_pose(
+                        pose=dorna_pose.transform_pose(
                             [0, 0, 0, 0, 0, 0], 
                             from_frame=load_list[0].pose("center"),
                             to_frame=component.assembly[solid_name].pose(anchor)
@@ -387,6 +387,7 @@ class Recipe:
         """
         _target_offset = [0, 0, height_load, 0, 0, 0]
         target_offset = pose_offset.pose(offset=_target_offset)
+
 
         """
         approach path
@@ -529,20 +530,20 @@ class Recipe:
         """
         pose_offset
         """
-        pose_offset = dorna_pose.Pose(pose=offset)
+        #pose_offset = dorna_pose.Pose(pose=offset)
 
         """approach path"""
         approach_path = []
         if approach:
             _approach_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0], 
                             [0, 0, height_container+gap, 0, 0, 0]]
-            approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
+            approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
 
         """exit path"""
         exit_path = []
         if exit:
             _exit_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0]]
-            exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
+            exit_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _exit_path]
 
         """
         output config

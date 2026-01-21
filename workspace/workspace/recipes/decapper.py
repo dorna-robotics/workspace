@@ -26,15 +26,15 @@ class Decapper(Recipe):
         )
 
 
-    def place_tube(self, approach=True, exit=True):
+    def place(self, approach=True, exit=True):
         return self.place_in(anchor="place", approach=approach, exit=exit, gravity_offset=0)
 
 
-    def pick_tube(self, approach=True, exit=True):
+    def pick(self, approach=True, exit=True):
         return self.pick_from(anchor="place", approach=approach, exit=exit)
 
 
-    def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, rotation=340, **kwargs):        
+    def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, twist=400, **kwargs):        
         # pick parameters
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=False, attachment=False, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
@@ -68,7 +68,7 @@ class Decapper(Recipe):
         if component_cap.cap_type == "screw":
             # chunks
             twist_chunks = lambda t: ([t % rotation] if t % rotation else []) + [rotation] * (t // rotation)
-            chunks = [0] + twist_chunks(component_cap.twist)
+            chunks = [0] + twist_chunks(twist or component_cap.twist) # rewrite twist, with the given twist
             joint_list = []
             z_offset = 0
             for chunk in chunks:
@@ -80,12 +80,6 @@ class Decapper(Recipe):
                 if C != 2:
                     print("Could not find valid joints to decap")
                     return False
-                
-                # calibration
-                if self.calibration:
-                    #J = self.core.calibration.interpolate(J[:])
-                    pass
-                
 
                 # end joint
                 J[5] = rotation/2 - chunk
@@ -100,13 +94,13 @@ class Decapper(Recipe):
                     # go to start
                     J_start = joint_list[i][:]
                     J_start[5] = -rotation/2
-                    self.core.robot_api.jmove(joint=J_start, vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 
                     # enable gripper
                     self.core.robot_api.output(config=tool.output_enable)
 
                     # uncap
-                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=300*self.speed_factor, accel=4000*self.speed_factor, jerk=10000*self.speed_factor)
+                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
                 else:
                     if exit:
                         # IK go up
@@ -116,11 +110,6 @@ class Decapper(Recipe):
                         if C != 2:
                             print("Could not find valid joints to decap")
                             return False
-
-                        # calibration
-                        if self.calibration:
-                            #J = self.core.calibration.interpolate(J[:])
-                            pass
 
                         # go up
                         self.core.robot_api.lmove(joint=J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)
@@ -135,7 +124,7 @@ class Decapper(Recipe):
         return True
 
 
-    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, rotation=500, **kwargs):        
+    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, **kwargs):        
         # ref joints
         if self.ref_joints is None:
             print("No reference joints defined")
@@ -160,9 +149,6 @@ class Decapper(Recipe):
             print(f"No item found in position {anchor}")
             return False
         component_tube = self.workspace.components[solid_tube.component]
-
-        # place
-        height_init = component_cap.twist * component_cap.pitch / 360
         
         # height_cap
         height_cap = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
@@ -199,10 +185,6 @@ class Decapper(Recipe):
                     print("Could not find valid joints to cap")
                     return False
 
-                # calibration
-                if self.calibration:
-                    #J = self.core.calibration.interpolate(J[:])
-                    pass
 
                 # end joint
                 J[5] = -rotation/2 + chunk
@@ -219,14 +201,13 @@ class Decapper(Recipe):
                     # go to start
                     J_start = joint_list[i][:]
                     J_start[5] = -rotation/2
-
-                    self.core.robot_api.jmove(joint=J_start, vel=500, accel=3000, jerk=15000)
+                    self.core.robot_api.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 
                     # enable gripper
                     self.core.robot_api.output(config=tool.output_enable)
 
                     # cap
-                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=1000, accel=3000, jerk=15000)
+                    self.core.robot_api.lmove(joint=joint_list[i+1], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
                 else:
                     if exit:
                         # IK go up
@@ -236,11 +217,6 @@ class Decapper(Recipe):
                         if C != 2:
                             print("Could not find valid joints to decap")
                             return False
-
-                        # calibration
-                        if self.calibration:
-                            #J = self.core.calibration.interpolate(J[:])
-                            pass
 
                         # go up
                         self.core.robot_api.lmove(joint=J, vel=self.lmove_vaj[0]*self.speed_factor, accel=self.lmove_vaj[1]*self.speed_factor, jerk=self.lmove_vaj[2]*self.speed_factor)

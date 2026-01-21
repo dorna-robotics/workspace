@@ -9,8 +9,8 @@ class CapFalcon15ml(Cap):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 10, 0, 0, 0]}},
         cap_type="screw",
-        twist=390,
-        pitch=1,
+        twist=1000,
+        pitch=2,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

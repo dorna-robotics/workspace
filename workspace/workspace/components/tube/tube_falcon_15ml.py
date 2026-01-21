@@ -7,9 +7,9 @@ from workspace.components.tube.tube import Tube
 class TubeFalcon15ml(Tube):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 118, 0, 0, 0], "place":[0, 0, 109.7, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 118.3, 0, 0, 0], "place":[0, 0, 110, 0, 0, 0], "place_cap":[0, 0, 112.3, 0, 0, 0]},
         },
-        size = [16.85, 16.85, 119], # [dx, dy, dz]
+        size = [15, 15, 118.3], # [dx, dy, dz]
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm

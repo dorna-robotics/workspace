@@ -16,6 +16,7 @@ result = []
 """
 class FixedInspector(Recipe):
     DEFAULTS = dict(
+        base_distance=200,
         # ref joints
         target_anchor="place",
     )

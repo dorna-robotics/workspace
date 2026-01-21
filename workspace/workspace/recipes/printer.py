@@ -8,10 +8,9 @@ class Printer(Recipe):
     DEFAULTS = dict(
         # ref joint
         target_anchor="place",
+        base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5 
-        # IK
-        base_distance=100,
         # calibration
         calibration_targets={"body": ["clb_0"]},
     )

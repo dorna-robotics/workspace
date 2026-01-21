@@ -51,7 +51,7 @@ class PipettingSite(Recipe):
 
 
     # the action of ejecting tip
-    def eject_tip(self, anchor="A1", **kwargs):
+    def eject_tip(self, anchor="A1", shake_travel=8, **kwargs):
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -67,9 +67,16 @@ class PipettingSite(Recipe):
         if not pipette._simulation_mode:
             actions = [[pipette.device.eject_tip, [], {}]]
         
-        # motion
-        motion_result = self.place_in(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=10, **kwargs)
+        # motion prm
+        motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=0, **kwargs)
 
+        # adjust exit_path
+        print("ali0: ", motion_prm["height_load"])
+        motion_prm["exit_path"] = [[shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [-shake_travel, 0, motion_prm["height_load"], 0, 0, 0]] + motion_prm["exit_path"]
+        
+        # run the motion
+        motion_result = self.touch(**motion_prm)
+        
         if not pipette._simulation_mode:
             # sleep
             time.sleep(0.25)

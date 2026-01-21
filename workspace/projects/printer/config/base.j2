@@ -128,3 +128,15 @@ vision_station:
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
+
+decapper:
+  type: decapper
+  output_enable: [[2, 1, 0.1]]
+  output_disable: [[2, 0, 0.1]]
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: D6
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, -90]
