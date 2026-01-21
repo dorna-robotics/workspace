@@ -4,7 +4,7 @@ core:
   has_camera: False
   has_rail: True
   has_tool_changer: True
-  ip: ""
+  ip: "192.168.254.124"
   tool_changer:
     present: True
     attach: [] 
@@ -12,7 +12,7 @@ core:
   attach:
     parent_name: fixture_plate_0
     parent_solid: body
-    parent_anchor: E10
+    parent_anchor: D10
     child_solid: rail_base
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 0]
@@ -76,6 +76,7 @@ tool_rack_1:
 
 printer:
   type: printer_axon_1
+  ip: "192.168.254.128"
   attach:
     parent_name: fixture_plate_1
     parent_solid: body

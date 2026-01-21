@@ -109,10 +109,10 @@ class Core:
         self.dorna = Dorna()
         if self.robot_ip:
             if self.dorna.connect(self.robot_ip):
-                print(f"✅ 🤖 robot {self.name} connected")
+                print(f"✅ 🤖 {self.name} connected @ {self.robot_ip}")
             else:
                 # simulation get activated
-                print(f"❌ 🤖 robot {self.name} connection failed")
+                print(f"❌ 🤖 {self.name} connection failed")
                 self._simulation_mode = True
 
         # optional robot API hookup
@@ -148,9 +148,9 @@ class Core:
             
             # connection status
             if self.camera is not None:
-                print(f"✅ 📷 camera {self.name} connected")
+                print(f"✅ 📷 camera connected @ {self.camera_serial_number}")
             else:
-                print(f"❌ 📷 camera {self.name} connection failed")
+                print(f"❌ 📷 camera connection failed")
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]

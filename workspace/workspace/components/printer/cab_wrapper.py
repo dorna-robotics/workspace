@@ -329,7 +329,7 @@ class Cab:
                 self.last_result = PrintResult(False, "dry_run_spin=False (ESCb send failed)", exception=repr(e))
                 return False
 
-            if i < count - 1:
+            if i < count:
                 time.sleep(self.dryrun_cycle_s)
 
         if not self.wait_ready():
@@ -393,12 +393,12 @@ class Cab:
 
 ### Example usage
 if __name__ == "__main__":
-    p = Cab(ip="192.168.100.12", dryrun_cycle_s=1.5)
+    p = Cab(ip="192.168.254.128", dryrun_cycle_s=1.5)
     p.set_label(width_in=1.50, length_in=1.00, gap_in=0.12, ptype="l1")
 
     print("1) real print")
-    print(p.print_qr("TUBE_000123", autorun=True, verify=True), p.last_result)
+    #print(p.print_qr("TUBE_000123", autorun=True, verify=True), p.last_result)
 
     # dry run
     #faking the print
-    # p.dry_run_spin(count=1)
+    p.dry_run_spin(count=1)

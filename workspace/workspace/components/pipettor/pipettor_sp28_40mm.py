@@ -9,7 +9,7 @@ from workspace.components.pipettor.keyto_wrapper import Keyto
 @register("pipettor_sp28_40mm")
 class PipettorSP2840mm(Pipettor):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 183.375, 0, 0, 0], "tip": [0, 0, 186.375, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174, 0, 0, 0], "tip": [0, 0, 185.375, 0, 0, 0]}},
         #cfg
         has_tool_changer = True,
         port="", # connect only if there is a port
@@ -33,7 +33,7 @@ class PipettorSP2840mm(Pipettor):
         )
 
         # simulation
-        self.simulation = prm["simulation"]
+        self._simulation_mode = prm["simulation"]
 
         # device
         self.device_port = prm["port"]
@@ -44,9 +44,9 @@ class PipettorSP2840mm(Pipettor):
             self.device = Keyto(port=self.device_port)
             if self.device.connect():
                 connection_status = True
-                print(f"pipette connected to {self.device_port}")
+                print(f"✅ 💧 {self.name} connected @ {self.device_port}")
             else:
-                print(f"pipette failed to connect to {self.device_port}")
+                print(f"❌ 💧 {self.name} connection failed")
 
         if not connection_status:
             self.device = None
@@ -58,6 +58,10 @@ class PipettorSP2840mm(Pipettor):
             return True
         print("pipette closing failed")
         return False
+    
+    def simulation(self, mode):
+        self._simulation_mode = mode
+
 
 
 

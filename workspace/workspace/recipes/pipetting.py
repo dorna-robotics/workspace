@@ -45,7 +45,7 @@ class PipettingSite(Recipe):
             return False
         
         # make sure tip exists
-        if not pipette.simulation:  
+        if not pipette._simulation_mode:  
             return pipette.device.has_tip()
         return True
 
@@ -64,13 +64,13 @@ class PipettingSite(Recipe):
         
         actions = []
         # no simulation
-        if not pipette.simulation:
-            actions = [[pipette.device.eject_tip(), [], {}]]
+        if not pipette._simulation_mode:
+            actions = [[pipette.device.eject_tip, [], {}]]
         
         # motion
         motion_result = self.place_in(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=10, **kwargs)
 
-        if not pipette.simulation:
+        if not pipette._simulation_mode:
             # sleep
             time.sleep(0.25)
 
@@ -138,30 +138,30 @@ class PipettingSite(Recipe):
 
     
     # volume is in microliter
-    def aspirate(self, volume, speed=200):
+    def aspirate(self, vol, speed=200):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
         
         # simulation
-        if pipette.simulation:
+        if pipette._simulation_mode:
             return True
 
-        return pipette.device.aspirate(volume, speed)
+        return pipette.device.aspirate(vol, speed)
 
 
     # volume is in microliter
-    def dispense(self, volume, speed=500, blowout=False):
+    def dispense(self, vol, speed=500, blowout=False):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
 
         # simulation
-        if pipette.simulation:
+        if pipette._simulation_mode:
             return True
         
-        return pipette.device.dispense(volume, speed, blowout)
+        return pipette.device.dispense(vol, speed, blowout)
 
 

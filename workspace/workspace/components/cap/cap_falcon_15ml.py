@@ -7,7 +7,7 @@ from workspace.components.cap.cap import Cap
 @register("cap_falcon_15ml")
 class CapFalcon15ml(Cap):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 11, 0, 0, 0]}},
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 10, 0, 0, 0]}},
         cap_type="screw",
         twist=390,
         pitch=1,

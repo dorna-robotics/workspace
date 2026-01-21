@@ -260,7 +260,7 @@ class Recipe:
         """
         attach
         """
-        if attach[0] is not None:
+        if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
         """

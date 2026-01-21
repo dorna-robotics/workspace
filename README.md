@@ -2,6 +2,11 @@
 ```
 ssh -p 52022 <device_username>@<your_public_ip>
 ```
+# pipette and syringe
+use this command to find the port
+```
+ls /dev/ttyUSB*
+```
 
 # Server
 ```bash

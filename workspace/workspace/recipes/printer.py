@@ -30,7 +30,7 @@ class Printer(Recipe):
         )
         
 
-    def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, **kwargs):
+    def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, **kwargs):
         # pick parameters
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
@@ -59,34 +59,24 @@ class Printer(Recipe):
 
 
 
-    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
-        # place parameters
-        motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
-        if not motion_prm:
-            return False
+    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", **kwargs):
+        # tool
+        tool = self.tool_attached_to_the_robot()
+
+        # item in tool
+        solid_in_tool = self.solid_attached_to_tool(tool)
 
         # place offset based on the radius of the tube
         offset= self.component._place_offset(
-            self.workspace.components[motion_prm["load_list"][0].component].size[0]/2
+            self.workspace.components[solid_in_tool.component].size[0]/2
         )
-        pose_offset = dorna_pose.Pose(pose=offset)
 
+        # place
+        return self.place_in(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+    
 
-        # update target offset
-        motion_prm["target_offset"] = pose_offset.pose(offset=motion_prm["target_offset"])
-
-
-        # update approach
-        for i in range(len(motion_prm["approach_path"])):
-            motion_prm["approach_path"][i] = pose_offset.pose(offset=motion_prm["approach_path"][i])
-            
-        # update exit
-        for i in range(len(motion_prm["exit_path"])):
-            motion_prm["exit_path"][i] = pose_offset.pose(offset=motion_prm["exit_path"][i])
-
-        # update attach
-        motion_prm["attach"][1]["offset"] = motion_prm["target_offset"]
-
-        # run touch
-        return self.touch(**motion_prm)
-
+    # dry run spin
+    def dry_run_spin(self, count=1):
+        if not self.component._simulation_mode:
+            return self.component.device.dry_run_spin(count=count)
+        return True

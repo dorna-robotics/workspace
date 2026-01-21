@@ -7,7 +7,7 @@ from workspace.components.tube.tube import Tube
 class TubeFalcon15ml(Tube):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 119, 0, 0, 0], "place":[0, 0, 109.5, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 118, 0, 0, 0], "place":[0, 0, 109.7, 0, 0, 0]},
         },
         size = [16.85, 16.85, 119], # [dx, dy, dz]
     )
