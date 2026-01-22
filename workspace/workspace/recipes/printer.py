@@ -30,6 +30,7 @@ class Printer(Recipe):
         
 
     def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, **kwargs):
+        """
         # pick parameters
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
@@ -55,10 +56,12 @@ class Printer(Recipe):
 
         # run touch
         return self.touch(**motion_prm)
+        """
+        return self.pick_from(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
 
 
 
-    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", **kwargs):
+    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", gravity_offset=2, **kwargs):
         # tool
         tool = self.tool_attached_to_the_robot()
 
@@ -71,7 +74,7 @@ class Printer(Recipe):
         )
 
         # place
-        return self.place_in(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+        return self.place_in(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, **kwargs)
     
 
     # dry run spin
