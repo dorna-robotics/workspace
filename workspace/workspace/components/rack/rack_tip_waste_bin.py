@@ -6,7 +6,7 @@ from workspace.components.rack.rack import Rack
 @register("rack_tip_waste_bin")
 class RackTipWasteBin(Rack):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 10, 0, 0, 0], "top": [0, 0, 66, 0, 0, 0]}},
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 45, 0, 0, 0], "top": [0, 0, 66, 0, 0, 0]}},
         size = [127.4, 85, 66],
         offset=[0, 0],
         pitch=[0, 0],

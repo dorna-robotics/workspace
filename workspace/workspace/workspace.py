@@ -6,8 +6,7 @@ import numpy as np
 
 from workspace.display import Display
 from workspace.components import factory as comp_factory
-from dorna2.pose import T_to_xyzabc
-from dorna2.pose import xyzabc_to_T
+from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
 
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
@@ -112,7 +111,7 @@ class Workspace:
             robot_flange = core_comp.assembly.get("robot_flange", None)
 
         T_flange_world = getattr(robot_flange, "_world_T", None) if robot_flange is not None else None
-        T_world_flange = np.linalg.inv(T_flange_world) if T_flange_world is not None else None
+        T_world_flange = inv_T(T_flange_world) if T_flange_world is not None else None
 
         def _is_downstream_of_flange(solid, max_hops=200):
             """

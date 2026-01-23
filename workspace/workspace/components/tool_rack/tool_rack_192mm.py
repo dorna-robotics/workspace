@@ -8,9 +8,9 @@ from workspace.components.tool_rack.tool_rack import ToolRack
 @register("tool_rack_192mm")
 class ToolRack192mm(ToolRack):
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 197, 127.27922061357856, -127.27922061357854, 0],
+        anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 201, 127.27922061357856, -127.27922061357854, 0],
             "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
-            "clb_0": [0, 46, 192, 0, 0, -45]}},
+            "clb_0": [0, 46, 196, 0, 0, -45]}}, 
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

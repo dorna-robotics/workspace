@@ -1,32 +1,27 @@
 import json
 
 from workspace.recipes.tool_rack import ToolRack
-from workspace.recipes.hotel import Hotel
-from workspace.recipes.adapter import Adapter
-from workspace.recipes.feeder import Feeder
 from workspace.recipes.rack import Rack
+from workspace.recipes.printer import Printer
+from workspace.recipes.pipetting import PipettingSite
+from workspace.recipes.inspector import FixedInspector
 from workspace.recipes.decapper import Decapper
-from workspace.recipes.inspector import MobileInspector
 
-def create_recipes(workspace, core):
-    # read detection preset
-    detection_preset = json.load(open("config/detection_preset.json"))
-    
-
+def create_recipes(workspace, core):    
     return {
-        "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_2"], left_approach=True),
         "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_1"], left_approach=True),
         "tool_rack_0": ToolRack(workspace, core, workspace.components["tool_rack_0"], left_approach=True),
 
-        "hotel": Hotel(workspace, core, workspace.components["hotel_0"], left_approach=True, base_distance=150),
+        "waste_bin": PipettingSite(workspace, core, workspace.components["adapter_sbs_1"], base_distance=250),
+        "tip_rack": PipettingSite(workspace, core, workspace.components["adapter_sbs_0"], base_distance=250),
+        "falcon_pipepette": PipettingSite(workspace, core, workspace.components["adapter_falcon"], base_distance=200),
+        
+        "falcon_rack": Rack(workspace, core, workspace.components["adapter_falcon"], base_distance=200),
 
-        "cap_holder": Rack(workspace, core, workspace.components["sbs_adapter_1"], left_approach=False, base_distance=50),
-        "sbs_plate": Rack(workspace, core, workspace.components["sbs_adapter_0"], base_distance=50),
+        "decapper": Decapper(workspace, core, workspace.components["decapper"], base_distance=200),
 
-        "sbs_adapter": Adapter(workspace, core, workspace.components["sbs_adapter_0"], left_approach=True),
+        "printer": Printer(workspace=workspace, core=core, component=workspace.components["printer"]),
 
-        "feeder": Feeder(workspace, core, workspace.components["feeder"], left_approach=False),
+        "inspector": FixedInspector(workspace, core, component=workspace.components["vision_station"], detection_preset={}),
 
-        "decapper": Decapper(workspace, core, workspace.components["decapper_0"], base_distance=50),
-        "inspector": MobileInspector(workspace, core, detection_preset=detection_preset["cap"])
     }

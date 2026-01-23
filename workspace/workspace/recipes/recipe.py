@@ -25,6 +25,7 @@ class Recipe:
         # calibration
         calibration_name=None,
         calibration=True,
+        calibrate_abc=False,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
         calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
@@ -56,6 +57,7 @@ class Recipe:
 
         # calibration
         self.calibration = prm["calibration"]
+        self.calibrate_abc = prm["calibrate_abc"]
         self.calibration_targets = prm["calibration_targets"]
         self.calibration_target_offset = prm["calibration_target_offset"]
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
@@ -202,11 +204,12 @@ class Recipe:
                 # target_pose in the world frame
                 pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
                 # interpolate pose
-                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name, calibrate_abc=self.calibrate_abc))
                 # anchor frame
                 anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
                 # corrected in anchor frame
                 path[i] = corrected_pose_frame.pose(in_frame=anchor_frame)
+
             
             # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
@@ -273,7 +276,7 @@ class Recipe:
                 # target_pose in the world frame
                 pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
                 # interpolate pose
-                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name))
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name, calibrate_abc=self.calibrate_abc))
                 # anchor frame
                 anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
                 # corrected in anchor frame
@@ -313,7 +316,7 @@ class Recipe:
     
     # pick from specific anchor in the given solid and component
     # always locate the object in the anchor, and go for that
-    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):        
+    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, soft_approach=False, **kwargs):        
         """
         assign kwargs
         """
@@ -396,6 +399,9 @@ class Recipe:
         if approach:
             _approach_path = [[0, 0, max(height_load,height_container) + padding, 0, 0, 0], 
                             [0, 0, height_load+height_tool+gap, 0, 0, 0]]
+            # remove the last motion from the approach
+            if not soft_approach:
+                _approach_path = _approach_path[0:1]
             approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
         
         """
@@ -459,9 +465,9 @@ class Recipe:
 
 
     # run pick with motion
-    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, soft_approach=False, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, soft_approach=soft_approach, **kwargs)
         if not pick_prm:
             return False
         # touch
@@ -469,7 +475,7 @@ class Recipe:
 
 
     # place the load in an specific anchor of the given solid and component, with the given offset
-    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, **kwargs):
+    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, soft_approach=False, **kwargs):
         """
         assign kwargs
         """
@@ -527,16 +533,14 @@ class Recipe:
                                 from_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"),
                                 to_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"))[2])
 
-        """
-        pose_offset
-        """
-        #pose_offset = dorna_pose.Pose(pose=offset)
 
         """approach path"""
         approach_path = []
         if approach:
             _approach_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0], 
                             [0, 0, height_container+gap, 0, 0, 0]]
+            if not soft_approach:
+                _approach_path = _approach_path[0:1]
             approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
 
         """exit path"""
@@ -601,9 +605,9 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, soft_approach=False, **kwargs):
         # place parameters
-        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset,**kwargs)
+        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, soft_approach=soft_approach, **kwargs)
         if not place_prm:
             return False
         
@@ -628,8 +632,9 @@ class Recipe:
         current_joint = self.core.robot_api.joint()
 
         # new_joint
+        joint_index = int(joint[1:])
         new_joint = current_joint[:]
-        new_joint[joint] = (new_joint[joint] + rotation + limit[1]) % abs(limit[1]-limit[0]) + limit[0]
+        new_joint[joint_index] = (new_joint[joint_index] + rotation + limit[1]) % abs(limit[1]-limit[0]) + limit[0]
 
         # motion
         self.core.robot_api.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])

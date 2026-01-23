@@ -26,22 +26,19 @@ class Decapper(Recipe):
         )
 
 
-    def place(self, approach=True, exit=True):
-        return self.place_in(anchor="place", approach=approach, exit=exit, gravity_offset=0)
+    def place(self, approach=True, exit=True, padding=30):
+        return self.place_in(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0)
 
 
-    def pick(self, approach=True, exit=True):
-        return self.pick_from(anchor="place", approach=approach, exit=exit)
+    def pick(self, approach=True, exit=True, padding=30):
+        return self.pick_from(anchor="place", approach=approach, exit=exit, padding=padding)
 
 
-    def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, twist=400, **kwargs):        
+    def decap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=30, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, twist=400, **kwargs):        
         # pick parameters
-        motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=False, attachment=False, padding=padding, gap=gap, **kwargs)
+        motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, trigger_io=False, exit=False, attachment=False, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
             return False
-
-        # adjust io in motion prm 
-        motion_prm["output_config"] = []
 
         # tube and cap
         if len(motion_prm["load_list"]) != 2:
@@ -93,7 +90,7 @@ class Decapper(Recipe):
                     
                     # go to start
                     J_start = joint_list[i][:]
-                    J_start[5] = -rotation/2
+                    J_start[5] = rotation/2
                     self.core.robot_api.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 
                     # enable gripper
@@ -124,7 +121,7 @@ class Decapper(Recipe):
         return True
 
 
-    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=50, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, **kwargs):        
+    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=30, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], rotation=500, **kwargs):        
         # ref joints
         if self.ref_joints is None:
             print("No reference joints defined")
@@ -164,7 +161,7 @@ class Decapper(Recipe):
         height_total = height_tube + height_cap
 
         # place
-        if not self.place_in(anchor="place_cap", solid_name="body", component=component_tube, offset=[0, 0, 0, 0, 0, 0], approach=approach, exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, gravity_offset=0, **kwargs):
+        if not self.place_in(anchor="place_cap", solid_name="body", component=component_tube, offset=[0, 0, 0, 0, 0, 0], approach=approach, exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, gravity_offset=0, soft_approach=True, **kwargs):
             print("Not able to place")
             return False
             

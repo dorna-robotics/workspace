@@ -75,7 +75,7 @@ class FixedInspector(Recipe):
     rotate j5
     """
     def rotate(self, rotation=90, **kwargs):
-        return super.rotaterotate(rotation=rotation, joint="j5", **kwargs)
+        return super().rotate(rotation=rotation, joint="j5", **kwargs)
 
 
 class MobileInspector:

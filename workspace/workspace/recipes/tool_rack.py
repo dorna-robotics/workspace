@@ -7,11 +7,9 @@ class ToolRack(Recipe):
     DEFAULTS = dict(
         # IK
         rail_span=2,        
-        # motion
-        speed_factor=1,
-        jmove_vaj=[100, 600, 3000],
-        lmove_vaj=[150, 500, 2500],
         # calibration
+        calibrate_abc=True,
+        calibration_target_offset=[0, 0, 20, 0, 0, 0],
         calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
@@ -57,7 +55,7 @@ class ToolRack(Recipe):
         
         # output approach
         output_approach = self.core.tool_changer_output_up[:]
-        output_approach[0][1] = int(not output_approach[0][1]) # change it for detach
+        #output_approach[0][1] = int(not output_approach[0][1]) # change it for detach
 
         # output touch
         output_touch = self.core.tool_changer_output_down[:]
@@ -81,7 +79,7 @@ class ToolRack(Recipe):
             "exit_path": [
                     [0, 0, -gap-height_offset, 0, 0, 0],
                     [-padding,0,-gap-height_offset,0,0,0],
-                    [-padding,0,-padding-height_offset,0,0,0]
+                    [-padding,0,-padding-height_offset,0,0,0],
                 ],
         }
 

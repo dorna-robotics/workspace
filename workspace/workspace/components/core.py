@@ -109,10 +109,10 @@ class Core:
         self.dorna = Dorna()
         if self.robot_ip:
             if self.dorna.connect(self.robot_ip):
-                print(f"✅ 🤖 {self.name} connected @ {self.robot_ip}")
+                print(f"✅ {self.name} connected @ {self.robot_ip}")
             else:
                 # simulation get activated
-                print(f"❌ 🤖 {self.name} connection failed")
+                print(f"❌ {self.name} connection failed")
                 self._simulation_mode = True
 
         # optional robot API hookup
@@ -462,14 +462,9 @@ class Core:
                     
 
         def joint_distance(q):
-            weight = [1, 1, 1, 4, 1, 0.25]
-            s = 0.0
-            for i in (0, 1, 2, 3, 4, 5):
-                d = weight[i] * (q[i] - ref_joints[i])
-                s += d * d
-            return s ** 0.5
-
-
+            W = np.array([1,1,1,4,1,0.25])
+            dq = (np.array(q[:6]) - ref_joints[:6])
+            return np.linalg.norm(W * dq)
 
         
         # now there are two cases, with rail and without rail
@@ -550,6 +545,18 @@ class Core:
             robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
 
             #for r in sorted(R, key=lambda rr: abs(rr - r0)):
+
+            # now we find the pose of the object in the world frame
+            object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
+            T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
+
+            # set tcp
+            tool_pose = [0,0,0,0,0,0]
+            if tool_solid and tool_anchor:
+                tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+            self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+            
             for r in R:
                 # Pose relative to ROBOT BASE
                 # now we update robot pose in rail base
@@ -561,12 +568,8 @@ class Core:
 
                 # now we calculate the transfer matrix for this pose
                 T_robot = np.array(dorna2.pose.xyzabc_to_T(updated_robot_pose_in_world_base))
-                inv_T_robot = np.linalg.inv(T_robot)
-
-                # now we find the pose of the object in the world frame
-                object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
-                T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
-
+                inv_T_robot = dorna2.pose.inv_T(T_robot)
+                
                 # now we find the pose of the object in the robot frame
                 T_object_in_robot = inv_T_robot @ T_object
                 pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
@@ -575,12 +578,13 @@ class Core:
                 init_arm = [ref_joints[i] for i in range(6)]
 
 
-
+                """
                 tool_pose = [0,0,0,0,0,0]
                 if tool_solid and tool_anchor:
                     tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
                 self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+                """
                 # pose_in_robot[3] += 0.01  # to avoid singularity
                 # pose_in_robot[4] += 0.01  # to avoid singularity
                 # pose_in_robot[5] += 0.01  # to avoid singularity

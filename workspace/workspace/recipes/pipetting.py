@@ -36,7 +36,7 @@ class PipettingSite(Recipe):
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, trigger_io=False, **kwargs):
+        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, trigger_io=False, soft_approach=True, **kwargs):
             return False
         
         # check if tip is there
@@ -71,7 +71,6 @@ class PipettingSite(Recipe):
         motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=0, **kwargs)
 
         # adjust exit_path
-        print("ali0: ", motion_prm["height_load"])
         motion_prm["exit_path"] = [[shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [-shake_travel, 0, motion_prm["height_load"], 0, 0, 0]] + motion_prm["exit_path"]
         
         # run the motion
