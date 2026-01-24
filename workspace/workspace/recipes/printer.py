@@ -30,33 +30,6 @@ class Printer(Recipe):
         
 
     def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, **kwargs):
-        """
-        # pick parameters
-        motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
-        if not motion_prm:
-            return False
-
-        # place offset based on the radius of the tube
-        offset= self.component._place_offset(
-            self.workspace.components[motion_prm["load_list"][0].component].size[0]/2
-        )
-        pose_offset = dorna_pose.Pose(pose=offset)
-
-        # update target offset
-        motion_prm["target_offset"] = pose_offset.pose(offset=motion_prm["target_offset"])
-
-
-        # update approach
-        for i in range(len(motion_prm["approach_path"])):
-            motion_prm["approach_path"][i] = pose_offset.pose(offset=motion_prm["approach_path"][i])
-            
-        # update exit
-        for i in range(len(motion_prm["exit_path"])):
-            motion_prm["exit_path"][i] = pose_offset.pose(offset=motion_prm["exit_path"][i])
-
-        # run touch
-        return self.touch(**motion_prm)
-        """
         return self.pick_from(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
 
 

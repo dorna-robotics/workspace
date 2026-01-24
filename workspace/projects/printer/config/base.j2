@@ -3,6 +3,7 @@ core:
   simulation: True
   has_camera: False
   has_rail: True
+  rail_offset: 51.16
   has_tool_changer: True
   ip: "192.168.254.124"
   tool_changer:
@@ -131,8 +132,8 @@ vision_station:
 
 decapper:
   type: decapper
-  output_enable: [[2, 1, 0.25]]
-  output_disable: [[2, 0, 0.25]]
+  output_enable: [[2, 1, 0.1]]
+  output_disable: [[null, null, 0.25], [2, 0, 0.1]]
   attach:
     parent_name: fixture_plate_3
     parent_solid: body

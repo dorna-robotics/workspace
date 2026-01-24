@@ -46,4 +46,12 @@ class Gripper:
         self.output_disable = prm["output_disable"]
 
         # io state
-        self.output_state = None
+        self._output_state = None
+
+    
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state

@@ -25,6 +25,14 @@ class Arm:
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
         }
 
-        # open and close
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
+        # enable and disable
+        self.output_enable = prm["output_enable"]
+        self.output_disable = prm["output_disable"]
+
+        # io state
+        self.output_state = None
+
+    
+    def set_output_state(self, state):
+        self.output_state = state
+

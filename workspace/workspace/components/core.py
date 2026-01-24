@@ -23,7 +23,8 @@ class Core:
         simulation = True,
         ip = "",
         has_rail = True,
-        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
+        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75},
+        rail_offset = 0,
         has_camera = False,
         camera_serial_number = "",
         camera_cfg = {
@@ -67,6 +68,7 @@ class Core:
         # -------- rail
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
+        self.rail_offset = prm["rail_offset"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
             self.rail_min = -75.0
             self.rail_max = 400.0
@@ -117,11 +119,11 @@ class Core:
 
         # optional robot API hookup
         if not self._simulation_mode:
-            print("🟡 🕹️ simulation api disabled")
+            print(f"🟡 {self.name} simulation api disabled")
             self.robot_api = self.dorna
         else:
             self.robot_api = SimulationAPI()
-            print("🔵 🕹️ simulation api enabled")
+            print(f"🔵 {self.name} simulation api enabled")
 
         # ------- camera
         self.has_camera = prm["has_camera"]
@@ -380,12 +382,12 @@ class Core:
             # switch to real robot
             self._simulation_mode = False
             self.robot_api = self.dorna
-            print("🟡 🕹️ simulation api disabled")
+            print(f"🟡 {self.name} simulation api disabled")
         elif not self._simulation_mode and on:
             # switch to simulation
             self._simulation_mode = True
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
-            print("🔵 🕹️ simulation api enabled")
+            print(f"🔵 {self.name} simulation api enabled")
 
 
 

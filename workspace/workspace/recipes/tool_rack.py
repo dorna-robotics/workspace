@@ -5,8 +5,8 @@ from workspace.recipes.recipe import Recipe
 
 class ToolRack(Recipe):
     DEFAULTS = dict(
-        # IK
-        rail_span=2,        
+        # motion
+        lmove_vaj=[150, 350, 1500],
         # calibration
         calibrate_abc=True,
         calibration_target_offset=[0, 0, 20, 0, 0, 0],
@@ -54,11 +54,10 @@ class ToolRack(Recipe):
                                                         to_frame=tool.pose("tool_rack_connection"))[2])
         
         # output approach
-        output_approach = self.core.tool_changer_output_up[:]
-        #output_approach[0][1] = int(not output_approach[0][1]) # change it for detach
+        output_approach = [[self.core.tool_changer_output_up[:], None, None]]
 
         # output touch
-        output_touch = self.core.tool_changer_output_down[:]
+        output_touch = [[self.core.tool_changer_output_down[:], None, None]]
 
         # motion prm
         motion_prm ={
@@ -119,10 +118,10 @@ class ToolRack(Recipe):
 
 
         # output touch
-        output_touch = self.core.tool_changer_output_up[:]
+        output_touch = [[self.core.tool_changer_output_up[:], None, None]]
 
         # output exit
-        output_exit = self.core.tool_changer_output_down[:]
+        output_exit = [[self.core.tool_changer_output_down[:], None, None]]
 
         # motion prm
         motion_prm ={

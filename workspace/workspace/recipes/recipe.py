@@ -20,8 +20,8 @@ class Recipe:
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[100, 600, 3000],
-        lmove_vaj=[300, 1000, 5000],
+        jmove_vaj=[200, 1200, 6000],
+        lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
         calibration=True,
@@ -169,12 +169,14 @@ class Recipe:
             output_approach=[],
             approach_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             approach_path = [],
+            approach_j5=None,
             output_touch=[],
             actions=[],
             sleep=0,
             attach=[None, {"parent":None, "parent_anchor":None, "child_anchor":None, "offset":[0, 0, 0, 0, 0, 0], "offset_frame":"parent"}],
             exit_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             exit_path = [],
+            exit_j5 = None,
             output_exit=[],
             **kwargs,
             ):
@@ -185,9 +187,23 @@ class Recipe:
         }
 
         """
-        output_approach
+        output_approach: [[set, value]]
         """
-        self.core.robot_api.output(config=output_approach)
+        _output_config = []
+        for _config, get_call, set_call in output_approach:
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1]
+                
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
 
         """
@@ -215,6 +231,10 @@ class Recipe:
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
                                 tool_solid=approach_tool["solid"], tool_anchor=approach_tool["anchor"], tool_offset=approach_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
+            
+            # approach j5
+            if approach_j5 is not None:
+                J[5] = approach_j5
             if C == 2:
                 if i == 0 and approach_path: # first motion of the approach
                     if self.core.has_motion_plan: # run path planing 
@@ -251,7 +271,22 @@ class Recipe:
         """
         output_config
         """
-        self.core.robot_api.output(config=output_touch)
+        _output_config = []
+        for _config, get_call, set_call in output_touch:
+            print("ali0: ", get_call, set_call )
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1]
+                print("ali1: ", current_state, new_state )
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
         """
         sleep, actions
@@ -286,6 +321,11 @@ class Recipe:
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
                                 tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
+
+            # approach j5
+            if exit_j5 is not None:
+                J[5] = exit_j5
+
             if C == 2:
                 # motion
                 if self.motion_type == "lmove": # run lmove
@@ -308,7 +348,21 @@ class Recipe:
         """
         output_exit
         """
-        self.core.robot_api.output(config=output_exit)
+        _output_config = []
+        for _config, get_call, set_call in output_exit:
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1]
+                
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
         return True
 
@@ -420,16 +474,37 @@ class Recipe:
         output_approach = []
         output_touch = []
         output_exit = []
-        if trigger_io:
-            # enable component setting
-            enable = list(getattr(component, "output_enable", []))
-            
-            # disable component setting
-            disable = list(getattr(component, "output_disable", []))
-            
+        if trigger_io:            
+            # enable and disable component setting
+            component_enable = []
+            component_disable = []
+            if  getattr(component, "output_state", False):
+                # [[output_config, get_call, set_call]]
+                component_enable = [[component.output_enable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (1)),
+                                    ]]
+                component_disable = [[component.output_disable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (0)),
+                                    ]]
+
+            # enable and disable tool setting
+            tool_enable = []
+            tool_disable = []
+            if  getattr(tool, "output_state", False):
+                tool_enable = [[tool.output_enable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (1)),
+                                    ]]
+                tool_disable = [[tool.output_disable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (0)),
+                                    ]]
             # output config
-            output_approach = tool.output_disable + enable
-            output_touch = tool.output_enable + disable
+            output_approach = tool_disable + component_enable
+            output_touch = tool_enable + component_disable
+    
         """
         run attachment
         """
@@ -556,16 +631,38 @@ class Recipe:
         output_approach = []
         output_touch = []
         output_exit = []
-        if trigger_io:
-            # enable component setting
-            enable = list(getattr(component, "output_enable", []))
-            
-            # disable component setting
-            disable = list(getattr(component, "output_disable", []))
-            
+        if trigger_io:            
+            # enable and disable component setting
+            component_enable = []
+            component_disable = []
+            if  getattr(component, "output_state", False):
+                # [[output_config, get_call, set_call]]
+                component_enable = [[component.output_enable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (1)),
+                                    ]]
+                component_disable = [[component.output_disable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (0)),
+                                    ]]
+
+            # enable and disable tool setting
+            tool_enable = []
+            tool_disable = []
+            if  getattr(tool, "output_state", False):
+                tool_enable = [[tool.output_enable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (1)),
+                                    ]]
+                tool_disable = [[tool.output_disable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (0)),
+                                    ]]
             # output config
-            output_approach = disable + tool.output_enable
-            output_touch = enable + tool.output_disable
+            output_approach = component_disable + tool_enable
+            output_touch = component_enable + tool_disable
+
+        
         """
         run attachment
         """

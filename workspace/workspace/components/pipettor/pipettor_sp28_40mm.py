@@ -9,7 +9,7 @@ from workspace.components.pipettor.keyto_wrapper import Keyto
 @register("pipettor_sp28_40mm")
 class PipettorSP2840mm(Pipettor):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174, 0, 0, 0], "tip": [0, 0, 185.375, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174, 0, 0, 0], "tip": [0, 0, 185.375-1.25, 0, 0, 0]}},
         #cfg
         has_tool_changer = True,
         port="", # connect only if there is a port

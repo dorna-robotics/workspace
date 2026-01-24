@@ -16,7 +16,7 @@ class Decapper:
         ]},
         # cfg
         output_enable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_disable = [[None, None, 0.1]], # [[pin, index, time]]
+        output_disable = [[None, None, 0.25], [None, None, 0.1]], # [[pin, index, time]]
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -43,4 +43,12 @@ class Decapper:
         self.output_disable = prm["output_disable"]
 
         # io state
-        self.output_state = None
+        self._output_state = None
+
+
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state
