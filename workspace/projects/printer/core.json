@@ -250,7 +250,7 @@
   "delta": {
     "adapter_sbs_0_True_250_20_5": [
       1.0,
-      0.0,
+      1.5,
       0.0
     ],
     "adapter_falcon_True_200_0_0": [

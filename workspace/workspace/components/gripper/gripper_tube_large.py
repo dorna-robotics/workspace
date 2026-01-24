@@ -8,6 +8,7 @@ from workspace.components.gripper.gripper import Gripper
 class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
         #anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 48, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
+        # anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 48.5, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 49.5, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
         #cfg
         has_tool_changer = False,

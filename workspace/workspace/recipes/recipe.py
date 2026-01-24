@@ -20,7 +20,7 @@ class Recipe:
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 1200, 6000],
+        jmove_vaj=[180, 1000, 6000], # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
@@ -194,7 +194,7 @@ class Recipe:
             # check current state
             if set_call is not None:
                 current_state = get_call[0](*get_call[1])
-                new_state = set_call[1]
+                new_state = set_call[1][0]
                 
                 # current is different from the new state
                 if current_state != new_state:
@@ -273,12 +273,11 @@ class Recipe:
         """
         _output_config = []
         for _config, get_call, set_call in output_touch:
-            print("ali0: ", get_call, set_call )
             # check current state
             if set_call is not None:
                 current_state = get_call[0](*get_call[1])
-                new_state = set_call[1]
-                print("ali1: ", current_state, new_state )
+                new_state = set_call[1][0]
+
                 # current is different from the new state
                 if current_state != new_state:
                     _output_config += _config
@@ -353,7 +352,7 @@ class Recipe:
             # check current state
             if set_call is not None:
                 current_state = get_call[0](*get_call[1])
-                new_state = set_call[1]
+                new_state = set_call[1][0]
                 
                 # current is different from the new state
                 if current_state != new_state:
@@ -482,11 +481,11 @@ class Recipe:
                 # [[output_config, get_call, set_call]]
                 component_enable = [[component.output_enable,
                                     (component.output_state, ()),
-                                    (component.output_state, (1)),
+                                    (component.output_state, (1,)),
                                     ]]
                 component_disable = [[component.output_disable,
                                     (component.output_state, ()),
-                                    (component.output_state, (0)),
+                                    (component.output_state, (0,)),
                                     ]]
 
             # enable and disable tool setting
@@ -495,11 +494,11 @@ class Recipe:
             if  getattr(tool, "output_state", False):
                 tool_enable = [[tool.output_enable,
                                     (tool.output_state, ()),
-                                    (tool.output_state, (1)),
+                                    (tool.output_state, (1,)),
                                     ]]
                 tool_disable = [[tool.output_disable,
                                     (tool.output_state, ()),
-                                    (tool.output_state, (0)),
+                                    (tool.output_state, (0,)),
                                     ]]
             # output config
             output_approach = tool_disable + component_enable
@@ -639,11 +638,11 @@ class Recipe:
                 # [[output_config, get_call, set_call]]
                 component_enable = [[component.output_enable,
                                     (component.output_state, ()),
-                                    (component.output_state, (1)),
+                                    (component.output_state, (1,)),
                                     ]]
                 component_disable = [[component.output_disable,
                                     (component.output_state, ()),
-                                    (component.output_state, (0)),
+                                    (component.output_state, (0,)),
                                     ]]
 
             # enable and disable tool setting
@@ -652,11 +651,11 @@ class Recipe:
             if  getattr(tool, "output_state", False):
                 tool_enable = [[tool.output_enable,
                                     (tool.output_state, ()),
-                                    (tool.output_state, (1)),
+                                    (tool.output_state, (1,)),
                                     ]]
                 tool_disable = [[tool.output_disable,
                                     (tool.output_state, ()),
-                                    (tool.output_state, (0)),
+                                    (tool.output_state, (0,)),
                                     ]]
             # output config
             output_approach = component_disable + tool_enable

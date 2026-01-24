@@ -29,14 +29,14 @@ class PipettingSite(Recipe):
         )
 
 
-    def pick_tip(self, anchor="place", **kwargs):
+    def pick_tip(self, anchor="place", padding=70, **kwargs):
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, trigger_io=False, soft_approach=True, **kwargs):
+        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
             return False
         
         # check if tip is there
