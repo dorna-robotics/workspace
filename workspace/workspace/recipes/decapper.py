@@ -125,7 +125,7 @@ class Decapper(Recipe):
         return True
 
 
-    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=30, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], max_rotation=500, **kwargs):             
+    def cap(self, anchor="place", solid_name="body", approach=True, exit=True, padding=30, gap=2, lmove_vaj=[1000, 3000, 15000], jmove_vaj=[500, 3000, 15000], max_rotation=500, cap_engage=False, **kwargs):             
         # ref joints
         if self.ref_joints is None:
             print("No reference joints defined")
@@ -178,6 +178,8 @@ class Decapper(Recipe):
             return False
         # adjust j5 in the approach
         place_prm["approach_j5"] = j5_start
+        if cap_engage: # cap engage to ge to zero and go to all negative for cap adjustment
+            place_prm["approach_j5"] = 0
         if not self.touch(**place_prm):
             print("Not able to place")
             return False            
@@ -213,7 +215,8 @@ class Decapper(Recipe):
 
             if i < len(joint_list)-1:
                 # go to start
-                J_start = joint_list[i+1][:]
+                #J_start = joint_list[i+1][:]
+                J_start = joint_list[i][:]
                 J_start[5] = j5_start
                 self.core.robot_api.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 

@@ -9,7 +9,7 @@ class CapFalcon15ml(Cap):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 10.4, 0, 0, 0]}},
         cap_type="screw",
-        twist=800, # 400 was ok
+        twist=900, # 400 was ok
         pitch=3.6 # 2
     )
 
