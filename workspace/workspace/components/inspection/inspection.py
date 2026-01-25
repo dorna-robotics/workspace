@@ -57,9 +57,9 @@ class Inspection:
                 print(f"camera connection failed {e}")
 
             if self.camera is not None:
-                print(f"✅ 📷 {self.name} connected @ {self.camera_serial_number}")
+                print(f"✅ {self.name} connected @ {self.camera_serial_number}")
             else:
-                print(f"❌ 📷 {self.name} connection failed")
+                print(f"❌ {self.name} connection failed @ {self.camera_serial_number}")
 
 
     # close the camera

@@ -46,7 +46,7 @@ class PipettorSP2840mm(Pipettor):
                 connection_status = True
                 print(f"✅ {self.name} connected @ {self.device_port}")
             else:
-                print(f"❌ {self.name} connection failed")
+                print(f"❌ {self.name} connection failed @ {self.device_port}")
 
         if not connection_status:
             self.device = None

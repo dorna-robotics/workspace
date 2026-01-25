@@ -114,7 +114,7 @@ class Core:
                 print(f"✅ {self.name} connected @ {self.robot_ip}")
             else:
                 # simulation get activated
-                print(f"❌ {self.name} connection failed")
+                print(f"❌ {self.name} connection failed @ {self.robot_ip}")
                 self._simulation_mode = True
 
         # optional robot API hookup
@@ -150,9 +150,9 @@ class Core:
             
             # connection status
             if self.camera is not None:
-                print(f"✅ 📷 camera connected @ {self.camera_serial_number}")
+                print(f"✅ camera connected @ {self.camera_serial_number}")
             else:
-                print(f"❌ 📷 camera connection failed")
+                print(f"❌ camera connection failed @ {self.camera_serial_number}")
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
