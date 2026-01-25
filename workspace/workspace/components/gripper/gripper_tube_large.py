@@ -8,6 +8,12 @@ from workspace.components.gripper.gripper import Gripper
 class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 52, 0, 0, 0], "tip": [0, 0, 59.5, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0,0,26,0,0,0], "scale":[40,72,40]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0,0,53,0,0,0], "scale":[14.5, 65, 14.5]},
+
+        ]},
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],
