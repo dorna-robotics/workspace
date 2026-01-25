@@ -7,7 +7,11 @@ from workspace.components.rack.rack import Rack
 class RackMicronic962(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
-        offset=[0, 0],
+        collision_box = 
+            {"body":[
+                {"pose":[0, 0, 15, 0, 0, 0], "scale":[129,87,30]}#[xyzabc] , [lx,ly,lz]
+        ]},
+        ffset=[0, 0],
         pitch=[9, 9],
         rvec_safe=[0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("H") + 1)],

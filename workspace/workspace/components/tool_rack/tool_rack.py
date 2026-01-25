@@ -11,9 +11,9 @@ class ToolRack:
             "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 3.24, 0.0, 0.0, 0.0], "scale":[66.0, 66.0, 5.95]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 0.0, 77.82, 0.0, 0.0, 0.0], "scale":[27.0, 27.0, 152.51]},
-                {"pose":[0.0, 23.57, 152.0, 0.0, 0.0, 0.0],"scale":[53.92, 75.07, 5.95]}
+                {"pose":[0.0, 0.0, 3.0, 0.0, 0.0, 0.0], "scale":[66.0, 66.0, 6.0]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 78.0, 0.0, 0.0, 0.0], "scale":[27.0, 27.0, 152.5]},
+                {"pose":[0.0, 23.5, 145.0, 0.0, 0.0, 0.0],"scale":[54.0, 75.0, 19.5]}
         
         ]}
     )
@@ -34,5 +34,5 @@ class ToolRack:
 
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         } 

@@ -10,6 +10,9 @@ from workspace.components.pipettor.keyto_wrapper import Keyto
 class PipettorSP2840mm(Pipettor):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, -104.2, 26.5, 90, 0, 0], "top": [0, -110.2, 26.5, 90, 0, 0]}},
+        collision_box = {"body":[
+                {"pose":[0,-20,30,0,0,0], "scale":[40,180,60]}
+        ]},
         #cfg
         has_tool_changer = True,
         port="",

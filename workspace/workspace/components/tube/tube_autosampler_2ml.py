@@ -9,10 +9,10 @@ class TubeAutosampler2ml(Tube):
         anchors={
             "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 32, 0, 0, 0], "place":[0, 0, 28, 0, 0, 0]},
         },
-        #collision_box = 
-        #    {"body":[
-        #        {"pose":[0.0, 0.0, 16.213, 0.0, 0.0, 0.0], "scale":[11.90, 11.90, 35.73]}#[xyzabc] , [lx,ly,lz]
-        #]},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 16.0, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 35.5]}#[xyzabc] , [lx,ly,lz]
+        ]},
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm

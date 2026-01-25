@@ -7,6 +7,10 @@ from workspace.components.rack.rack import Rack
 class RackFalcon15ml(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.4, 0, 0, 0], "top": [0, 0, 78, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0, 0, 39, 0, 0, 0], "scale":[164, 117, 78]}#[xyzabc] , [lx,ly,lz]
+        ]},
         offset=[0, 0],
         pitch=[28, 28],
         rvec_safe=[0, 0, 45],

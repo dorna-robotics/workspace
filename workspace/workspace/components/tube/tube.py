@@ -23,7 +23,7 @@ class Tube:
 
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, box_for_grip=True, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
 
         # size

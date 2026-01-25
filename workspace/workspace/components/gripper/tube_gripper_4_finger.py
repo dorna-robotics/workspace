@@ -10,8 +10,8 @@ class TubeGripper4Finger(Gripper):
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 65, 0, 0, 0], "tip": [0, 0, 69.5, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 27.733, 0.0, 0.0, 0.0], "scale":[46.87, 46.87, 56.52]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 0.0, 57.142, 0.0, 0.0, 0.0], "scale":[21.74, 21.74, 26.21]}
+                {"pose":[0.0, 0.0, 27.5, 0.0, 0.0, 0.0], "scale":[47.0, 47.0, 56.5]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 57.0, 0.0, 0.0, 0.0], "scale":[21.5, 21.5, 26.0]}
         ]},
         #cfg
         has_tool_changer = False,

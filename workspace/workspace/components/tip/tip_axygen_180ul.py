@@ -9,6 +9,10 @@ class TipAxygen180ul(Tip):
         anchors={
             "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 52, 0, 0, 0]},
         },
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 26.0, 0.0, 0.0, 0.0], "scale":[7.7, 7.7, 52.3]}
+        ]},
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm

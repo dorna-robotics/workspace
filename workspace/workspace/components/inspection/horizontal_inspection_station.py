@@ -8,6 +8,11 @@ from workspace.components.inspection.inspection import Inspection
 class HorizontalInspectionStation(Inspection):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+        collision_box = {"body":[
+                {"pose":[0,0,4,0,0,0], "scale":[64,64,6.5]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[3,0,80,0,0,0], "scale": [28,25.5,152]},
+                {"pose":[23.5,0,170.5,0,0,0], "scale": [31,46,47]}
+        ]},
         camera = {
             "stream": {"width":848, "height":480, "fps":15},
             "K": None,

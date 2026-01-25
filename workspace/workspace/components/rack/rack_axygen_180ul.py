@@ -7,6 +7,10 @@ from workspace.components.rack.rack import Rack
 class RackAxygen180ul(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 7, 0, 0, 0], "top": [0, 0, 46, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0, 0, 23.5, 0, 0, 0], "scale":[128, 86, 47]}#[xyzabc] , [lx,ly,lz]
+        ]},
         offset=[0, 0],
         pitch=[9, 9],
         rvec_safe=[0, 0, 45], # -135 and -90

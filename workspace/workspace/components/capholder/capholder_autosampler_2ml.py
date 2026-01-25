@@ -10,7 +10,7 @@ class CapholderAutosampler2ml(Rack):
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 3.5, 0, 0, 0], "top": [0, 0, 7, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 3.84, 0.0, 0.0, 0.0], "scale":[130.5, 88.6, 8.66]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 4.0, 0.0, 0.0, 0.0], "scale":[130.0, 89.0, 9.0]}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[0, 0],
         pitch=[14, 14],

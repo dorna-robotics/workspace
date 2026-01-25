@@ -8,7 +8,11 @@ class TubeMicronic075ml(Tube):
     DEFAULTS = dict(
         anchors={
             "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 42, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0]},
-        }
+        },
+        collision_box = 
+            {"body":[
+                {"pose":[0,0,22,0,0,0], "scale":[8,8,45]}#[xyzabc] , [lx,ly,lz]
+        ]}
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

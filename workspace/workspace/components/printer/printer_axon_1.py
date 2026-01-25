@@ -12,6 +12,12 @@ class PrinterAxon1(Printer):
         anchors={
             "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 93.5, 0, 0, 0]},
         },
+        collision_box = 
+            {"body":[
+                {"pose":[-40, 0, 50, 0, 0, 0], "scale":[564,258,91.5]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[-101, 0, 138, 0, 0, 0], "scale":[410.5, 250.5, 101.5]},
+                {"pose":[150,53,120, 0, 0, 0], "scale":[60.5,68.5,80.5]}
+        ]},
         # cfg
         ip="127.0.0.1",
         simulation=True,

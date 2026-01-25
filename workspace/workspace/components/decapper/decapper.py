@@ -11,7 +11,7 @@ class Decapper:
             "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]},},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 23.85, 0.0, 0.0, 0.0], "scale":[76.1, 70.7, 63.21]}   #[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 24.0, 0.0, 0.0, 0.0], "scale":[76, 71, 63]}   #[xyzabc] , [lx,ly,lz]
         ]},
         # cfg
         output_enable = [[None, None, 0.1]], # [[pin, index, time]]
@@ -34,7 +34,7 @@ class Decapper:
         
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name) for k in prm["anchors"]
+            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
 
         # open and close

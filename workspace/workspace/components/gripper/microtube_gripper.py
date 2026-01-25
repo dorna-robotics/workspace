@@ -8,6 +8,11 @@ from workspace.components.gripper.gripper import Gripper
 class SuctionGripper(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 51.35, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0, 0, 27, 0, 0, 0], "scale":[38,40,57]},#[xyzabc] , [lx,ly,lz]
+        ]},
+
         #cfg
         has_tool_changer = False,
         output_enable=[[None, None, 0]],

@@ -92,6 +92,7 @@ class Core:
         self.planner.update(
             aux_dir=[[1, 0, 0], [0, 0, 0]],
             aux_limit=[[self.rail_min, self.rail_max], [-1,1]],
+            has_camera=self.has_camera
         )
 
         # --- scene dirty tracking & last joints (for Workspace optimization)
@@ -152,10 +153,15 @@ class Core:
         }
 
 
+        collision_boxes = {"rail_base":[
+                {"pose":[170.0, 0.13, 36.66, 0.0, 0.0, 0.0], "scale":[771.0, 122.4, 73.6]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[170.7, 116.3, 37.1, 0.0, 0.0, 0.0], "scale":[771.0, 111.1, 74.6]}
+        ]}
+
         # next we add the rail base depending on the type of the rail
         if self.has_rail:
             if self.rail_cfg["type"] == "rail_hd_500mm":
-                self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_hd_500mm_base_anchors, component = self.name)
+                self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_hd_500mm_base_anchors, component = self.name, collision_box=collision_boxes )
                 self.assembly["rail_base"] = self.rail_base
                 self.rail_carriage = Solid(name="rail_carriage", type="rail_hd_carriage", anchors=rail_hd_carriage_anchors, component = self.name)
                 self.assembly["rail_carriage"] =  self.rail_carriage
@@ -599,7 +605,7 @@ class Core:
         if self.camera:
             self.camera.close()
 
-    def motion_plan(self, joint):
+    def motion_plan(self, joint, seed=1234, padding=0):
 
         print("Motion planner called")
 
@@ -622,13 +628,13 @@ class Core:
         scene = []
         tool = []
         if hasattr(self.workspace, "compute_collision_boxes"):
-            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding) 
             for box in world_boxes:
                 try:
                     pose = box["pose"]
                     scale = box["scale"]
                     scene.append(
-                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
                     )
                 except Exception:
                     # If a malformed box slips through, skip it rather than failing the whole move
@@ -639,11 +645,14 @@ class Core:
                     pose = box["pose"]
                     scale = box["scale"]
                     tool.append(
-                        Planner.create_cube(pose, [scale[0], scale[1], scale[2]])
+                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
                     )
                 except Exception:
                     # If a malformed box slips through, skip it rather than failing the whole move
                     continue
+        
+        #print("world box: ", world_boxes)
+        #print("tool box: ", tool_boxes)
 
         # -------------------------
         # Planner update args
@@ -672,7 +681,7 @@ class Core:
 
         start_time = time.perf_counter()
         
-        res = self.planner.plan(start, goal)
+        res = self.planner.plan(start, goal, seed=seed)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
@@ -684,11 +693,12 @@ class Core:
 
 
 
-    def check_collision(self, j):
+    def check_collision(self, j, internal=True):
         scene = []
         tool = []
+        padding = 0
         if hasattr(self.workspace, "compute_collision_boxes"):
-            world_boxes, tool_boxes = self.workspace.compute_collision_boxes() 
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding) 
             for box in world_boxes:
                 try:
                     pose = box["pose"]
@@ -711,7 +721,8 @@ class Core:
                     # If a malformed box slips through, skip it rather than failing the whole move
                     continue
 
-
+        #print("world box: ", world_boxes)
+        #print("tool box: ", tool_boxes)
         # -------------------------
         # Planner update args
         # -------------------------
@@ -720,15 +731,14 @@ class Core:
         base_solid = self.rail_base
 
         base_in_world = list( self.rail_base.pose(anchor="carriage"))
-        print("scene: ",scene)
-        print("gripper:",gripper)
+
         self.planner.update(
             scene=scene,
             gripper=tool,
             base_in_world=list(base_in_world)
         )
 
-        return self.planner.check_collision(j)
+        return self.planner.check_collision(j,internal)
 
 
 
