@@ -91,6 +91,11 @@ class Decapper(Recipe):
         
         # move, startting from max_rotation/2
         for i in range(len(joint_list)):
+            # enable gripper
+            if tool.output_state() != 1:
+                self.core.robot_api.output(config=tool.output_enable)
+                tool.output_state(1)
+
             # uncap
             self.core.robot_api.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
 
@@ -104,11 +109,6 @@ class Decapper(Recipe):
                 J_start = joint_list[i][:]
                 J_start[5] = j5_start
                 self.core.robot_api.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
-
-                # enable gripper
-                if tool.output_state() != 1:
-                    self.core.robot_api.output(config=tool.output_enable)
-                    tool.output_state(1)
 
             elif exit:
                 # IK go up
