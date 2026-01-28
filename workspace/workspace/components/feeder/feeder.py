@@ -7,7 +7,7 @@ class Feeder:
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
         # cfg
-        axis_cfg = {"axis": 7, "usem":1, "pprm":4000, "tprm":360, "usee":1, "ppre":4000, "tpre":360, "p": 0.01, "i": 0.0001, "d": 0},
+        axis_cfg = {"axis": 7, "usem":1, "pprm":4000, "tprm":360, "usee":1, "ppre":4000, "tpre":360, "p":0.01, "i":0.0001, "d":0, "duration":100 , "threshold":100},
         offset= 0,
         num_slots = 16,
         vaj=[300, 4000, 10000],

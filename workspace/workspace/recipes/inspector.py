@@ -66,7 +66,7 @@ class FixedInspector(Recipe):
     """
     run detection
     """
-    def detect(self, retval=[], **kwargs):
+    def detect(self, retval=True, **kwargs):
         if not self.component.simulation and self.detection is not None:
             retval = self.detection.run(**kwargs)
         return retval
@@ -100,7 +100,7 @@ class MobileInspector:
     """
     run detection
     """
-    def detect(self, retval=[], **kwargs):
+    def detect(self, retval=True, **kwargs):
         if not self.core._simulation_mode and self.detection is not None:
             # ensure Detection always points to the current robot API
             if self.detection.robot is not self.core.robot_api:

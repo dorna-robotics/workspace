@@ -8,6 +8,8 @@ class Hotel(Recipe):
         # ref joints
         target_anchor="clb_0",
         target_offset=[0, 0, 10, 0, 180, 0],
+        # motion
+        lmove_vaj=[300, 700, 3000],
         # IK
         left_approach=True,
         base_distance=150,
