@@ -30,9 +30,13 @@ class Arm:
         self.output_disable = prm["output_disable"]
 
         # io state
-        self.output_state = None
+        self._output_state = None
 
     
-    def set_output_state(self, state):
-        self.output_state = state
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state
 

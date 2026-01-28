@@ -3,6 +3,7 @@ core:
   simulation: True
   ip: "192.168.254.88"
   has_rail: True
+  rail_offset: -11.12
   has_tool_changer: True
   has_camera: True
   camera_serial_number: "218622272001"
@@ -49,7 +50,7 @@ fixture_plate_4:
     child_anchor: corner_0
 
 tool_rack_0:
-  type: tool_rack
+  type: tool_rack_144mm
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
@@ -59,7 +60,7 @@ tool_rack_0:
     offset: [0,0,0,0,0,90]
 
 tool_rack_1:
-  type: tool_rack
+  type: tool_rack_144mm
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
@@ -69,7 +70,7 @@ tool_rack_1:
     offset: [0,0,0,0,0,90]
 
 tool_rack_2:
-  type: tool_rack
+  type: tool_rack_144mm
   attach:
     parent_name: fixture_plate_3
     parent_solid: body
@@ -90,13 +91,14 @@ hotel_0:
 
 feeder:
   type: capfeeder_autosampler_2ml
+  offset: 62.37
   attach:
     parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: E4
+    parent_anchor: G5
     child_solid: body
     child_anchor: hole_0
-    offset: [0, 0, 0, 0, 0, 180]
+    offset: [0, 0, 0, 0, 0, -90]
 
 
 sbs_adapter_0:
@@ -104,7 +106,7 @@ sbs_adapter_0:
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: E5
+    parent_anchor: D6
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
@@ -114,17 +116,19 @@ sbs_adapter_1:
   attach:
     parent_name: fixture_plate_2
     parent_solid: body
-    parent_anchor: E16
+    parent_anchor: D14
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, 90]
 
 syringe_dispence_0:
   type: syringe_dispense_arm
+  output_enable: [[3, 1, 1]]
+  output_disable: [[3, 0, 1]]
   attach:
     parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: C3
+    parent_anchor: G1
     child_solid: body
     child_anchor: hole_0
     offset: [0, 0, 0, 0, 0, -90]
@@ -134,9 +138,9 @@ decapper_0:
   output_enable: [[2, 1, 0.1]]
   output_disable: [[2, 0, 0.1]]
   attach:
-    parent_name: syringe_dispence_0
+    parent_name: fixture_plate_4
     parent_solid: body
-    parent_anchor: place
+    parent_anchor: G4
     child_solid: body
-    child_anchor: center
-    offset: [0, 0, 0, 0, 0, 180]
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, -90]

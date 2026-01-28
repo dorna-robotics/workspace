@@ -11,13 +11,7 @@ class Feeder(Recipe):
         # calibration
         calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
         # index_list
-        index_list = [
-            [0, {"limit": {"center": {"width": [378, 398], "height": [304, 324], "inv": 0}}}],
-            [1, {"limit": {"center": {"width": [417, 438], "height": [271, 291], "inv": 0}}}],
-            [-1, {"limit": {"center": {"width": [329, 349], "height": [318, 338], "inv": 0}}}],
-            [2, {"limit": {"center": {"width": [442, 462], "height": [226, 246], "inv": 0}}}],
-            [-2, {"limit": {"center": {"width": [276, 296], "height": [311, 331], "inv": 0}}}],
-        ],
+        index_list = [],
         # mix
         vaj_mix = [200, 600, 3000],
         thr_dir = 10000,
@@ -58,7 +52,7 @@ class Feeder(Recipe):
         # new_joint
         new_joint = current_joint[:]
         # change the direction if necessary
-        if abs(new_joint[self.component.axis]) > self.thr_dir:
+        if abs(new_joint[self.component.axis_cfg["axis"]]) > self.thr_dir:
             self.mix_dir = -1 * self.mix_dir
         
         return self.roate_in_step(step=self.mix_dir*self.shift_steps, **kwargs)
@@ -71,8 +65,8 @@ class Feeder(Recipe):
 
         # new_joint
         new_joint = current_joint[:] # init
-        current_steps = int((new_joint[self.component.axis] - self.pick_offset)*(self.component.num_slots/360)) # current steps
-        new_joint[self.component.axis] = (step+current_steps)*(360/self.component.num_slots)+self.pick_offset # make sure they are aligned
+        current_steps = int((new_joint[self.component.axis_cfg["axis"]] - self.pick_offset)*(self.component.num_slots/360)) # current steps
+        new_joint[self.component.axis_cfg["axis"]] = (step+current_steps)*(360/self.component.num_slots)+self.pick_offset # make sure they are aligned
 
         # motion
         return self.core.robot_api.jmove(joint=new_joint, vel=self.vaj_mix[0], accel=self.vaj_mix[1], jerk=self.vaj_mix[2])
@@ -82,8 +76,8 @@ class Feeder(Recipe):
         return self.pick_from(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
 
 
-    def above(self, anchor="place", solid_name="body", component=None, padding=25, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
-        return super().above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+    def above(self, anchor="place", solid_name="body", component=None, padding=25, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        return super().above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
     
 
     """

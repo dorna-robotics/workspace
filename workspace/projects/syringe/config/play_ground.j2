@@ -67,6 +67,14 @@ cap_{{ index }}_{{ r }}{{ c }}:
     parent_anchor: place
     child_solid: body
     child_anchor: center
+cap_2_{{ index }}_{{ r }}{{ c }}:
+  type: cap_autosampler_2ml
+  attach:
+    parent_name: capholder
+    parent_solid: body
+    parent_anchor: {{ r }}{{ c }}
+    child_solid: body
+    child_anchor: center
 {% endfor %}
 {% endfor %}
 {% endfor %}

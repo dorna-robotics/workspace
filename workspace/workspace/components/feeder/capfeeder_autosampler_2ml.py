@@ -7,7 +7,7 @@ from workspace.components.feeder.feeder import Feeder
 @register("capfeeder_autosampler_2ml")
 class FeederCap2ml(Feeder):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -20.569 , 171.66, -48, 0, 0], "top": [0, 87.972 , 147.972, -48, 0, 0],
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -20.569 , 171.66, -48, 0, 0], "top": [0, 87.972 , 147.972, -48, 0, 0], "plate_center": [0, 48.02, 108.02, -45, 0, 0],
                 "hole_0":[50, 12.5, 0, 0, 0, 0], "hole_1": [-50, 12.5, 0, 0, 0, 0], "hole_2": [-50, -12.5, 0, 0, 0, 0], "hole_3": [50, -12.5, 0, 0, 0, 0],
                 "clb_0": [0, 21.15, 134.89, -45, 0, 0]}},
         collision_box = 
@@ -18,7 +18,6 @@ class FeederCap2ml(Feeder):
                 {"pose":[0.0, 62.83, 121.75, 45.0, 0.0, 0.0], "scale":[215.14, 215.14, 71.75]}
         ]},
         # cfg
-        axis = 7,
         num_slots = 16,
         vaj=[300, 4000, 10000],
     )

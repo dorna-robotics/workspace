@@ -5,28 +5,14 @@ from workspace.recipes.recipe import Recipe
 
 class Adapter(Recipe):
     DEFAULTS = dict(
-        # ref joints
-        target_solid_name="body",
-        target_anchor="center",
-        target_offset=[0, 0, 75, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
         left_approach=True,
         base_distance=200,
-        rail_step=5,
-        rail_span=10,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 1000, 5000],
-        lmove_vaj=[200, 1000, 5000],
+        rail_step=0, # 5
+        rail_span=0, # 10        
         # calibration
-        calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
+        calibration_abc=True,
+        calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -60,7 +46,7 @@ class Adapter(Recipe):
 
     def place_in(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", **kwargs):
             # place parameters
-            motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+            motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, soft_approach=True, **kwargs)
             if not motion_prm:
                 return False
 

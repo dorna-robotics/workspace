@@ -15,8 +15,8 @@ class Recipe:
         # IK
         left_approach=True,
         base_distance=350,
-        rail_step=0,
-        rail_span=0,        
+        rail_step=0, # step size
+        rail_span=0, # number of tries around that point positive and negative directions       
         # motion
         motion_type="lmove",
         speed_factor=0.5,
@@ -81,7 +81,7 @@ class Recipe:
         if C == 2:
             self.ref_joints = J
         else:
-            print("🔴 could not find a valid reference joint to approach the container")
+            print(f"🔴 could not find a valid reference joint for {self.component.name}")
             return
 
 
@@ -399,17 +399,26 @@ class Recipe:
         """
         find the hierarchy of the items attached to the anchor
         """
+        height_load = 0
+        pose_offset = dorna_pose.Pose(pose=[0, 0, 0, 0, 0, 0])
         load_list = self.solid_hierarchy(parent_solid=component.assembly[solid_name], parent_anchor=anchor, connection_anchor="place")
-        if not load_list:
-            print(f"🔴 no item found in position {anchor}")
-            return False
+        if load_list:
+            """
+            height_load
+            """
+            height_load = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                    from_frame=load_list[0].pose("center"),
+                                    to_frame=load_list[-1].pose("top"))[2])
 
-        """
-        height load
-        """
-        height_load = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+            """
+            pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
+            """
+            pose_offset = dorna_pose.Pose(
+                            pose=dorna_pose.transform_pose(
+                                [0, 0, 0, 0, 0, 0], 
                                 from_frame=load_list[0].pose("center"),
-                                to_frame=load_list[-1].pose("top"))[2])
+                                to_frame=component.assembly[solid_name].pose(anchor)
+            ))
 
         """
         height_container
@@ -425,16 +434,6 @@ class Recipe:
                                 from_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"),
                                 to_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"))[2])
 
-
-        """
-        pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
-        """
-        pose_offset = dorna_pose.Pose(
-                        pose=dorna_pose.transform_pose(
-                            [0, 0, 0, 0, 0, 0], 
-                            from_frame=load_list[0].pose("center"),
-                            to_frame=component.assembly[solid_name].pose(anchor)
-        ))
 
 
 
@@ -711,9 +710,9 @@ class Recipe:
         return self.touch(**place_prm)
 
 
-    def above(self, anchor, solid_name="body", component=None, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+    def above(self, anchor, solid_name="body", component=None, padding=50, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         if not pick_prm:
             return False
         # update
@@ -721,7 +720,7 @@ class Recipe:
         pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
         # touch
         return self.touch(**pick_prm)
- 
+
 
     def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
         # current joint

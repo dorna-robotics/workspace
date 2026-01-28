@@ -14,7 +14,7 @@ class Hotel(Recipe):
         rail_step=20, #10
         rail_span=5, # 5    
         # calibration
-        calibration=True,
+        calibrate_abc = True, # True
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
@@ -39,7 +39,7 @@ class Hotel(Recipe):
         )
         
     
-    def pick_from(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=10, gap=2, **kwargs):
+    def pick_from(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, **kwargs):
         # anchor
         anchor = f"place_{level}"
 
@@ -62,7 +62,7 @@ class Hotel(Recipe):
         return self.touch(**motion_prm)
 
 
-    def place_in(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=10, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", **kwargs):
             # anchor
             anchor = f"place_{level}"
 

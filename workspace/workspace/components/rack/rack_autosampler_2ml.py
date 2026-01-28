@@ -6,7 +6,7 @@ from workspace.components.rack.rack import Rack
 @register("rack_autosampler_2ml")
 class RackAutosampler2ml(Rack):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 5, 0, 0, 0], "top": [0, 0, 25.5, 0, 0, 0]}},
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 5, 0, 0, 0], "top": [0, 0, 23, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 12.90, 0.0, 0.0, 0.0], "scale":[131.0, 87.4, 28.28]}#[xyzabc] , [lx,ly,lz]

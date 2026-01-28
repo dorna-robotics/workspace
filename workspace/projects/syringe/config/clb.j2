@@ -1,5 +1,5 @@
 gripper_0:
-  type: gripper_calibration_vertical
+  type: gripper_calibration_vertical_short
   has_tool_changer: True 
   attach:
     parent_name: tool_rack_0
@@ -9,10 +9,20 @@ gripper_0:
     child_anchor: tool_rack_connection
 
 gripper_1:
-  type: gripper_calibration_horizontal
+  type: gripper_calibration_vertical_long
   has_tool_changer: True 
   attach:
     parent_name: tool_rack_1
+    parent_solid: body
+    parent_anchor: place
+    child_solid: tool_changer_tool_side
+    child_anchor: tool_rack_connection
+
+gripper_2:
+  type: gripper_calibration_horizontal
+  has_tool_changer: True 
+  attach:
+    parent_name: tool_rack_2
     parent_solid: body
     parent_anchor: place
     child_solid: tool_changer_tool_side
