@@ -8,7 +8,7 @@ from workspace.components.gripper.gripper import Gripper
 class Gripper4Finger(Gripper):
     DEFAULTS = dict(
         #anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0+0.7-0.3, 0.3+0.7, 66.5, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 66.5, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 66.5-1, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 27.733, 0.0, 0.0, 0.0], "scale":[46.87, 46.87, 56.52]},#[xyzabc] , [lx,ly,lz]

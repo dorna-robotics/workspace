@@ -6,6 +6,7 @@ from workspace.recipes.recipe import Recipe
 class Adapter(Recipe):
     DEFAULTS = dict(
         # motion
+        jmove_vaj=[150, 750, 4500],
         lmove_vaj=[300, 700, 3000],
         # IK
         left_approach=True,

@@ -9,6 +9,7 @@ class Hotel(Recipe):
         target_anchor="clb_0",
         target_offset=[0, 0, 10, 0, 180, 0],
         # motion
+        jmove_vaj=[150, 750, 4500],
         lmove_vaj=[300, 700, 3000],
         # IK
         left_approach=True,

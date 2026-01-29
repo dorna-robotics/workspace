@@ -1,3 +1,4 @@
+import time
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
@@ -34,3 +35,8 @@ class DispenseArm(Recipe):
             self.core.robot_api.output(config=self.component.output_disable)
             self.component.output_state(0)
         return True
+
+    # bring the arm down
+    def dispense(self, sleep=1.5):
+        time.sleep(sleep)
+        return 0

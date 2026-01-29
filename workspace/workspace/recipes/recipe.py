@@ -20,7 +20,7 @@ class Recipe:
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 1000, 6000], # [200, 1200, 6000],
+        jmove_vaj=[200, 500, 3000], # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
@@ -672,8 +672,7 @@ class Recipe:
 
         # add gravity compensation
         target_offset = offset[:]
-        if gravity_offset > 0:
-            target_offset[2] += gravity_offset
+        target_offset[2] += gravity_offset
 
         """
         return

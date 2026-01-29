@@ -2,6 +2,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
 import numpy as np
+import time
 
 
 class Feeder(Recipe):
@@ -65,7 +66,7 @@ class Feeder(Recipe):
 
         # new_joint
         new_joint = current_joint[:] # init
-        current_steps = int((new_joint[self.component.axis_cfg["axis"]] - self.pick_offset)*(self.component.num_slots/360)) # current steps
+        current_steps = round((new_joint[self.component.axis_cfg["axis"]] - self.pick_offset)*(self.component.num_slots/360)) # current steps
         new_joint[self.component.axis_cfg["axis"]] = (step+current_steps)*(360/self.component.num_slots)+self.pick_offset # make sure they are aligned
 
         # motion
@@ -95,7 +96,8 @@ class Feeder(Recipe):
             # object exists
             if inspector.detect(**preset, **kwargs):
                 # move the feeder to that position
-                return self.roate_in_step(step=step)
+                self.roate_in_step(step=step)
+                return time.sleep(0.5)
         
         # mix
         self.mix()
