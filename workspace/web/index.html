@@ -157,6 +157,51 @@
       const gltfLoader = new GLTFLoader();
       const objectsByName = new Map();
 
+      // --- Collision visuals ---
+      const collisionWorldGroup = new THREE.Group();
+      collisionWorldGroup.visible = false;
+      scene.add(collisionWorldGroup);
+
+      const collisionFlangeGroup = new THREE.Group();
+      collisionFlangeGroup.visible = false;
+      scene.add(collisionFlangeGroup);
+
+      const collisionMeshesByKey = new Map(); // key -> {world:[], flange:[]}
+
+      // --- GUI (top-right, Three.js style) ---
+      const guiToggle = document.getElementById("toggleCollision");
+      let showCollisionBoxes = false;
+      if (guiToggle) {
+        guiToggle.checked = false;
+        guiToggle.addEventListener("change", () => {
+          showCollisionBoxes = guiToggle.checked;
+          collisionWorldGroup.visible = showCollisionBoxes;
+          collisionFlangeGroup.visible = showCollisionBoxes;
+        });
+      }
+
+      function findFlangeRoot() {
+        const direct = objectsByName.get("core_robot_flange");
+        if (direct) return direct;
+        for (const obj of objectsByName.values()) {
+          if (obj.userData?.componentName === "core" &&
+              obj.userData?.solidName === "robot_flange") {
+            return obj;
+          }
+        }
+        return null;
+      }
+
+      function ensureFlangeGroupAttached() {
+        const flangeRoot = findFlangeRoot();
+        if (flangeRoot && collisionFlangeGroup.parent !== flangeRoot) {
+          flangeRoot.add(collisionFlangeGroup);
+          collisionFlangeGroup.position.set(0, 0, 0);
+          collisionFlangeGroup.quaternion.identity();
+          collisionFlangeGroup.scale.set(1, 1, 1);
+        }
+      }
+
       function base64ToArrayBuffer(b64) {
         const bin = atob(b64);
         const len = bin.length;
@@ -176,6 +221,71 @@
         const q = new THREE.Quaternion();
         q.setFromAxisAngle(new THREE.Vector3(ax, ay, az), ang * Math.PI / 180);
         return q;
+      }
+
+      function makeCollisionMesh(pose, scale, color, opacity) {
+        const geom = new THREE.BoxGeometry(scale[0], scale[1], scale[2]);
+        const mat = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geom, mat);
+        const [x, y, z, rx, ry, rz] = pose;
+        mesh.position.set(x, y, z);
+        mesh.quaternion.copy(rodriguesDegToQuaternion(rx, ry, rz));
+        mesh.renderOrder = 20;
+        return mesh;
+      }
+
+      function clearCollisionMeshesFor(key) {
+        const entry = collisionMeshesByKey.get(key);
+        if (!entry) return;
+        for (const mesh of entry.world) {
+          collisionWorldGroup.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+        }
+        for (const mesh of entry.flange) {
+          collisionFlangeGroup.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+        }
+        collisionMeshesByKey.delete(key);
+      }
+
+      function updateCollisionMeshesFor(key, worldBoxes, flangeBoxes, meta) {
+        clearCollisionMeshesFor(key);
+        const entry = { world: [], flange: [] };
+
+        if (Array.isArray(worldBoxes)) {
+          for (const box of worldBoxes) {
+            if (!box?.pose || !box?.scale) continue;
+            const mesh = makeCollisionMesh(box.pose, box.scale, 0xff3344, 0.28);
+            mesh.userData = {
+              ...meta,
+              frame: "world"
+            };
+            collisionWorldGroup.add(mesh);
+            entry.world.push(mesh);
+          }
+        }
+
+        if (Array.isArray(flangeBoxes)) {
+          for (const box of flangeBoxes) {
+            if (!box?.pose || !box?.scale) continue;
+            const mesh = makeCollisionMesh(box.pose, box.scale, 0x33a7ff, 0.28);
+            mesh.userData = {
+              ...meta,
+              frame: "flange"
+            };
+            collisionFlangeGroup.add(mesh);
+            entry.flange.push(mesh);
+          }
+        }
+
+        collisionMeshesByKey.set(key, entry);
       }
 
       // ===== Picking + sticky anchor gizmos =====
@@ -459,6 +569,7 @@
             scene.remove(prev);
             objectsByName.delete(name);
           }
+          clearCollisionMeshesFor(name);
           return;
         }
 
@@ -558,6 +669,18 @@
         if (spec.type) {
           root.userData.typeName = spec.type;
         }
+
+        if ("collisionWorld" in spec || "collisionFlange" in spec) {
+          updateCollisionMeshesFor(
+            name,
+            spec.collisionWorld || [],
+            spec.collisionFlange || [],
+            {
+              componentName: root.userData.componentName,
+              solidName: root.userData.solidName
+            }
+          );
+        }
       }
 
       // --- Socket.IO hookup ---
@@ -579,6 +702,7 @@
       function animate() {
         controls.update();
         updateAnchorsNow();
+        ensureFlangeGroupAttached();
         renderer.render(scene, camera);
         requestAnimationFrame(animate);
       }
@@ -595,6 +719,14 @@
     boot();
   </script>
 
+  <!-- Top-right settings panel -->
+  <div id="guiPanel">
+    <label class="guiRow">
+      <input type="checkbox" id="toggleCollision" />
+      <span>Show collision boxes</span>
+    </label>
+  </div>
+
   <!-- Modern minimal bottom-left info bar, hidden by default -->
   <div id="infoBar">
     <span id="infoName"  class="infoLabel"></span>
@@ -603,6 +735,35 @@
   </div>
 
   <style>
+    #guiPanel {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      background: rgba(240, 240, 240, 0.92);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+      border-radius: 4px;
+      padding: 8px 10px;
+      z-index: 999999;
+      font-family: "Lucida Grande", Tahoma, Arial, sans-serif;
+      font-size: 13px;
+      color: #111;
+      user-select: none;
+    }
+
+    .guiRow {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .guiRow input {
+      margin: 0;
+      accent-color: #3a6ea5;
+    }
+
     #infoBar {
       position: fixed;
       bottom: 18px;

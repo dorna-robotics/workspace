@@ -86,6 +86,11 @@ class Core:
         self.has_tool_changer = prm["has_tool_changer"]
         self.tool_changer_output = prm["tool_changer_output"]
 
+        # ------- camera
+        self.has_camera = prm["has_camera"]
+        self.camera_serial_number = prm["camera_serial_number"]
+        self.camera_cfg = prm["camera_cfg"]
+        
         # planner
         self.planner = Planner()
 
@@ -111,10 +116,6 @@ class Core:
                 self.robot_api = SimulationAPI()
                 self._simulation_mode = True
 
-        # ------- camera
-        self.has_camera = prm["has_camera"]
-        self.camera_serial_number = prm["camera_serial_number"]
-        self.camera_cfg = prm["camera_cfg"]
         
         # camera api
         self.camera = None

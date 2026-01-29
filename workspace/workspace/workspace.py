@@ -193,6 +193,7 @@ class Workspace:
             return c_box_data
 
         for comp in self.components.values():
+            comp_name = getattr(comp, "name", None)
             for solid_name, solid in comp.assembly.items():
                 safe_solid_name = str(solid_name) if solid_name else ""
                 if safe_solid_name.lower().startswith("robot_"):
@@ -220,15 +221,33 @@ class Workspace:
                         if tool_load_solid is None or solid is not tool_load_solid:
                             continue
 
+                    if (not downstream) and getattr(solid, "box_for_grip", False):
+                        continue
+
                     if downstream and (T_world_flange is not None):
                         # Pose in flange frame: T_flange^-1 * T_box_world
                         T_box_flange = T_world_flange @ T_box_world
                         pose_out = T_to_xyzabc(T_box_flange)
-                        collision_flange.append({"pose": pose_out, "scale": pad(box["scale"])})
+                        collision_flange.append({
+                            "pose": pose_out,
+                            "scale": pad(box["scale"]),
+                            "componentName": comp_name,
+                            "solidName": solid_name,
+                            "frame": "flange",
+                        })
                     else:
                         # Pose in world frame (old behavior)
                         pose_out = T_to_xyzabc(T_box_world)
-                        collision_world.append({"pose": pose_out, "scale": pad(box["scale"])})
+                        entry = {
+                            "pose": pose_out,
+                            "scale": pad(box["scale"]),
+                            "componentName": comp_name,
+                            "solidName": solid_name,
+                            "frame": "world",
+                        }
+                        if isinstance(box.get("pose"), (list, tuple)):
+                            entry["poseLocal"] = list(box["pose"])
+                        collision_world.append(entry)
 
         return collision_world, collision_flange
 

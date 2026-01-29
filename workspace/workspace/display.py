@@ -121,6 +121,8 @@ class Display:
             print("[Display] compute_world_poses() failed in snapshot:", e)
             poses = {}
 
+        world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
+
         batch = {}
         try:
             for comp_name, comp in getattr(self.workspace, "components", {}).items():
@@ -143,6 +145,12 @@ class Display:
                     if anchors:
                         item["anchors"] = anchors
 
+                    key_boxes = (comp_name, solid_name)
+                    if key_boxes in world_boxes_by_solid:
+                        item["collisionWorld"] = world_boxes_by_solid[key_boxes]
+                    if key_boxes in flange_boxes_by_solid:
+                        item["collisionFlange"] = flange_boxes_by_solid[key_boxes]
+
                     batch[key] = item
         except Exception as e:
             print("[Display] error building snapshot batch:", e)
@@ -156,15 +164,62 @@ class Display:
             print("[Display] compute_world_poses() failed in frame:", e)
             poses = {}
 
+        world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
+
         out = {}
-        for name, p in poses.items():
-            out[name] = {
-                "pose": p,
-                # DO NOT send meshUrl
-                # DO NOT send componentName / solidName
-                "visible": True
-            }
+        for comp_name, comp in getattr(self.workspace, "components", {}).items():
+            assembly = getattr(comp, "assembly", {}) or {}
+            for solid_name, _solid in assembly.items():
+                key = f"{comp_name}_{solid_name}"
+                p = poses.get(key, [0, 0, 0, 0, 0, 0])
+                item = {
+                    "pose": p,
+                    # DO NOT send meshUrl
+                    # DO NOT send componentName / solidName
+                    "visible": True
+                }
+                key_boxes = (comp_name, solid_name)
+                if key_boxes in world_boxes_by_solid:
+                    item["collisionWorld"] = world_boxes_by_solid[key_boxes]
+                if key_boxes in flange_boxes_by_solid:
+                    item["collisionFlange"] = flange_boxes_by_solid[key_boxes]
+
+                out[key] = item
         return out
+
+    def _collision_boxes_by_solid(self, padding=0.0):
+        if not hasattr(self.workspace, "compute_collision_boxes"):
+            return {}, {}
+
+        try:
+            collision_world, collision_flange = self.workspace.compute_collision_boxes(padding)
+        except Exception as e:
+            print("[Display] compute_collision_boxes() failed:", e)
+            return {}, {}
+
+        world_map = {}
+        for box in collision_world:
+            comp = box.get("componentName")
+            solid = box.get("solidName")
+            if comp is None or solid is None:
+                continue
+            world_map.setdefault((comp, solid), []).append({
+                "pose": box.get("pose"),
+                "scale": box.get("scale"),
+            })
+
+        flange_map = {}
+        for box in collision_flange:
+            comp = box.get("componentName")
+            solid = box.get("solidName")
+            if comp is None or solid is None:
+                continue
+            flange_map.setdefault((comp, solid), []).append({
+                "pose": box.get("pose"),
+                "scale": box.get("scale"),
+            })
+
+        return world_map, flange_map
     # ----------------------------------------------------
     # Emit with backpressure
     # ----------------------------------------------------
