@@ -1,7 +1,9 @@
 from copy import deepcopy
+from json import tool
 from mergedeep import merge
 from collections import deque
 from dorna2 import pose as dorna_pose
+from dorna2 import Pose
 
 class Recipe:
     DEFAULTS = dict(
@@ -13,17 +15,19 @@ class Recipe:
         # IK
         left_approach=True,
         base_distance=350,
-        rail_step=5.0,
-        rail_span=10,        
+        rail_step=0, # step size
+        rail_span=0, # number of tries around that point positive and negative directions       
         # motion
         motion_type="lmove",
         speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        jmove_vaj=[200, 500, 3000], # [200, 1200, 6000],
+        lmove_vaj=[600, 1400, 6000],
         # calibration
+        calibration_name=None,
         calibration=True,
+        calibrate_abc=False,
         calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
+        calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
         calibration_tool_offset=[0, 0, 0, 0, 0, 0],
@@ -53,11 +57,16 @@ class Recipe:
 
         # calibration
         self.calibration = prm["calibration"]
+        self.calibrate_abc = prm["calibrate_abc"]
         self.calibration_targets = prm["calibration_targets"]
         self.calibration_target_offset = prm["calibration_target_offset"]
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
         self.calibration_tool_anchor = prm["calibration_tool_anchor"]
         self.calibration_tool_offset = prm["calibration_tool_offset"]
+        # calibration name initi
+        if prm["calibration_name"] is None:
+            self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
+
 
         # find the reference joints used later for every IK
         J,C = self.core.IK(
@@ -72,7 +81,7 @@ class Recipe:
         if C == 2:
             self.ref_joints = J
         else:
-            print("could not find a valid reference joint to approach the container")
+            print(f"🔴 could not find a valid reference joint for {self.component.name}")
             return
 
 
@@ -160,12 +169,14 @@ class Recipe:
             output_approach=[],
             approach_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             approach_path = [],
+            approach_j5=None,
             output_touch=[],
             actions=[],
             sleep=0,
             attach=[None, {"parent":None, "parent_anchor":None, "child_anchor":None, "offset":[0, 0, 0, 0, 0, 0], "offset_frame":"parent"}],
             exit_tool={"solid": None, "anchor": None, "offset":[0, 0, 0, 0, 0, 0]},
             exit_path = [],
+            exit_j5 = None,
             output_exit=[],
             **kwargs,
             ):
@@ -176,30 +187,61 @@ class Recipe:
         }
 
         """
-        output_approach
+        output_approach: [[set, value]]
         """
-        self.core.robot_api.output(config=output_approach)
+        _output_config = []
+        for _config, get_call, set_call in output_approach:
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1][0]
+                
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
 
         """
         approach
         """
-        path = list(approach_path+[target_offset])
+        if target_offset is None:
+            path = approach_path[:]
+        else:
+            path = approach_path[:] + [target_offset]
+        
         for i in range(len(path)):
+            # calibration
+            if self.calibration:
+                # target_pose in the world frame
+                pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
+                # interpolate pose
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name, calibrate_abc=self.calibrate_abc))
+                # anchor frame
+                anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
+                # corrected in anchor frame
+                path[i] = corrected_pose_frame.pose(in_frame=anchor_frame)
+
+            
+            # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
                                 tool_solid=approach_tool["solid"], tool_anchor=approach_tool["anchor"], tool_offset=approach_tool["offset"],
-                                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)
+                                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
+            
+            # approach j5
+            if approach_j5 is not None:
+                J[5] = approach_j5
             if C == 2:
-                # calibration
-                if self.calibration:
-                    J = self.core.calibration.interpolate(J[:])
-
                 if i == 0 and approach_path: # first motion of the approach
                     if self.core.has_motion_plan: # run path planing 
                         #create the path
                         points = self.core.motion_plan(joint=J)
                         if len(points)==0:
-                            print("No proper path was found")
+                            print("🔴 [error] no proper path was found")
                             return False
                         
                         #run the path
@@ -207,17 +249,43 @@ class Recipe:
                     else: # no path planing
                         self.core.robot_api.jmove(joint=J, vel=vaj_map["jmove"][0]*self.speed_factor, accel=vaj_map["jmove"][1]*self.speed_factor, jerk=vaj_map["jmove"][2]*self.speed_factor)
 
-                else: # rest are all based on the user motion command 
-                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+                else: # rest are all based on the user motion command
+                    if self.motion_type == "lmove": # run lmove
+                        # set the tool
+                        path_tool = dict(approach_tool)
+                        tool_pose = [0,0,0,0,0,0]
+                        if path_tool["solid"] and path_tool["anchor"]:
+                            tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.core.robot_flange, offset=path_tool["offset"])
+
+                        # lmove with tool_pose
+                        getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
+
+                    elif self.motion_type == "jmove": # run jmove
+                        getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
+
 
             else:
-                print("Could not find a valid pose to approach")
+                print("🔴 could not find a valid pose to approach")
                 return False
         
         """
         output_config
         """
-        self.core.robot_api.output(config=output_touch)
+        _output_config = []
+        for _config, get_call, set_call in output_touch:
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1][0]
+
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
         """
         sleep, actions
@@ -229,7 +297,7 @@ class Recipe:
         """
         attach
         """
-        if attach[0] is not None:
+        if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
         """
@@ -237,32 +305,71 @@ class Recipe:
         """
         path = list(exit_path)
         for i in range(len(path)):
+            # calibration
+            if self.calibration:
+                # target_pose in the world frame
+                pose_in_world = target_solid.pose(anchor=target_anchor, offset=path[i])
+                # interpolate pose
+                corrected_pose_frame = Pose(pose=self.core.calibration.interpolate(pose_in_world, dict_name=self.calibration_name, calibrate_abc=self.calibrate_abc))
+                # anchor frame
+                anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
+                # corrected in anchor frame
+                path[i] = corrected_pose_frame.pose(in_frame=anchor_frame)
+            
+            # get IK        
             J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=path[i],
                                 tool_solid=exit_tool["solid"], tool_anchor=exit_tool["anchor"], tool_offset=exit_tool["offset"],
                                 base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, ref_joints=self.ref_joints, left_approach=self.left_approach)        
-            if C == 2:
-                # calibration
-                if self.calibration:
-                    J = self.core.calibration.interpolate(J[:])
 
+            # approach j5
+            if exit_j5 is not None:
+                J[5] = exit_j5
+
+            if C == 2:
                 # motion
-                getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)
+                if self.motion_type == "lmove": # run lmove
+                    # set the tool
+                    path_tool = dict(exit_tool)
+                    tool_pose = [0,0,0,0,0,0]
+                    if path_tool["solid"] and path_tool["anchor"]:
+                        tool_pose = path_tool["solid"].pose(anchor=path_tool["anchor"], in_frame=self.core.robot_flange, offset=path_tool["offset"])
+
+                    # lmove with tool_pose
+                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor, tool_pose=tool_pose)   
+
+                elif self.motion_type == "jmove": # run jmove
+                    getattr(self.core.robot_api, self.motion_type)(joint=J, vel=vaj_map[self.motion_type][0]*self.speed_factor, accel=vaj_map[self.motion_type][1]*self.speed_factor, jerk=vaj_map[self.motion_type][2]*self.speed_factor)   
             
             else:
-                print("Could not find a valid pose to approach")
+                print("🔴 could not find a valid pose to approach")
                 return False
 
         """
         output_exit
         """
-        self.core.robot_api.output(config=output_exit)
+        _output_config = []
+        for _config, get_call, set_call in output_exit:
+            # check current state
+            if set_call is not None:
+                current_state = get_call[0](*get_call[1])
+                new_state = set_call[1][0]
+                
+                # current is different from the new state
+                if current_state != new_state:
+                    _output_config += _config
+                    set_call[0](*set_call[1])
+            else: # no need to check
+                _output_config += _config
+
+        self.core.robot_api.output(config=_output_config)
 
         return True
+
 
     
     # pick from specific anchor in the given solid and component
     # always locate the object in the anchor, and go for that
-    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+    def pick_setting(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, soft_approach=False, **kwargs):        
         """
         assign kwargs
         """
@@ -273,15 +380,12 @@ class Recipe:
         component
         """
         component = component or self.component
-        # adjust the component to make sure anchor exists
-        #_solid = self.solid_with_anchor(initial_solid=component.assembly[solid_name], anchor=anchor)
-        #component = self.workspace.components[_solid.component]  
         
         """
         ref joints
         """
         if self.ref_joints is None:
-            print("no reference joints defined")
+            print("🔴 no reference joints defined")
             return False
         
         """
@@ -289,23 +393,32 @@ class Recipe:
         """
         tool = self.tool_attached_to_the_robot()
         if tool is None:
-            print("no tool attached to the robot")
+            print("🔴 no tool attached to the robot")
             return False
         
         """
         find the hierarchy of the items attached to the anchor
         """
+        height_load = 0
+        pose_offset = dorna_pose.Pose(pose=[0, 0, 0, 0, 0, 0])
         load_list = self.solid_hierarchy(parent_solid=component.assembly[solid_name], parent_anchor=anchor, connection_anchor="place")
-        if not load_list:
-            print(f"no item found in position {anchor}")
-            return False
+        if load_list:
+            """
+            height_load
+            """
+            height_load = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                    from_frame=load_list[0].pose("center"),
+                                    to_frame=load_list[-1].pose("top"))[2])
 
-        """
-        height load
-        """
-        height_load = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+            """
+            pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
+            """
+            pose_offset = dorna_pose.Pose(
+                            pose=dorna_pose.transform_pose(
+                                [0, 0, 0, 0, 0, 0], 
                                 from_frame=load_list[0].pose("center"),
-                                to_frame=load_list[-1].pose("top"))[2])
+                                to_frame=component.assembly[solid_name].pose(anchor)
+            ))
 
         """
         height_container
@@ -322,16 +435,6 @@ class Recipe:
                                 to_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"))[2])
 
 
-        """
-        pose_offset: anchor center in load_list[0] with respect to the anchor in component.assembly[solid_name]
-        """
-        pose_offset = dorna_pose.Pose(
-                        dorna_pose.transform_pose(
-                            [0, 0, 0, 0, 0, 0], 
-                            from_frame=load_list[0].pose("center"),
-                            to_frame=component.assembly[solid_name].pose(anchor)
-        ))
-
 
 
         """
@@ -340,6 +443,7 @@ class Recipe:
         _target_offset = [0, 0, height_load, 0, 0, 0]
         target_offset = pose_offset.pose(offset=_target_offset)
 
+
         """
         approach path
         """
@@ -347,6 +451,9 @@ class Recipe:
         if approach:
             _approach_path = [[0, 0, max(height_load,height_container) + padding, 0, 0, 0], 
                             [0, 0, height_load+height_tool+gap, 0, 0, 0]]
+            # remove the last motion from the approach
+            if not soft_approach:
+                _approach_path = _approach_path[0:1]
             approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
         
         """
@@ -354,7 +461,7 @@ class Recipe:
         """
         exit_path = []
         if exit:
-            _exit_path = [[0, 0, height_container+gap, 0, 0, 0], 
+            _exit_path = [ 
                         [0, 0, max(height_load,height_container)+padding, 0, 0, 0]]
             exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
 
@@ -365,17 +472,37 @@ class Recipe:
         output_approach = []
         output_touch = []
         output_exit = []
-        if trigger_io:
-            # enable component setting
-            enable = list(getattr(component, "enable", []))
-            
-            # disable component setting
-            disable = list(getattr(component, "disable", []))
-            
-            # output config
-            output_approach = tool.disable + enable
-            output_touch = tool.enable + disable
+        if trigger_io:            
+            # enable and disable component setting
+            component_enable = []
+            component_disable = []
+            if  getattr(component, "output_state", False):
+                # [[output_config, get_call, set_call]]
+                component_enable = [[component.output_enable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (1,)),
+                                    ]]
+                component_disable = [[component.output_disable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (0,)),
+                                    ]]
 
+            # enable and disable tool setting
+            tool_enable = []
+            tool_disable = []
+            if  getattr(tool, "output_state", False):
+                tool_enable = [[tool.output_enable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (1,)),
+                                    ]]
+                tool_disable = [[tool.output_disable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (0,)),
+                                    ]]
+            # output config
+            output_approach = tool_disable + component_enable
+            output_touch = tool_enable + component_disable
+    
         """
         run attachment
         """
@@ -397,7 +524,7 @@ class Recipe:
             "approach_path": approach_path,
             "output_touch": output_touch,
             "actions": actions,
-            "sleep": 0.1,
+            "sleep": 0,
             "attach": attach,
             "exit_tool": exit_tool,
             "exit_path": exit_path,
@@ -411,9 +538,9 @@ class Recipe:
 
 
     # run pick with motion
-    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+    def pick_from(self, anchor, solid_name="body", component=None, approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, tool_tcp_z_offset=0, tool_tip_z_offset=0, soft_approach=False, **kwargs):
         # pick parameters
-        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, soft_approach=soft_approach, **kwargs)
         if not pick_prm:
             return False
         # touch
@@ -421,7 +548,7 @@ class Recipe:
 
 
     # place the load in an specific anchor of the given solid and component, with the given offset
-    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_setting(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, soft_approach=False, **kwargs):
         """
         assign kwargs
         """
@@ -437,7 +564,7 @@ class Recipe:
         ref joints
         """
         if self.ref_joints is None:
-            print("no reference joints defined")
+            print("🔴 no reference joints defined")
             return False
 
         """
@@ -445,7 +572,7 @@ class Recipe:
         """
         tool = self.tool_attached_to_the_robot()
         if tool is None:
-            print("no tool attached to the robot")
+            print("🔴 no tool attached to the robot")
             return False
 
         """
@@ -454,7 +581,7 @@ class Recipe:
         # item in tool
         load_list = [self.solid_attached_to_tool(tool)]
         if load_list[-1] is None:
-            print("no item in the gripper")
+            print("🔴 no item in the gripper")
             return False
         
         # find all the items attached to the tool
@@ -479,23 +606,21 @@ class Recipe:
                                 from_frame=tool.assembly[next(iter(tool.assembly))].pose("tcp"),
                                 to_frame=tool.assembly[next(iter(tool.assembly))].pose("tip"))[2])
 
-        """
-        pose_offset
-        """
-        pose_offset = dorna_pose.Pose(pose=offset)
 
         """approach path"""
         approach_path = []
         if approach:
             _approach_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0], 
                             [0, 0, height_container+gap, 0, 0, 0]]
-            approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
+            if not soft_approach:
+                _approach_path = _approach_path[0:1]
+            approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
 
         """exit path"""
         exit_path = []
         if exit:
             _exit_path = [[0, 0, max(height_load, height_container)+padding, 0, 0, 0]]
-            exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
+            exit_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _exit_path]
 
         """
         output config
@@ -504,17 +629,38 @@ class Recipe:
         output_approach = []
         output_touch = []
         output_exit = []
-        if trigger_io:
-            # enable component setting
-            enable = list(getattr(component, "enable", []))
-            
-            # disable component setting
-            disable = list(getattr(component, "disable", []))
-            
-            # output config
-            output_approach = tool.enable + disable
-            output_touch = tool.disable + enable
+        if trigger_io:            
+            # enable and disable component setting
+            component_enable = []
+            component_disable = []
+            if  getattr(component, "output_state", False):
+                # [[output_config, get_call, set_call]]
+                component_enable = [[component.output_enable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (1,)),
+                                    ]]
+                component_disable = [[component.output_disable,
+                                    (component.output_state, ()),
+                                    (component.output_state, (0,)),
+                                    ]]
 
+            # enable and disable tool setting
+            tool_enable = []
+            tool_disable = []
+            if  getattr(tool, "output_state", False):
+                tool_enable = [[tool.output_enable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (1,)),
+                                    ]]
+                tool_disable = [[tool.output_disable,
+                                    (tool.output_state, ()),
+                                    (tool.output_state, (0,)),
+                                    ]]
+            # output config
+            output_approach = component_disable + tool_enable
+            output_touch = component_enable + tool_disable
+
+        
         """
         run attachment
         """
@@ -524,19 +670,23 @@ class Recipe:
             attach = [load_list[0], {"parent": component.assembly[solid_name], "parent_anchor":anchor, "child_anchor":load_anchor, "offset": offset, "offset_frame": "parent"}]
             exit_tool = {"solid": tool.assembly[next(iter(tool.assembly))], "anchor": "tcp", "offset":[0, 0, 0, 0, 180, 0]}
 
+        # add gravity compensation
+        target_offset = offset[:]
+        target_offset[2] += gravity_offset
+
         """
         return
         """
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": offset,
+            "target_offset": target_offset,
             "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
             "actions": actions,
-            "sleep": 0.1,
+            "sleep": 0,
             "attach": attach,
             "exit_tool": exit_tool,
             "exit_path": exit_path,
@@ -549,9 +699,9 @@ class Recipe:
         }
     
 
-    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", **kwargs):
+    def place_in(self, anchor, solid_name="body", component=None, offset=[0, 0, 0, 0, 0, 0], approach=True, actions=[], exit=True, attachment=True, trigger_io=True, padding=50, gap=2, load_anchor="center", gravity_offset=1, soft_approach=False, **kwargs):
         # place parameters
-        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
+        place_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, offset=offset, approach=approach, actions=actions, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, soft_approach=soft_approach, **kwargs)
         if not place_prm:
             return False
         
@@ -559,73 +709,130 @@ class Recipe:
         return self.touch(**place_prm)
 
 
+    def above(self, anchor, solid_name="body", component=None, padding=50, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        # pick parameters
+        pick_prm = self.pick_setting(anchor, solid_name, component=component, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        if not pick_prm:
+            return False
+        # update
+        pick_prm["target_offset"] = None
+        pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
+        # touch
+        return self.touch(**pick_prm)
+
+
+    def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
+        # current joint
+        current_joint = self.core.robot_api.joint()
+
+        # new_joint
+        joint_index = int(joint[1:])
+        new_joint = current_joint[:]
+        new_joint[joint_index] = (new_joint[joint_index] + rotation + limit[1]) % abs(limit[1]-limit[0]) + limit[0]
+
+        # motion
+        self.core.robot_api.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+
+        # sleep
+        return self.core.robot_api.sleep(0.1)
+
+
     # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot 
     # to the target anchor and offset using tool attached to the robot. Then the user click on a button to approve the calibration point
     # then the user moves the robot out and then the robot motors are turned on
     # the tool anchor and offset will match target anchor by the user. 
     # the robot will move to target_offset in the beginning
-    def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):        
+    def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):
+        # initialize
+        success = False
+
         # first we find the solutions for the target:
         J,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=target_offset, tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
             base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
-
         if C == 2:
             self.core.robot_api.jmove(joint=J, vel=self.jmove_vaj[0]*self.speed_factor,accel=self.jmove_vaj[1]*self.speed_factor,jerk=self.jmove_vaj[2]*self.speed_factor)
         else:
-            print("Could not find a valid approach to the calibration point")
+            print("🔴 could not find a valid approach to the calibration point")
             return False
         
         # now we are at the point. We show a message to the user and ask him to hold the robot to release the motor.
-        input("Hold the robot by hand and when ready press enter...")
+        #input("1- ✋ hold the robot by hand...")
 
         # next we release the motor
-        self.core.robot_api.motor(0)
+        #self.core.robot_api.motor(0)
 
         # now ask user to align the robot to the calibration point
-        input("Take the robot to the calibration point and when ready press enter...")
-
+        input("2- 🎯 take the robot to the calibration point...")
+        
         # the joint recording from the user
-        corrected_values = self.core.robot_api.joint()
+        corrected_joint_values = self.core.robot_api.joint()
+        
+        # now we need to convert the corrected values to corrected xyz in world frame
+        corrected_xyz_values = tool_solid.pose(anchor=tool_anchor, offset=tool_offset)
+
+        raw_xyz_values = target_solid.pose(anchor=target_anchor, offset=[0,0,0,0,0,0])
+
+
+        """
+
         # now we find the raw values by solving IK
         # note target_offset is all zeros because we want to exactly match the anchor point
-        raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset, base_distance=None)
+        raw_values,C = self.core.IK(target_solid=target_solid, target_anchor=target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=tool_solid, tool_anchor=tool_anchor, tool_offset=tool_offset,
+                base_distance=self.base_distance, rail_step=self.rail_step, rail_span=self.rail_span, left_approach=self.left_approach,ref_joints=self.ref_joints)
         if C == 2:
             # we found a solution now we need to save it.
             # first we check if the error between calibrated point and the raw point is not too large only for robot joints.
             for i in range(6):        # compare only robot joints j0..j5
                 if abs(corrected_values[i] - raw_values[i]) > 5: # if the error is more than 10 degrees we stop the calibration
-                    print("Calibration error is too large. Please try again")
+                    input("🟡 calibration error is too large. Please try again. Move the robot out of the calibration point and when done press enter...")
+                    self.core.robot_api.motor(1)
                     return False
+                
             # if the error is small we save the calibration point
-            self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3)
+            success = True
             # we also print the raw and corrected values for the user to see
-            print("Raw values:", raw_values)
-            print("Corrected values:", corrected_values)
+            print("raw values:", raw_values)
+            print("corrected values:", corrected_values)
             # now we turn the motors on again
 
         else:
-            print("Could not find a valid solution for the calibration point")
+            input("🔴 could not find a valid solution for the calibration point. Move the robot out of the calibration point and when done press enter...")
+            self.core.robot_api.motor(1)            
             return False     
-        
+        """
         # now we ask the user to move the robot out of the calibration point
-        input("Move the robot out of the calibration point and when ready press enter...")
+        input("3- ⬆️ take the robot out of the calibration point...")
         # now we turn the motors on again
-        self.core.robot_api.motor(1)
+        #self.core.robot_api.motor(1)
+
+        self.core.calibration.add_point(raw_xyz_values, corrected_xyz_values, threshold=1e-3, dict_name=self.calibration_name)
+
+        """
+
+        # success
+        if success:
+            val = input("🔵 press enter to save the calibration point...")
+            if val == "":
+                self.core.calibration.add_point(raw_values, corrected_values, threshold=1e-3, dict_name=self.calibration_name)
+        """
+
         return True
 
 
     # this method goes over all calibration anchors and calibrates them
-    def calibrate(self):
+    def calibrate(self, calibration_targets={}):
         # first we find the tool attached to the robot
-        tool = self.tool()
+        tool = self.tool_attached_to_the_robot()
 
         # now we find the solid that will be used for calibration
         tool_solid = tool.assembly[self.calibration_tool_solid_name]
 
+        # calibration targets
+        _calibration_targets = calibration_targets or self.calibration_targets
         # now we loop over the solids that will be used for calibration
-        for solid in self.calibration_targets:
+        for solid in _calibration_targets:
             calibration_target_solid = self.component.assembly[solid]
 
             # now we go over all the calibration anchors and calibrate them
-            for anchor in self.self.calibration_targets[solid]:
+            for anchor in _calibration_targets[solid]:
                 self.calibrate_anchor(target_solid=calibration_target_solid, target_anchor=anchor, target_offset=self.calibration_target_offset, tool_solid=tool_solid, tool_anchor=self.calibration_tool_anchor, tool_offset=self.calibration_tool_offset)

@@ -21,9 +21,10 @@ class Core:
     """
     DEFAULTS = dict(
         simulation = True,
-        ip = "127.0.0.1",
+        ip = "",
         has_rail = True,
-        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0},
+        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75, "p":0.01, "i":0.0001, "d":0, "duration":100 , "threshold":100},
+        rail_offset = 0,
         has_camera = False,
         camera_serial_number = "",
         camera_cfg = {
@@ -35,8 +36,14 @@ class Core:
             "exposure": None,
             "native_res": None,
         },
-        has_tool_changer = True,
-        tool_changer_output = [[None, None, 0]], # attach signal
+        camera_mount = {
+            "type": "dorna_ta_j4_1",
+            "T": [46.5174596, 32.0776662, -4.24772615, -0.27547989, 0.27691881, 89.6939516],
+            "ej": [0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        has_tool_changer = True, 
+        tool_changer_output_down = [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]], # attach signal
+        tool_changer_output_up = [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]], # detach signal
         has_motion_plan = False, # enable or disable path planing
     )
 
@@ -61,9 +68,10 @@ class Core:
         # -------- rail
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
+        self.rail_offset = prm["rail_offset"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
-            self.rail_min = -80.0
-            self.rail_max = 420.0
+            self.rail_min = -75.0
+            self.rail_max = 400.0
         elif self.rail_cfg["type"] == "rail_hd_1000mm":
             self.rail_min = -80.0
             self.rail_max = 920.0
@@ -77,14 +85,12 @@ class Core:
         self.robot_ip = prm["ip"]
 
         # -------- calibration
-        axis_mask = [1,1,1,1,1,1,0,0]
-        axis_mask[self.rail_cfg["axis"]] = 1
-        self.calibration = Calibration(self.name, axis_mask)
-
+        self.calibration = Calibration(self.name)
 
         # -------- tool_changer
         self.has_tool_changer = prm["has_tool_changer"]
-        self.tool_changer_output = prm["tool_changer_output"]
+        self.tool_changer_output_down = prm["tool_changer_output_down"]
+        self.tool_changer_output_up = prm["tool_changer_output_up"]
 
         # ------- camera
         self.has_camera = prm["has_camera"]
@@ -106,29 +112,51 @@ class Core:
         if hasattr(self.workspace, "_scene_dirty"):
             self.workspace._scene_dirty = True
 
-
-        # optional robot API hookup
+        # connect to the robot
         self._simulation_mode = prm["simulation"]
         self.dorna = Dorna()
-        if not self._simulation_mode and self.dorna.connect(self.robot_ip):
-                self.robot_api = self.dorna
-        else:
-                self.robot_api = SimulationAPI()
+        if self.robot_ip:
+            if self.dorna.connect(self.robot_ip):
+                print(f"✅ {self.name} connected @ {self.robot_ip}")
+            else:
+                # simulation get activated
+                print(f"❌ {self.name} connection failed @ {self.robot_ip}")
                 self._simulation_mode = True
 
-        
+
+        # optional robot API hookup
+        if not self._simulation_mode:
+            print(f"🟡 {self.name} simulation api disabled")
+            self.robot_api = self.dorna
+        else:
+            self.robot_api = SimulationAPI()
+            print(f"🔵 {self.name} simulation api enabled")
+
+
+        # camera mount
+        self.camera_mount = prm["camera_mount"]
+
         # camera api
         self.camera = None
-        if not self._simulation_mode and self.has_camera:
+        # connect to the camera
+        if self.has_camera and self.camera_serial_number :
             try:
                 # import
                 from camera import Camera
                 # init camera
                 self.camera = Camera()
-                self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg)
+                if not self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
+                    self.camera = None
             except Exception as e:
-                print(f"[Camera disabled] {e}")
-
+                print(f"camera connection failed {e}")
+                self.camera = None
+            
+            # connection status
+            if self.camera is not None:
+                print(f"✅ camera connected @ {self.camera_serial_number}")
+            else:
+                print(f"❌ camera connection failed @ {self.camera_serial_number}")
+        
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
 
@@ -362,12 +390,12 @@ class Core:
             # switch to real robot
             self._simulation_mode = False
             self.robot_api = self.dorna
-            print("Switched to real robot API")
+            print(f"🟡 {self.name} simulation api disabled")
         elif not self._simulation_mode and on:
             # switch to simulation
             self._simulation_mode = True
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
-            print("Switched to simulation API")
+            print(f"🔵 {self.name} simulation api enabled")
 
 
 
@@ -405,7 +433,6 @@ class Core:
         # 
         # If base distance is not given (None), the rail value will be set to the current rail value.
         # It is very helpful for calibration methods        
-
         # Refresh all poses/frames
         self.update_pose()
         # Live joints & indices
@@ -415,7 +442,6 @@ class Core:
 
         if ref_joints is None:
             ref_joints = list(cur)
-
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):
@@ -446,14 +472,9 @@ class Core:
                     
 
         def joint_distance(q):
-            weight = [1, 1, 1, 1, 1, 0.25]
-            s = 0.0
-            for i in (0, 1, 2, 3, 4, 5):
-                d = weight[i] * (q[i] - ref_joints[i])
-                s += d * d
-            return s ** 0.5
-
-
+            W = np.array([1,1,1,4,1,0.25])
+            dq = (np.array(q[:6]) - ref_joints[:6])
+            return np.linalg.norm(W * dq)
 
         
         # now there are two cases, with rail and without rail
@@ -534,6 +555,18 @@ class Core:
             robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
 
             #for r in sorted(R, key=lambda rr: abs(rr - r0)):
+
+            # now we find the pose of the object in the world frame
+            object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
+            T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
+
+            # set tcp
+            tool_pose = [0,0,0,0,0,0]
+            if tool_solid and tool_anchor:
+                tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+
+            self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+            
             for r in R:
                 # Pose relative to ROBOT BASE
                 # now we update robot pose in rail base
@@ -545,12 +578,8 @@ class Core:
 
                 # now we calculate the transfer matrix for this pose
                 T_robot = np.array(dorna2.pose.xyzabc_to_T(updated_robot_pose_in_world_base))
-                inv_T_robot = np.linalg.inv(T_robot)
-
-                # now we find the pose of the object in the world frame
-                object_pose_in_world = target_solid.pose(anchor=target_anchor, offset=target_offset)
-                T_object = np.array(dorna2.pose.xyzabc_to_T(object_pose_in_world))
-
+                inv_T_robot = dorna2.pose.inv_T(T_robot)
+                
                 # now we find the pose of the object in the robot frame
                 T_object_in_robot = inv_T_robot @ T_object
                 pose_in_robot = dorna2.pose.T_to_xyzabc(T_object_in_robot)
@@ -559,28 +588,27 @@ class Core:
                 init_arm = [ref_joints[i] for i in range(6)]
 
 
-
+                """
                 tool_pose = [0,0,0,0,0,0]
                 if tool_solid and tool_anchor:
                     tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
 
                 self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+                """
                 # pose_in_robot[3] += 0.01  # to avoid singularity
                 # pose_in_robot[4] += 0.01  # to avoid singularity
                 # pose_in_robot[5] += 0.01  # to avoid singularity
                 sols = self.dorna.kinematic.inv(pose_in_robot, init_arm, True, freedom=None)
-
  
                 if sols is None or len(sols) == 0:
                     continue
 
                 for arm_sol in sols:  # each is a NumPy vector of length 6
-                    joint_sol = list(ref_joints)     # start from live joints
+                    joint_sol = list(cur)     # start from live joints
                     for i in range(6):        # overwrite j0..j5
                         joint_sol[i] = float(arm_sol[i])
                     joint_sol[aux] = r               # set rail
                     col_res = self.planner.check_collision(arm_sol)
-
                     if len(col_res) > 0:
                         # collision detected, skip
                         continue
@@ -608,7 +636,7 @@ class Core:
 
     def motion_plan(self, joint, seed=1234, padding=0):
 
-        print("Motion planner called")
+        print("motion planner called")
 
         """
         Collision-aware joint move:
@@ -686,7 +714,7 @@ class Core:
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
-        print(f"Operation finished in {execution_time:.4f} seconds")
+        print(f"operation finished in {execution_time:.4f} seconds")
         
         #print(res)
 
@@ -1064,7 +1092,7 @@ class SimulationAPI:
         return 2
 
 
-    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0]):
+    def lmove(self, joint, vel=100, accel=1000, jerk=4000, tool_pose=[0, 0, 0, 0, 0, 0], **kwargs):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
         Interpolates joint updates at `interp_freq` Hz (default 120).
@@ -1319,11 +1347,7 @@ class SimulationAPI:
             dy = fk[1] - xyzj[1]
             dz = fk[2] - xyzj[2]
             err = math.sqrt(dx*dx + dy*dy + dz*dz)
-
-
             return out
-
-
 
 
         # --- Setup start/goal
@@ -1331,12 +1355,7 @@ class SimulationAPI:
         tgt_joints = list(joint)
 
         # first we set the tool
-        #tool_pose = [0,0,0,0,0,0]
-        #if tool_solid and tool_anchor:
-        #    tool_pose = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
-
-
-        #self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
+        self.dorna.kinematic.set_tcp_xyzabc(tool_pose)
         cur_xyz = self.dorna.kinematic.fw(cur_joints[0:6])
 
         tgt_xyz = self.dorna.kinematic.fw(tgt_joints[0:6])
@@ -1415,4 +1434,8 @@ class SimulationAPI:
             for c in config:
                 if len(c) > 2 and c[2] > 0:
                     self.sleep(c[2])
+        return True
+    
+    # motor
+    def motor(self, val=None):
         return True

@@ -1,11 +1,12 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
-from camera import Camera
+
 
 class Inspection:
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
+                "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
         camera_cfg={
             "stream": {"width":848, "height":480, "fps":15},
             "K": None,
@@ -44,21 +45,24 @@ class Inspection:
 
         # initialize the camera
         self.camera = None
-        if not self.simulation:
-            # init camera
-            self.camera = Camera()
-            self.connect()
-            
+        if self.camera_serial_number:
+            try:
+                from camera import Camera
+                # init camera
+                self.camera = Camera()
+                if not self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
+                   self.camera = None 
+            except Exception as e:
+                self.camera = None
+                print(f"camera connection failed {e}")
 
-    # connect to the camera
-    def connect(self):
-        if self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
-            print("camera connected")
-            return True
-        print("can not connect to the camera")
-        return False
+            if self.camera is not None:
+                print(f"✅ {self.name} connected @ {self.camera_serial_number}")
+            else:
+                print(f"❌ {self.name} connection failed @ {self.camera_serial_number}")
 
 
     # close the camera
     def close(self):
-        return self.camera.close()
+        if self.camera is not None:
+            return self.camera.close()

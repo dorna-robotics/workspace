@@ -3,18 +3,13 @@ from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
 
-@register("sbs_gripper_width")
-class SBS_gripper_width(Gripper):
+
+@register("gripper_calibration_horizontal")
+class GripperCalibrationHorizontal(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41, 0, 0, 0], "tip": [119, 0, 56, 0, 0, 0]}},
-        collision_box = 
-            {"body":[
-                {"pose":[0.0, 0.0, 21.0, 0.0, 0.0, 0.0], "scale":[44.5, 73.5, 46.0]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[48.0, 50, 47.0, 0.0, 0.0, 0.0], "scale":[125.5, 37.5, 22.5]},
-                {"pose":[48.0, -50, 47.0, 0.0, 0.0, 0.0], "scale":[125.5, 37.5, 22.5]}
-        ]},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[60, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551], "tip": [66, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551]}},
         #cfg
-        has_tool_changer = False,
+        has_tool_changer = True,
         output_enable=[[None, None, 0]],
         output_disable=[[None, None, 0]],
     )

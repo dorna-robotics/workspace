@@ -7,8 +7,8 @@ from workspace.components.hotel.hotel import Hotel
 @register("hotel_sbs_4lvl")
 class HotelSBS4lvl(Hotel):
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 90, 8, 0, 0, 90], "place": [0, 90, 4.5, 0, 0, 90],
-                        "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]}},
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 90], "place": [0, 0, 4.5, 0, 0, 90],
+                        "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 3.0, 0.0, 0.0, 0.0], "scale":[65.0, 65.0, 6.0]},#[xyzabc] , [lx,ly,lz]

@@ -7,6 +7,7 @@ class Rack:
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
         #collision_box = {"body":[[[x,y,z,a,b,c], [lx, ly, lz]]]}
+        size = [0, 0, 0], # [dx, dy, dz]
         offset= [0, 0],
         pitch=[9, 9],
         rvec_safe = [0, 0, 45],
@@ -23,6 +24,9 @@ class Rack:
         self.name = name
         self.workspace = workspace
         self.type = type
+
+        # size
+        self.size = prm["size"]
 
         # prm
         self.offset = prm["offset"] 

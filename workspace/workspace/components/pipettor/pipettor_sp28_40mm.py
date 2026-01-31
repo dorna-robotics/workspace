@@ -9,13 +9,13 @@ from workspace.components.pipettor.keyto_wrapper import Keyto
 @register("pipettor_sp28_40mm")
 class PipettorSP2840mm(Pipettor):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, -104.2, 26.5, 90, 0, 0], "top": [0, -110.2, 26.5, 90, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174+1, 0, 0, 0], "tip": [0, 0, 185.375-1.25, 0, 0, 0]}},
         collision_box = {"body":[
                 {"pose":[0,-20,30,0,0,0], "scale":[40,180,60]}
         ]},
         #cfg
         has_tool_changer = True,
-        port="",
+        port="", # connect only if there is a port
         simulation= True,
     )
 
@@ -36,23 +36,23 @@ class PipettorSP2840mm(Pipettor):
         )
 
         # simulation
-        self.simulation = prm["simulation"]
+        self._simulation_mode = prm["simulation"]
 
         # device
         self.device_port = prm["port"]
         self.device = None
-        if not self.simulation:
-            # init camera
+        connection_status = False
+        if self.device_port is not None:
+            # init device
             self.device = Keyto(port=self.device_port)
-            self.connect()
+            if self.device.connect():
+                connection_status = True
+                print(f"✅ {self.name} connected @ {self.device_port}")
+            else:
+                print(f"❌ {self.name} connection failed @ {self.device_port}")
 
-
-    def connect(self):
-        if self.device is not None and self.device.connect():
-            print("pipette connected")
-            return True
-        print("pipette connecting failed")
-        return False
+        if not connection_status:
+            self.device = None
 
 
     def close(self):
@@ -61,6 +61,10 @@ class PipettorSP2840mm(Pipettor):
             return True
         print("pipette closing failed")
         return False
+    
+    def simulation(self, mode):
+        self._simulation_mode = mode
+
 
 
 

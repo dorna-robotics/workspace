@@ -7,7 +7,9 @@ from workspace.components.adapter.adapter import Adapter
 @register("adapter_plate_falcon_15ml")
 class AdapterPlateFalcon15ml(Adapter):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 10, 0, 0, 0]}},
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 10, 0, 0, 0],
+                "hole_0": [75, 50, 0, 0, 0, 0], "hole_1": [-75, 50, 0, 0, 0, 0], "hole_2": [-75, -50, 0, 0, 0, 0], "hole_3": [75, -50, 0, 0, 0, 0],
+                "clb_0": [56, 42, 78, 0, 0, -45], "clb_1": [-56, 42, 78, 0, 0, -135], "clb_2": [-56, -42, 78, 0, 0, -45], "clb_3": [56, -42, 78, 0, 0, -135]}},
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):

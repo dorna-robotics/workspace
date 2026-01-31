@@ -1,32 +1,18 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
-
+from dorna2 import pose as dorna_pose
+import time
 
 class PipettingSite(Recipe):
     DEFAULTS = dict(
         # ref joints
-        target_solid_name="body",
-        target_anchor="place",
-        target_offset=[0, 0, 50, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
+        target_offset=[0, 0, 150, 0, 180, 0],
         # IK
-        left_approach=True,
-        base_distance=350,
-        rail_step=5.0,
-        rail_span=10,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        rail_step=20, # 5
+        rail_span=5, # 10        
         # calibration
-        calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
+        calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -43,9 +29,14 @@ class PipettingSite(Recipe):
         )
 
 
-    def pick_tip(self, anchor="place"):
-        # unsuccessful motion
-        if not self.pick_from(anchor=anchor, trigger_io=False):
+    def pick_tip(self, anchor="place", padding=70, **kwargs):
+        # find plate component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+
+        # motion
+        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
             return False
         
         # check if tip is there
@@ -54,50 +45,129 @@ class PipettingSite(Recipe):
             return False
         
         # make sure tip exists
-        return pipette.device.has_tip()
+        if not pipette._simulation_mode:  
+            return pipette.device.has_tip()
+        return True
 
 
     # the action of ejecting tip
-    def eject_tip(self, anchor="place"):
+    def eject_tip(self, anchor="A1", shake_travel=5, **kwargs):
+        # find rack component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
+        
+        actions = []
+        # no simulation
+        if not pipette._simulation_mode:
+            actions = [[pipette.device.eject_tip, [], {}]]
+        
+        # motion prm
+        motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=0, **kwargs)
 
-        # motion
-        if not self.place_in(anchor=anchor, actions=[[pipette.device.eject_tip(), [], {}]], trigger_io=False):
-            return False
+        # adjust exit_path
+        motion_prm["exit_path"] = [[shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [-shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [shake_travel, 0, motion_prm["height_load"], 0, 0, 0]] + motion_prm["exit_path"]
+        
+        # run the motion
+        motion_result = self.touch(**motion_prm)
+        
+        if not pipette._simulation_mode:
+            # sleep
+            time.sleep(0.25)
 
-        # make sure tip is ejected
-        return pipette.device.has_no_tip()
+            # make sure tip is ejected
+            return not pipette.device.has_tip()
+        else:
+            return motion_result
 
 
     # go on top of the source, and go down for the amount
-    # anchor of the rack, plate or the item, look for the tube there
-    def immerse(self, anchor="place", depth=0, approach=True):
-        pass
+    def immerse(self, anchor="place", depth=0, approach=True, padding=50, **kwargs):
+        # find plate component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+
+        # check if pipette is there
+        pipette = self.tool_attached_to_the_robot()
+        if pipette is None:
+            return False
+        
+        # tip solid
+        tip_solid = self.solid_attached_to_tool(pipette)
+
+        # tip length
+        tip_length = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                from_frame=tip_solid.pose("center"),
+                                to_frame=tip_solid.pose("top"))[2])
+
+        # tool offset
+        tool_tcp_z_offset = tip_length - depth
+        tool_tip_z_offset = tip_length - depth
+
+        # motion
+        return self.pick_from(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=2, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+
 
     # given the component, go on top of the source
     # anchor of the rack, plate or the item, look for the tube there
-    def retract(self, anchor="place"):
-        pass
+    def retract(self, anchor="place", padding=50, **kwargs):
+        # find plate component
+        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
+        component = self.workspace.components[solid_plate.component]
+        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+
+        # check if pipette is there
+        pipette = self.tool_attached_to_the_robot()
+        if pipette is None:
+            return False
+
+        # tip solid
+        tip_solid = self.solid_attached_to_tool(pipette)
+
+        # tip length
+        tip_length = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
+                                from_frame=tip_solid.pose("center"),
+                                to_frame=tip_solid.pose("top"))[2])
+
+        # tool offset
+        tool_tcp_z_offset = tip_length
+        tool_tip_z_offset = tip_length
+
+        return self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
 
 
-    def aspirate(self, volume, speed=200):
+    
+    # volume is in microliter
+    def aspirate(self, vol, speed=200):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
         
-        return pipette.device.aspirate(volume, speed)
+        # simulation
+        if pipette._simulation_mode:
+            return True
+
+        return pipette.device.aspirate(vol, speed)
 
 
-    def dispense(self, volume, speed=500, blowout=False):
+    # volume is in microliter
+    def dispense(self, vol, speed=500, blowout=False):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             return False
+
+        # simulation
+        if pipette._simulation_mode:
+            return True
         
-        return pipette.device.dispense(volume, speed, blowout)
+        return pipette.device.dispense(vol, speed, blowout)
 
 

@@ -7,28 +7,10 @@ component: is the adapter plate for the rack
 """
 class Rack(Recipe):
     DEFAULTS = dict(
-        # ref joints
-        target_solid_name="body",
-        target_anchor="center",
-        target_offset=[0, 0, 50, 0, 180, 0],
-        initial_joints = [0, 0, 0, 0, 0, 0, 0, 0],
         # IK
-        left_approach=True,
-        base_distance=350,
-        rail_step=5.0,
-        rail_span=10,        
-        # motion
-        motion_type="lmove",
-        speed_factor=0.5,
-        jmove_vaj=[200, 5000, 50000],
-        lmove_vaj=[200, 5000, 50000],
+        base_distance=50,
         # calibration
-        calibration=True,
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
-        calibration_target_offset=[0, 0, -30, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
+        calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -46,7 +28,7 @@ class Rack(Recipe):
         
 
     def pick_from(self, anchor, **kwargs):
-        # find plate component
+        # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
@@ -56,12 +38,12 @@ class Rack(Recipe):
    
              
 
-    def place_in(self, anchor, **kwargs):
-        # find plate component
+    def place_in(self, anchor, soft_approach=True, **kwargs):
+        # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        return super().place_in(anchor, solid_name=solid_name, component=component, **kwargs)
+        return super().place_in(anchor, solid_name=solid_name, component=component, soft_approach=soft_approach, **kwargs)
 

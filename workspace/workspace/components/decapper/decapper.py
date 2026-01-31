@@ -8,14 +8,15 @@ from dorna2 import Solid
 class Decapper:
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 0], "top":[0, 0, 55, 0, 0, 0],
-            "hole_0":[25, 25, 0, 0, 0, 0], "holde_1": [-25, 25, 0, 0, 0, 0], "holse_2": [-25, -25, 0, 0, 0, 0], "holde_3": [25, -25, 0, 0, 0, 0]},},
+            "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
+            "clb_0": [0, 25, 7, 0, 0, 0], "clb_1": [0, -25, 7, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 24.0, 0.0, 0.0, 0.0], "scale":[76, 71, 63]}   #[xyzabc] , [lx,ly,lz]
         ]},
         # cfg
         output_enable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_disable = [[None, None, 0.1]], # [[pin, index, time]]
+        output_disable = [[None, None, 0.25], [None, None, 0.1]], # [[pin, index, time]]
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -38,5 +39,16 @@ class Decapper:
         }
 
         # open and close
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
+        self.output_enable = prm["output_enable"]
+        self.output_disable = prm["output_disable"]
+
+        # io state
+        self._output_state = None
+
+
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state

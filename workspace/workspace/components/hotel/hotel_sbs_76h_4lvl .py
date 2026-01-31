@@ -1,22 +1,25 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.adapter.adapter import Adapter
+from workspace.components.hotel.hotel import Hotel
 
 
-@register("sbs_adapter")
-class SBSAdapter(Adapter):
+@register("hotel_sbs_76h_4lvl")
+class HotelSBS76h4lvl(Hotel):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.5, 0, 0, 0], "top": [0, 0, 8, 0, 0, 0]}},
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 8, 0, 0, 90], "place": [0, 0, 4.5, 0, 0, 90],
+                "hole_0":[37.5, 37.5, 0, 0, 0, 0], "hole_1": [-37.5, 37.5, 0, 0, 0, 0], "hole_2": [-37.5, -37.5, 0, 0, 0, 0], "hole_3": [37.5, -37.5, 0, 0, 0, 9]}},
         collision_box= 
             {"body":[
                 {"pose":[0.0, 0.0, 4.0, 0.0, 0.0, 0.0], "scale":[150.0, 100.0, 8.0]}#[xyzabc] , [lx,ly,lz]
-        ]}
+        ]},
+        size=[150, 100, 76],
+        level=4,
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):
         # prm
-        prm = deepcopy(Adapter.DEFAULTS) # default
+        prm = deepcopy(Hotel.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs

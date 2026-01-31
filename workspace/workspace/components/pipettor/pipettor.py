@@ -38,8 +38,3 @@ class Pipettor:
                                                         "tool_rack_connection": prm["tool_rack_connection"]},
                                                     component=self.name)
             self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["tool_changer_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=prm["offset"])
-
-
-        # enable and disable
-        self.enable = [[None, None, 0]]
-        self.disable = [[None, None, 0]]

@@ -4,10 +4,11 @@ from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
 
 
-@register("tube_gripper_4_finger")
-class TubeGripper4Finger(Gripper):
+@register("gripper_4_finger")
+class Gripper4Finger(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 65, 0, 0, 0], "tip": [0, 0, 69.5, 0, 0, 0]}},
+        #anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0+0.7-0.3, 0.3+0.7, 66.5, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 66.5-1, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 27.5, 0.0, 0.0, 0.0], "scale":[47.0, 47.0, 56.5]},#[xyzabc] , [lx,ly,lz]
@@ -15,8 +16,8 @@ class TubeGripper4Finger(Gripper):
         ]},
         #cfg
         has_tool_changer = False,
-        output_enable=[[None, None, 0]],
-        output_disable=[[None, None, 0]],
+        output_enable=[[0, 0, 0], [1, 0, 0.1]],
+        output_disable=[[1, 1, 0.5], [0, 1, 0.75], [0, 0, 0.1]],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

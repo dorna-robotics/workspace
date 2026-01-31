@@ -25,6 +25,18 @@ class Arm:
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
 
-        # open and close
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
+        # enable and disable
+        self.output_enable = prm["output_enable"]
+        self.output_disable = prm["output_disable"]
+
+        # io state
+        self._output_state = None
+
+    
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state
+

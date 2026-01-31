@@ -4,13 +4,16 @@ from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.printer.printer import Printer
 from workspace.components.printer.cab_wrapper import Cab
+from dorna2 import pose as dorna_pose
 
-
+# set the sit -25 from the surface
 @register("printer_axon_1")
 class PrinterAxon1(Printer):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 93.5, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 190, 0, 0, 0], "place":[132.865, 34.16, 93.5-25, 0, 0, -45],
+            "hole_0": [200, 50, 0, 0, 0, 0], "hole_1": [-200, 50, 0, 0, 0, 0], "hole_2": [-200, -50, 0, 0, 0, 0], "hole_3": [200, -50, 0, 0, 0, 0],
+            "clb_0": [210.865, 41, 107, 0, 0, -90]},
         },
         collision_box = 
             {"body":[
@@ -19,8 +22,14 @@ class PrinterAxon1(Printer):
                 {"pose":[150,53,120, 0, 0, 0], "scale":[60.5,68.5,80.5]}
         ]},
         # cfg
-        ip="127.0.0.1",
+        ip="",
         simulation=True,
+        label_cfg={
+            "width_in": 1.5,
+            "length_in": 1,
+            "gap_in": 0.12,
+            "ptype": "l1"
+        },
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -37,22 +46,43 @@ class PrinterAxon1(Printer):
         super().__init__(name=name, workspace=workspace, **prm)
 
         # simulation
-        self.simulation = prm["simulation"]
+        self._simulation_mode = prm["simulation"]
+
+        # ip
+        self.ip = prm["ip"]
+
+        # label cfg
+        self.label_cfg = prm["label_cfg"]
 
         # printer
         self.device = None
-        if not self.simulation:
+        if self.ip:
             # init camera
-            self.device = Cab(ip=prm["ip"], simulation=self.simulation)
+            self.device = Cab(ip=self.ip)
+            # set label
+            self.device.set_label(**self.label_cfg)
+            # print
+            print(f"✅ {self.name} connected @ {self.ip}")
 
 
-    def _place_offset(self, radius):
-        return(
-            [np.cos(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
-            np.sin(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
-            0,
-            0,
-            0,
-            0]
-        )
-    
+    # change the simulation
+    def simulation(self, mode):
+        self._simulation_mode = mode
+
+
+    def _place_offset(self, radius):        
+        # place_no_rotation
+        place_no_rotation = self.assembly[next(iter(self.assembly))].pose("place")[0:3] + self.assembly[next(iter(self.assembly))].anchors["center"][3:6]
+
+        # place
+        place = self.assembly[next(iter(self.assembly))].pose("place")
+
+        # offset in no rotation
+        offset_in_no_rotation = [np.cos(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
+                            np.sin(np.deg2rad(30))*(np.sqrt((radius + 7.1)**2 - 100)),
+                            0] + place[3:6]
+
+        # offset in place
+        return dorna_pose.transform_pose(offset_in_no_rotation, 
+                                from_frame=place_no_rotation,
+                                to_frame=place)

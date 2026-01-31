@@ -42,6 +42,16 @@ class Gripper:
             self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["tool_changer_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=prm["offset"])
         
         # enable and disable
-        self.enable = prm["output_enable"]
-        self.disable = prm["output_disable"]
+        self.output_enable = prm["output_enable"]
+        self.output_disable = prm["output_disable"]
 
+        # io state
+        self._output_state = None
+
+    
+    # set or get output state
+    def output_state(self, state=None):
+        if state is None:
+            return self._output_state
+        self._output_state = state
+        return self._output_state

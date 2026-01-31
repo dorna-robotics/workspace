@@ -9,8 +9,8 @@ class CapAutosampler2ml(Cap):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
         cap_type="screw",
-        twist=390,
-        pitch=1,
+        twist=1200, # 900
+        pitch=1.25, # 1
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
