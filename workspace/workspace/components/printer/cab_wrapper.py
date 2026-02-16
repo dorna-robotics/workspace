@@ -79,7 +79,7 @@ class Cab:
         poll_s: float = 0.6,
         ready_timeout_s: float = 30.0,
         print_timeout_s: float = 60.0,
-        dryrun_cycle_s: float = 1.5,  # tune if dryrun count still collapses to 1
+        dryrun_cycle_s: float = 0,  # tune if dryrun count still collapses to 1
     ):
         self.ip = ip
         self.port = int(port)
