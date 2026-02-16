@@ -30,7 +30,7 @@ class Recipe:
         calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
+        calibration_tool_offset=[0, 0, 0, 0, 0, 0],        
     )
 
     def __init__(self, workspace, core, component, **kwargs):
