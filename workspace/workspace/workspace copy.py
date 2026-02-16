@@ -6,9 +6,7 @@ import numpy as np
 
 from workspace.display import Display
 from workspace.components import factory as comp_factory
-from workspace.runtime import Runtime
 from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
-
 
 class Workspace:
     def __init__(self, config_path="config/config.yaml"):
@@ -31,18 +29,13 @@ class Workspace:
                 text = Template(text).render()
 
             cfg = yaml.safe_load(text) or {}
-            comp_cfgs.update(cfg)  # later files override earlier ones
+            comp_cfgs.update(cfg)   # later files override earlier ones
+
 
         # 1) build components
         self.components = {}
         for name, ccfg in comp_cfgs.items():
             self.components[name] = comp_factory.create_component(name, ccfg, self)
-
-        # 1.5) runtime controller (pause/stop/resume/start)
-        core = self.components.get("core")
-        if core is None:
-            raise RuntimeError("Workspace requires a 'core' component for Runtime")
-        self.rt = Runtime(core)
 
         # 2) perform attachments (child-side offset)
         for child_name, ccfg in comp_cfgs.items():
@@ -50,9 +43,9 @@ class Workspace:
             if not att:
                 continue
             parent_comp = self.components[att["parent_name"]]
-            child_comp = self.components[child_name]
+            child_comp  = self.components[child_name]
             parent_solid = parent_comp.assembly[att["parent_solid"]]
-            child_solid = child_comp.assembly[att["child_solid"]]
+            child_solid  = child_comp.assembly[att["child_solid"]]
             child_solid.attach_to(
                 parent=parent_solid,
                 parent_anchor=att["parent_anchor"],
@@ -63,6 +56,7 @@ class Workspace:
         # 3) start Display (it will pull poses from compute_world_poses())
         self.display = Display(self)
         self.display.start()
+
 
     def compute_collision_boxes(self):
         """
@@ -284,7 +278,6 @@ class Workspace:
                 for entry in child_list:
                     child_solid = entry["child_solid"]
                     stack.append((child_solid, T_world, node._pose_flag))
-
         # ----------------------------------------------------------------------
         # 4) Build name->pose dict (same as your original behavior)
         # ----------------------------------------------------------------------
@@ -302,22 +295,16 @@ class Workspace:
 
         return poses
 
+
     def stop(self):
         """Cleanly stop background threads and close any resources."""
-        # stop any running job first
-        try:
-            if hasattr(self, "rt") and self.rt is not None:
-                self.rt.stop()
-        except Exception:
-            pass
-
         # stop display loop (if it was started)
         try:
             self.display.stop()
         except Exception:
             pass
 
-        # give each component a chance to cleanup
+        # give each component a chance to cleanup 
         for comp in self.components.values():
             if hasattr(comp, "stop"):
                 try:
