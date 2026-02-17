@@ -1,162 +1,308 @@
 # workspace/runtime.py
-import time
+from __future__ import annotations
+
 import threading
-import functools
-from enum import Enum, auto
+import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable, Optional, TypeVar
+
+T = TypeVar("T")
 
 
-class RunState(Enum):
-    IDLE = auto()
-    RUNNING = auto()
-    PAUSED = auto()
-    STOPPING = auto()
-    FAULT = auto()
+class RTState(str, Enum):
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    ERROR = "ERROR"
+    KILLED = "KILLED"
 
 
-class StopRequested(RuntimeError):
-    """Raised inside running code when STOP/FAULT/IDLE is requested."""
-    pass
+class KillRequested(SystemExit):
+    """Raised to terminate the gate/worker thread immediately (cooperative thread-exit)."""
+
+
+@dataclass
+class RTStatus:
+    state: RTState = RTState.IDLE
+    last_error: Optional[str] = None
+    job_runs: int = 0
+    job_pauses: int = 0
+    job_resumes: int = 0
+    kills: int = 0
 
 
 class Runtime:
     """
-    Runtime controller for start/pause/resume/stop.
+    Scalable, thread-safe runtime gate.
 
-    - Thread-safe state machine (Condition + RLock)
-    - Pause gate via checkpoint()
-    - STOP propagates by raising StopRequested from checkpoint()
-    - Single-writer guarantee for robot_api via _robot_lock
-    - Dynamic proxy to core.robot_api: ws.rt.<any_robot_method>(...) works
-      without you adding wrappers over time.
-    - Use rt.delay(sec) instead of robot_api.sleep(sec) to respect pause/stop.
+    - Dynamic robot API forwarding via __getattr__ (no wrapper maintenance).
+    - pause/resume gates via checkpoint().
+    - kill() terminates the gate/worker thread (exits loops).
     """
 
-    def __init__(self, core):
-        self.core = core
-        self.state = RunState.IDLE
+    def __init__(self, robot_api: Any = None, *, sleep_fn: Callable[[float], None] = time.sleep):
+        self.robot_api = robot_api
+        self._sleep = sleep_fn
 
         self._lock = threading.RLock()
         self._cv = threading.Condition(self._lock)
 
-        # Single-writer lock for robot_api I/O (prevents interleaving from threads)
-        self._robot_lock = threading.RLock()
+        self._status = RTStatus()
 
-    # ---------------- commands (call from UI/IO thread) ----------------
-    def start(self) -> bool:
-        with self._cv:
-            if self.state == RunState.FAULT:
-                return False
-            self.state = RunState.RUNNING
+        # start-token handshake
+        self._start_token = 0
+        self._seen_start_token = 0
+
+        # kill flag (kills thread loops)
+        self._killed = False
+
+        # prevent concurrent worker() runs
+        self._in_worker = False
+
+        self.on_state_change: Optional[Callable[[RTState, RTState], None]] = None
+
+    # ---------------------------------------------------------------------
+    # Status helpers
+    # ---------------------------------------------------------------------
+
+    @property
+    def status(self) -> RTStatus:
+        with self._lock:
+            return RTStatus(**self._status.__dict__)
+
+    @property
+    def state(self) -> RTState:
+        with self._lock:
+            return self._status.state
+
+    def _set_state(self, new_state: RTState, *, err: Optional[str] = None) -> None:
+        old = self._status.state
+        if old == new_state and err is None:
+            return
+        self._status.state = new_state
+        if err is not None:
+            self._status.last_error = err
+        self._cv.notify_all()
+
+    def _set_state_with_callback(self, new_state: RTState, *, err: Optional[str] = None) -> None:
+        cb = None
+        old = None
+        with self._lock:
+            old = self._status.state
+            self._set_state(new_state, err=err)
+            cb = self.on_state_change
+        if cb is not None:
+            try:
+                cb(old, new_state)
+            except Exception:
+                pass
+
+    # ---------------------------------------------------------------------
+    # Control API
+    # ---------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Issue a start token, or resume if paused."""
+        with self._lock:
+            if self._killed:
+                return  # dead runtime
+
+            st = self._status.state
+            if st == RTState.PAUSED:
+                self._status.job_resumes += 1
+                self._set_state(RTState.RUNNING)
+                self._cv.notify_all()
+                return
+
+            if st == RTState.RUNNING:
+                return
+
+            self._start_token += 1
+            self._status.last_error = None
+            self._set_state(RTState.IDLE)
             self._cv.notify_all()
-            return True
 
     def pause(self) -> None:
-        with self._cv:
-            if self.state == RunState.RUNNING:
-                self.state = RunState.PAUSED
-            self._cv.notify_all()
-
-        # Optional: if your robot supports real pause, do it best-effort
-        ra = getattr(self.core, "robot_api", None)
-        if ra is not None and hasattr(ra, "pause"):
-            with self._robot_lock:
-                try:
-                    ra.pause()
-                except Exception:
-                    pass
+        with self._lock:
+            if self._killed:
+                return
+            if self._status.state in (RTState.RUNNING, RTState.IDLE):
+                self._status.job_pauses += 1
+                self._set_state(RTState.PAUSED)
+                self._cv.notify_all()
 
     def resume(self) -> None:
-        with self._cv:
-            if self.state == RunState.PAUSED:
-                self.state = RunState.RUNNING
+        with self._lock:
+            if self._killed:
+                return
+            if self._status.state == RTState.PAUSED:
+                self._status.job_resumes += 1
+                self._set_state(RTState.RUNNING)
+                self._cv.notify_all()
+
+    def kill(self) -> None:
+        """
+        Kill the runtime:
+          - unblocks wait_for_start()
+          - unblocks checkpoint() (even if paused)
+          - makes gate/worker loops EXIT (thread ends)
+        """
+        with self._lock:
+            if self._killed:
+                return
+            self._killed = True
+            self._status.kills += 1
+            self._set_state(RTState.KILLED)
+            self._start_token += 1  # release wait_for_start
             self._cv.notify_all()
 
-        # Optional: if your robot supports real resume, do it best-effort
-        ra = getattr(self.core, "robot_api", None)
-        if ra is not None and hasattr(ra, "resume"):
-            with self._robot_lock:
+
+    def reset(self) -> None:
+        """
+        Reset runtime after kill().
+        Allows creating a new gate thread and starting again.
+        """
+        with self._lock:
+            self._killed = False
+            self._status.last_error = None
+            self._status.state = RTState.IDLE
+            self._cv.notify_all()
+    # ---------------------------------------------------------------------
+    # Gate helpers for your thread model
+    # ---------------------------------------------------------------------
+
+    def mark_running(self) -> None:
+        if self._killed:
+            raise KillRequested()
+        self._set_state_with_callback(RTState.RUNNING)
+
+    def mark_idle(self) -> None:
+        if self._killed:
+            raise KillRequested()
+        self._set_state_with_callback(RTState.IDLE)
+
+    def mark_error(self, ex: Exception) -> None:
+        self._set_state_with_callback(RTState.ERROR, err=f"{type(ex).__name__}: {ex}")
+
+    def wait_for_start(self) -> None:
+        """Block until start token; exits if killed."""
+        with self._lock:
+            while True:
+                if self._killed:
+                    raise KillRequested()
+
+                if self._seen_start_token != self._start_token:
+                    self._seen_start_token = self._start_token
+                    return
+
+                self._cv.wait()
+
+    # ---------------------------------------------------------------------
+    # Optional worker loop (also exits on kill)
+    # ---------------------------------------------------------------------
+
+    def worker(self, job_fn: Callable[..., T], /, **kwargs) -> Optional[T]:
+        with self._lock:
+            if self._in_worker:
+                raise RuntimeError("Runtime.worker() is already running in another thread.")
+            self._in_worker = True
+
+        result: Optional[T] = None
+        try:
+            while True:
+                self.wait_for_start()
+                self._set_state_with_callback(RTState.RUNNING)
+                with self._lock:
+                    self._status.job_runs += 1
+
                 try:
-                    ra.resume()
-                except Exception:
-                    pass
+                    result = job_fn(**kwargs)
+                except KillRequested:
+                    raise
+                except Exception as ex:
+                    self._set_state_with_callback(RTState.ERROR, err=f"{type(ex).__name__}: {ex}")
 
-    def stop(self) -> None:
-        # Set state and wake paused threads
-        with self._cv:
-            if self.state not in (RunState.IDLE, RunState.STOPPING):
-                self.state = RunState.STOPPING
-            self._cv.notify_all()
+                self._set_state_with_callback(RTState.IDLE)
 
-        # Best-effort immediate stop (protected by robot lock)
-        ra = getattr(self.core, "robot_api", None)
-        if ra is None:
-            return
-        with self._robot_lock:
-            for fn in ("stop", "halt", "estop"):
-                if hasattr(ra, fn):
-                    try:
-                        getattr(ra, fn)()
-                        break
-                    except Exception:
-                        pass
+        finally:
+            with self._lock:
+                self._in_worker = False
 
-    def set_fault(self) -> None:
-        with self._cv:
-            self.state = RunState.FAULT
-            self._cv.notify_all()
+        return result
 
-    def to_idle(self) -> None:
-        """Return to IDLE after a job ends (will not clear FAULT)."""
-        with self._cv:
-            if self.state != RunState.FAULT:
-                self.state = RunState.IDLE
-            self._cv.notify_all()
+    # ---------------------------------------------------------------------
+    # Pause gate + utilities (exits on kill)
+    # ---------------------------------------------------------------------
 
-    # ---------------- enforcement (called inside recipes) ----------------
     def checkpoint(self) -> None:
-        """Blocks if paused. Raises StopRequested if stopping/fault/idle."""
-        with self._cv:
-            while self.state == RunState.PAUSED:
-                self._cv.wait(timeout=0.2)
+        with self._lock:
+            while True:
+                if self._killed:
+                    raise KillRequested()
 
-            if self.state in (RunState.STOPPING, RunState.FAULT, RunState.IDLE):
-                raise StopRequested()
+                st = self._status.state
 
-    def delay(self, sec: float, step: float = 0.05) -> None:
-        """Pause/stop-aware sleep. Use this instead of robot_api.sleep()."""
-        t0 = time.time()
+                if st == RTState.PAUSED:
+                    self._cv.wait()
+                    continue
+
+                # RUNNING / IDLE / ERROR -> allow
+                return
+
+    def call(self, fn: Callable[..., T], *a: Any, checkpoint: bool = True, **k: Any) -> T:
+        if checkpoint:
+            self.checkpoint()
+        return fn(*a, **k)
+
+    def sleep(self, seconds: float = 0.0, *, checkpoint: bool = True, step: float = 0.05, val: Optional[float] = None) -> None:
+        if val is not None:
+            seconds = float(val)
+        if seconds <= 0:
+            return
+
+        if not checkpoint:
+            self._sleep(seconds)
+            return
+
+        end = time.time() + seconds
         while True:
             self.checkpoint()
-            dt = time.time() - t0
-            if dt >= sec:
+            now = time.time()
+            if now >= end:
                 return
-            time.sleep(min(step, sec - dt))
+            self._sleep(min(step, end - now))
 
-    # ---------------- dynamic proxy to robot_api ----------------
-    def __getattr__(self, name):
-        """
-        Proxy unknown attributes/methods to core.robot_api.
+    def delay(self, seconds: float = 0.0, **k: Any) -> None:
+        if "val" in k and not seconds:
+            seconds = float(k["val"])
+        self.sleep(float(seconds), checkpoint=True)
 
-        - If it's callable: return a wrapped callable that does checkpoint() + robot lock
-        - If it's a value/property: return as-is
+    # ---------------------------------------------------------------------
+    # Dynamic forwarding to robot_api (scalable)
+    # ---------------------------------------------------------------------
 
-        Note: __getattr__ is only called if 'name' is not found on Runtime itself,
-        so Runtime.delay/checkpoint/etc. will not be shadowed by robot_api members.
-        """
-        ra = getattr(self.core, "robot_api", None)
-        if ra is None:
-            raise AttributeError(
-                f"Runtime has no core.robot_api; cannot access '{name}'"
-            )
+    def _require_robot(self) -> Any:
+        rb = self.robot_api
+        if rb is None:
+            raise RuntimeError("Runtime.robot_api is None.")
 
-        attr = getattr(ra, name)  # raises AttributeError if missing (good)
+        # unwrap Core -> core.robot_api if someone passed core by mistake
+        if hasattr(rb, "robot_api"):
+            inner = getattr(rb, "robot_api")
+            if inner is not None:
+                rb = inner
+
+        return rb
+
+    def __getattr__(self, name: str):
+        rb = self._require_robot()
+        attr = getattr(rb, name)  # raises AttributeError if missing
 
         if callable(attr):
-            @functools.wraps(attr)
-            def _wrapped(*args, **kwargs):
-                self.checkpoint()
-                with self._robot_lock:
-                    return attr(*args, **kwargs)
+            def _wrapped(*a, **k):
+                return self.call(attr, *a, **k)
+            _wrapped.__name__ = name
             return _wrapped
 
         return attr
