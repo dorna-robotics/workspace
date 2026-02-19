@@ -9,7 +9,7 @@ class CapAutosampler2ml(Cap):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
         cap_type="screw",
-        twist=1200, # 900
+        twist=1000, # 900
         pitch=1.25, # 1
     )
 

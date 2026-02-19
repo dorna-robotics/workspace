@@ -1,3 +1,4 @@
+import time
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
@@ -7,9 +8,10 @@ class DispenseArm(Recipe):
     DEFAULTS = dict()
 
     def __init__(self, workspace, core, component, **kwargs):
-        prm = deepcopy(Recipe.DEFAULTS)
-        merge(prm, self.DEFAULTS)
-        merge(prm, kwargs)
+        # prm
+        prm = deepcopy(Recipe.DEFAULTS) # default
+        merge(prm, self.DEFAULTS) # self
+        merge(prm, kwargs) # kwargs
 
         super().__init__(
             workspace=workspace,
@@ -17,38 +19,24 @@ class DispenseArm(Recipe):
             component=component,
             **prm
         )
+            
 
     # bring the arm down
     def down(self):
-        rt = self.rt
-        rt.checkpoint()
-
         if self.component.output_state() != 1:
-            rt.output(config=self.component.output_enable)
+            self.core.robot_api.output(config=self.component.output_enable)
             self.component.output_state(1)
-
-        rt.checkpoint()
         return True
 
-    # bring the arm up
+
+    # bring the arm down
     def up(self):
-        rt = self.rt
-        rt.checkpoint()
-
         if self.component.output_state() != 0:
-            rt.output(config=self.component.output_disable)
+            self.core.robot_api.output(config=self.component.output_disable)
             self.component.output_state(0)
-
-        rt.checkpoint()
         return True
 
-    # dispense (pause-aware)
+    # bring the arm down
     def dispense(self, sleep=1.5):
-        rt = self.rt
-        rt.checkpoint()
-
-        # IMPORTANT: do NOT use time.sleep here
-        rt.delay(sleep)
-
-        rt.checkpoint()
+        time.sleep(sleep)
         return 0
