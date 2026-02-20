@@ -146,10 +146,10 @@ class Display:
                         item["anchors"] = anchors
 
                     key_boxes = (comp_name, solid_name)
-                    if key_boxes in world_boxes_by_solid:
-                        item["collisionWorld"] = world_boxes_by_solid[key_boxes]
-                    if key_boxes in flange_boxes_by_solid:
-                        item["collisionFlange"] = flange_boxes_by_solid[key_boxes]
+                    # Always include collision arrays so consumers can clear
+                    # stale visuals when a solid no longer has any boxes.
+                    item["collisionWorld"] = world_boxes_by_solid.get(key_boxes, [])
+                    item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
         except Exception as e:
@@ -179,10 +179,10 @@ class Display:
                     "visible": True
                 }
                 key_boxes = (comp_name, solid_name)
-                if key_boxes in world_boxes_by_solid:
-                    item["collisionWorld"] = world_boxes_by_solid[key_boxes]
-                if key_boxes in flange_boxes_by_solid:
-                    item["collisionFlange"] = flange_boxes_by_solid[key_boxes]
+                # Always send collision arrays (possibly empty) so stale
+                # collision meshes get removed on detach/topology changes.
+                item["collisionWorld"] = world_boxes_by_solid.get(key_boxes, [])
+                item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                 out[key] = item
         return out

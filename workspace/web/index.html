@@ -680,6 +680,9 @@
               solidName: root.userData.solidName
             }
           );
+        } else {
+          // Defensive cleanup for senders that omit collision fields.
+          clearCollisionMeshesFor(name);
         }
       }
 
