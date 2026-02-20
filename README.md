@@ -20,7 +20,7 @@ Solids has two anchors `center`
 - `top` is later be matched with `gripping_point` for picking  
 - `center` is later be matched with the parent anchor for placing  
 
-# Collision boxes:
+# Collision boxes
 Collision boxes are defined in the component's .py file, typically alongside the anchor definitions. (please take a look at examples)
 
 The collision_box variable is a dictionary that maps each solid part of your component to a list of bounding boxes. This structure allows you to use one or multiple boxes to accurately encapsulate a solid's shape.
@@ -33,7 +33,7 @@ Dictionary Structure:
 
 Example: Component with a Single Box
 
-```
+```json
 collision_box = {"body":[
                 {"pose":[0.0, 0.0, 4.0, 0.0, 0.0, 0.0], "scale":[150.0, 100.0, 8.0]}
         ]}
