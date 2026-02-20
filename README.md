@@ -33,7 +33,7 @@ Dictionary Structure:
 
 Example: Component with a Single Box
 
-```json
+```python
 collision_box = {"body":[
                 {"pose":[0.0, 0.0, 4.0, 0.0, 0.0, 0.0], "scale":[150.0, 100.0, 8.0]}
         ]}
