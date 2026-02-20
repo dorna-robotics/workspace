@@ -634,7 +634,7 @@ class Core:
         if self.camera:
             self.camera.close()
 
-    def motion_plan(self, joint, seed=1234, padding=0):
+    def motion_plan(self, joint, seed=1234, padding=0, gravity=False, gravity_thr=5.0):
 
         print("motion planner called")
 
@@ -710,7 +710,7 @@ class Core:
 
         start_time = time.perf_counter()
         
-        res = self.planner.plan(start, goal, seed=seed)
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_thr=gravity_thr)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
