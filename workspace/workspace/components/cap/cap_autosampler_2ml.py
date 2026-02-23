@@ -8,6 +8,11 @@ from workspace.components.cap.cap import Cap
 class CapAutosampler2ml(Cap):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0]}},
+        collision_box={
+            "body": [
+                {"pose": [0.0, 0.0, 3.15, 0.0, 0.0, 0.0], "scale": [11.60, 11.60, 6.3]}
+            ]
+        },
         cap_type="screw",
         twist=1000, # 900
         pitch=1.25, # 1
@@ -19,7 +24,7 @@ class CapAutosampler2ml(Cap):
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs
-        
+
         # update type
         prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
 
@@ -28,3 +33,5 @@ class CapAutosampler2ml(Cap):
             workspace=workspace,
             **prm
         )
+
+        self.assembly["body"].collision_box = prm["collision_box"]["body"]

@@ -10,9 +10,7 @@ class InspectionHorizontal144mm(Inspection):
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [175, 0, 94, 0, 0, 180], "top": [0, 0, 144, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
         collision_box = {"body":[
-                {"pose":[0,0,4,0,0,0], "scale":[64,64,6.5]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[3,0,80,0,0,0], "scale": [28,25.5,152]},
-                {"pose":[23.5,0,170.5,0,0,0], "scale": [31,46,47]}
+                {"pose":[5,0,195/2,0,0,0], "scale":[75,65,195]},#[xyzabc] , [lx,ly,lz]
         ]},
         camera = {
             "stream": {"width":848, "height":480, "fps":15},

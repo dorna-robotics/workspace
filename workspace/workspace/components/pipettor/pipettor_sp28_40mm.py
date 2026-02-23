@@ -11,11 +11,11 @@ class PipettorSP2840mm(Pipettor):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174+1, 0, 0, 0], "tip": [0, 0, 185.375-1.25, 0, 0, 0]}},
         collision_box = {"body":[
-                {"pose":[0,-20,30,0,0,0], "scale":[40,180,60]}
+                {"pose":[0,-3.863,90+3.25,0,0,0], "scale":[43,55,180+6.45]}
         ]},
         #cfg
         has_tool_changer = True,
-        port="", # connect only if there is a port
+        port=None, # connect only if there is a port
         simulation= True,
     )
 

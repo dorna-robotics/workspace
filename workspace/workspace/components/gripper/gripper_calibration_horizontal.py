@@ -8,6 +8,10 @@ from workspace.components.gripper.gripper import Gripper
 class GripperCalibrationHorizontal(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[60, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551], "tip": [66, 0, 10.5, 69.28203230275508, -69.28203230275508, -69.2820323027551]}},
+        collision_box = 
+            {"body":[
+                {"pose":[23, 0.0, 7.25, 0.0, 0.0, 0.0], "scale":[86.5, 43.0, 14.5]},#[xyzabc] , [lx,ly,lz]
+        ]},
         #cfg
         has_tool_changer = True,
         output_enable=[[None, None, 0]],

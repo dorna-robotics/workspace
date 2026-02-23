@@ -10,7 +10,7 @@ class SuctionGripper(Gripper):
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 51.35, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0, 0, 27, 0, 0, 0], "scale":[38,40,57]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 27, 0, 0, 0], "scale":[43,43,57]},#[xyzabc] , [lx,ly,lz]
         ]},
 
         #cfg

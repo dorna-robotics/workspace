@@ -12,7 +12,7 @@ class Decapper:
             "clb_0": [0, 25, 7, 0, 0, 0], "clb_1": [0, -25, 7, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 24.0, 0.0, 0.0, 0.0], "scale":[76, 71, 63]}   #[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 24.0, 0.0, 0.0, 0.0], "scale":[72, 68, 62]}   #[xyzabc] , [lx,ly,lz]
         ]},
         # cfg
         output_enable = [[None, None, 0.1]], # [[pin, index, time]]

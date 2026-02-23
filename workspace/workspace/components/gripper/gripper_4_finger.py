@@ -11,8 +11,7 @@ class Gripper4Finger(Gripper):
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 66.5-1, 0, 0, -45], "tip": [0, 0, 69.5, 0, 0, -45]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 27.5, 0.0, 0.0, 0.0], "scale":[47.0, 47.0, 56.5]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 0.0, 57.0, 0.0, 0.0, 0.0], "scale":[21.5, 21.5, 26.0]}
+                {"pose":[0.0, 0.0, 34, 0.0, 0.0, 0.0], "scale":[47.0, 47.0, 71]},#[xyzabc] , [lx,ly,lz]
         ]},
         #cfg
         has_tool_changer = False,

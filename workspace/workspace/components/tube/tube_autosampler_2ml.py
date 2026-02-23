@@ -11,7 +11,7 @@ class TubeAutosampler2ml(Tube):
         },
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 16.0, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 35.5]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 32/2, 0.0, 0.0, 0.0], "scale":[11.6, 11.6, 32]}#[xyzabc] , [lx,ly,lz]
         ]},
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
