@@ -747,8 +747,6 @@ class Core:
 
     def motion_plan(self, joint, seed=1234, padding=0, gravity=False, gravity_thr=5.0):
 
-        print("motion planner called")
-
         """
         Collision-aware joint move:
         - Build collision scene from workspace boxes
@@ -790,9 +788,6 @@ class Core:
                 except Exception:
                     # If a malformed box slips through, skip it rather than failing the whole move
                     continue
-        
-        #print("world box: ", world_boxes)
-        #print("tool box: ", tool_boxes)
 
         # -------------------------
         # Planner update args
@@ -825,9 +820,6 @@ class Core:
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
-        print(f"operation finished in {execution_time:.4f} seconds")
-        
-        #print(res)
 
         return res
 
