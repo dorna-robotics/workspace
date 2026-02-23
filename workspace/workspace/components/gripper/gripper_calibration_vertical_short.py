@@ -10,6 +10,10 @@ class GripperCalibrationVerticalShort(Gripper):
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 6.5, 166.2983158520316, -68.88301782571617, 0], "tip": [0, 0, 12.5, 0, 0, -45]}},
         #anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 6.5+24, 0, 0, -45], "tip": [0, 0, 12.5, 0, 0, 0]}},
         #cfg
+        collision_box = 
+            {"body":[
+                {"pose":[0, 0.0, 12.5/2, 0.0, 0.0, 0.0], "scale":[43, 43.0, 12.5]},#[xyzabc] , [lx,ly,lz]
+        ]},
         has_tool_changer = True,
         output_enable=[[None, None, 0]],
         output_disable=[[None, None, 0]],

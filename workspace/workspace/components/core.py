@@ -292,8 +292,8 @@ class Core:
 
 
         collision_boxes = {"rail_base":[
-                {"pose":[170.0, 0.13, 36.66, 0.0, 0.0, 0.0], "scale":[771.0, 122.4, 73.6]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[170.7, 116.3, 37.1, 0.0, 0.0, 0.0], "scale":[771.0, 111.1, 74.6]}
+                {"pose":[170.0, 33.63, 50, 0.0, 0.0, 0.0], "scale":[761.0, 183.5, 100.6]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[-176.105, 116.3, 50, 0.0, 0.0, 0.0], "scale":[68.6, 183.5, 100.6]}
         ]}
 
         # next we add the rail base depending on the type of the rail

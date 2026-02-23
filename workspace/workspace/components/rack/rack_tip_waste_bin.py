@@ -7,6 +7,11 @@ from workspace.components.rack.rack import Rack
 class RackTipWasteBin(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 45, 0, 0, 0], "top": [0, 0, 66, 0, 0, 0]}},
+        collision_box = 
+            {"body":[
+                {"pose":[0.0, 0.0, 66/2, 0.0, 0.0, 0.0], "scale":[127.4, 85, 66]}#[xyzabc] , [lx,ly,lz]
+        ]},
+
         size = [127.4, 85, 66],
         offset=[0, 0],
         pitch=[0, 0],

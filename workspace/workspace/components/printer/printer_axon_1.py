@@ -17,9 +17,7 @@ class PrinterAxon1(Printer):
         },
         collision_box = 
             {"body":[
-                {"pose":[-40, 0, 50, 0, 0, 0], "scale":[564,258,91.5]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[-101, 0, 138, 0, 0, 0], "scale":[410.5, 250.5, 101.5]},
-                {"pose":[150,53,120, 0, 0, 0], "scale":[60.5,68.5,80.5]}
+                {"pose":[-36.135, 0, 188.5/2, 0, 0, 0], "scale":[560,260,188.5]}#[xyzabc] , [lx,ly,lz]
         ]},
         # cfg
         ip="",

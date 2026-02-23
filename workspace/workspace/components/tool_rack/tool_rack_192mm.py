@@ -11,6 +11,10 @@ class ToolRack192mm(ToolRack):
         anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 201, 127.27922061357856, -127.27922061357854, 0],
             "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
             "clb_0": [0, 46, 196, 0, 0, -45]}}, 
+        collision_box = 
+            {"body":[
+                {"pose":[0, 13.75, (158+48)/2, 0.0, 0.0, 0.0], "scale":[65, 92.5, 158+48]}
+        ]}
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
