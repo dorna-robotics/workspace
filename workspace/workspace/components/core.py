@@ -292,9 +292,11 @@ class Core:
 
 
         collision_boxes = {"rail_base":[
-                {"pose":[170.0, 33.63, 50, 0.0, 0.0, 0.0], "scale":[761.0, 183.5, 100.6]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[-176.105, 116.3, 50, 0.0, 0.0, 0.0], "scale":[68.6, 183.5, 100.6]}
+                {"pose":[170.0, 33.63, 41-1, 0.0, 0.0, 0.0], "scale":[761.0, 183.5, 82]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[-176.105, 116.3, 41-1, 0.0, 0.0, 0.0], "scale":[68.6, 120.5, 82]},
+                {"pose":[170, 91.5+1, 51, 0.0, 0.0, 0.0], "scale":[761, 66, 102]}
         ]}
+
 
         # next we add the rail base depending on the type of the rail
         if self.has_rail:

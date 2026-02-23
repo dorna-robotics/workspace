@@ -1,10 +1,10 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.tip.tip import Tip
+from workspace.components.tube.tube import Tube
 
 @register("tip_axygen_180ul")
-class TipAxygen180ul(Tip):
+class TipAxygen180ul(Tube):
     DEFAULTS = dict(
         anchors={
             "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 52, 0, 0, 0]},
@@ -16,7 +16,7 @@ class TipAxygen180ul(Tip):
     )
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(Tip.DEFAULTS) # default
+        prm = deepcopy(Tube.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs
