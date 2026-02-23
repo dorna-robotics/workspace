@@ -13,6 +13,115 @@ from workspace.components.calibration import Calibration
 
 import time
 
+
+
+class SplinePath:
+    """Natural cubic spline through a list of points in joint space."""
+    def __init__(self, points):
+        """
+        points : list of lists/arrays, each of length d (joint space dimension)
+        """
+        if len(points) < 2:
+            raise ValueError("Need at least two points to build a spline.")
+        self.points = points
+        self.n = len(points)
+        self.d = len(points[0])
+
+        # 1. Chord‑length parameter s (cumulative Euclidean distance)
+        self.s = [0.0]
+        for i in range(1, self.n):
+            diff = [points[i][j] - points[i-1][j] for j in range(self.d)]
+            dist = math.sqrt(sum(dj * dj for dj in diff))
+            self.s.append(self.s[-1] + dist)
+        self.total_len = self.s[-1]
+
+        # Number of segments = n-1
+        n_seg = self.n - 1
+
+        # Pre‑allocate coefficient storage: one list per segment, each of length d
+        self.coeffs = [ [None] * self.d for _ in range(n_seg) ]
+
+        # Work arrays (tridiagonal solve)
+        h = [self.s[i+1] - self.s[i] for i in range(n_seg)]
+
+        for dim in range(self.d):
+            y = [p[dim] for p in points]
+
+            # Tridiagonal system for c (natural spline: c[0]=c[n-1]=0)
+            alpha = [0.0] * self.n
+            l = [0.0] * self.n
+            mu = [0.0] * self.n
+            z = [0.0] * self.n
+            c_arr = [0.0] * self.n   # c at knots
+
+            l[0] = 1.0
+            mu[0] = 0.0
+            z[0] = 0.0
+
+            for i in range(1, self.n-1):
+                alpha[i] = (3.0/h[i])*(y[i+1]-y[i]) - (3.0/h[i-1])*(y[i]-y[i-1])
+                l[i] = 2.0*(self.s[i+1] - self.s[i-1]) - h[i-1]*mu[i-1]
+                mu[i] = h[i]/l[i]
+                z[i] = (alpha[i] - h[i-1]*z[i-1])/l[i]
+
+            l[self.n-1] = 1.0
+            z[self.n-1] = 0.0
+            c_arr[self.n-1] = 0.0
+
+            # Back substitution and coefficient computation
+            for i in range(self.n-2, -1, -1):
+                c_arr[i] = z[i] - mu[i]*c_arr[i+1]
+
+                a = y[i]
+                b = (y[i+1]-y[i])/h[i] - h[i]*(c_arr[i+1] + 2.0*c_arr[i])/3.0
+                c = c_arr[i]
+                d_coeff = (c_arr[i+1] - c_arr[i])/(3.0*h[i])
+
+                # Store at the correct segment index i
+                self.coeffs[i][dim] = (a, b, c, d_coeff)
+
+    def get_curve_data(self, s):
+        """
+        Return (position, velocity, acceleration) at arc length s.
+        Each is a list of length self.d.
+        """
+        if s <= 0.0:
+            s = 0.0
+        # Locate segment
+        if s >= self.total_len:
+            i = self.n - 2
+            ds = self.total_len - self.s[i]
+        else:
+            low, high = 0, self.n - 2
+            while low <= high:
+                mid = (low + high) // 2
+                if s < self.s[mid]:
+                    high = mid - 1
+                elif s >= self.s[mid+1]:
+                    low = mid + 1
+                else:
+                    i = mid
+                    break
+            ds = s - self.s[i]
+
+        pos = [0.0] * self.d
+        vel = [0.0] * self.d
+        acc = [0.0] * self.d
+        for j in range(self.d):
+            a, b, c, d_coeff = self.coeffs[i][j]
+            # position
+            pos[j] = ((d_coeff * ds + c) * ds + b) * ds + a
+            # velocity (first derivative w.r.t. s)
+            vel[j] = (3.0 * d_coeff * ds + 2.0 * c) * ds + b
+            # acceleration (second derivative w.r.t. s)
+            acc[j] = 6.0 * d_coeff * ds + 2.0 * c
+        return pos, vel, acc
+
+    def get_curve_point(self, s):
+        """Return only position at arc length s."""
+        pos, _, _ = self.get_curve_data(s)
+        return pos
+
 @register("core")
 class Core:
     """
@@ -1058,6 +1167,62 @@ class SimulationAPI:
 
         return 2  # success
 
+
+    def smove(self, points, vel=100, accel=1000, jerk=4000):
+        """
+        Move along a cubic spline path defined by a list of joint vectors.
+        The first point should equal the current joint position.
+        Returns:
+            -1 : error
+            2 : success
+        """
+
+        if len(points) < 2:
+            print("given points: ", points)
+            return 2   # nothing to do
+
+        # Build the spline path
+        path = SplinePath(points)
+        d = path.total_len
+        if d <= 0.0:
+            return 2
+
+        # Create S‑curve profile using the total path length
+        prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+        jerks = prof.get('jerks', [])
+        ticks = prof.get('ticks', [])
+        t_total = prof.get('t_total', 0.0)
+
+        if t_total <= 0.0 or not ticks:
+            return 2
+
+        dt = 1.0 / float(self.INTERP_FREQ)
+        t0 = time.perf_counter()
+        step = 0
+
+        while True:
+            now = time.perf_counter()
+            elapsed = now - t0
+            if elapsed >= t_total:
+                break
+
+            # Distance traveled at this time
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            # q is in [0, d]
+
+            # Get joint positions at that arc length
+            pos, _, _ = path.get_curve_data(q)
+            self.joints = pos
+
+            step += 1
+            next_tick = t0 + step * dt
+            sleep_for = next_tick - time.perf_counter()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+        # Ensure exact final position
+        self.joints = points[-1][:]
+        return 2
 
     def jmove_multi_point(self, points, vel=100, accel=1000, jerk=4000):
 

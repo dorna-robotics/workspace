@@ -285,14 +285,15 @@ class Recipe:
                         if len(points) == 0:
                             print("🔴 [error] no proper path was found")
                             return False
-
+                
                         # run the path (pause/stop aware + locked)
-                        rt.jmove_multi_point(
+                        rt.smove(
                             points,
                             vel=vaj_map["jmove"][0] * self.speed_factor,
                             accel=vaj_map["jmove"][1] * self.speed_factor,
                             jerk=vaj_map["jmove"][2] * self.speed_factor,
                         )
+
                     else:  # no path planning
                         rt.jmove(
                             joint=J,
