@@ -163,6 +163,7 @@ class Core:
         merge(prm, cfg) # config
         merge(prm, kwargs) # kwargs
         
+        self.gravity_vec = None
         # type
         prm.setdefault("type", getattr(self.__class__, "_registered_type", prm.get("type")))
 
@@ -745,7 +746,7 @@ class Core:
         if self.camera:
             self.camera.close()
 
-    def motion_plan(self, joint, seed=1234, padding=0, gravity=False, gravity_thr=5.0):
+    def motion_plan(self, joint, seed=1234, padding=0, gravity_vec=None, gravity_thr=5.0):
 
         """
         Collision-aware joint move:
@@ -760,9 +761,14 @@ class Core:
             otherwise: whatever robot_api.jmove returns if it fails
         """
 
+        gravity = False
+        if gravity_vec is not None:
+            gravity = True
+
         # -------------------------
         # Build collision scene
         # -------------------------
+
         scene = []
         tool = []
         if hasattr(self.workspace, "compute_collision_boxes"):
@@ -816,7 +822,7 @@ class Core:
 
         start_time = time.perf_counter()
         
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_thr=gravity_thr)
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
