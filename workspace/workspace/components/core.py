@@ -163,7 +163,6 @@ class Core:
         merge(prm, cfg) # config
         merge(prm, kwargs) # kwargs
         
-        self.gravity_vec = None
         # type
         prm.setdefault("type", getattr(self.__class__, "_registered_type", prm.get("type")))
 
