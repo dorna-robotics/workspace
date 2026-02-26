@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Orchestrator</title>
+  <style>
+    :root{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      --bg: #ffffff;
+      --text: #111;
+      --muted: #666;
+      --border: #e5e5e5;
+      --card: #fafafa;
+      --btn: #f4f4f4;
+      --btnHover: #ededed;
+
+      --ok: #0a7a2f;
+      --bad: #b00020;
+      --warn: #a06a00;
+
+      --radius: 14px;
+    }
+
+    body{ margin: 20px; background: var(--bg); color: var(--text); }
+    .wrap{ max-width: 1200px; margin: 0 auto; }
+
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between;
+      gap: 12px; margin-bottom: 14px;
+    }
+
+    h1{ margin:0; font-size: 20px; letter-spacing: .2px; }
+    .small{ font-size: 12px; color: var(--muted); }
+
+    .card{
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: var(--card);
+      margin: 12px 0;
+    }
+
+    .row{ display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
+    .spacer{ flex: 1; }
+
+    button{
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--btn);
+      cursor: pointer;
+      font-weight: 650;
+      letter-spacing: .2px;
+    }
+    button:hover{ background: var(--btnHover); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .btnPrimary{ border-color:#d8d8d8; }
+    .btnDanger{ border-color:#f0c0c0; }
+    .btnDanger:hover{ background:#ffecec; }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot{
+      width:10px; height:10px; border-radius:999px;
+      background: #bbb;
+    }
+    .dot.ok{ background: var(--ok); }
+    .dot.bad{ background: var(--bad); }
+    .dot.warn{ background: var(--warn); }
+
+    .grid2{
+      display:grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .grid3{
+      display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    }
+    @media (max-width: 900px){
+      .grid2, .grid3{ grid-template-columns: 1fr; }
+    }
+
+    label{ display:block; font-size: 12px; color: #444; margin: 10px 0 6px; }
+    input[type="text"], input[type="number"]{
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cfcfcf;
+      border-radius: 12px;
+      font-size: 14px;
+      box-sizing: border-box;
+      background: #fff;
+    }
+
+    /* Workspace list (collapsed by default) */
+    .wsItem{
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+
+    .wsHead{
+      display:flex;
+      align-items:center;
+      gap: 12px;
+      padding: 12px 12px;
+      cursor: pointer;
+      user-select:none;
+    }
+    .wsHead:hover{ background: #f9f9f9; }
+
+    .chev{
+      width: 18px; text-align:center;
+      font-weight: 900;
+      color: #555;
+    }
+
+    .wsName{
+      font-weight: 750;
+      letter-spacing: .2px;
+    }
+    .wsMeta{
+      display:flex; gap: 10px; align-items:center; flex-wrap:wrap;
+      margin-left: auto;
+    }
+
+    .wsBody{
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      background: #fbfbfb;
+      display:none;
+    }
+    .wsItem.expanded .wsBody{ display:block; }
+    .wsItem.expanded .chev{ transform: rotate(90deg); }
+
+    .controls{
+      display:flex; gap: 10px; flex-wrap: wrap;
+      margin: 8px 0 12px;
+    }
+
+    .sectionTitle{
+      display:flex; align-items:center; gap:10px;
+      margin-top: 10px;
+      margin-bottom: 6px;
+    }
+    .sectionTitle h3{
+      margin:0; font-size: 14px;
+    }
+    .sectionTitle .spacer{ flex:1; }
+
+    pre{
+      background: #0b0b0b;
+      color: #eaeaea;
+      padding: 12px;
+      border-radius: 12px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.35;
+      max-height: 320px;
+      margin: 0;
+    }
+
+    /* Modal overlay */
+    .modalOverlay{
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.35);
+      display:none;
+      align-items:center; justify-content:center;
+      padding: 18px;
+      z-index: 9999;
+    }
+    .modalOverlay.show{ display:flex; }
+    .modal{
+      width: min(780px, 100%);
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,.18);
+      overflow: hidden;
+    }
+    .modalHead{
+      padding: 12px 14px;
+      display:flex; align-items:center; gap: 10px;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+    .modalHead strong{ font-size: 14px; }
+    .modalBody{ padding: 14px; }
+    .modalFoot{
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      display:flex; gap: 10px; justify-content:flex-end;
+      background: #fafafa;
+    }
+
+    .hint{
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>Orchestrator</h1>
+        <div class="small">Multi-workspace control (collapsed list by default)</div>
+      </div>
+
+      <div class="row">
+        <span class="pill" title="Orchestrator Base URL used by the UI">
+          <span class="dot ok"></span>
+          <span class="mono" id="baseUrlLabel"></span>
+        </span>
+        <button class="btnPrimary" id="btnOpenAdd">➕ Add Workspace</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div style="min-width:320px; flex:1;">
+          <label>Orchestrator Base URL</label>
+          <input id="baseUrl" type="text" />
+        </div>
+        <div style="min-width:220px;">
+          <label>Auto-refresh</label>
+          <div class="row">
+            <label style="margin:0; display:flex; gap:10px; align-items:center;">
+              <input id="autoPoll" type="checkbox" checked />
+              <span class="small">Status every 1s</span>
+            </label>
+          </div>
+          <label style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+            <input id="autoLogs" type="checkbox" />
+            <span class="small">Logs for expanded items</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <strong>Workspaces</strong>
+        <span class="small" id="wsCount"></span>
+        <div class="spacer"></div>
+        <button id="btnCollapseAll">Collapse all</button>
+      </div>
+
+      <div id="wsList"></div>
+    </div>
+
+    <div class="card">
+      <div class="sectionTitle">
+        <h3>Debug</h3>
+        <div class="spacer"></div>
+        <button id="btnClearDebug">Clear</button>
+      </div>
+      <pre id="debugOut">{}</pre>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modalOverlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modalHead">
+        <strong>➕ Add Workspace</strong>
+        <div class="spacer"></div>
+        <button id="btnCloseAdd">✕</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="grid3">
+          <div>
+            <label>Workspace Name</label>
+            <input id="m_wsName" type="text" placeholder="printer" />
+          </div>
+          <div>
+            <label>Port</label>
+            <input id="m_wsPort" type="number" value="8000" />
+          </div>
+          <div>
+            <label>Display Label (optional)</label>
+            <input id="m_wsLabel" type="text" placeholder="Printer demo" />
+          </div>
+        </div>
+
+        <div style="margin-top: 8px;">
+          <label>Path to main.py</label>
+          <input id="m_wsPath" type="text" value="/home/dorna/Downloads/workspace/workspace/projects/printer/main.py" />
+        </div>
+      </div>
+
+      <div class="modalFoot">
+        <button id="btnAddCancel">Cancel</button>
+        <button class="btnPrimary" id="btnAddConfirm">Add workspace</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function $(id){ return document.getElementById(id); }
+
+  // ======= endpoints / knobs =======
+  const STORE_KEY = "orchestrator_workspaces_v1";
+  const POLL_MS = 1000;
+
+  // If your logs endpoint differs, change this one line:
+  // Example alternative: `/workspace/${name}/log` or `/workspace/${name}/tail`
+  const LOGS_PATH = (name) => `/workspace/${encodeURIComponent(name)}/logs?tail=200`;
+
+  // ======= state =======
+  let wss = []; // [{name, label, path_to_file, port, expanded, lastStatus, lastLogs, loadedHint}]
+  function loadStore(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    }catch{ return []; }
+  }
+  function saveStore(){
+    localStorage.setItem(STORE_KEY, JSON.stringify(wss.map(ws => ({
+      name: ws.name,
+      label: ws.label || "",
+      path_to_file: ws.path_to_file || "",
+      port: ws.port || 0
+    }))));
+  }
+
+  // ======= base url =======
+  function base(){
+    return $("baseUrl").value.replace(/\/+$/, "");
+  }
+  function setBaseLabel(){
+    $("baseUrlLabel").textContent = base();
+  }
+
+  // Auto-set base URL to page origin (perfect if served by Tornado)
+  $("baseUrl").value = window.location.origin;
+  setBaseLabel();
+  $("baseUrl").addEventListener("input", setBaseLabel);
+
+  // ======= api =======
+  async function api(path, opts = {}) {
+    const url = base() + path;
+    const res = await fetch(url, {
+      ...opts,
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) }
+    });
+
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+    if (!res.ok) {
+      const msg = json && json.error ? json.error : (json.raw || res.statusText);
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`);
+    }
+    return json;
+  }
+
+  function dbg(obj){
+    $("debugOut").textContent = JSON.stringify(obj, null, 2);
+  }
+
+  // ======= ui helpers =======
+  function dotClassFromState(state){
+    const s = String(state || "").toUpperCase();
+    if (["RUNNING","ACTIVE"].includes(s)) return "ok";
+    if (["IDLE","READY","WAITING","PAUSED"].includes(s)) return "warn";
+    if (["ERROR","FAILED","OFFLINE"].includes(s)) return "bad";
+    return "warn";
+  }
+
+  // "Loaded" means: launch happened and workspace exists in orchestrator.
+  // We use a mix of: last successful launch cmd OR status state being not OFFLINE/UNKNOWN/NOT_FOUND.
+  function isLoaded(ws){
+    if (ws.loadedHint) return true;
+    const st = ws.lastStatus || {};
+    const s = String(st.state || "").toUpperCase();
+    if (!s) return false;
+    if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED"].includes(s)) return false;
+    return true;
+  }
+
+  function isRunning(ws){
+    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
+    return ["RUNNING","ACTIVE"].includes(s);
+  }
+
+  function isIdle(ws){
+    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
+    return ["IDLE","READY","WAITING","PAUSED"].includes(s);
+  }
+
+  // ======= rendering =======
+  function render(){
+    $("wsCount").textContent = `(${wss.length})`;
+    const list = $("wsList");
+    list.innerHTML = "";
+
+    if (!wss.length){
+      const d = document.createElement("div");
+      d.className = "small";
+      d.textContent = "No workspaces yet. Click “Add Workspace”.";
+      list.appendChild(d);
+      return;
+    }
+
+    wss.forEach((ws, idx) => {
+      const st = ws.lastStatus || {};
+      const state = (st.state || "unknown");
+      const lastErr = st.last_error || null;
+
+      const item = document.createElement("div");
+      item.className = "wsItem" + (ws.expanded ? " expanded" : "");
+
+      const head = document.createElement("div");
+      head.className = "wsHead";
+      head.onclick = () => {
+        ws.expanded = !ws.expanded;
+        render();
+      };
+
+      const chev = document.createElement("div");
+      chev.className = "chev";
+      chev.textContent = "›";
+
+      const nm = document.createElement("div");
+      nm.innerHTML = `<div class="wsName">${escapeHtml(ws.name)}${ws.label ? ` <span class="small">(${escapeHtml(ws.label)})</span>` : ""}</div>
+                      <div class="small mono">${escapeHtml(ws.path_to_file || "")}</div>`;
+
+      const meta = document.createElement("div");
+      meta.className = "wsMeta";
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.innerHTML = `<span class="dot ${dotClassFromState(state)}"></span><span>${escapeHtml(String(state))}</span>`;
+      meta.appendChild(pill);
+
+      if (lastErr){
+        const err = document.createElement("span");
+        err.className = "pill";
+        err.title = String(lastErr);
+        err.innerHTML = `<span class="dot bad"></span><span class="mono">last_error</span>`;
+        meta.appendChild(err);
+      }
+
+      const rm = document.createElement("button");
+      rm.className = "btnDanger";
+      rm.textContent = "Remove";
+      rm.onclick = (e) => {
+        e.stopPropagation();
+        wss.splice(idx, 1);
+        saveStore();
+        render();
+      };
+      meta.appendChild(rm);
+
+      head.appendChild(chev);
+      head.appendChild(nm);
+      head.appendChild(meta);
+
+      const body = document.createElement("div");
+      body.className = "wsBody";
+
+      // controls (state-based)
+      const controls = document.createElement("div");
+      controls.className = "controls";
+
+      const loaded = isLoaded(ws);
+
+      if (!loaded){
+        // Only Launch before being loaded
+        controls.appendChild(makeBtn("🚀 Launch", async () => {
+          await runCmd(ws, "launch");
+          ws.loadedHint = true;
+          await refreshStatus(ws);
+          render();
+        }, {primary:true}));
+      } else {
+        controls.appendChild(makeBtn("▶ Start / Resume", async () => {
+          // your backend supports "start" and/or "resume"
+          // We'll try "start" first; if it errors you can swap to "resume"
+          await runCmd(ws, "start");
+          await refreshStatus(ws);
+          render();
+        }, {primary:true}));
+
+        controls.appendChild(makeBtn("⏸ Pause", async () => {
+          await runCmd(ws, "pause");
+          await refreshStatus(ws);
+          render();
+        }, {disabled: !isRunning(ws)}));
+
+        controls.appendChild(makeBtn("☠ Kill", async () => {
+          await runCmd(ws, "kill");
+          // after kill, probably not "loaded" anymore depends on your backend,
+          // but we keep loadedHint true so you still see advanced controls if status exists
+          await refreshStatus(ws);
+          render();
+        }, {danger:true}));
+
+        controls.appendChild(makeBtn("↻ Restart", async () => {
+          await runCmd(ws, "restart");
+          await refreshStatus(ws);
+          render();
+        }));
+      }
+
+      body.appendChild(controls);
+
+      // Timing (started + uptime)
+      const startedAt = st.started_at || null;   // epoch seconds or ISO if you choose
+      const uptimeS = st.uptime_s ?? null;
+
+      const timing = document.createElement("div");
+      timing.className = "small";
+      timing.style.margin = "6px 0 12px";
+
+      function fmtAbs(v){
+        if (!v) return "—";
+        // if epoch seconds
+        if (typeof v === "number") return new Date(v * 1000).toLocaleString();
+        // if ISO string
+        const t = Date.parse(String(v));
+        if (!Number.isNaN(t)) return new Date(t).toLocaleString();
+        return String(v);
+      }
+      function fmtDur(sec){
+        if (sec === null || sec === undefined) return "—";
+        sec = Math.max(0, Number(sec) || 0);
+        const hh = Math.floor(sec / 3600);
+        const mm = Math.floor((sec % 3600) / 60);
+        const ss = Math.floor(sec % 60);
+        const pad2 = (n) => (n < 10 ? "0" : "") + n;
+        if (hh > 0) return `${hh}:${pad2(mm)}:${pad2(ss)}`;
+        return `${mm}:${pad2(ss)}`;
+      }
+
+      timing.innerHTML = `
+        <div><span class="mono">started</span>: ${escapeHtml(fmtAbs(startedAt))}</div>
+        <div><span class="mono">uptime</span>: ${escapeHtml(fmtDur(uptimeS))}</div>
+      `;
+      body.appendChild(timing);
+      
+      // Logs section (refresh belongs here)
+      const title = document.createElement("div");
+      title.className = "sectionTitle";
+      title.innerHTML = `<h3>Logs</h3><span class="small">Refresh lives here</span><div class="spacer"></div>`;
+      const btnRef = document.createElement("button");
+      btnRef.textContent = "🔄 Refresh";
+      btnRef.onclick = async () => {
+        await refreshLogs(ws);
+        render();
+      };
+      title.appendChild(btnRef);
+      body.appendChild(title);
+
+      const pre = document.createElement("pre");
+      pre.textContent = ws.lastLogs || "(no logs yet)";
+      body.appendChild(pre);
+
+      // quick info
+      const info = document.createElement("div");
+      info.className = "small";
+      info.style.marginTop = "10px";
+      info.innerHTML = `
+        <div><span class="mono">port</span>: ${escapeHtml(String(ws.port || ""))}</div>
+      `;
+      body.appendChild(info);
+
+      item.appendChild(head);
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  }
+
+  function makeBtn(text, fn, opts = {}){
+    const b = document.createElement("button");
+    b.textContent = text;
+    if (opts.primary) b.classList.add("btnPrimary");
+    if (opts.danger) b.classList.add("btnDanger");
+    if (opts.disabled) b.disabled = true;
+    b.onclick = async (e) => {
+      e.preventDefault();
+      if (b.disabled) return;
+      b.disabled = true;
+      try { await fn(); }
+      catch (err){
+        dbg({ error: String(err) });
+      } finally {
+        b.disabled = false;
+      }
+    };
+    return b;
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  // ======= workspace actions =======
+  async function addWorkspace(ws){
+    const payload = {
+      name: ws.name,
+      path_to_file: ws.path_to_file,
+      port: Number(ws.port)
+    };
+    const j = await api("/add_workspace", { method:"POST", body: JSON.stringify(payload) });
+    dbg({ action: "add_workspace", payload, response: j });
+    return j;
+  }
+
+  async function runCmd(ws, cmd){
+    const j = await api(`/workspace/${encodeURIComponent(ws.name)}/cmd`, {
+      method: "POST",
+      body: JSON.stringify({ cmd })
+    });
+    dbg({ action: cmd, workspace: ws.name, response: j });
+    return j;
+  }
+
+  async function refreshStatus(ws){
+    try{
+      const j = await api(`/workspace/${encodeURIComponent(ws.name)}/status`, { method:"GET" });
+      ws.lastStatus = j || {};
+      return j;
+    }catch(err){
+      ws.lastStatus = { state: "OFFLINE", last_error: String(err) };
+      return ws.lastStatus;
+    }
+  }
+
+  async function refreshLogs(ws){
+    try{
+      const j = await api(LOGS_PATH(ws.name), { method:"GET" });
+      // Accept either {text:"..."} or raw string
+      if (typeof j === "string") ws.lastLogs = j;
+      else if (j && typeof j.text === "string") ws.lastLogs = j.text;
+      else ws.lastLogs = JSON.stringify(j, null, 2);
+      return ws.lastLogs;
+    }catch(err){
+      ws.lastLogs = `(logs failed) ${String(err)}`;
+      return ws.lastLogs;
+    }
+  }
+
+  // ======= polling =======
+  async function poll(){
+    if ($("autoPoll").checked){
+      await Promise.all(wss.map(ws => refreshStatus(ws)));
+    }
+    if ($("autoLogs").checked){
+      // refresh logs only for expanded items to avoid load
+      const ex = wss.filter(ws => ws.expanded);
+      await Promise.all(ex.map(ws => refreshLogs(ws)));
+    }
+    render();
+  }
+
+  // ======= modal =======
+  function openModal(){
+    $("modalOverlay").classList.add("show");
+    $("m_wsName").focus();
+  }
+  function closeModal(){
+    $("modalOverlay").classList.remove("show");
+  }
+
+  $("btnOpenAdd").onclick = openModal;
+  $("btnCloseAdd").onclick = closeModal;
+  $("btnAddCancel").onclick = closeModal;
+
+  $("modalOverlay").addEventListener("click", (e) => {
+    if (e.target === $("modalOverlay")) closeModal();
+  });
+
+  $("btnAddConfirm").onclick = async () => {
+    const name = $("m_wsName").value.trim();
+    const port = Number($("m_wsPort").value);
+    const path = $("m_wsPath").value.trim();
+    const label = $("m_wsLabel").value.trim();
+
+    if (!name){
+      dbg({ error: "Workspace name is required" });
+      return;
+    }
+    if (!path){
+      dbg({ error: "Path to main.py is required" });
+      return;
+    }
+
+    const ws = {
+      name,
+      label,
+      port,
+      path_to_file: path,
+      expanded: false,
+      lastStatus: { state: "unknown" },
+      lastLogs: "",
+      loadedHint: false
+    };
+
+    try{
+      // Add workspace in orchestrator first
+      await addWorkspace(ws);
+
+      // Put it in list (top), collapsed by default
+      wss.unshift(ws);
+      saveStore();
+
+      // Immediately refresh status + render
+      await refreshStatus(ws);
+      render();
+      closeModal();
+    }catch(err){
+      dbg({ action: "add_workspace", error: String(err) });
+    }
+  };
+
+  $("btnCollapseAll").onclick = () => {
+    wss.forEach(ws => ws.expanded = false);
+    render();
+  };
+
+  $("btnClearDebug").onclick = () => dbg({});
+
+  // ======= init =======
+  (function init(){
+    // load from localStorage
+    const stored = loadStore();
+    wss = stored.map(s => ({
+      name: s.name,
+      label: s.label || "",
+      port: Number(s.port || 0),
+      path_to_file: s.path_to_file || "",
+      expanded: false,
+      lastStatus: { state: "unknown" },
+      lastLogs: "",
+      loadedHint: false
+    }));
+
+    // initial poll
+    poll();
+    setInterval(poll, POLL_MS);
+  })();
+</script>
+</body>
+</html>

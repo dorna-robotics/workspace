@@ -39,6 +39,7 @@ class Runtime:
     - Dynamic robot API forwarding via __getattr__ (no wrapper maintenance).
     - pause/resume gates via checkpoint().
     - kill() terminates the gate/worker thread (exits loops).
+    - Can run a workflow in a dedicated internal thread.
     """
 
     def __init__(self, robot_api: Any = None, *, sleep_fn: Callable[[float], None] = time.sleep):
@@ -59,6 +60,9 @@ class Runtime:
 
         # prevent concurrent worker() runs
         self._in_worker = False
+
+        # internal workflow thread
+        self._workflow_thread: Optional[threading.Thread] = None
 
         self.on_state_change: Optional[Callable[[RTState, RTState], None]] = None
 
@@ -142,32 +146,29 @@ class Runtime:
                 self._cv.notify_all()
 
     def kill(self) -> None:
-        """
-        Kill the runtime:
-          - unblocks wait_for_start()
-          - unblocks checkpoint() (even if paused)
-          - makes gate/worker loops EXIT (thread ends)
-        """
+        """Kill runtime and join workflow thread."""
         with self._lock:
             if self._killed:
                 return
             self._killed = True
             self._status.kills += 1
             self._set_state(RTState.KILLED)
-            self._start_token += 1  # release wait_for_start
+            self._start_token += 1
             self._cv.notify_all()
 
+        # join internal workflow thread outside lock
+        if self._workflow_thread:
+            self._workflow_thread.join()
+            self._workflow_thread = None
 
     def reset(self) -> None:
-        """
-        Reset runtime after kill().
-        Allows creating a new gate thread and starting again.
-        """
+        """Reset runtime after kill()."""
         with self._lock:
             self._killed = False
             self._status.last_error = None
             self._status.state = RTState.IDLE
             self._cv.notify_all()
+
     # ---------------------------------------------------------------------
     # Gate helpers for your thread model
     # ---------------------------------------------------------------------
@@ -191,11 +192,9 @@ class Runtime:
             while True:
                 if self._killed:
                     raise KillRequested()
-
                 if self._seen_start_token != self._start_token:
                     self._seen_start_token = self._start_token
                     return
-
                 self._cv.wait()
 
     # ---------------------------------------------------------------------
@@ -215,21 +214,47 @@ class Runtime:
                 self._set_state_with_callback(RTState.RUNNING)
                 with self._lock:
                     self._status.job_runs += 1
-
                 try:
                     result = job_fn(**kwargs)
                 except KillRequested:
                     raise
                 except Exception as ex:
                     self._set_state_with_callback(RTState.ERROR, err=f"{type(ex).__name__}: {ex}")
-
                 self._set_state_with_callback(RTState.IDLE)
-
         finally:
             with self._lock:
                 self._in_worker = False
-
         return result
+
+    # ---------------------------------------------------------------------
+    # Workflow thread
+    # ---------------------------------------------------------------------
+
+    def run_workflow_thread(self, workflow_fn: Callable[..., Any], *, workspace: Any):
+        """Run a workflow in its own internal thread, managed by this runtime."""
+        if self._workflow_thread and self._workflow_thread.is_alive():
+            raise RuntimeError("Workflow thread already running!")
+
+        def _gate_loop():
+            while True:
+                try:
+                    self.wait_for_start()
+                    self.mark_running()
+                    workflow_fn(workspace=workspace, core=workspace.components["core"])
+                    self.mark_idle()
+                except KillRequested:
+                    return
+                except Exception as ex:
+                    self.mark_error(ex)
+                    import traceback
+                    traceback.print_exc()
+                    if self.state != RTState.KILLED:
+                        self.mark_idle()
+
+        th = threading.Thread(target=_gate_loop, daemon=True)
+        th.start()
+        self._workflow_thread = th
+        return th
 
     # ---------------------------------------------------------------------
     # Pause gate + utilities (exits on kill)
@@ -240,14 +265,10 @@ class Runtime:
             while True:
                 if self._killed:
                     raise KillRequested()
-
                 st = self._status.state
-
                 if st == RTState.PAUSED:
                     self._cv.wait()
                     continue
-
-                # RUNNING / IDLE / ERROR -> allow
                 return
 
     def call(self, fn: Callable[..., T], *a: Any, checkpoint: bool = True, **k: Any) -> T:
@@ -260,11 +281,9 @@ class Runtime:
             seconds = float(val)
         if seconds <= 0:
             return
-
         if not checkpoint:
             self._sleep(seconds)
             return
-
         end = time.time() + seconds
         while True:
             self.checkpoint()
@@ -286,23 +305,18 @@ class Runtime:
         rb = self.robot_api
         if rb is None:
             raise RuntimeError("Runtime.robot_api is None.")
-
-        # unwrap Core -> core.robot_api if someone passed core by mistake
         if hasattr(rb, "robot_api"):
             inner = getattr(rb, "robot_api")
             if inner is not None:
                 rb = inner
-
         return rb
 
     def __getattr__(self, name: str):
         rb = self._require_robot()
-        attr = getattr(rb, name)  # raises AttributeError if missing
-
+        attr = getattr(rb, name)
         if callable(attr):
             def _wrapped(*a, **k):
                 return self.call(attr, *a, **k)
             _wrapped.__name__ = name
             return _wrapped
-
         return attr
