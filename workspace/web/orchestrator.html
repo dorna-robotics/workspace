@@ -68,6 +68,7 @@
       background: #fff;
       font-size: 12px;
       color: var(--muted);
+      white-space: nowrap;
     }
     .dot{
       width:10px; height:10px; border-radius:999px;
@@ -77,14 +78,11 @@
     .dot.bad{ background: var(--bad); }
     .dot.warn{ background: var(--warn); }
 
-    .grid2{
-      display:grid; grid-template-columns: 1fr 1fr; gap: 12px;
-    }
     .grid3{
       display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
     }
     @media (max-width: 900px){
-      .grid2, .grid3{ grid-template-columns: 1fr; }
+      .grid3{ grid-template-columns: 1fr; }
     }
 
     label{ display:block; font-size: 12px; color: #444; margin: 10px 0 6px; }
@@ -208,6 +206,14 @@
     }
 
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+    /* ✅ Node/Port pills shown only inside expanded body */
+    .pillRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
   </style>
 </head>
 
@@ -216,39 +222,18 @@
     <div class="topbar">
       <div>
         <h1>Orchestrator</h1>
-        <div class="small">Multi-workspace control (collapsed list by default)</div>
+        <div class="small">Multi-workspace control</div>
       </div>
 
       <div class="row">
-        <span class="pill" title="Orchestrator Base URL used by the UI">
+        <span class="pill" title="This page is talking to this orchestrator">
           <span class="dot ok"></span>
-          <span class="mono" id="baseUrlLabel"></span>
+          <span class="mono" id="originLabel"></span>
         </span>
         <button class="btnPrimary" id="btnOpenAdd">➕ Add Workspace</button>
       </div>
     </div>
 
-    <div class="card">
-      <div class="row">
-        <div style="min-width:320px; flex:1;">
-          <label>Orchestrator Base URL</label>
-          <input id="baseUrl" type="text" />
-        </div>
-        <div style="min-width:220px;">
-          <label>Auto-refresh</label>
-          <div class="row">
-            <label style="margin:0; display:flex; gap:10px; align-items:center;">
-              <input id="autoPoll" type="checkbox" checked />
-              <span class="small">Status every 1s</span>
-            </label>
-          </div>
-          <label style="margin-top:10px; display:flex; gap:10px; align-items:center;">
-            <input id="autoLogs" type="checkbox" />
-            <span class="small">Logs for expanded items</span>
-          </label>
-        </div>
-      </div>
-    </div>
 
     <div class="card">
       <div class="row">
@@ -284,7 +269,7 @@
         <div class="grid3">
           <div>
             <label>Workspace Name</label>
-            <input id="m_wsName" type="text" placeholder="printer" />
+            <input id="m_wsName" type="text" placeholder="workspace" />
           </div>
           <div>
             <label>Port</label>
@@ -292,13 +277,19 @@
           </div>
           <div>
             <label>Display Label (optional)</label>
-            <input id="m_wsLabel" type="text" placeholder="Printer demo" />
+            <input id="m_wsLabel" type="text" placeholder="Workspace demo" />
           </div>
         </div>
 
         <div style="margin-top: 8px;">
-          <label>Path to main.py</label>
-          <input id="m_wsPath" type="text" value="/home/dorna/Downloads/workspace/workspace/projects/printer/main.py" />
+          <label>Path to the workspace file</label>
+          <input id="m_wsPath" type="text" value="/home/dorna/Downloads/workspace/workspace/projects/project_name/main.py" />
+        </div>
+
+        <div style="margin-top: 8px;">
+          <label>Node URL (optional) — leave empty for this orchestrator</label>
+          <input id="m_nodeUrl" type="text" />
+          <div class="hint">Leave empty = this same orchestrator. Set it to another machine’s orchestrator URL to control remote.</div>
         </div>
       </div>
 
@@ -312,16 +303,13 @@
 <script>
   function $(id){ return document.getElementById(id); }
 
-  // ======= endpoints / knobs =======
-  const STORE_KEY = "orchestrator_workspaces_v1";
+  const STORE_KEY = "orchestrator_workspaces_v5";
   const POLL_MS = 1000;
-
-  // If your logs endpoint differs, change this one line:
-  // Example alternative: `/workspace/${name}/log` or `/workspace/${name}/tail`
   const LOGS_PATH = (name) => `/workspace/${encodeURIComponent(name)}/logs?tail=200`;
+  const ORIGIN = window.location.origin;
 
-  // ======= state =======
-  let wss = []; // [{name, label, path_to_file, port, expanded, lastStatus, lastLogs, loadedHint}]
+  let wss = [];
+
   function loadStore(){
     try{
       const raw = localStorage.getItem(STORE_KEY);
@@ -330,31 +318,19 @@
       return Array.isArray(arr) ? arr : [];
     }catch{ return []; }
   }
+
   function saveStore(){
     localStorage.setItem(STORE_KEY, JSON.stringify(wss.map(ws => ({
       name: ws.name,
       label: ws.label || "",
       path_to_file: ws.path_to_file || "",
-      port: ws.port || 0
+      port: ws.port || 0,
+      node_url: ws.node_url || ""
     }))));
   }
 
-  // ======= base url =======
-  function base(){
-    return $("baseUrl").value.replace(/\/+$/, "");
-  }
-  function setBaseLabel(){
-    $("baseUrlLabel").textContent = base();
-  }
-
-  // Auto-set base URL to page origin (perfect if served by Tornado)
-  $("baseUrl").value = window.location.origin;
-  setBaseLabel();
-  $("baseUrl").addEventListener("input", setBaseLabel);
-
-  // ======= api =======
   async function api(path, opts = {}) {
-    const url = base() + path;
+    const url = ORIGIN + path;
     const res = await fetch(url, {
       ...opts,
       headers: { "Content-Type": "application/json", ...(opts.headers || {}) }
@@ -375,23 +351,20 @@
     $("debugOut").textContent = JSON.stringify(obj, null, 2);
   }
 
-  // ======= ui helpers =======
   function dotClassFromState(state){
     const s = String(state || "").toUpperCase();
     if (["RUNNING","ACTIVE"].includes(s)) return "ok";
     if (["IDLE","READY","WAITING","PAUSED"].includes(s)) return "warn";
-    if (["ERROR","FAILED","OFFLINE"].includes(s)) return "bad";
+    if (["ERROR","FAILED","OFFLINE","REMOTE_OFFLINE"].includes(s)) return "bad";
     return "warn";
   }
 
-  // "Loaded" means: launch happened and workspace exists in orchestrator.
-  // We use a mix of: last successful launch cmd OR status state being not OFFLINE/UNKNOWN/NOT_FOUND.
   function isLoaded(ws){
     if (ws.loadedHint) return true;
     const st = ws.lastStatus || {};
     const s = String(st.state || "").toUpperCase();
     if (!s) return false;
-    if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED"].includes(s)) return false;
+    if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s)) return false;
     return true;
   }
 
@@ -400,12 +373,20 @@
     return ["RUNNING","ACTIVE"].includes(s);
   }
 
-  function isIdle(ws){
-    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
-    return ["IDLE","READY","WAITING","PAUSED"].includes(s);
+  function effectiveNodeUrl(ws){
+    const v = (ws.node_url || "").trim();
+    return v ? v.replace(/\/+$/,"") : ORIGIN;
   }
 
-  // ======= rendering =======
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
   function render(){
     $("wsCount").textContent = `(${wss.length})`;
     const list = $("wsList");
@@ -439,15 +420,21 @@
       chev.textContent = "›";
 
       const nm = document.createElement("div");
-      nm.innerHTML = `<div class="wsName">${escapeHtml(ws.name)}${ws.label ? ` <span class="small">(${escapeHtml(ws.label)})</span>` : ""}</div>
-                      <div class="small mono">${escapeHtml(ws.path_to_file || "")}</div>`;
+      nm.innerHTML = `
+        <div class="wsName">
+          ${escapeHtml(ws.name)}
+          ${ws.label ? ` <span class="small">(${escapeHtml(ws.label)})</span>` : ""}
+        </div>
+        <div class="small mono">${escapeHtml(ws.path_to_file || "")}</div>
+      `;
 
       const meta = document.createElement("div");
       meta.className = "wsMeta";
-      const pill = document.createElement("span");
-      pill.className = "pill";
-      pill.innerHTML = `<span class="dot ${dotClassFromState(state)}"></span><span>${escapeHtml(String(state))}</span>`;
-      meta.appendChild(pill);
+
+      const pillState = document.createElement("span");
+      pillState.className = "pill";
+      pillState.innerHTML = `<span class="dot ${dotClassFromState(state)}"></span><span>${escapeHtml(String(state))}</span>`;
+      meta.appendChild(pillState);
 
       if (lastErr){
         const err = document.createElement("span");
@@ -475,14 +462,12 @@
       const body = document.createElement("div");
       body.className = "wsBody";
 
-      // controls (state-based)
       const controls = document.createElement("div");
       controls.className = "controls";
 
       const loaded = isLoaded(ws);
 
       if (!loaded){
-        // Only Launch before being loaded
         controls.appendChild(makeBtn("🚀 Launch", async () => {
           await runCmd(ws, "launch");
           ws.loadedHint = true;
@@ -491,8 +476,6 @@
         }, {primary:true}));
       } else {
         controls.appendChild(makeBtn("▶ Start / Resume", async () => {
-          // your backend supports "start" and/or "resume"
-          // We'll try "start" first; if it errors you can swap to "resume"
           await runCmd(ws, "start");
           await refreshStatus(ws);
           render();
@@ -506,8 +489,6 @@
 
         controls.appendChild(makeBtn("☠ Kill", async () => {
           await runCmd(ws, "kill");
-          // after kill, probably not "loaded" anymore depends on your backend,
-          // but we keep loadedHint true so you still see advanced controls if status exists
           await refreshStatus(ws);
           render();
         }, {danger:true}));
@@ -521,19 +502,13 @@
 
       body.appendChild(controls);
 
-      // Timing (started + uptime)
-      const startedAt = st.started_at || null;   // epoch seconds or ISO if you choose
+      // Timing
+      const startedAt = st.started_at || null;
       const uptimeS = st.uptime_s ?? null;
-
-      const timing = document.createElement("div");
-      timing.className = "small";
-      timing.style.margin = "6px 0 12px";
 
       function fmtAbs(v){
         if (!v) return "—";
-        // if epoch seconds
         if (typeof v === "number") return new Date(v * 1000).toLocaleString();
-        // if ISO string
         const t = Date.parse(String(v));
         if (!Number.isNaN(t)) return new Date(t).toLocaleString();
         return String(v);
@@ -549,13 +524,38 @@
         return `${mm}:${pad2(ss)}`;
       }
 
+      const timing = document.createElement("div");
+      timing.className = "small";
+      timing.style.margin = "6px 0 12px";
       timing.innerHTML = `
         <div><span class="mono">started</span>: ${escapeHtml(fmtAbs(startedAt))}</div>
         <div><span class="mono">uptime</span>: ${escapeHtml(fmtDur(uptimeS))}</div>
       `;
+
+      // ✅ Node/Port shown ONLY when expanded (they live inside wsBody)
+      const pills = document.createElement("div");
+      pills.className = "pillRow";
+
+      const pillNode = document.createElement("span");
+      pillNode.className = "pill";
+      pillNode.title = "Orchestrator node for this workspace";
+      pillNode.innerHTML =
+        `<span class="dot ok"></span>
+         <span class="mono">node</span>: <span class="mono">${escapeHtml(effectiveNodeUrl(ws))}</span>`;
+
+      const pillPort = document.createElement("span");
+      pillPort.className = "pill";
+      pillPort.title = "Workspace port";
+      pillPort.innerHTML =
+        `<span class="dot ok"></span>
+         <span class="mono">port</span>: <span class="mono">${escapeHtml(String(ws.port || ""))}</span>`;
+
+      pills.appendChild(pillNode);
+      pills.appendChild(pillPort);
+
+      timing.appendChild(pills);
       body.appendChild(timing);
-      
-      // Logs section (refresh belongs here)
+
       const title = document.createElement("div");
       title.className = "sectionTitle";
       title.innerHTML = `<h3>Logs</h3><span class="small">Refresh lives here</span><div class="spacer"></div>`;
@@ -571,15 +571,6 @@
       const pre = document.createElement("pre");
       pre.textContent = ws.lastLogs || "(no logs yet)";
       body.appendChild(pre);
-
-      // quick info
-      const info = document.createElement("div");
-      info.className = "small";
-      info.style.marginTop = "10px";
-      info.innerHTML = `
-        <div><span class="mono">port</span>: ${escapeHtml(String(ws.port || ""))}</div>
-      `;
-      body.appendChild(info);
 
       item.appendChild(head);
       item.appendChild(body);
@@ -598,31 +589,21 @@
       if (b.disabled) return;
       b.disabled = true;
       try { await fn(); }
-      catch (err){
-        dbg({ error: String(err) });
-      } finally {
-        b.disabled = false;
-      }
+      catch (err){ dbg({ error: String(err) }); }
+      finally { b.disabled = false; }
     };
     return b;
   }
 
-  function escapeHtml(s){
-    return String(s)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
-  }
-
-  // ======= workspace actions =======
   async function addWorkspace(ws){
     const payload = {
       name: ws.name,
       path_to_file: ws.path_to_file,
       port: Number(ws.port)
     };
+    const nodeUrl = (ws.node_url || "").trim();
+    if (nodeUrl) payload.node_url = nodeUrl;
+
     const j = await api("/add_workspace", { method:"POST", body: JSON.stringify(payload) });
     dbg({ action: "add_workspace", payload, response: j });
     return j;
@@ -651,7 +632,6 @@
   async function refreshLogs(ws){
     try{
       const j = await api(LOGS_PATH(ws.name), { method:"GET" });
-      // Accept either {text:"..."} or raw string
       if (typeof j === "string") ws.lastLogs = j;
       else if (j && typeof j.text === "string") ws.lastLogs = j.text;
       else ws.lastLogs = JSON.stringify(j, null, 2);
@@ -662,22 +642,16 @@
     }
   }
 
-  // ======= polling =======
   async function poll(){
-    if ($("autoPoll").checked){
-      await Promise.all(wss.map(ws => refreshStatus(ws)));
-    }
-    if ($("autoLogs").checked){
-      // refresh logs only for expanded items to avoid load
-      const ex = wss.filter(ws => ws.expanded);
-      await Promise.all(ex.map(ws => refreshLogs(ws)));
-    }
+    await Promise.all(wss.map(ws => refreshStatus(ws)));
+    const ex = wss.filter(ws => ws.expanded);
+    await Promise.all(ex.map(ws => refreshLogs(ws)));
     render();
   }
 
-  // ======= modal =======
   function openModal(){
     $("modalOverlay").classList.add("show");
+    $("m_nodeUrl").value = "";
     $("m_wsName").focus();
   }
   function closeModal(){
@@ -697,21 +671,17 @@
     const port = Number($("m_wsPort").value);
     const path = $("m_wsPath").value.trim();
     const label = $("m_wsLabel").value.trim();
+    const nodeUrl = ($("m_nodeUrl").value || "").trim();
 
-    if (!name){
-      dbg({ error: "Workspace name is required" });
-      return;
-    }
-    if (!path){
-      dbg({ error: "Path to main.py is required" });
-      return;
-    }
+    if (!name){ dbg({ error: "Workspace name is required" }); return; }
+    if (!path){ dbg({ error: "Path to workspace is required" }); return; }
 
     const ws = {
       name,
       label,
       port,
       path_to_file: path,
+      node_url: nodeUrl,
       expanded: false,
       lastStatus: { state: "unknown" },
       lastLogs: "",
@@ -719,14 +689,11 @@
     };
 
     try{
-      // Add workspace in orchestrator first
       await addWorkspace(ws);
 
-      // Put it in list (top), collapsed by default
       wss.unshift(ws);
       saveStore();
 
-      // Immediately refresh status + render
       await refreshStatus(ws);
       render();
       closeModal();
@@ -742,22 +709,23 @@
 
   $("btnClearDebug").onclick = () => dbg({});
 
-  // ======= init =======
   (function init(){
-    // load from localStorage
+    $("originLabel").textContent = ORIGIN;
+    $("m_nodeUrl").placeholder = ORIGIN;
+
     const stored = loadStore();
     wss = stored.map(s => ({
       name: s.name,
       label: s.label || "",
       port: Number(s.port || 0),
       path_to_file: s.path_to_file || "",
+      node_url: (s.node_url || "").trim(),
       expanded: false,
       lastStatus: { state: "unknown" },
       lastLogs: "",
       loadedHint: false
     }));
 
-    // initial poll
     poll();
     setInterval(poll, POLL_MS);
   })();
