@@ -6,7 +6,7 @@ import socketio
 
 
 class Display:
-    def __init__(self, workspace, server_url="http://127.0.0.1:5000", fps=60, debug=False):
+    def __init__(self, workspace, port=8000, fps=60, debug=False):
         """
         Non-blocking display:
         - Does NOT block Workspace.__init__()
@@ -14,7 +14,7 @@ class Display:
         - Sends pose frames with backpressure (ACK-based)
         """
         self.workspace = workspace
-        self.SERVER = server_url
+        self.SERVER = f"http://127.0.0.1:{port}"
 
         # target FPS for pose sending
         self.fps = max(1, int(fps))

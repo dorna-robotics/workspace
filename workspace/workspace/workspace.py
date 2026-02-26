@@ -11,7 +11,7 @@ from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
 
 
 class Workspace:
-    def __init__(self, config_path="config/config.yaml"):
+    def __init__(self, config_path="config/config.yaml", port: int = 8000):
 
         # --- normalize to list ---
         if isinstance(config_path, (str, Path)):
@@ -61,7 +61,8 @@ class Workspace:
             )
 
         # 3) start Display (it will pull poses from compute_world_poses())
-        self.display = Display(self)
+        self.port = int(port)
+        self.display = Display(self, port=self.port)
         self.display.start()
 
 

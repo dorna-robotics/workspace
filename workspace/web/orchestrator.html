@@ -360,17 +360,29 @@
   }
 
   function isLoaded(ws){
-    if (ws.loadedHint) return true;
     const st = ws.lastStatus || {};
     const s = String(st.state || "").toUpperCase();
+
+    // If backend says it's not running/available, it's NOT loaded no matter what hint says
     if (!s) return false;
     if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s)) return false;
+
+    // Otherwise allow the hint to count as loaded
     return true;
+  }
+
+  function nearBottom(el, slack = 6){
+    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= slack;
   }
 
   function isRunning(ws){
     const s = String((ws.lastStatus||{}).state || "").toUpperCase();
     return ["RUNNING","ACTIVE"].includes(s);
+  }
+
+  function canRemove(ws){
+    const s = String((ws.lastStatus || {}).state || "").toUpperCase();
+    return ["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s);
   }
 
   function effectiveNodeUrl(ws){
@@ -390,6 +402,17 @@
   function render(){
     $("wsCount").textContent = `(${wss.length})`;
     const list = $("wsList");
+
+    // ✅ save scroll positions before we rebuild DOM
+    const scrollMap = new Map();
+    list.querySelectorAll('pre[data-ws]').forEach(pre => {
+      const name = pre.getAttribute("data-ws");
+      scrollMap.set(name, {
+        top: pre.scrollTop,
+        follow: nearBottom(pre)
+      });
+    });
+
     list.innerHTML = "";
 
     if (!wss.length){
@@ -447,12 +470,21 @@
       const rm = document.createElement("button");
       rm.className = "btnDanger";
       rm.textContent = "Remove";
+
+      const removable = canRemove(ws);
+      rm.disabled = !removable;
+      rm.title = removable
+        ? "Remove this workspace from the list"
+        : "Disabled: workspace must be stopped/killed/offline before removing (otherwise you lose control).";
+
       rm.onclick = (e) => {
         e.stopPropagation();
+        if (rm.disabled) return;
         wss.splice(idx, 1);
         saveStore();
         render();
       };
+
       meta.appendChild(rm);
 
       head.appendChild(chev);
@@ -487,13 +519,14 @@
           render();
         }, {disabled: !isRunning(ws)}));
 
-        controls.appendChild(makeBtn("☠ Kill", async () => {
+        controls.appendChild(makeBtn("✖ Kill", async () => {
           await runCmd(ws, "kill");
+          ws.loadedHint = false;
           await refreshStatus(ws);
           render();
         }, {danger:true}));
 
-        controls.appendChild(makeBtn("↻ Restart", async () => {
+        controls.appendChild(makeBtn("↻ Relaunch", async () => {
           await runCmd(ws, "restart");
           await refreshStatus(ws);
           render();
@@ -532,26 +565,55 @@
         <div><span class="mono">uptime</span>: ${escapeHtml(fmtDur(uptimeS))}</div>
       `;
 
-      // ✅ Node/Port shown ONLY when expanded (they live inside wsBody)
+
+      // ✅ Clickable Node / URL pills
       const pills = document.createElement("div");
       pills.className = "pillRow";
 
-      const pillNode = document.createElement("span");
-      pillNode.className = "pill";
-      pillNode.title = "Orchestrator node for this workspace";
-      pillNode.innerHTML =
-        `<span class="dot ok"></span>
-         <span class="mono">node</span>: <span class="mono">${escapeHtml(effectiveNodeUrl(ws))}</span>`;
+      const nodeBase = effectiveNodeUrl(ws); // e.g. http://192.168.254.105:5000
 
-      const pillPort = document.createElement("span");
-      pillPort.className = "pill";
-      pillPort.title = "Workspace port";
-      pillPort.innerHTML =
+      // Build workspace URL by REPLACING the port, not appending another one
+      let wsUrl = "";
+      try {
+        const u = new URL(nodeBase);
+        u.port = String(ws.port || "");
+        u.pathname = "/";   // optional: keep it clean
+        u.search = "";
+        u.hash = "";
+        wsUrl = u.origin;   // e.g. http://192.168.254.105:8000
+      } catch {
+        // fallback (shouldn't happen if nodeBase is a proper URL)
+        wsUrl = nodeBase;
+      }
+      function pillLink(href, html, title){
+        const a = document.createElement("a");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "pill";
+        a.title = title || href;
+        a.style.textDecoration = "none";
+        a.style.color = "inherit";
+        a.innerHTML = html;
+        return a;
+      }
+
+      const pillNode = pillLink(
+        nodeBase,
         `<span class="dot ok"></span>
-         <span class="mono">port</span>: <span class="mono">${escapeHtml(String(ws.port || ""))}</span>`;
+         <span class="mono">node</span>: <span class="mono">${escapeHtml(nodeBase)}</span>`,
+        "Open node in new tab"
+      );
+
+      const pillUrl = pillLink(
+        wsUrl,
+        `<span class="dot ok"></span>
+         <span class="mono">url</span>: <span class="mono">${escapeHtml(wsUrl)}</span>`,
+        "Open workspace in new tab"
+      );
 
       pills.appendChild(pillNode);
-      pills.appendChild(pillPort);
+      pills.appendChild(pillUrl);
 
       timing.appendChild(pills);
       body.appendChild(timing);
@@ -569,8 +631,19 @@
       body.appendChild(title);
 
       const pre = document.createElement("pre");
+      pre.setAttribute("data-ws", ws.name);
       pre.textContent = ws.lastLogs || "(no logs yet)";
       body.appendChild(pre);
+
+      // ✅ Restore scroll (or follow tail if user was at bottom)
+      const prev = scrollMap.get(ws.name);
+      requestAnimationFrame(() => {
+        if (prev && !prev.follow){
+          pre.scrollTop = prev.top;
+        } else {
+          pre.scrollTop = pre.scrollHeight; // follow newest
+        }
+      });
 
       item.appendChild(head);
       item.appendChild(body);

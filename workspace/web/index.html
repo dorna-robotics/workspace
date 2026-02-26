@@ -611,7 +611,7 @@
                 registerPickables(gltf.scene);
               },
               undefined,
-              () => { /* ignore errors for now */ }
+              (err) => { console.log("GLB load failed:", spec.meshUrl, err); }
             );
           }
         }
@@ -695,10 +695,11 @@
       });
 
       socket.on("scene_update", (payload) => {
-        if (!payload || typeof payload !== "object") return;
-        for (const [n, s] of Object.entries(payload)) {
-          upsertObject(n, s || {});
-        }
+        const entries = Object.entries(payload || {});
+        const withMesh = entries.filter(([, s]) => s && s.meshUrl).length;
+        console.log("scene_update keys:", entries.length, "with meshUrl:", withMesh);
+
+        for (const [n, s] of entries) upsertObject(n, s || {});
       });
 
       // --- Animate (keep anchors & badges sticky) ---
