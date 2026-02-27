@@ -372,6 +372,23 @@ class AddWorkspaceHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
+class WorkspacesListHandler(tornado.web.RequestHandler):
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        out = []
+        for name, ws in self.orch.workspaces.items():
+            out.append({
+                "name": ws.name,
+                "path_to_file": ws.path_to_file,
+                "port": ws.port,
+                "node_url": ws.node_url or "",
+                "label": "",  # UI-only today; you can wire it later if you want
+            })
+        self.write({"workspaces": out})
+
+
 class WorkspaceCmdHandler(tornado.web.RequestHandler):
     def initialize(self, orch: Orchestrator):
         self.orch = orch
@@ -450,6 +467,7 @@ class OrchestratorHTTPServer:
             (r"/web/(.*)", tornado.web.StaticFileHandler, {"path": web_dir}),
 
             # ---- API ----
+            (r"/workspaces", WorkspacesListHandler, dict(orch=self.orch)),
             (r"/add_workspace", AddWorkspaceHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/cmd", WorkspaceCmdHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),

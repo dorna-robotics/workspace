@@ -611,9 +611,9 @@
          <span class="mono">url</span>: <span class="mono">${escapeHtml(wsUrl)}</span>`,
         "Open workspace in new tab"
       );
-
-      pills.appendChild(pillNode);
+      
       pills.appendChild(pillUrl);
+      pills.appendChild(pillNode);
 
       timing.appendChild(pills);
       body.appendChild(timing);
@@ -680,6 +680,23 @@
     const j = await api("/add_workspace", { method:"POST", body: JSON.stringify(payload) });
     dbg({ action: "add_workspace", payload, response: j });
     return j;
+  }
+
+  async function loadFromBackend(){
+    const j = await api("/workspaces", { method:"GET" });
+    const arr = (j && Array.isArray(j.workspaces)) ? j.workspaces : [];
+
+    wss = arr.map(s => ({
+      name: s.name,
+      label: s.label || "",
+      port: Number(s.port || 0),
+      path_to_file: s.path_to_file || "",
+      node_url: (s.node_url || "").trim(),
+      expanded: false,
+      lastStatus: { state: "unknown" },
+      lastLogs: "",
+      loadedHint: false
+    }));
   }
 
   async function runCmd(ws, cmd){
@@ -782,24 +799,12 @@
 
   $("btnClearDebug").onclick = () => dbg({});
 
-  (function init(){
+  (async function init(){
     $("originLabel").textContent = ORIGIN;
     $("m_nodeUrl").placeholder = ORIGIN;
 
-    const stored = loadStore();
-    wss = stored.map(s => ({
-      name: s.name,
-      label: s.label || "",
-      port: Number(s.port || 0),
-      path_to_file: s.path_to_file || "",
-      node_url: (s.node_url || "").trim(),
-      expanded: false,
-      lastStatus: { state: "unknown" },
-      lastLogs: "",
-      loadedHint: false
-    }));
-
-    poll();
+    await loadFromBackend();   // ✅ backend is source of truth
+    await poll();
     setInterval(poll, POLL_MS);
   })();
 </script>
