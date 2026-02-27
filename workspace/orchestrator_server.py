@@ -1,10 +1,11 @@
 # orchestrator_server.py
+import shlex
 import os
 import json
 import subprocess
 import time
 from threading import Thread
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import requests
 import tornado.web
@@ -12,13 +13,44 @@ import tornado.ioloop
 
 # -------------------- Workspace Orchestrator --------------------
 
+ORCH_TOKEN = os.environ.get("ORCH_TOKEN", "").strip()  # if empty => auth disabled
+REG_PATH = os.environ.get("ORCH_REG_PATH", "/tmp/orchestrator_registry.json")
+MAX_LOG_BYTES = int(os.environ.get("ORCH_MAX_LOG_BYTES", str(2 * 1024 * 1024)))  # 2MB
+
+
+def _now_str():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _truncate_log_if_needed(path: str, max_bytes: int):
+    try:
+        if max_bytes <= 0:
+            return
+        if not os.path.isfile(path):
+            return
+        sz = os.path.getsize(path)
+        if sz <= max_bytes:
+            return
+        keep = max_bytes // 2
+        with open(path, "rb") as f:
+            f.seek(max(0, sz - keep))
+            tail = f.read()
+        with open(path, "wb") as f:
+            f.write(b"--- LOG TRUNCATED " + _now_str().encode("utf-8") + b" ---\n")
+            f.write(tail)
+    except Exception:
+        # never crash orchestrator due to log housekeeping
+        pass
+
 
 class WorkspaceInfo:
     """Holds workspace process info and metadata."""
-    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None):
+    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = "", args: str = ""):
         self.name = name
         self.path_to_file = path_to_file
-        self.port = port
+        self.port = int(port)
+        self.label = label or ""
+        self.args = (args or "").strip()
 
         # If set => this workspace is remote, and commands/status/logs are proxied to that orchestrator
         self.node_url: Optional[str] = node_url.strip().rstrip("/") if node_url else None
@@ -36,41 +68,121 @@ class WorkspaceInfo:
     def is_remote(self) -> bool:
         return bool(self.node_url)
 
+    def to_dict(self) -> Dict:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "path_to_file": self.path_to_file,
+            "port": self.port,
+            "node_url": self.node_url or "",
+        }
+
 
 class Orchestrator:
     """Manages multiple workspaces as local OS processes OR remote orchestrator proxies."""
     def __init__(self):
         self.workspaces: Dict[str, WorkspaceInfo] = {}
 
+    # ---------------- Persistence ----------------
+
+    def save_registry(self):
+        data = {
+            "version": 1,
+            "saved_at": time.time(),
+            "workspaces": [ws.to_dict() for ws in self.workspaces.values()],
+        }
+        tmp = REG_PATH + ".tmp"
+        os.makedirs(os.path.dirname(REG_PATH) or ".", exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, REG_PATH)
+
+    def load_registry(self):
+        if not os.path.isfile(REG_PATH):
+            return
+        try:
+            with open(REG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            arr = data.get("workspaces", [])
+            if not isinstance(arr, list):
+                return
+            for item in arr:
+                try:
+                    self.add_workspace(
+                        name=item["name"],
+                        path_to_file=item.get("path_to_file", ""),
+                        port=int(item.get("port", 0)),
+                        node_url=item.get("node_url") or None,
+                        label=item.get("label", "") or "",
+                        sync_remote=False,   # IMPORTANT: don't re-add remotely on startup
+                        persist=False,       # we'll persist once after bulk load
+                    )
+                except Exception:
+                    # keep loading others
+                    pass
+            self.save_registry()
+        except Exception:
+            pass
+
     # ---------------- Workspace management ----------------
 
-    def add_workspace(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None):
+    def add_workspace(
+        self,
+        name: str,
+        path_to_file: str,
+        port: int,
+        node_url: Optional[str] = None,
+        label: str = "",
+        args: str = "",
+        sync_remote: bool = True,
+        persist: bool = True,
+    ):
         if name in self.workspaces:
             raise ValueError(f"Workspace {name} already exists.")
 
-        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=port, node_url=node_url)
+        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=int(port), node_url=node_url, label=label, args=args)
 
         # Local workspace must have a valid file path
         if not ws.is_remote():
             if not os.path.isfile(path_to_file):
                 raise FileNotFoundError(f"{path_to_file} does not exist.")
 
-        # For remote, we try to add the workspace on the remote orchestrator too
-        # (so the remote node knows about it)
-        if ws.is_remote():
-            payload = {"name": name, "path_to_file": path_to_file, "port": int(port)}
+        # For remote, optionally add the workspace on the remote orchestrator too
+        if ws.is_remote() and sync_remote:
+            payload = {"name": name, "path_to_file": path_to_file, "port": int(port), "args": (args or "").strip()}
+            if label:
+                payload["label"] = label
             try:
-                r = requests.post(f"{ws.node_url}/add_workspace", json=payload, timeout=4)
+                hdrs = {}
+                if ORCH_TOKEN:
+                    hdrs["X-Orch-Token"] = ORCH_TOKEN
+                r = requests.post(f"{ws.node_url}/add_workspace", json=payload, timeout=6, headers=hdrs)
                 r.raise_for_status()
             except Exception as e:
                 raise RuntimeError(f"Failed to add workspace on remote node {ws.node_url}: {e}")
 
         self.workspaces[name] = ws
+        if persist:
+            self.save_registry()
+
+    def remove_workspace(self, name: str):
+        if name not in self.workspaces:
+            raise ValueError(f"Unknown workspace: {name}")
+        ws = self.workspaces[name]
+        # Safety: refuse removing launched/running workspace
+        if not ws.is_remote() and self.is_launched(name):
+            raise RuntimeError("Refuse to remove: workspace is launched/running. Kill it first.")
+        # Remote: you may still want to keep it registered remotely; we won't delete remotely here.
+        del self.workspaces[name]
+        self.save_registry()
+        return {"status": "ok", "removed": True, "name": name}
+
+    def list_workspaces(self) -> List[Dict]:
+        return [ws.to_dict() for ws in self.workspaces.values()]
 
     def is_launched(self, name: str) -> bool:
         ws = self.workspaces[name]
         if ws.is_remote():
-            # "launched" is a node concept; master will infer from /status
             return False
         return ws.process is not None and ws.process.poll() is None
 
@@ -89,16 +201,17 @@ class Orchestrator:
         if self.is_launched(name):
             return
 
-        cmd = ["sudo", "python3", ws.path_to_file]
+        cmd = ["sudo", "python3", ws.path_to_file, "--port", str(ws.port)]
+        if ws.args:
+            cmd += shlex.split(ws.args)
 
-        env = os.environ.copy()
-        env["PORT"] = str(ws.port)  # workspace main.py should read this
+        env = os.environ.copy()  # keep env normal; no PORT needed anymore
+        
+        # log cap + append marker
+        _truncate_log_if_needed(ws.log_path, MAX_LOG_BYTES)
 
-        # Append logs so you can see past runs
         log_f = open(ws.log_path, "a", buffering=1)
-        log_f.write(
-            f"\n--- LAUNCH {time.strftime('%Y-%m-%d %H:%M:%S')} cmd={cmd} port={ws.port} ---\n"
-        )
+        log_f.write(f"\n--- LAUNCH {_now_str()} cmd={cmd} port={ws.port} ---\n")
 
         ws.process = subprocess.Popen(
             cmd,
@@ -109,20 +222,18 @@ class Orchestrator:
             text=True,
         )
 
-        # Start timer at launch (what you asked for)
         ws.started_at = time.time()
         ws.last_error = None
 
     def wait_until_ready(self, name: str, timeout: float = 8.0) -> bool:
         """
-        Wait until workspace runtime server responds on /status (LOCAL only).
+        Wait until workspace responds on /healthz (LOCAL only).
         """
         ws = self.workspaces[name]
         if ws.is_remote():
-            # master doesn't wait for remote runtime directly
             return True
 
-        url = f"http://127.0.0.1:{ws.port}/status"
+        url = f"http://127.0.0.1:{ws.port}/healthz"
         t0 = time.time()
         while time.time() - t0 < timeout:
             if ws.process is not None and ws.process.poll() is not None:
@@ -142,23 +253,25 @@ class Orchestrator:
         assert ws.node_url
         return f"{ws.node_url}{path}"
 
+    def _auth_headers(self) -> Dict[str, str]:
+        return {"X-Orch-Token": ORCH_TOKEN} if ORCH_TOKEN else {}
+
     def _proxy_cmd_to_node(self, ws: WorkspaceInfo, cmd: str):
         url = self._orch_url(ws, f"/workspace/{requests.utils.quote(ws.name)}/cmd")
-        r = requests.post(url, json={"cmd": cmd}, timeout=6)
+        r = requests.post(url, json={"cmd": cmd}, timeout=10, headers=self._auth_headers())
         r.raise_for_status()
         return r.json()
 
     def _proxy_status_from_node(self, ws: WorkspaceInfo):
         url = self._orch_url(ws, f"/workspace/{requests.utils.quote(ws.name)}/status")
-        r = requests.get(url, timeout=6)
+        r = requests.get(url, timeout=8, headers=self._auth_headers())
         r.raise_for_status()
         return r.json()
 
     def _proxy_logs_from_node(self, ws: WorkspaceInfo, tail: int = 200):
         url = self._orch_url(ws, f"/workspace/{requests.utils.quote(ws.name)}/logs?tail={int(tail)}")
-        r = requests.get(url, timeout=6)
+        r = requests.get(url, timeout=8, headers=self._auth_headers())
         r.raise_for_status()
-        # expect {"text": "..."}
         return r.json()
 
     # ---------------- Public Commands ----------------
@@ -166,14 +279,11 @@ class Orchestrator:
     def launch_workspace(self, name: str):
         ws = self.workspaces[name]
 
-        # Remote: forward launch to that node orchestrator
         if ws.is_remote():
             out = self._proxy_cmd_to_node(ws, "launch")
-            # attach master hint
             out["_orch"] = {"node_url": ws.node_url, "mode": "remote"}
             return out
 
-        # Local: existing behavior
         if self.is_launched(name):
             ready = self.wait_until_ready(name, timeout=1.0)
             return {
@@ -207,11 +317,9 @@ class Orchestrator:
     def stop_workspace(self, name: str):
         ws = self.workspaces[name]
 
-        # Remote: forward kill to node orchestrator
         if ws.is_remote():
             return self._proxy_cmd_to_node(ws, "kill")
 
-        # Local: stop process
         if ws.process is None or ws.process.poll() is not None:
             ws.process = None
             ws.started_at = None
@@ -226,16 +334,14 @@ class Orchestrator:
         ws.process = None
         ws.started_at = None
 
-    def restart_workspace(self, name: str):
+    def relaunch_workspace(self, name: str):
         ws = self.workspaces[name]
 
-        # Remote: forward restart
         if ws.is_remote():
-            out = self._proxy_cmd_to_node(ws, "restart")
+            out = self._proxy_cmd_to_node(ws, "restart")  # keep cmd name for compatibility
             out["_orch"] = {"node_url": ws.node_url, "mode": "remote"}
             return out
 
-        # Local: kill + launch
         self.stop_workspace(name)
         return self.launch_workspace(name)
 
@@ -243,18 +349,15 @@ class Orchestrator:
 
     def _send_runtime_cmd_local(self, ws: WorkspaceInfo, cmd: str):
         url = f"http://127.0.0.1:{ws.port}/cmd"
-        r = requests.post(url, json={"cmd": cmd}, timeout=3)
+        r = requests.post(url, json={"cmd": cmd}, timeout=4)
         r.raise_for_status()
         return r.json()
 
     def start_runtime(self, name: str):
         ws = self.workspaces[name]
-
-        # Remote: orchestrator on node will handle prerequisites
         if ws.is_remote():
             return self._proxy_cmd_to_node(ws, "start")
 
-        # Local:
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched. Send cmd=launch first.")
         if not self.wait_until_ready(name, timeout=2.0):
@@ -280,7 +383,6 @@ class Orchestrator:
     def get_status(self, name: str):
         ws = self.workspaces[name]
 
-        # Remote: pass-through node status
         if ws.is_remote():
             try:
                 out = self._proxy_status_from_node(ws)
@@ -288,13 +390,8 @@ class Orchestrator:
                 return out
             except Exception as e:
                 ws.last_error = f"Remote status failed: {e}"
-                return {
-                    "state": "REMOTE_OFFLINE",
-                    "last_error": ws.last_error,
-                    "_orch": {"node_url": ws.node_url, "mode": "remote"},
-                }
+                return {"state": "REMOTE_OFFLINE", "last_error": ws.last_error, "_orch": {"node_url": ws.node_url, "mode": "remote"}}
 
-        # Local: orchestrator-level status + runtime status if reachable
         uptime_s = (time.time() - ws.started_at) if ws.started_at else None
 
         if not self.is_launched(name):
@@ -310,15 +407,12 @@ class Orchestrator:
 
         url = f"http://127.0.0.1:{ws.port}/status"
         try:
-            r = requests.get(url, timeout=3)
+            r = requests.get(url, timeout=4)
             r.raise_for_status()
             out = r.json()
-
             out["started_at"] = ws.started_at
             out["uptime_s"] = uptime_s
             out["_orch"] = {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"}
-
-            # prefer runtime last_error, fallback to orchestrator last_error
             out["last_error"] = out.get("last_error") or ws.last_error
             return out
         except Exception as e:
@@ -336,13 +430,9 @@ class Orchestrator:
     def get_logs(self, name: str, tail: int = 200) -> Dict:
         ws = self.workspaces[name]
 
-        # Remote: pass-through node logs
         if ws.is_remote():
-            out = self._proxy_logs_from_node(ws, tail=tail)
-            # keep as {"text": "..."}
-            return out
+            return self._proxy_logs_from_node(ws, tail=tail)
 
-        # Local: read /tmp/<name>.log
         if not os.path.isfile(ws.log_path):
             return {"text": ""}
 
@@ -351,49 +441,79 @@ class Orchestrator:
         return {"text": "".join(lines)}
 
 
+# -------------------- Auth base --------------------
+
+class AuthedHandler(tornado.web.RequestHandler):
+    def require_auth(self) -> bool:
+        if not ORCH_TOKEN:
+            return True  # auth disabled
+        tok = self.request.headers.get("X-Orch-Token", "")
+        return tok == ORCH_TOKEN
+
+    def ensure_auth(self) -> bool:
+        if self.require_auth():
+            return True
+        self.set_status(401)
+        self.write({"error": "Unauthorized"})
+        return False
+
+
 # -------------------- Tornado Handlers --------------------
-
-class AddWorkspaceHandler(tornado.web.RequestHandler):
-    def initialize(self, orch: Orchestrator):
-        self.orch = orch
-
-    async def post(self):
-        try:
-            data = json.loads(self.request.body.decode())
-            name = data["name"]
-            path_to_file = data["path_to_file"]
-            port = int(data["port"])
-            node_url = data.get("node_url")  # optional
-
-            self.orch.add_workspace(name, path_to_file, port, node_url=node_url)
-            self.write({"status": "ok"})
-        except Exception as e:
-            self.set_status(400)
-            self.write({"error": str(e)})
-
 
 class WorkspacesListHandler(tornado.web.RequestHandler):
     def initialize(self, orch: Orchestrator):
         self.orch = orch
 
     async def get(self):
-        out = []
-        for name, ws in self.orch.workspaces.items():
-            out.append({
-                "name": ws.name,
-                "path_to_file": ws.path_to_file,
-                "port": ws.port,
-                "node_url": ws.node_url or "",
-                "label": "",  # UI-only today; you can wire it later if you want
-            })
-        self.write({"workspaces": out})
+        self.write({"workspaces": self.orch.list_workspaces()})
 
 
-class WorkspaceCmdHandler(tornado.web.RequestHandler):
+class AddWorkspaceHandler(AuthedHandler):
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self):
+        if not self.ensure_auth():
+            return
+        try:
+            data = json.loads(self.request.body.decode())
+            args = data.get("args", "")
+            name = data["name"]
+            path_to_file = data["path_to_file"]
+            port = int(data["port"])
+            node_url = data.get("node_url")
+            label = data.get("label", "") or ""
+
+            self.orch.add_workspace(name, path_to_file, port, node_url=node_url, label=label, args=args, sync_remote=True, persist=True)
+            self.write({"status": "ok"})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class RemoveWorkspaceHandler(AuthedHandler):
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self):
+        if not self.ensure_auth():
+            return
+        try:
+            data = json.loads(self.request.body.decode())
+            name = data["name"]
+            self.write(self.orch.remove_workspace(name))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class WorkspaceCmdHandler(AuthedHandler):
     def initialize(self, orch: Orchestrator):
         self.orch = orch
 
     async def post(self, name):
+        if not self.ensure_auth():
+            return
         try:
             data = json.loads(self.request.body.decode())
             cmd = data["cmd"].lower()
@@ -412,8 +532,8 @@ class WorkspaceCmdHandler(tornado.web.RequestHandler):
             if cmd == "kill":
                 out = self.orch.stop_workspace(name) or {"status": "ok", "killed": True}
                 self.write(out); return
-            if cmd == "restart":
-                self.write(self.orch.restart_workspace(name)); return
+            if cmd in ("restart", "relaunch"):
+                self.write(self.orch.relaunch_workspace(name)); return
 
             raise ValueError("Unknown cmd")
         except Exception as e:
@@ -455,6 +575,8 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
 class OrchestratorHTTPServer:
     def __init__(self, host="0.0.0.0", port=9000):
         self.orch = Orchestrator()
+        self.orch.load_registry()
+
         self.host = host
         self.port = port
 
@@ -469,6 +591,7 @@ class OrchestratorHTTPServer:
             # ---- API ----
             (r"/workspaces", WorkspacesListHandler, dict(orch=self.orch)),
             (r"/add_workspace", AddWorkspaceHandler, dict(orch=self.orch)),
+            (r"/remove_workspace", RemoveWorkspaceHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/cmd", WorkspaceCmdHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
@@ -478,6 +601,11 @@ class OrchestratorHTTPServer:
         self.app.listen(self.port, address=self.host)
         print(f"Orchestrator server running on {self.host}:{self.port}")
         print(f"GUI: http://{self.host}:{self.port}/web/orchestrator.html")
+        if ORCH_TOKEN:
+            print("Auth: ENABLED (X-Orch-Token required for add/cmd/remove)")
+        else:
+            print("Auth: disabled (set ORCH_TOKEN to enable)")
+        print("Registry:", REG_PATH)
         tornado.ioloop.IOLoop.current().start()
 
     def run_in_thread(self):

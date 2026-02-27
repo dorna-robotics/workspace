@@ -86,7 +86,7 @@
     }
 
     label{ display:block; font-size: 12px; color: #444; margin: 10px 0 6px; }
-    input[type="text"], input[type="number"]{
+    input[type="text"], input[type="number"], input[type="password"]{
       width: 100%;
       padding: 10px;
       border: 1px solid #cfcfcf;
@@ -96,7 +96,6 @@
       background: #fff;
     }
 
-    /* Workspace list (collapsed by default) */
     .wsItem{
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -166,7 +165,6 @@
       margin: 0;
     }
 
-    /* Modal overlay */
     .modalOverlay{
       position: fixed; inset: 0;
       background: rgba(0,0,0,.35);
@@ -207,7 +205,6 @@
 
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    /* ✅ Node/Port pills shown only inside expanded body */
     .pillRow{
       display:flex;
       gap:10px;
@@ -234,12 +231,12 @@
       </div>
     </div>
 
-
     <div class="card">
       <div class="row">
         <strong>Workspaces</strong>
         <span class="small" id="wsCount"></span>
         <div class="spacer"></div>
+        <button id="btnReload">Reload</button>
         <button id="btnCollapseAll">Collapse all</button>
       </div>
 
@@ -277,7 +274,7 @@
           </div>
           <div>
             <label>Display Label (optional)</label>
-            <input id="m_wsLabel" type="text" placeholder="Workspace demo" />
+            <input id="m_wsLabel" type="text" placeholder="workspace_101" />
           </div>
         </div>
 
@@ -286,13 +283,38 @@
           <input id="m_wsPath" type="text" value="/home/dorna/Downloads/workspace/workspace/projects/project_name/main.py" />
         </div>
 
-        <div style="margin-top: 8px;">
-          <label>Node URL (optional) — leave empty for this orchestrator</label>
-          <input id="m_nodeUrl" type="text" />
-          <div class="hint">Leave empty = this same orchestrator. Set it to another machine’s orchestrator URL to control remote.</div>
+        <div class="row" style="margin-top: 10px;">
+          <label style="margin:0; display:flex; align-items:center; gap:10px; cursor:pointer;">
+            <input id="m_adv" type="checkbox" />
+            Advanced
+          </label>
+          <div class="spacer"></div>
+        </div>
+
+        <div id="advBox" style="display:none; margin-top: 6px;">
+          <!-- Args block -->
+          <div style="margin-top: 8px;">
+            <label>Args (optional)</label>
+            <input id="m_wsArgs" type="text" placeholder='--job "/home/dorna/jobs/batch.xlsx" --cfg cfg/printer.yaml' />
+            <div class="hint">These args are appended to: <span class="mono">sudo python3 main.py ...</span></div>
+          </div>
+
+          <!-- Node URL block -->
+          <div style="margin-top: 8px;">
+            <label>Node URL (optional) — leave empty for this orchestrator</label>
+            <input id="m_nodeUrl" type="text" />
+            <div class="hint">Leave empty = this same orchestrator. Set it to another machine’s orchestrator URL to control remote.</div>
+          </div>
+
+          <!-- Admin token block -->
+          <div style="margin-top: 8px;">
+            <label>Admin token (optional)</label>
+            <input id="m_token" type="password" placeholder="X-Orch-Token (if enabled on server)" />
+            <div class="hint">If your orchestrator uses ORCH_TOKEN, put it here once. Saved locally in this browser.</div>
+          </div>
         </div>
       </div>
-
+    
       <div class="modalFoot">
         <button id="btnAddCancel">Cancel</button>
         <button class="btnPrimary" id="btnAddConfirm">Add workspace</button>
@@ -303,91 +325,14 @@
 <script>
   function $(id){ return document.getElementById(id); }
 
-  const STORE_KEY = "orchestrator_workspaces_v5";
   const POLL_MS = 1000;
   const LOGS_PATH = (name) => `/workspace/${encodeURIComponent(name)}/logs?tail=200`;
   const ORIGIN = window.location.origin;
 
   let wss = [];
 
-  function loadStore(){
-    try{
-      const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    }catch{ return []; }
-  }
-
-  function saveStore(){
-    localStorage.setItem(STORE_KEY, JSON.stringify(wss.map(ws => ({
-      name: ws.name,
-      label: ws.label || "",
-      path_to_file: ws.path_to_file || "",
-      port: ws.port || 0,
-      node_url: ws.node_url || ""
-    }))));
-  }
-
-  async function api(path, opts = {}) {
-    const url = ORIGIN + path;
-    const res = await fetch(url, {
-      ...opts,
-      headers: { "Content-Type": "application/json", ...(opts.headers || {}) }
-    });
-
-    const text = await res.text();
-    let json;
-    try { json = JSON.parse(text); } catch { json = { raw: text }; }
-
-    if (!res.ok) {
-      const msg = json && json.error ? json.error : (json.raw || res.statusText);
-      throw new Error(`${res.status} ${res.statusText}: ${msg}`);
-    }
-    return json;
-  }
-
   function dbg(obj){
     $("debugOut").textContent = JSON.stringify(obj, null, 2);
-  }
-
-  function dotClassFromState(state){
-    const s = String(state || "").toUpperCase();
-    if (["RUNNING","ACTIVE"].includes(s)) return "ok";
-    if (["IDLE","READY","WAITING","PAUSED"].includes(s)) return "warn";
-    if (["ERROR","FAILED","OFFLINE","REMOTE_OFFLINE"].includes(s)) return "bad";
-    return "warn";
-  }
-
-  function isLoaded(ws){
-    const st = ws.lastStatus || {};
-    const s = String(st.state || "").toUpperCase();
-
-    // If backend says it's not running/available, it's NOT loaded no matter what hint says
-    if (!s) return false;
-    if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s)) return false;
-
-    // Otherwise allow the hint to count as loaded
-    return true;
-  }
-
-  function nearBottom(el, slack = 6){
-    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= slack;
-  }
-
-  function isRunning(ws){
-    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
-    return ["RUNNING","ACTIVE"].includes(s);
-  }
-
-  function canRemove(ws){
-    const s = String((ws.lastStatus || {}).state || "").toUpperCase();
-    return ["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s);
-  }
-
-  function effectiveNodeUrl(ws){
-    const v = (ws.node_url || "").trim();
-    return v ? v.replace(/\/+$/,"") : ORIGIN;
   }
 
   function escapeHtml(s){
@@ -399,18 +344,93 @@
       .replaceAll("'","&#039;");
   }
 
+  function getToken(){
+    return (localStorage.getItem("orch_token") || "").trim();
+  }
+  function setToken(v){
+    localStorage.setItem("orch_token", String(v || "").trim());
+  }
+
+  async function api(path, opts = {}) {
+    const url = ORIGIN + path;
+    const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+    const tok = getToken();
+    if (tok) headers["X-Orch-Token"] = tok;
+
+    const res = await fetch(url, { ...opts, headers });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+    if (!res.ok) {
+      const msg = json && json.error ? json.error : (json.raw || res.statusText);
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`);
+    }
+    return json;
+  }
+
+  function dotClassFromState(state){
+    const s = String(state || "").toUpperCase();
+    if (["RUNNING","ACTIVE"].includes(s)) return "ok";
+    if (["IDLE","READY","WAITING","PAUSED","LAUNCHED_NOT_READY"].includes(s)) return "warn";
+    if (["ERROR","FAILED","OFFLINE","REMOTE_OFFLINE"].includes(s)) return "bad";
+    return "warn";
+  }
+
+  function isRunning(ws){
+    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
+    return ["RUNNING","ACTIVE"].includes(s);
+  }
+
+  function isLoaded(ws){
+    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
+    if (!s) return false;
+    if (["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s)) return false;
+    return true;
+  }
+
+  function canRemove(ws){
+    const s = String((ws.lastStatus||{}).state || "").toUpperCase();
+    return ["OFFLINE","UNKNOWN","NOT_FOUND","NOT_LAUNCHED","STOPPED","REMOTE_OFFLINE"].includes(s);
+  }
+
+  function effectiveNodeUrl(ws){
+    const v = (ws.node_url || "").trim();
+    return v ? v.replace(/\/+$/,"") : ORIGIN;
+  }
+
+  function buildWorkspaceUrl(ws){
+    // Replace the port of node URL with workspace port
+    const base = effectiveNodeUrl(ws);
+    try{
+      const u = new URL(base);
+      u.port = String(ws.port || "");
+      u.pathname = "/";
+      u.search = "";
+      u.hash = "";
+      return u.origin;
+    }catch{
+      return base;
+    }
+  }
+
+  function nearBottom(el, slack = 6){
+    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= slack;
+  }
+
+  function confirmDanger(msg){
+    return window.confirm(msg);
+  }
+
   function render(){
     $("wsCount").textContent = `(${wss.length})`;
     const list = $("wsList");
 
-    // ✅ save scroll positions before we rebuild DOM
+    // Save log scroll positions before re-render
     const scrollMap = new Map();
     list.querySelectorAll('pre[data-ws]').forEach(pre => {
       const name = pre.getAttribute("data-ws");
-      scrollMap.set(name, {
-        top: pre.scrollTop,
-        follow: nearBottom(pre)
-      });
+      scrollMap.set(name, { top: pre.scrollTop, follow: nearBottom(pre) });
     });
 
     list.innerHTML = "";
@@ -470,21 +490,23 @@
       const rm = document.createElement("button");
       rm.className = "btnDanger";
       rm.textContent = "Remove";
-
       const removable = canRemove(ws);
       rm.disabled = !removable;
       rm.title = removable
-        ? "Remove this workspace from the list"
-        : "Disabled: workspace must be stopped/killed/offline before removing (otherwise you lose control).";
-
-      rm.onclick = (e) => {
+        ? "Remove this workspace from the orchestrator registry"
+        : "Disabled: stop/kill workspace first (otherwise you lose control).";
+      rm.onclick = async (e) => {
         e.stopPropagation();
         if (rm.disabled) return;
-        wss.splice(idx, 1);
-        saveStore();
-        render();
+        try{
+          const out = await api("/remove_workspace", { method:"POST", body: JSON.stringify({ name: ws.name }) });
+          dbg({ action:"remove_workspace", response: out });
+          wss.splice(idx, 1);
+          render();
+        }catch(err){
+          dbg({ action:"remove_workspace", error: String(err) });
+        }
       };
-
       meta.appendChild(rm);
 
       head.appendChild(chev);
@@ -502,7 +524,6 @@
       if (!loaded){
         controls.appendChild(makeBtn("🚀 Launch", async () => {
           await runCmd(ws, "launch");
-          ws.loadedHint = true;
           await refreshStatus(ws);
           render();
         }, {primary:true}));
@@ -520,14 +541,19 @@
         }, {disabled: !isRunning(ws)}));
 
         controls.appendChild(makeBtn("✖ Kill", async () => {
+          if (isRunning(ws)){
+            if (!confirmDanger(`Kill "${ws.name}"? This stops the process.`)) return;
+          }
           await runCmd(ws, "kill");
-          ws.loadedHint = false;
           await refreshStatus(ws);
           render();
         }, {danger:true}));
 
         controls.appendChild(makeBtn("↻ Relaunch", async () => {
-          await runCmd(ws, "restart");
+          if (isRunning(ws)){
+            if (!confirmDanger(`Relaunch "${ws.name}"? This kills and launches again.`)) return;
+          }
+          await runCmd(ws, "relaunch");
           await refreshStatus(ws);
           render();
         }));
@@ -565,26 +591,10 @@
         <div><span class="mono">uptime</span>: ${escapeHtml(fmtDur(uptimeS))}</div>
       `;
 
-
-      // ✅ Clickable Node / URL pills
+      // URL + Node pills (URL first), both clickable new tab
       const pills = document.createElement("div");
       pills.className = "pillRow";
 
-      const nodeBase = effectiveNodeUrl(ws); // e.g. http://192.168.254.105:5000
-
-      // Build workspace URL by REPLACING the port, not appending another one
-      let wsUrl = "";
-      try {
-        const u = new URL(nodeBase);
-        u.port = String(ws.port || "");
-        u.pathname = "/";   // optional: keep it clean
-        u.search = "";
-        u.hash = "";
-        wsUrl = u.origin;   // e.g. http://192.168.254.105:8000
-      } catch {
-        // fallback (shouldn't happen if nodeBase is a proper URL)
-        wsUrl = nodeBase;
-      }
       function pillLink(href, html, title){
         const a = document.createElement("a");
         a.href = href;
@@ -598,12 +608,8 @@
         return a;
       }
 
-      const pillNode = pillLink(
-        nodeBase,
-        `<span class="dot ok"></span>
-         <span class="mono">node</span>: <span class="mono">${escapeHtml(nodeBase)}</span>`,
-        "Open node in new tab"
-      );
+      const nodeBase = effectiveNodeUrl(ws);
+      const wsUrl = buildWorkspaceUrl(ws);
 
       const pillUrl = pillLink(
         wsUrl,
@@ -611,7 +617,14 @@
          <span class="mono">url</span>: <span class="mono">${escapeHtml(wsUrl)}</span>`,
         "Open workspace in new tab"
       );
-      
+
+      const pillNode = pillLink(
+        nodeBase,
+        `<span class="dot ok"></span>
+         <span class="mono">node</span>: <span class="mono">${escapeHtml(nodeBase)}</span>`,
+        "Open node in new tab"
+      );
+
       pills.appendChild(pillUrl);
       pills.appendChild(pillNode);
 
@@ -620,7 +633,7 @@
 
       const title = document.createElement("div");
       title.className = "sectionTitle";
-      title.innerHTML = `<h3>Logs</h3><span class="small">Refresh lives here</span><div class="spacer"></div>`;
+      title.innerHTML = `<h3>Logs</h3><span class="small">Auto-refresh when expanded</span><div class="spacer"></div>`;
       const btnRef = document.createElement("button");
       btnRef.textContent = "🔄 Refresh";
       btnRef.onclick = async () => {
@@ -635,13 +648,13 @@
       pre.textContent = ws.lastLogs || "(no logs yet)";
       body.appendChild(pre);
 
-      // ✅ Restore scroll (or follow tail if user was at bottom)
+      // Restore scroll (or follow tail if user was at bottom)
       const prev = scrollMap.get(ws.name);
       requestAnimationFrame(() => {
         if (prev && !prev.follow){
           pre.scrollTop = prev.top;
         } else {
-          pre.scrollTop = pre.scrollHeight; // follow newest
+          pre.scrollTop = pre.scrollHeight;
         }
       });
 
@@ -666,37 +679,6 @@
       finally { b.disabled = false; }
     };
     return b;
-  }
-
-  async function addWorkspace(ws){
-    const payload = {
-      name: ws.name,
-      path_to_file: ws.path_to_file,
-      port: Number(ws.port)
-    };
-    const nodeUrl = (ws.node_url || "").trim();
-    if (nodeUrl) payload.node_url = nodeUrl;
-
-    const j = await api("/add_workspace", { method:"POST", body: JSON.stringify(payload) });
-    dbg({ action: "add_workspace", payload, response: j });
-    return j;
-  }
-
-  async function loadFromBackend(){
-    const j = await api("/workspaces", { method:"GET" });
-    const arr = (j && Array.isArray(j.workspaces)) ? j.workspaces : [];
-
-    wss = arr.map(s => ({
-      name: s.name,
-      label: s.label || "",
-      port: Number(s.port || 0),
-      path_to_file: s.path_to_file || "",
-      node_url: (s.node_url || "").trim(),
-      expanded: false,
-      lastStatus: { state: "unknown" },
-      lastLogs: "",
-      loadedHint: false
-    }));
   }
 
   async function runCmd(ws, cmd){
@@ -739,11 +721,37 @@
     render();
   }
 
+  async function loadFromBackend(){
+    const j = await api("/workspaces", { method:"GET" });
+    const arr = (j && Array.isArray(j.workspaces)) ? j.workspaces : [];
+    wss = arr.map(s => ({
+      name: s.name,
+      label: s.label || "",
+      port: Number(s.port || 0),
+      path_to_file: s.path_to_file || "",
+      node_url: (s.node_url || "").trim(),
+      expanded: false,
+      lastStatus: { state: "unknown" },
+      lastLogs: ""
+    }));
+  }
+
   function openModal(){
     $("modalOverlay").classList.add("show");
     $("m_nodeUrl").value = "";
+    $("m_token").value = getToken();
     $("m_wsName").focus();
+    $("m_adv").checked = false;
+    setAdvanced(false);
   }
+
+  function setAdvanced(on){
+    $("advBox").style.display = on ? "block" : "none";
+  }
+
+  // default: off
+  $("m_adv").addEventListener("change", () => setAdvanced($("m_adv").checked));
+  
   function closeModal(){
     $("modalOverlay").classList.remove("show");
   }
@@ -761,34 +769,26 @@
     const port = Number($("m_wsPort").value);
     const path = $("m_wsPath").value.trim();
     const label = $("m_wsLabel").value.trim();
+    const args = ($("m_wsArgs").value || "").trim();
     const nodeUrl = ($("m_nodeUrl").value || "").trim();
+    const tok = ($("m_token").value || "").trim();
+    if (tok) setToken(tok);
 
     if (!name){ dbg({ error: "Workspace name is required" }); return; }
     if (!path){ dbg({ error: "Path to workspace is required" }); return; }
 
-    const ws = {
-      name,
-      label,
-      port,
-      path_to_file: path,
-      node_url: nodeUrl,
-      expanded: false,
-      lastStatus: { state: "unknown" },
-      lastLogs: "",
-      loadedHint: false
-    };
+    const payload = { name, path_to_file: path, port: Number(port), label, args: args};
+    if (nodeUrl) payload.node_url = nodeUrl;
 
     try{
-      await addWorkspace(ws);
+      const j = await api("/add_workspace", { method:"POST", body: JSON.stringify(payload) });
+      dbg({ action:"add_workspace", payload, response:j });
 
-      wss.unshift(ws);
-      saveStore();
-
-      await refreshStatus(ws);
-      render();
+      await loadFromBackend();
+      await poll();
       closeModal();
     }catch(err){
-      dbg({ action: "add_workspace", error: String(err) });
+      dbg({ action:"add_workspace", error: String(err) });
     }
   };
 
@@ -797,15 +797,27 @@
     render();
   };
 
+  $("btnReload").onclick = async () => {
+    try{
+      await loadFromBackend();
+      await poll();
+    }catch(err){
+      dbg({ action:"reload", error: String(err) });
+    }
+  };
+
   $("btnClearDebug").onclick = () => dbg({});
 
   (async function init(){
     $("originLabel").textContent = ORIGIN;
     $("m_nodeUrl").placeholder = ORIGIN;
-
-    await loadFromBackend();   // ✅ backend is source of truth
-    await poll();
-    setInterval(poll, POLL_MS);
+    try{
+      await loadFromBackend();
+      await poll();
+      setInterval(poll, POLL_MS);
+    }catch(err){
+      dbg({ action:"init", error: String(err) });
+    }
   })();
 </script>
 </body>
