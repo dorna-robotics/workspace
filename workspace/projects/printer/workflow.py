@@ -58,6 +58,7 @@ def workflow_fn(*, workspace, core):
 
     dry_run_count = 1
     printer_gravity_offset = 4
+    print = True
 
     inspection_frq = 4
     inspection_rot = 90
@@ -120,7 +121,11 @@ def workflow_fn(*, workspace, core):
             rcp["decapper"].pick(approach=False, tool_tcp_z_offset=decapper_tool_tcp_z_offset)
 
             rcp["printer"].place(exit=False, gravity_offset=printer_gravity_offset)
-            rcp["printer"].dry_run_spin(count=dry_run_count)
+
+            if print:
+                rcp["printer"].print_label("D-1783", code_type="code128", autorun=True, verify=True)
+            else:
+                rcp["printer"].dry_run_spin(count=dry_run_count)
             rcp["printer"].pick(approach=False)
 
             rcp["inspector"].present(approach=False)

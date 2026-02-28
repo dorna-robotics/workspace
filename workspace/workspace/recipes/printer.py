@@ -55,3 +55,10 @@ class Printer(Recipe):
         if not self.component._simulation_mode:
             return self.component.device.dry_run_spin(count=count)
         return True
+
+    # real print
+    def print_label(self, data, code_type="code128", autorun=True, verify=True):
+        if not self.component._simulation_mode:
+            from workspace.components.printer.cab_wrapper import CodeType
+            return self.component.device.print_one(CodeType(code_type), data, autorun=autorun, verify=verify)
+        return True
