@@ -60,7 +60,7 @@ class PrinterAxon1(Printer):
             if self.device.is_reachable():
                 print(f"✅ {self.name} connected @ {self.ip}")
             else:
-                # self.device = None
+                self.device = None
                 print(f"❌ {self.name} connection failed @ {self.ip}")
 
 
