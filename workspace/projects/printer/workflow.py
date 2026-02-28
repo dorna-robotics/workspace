@@ -58,7 +58,7 @@ def workflow_fn(*, workspace, core):
 
     dry_run_count = 1
     printer_gravity_offset = 4
-    print = True
+    print_job = True
 
     inspection_frq = 4
     inspection_rot = 90
@@ -122,7 +122,7 @@ def workflow_fn(*, workspace, core):
 
             rcp["printer"].place(exit=False, gravity_offset=printer_gravity_offset)
 
-            if print:
+            if print_job:
                 rcp["printer"].print_label("D-1783", code_type="code128", autorun=True, verify=True)
             else:
                 rcp["printer"].dry_run_spin(count=dry_run_count)

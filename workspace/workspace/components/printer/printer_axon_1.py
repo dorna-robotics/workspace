@@ -55,12 +55,13 @@ class PrinterAxon1(Printer):
         # printer
         self.device = None
         if self.ip:
-            # init camera
             self.device = Cab(ip=self.ip)
-            # set label
             self.device.set_label(**self.label_cfg)
-            # print
-            print(f"✅ {self.name} connected @ {self.ip}")
+            if self.device.is_reachable():
+                print(f"✅ {self.name} connected @ {self.ip}")
+            else:
+                # self.device = None
+                print(f"❌ {self.name} connection failed @ {self.ip}")
 
 
     # change the simulation
