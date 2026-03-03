@@ -10,12 +10,12 @@ class CapFalcon40ml(Cap):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 14, 0, 0, 0]}},
         collision_box={
             "body": [
-                {"pose": [0.0, 0.0, 5.5, 0.0, 0.0, 0.0], "scale": [21.2, 21.2, 11.0]}
+                {"pose": [0.0, 0.0, 7, 0.0, 0.0, 0.0], "scale": [26.0, 26.0, 14.0]}
             ]
         },
         cap_type="screw",
-        twist=900, # 400 was ok
-        pitch=3.6 # 2
+        twist=900,
+        pitch=3.6
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

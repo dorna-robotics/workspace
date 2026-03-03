@@ -8,9 +8,9 @@ from workspace.components.rack.rack import Rack
 class CapholderAutosampler2ml5x10(Rack):
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 7, 0, 0, 0], "top": [0, 0, 10.5, 0, 0, 0]}},
-        collision_box = 
+        collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 4.0, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 9.0]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 10.5/2, 0.0, 0.0, 0.0], "scale":[194.0, 101.25, 10.5]}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[0, 0],
         pitch=[19.18, 19.18],
