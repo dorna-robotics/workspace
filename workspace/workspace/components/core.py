@@ -269,19 +269,7 @@ class Core:
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
 
-        # --------- rail base
-        rail_hd_500mm_base_anchors = {
-        "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
-        "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-        "hole_1": [400, 37.5, 0.0, 0.0, 0.0, 0.0],
-        "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
-        "hole_3": [0, -37.5, 0.0, 0.0, 0.0, 0.0],
-        }
-        # we can later add 1000mm and 2000mm rail bases
-
-
-        # --------- rail carriage
+        # --------- rail carriage (shared across all rail sizes)
         rail_hd_carriage_anchors = {
             "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "hole_0": [-50.0, 50.0, 0.0, 0.0, 0.0, 0.0],
@@ -290,25 +278,62 @@ class Core:
             "hole_3": [-50.0, -50.0, 0.0, 0.0, 0.0, 0.0],
         }
 
-
-        collision_boxes = {"rail_base":[
-                {"pose":[170.0, 33.63, 41-1, 0.0, 0.0, 0.0], "scale":[761.0, 183.5, 82]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[-176.105, 116.3, 41-1, 0.0, 0.0, 0.0], "scale":[68.6, 120.5, 82]},
-                {"pose":[170, 91.5+1, 51, 0.0, 0.0, 0.0], "scale":[761, 66, 102]}
-        ]}
-
-
         # next we add the rail base depending on the type of the rail
         if self.has_rail:
             if self.rail_cfg["type"] == "rail_hd_500mm":
-                self.rail_base = self.assembly["rail_base"] = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_hd_500mm_base_anchors, component = self.name, collision_box=collision_boxes )
-                self.assembly["rail_base"] = self.rail_base
-                self.rail_carriage = Solid(name="rail_carriage", type="rail_hd_carriage", anchors=rail_hd_carriage_anchors, component = self.name)
-                self.assembly["rail_carriage"] =  self.rail_carriage
-             
+                rail_base_anchors = {
+                    "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [400.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                }
+                rail_collision_boxes = {"rail_base": [
+                    {"pose": [170.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 183.5, 82]},
+                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [170.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 102]}
+                ]}
+                self.rail_base = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
+
+            elif self.rail_cfg["type"] == "rail_hd_1000mm":
+                rail_base_anchors = {
+                    "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [920.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [920.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                }
+                rail_collision_boxes = {"rail_base": [
+                    {"pose": [420.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
+                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [420.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 102]}
+                ]}
+                self.rail_base = Solid(name="rail_base", type="rail_hd_1000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
+
+            elif self.rail_cfg["type"] == "rail_hd_2000mm":
+                rail_base_anchors = {
+                    "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [1920.0, 37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [1920.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                }
+                rail_collision_boxes = {"rail_base": [
+                    {"pose": [920.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 183.5, 82]},
+                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [920.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 102]}
+                ]}
+                self.rail_base = Solid(name="rail_base", type="rail_hd_2000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
+
             else:
-                # rail type is not supported
                 raise ValueError(f"Unsupported rail type: {self.rail_cfg['type']}")
+
+            self.assembly["rail_base"] = self.rail_base
+            self.rail_carriage = Solid(name="rail_carriage", type="rail_hd_carriage", anchors=rail_hd_carriage_anchors, component=self.name)
+            self.assembly["rail_carriage"] = self.rail_carriage
 
 
         robot_A0_anchors = {
@@ -369,12 +394,15 @@ class Core:
         # we check if there is tool changer
         if self.has_tool_changer:
             tool_changer_robot_side_anchors = {
-            "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "output": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
-            "tool_changer_connection": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
-            "top": [0.0, 0.0, 34.0, 0.0, 0.0, 0.0]
+                "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                "output": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
+                "tool_changer_connection": [0.0, 0.0, 22.0, 0.0, 0.0, 0.0],
+                "top": [0.0, 0.0, 34.0, 0.0, 0.0, 0.0]
             }
-            self.tool_changer_robot_side = Solid(name="tool_changer_robot_side", type="tool_changer_robot_side", anchors=tool_changer_robot_side_anchors, component=self.name)
+            tool_changer_collision_boxes = {"tool_changer_robot_side": [
+                {"pose": [0.0, 0.0, 18.5-3, 0.0, 0.0, 0.0], "scale": [48, 48, 37]}
+            ]}
+            self.tool_changer_robot_side = Solid(name="tool_changer_robot_side", type="tool_changer_robot_side", anchors=tool_changer_robot_side_anchors, component=self.name, collision_box=tool_changer_collision_boxes)
             self.assembly["tool_changer_robot_side"] = self.tool_changer_robot_side
             self.tool_changer_robot_side.attach_to(parent=self.robot_flange, parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, 0, 0])
 

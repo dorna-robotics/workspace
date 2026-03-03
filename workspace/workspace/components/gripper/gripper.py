@@ -33,12 +33,16 @@ class Gripper:
         # has tool changer
         self.has_tool_changer = prm["has_tool_changer"]
         if self.has_tool_changer:
-            self.assembly["tool_changer_tool_side"] = Solid(type="tool_changer_tool_side", 
+            tool_changer_collision_box = {"tool_changer_tool_side": [
+                {"pose": [0.0, 0.0, (-17.5/2)+4.5, 0.0, 0.0, 0.0], "scale": [48, 48, 17.5]}
+            ]}
+            self.assembly["tool_changer_tool_side"] = Solid(type="tool_changer_tool_side",
                                                     anchors= {
                                                         "tool_connection": prm["tool_connection"],
                                                         "tool_changer_connection": prm["tool_changer_connection"],
                                                         "tool_rack_connection": prm["tool_rack_connection"]},
-                                                    component=self.name)
+                                                    component=self.name,
+                                                    collision_box=tool_changer_collision_box)
             self.assembly[next(iter(self.assembly))].attach_to(parent=self.assembly["tool_changer_tool_side"], parent_anchor="tool_connection", child_anchor="center", offset=prm["offset"])
         
         # enable and disable
