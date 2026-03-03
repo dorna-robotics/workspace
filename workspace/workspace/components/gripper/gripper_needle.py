@@ -8,9 +8,9 @@ from workspace.components.gripper.gripper import Gripper
 class GripperNeedle(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 146.27, 0, 0, 0],  "tip":[0, 0, 146.27, 0, 0, 0]}},
-        collision_box = 
+        collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 140/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 140]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 146.308/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 146.308]},
         ]},
         #cfg
         has_tool_changer = False,
