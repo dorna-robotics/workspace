@@ -1,0 +1,119 @@
+gripper_4_finger_1:
+  type: "gripper_4_finger"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_2"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+gripper_needle_1:
+  type: "gripper_needle"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_4"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+gripper_suction_1:
+  type: "gripper_suction"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_3"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+gripper_tube_large_1:
+  type: "gripper_tube_large"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+{% for r in "ABCD" %}
+{% for c in range(1, 7+1) %}
+tube_amber_40ml_{{ r }}{{ c }}:
+  type: "tube_amber_40ml"
+  attach:
+    parent_name: "rack_amber_40ml_4x7_1"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+cap_amber_40ml_{{ r }}{{ c }}:
+  type: "cap_amber_40ml"
+  attach:
+    parent_name: "tube_amber_40ml_{{ r }}{{ c }}"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+{% for r in "A" %}
+{% for c in range(1, 4+1) %}
+tube_amber_40ml_2_{{ r }}{{ c }}:
+  type: "tube_amber_40ml"
+  attach:
+    parent_name: "rack_amber_40ml_2x4_1"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+{% for r in "ABCDE" %}
+{% for c in range(1, 10+1) %}
+tube_autosampler_2ml_1_{{ r }}{{ c }}:
+  type: "tube_autosampler_2ml"
+  attach:
+    parent_name: "rack_autosampler_2ml_5x10_1"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+{% for r in "ABCDE" %}
+{% for c in range(1, 10+1) %}
+tube_autosampler_2ml_2_{{ r }}{{ c }}:
+  type: "tube_autosampler_2ml"
+  attach:
+    parent_name: "rack_autosampler_2ml_5x10_2"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+{% for r in "ABCDE" %}
+{% for c in range(1, 10+1) %}
+cap_autosampler_2ml_{{ r }}{{ c }}:
+  type: "cap_autosampler_2ml"
+  attach:
+    parent_name: "capfeeder_autosampler_2ml_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
