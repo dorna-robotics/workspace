@@ -14,7 +14,7 @@ class RackAmber40ml2x4(Rack):
         offset=[0, 0],
         pitch=[40, 40],
         rvec_safe=[0, 0, 45],
-        rows=[chr(c) for c in range(ord("A"), ord("B") + 1)],
+        rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
         cols= [i for i in range(1, 2+1)],
     )
 
