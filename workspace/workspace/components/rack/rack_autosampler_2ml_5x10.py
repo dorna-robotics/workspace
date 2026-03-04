@@ -3,7 +3,7 @@ from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.rack.rack import Rack
 
-@register("rack_autosampler_2ml5x10")
+@register("rack_autosampler_2ml_5x10")
 class RackAutosampler2ml5x10(Rack):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 8, 0, 0, 0], "top": [0, 0, 21, 0, 0, 0]}},
