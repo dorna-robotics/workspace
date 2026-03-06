@@ -8,7 +8,7 @@ from workspace.components.factory import register
 class Scale:
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 106, 0, 0, 0], "place":[0, 0, 96, 0, 0, 0],
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 126, 0, 0, 0], "place":[0, 0, 96, 0, 0, 0],
                 "hole_0": [75, 75, 0, 0, 0, 0], "hole_1": [-75, 75, 0, 0, 0, 0], "hole_2": [-75, -75, 0, 0, 0, 0], "hole_3": [75, -75, 0, 0, 0, 0]},
         },
         collision_box =

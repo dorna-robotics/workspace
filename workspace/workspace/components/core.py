@@ -75,8 +75,10 @@ class SplinePath:
                 a = y[i]
                 b = (y[i+1]-y[i])/h[i] - h[i]*(c_arr[i+1] + 2.0*c_arr[i])/3.0
                 c = c_arr[i]
-                d_coeff = (c_arr[i+1] - c_arr[i])/(3.0*h[i])
-
+                if h[i] < 1e-12:
+                    d_coeff = 0
+                else:
+                    d_coeff = (c_arr[i+1] - c_arr[i])/(3.0*h[i])
                 # Store at the correct segment index i
                 self.coeffs[i][dim] = (a, b, c, d_coeff)
 

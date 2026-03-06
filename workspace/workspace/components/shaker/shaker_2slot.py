@@ -7,7 +7,8 @@ from workspace.components.shaker.shaker import Shaker
 @register("shaker_2slot")
 class Shaker2slot(Shaker):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -20.569 , 171.66, -48, 0, 0], "top": [0, 87.972 , 147.972, -48, 0, 0], "plate_center": [0, 48.02, 108.02, -45, 0, 0],
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 94+20, 100, 0, 0, 0], "top": [0, 87.972 , 147.972, 0, 0, 0],
+                          "A1": [35, 94+20, 100-45, 0, 0, 0], "A2": [-35, 94+20, 100-45, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
                 "clb_0": [0, 0, 146, 0, 0, 0]}},
         collision_box =

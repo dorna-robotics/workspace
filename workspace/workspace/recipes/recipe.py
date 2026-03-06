@@ -196,10 +196,15 @@ class Recipe:
         exit_path=[],
         exit_j5=None,
         output_exit=[],
+        has_motion_plan=None,
         **kwargs,
     ):
+        # rt
         rt = self.rt
 
+        # define motion plan
+        has_motion_plan = self.core.has_motion_plan if has_motion_plan is None else has_motion_plan
+            
         # vaj_map
         vaj_map = {
             "jmove": self.jmove_vaj,
@@ -279,7 +284,7 @@ class Recipe:
 
             if C == 2:
                 if i == 0 and approach_path:  # first motion of the approach
-                    if self.core.has_motion_plan:  # run path planning
+                    if has_motion_plan:  # run path planning
                         # create the path
                         points = self.core.motion_plan(joint=J)
                         if len(points) == 0:
@@ -510,7 +515,8 @@ class Recipe:
         assign kwargs
         """
         for k, v in kwargs.items():
-            setattr(self, k, v)
+            if hasattr(self, k):
+                setattr(self, k, v)
 
         """
         component
@@ -784,7 +790,8 @@ class Recipe:
         assign kwargs
         """
         for k, v in kwargs.items():
-            setattr(self, k, v)
+            if hasattr(self, k):
+                setattr(self, k, v)
 
         """
         component
@@ -1039,7 +1046,7 @@ class Recipe:
         pick_prm["target_offset"] = None
         pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
         # touch
-        return self.touch(**pick_prm)
+        return self.touch(**pick_prm, **kwargs)
 
     def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
         rt = self.rt
@@ -1060,6 +1067,68 @@ class Recipe:
         rt.delay(0.1)
 
         return True
+
+
+    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
+        # check if tool is there
+        tool = self.tool_attached_to_the_robot()
+        if tool is None:
+            return False
+        
+        # find all the items attached to the tool
+        load_list = [self.solid_attached_to_tool(tool)]
+        if load_list[-1] is not None:
+            load_list += self.solid_hierarchy(parent_solid=load_list[0], parent_anchor="place", connection_anchor="place")
+
+            # height_load
+            height_load = abs(
+                dorna_pose.transform_pose(
+                    [0, 0, 0, 0, 0, 0],
+                    from_frame=load_list[0].pose("center"),
+                    to_frame=load_list[-1].pose("top"),
+                )[2]
+            )
+        else:
+            height_load = 0
+
+        # tool offset
+        tool_tcp_z_offset = height_load - dist
+        tool_tip_z_offset = height_load - dist
+        if self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=height_load, tool_tip_z_offset=height_load, **kwargs):
+            # motion
+            return self.pick_from(anchor=anchor, solid_name=solid_name, component=component, approach=False, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        return False
+
+
+
+    def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=False, **kwargs):
+        # check if tool is there
+        tool = self.tool_attached_to_the_robot()
+        if tool is None:
+            return False
+        
+        # find all the items attached to the tool
+        load_list = [self.solid_attached_to_tool(tool)]
+        if load_list[-1] is not None:
+            load_list += self.solid_hierarchy(parent_solid=load_list[0], parent_anchor="place", connection_anchor="place")
+
+            # height_load
+            height_load = abs(
+                dorna_pose.transform_pose(
+                    [0, 0, 0, 0, 0, 0],
+                    from_frame=load_list[0].pose("center"),
+                    to_frame=load_list[-1].pose("top"),
+                )[2]
+            )
+        else:
+            height_load = 0
+
+        # tool offset
+        tool_tcp_z_offset = height_load + dist
+        tool_tip_z_offset = height_load + dist
+
+        return self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, has_motion_plan=has_motion_plan, **kwargs)
+
 
     # this method moves the robot close to the anchor point and then turns the motor off and asks user to move the robot
     def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):
