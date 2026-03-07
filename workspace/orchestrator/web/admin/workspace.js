@@ -134,12 +134,13 @@ function updateStatusUI(st) {
   // Accent the header border with state colour
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
-  renderControls(launched, running);
+  renderControls(state, launched, running);
   updateIframe(launched);
 }
 
-function renderControls(launched, running) {
+function renderControls(state, launched, running) {
   controls.innerHTML = "";
+  const s = (state || "").toUpperCase();
 
   const addBtn = (label, cmd, opts = {}) => {
     const b = document.createElement("button");
@@ -162,6 +163,13 @@ function renderControls(launched, running) {
 
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
+  } else if (s === "LAUNCHED_NOT_READY") {
+    // Server process is starting — show a spinner label and only a Kill escape hatch
+    const lbl = document.createElement("span");
+    lbl.className = "ctrl-starting";
+    lbl.textContent = "Starting…";
+    controls.appendChild(lbl);
+    addBtn("Kill", "kill", { danger: true });
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });

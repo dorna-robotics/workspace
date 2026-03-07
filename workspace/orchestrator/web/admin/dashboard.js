@@ -156,6 +156,9 @@ function render() {
         <div class="wc-actions">
           ${!launched
             ? `<button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>`
+            : state.toUpperCase() === "LAUNCHED_NOT_READY"
+            ? `<span class="wc-starting">Starting…</span>
+               <button class="btn btn-sm btn-danger action-btn" data-cmd="kill" title="Kill process">Kill</button>`
             : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start"   title="Start"   ${running  ? "disabled" : ""}>▶</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause"   title="Pause"   ${!running ? "disabled" : ""}>⏸</button>
                <button class="btn btn-sm action-btn"             data-cmd="relaunch" title="Relaunch">↻</button>

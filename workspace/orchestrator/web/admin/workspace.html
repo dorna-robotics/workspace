@@ -69,7 +69,17 @@
     }
 
     /* ---- Controls ---- */
-    #controls { display: flex; gap: 5px; flex-wrap: wrap; }
+    #controls { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+    .ctrl-starting {
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .ctrl-starting::before {
+      content: ""; display: inline-block; width: 10px; height: 10px;
+      border: 2px solid var(--muted); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ---- Logs ---- */
     .log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }

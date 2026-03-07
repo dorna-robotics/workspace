@@ -70,11 +70,11 @@
       camera.up.set(0,0,1);
       camera.position.set(2400, 900, 1200);
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+      renderer.setPixelRatio(1);
       renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMapping = THREE.LinearToneMapping;
       renderer.toneMappingExposure = 0.9;
       viewerEl.appendChild(renderer.domElement);
 
@@ -158,6 +158,7 @@
         const gc = isLight ? LIGHT_GRID : DARK_GRID;
         _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, gc.minor, gc.major);
         scene.add(_sbGridMesh);
+        markDirty();
       }
       let _sbShowGrid = true;
       sbApplyTheme(_sbCurrentTheme);
@@ -1314,6 +1315,7 @@ if (node) {
           upsertObject(n, s || {});
       window.upsertObject = upsertObject;
         }
+        markDirty();
       });
 
 // =========================
@@ -6069,8 +6071,8 @@ ensureBuilderBar();
 
       // --- ViewCube (matches orchestrator exactly) ---
       const vcCanvas = document.getElementById("viewCubeCanvas");
-      const vcRenderer = new THREE.WebGLRenderer({ canvas: vcCanvas, antialias: true, alpha: true });
-      vcRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const vcRenderer = new THREE.WebGLRenderer({ canvas: vcCanvas, antialias: false, alpha: true, powerPreference: "high-performance" });
+      vcRenderer.setPixelRatio(1);
       vcRenderer.setSize(130, 130);
       vcRenderer.setClearColor(0x000000, 0);
 
@@ -6247,14 +6249,29 @@ ensureBuilderBar();
         snapCamera(pos, tgt, up);
       });
 
+      // --- Render on demand ---
+      let _needsRender = true;
+      let _lastRenderMs = 0;
+      const IDLE_RENDER_INTERVAL = 500; // fallback: re-render every 500ms even if idle
+      function markDirty() { _needsRender = true; }
+      controls.addEventListener("change", markDirty);
+      renderer.domElement.addEventListener("pointermove", markDirty);
+
       // --- Animate (keep anchors & badges sticky) ---
       function animate() {
-        updateSnap();
+        const snapActive = !!snapTarget;
+        if (snapActive) { updateSnap(); markDirty(); }
         controls.update();
-        updateAnchorsNow();
-        renderer.render(scene, camera);
-        vcGroup.quaternion.copy(camera.quaternion).invert();
-        vcRenderer.render(vcScene, vcCamera);
+        if (activeAnchors) { updateAnchorsNow(); markDirty(); }
+
+        const now = performance.now();
+        if (_needsRender || now - _lastRenderMs > IDLE_RENDER_INTERVAL) {
+          renderer.render(scene, camera);
+          vcGroup.quaternion.copy(camera.quaternion).invert();
+          vcRenderer.render(vcScene, vcCamera);
+          _needsRender = false;
+          _lastRenderMs = now;
+        }
         requestAnimationFrame(animate);
       }
       animate();
