@@ -1,6 +1,5 @@
 import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl } from "./api.js";
 
-const POLL_MS = 1500;
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
 
@@ -10,7 +9,17 @@ let wsInfo      = null;
 let lastLogs    = "";
 let iframeReady = false;
 let iframeUrl   = "";
-let iframeLoadedWhileRunning = false;
+
+// Adaptive poll: fast when active, slow when idle
+let _pollTimer  = null;
+let _lastState  = "";
+
+// Live uptime: interpolate locally between polls
+let _uptimeBase = null;   // uptime_s from last server response
+let _uptimeAt   = null;   // performance.now() when received
+
+// Log follow mode
+let _logFollowing = true;
 
 // ---- DOM refs ----
 const $  = id => document.getElementById(id);
@@ -71,17 +80,26 @@ async function refreshStatus() {
   }
 }
 
+function _updateFollowBtn() {
+  const btn = $("btnFollowLogs");
+  if (btn) btn.style.display = _logFollowing ? "none" : "";
+}
+
 async function refreshLogs() {
   try {
     const j    = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs?tail=400`);
     const text = typeof j === "string" ? j : (j?.text || "");
     if (text === lastLogs) return;
     lastLogs = text;
-    const atBottom = logPre.scrollHeight - logPre.scrollTop - logPre.clientHeight <= 10;
     logPre.innerHTML = colorizeLogs(text);
-    if (atBottom) logPre.scrollTop = logPre.scrollHeight;
+    if (_logFollowing) logPre.scrollTop = logPre.scrollHeight;
   } catch { /* ignore */ }
 }
+
+logPre.addEventListener("scroll", () => {
+  const atBottom = logPre.scrollHeight - logPre.scrollTop - logPre.clientHeight <= 24;
+  if (_logFollowing && !atBottom) { _logFollowing = false; _updateFollowBtn(); }
+});
 
 // ---- UI updates ----
 function updateStatusUI(st) {
@@ -93,7 +111,16 @@ function updateStatusUI(st) {
   statePill.className = `pill ${variant}`;
   statePill.innerHTML = `<span class="dot ${variant}${running ? " pulse" : ""}"></span>${esc(state)}`;
 
-  uptimeVal.textContent  = fmtUptime(st?.uptime_s)      || "—";
+  // Live uptime: store base so the 1s ticker can interpolate
+  if (st?.uptime_s != null) {
+    _uptimeBase = Number(st.uptime_s);
+    _uptimeAt   = performance.now();
+    uptimeVal.textContent = fmtUptime(_uptimeBase) || "—";
+  } else {
+    _uptimeBase = null;
+    uptimeVal.textContent = "—";
+  }
+  _lastState = state;
   startedVal.textContent = fmtTimestamp(st?.started_at) || "—";
 
   if (st?.last_error) {
@@ -108,7 +135,7 @@ function updateStatusUI(st) {
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
   renderControls(launched, running);
-  updateIframe(launched, running);
+  updateIframe(launched);
 }
 
 function renderControls(launched, running) {
@@ -143,34 +170,54 @@ function renderControls(launched, running) {
   }
 }
 
-function updateIframe(launched, running) {
+function updateIframe(launched) {
   if (!wsInfo) return;
   if (!launched) {
     if (iframeReady) {
       iframeReady = false;
       iframeUrl   = "";
-      iframeLoadedWhileRunning = false;
-      frame.src = "about:blank";
+      frame.src   = "about:blank";
       placeholder.style.display = "";
     }
     return;
   }
-  const theme = document.documentElement.getAttribute("data-theme") || "dark";
-  const targetUrl = wsViewerUrl(wsInfo) + "/?theme=" + theme;
-
-  // (Re)load if: first load, URL changed, or server became running after a premature load
-  const needsLoad = !iframeReady || iframeUrl !== targetUrl || (running && !iframeLoadedWhileRunning);
-  if (needsLoad) {
+  const theme     = document.documentElement.getAttribute("data-theme") || "dark";
+  const targetUrl = wsViewerUrl(wsInfo);
+  if (!iframeReady || iframeUrl !== targetUrl) {
     iframeReady = true;
     iframeUrl   = targetUrl;
-    iframeLoadedWhileRunning = running;
     frame.addEventListener("load", () => {
       frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
     }, { once: true });
-    frame.src = targetUrl;
+    frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
   }
 }
+
+// Theme changes: postMessage the iframe instead of reloading
+new MutationObserver(() => {
+  if (!iframeReady) return;
+  const theme = document.documentElement.getAttribute("data-theme") || "dark";
+  frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// ---- Adaptive poll ----
+function scheduleWsPoll() {
+  const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
+  clearTimeout(_pollTimer);
+  _pollTimer = setTimeout(async () => {
+    await Promise.all([refreshStatus(), refreshLogs()]);
+    scheduleWsPoll();
+  }, active ? 1500 : 4000);
+}
+
+// ---- Live uptime ticker (1 s interval, no server call) ----
+setInterval(() => {
+  if (_uptimeBase != null && _uptimeAt != null) {
+    const elapsed = (performance.now() - _uptimeAt) / 1000;
+    uptimeVal.textContent = fmtUptime(_uptimeBase + elapsed) || "—";
+  }
+}, 1000);
 
 // ---- Init ----
 async function init() {
@@ -188,16 +235,21 @@ async function init() {
     const fullUrl = wsViewerUrl(wsInfo);
     urlVal.textContent = fullUrl;
     urlVal.title       = fullUrl;
-    pathVal.textContent   = wsInfo.path_to_file;
-    pathVal.title         = wsInfo.path_to_file;
+    pathVal.textContent = wsInfo.path_to_file;
+    pathVal.title       = wsInfo.path_to_file;
 
     await Promise.all([refreshStatus(), refreshLogs()]);
-    setInterval(() => Promise.all([refreshStatus(), refreshLogs()]), POLL_MS);
+    scheduleWsPoll();
   } catch (err) {
     toast(String(err), "bad");
   }
 }
 
 $("btnRefreshLogs").addEventListener("click", refreshLogs);
+$("btnFollowLogs")?.addEventListener("click", () => {
+  _logFollowing = true;
+  logPre.scrollTop = logPre.scrollHeight;
+  _updateFollowBtn();
+});
 
 init();

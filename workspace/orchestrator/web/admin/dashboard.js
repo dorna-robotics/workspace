@@ -1,7 +1,9 @@
 import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl } from "./api.js";
 
-const POLL_MS = 2000;
 let workspaces = [];
+let prevStates = {};   // name → last known state string (for transition toasts)
+let firstPoll  = true;
+let pollTimer  = null;
 
 // ---- Avatar color hash (deterministic per workspace name) ----
 const AVATAR_PALETTE = ["#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#ef4444","#22c55e","#6366f1"];
@@ -46,13 +48,26 @@ async function loadWorkspaces() {
 }
 
 async function refreshStatuses() {
-  await Promise.all(workspaces.map(async (ws) => {
-    try {
-      ws.lastStatus = await apiFetch(`/workspace/${encodeURIComponent(ws.name)}/status`);
-    } catch (e) {
-      ws.lastStatus = { state: "OFFLINE", last_error: String(e) };
+  try {
+    const j = await apiFetch("/workspaces/status");
+    workspaces.forEach(ws => {
+      ws.lastStatus = j.statuses?.[ws.name] || { state: "OFFLINE" };
+    });
+  } catch (e) {
+    workspaces.forEach(ws => { ws.lastStatus = { state: "OFFLINE", last_error: String(e) }; });
+  }
+}
+
+function checkStateTransitions() {
+  workspaces.forEach(ws => {
+    const cur  = (ws.lastStatus?.state || "").toUpperCase();
+    const prev = prevStates[ws.name];
+    if (prev !== undefined && prev !== cur) {
+      if (cur === "RUNNING" || cur === "ACTIVE")          toast(`${ws.name} is running`, "ok");
+      else if (["ERROR","FAILED","OFFLINE"].includes(cur)) toast(`${ws.name}: ${cur.toLowerCase()}`, "bad");
     }
-  }));
+    prevStates[ws.name] = cur;
+  });
 }
 
 async function sendCmd(name, cmd) {
@@ -211,8 +226,18 @@ wsSearch?.addEventListener("input", applySearch);
 // ---- Poll ----
 async function poll() {
   await refreshStatuses();
+  if (!firstPoll) checkStateTransitions();
+  firstPoll = false;
   render();
   applySearch();
+}
+
+function schedulePoll() {
+  const hasActive = workspaces.some(w =>
+    ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes((w.lastStatus?.state || "").toUpperCase())
+  );
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => { await poll(); schedulePoll(); }, hasActive ? 2000 : 6000);
 }
 
 // ---- Add Workspace Modal ----
@@ -266,6 +291,6 @@ document.getElementById("btnModalConfirm").addEventListener("click", async () =>
   try {
     await loadWorkspaces();
     await poll();
-    setInterval(async () => { await poll(); }, POLL_MS);
+    schedulePoll();
   } catch (err) { toast(String(err), "bad"); }
 })();

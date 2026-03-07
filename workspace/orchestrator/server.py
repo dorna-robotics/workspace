@@ -1,15 +1,20 @@
 # orchestrator_server.py
+import asyncio
 import shlex
 import os
 import json
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 from typing import Dict, Optional, List
 
 import requests
 import tornado.web
 import tornado.ioloop
+
+_status_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="orch-status")
+_cmd_pool    = ThreadPoolExecutor(max_workers=4, thread_name_prefix="orch-cmd")
 
 # -------------------- Workspace Orchestrator --------------------
 
@@ -533,24 +538,54 @@ class WorkspaceCmdHandler(AuthedHandler):
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
 
+            loop = asyncio.get_running_loop()
+
             if cmd == "launch":
-                self.write(self.orch.launch_workspace(name)); return
-            if cmd == "start":
-                self.write(self.orch.start_runtime(name)); return
-            if cmd == "pause":
-                self.write(self.orch.pause_runtime(name)); return
-            if cmd == "resume":
-                self.write(self.orch.resume_runtime(name)); return
-            if cmd == "kill":
-                out = self.orch.stop_workspace(name) or {"status": "ok", "killed": True}
+                out = await loop.run_in_executor(_cmd_pool, self.orch.launch_workspace, name)
                 self.write(out); return
+            if cmd == "start":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name)
+                self.write(out); return
+            if cmd == "pause":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
+                self.write(out); return
+            if cmd == "resume":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.resume_runtime, name)
+                self.write(out); return
+            if cmd == "kill":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.stop_workspace, name)
+                self.write(out or {"status": "ok", "killed": True}); return
             if cmd in ("restart", "relaunch"):
-                self.write(self.orch.relaunch_workspace(name)); return
+                out = await loop.run_in_executor(_cmd_pool, self.orch.relaunch_workspace, name)
+                self.write(out); return
 
             raise ValueError("Unknown cmd")
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
+
+
+class WorkspacesStatusHandler(tornado.web.RequestHandler):
+    """Bulk status: returns all workspace statuses in one request (Pi-friendly)."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        names = list(self.orch.workspaces.keys())
+        if not names:
+            self.write({"statuses": {}})
+            return
+        loop = asyncio.get_running_loop()
+
+        async def fetch_one(name):
+            try:
+                st = await loop.run_in_executor(_status_pool, self.orch.get_status, name)
+                return name, st
+            except Exception as e:
+                return name, {"state": "OFFLINE", "last_error": str(e)}
+
+        pairs = await asyncio.gather(*[fetch_one(n) for n in names])
+        self.write({"statuses": dict(pairs)})
 
 
 class WorkspaceStatusHandler(tornado.web.RequestHandler):
@@ -561,7 +596,9 @@ class WorkspaceStatusHandler(tornado.web.RequestHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
-            self.write(self.orch.get_status(name))
+            loop = asyncio.get_running_loop()
+            st = await loop.run_in_executor(_status_pool, self.orch.get_status, name)
+            self.write(st)
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -601,6 +638,7 @@ class OrchestratorHTTPServer:
             (r"/web/(.*)", tornado.web.StaticFileHandler, {"path": web_dir}),
 
             # ---- API ----
+            (r"/workspaces/status", WorkspacesStatusHandler, dict(orch=self.orch)),
             (r"/workspaces", WorkspacesListHandler, dict(orch=self.orch)),
             (r"/add_workspace", AddWorkspaceHandler, dict(orch=self.orch)),
             (r"/remove_workspace", RemoveWorkspaceHandler, dict(orch=self.orch)),
