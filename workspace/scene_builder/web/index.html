@@ -88,8 +88,8 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ReinhardToneMapping;
-      renderer.toneMappingExposure = 1.2;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.9;
       document.body.appendChild(renderer.domElement);
 
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -120,7 +120,7 @@
         envMesh.rotation.x = Math.PI / 2;
         envScene.add(envMesh);
         scene.environment = pmrem.fromScene(envScene).texture;
-        scene.environmentIntensity = 0.1;
+        scene.environmentIntensity = 0.6;
       });
 
       // --- Helpers (grid/axes) ---
@@ -183,10 +183,13 @@
                          new THREE.Vector3(0,0,500), 0x0000ff));
       */
       // --- Lights ---
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 0.3));
-      const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x080c18, 0.5));
+      const dir = new THREE.DirectionalLight(0xfff4e0, 1.6);
       dir.position.set(1200, 900, 1500);
       scene.add(dir);
+      const fill = new THREE.DirectionalLight(0xb0ccff, 0.4);
+      fill.position.set(-800, -600, 600);
+      scene.add(fill);
 
       // --- GLTF + object management ---
       const gltfLoader = new GLTFLoader();

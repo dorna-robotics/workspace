@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Workspace — Dorna Lab</title>
+  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"dark"); })();</script>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+
+    /* ---- Header ---- */
+    .ws-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      height: 52px;
+      min-height: 52px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+      position: relative;
+      transition: border-bottom-color 0.4s;
+      box-shadow: 0 1px 12px rgba(0,0,0,0.2);
+    }
+    .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
+    .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
+    .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
+    .back-link {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      transition: background 0.1s, color 0.1s;
+      text-decoration: none;
+    }
+    .back-link:hover { background: var(--surface2); color: var(--text); }
+    .vdivider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+    .ws-title-block { min-width: 0; }
+    .ws-title    { font-size: 15px; font-weight: 600; line-height: 1.2; }
+    .ws-subtitle { font-size: 11px; color: var(--muted); }
+
+    /* ---- Body ---- */
+    .ws-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* ---- Sidebar ---- */
+    .sidebar {
+      width: 320px;
+      min-width: 320px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ---- Sidebar sections ---- */
+    #controls { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .meta-list {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .meta-row:last-child { border-bottom: none; }
+    .meta-key { color: var(--muted); flex-shrink: 0; font-size: 11px; }
+    .meta-val { color: var(--text); font-weight: 500; text-align: right; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta-val.err  { color: var(--red); font-size: 11px; }
+    .meta-val.path { font-size: 10px; font-family: var(--mono); }
+
+    /* ---- Logs ---- */
+    .log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .log-header .section-label { margin: 0; }
+
+    #logPre {
+      background: #070a10;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.65;
+      overflow-y: auto;
+      color: #7d8590;
+      white-space: pre-wrap;
+      word-break: break-all;
+      height: 280px;
+      flex-shrink: 0;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    /* ---- 3D Viewer area ---- */
+    .viewer-area {
+      flex: 1;
+      position: relative;
+      background: #080b10;
+      min-width: 0;
+    }
+    #ws3dFrame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+    .viewer-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      gap: 10px;
+      pointer-events: none;
+    }
+    .ph-icon { font-size: 48px; opacity: 0.15; margin-bottom: 4px; }
+    .viewer-placeholder h3 { font-size: 14px; color: var(--text); font-weight: 500; }
+    .viewer-placeholder p  { font-size: 12px; }
+  </style>
+</head>
+<body>
+
+<header class="ws-header">
+  <div class="brand">
+    <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="22"/>
+  </div>
+  <a href="index.html" class="back-link">← Workspaces</a>
+  <div class="vdivider"></div>
+  <div class="ws-title-block">
+    <div class="ws-title" id="wsName">—</div>
+    <div class="ws-subtitle" id="wsLabel"></div>
+  </div>
+  <span class="pill off" id="statePill"><span class="dot"></span>—</span>
+  <div class="spacer"></div>
+  <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme">○</button>
+</header>
+
+<div class="ws-body">
+
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+
+      <div>
+        <div class="section-label">Controls</div>
+        <div id="controls"></div>
+      </div>
+
+      <div>
+        <div class="section-label">Status</div>
+        <div class="meta-list">
+          <div class="meta-row">
+            <span class="meta-key">Uptime</span>
+            <span class="meta-val mono" id="uptimeVal">—</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">Started</span>
+            <span class="meta-val mono" id="startedVal">—</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">URL</span>
+            <span class="meta-val path mono" id="urlVal" title="">—</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">Path</span>
+            <span class="meta-val path mono" id="pathVal" title="">—</span>
+          </div>
+          <div class="meta-row" id="lastErrRow" style="display:none">
+            <span class="meta-key">Last error</span>
+            <span class="meta-val err" id="lastErrVal">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="log-header">
+          <div class="section-label">Logs</div>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnRefreshLogs" title="Refresh logs">↺</button>
+        </div>
+        <pre id="logPre">(loading...)</pre>
+      </div>
+
+    </div>
+  </aside>
+
+  <div class="viewer-area">
+    <iframe id="ws3dFrame" src="about:blank"></iframe>
+    <div class="viewer-placeholder" id="viewerPlaceholder">
+      <div class="ph-icon">⬡</div>
+      <h3>3D Viewer</h3>
+      <p>Launch the workspace to load the simulation.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-area" id="toastArea"></div>
+
+<script type="module" src="theme.js"></script>
+<script type="module" src="workspace.js"></script>
+</body>
+</html>

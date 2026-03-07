@@ -16,10 +16,10 @@ from workspace.runtime import Runtime
 # Viewer/Static paths
 # --------------------------------------------------
 # runtime_server.py is inside:  .../workspace/workspace/workspace/runtime_server.py
-# web/ and static/ are here:    .../workspace/workspace/web  and  .../workspace/workspace/static
+# web/ and static/ are here:    .../workspace/workspace/orchestrator/web  and  .../workspace/workspace/static
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WEB_DIR = os.path.join(BASE_DIR, "web")
+WEB_DIR = os.path.join(BASE_DIR, "orchestrator", "web")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
@@ -76,7 +76,7 @@ async def connect(sid, environ, auth):
         await sio.emit("scene_update", world_state, room=sid)
 
     # If we don't yet have meshUrl in state, force Display to resend snapshot
-    if not has_meshurl(world_state):
+    if not _has_meshurl(world_state):
         await sio.emit("request_snapshot")
 
 
@@ -96,7 +96,8 @@ async def upstream_update(sid, payload):
 
 @sio.event
 async def request_snapshot(sid):
-    await sio.emit("request_snapshot", room=sid)
+    # Broadcast to all clients so the Display picks it up and resends the snapshot
+    await sio.emit("request_snapshot")
 
 
 @sio.event

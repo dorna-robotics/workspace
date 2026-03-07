@@ -585,7 +585,7 @@ class OrchestratorHTTPServer:
 
         self.app = tornado.web.Application([
             # ---- GUI (serve ./web) ----
-            (r"/", tornado.web.RedirectHandler, {"url": "/web/orchestrator.html"}),
+            (r"/", tornado.web.RedirectHandler, {"url": "/web/admin/index.html"}),
             (r"/web/(.*)", tornado.web.StaticFileHandler, {"path": web_dir}),
 
             # ---- API ----

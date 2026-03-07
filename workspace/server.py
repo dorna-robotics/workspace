@@ -13,7 +13,7 @@ from tornado import autoreload
 # --------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-WEB_DIR = os.path.join(BASE_DIR, "web")
+WEB_DIR = os.path.join(BASE_DIR, "orchestrator", "web")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.yaml")
 

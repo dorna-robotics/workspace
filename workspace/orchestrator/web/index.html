@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Dorna Lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #080c12; }
+
+    /* ---- Control Panel (top-right) ---- */
+    #ctrlPanel {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      z-index: 999;
+      user-select: none;
+    }
+    .ctrl-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(8,14,24,0.80);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #ffffff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.14s, border-color 0.14s, color 0.14s;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.55);
+      outline: none;
+    }
+    .ctrl-btn:hover {
+      background: rgba(40,60,90,0.90);
+      border-color: rgba(255,255,255,0.22);
+    }
+    .ctrl-btn.active {
+      background: rgba(50,110,210,0.30);
+      border-color: rgba(79,156,249,0.60);
+      color: #79b8ff;
+    }
+    .ctrl-btn svg { display: block; }
+
+    /* Light-mode overrides for the control panel */
+    body.light .ctrl-btn {
+      background: rgba(255,255,255,0.85);
+      border-color: rgba(0,0,0,0.12);
+      color: #1a1a1a;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    }
+    body.light .ctrl-btn:hover {
+      background: rgba(230,235,245,0.95);
+      border-color: rgba(0,0,0,0.22);
+    }
+    body.light .ctrl-btn.active {
+      background: rgba(0,100,220,0.12);
+      border-color: rgba(0,100,220,0.45);
+      color: #005cc5;
+    }
+
+    /* ---- ViewCube (bottom-right) ---- */
+    #viewCubeWrap {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      z-index: 999;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      width: 130px;
+    }
+    #viewCubeCanvas {
+      display: block;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.55);
+      width: 130px;
+      height: 130px;
+    }
+
+    /* ---- Info Bar (bottom-left) ---- */
+    #infoBar {
+      position: fixed;
+      bottom: 18px;
+      left: 22px;
+      display: none;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      z-index: 999;
+    }
+    .infoLabel {
+      padding: 5px 13px;
+      display: inline-block;
+      white-space: nowrap;
+    }
+    #infoName  { background: #0b3d91; border-radius: 6px 0 0 6px; }
+    #infoType  { background: #1a5c00; }
+    #infoSolid { background: #6b4d00; border-radius: 0 6px 6px 0; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Control Panel -->
+  <div id="ctrlPanel">
+    <button class="ctrl-btn active" id="btnGrid" title="Toggle grid">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+      </svg>
+    </button>
+    <button class="ctrl-btn" id="btnCollision" title="Toggle collision boxes">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ViewCube + Reset view (grouped bottom-right) -->
+  <div id="viewCubeWrap">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+      <button class="ctrl-btn" id="btnHome" title="Reset view">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+      </button>
+    </div>
+    <canvas id="viewCubeCanvas" width="130" height="130"></canvas>
+  </div>
+
+  <!-- Info Bar -->
+  <div id="infoBar">
+    <span id="infoName"  class="infoLabel"></span>
+    <span id="infoType"  class="infoLabel"></span>
+    <span id="infoSolid" class="infoLabel"></span>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
+    import { RGBELoader }    from "three/addons/loaders/RGBELoader.js";
+    import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+
+    // -------- cache-busting --------
+    function versioned(url) {
+      const v = window.__CONFIG_VERSION__ || Date.now();
+      return `${url}${url.includes("?") ? "&" : "?"}v=${v}`;
+    }
+    async function getVersion() {
+      try {
+        const j = await (await fetch("/config_version", { cache: "no-store" })).json();
+        window.__CONFIG_VERSION__ = j?.version || String(Date.now());
+      } catch { window.__CONFIG_VERSION__ = String(Date.now()); }
+    }
+
+    async function boot() {
+      // ── Theme: URL param > localStorage > default dark ────────────────────
+      const THEME_KEY = "orch_theme";
+      const _urlTheme = new URLSearchParams(window.location.search).get("theme");
+      let currentTheme = _urlTheme || localStorage.getItem(THEME_KEY) || "dark";
+
+      const DARK_BG    = new THREE.Color("#080c12");
+      const LIGHT_BG   = new THREE.Color("#f0f4f8");
+      const DARK_GRID  = { minor: 0x182030, major: 0x253548 };
+      const LIGHT_GRID = { minor: 0xbbbbbb, major: 0x888888 };
+
+      // ── Scene / Camera / Renderer ──────────────────────────────────────────
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100000);
+      camera.up.set(0, 0, 1);
+      camera.position.set(2400, 900, 1200);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.9;
+      document.body.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = false;
+      controls.target.set(0, 0, 0);
+      controls.minDistance = 5;
+      controls.maxDistance = 50000;
+
+      // ── Environment (HDR) ─────────────────────────────────────────────────
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      new RGBELoader().load(versioned("light.hdr"), (texture) => {
+        const envScene = new THREE.Scene();
+        const envMesh  = new THREE.Mesh(
+          new THREE.SphereGeometry(100, 64, 64),
+          new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide })
+        );
+        envMesh.rotation.x = Math.PI / 2;
+        envScene.add(envMesh);
+        scene.environment = pmrem.fromScene(envScene).texture;
+        scene.environmentIntensity = 0.6;
+      });
+
+      // ── Grid ──────────────────────────────────────────────────────────────
+      function makeRectGrid(size, step, major, colorMinor, colorMajor) {
+        const geom = new THREE.BufferGeometry();
+        const verts = [], cols = [];
+        const half  = size / 2;
+        const cMin  = new THREE.Color(colorMinor);
+        const cMaj  = new THREE.Color(colorMajor);
+        for (let x = -half; x <= half + 1e-6; x += step) {
+          const c = Math.abs(x % major) < 1e-6 ? cMaj : cMin;
+          verts.push(x, -half, 0, x, half, 0);
+          cols.push(c.r, c.g, c.b, c.r, c.g, c.b);
+        }
+        for (let y = -half; y <= half + 1e-6; y += step) {
+          const c = Math.abs(y % major) < 1e-6 ? cMaj : cMin;
+          verts.push(-half, y, 0, half, y, 0);
+          cols.push(c.r, c.g, c.b, c.r, c.g, c.b);
+        }
+        geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+        geom.setAttribute("color",    new THREE.Float32BufferAttribute(cols, 3));
+        return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false }));
+      }
+
+      let gridMesh = makeRectGrid(6000, 50, 500, DARK_GRID.minor, DARK_GRID.major);
+      scene.add(gridMesh);
+
+      // ── Lights ────────────────────────────────────────────────────────────
+      // Sky: warm white  /  Ground: deep cool blue — gives depth to underside faces
+      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x080c18, 0.5));
+
+      // Key light (warm)
+      const dir = new THREE.DirectionalLight(0xfff4e0, 1.6);
+      dir.position.set(1200, 900, 1500);
+      scene.add(dir);
+
+      // Fill light (cool, from opposite side — keeps shadows from going fully black)
+      const fill = new THREE.DirectionalLight(0xb0ccff, 0.4);
+      fill.position.set(-800, -600, 600);
+      scene.add(fill);
+
+      // ── Apply / update theme ──────────────────────────────────────────────
+      let showGrid = true;
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        const isLight = theme === "light";
+        document.body.classList.toggle("light", isLight);
+        scene.background = isLight ? LIGHT_BG : DARK_BG;
+
+        // Rebuild grid with correct colors
+        scene.remove(gridMesh);
+        gridMesh.geometry.dispose();
+        gridMesh.material.dispose();
+        const gc = isLight ? LIGHT_GRID : DARK_GRID;
+        gridMesh = makeRectGrid(6000, 50, 500, gc.minor, gc.major);
+        gridMesh.visible = showGrid;
+        scene.add(gridMesh);
+
+      }
+
+      applyTheme(currentTheme);
+
+      // Listen for theme changes made in the parent admin page (same origin)
+      window.addEventListener("storage", (e) => {
+        if (e.key === THEME_KEY) applyTheme(e.newValue || "dark");
+      });
+      // Also allow parent to postMessage theme changes
+      window.addEventListener("message", (e) => {
+        if (e.data?.type === "theme") applyTheme(e.data.value);
+      });
+
+      // ── GLTF + object management ──────────────────────────────────────────
+      const gltfLoader    = new GLTFLoader();
+      const objectsByName = new Map();
+
+      // ── Collision visuals ─────────────────────────────────────────────────
+      const collisionWorldGroup  = new THREE.Group();
+      collisionWorldGroup.visible = false;
+      scene.add(collisionWorldGroup);
+
+      const collisionFlangeGroup = new THREE.Group();
+      collisionFlangeGroup.visible = false;
+      scene.add(collisionFlangeGroup);
+
+      const collisionMeshesByKey = new Map();
+
+      // ── UI button handlers ────────────────────────────────────────────────
+      let showCollisionBoxes = false;
+
+      document.getElementById("btnGrid").addEventListener("click", () => {
+        showGrid = !showGrid;
+        gridMesh.visible = showGrid;
+        document.getElementById("btnGrid").classList.toggle("active", showGrid);
+      });
+
+      document.getElementById("btnCollision").addEventListener("click", () => {
+        showCollisionBoxes = !showCollisionBoxes;
+        collisionWorldGroup.visible  = showCollisionBoxes;
+        collisionFlangeGroup.visible = showCollisionBoxes;
+        document.getElementById("btnCollision").classList.toggle("active", showCollisionBoxes);
+      });
+
+      const HOME_POS    = new THREE.Vector3(2400, 900, 1200);
+      const HOME_TARGET = new THREE.Vector3(0, 0, 0);
+      const HOME_UP     = new THREE.Vector3(0, 0, 1);
+      document.getElementById("btnHome").addEventListener("click", () => {
+        snapCamera(HOME_POS, HOME_TARGET, HOME_UP);
+      });
+
+      // ── Camera snap animation ─────────────────────────────────────────────
+      let snapAnim = null;
+
+      function snapCamera(endPos, endTarget, endUp) {
+        snapAnim = {
+          startPos:    camera.position.clone(),
+          startTarget: controls.target.clone(),
+          startUp:     camera.up.clone(),
+          endPos:      endPos.clone(),
+          endTarget:   endTarget.clone(),
+          endUp:       endUp.clone(),
+          startTime:   performance.now(),
+          duration:    420,
+        };
+      }
+
+      function updateSnap() {
+        if (!snapAnim) return;
+        const elapsed = performance.now() - snapAnim.startTime;
+        let t = Math.min(elapsed / snapAnim.duration, 1);
+        t = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2; // cubic ease-in-out
+        camera.position.lerpVectors(snapAnim.startPos,    snapAnim.endPos,    t);
+        controls.target.lerpVectors(snapAnim.startTarget, snapAnim.endTarget, t);
+        camera.up.lerpVectors(snapAnim.startUp, snapAnim.endUp, t).normalize();
+        camera.lookAt(controls.target);
+        controls.update();
+        if (elapsed >= snapAnim.duration) snapAnim = null;
+      }
+
+      // ── ViewCube ──────────────────────────────────────────────────────────
+      const vcCanvas   = document.getElementById("viewCubeCanvas");
+      const vcRenderer = new THREE.WebGLRenderer({ canvas: vcCanvas, antialias: true, alpha: true });
+      vcRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      vcRenderer.setSize(130, 130);
+      vcRenderer.setClearColor(0x000000, 0);
+
+      const vcScene  = new THREE.Scene();
+      const vcCamera = new THREE.OrthographicCamera(-1.7, 1.7, 1.7, -1.7, 0.1, 100);
+      vcCamera.position.set(0, 0, 6);
+      vcCamera.lookAt(0, 0, 0);
+      vcScene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+      // ViewCube geometry constants — defined here so makeFaceTex can reference them
+      const VC_DIST  = 2800;
+      const VC_HALF  = 0.85;  // half-size of visual cube (1.7/2)
+      const VC_ETHR  = 0.38;  // thickness of edge/corner detection zone
+
+      // Build a canvas texture for a ViewCube face (light style — standard ViewCube look)
+      // Zone separator lines are drawn to visually show where edge/corner zones start.
+      function makeFaceTex(label, bg, fg = "#1a2840") {
+        const c   = document.createElement("canvas");
+        c.width   = 128; c.height = 128;
+        const ctx = c.getContext("2d");
+        // Face background
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        vcRR(ctx, 4, 4, 120, 120, 10); ctx.fill();
+        // Zone separator lines: show where edge zone starts (edge zone = VC_ETHR / (2*VC_HALF) of face)
+        // Drawn area = 120px (from 4 to 124). Zone boundary from each edge:
+        const zoneFromEdge = Math.round(120 * VC_ETHR / (2 * VC_HALF)); // ≈ 27px
+        const z = 4 + zoneFromEdge;
+        ctx.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx.lineWidth   = 1;
+        ctx.strokeRect(z, z, 128 - 2 * z, 128 - 2 * z);
+        // Face border
+        ctx.strokeStyle = "rgba(0,0,0,0.22)";
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        vcRR(ctx, 4, 4, 120, 120, 10); ctx.stroke();
+        // Label
+        ctx.fillStyle    = fg;
+        ctx.font         = "bold 24px system-ui, sans-serif";
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, 64, 64);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      }
+      function vcRR(ctx, x, y, w, h, r) {
+        ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+        ctx.quadraticCurveTo(x+w, y,   x+w, y+r);   ctx.lineTo(x+w, y+h-r);
+        ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h); ctx.lineTo(x+r, y+h);
+        ctx.quadraticCurveTo(x, y+h,   x, y+h-r);   ctx.lineTo(x, y+r);
+        ctx.quadraticCurveTo(x, y,     x+r, y);      ctx.closePath();
+      }
+
+      // ── ViewCube cube faces ───────────────────────────────────────────────
+      // BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
+      // Z-up world: +Z=TOP, -Z=BOT, -Y=FRONT, +Y=BACK, +X=RIGHT, -X=LEFT
+      const FACE_BG  = "#d8e4f0";
+      const TOP_BG   = "#b8d0ea";
+      const vcFaces  = [
+        { l: "R",     bg: FACE_BG }, // 0  +X
+        { l: "L",     bg: FACE_BG }, // 1  -X
+        { l: "BACK",  bg: FACE_BG }, // 2  +Y
+        { l: "FRONT", bg: FACE_BG }, // 3  -Y
+        { l: "TOP",   bg: TOP_BG  }, // 4  +Z
+        { l: "BOT",   bg: FACE_BG }, // 5  -Z
+      ];
+      const vcMats = vcFaces.map(f => new THREE.MeshBasicMaterial({ map: makeFaceTex(f.l, f.bg) }));
+      const vcCube = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.7, 1.7), vcMats);
+
+      // ── Corner gem meshes (8) — one visible sphere at each cube corner ────
+      // Corners are the primary visual indicator of corner-view selection
+      const VC_CORNER_DIRS = [
+        [+1,+1,+1],[+1,+1,-1],[+1,-1,+1],[+1,-1,-1],
+        [-1,+1,+1],[-1,+1,-1],[-1,-1,+1],[-1,-1,-1],
+      ];
+      const vcCornerGeo = new THREE.SphereGeometry(0.22, 10, 10); // large sphere gem
+      const vcCornerMeshes = VC_CORNER_DIRS.map(d => {
+        const m = new THREE.Mesh(vcCornerGeo, new THREE.MeshBasicMaterial({ color: "#6b9ac4" }));
+        m.position.set(d[0]*VC_HALF, d[1]*VC_HALF, d[2]*VC_HALF);
+        m.userData.vcType = "corner";
+        m.userData.vcDir  = d;
+        return m;
+      });
+
+      // ── Edge bar meshes (12) — chunky bars along each cube edge ──────────
+      // One bar per edge, centred on the edge midpoint, shorter than the full
+      // edge so they don't overlap the corner spheres.
+      const VC_EDGE_DIRS = [
+        [0,+1,+1],[0,+1,-1],[0,-1,+1],[0,-1,-1],   // parallel to X
+        [+1,0,+1],[+1,0,-1],[-1,0,+1],[-1,0,-1],   // parallel to Y
+        [+1,+1,0],[+1,-1,0],[-1,+1,0],[-1,-1,0],   // parallel to Z
+      ];
+      const VC_EBAR_THICK = 0.20;
+      const VC_EBAR_LEN   = 1.7 - 2 * 0.30; // leave room for corner spheres
+      const vcEdgeMeshes = VC_EDGE_DIRS.map(d => {
+        const freeX = d[0] === 0, freeY = d[1] === 0, freeZ = d[2] === 0;
+        const sx = freeX ? VC_EBAR_LEN : VC_EBAR_THICK;
+        const sy = freeY ? VC_EBAR_LEN : VC_EBAR_THICK;
+        const sz = freeZ ? VC_EBAR_LEN : VC_EBAR_THICK;
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(sx, sy, sz),
+          new THREE.MeshBasicMaterial({ color: "#5a88b0" })
+        );
+        m.position.set(d[0]*VC_HALF, d[1]*VC_HALF, d[2]*VC_HALF);
+        m.userData.vcType = "edge";
+        m.userData.vcDir  = d;
+        return m;
+      });
+
+      // ── Group everything so one quaternion sync covers all ─────────────────
+      const vcGroup = new THREE.Group();
+      vcGroup.add(vcCube);
+      vcCornerMeshes.forEach(m => vcGroup.add(m));
+      vcEdgeMeshes.forEach(m => vcGroup.add(m));
+      vcScene.add(vcGroup);
+
+      // ── Per-face snap data ─────────────────────────────────────────────────
+      const VC_FACE_NORMALS = [
+        [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]
+      ];
+
+      function vcSnapFromDir(dx, dy, dz) {
+        const len  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        const nx = dx/len, ny = dy/len, nz = dz/len;
+        // Preserve current zoom distance so ViewCube snaps match whatever
+        // zoom level the user is at (including the home view distance)
+        const dist = camera.position.distanceTo(controls.target);
+        const t    = controls.target;
+        const up   = Math.abs(nz) > 0.98
+          ? new THREE.Vector3(1, 0, 0)
+          : new THREE.Vector3(0, 0, 1);
+        return [
+          new THREE.Vector3(t.x + nx*dist, t.y + ny*dist, t.z + nz*dist),
+          t.clone(),
+          up,
+        ];
+      }
+
+      // ── Raycaster ─────────────────────────────────────────────────────────
+      const vcRaycaster = new THREE.Raycaster();
+      const vcPointer   = new THREE.Vector2();
+      const vcAllMeshes = [vcCube, ...vcCornerMeshes, ...vcEdgeMeshes];
+
+      function vcSetPointer(e) {
+        const r = vcCanvas.getBoundingClientRect();
+        vcPointer.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+        vcPointer.y = -((e.clientY - r.top)  / r.height) * 2 + 1;
+      }
+
+      // ── Highlight ─────────────────────────────────────────────────────────
+      // Highlight colours designed for light face textures (colour × texture):
+      //   face hover  → medium blue on hit face, faces dimmed elsewhere
+      //   edge hover  → edge bar turns bright blue, faces dimmed
+      //   corner hover → corner gem turns gold (Autodesk style), faces dimmed
+      const VC_FACE_DIM = "#9db0c0";
+
+      function vcResetHighlight() {
+        vcMats.forEach(m => m.color.set("#ffffff"));
+        vcCornerMeshes.forEach(m => m.material.color.set("#6b9ac4"));
+        vcEdgeMeshes.forEach(m => m.material.color.set("#5a88b0"));
+      }
+
+      function vcApplyHighlight(hit) {
+        vcResetHighlight();
+        if (!hit) return;
+        const type = hit.object.userData.vcType;
+        if (type === "corner") {
+          hit.object.material.color.set("#f5a623"); // gold gem
+          vcMats.forEach(m => m.color.set(VC_FACE_DIM));
+        } else if (type === "edge") {
+          hit.object.material.color.set("#2299ff"); // bright blue bar
+          vcMats.forEach(m => m.color.set(VC_FACE_DIM));
+        } else {
+          // face hit — highlight the specific face
+          const fi = hit.face.materialIndex;
+          vcMats.forEach((m, i) => m.color.set(i === fi ? "#1a66cc" : VC_FACE_DIM));
+        }
+      }
+
+      function vcGetSnap(hit) {
+        const type = hit.object.userData.vcType;
+        if (type === "corner" || type === "edge") {
+          const d = hit.object.userData.vcDir;
+          return vcSnapFromDir(d[0], d[1], d[2]);
+        }
+        const n = VC_FACE_NORMALS[hit.face.materialIndex];
+        return vcSnapFromDir(n[0], n[1], n[2]);
+      }
+
+      let vcHoveredHit = null;
+
+      vcCanvas.addEventListener("mousemove", (e) => {
+        vcSetPointer(e);
+        vcRaycaster.setFromCamera(vcPointer, vcCamera);
+        const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
+        if (hits.length) {
+          vcHoveredHit = hits[0];
+          vcApplyHighlight(hits[0]);
+          vcCanvas.style.cursor = "pointer";
+        } else {
+          vcHoveredHit = null;
+          vcApplyHighlight(null);
+          vcCanvas.style.cursor = "default";
+        }
+      });
+      vcCanvas.addEventListener("mouseleave", () => {
+        vcHoveredHit = null;
+        vcApplyHighlight(null);
+        vcCanvas.style.cursor = "default";
+      });
+      vcCanvas.addEventListener("click", (e) => {
+        vcSetPointer(e);
+        vcRaycaster.setFromCamera(vcPointer, vcCamera);
+        const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
+        if (!hits.length) return;
+        const [pos, tgt, up] = vcGetSnap(hits[0]);
+        snapCamera(pos, tgt, up);
+      });
+
+      // ── Collision helpers ─────────────────────────────────────────────────
+      function findFlangeRoot() {
+        const d = objectsByName.get("core_robot_flange");
+        if (d) return d;
+        for (const obj of objectsByName.values())
+          if (obj.userData?.componentName === "core" && obj.userData?.solidName === "robot_flange") return obj;
+        return null;
+      }
+      function ensureFlangeGroupAttached() {
+        const fr = findFlangeRoot();
+        if (fr && collisionFlangeGroup.parent !== fr) {
+          fr.add(collisionFlangeGroup);
+          collisionFlangeGroup.position.set(0,0,0);
+          collisionFlangeGroup.quaternion.identity();
+          collisionFlangeGroup.scale.set(1,1,1);
+        }
+      }
+      function base64ToArrayBuffer(b64) {
+        const bin = atob(b64), bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes.buffer;
+      }
+      function rodriguesDegToQuaternion(rx, ry, rz) {
+        const ang = Math.hypot(rx, ry, rz);
+        if (ang === 0) return new THREE.Quaternion();
+        const q = new THREE.Quaternion();
+        q.setFromAxisAngle(new THREE.Vector3(rx/ang, ry/ang, rz/ang), ang * Math.PI / 180);
+        return q;
+      }
+      function makeCollisionMesh(pose, scale, color, opacity) {
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(scale[0], scale[1], scale[2]),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+        );
+        const [x,y,z,rx,ry,rz] = pose;
+        mesh.position.set(x,y,z);
+        mesh.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
+        mesh.renderOrder = 20;
+        return mesh;
+      }
+      function clearCollisionMeshesFor(key) {
+        const e = collisionMeshesByKey.get(key);
+        if (!e) return;
+        for (const m of e.world)  { collisionWorldGroup.remove(m);  m.geometry.dispose(); m.material.dispose(); }
+        for (const m of e.flange) { collisionFlangeGroup.remove(m); m.geometry.dispose(); m.material.dispose(); }
+        collisionMeshesByKey.delete(key);
+      }
+      function updateCollisionMeshesFor(key, worldBoxes, flangeBoxes, meta) {
+        clearCollisionMeshesFor(key);
+        const entry = { world: [], flange: [] };
+        for (const box of (worldBoxes||[])) {
+          if (!box?.pose || !box?.scale) continue;
+          const m = makeCollisionMesh(box.pose, box.scale, 0xff3344, 0.28);
+          m.userData = { ...meta, frame: "world" };
+          collisionWorldGroup.add(m); entry.world.push(m);
+        }
+        for (const box of (flangeBoxes||[])) {
+          if (!box?.pose || !box?.scale) continue;
+          const m = makeCollisionMesh(box.pose, box.scale, 0x33a7ff, 0.28);
+          m.userData = { ...meta, frame: "flange" };
+          collisionFlangeGroup.add(m); entry.flange.push(m);
+        }
+        collisionMeshesByKey.set(key, entry);
+      }
+
+      // ── Picking + anchor gizmos ───────────────────────────────────────────
+      const raycaster     = new THREE.Raycaster();
+      const pointer       = new THREE.Vector2();
+      const pickableMeshes = new Set();
+      let activeAnchors   = null;
+
+      const anchorsLayer  = new THREE.Group();
+      anchorsLayer.frustumCulled = false;
+      scene.add(anchorsLayer);
+
+      function makeTextSprite(text, fontPx=72, bg="#000", fg="#fff", alpha=0.7, pad=10, bold=true) {
+        const cv = document.createElement("canvas"), ctx = cv.getContext("2d");
+        ctx.font = `${bold?"bold ":""}${fontPx}px sans-serif`;
+        const m  = ctx.measureText(text);
+        cv.width  = Math.ceil(m.width + pad*2);
+        cv.height = Math.ceil(fontPx + pad*2);
+        ctx.font = `${bold?"bold ":""}${fontPx}px sans-serif`;
+        ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillStyle = bg; ctx.globalAlpha = alpha;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.globalAlpha = 1; ctx.fillStyle = fg;
+        ctx.fillText(text, pad, pad);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+        spr.scale.set(cv.width*0.1, cv.height*0.1, 1);
+        spr.renderOrder = 999; spr.frustumCulled = false;
+        return spr;
+      }
+      function makeAxesHelperAlwaysOnTop(size) {
+        const axes = new THREE.AxesHelper(size);
+        axes.traverse(c => { if (c.material?.isMaterial) { c.material.depthTest = false; c.renderOrder = 999; } });
+        axes.renderOrder = 999; axes.frustumCulled = false;
+        return axes;
+      }
+      function clearAnchors() {
+        if (activeAnchors) activeAnchors.items.forEach(it => {
+          anchorsLayer.remove(it.axes);
+          if (it.label) anchorsLayer.remove(it.label);
+        });
+        activeAnchors = null;
+        const bar = document.getElementById("infoBar");
+        if (bar) bar.style.display = "none";
+      }
+      function buildAnchorsFor(obj) {
+        clearAnchors();
+        const anchors = obj.userData?.anchors || {};
+        if (!Object.keys(anchors).length) return;
+        const items = [];
+        for (const [name, arr] of Object.entries(anchors)) {
+          if (!Array.isArray(arr) || arr.length !== 6) continue;
+          const [ax,ay,az,rx,ry,rz] = arr;
+          const pLocal = new THREE.Vector3(ax,ay,az);
+          const qLocal = rodriguesDegToQuaternion(rx,ry,rz);
+          const axes   = makeAxesHelperAlwaysOnTop(18);
+          const label  = makeTextSprite(name, 90, "#000", "#fff", 0.65);
+          anchorsLayer.add(axes); anchorsLayer.add(label);
+          items.push({ name, pLocal, qLocal, axes, label });
+        }
+        const comp  = obj.userData?.componentName || "--";
+        const type  = obj.userData?.typeName || obj.userData?.type || "--";
+        const solid = obj.userData?.solidName || "--";
+        document.getElementById("infoName").textContent  = `Name: ${comp}`;
+        document.getElementById("infoType").textContent  = `Type: ${type}`;
+        document.getElementById("infoSolid").textContent = `Solid: ${solid}`;
+        document.getElementById("infoBar").style.display = "flex";
+        activeAnchors = { obj, items };
+        updateAnchorsNow();
+      }
+      function updateAnchorsNow() {
+        if (!activeAnchors) return;
+        const { obj, items } = activeAnchors;
+        if (!obj.parent) { clearAnchors(); return; }
+        const wq = new THREE.Quaternion();
+        obj.getWorldQuaternion(wq);
+        for (const it of items) {
+          const pw = obj.localToWorld(it.pLocal.clone());
+          it.axes.position.copy(pw);
+          it.axes.quaternion.copy(wq.clone().multiply(it.qLocal));
+          if (it.label) it.label.position.copy(pw).add(new THREE.Vector3(0,0,22));
+        }
+      }
+
+      function setPointerFromEvent(e) {
+        const r = renderer.domElement.getBoundingClientRect();
+        pointer.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+        pointer.y = -((e.clientY - r.top)  / r.height) * 2 + 1;
+      }
+      function pickFirstMesh() {
+        raycaster.setFromCamera(pointer, camera);
+        const targets = pickableMeshes.size ? Array.from(pickableMeshes) : scene.children;
+        const hits    = raycaster.intersectObjects(targets, true);
+        if (!hits.length) return null;
+        for (const h of hits) { if (h.object?.isMesh) return h; }
+        return hits[0];
+      }
+
+      const CLICK_MS = 250, CLICK_PX = 6;
+      let downInfo = null;
+      renderer.domElement.addEventListener("pointerdown", (e) => {
+        downInfo = { button: e.button, x: e.clientX, y: e.clientY, time: performance.now() };
+        if (e.button === 2) { e.preventDefault(); clearAnchors(); }
+      });
+      renderer.domElement.addEventListener("pointerup", (e) => {
+        if (!downInfo) return;
+        const dt = performance.now() - downInfo.time;
+        const dx = Math.abs(e.clientX - downInfo.x);
+        const dy = Math.abs(e.clientY - downInfo.y);
+        if (downInfo.button === 0 && e.button === 0 && dt <= CLICK_MS && dx <= CLICK_PX && dy <= CLICK_PX) {
+          setPointerFromEvent(e);
+          const hit = pickFirstMesh();
+          if (hit?.object?.isMesh) {
+            let node = hit.object;
+            while (node && !node.userData?.anchors && node !== scene) node = node.parent;
+            if (node?.userData?.anchors) buildAnchorsFor(node);
+          }
+        }
+        downInfo = null;
+      });
+      renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
+      renderer.domElement.addEventListener("pointermove", (e) => {
+        setPointerFromEvent(e);
+        const hit = pickFirstMesh();
+        renderer.domElement.style.cursor = hit?.object?.isMesh ? "pointer" : "default";
+      });
+
+      function registerPickables(node) {
+        node.traverse(o => { if (o.isMesh) pickableMeshes.add(o); });
+      }
+      function addEdgeOverlay(node) {
+        node.traverse(obj => {
+          if (!obj.isMesh) return;
+          if (!obj.userData.__originalMat) obj.userData.__originalMat = obj.material;
+          obj.material = obj.userData.__originalMat;
+          if (obj.userData.__edgeLines) {
+            obj.remove(obj.userData.__edgeLines);
+            obj.userData.__edgeLines.geometry.dispose();
+            obj.userData.__edgeLines.material.dispose();
+            obj.userData.__edgeLines = null;
+          }
+          const el = new THREE.LineSegments(
+            new THREE.EdgesGeometry(obj.geometry, 30),
+            new THREE.LineBasicMaterial({ color: 0x000000, toneMapped: false })
+          );
+          el.renderOrder = 10;
+          obj.add(el);
+          obj.userData.__edgeLines = el;
+        });
+      }
+
+      // ── upsert pipeline ───────────────────────────────────────────────────
+      function upsertObject(name, spec) {
+        if (spec.delete) {
+          const prev = objectsByName.get(name);
+          if (prev) {
+            if (activeAnchors?.obj === prev) clearAnchors();
+            prev.traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+            scene.remove(prev);
+            objectsByName.delete(name);
+          }
+          clearCollisionMeshesFor(name);
+          return;
+        }
+        let root = objectsByName.get(name);
+        if (!root) {
+          root = new THREE.Group(); root.name = name;
+          scene.add(root); objectsByName.set(name, root);
+        }
+        if (spec.meshUrl && root.userData.meshUrl !== spec.meshUrl) {
+          root.userData.meshUrl = spec.meshUrl;
+          while (root.children.length) {
+            root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+            root.remove(root.children[0]);
+          }
+          gltfLoader.load(versioned(spec.meshUrl), (gltf) => {
+            gltf.scene.traverse(o => {
+              if (o.isMesh) {
+                const mats = Array.isArray(o.material)?o.material:[o.material];
+                mats.forEach(m => { if (m&&"side"in m) m.side = THREE.DoubleSide; });
+              }
+            });
+            addEdgeOverlay(gltf.scene);
+            root.add(gltf.scene); registerPickables(gltf.scene);
+          }, undefined, err => console.log("GLB load failed:", spec.meshUrl, err));
+        }
+        if (spec.mesh) {
+          gltfLoader.parse(base64ToArrayBuffer(spec.mesh), "", (gltf) => {
+            while (root.children.length) {
+              root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+              root.remove(root.children[0]);
+            }
+            gltf.scene.traverse(o => {
+              if (o.isMesh) {
+                const mats = Array.isArray(o.material)?o.material:[o.material];
+                mats.forEach(m => { if (m&&"side"in m) m.side = THREE.DoubleSide; });
+              }
+            });
+            addEdgeOverlay(gltf.scene);
+            root.add(gltf.scene); registerPickables(gltf.scene);
+          }, () => {});
+        }
+        if (Array.isArray(spec.pose) && spec.pose.length === 6) {
+          const [x,y,z,rx,ry,rz] = spec.pose;
+          root.position.set(x,y,z);
+          root.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
+        }
+        if (typeof spec.visible === "boolean")              root.visible = spec.visible;
+        if (spec.anchors && typeof spec.anchors === "object") root.userData.anchors = spec.anchors;
+        if (spec.componentName) root.userData.componentName = spec.componentName;
+        if (spec.solidName)     root.userData.solidName     = spec.solidName;
+        if (spec.typeName)      root.userData.typeName      = spec.typeName;
+        if (spec.type)          root.userData.typeName      = spec.type;
+        if ("collisionWorld" in spec || "collisionFlange" in spec) {
+          updateCollisionMeshesFor(name, spec.collisionWorld||[], spec.collisionFlange||[], {
+            componentName: root.userData.componentName, solidName: root.userData.solidName
+          });
+        } else {
+          clearCollisionMeshesFor(name);
+        }
+      }
+
+      // ── Socket.IO ─────────────────────────────────────────────────────────
+      const socket = io({ path: "/socket.io/", transports: ["websocket"], forceNew: true, timeout: 10000 });
+
+      let _hasMeshData = false;
+      let _resyncTimer = null;
+
+      socket.on("connect", () => {
+        // Actively ask for a snapshot — don't rely solely on the server pushing it
+        socket.emit("request_snapshot");
+        // If we still have no mesh data after 3s, keep asking (Display may not be ready yet)
+        _resyncTimer = setInterval(() => {
+          if (!_hasMeshData) socket.emit("request_snapshot");
+        }, 3000);
+      });
+
+      socket.on("disconnect", () => {
+        clearInterval(_resyncTimer);
+        _hasMeshData = false;
+      });
+
+      socket.on("scene_update", (payload) => {
+        const entries  = Object.entries(payload || {});
+        if (!_hasMeshData && entries.some(([, s]) => s?.meshUrl)) {
+          _hasMeshData = true;
+          clearInterval(_resyncTimer);
+        }
+        for (const [n, s] of entries) upsertObject(n, s || {});
+      });
+
+      // ── Animate ───────────────────────────────────────────────────────────
+      function animate() {
+        updateSnap();
+        controls.update();
+        updateAnchorsNow();
+        ensureFlangeGroupAttached();
+        renderer.render(scene, camera);
+
+        // ViewCube: sync group orientation (inverse of main camera)
+        vcGroup.quaternion.copy(camera.quaternion).invert();
+        vcRenderer.render(vcScene, vcCamera);
+
+        requestAnimationFrame(animate);
+      }
+      animate();
+
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    } // boot
+
+    await getVersion();
+    boot();
+  </script>
+</body>
+</html>

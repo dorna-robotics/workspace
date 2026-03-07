@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dorna Lab — Admin</title>
+  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"dark"); })();</script>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    .main {
+      padding: 28px 24px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .section-header h2 { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .section-header .count {
+      font-size: 11px; font-weight: 600;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1px 8px;
+      font-family: var(--mono);
+    }
+
+    /* ---- Workspace grid ---- */
+    .ws-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 14px;
+    }
+
+    /* ---- Workspace card ---- */
+    .ws-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: box-shadow 0.18s, border-color 0.18s, transform 0.18s;
+      /* Left status stripe via inset box-shadow — default = border color */
+      box-shadow: inset 3px 0 0 var(--border2);
+    }
+    .ws-card:hover {
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 var(--border), 0 6px 24px rgba(0,0,0,0.35);
+      transform: translateY(-1px);
+    }
+    /* Running: green left stripe + subtle ambient glow */
+    .ws-card.is-running {
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 var(--green), 0 0 0 1px rgba(63,185,80,0.06), 0 4px 16px rgba(0,0,0,0.2);
+    }
+    .ws-card.is-running:hover {
+      box-shadow: inset 3px 0 0 var(--green), 0 8px 28px rgba(0,0,0,0.35);
+    }
+    /* Error: red left stripe */
+    .ws-card.is-error {
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 var(--red);
+    }
+    .ws-card.is-error:hover {
+      box-shadow: inset 3px 0 0 var(--red), 0 6px 24px rgba(0,0,0,0.35);
+    }
+
+    .wc-head {
+      padding: 14px 16px 8px 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .wc-info { flex: 1; min-width: 0; }
+    .wc-name {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+    .wc-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 7px;
+      letter-spacing: 0.4px;
+      flex-shrink: 0;
+      text-transform: uppercase;
+    }
+    .wc-path {
+      color: var(--muted);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .wc-meta {
+      padding: 0 18px 12px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .wc-meta-item { font-size: 12px; display: flex; gap: 4px; align-items: center; color: var(--muted); }
+    .wc-meta-item strong { font-weight: 600; color: var(--text); font-family: var(--mono); font-size: 11px; }
+    .wc-err {
+      font-size: 11px;
+      color: var(--red);
+      background: rgba(248,81,73,0.08);
+      border: 1px solid rgba(248,81,73,0.25);
+      border-radius: 4px;
+      padding: 2px 8px;
+    }
+
+    .wc-footer {
+      margin-top: auto;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: var(--surface2);
+    }
+    .wc-actions { display: flex; gap: 5px; }
+
+    /* ---- Empty state ---- */
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 36px; margin-bottom: 16px; opacity: 0.2; }
+    .empty-state h3 { color: var(--text); margin-bottom: 6px; font-size: 15px; font-weight: 600; }
+    .empty-state p { font-size: 13px; line-height: 1.6; }
+
+    /* ---- Modal extras ---- */
+    #advSection { flex-direction: column; gap: 14px; display: none; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="26"/>
+  </div>
+  <span class="pill off" style="margin-left:2px">
+    <span class="dot ok"></span>
+    <span class="mono" id="orchUrl"></span>
+  </span>
+  <div class="spacer"></div>
+  <button class="btn btn-primary btn-sm" id="btnAdd">+ Add Workspace</button>
+  <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme">○</button>
+</header>
+
+<main class="main">
+  <!-- Stats bar -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-item">
+      <div class="stat-label">Total</div>
+      <div class="stat-value off" id="statTotal">—</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Running</div>
+      <div class="stat-value ok"  id="statRunning">—</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Idle</div>
+      <div class="stat-value warn" id="statIdle">—</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value bad" id="statErrors">—</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Offline</div>
+      <div class="stat-value off" id="statOffline">—</div>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <h2>Workspaces</h2>
+    <span class="count" id="wsCount"></span>
+  </div>
+  <div class="ws-grid" id="wsGrid"></div>
+</main>
+
+<div class="toast-area" id="toastArea"></div>
+
+<!-- Add Workspace Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Add Workspace</h3>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnModalClose" title="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field">
+          <label>Name *</label>
+          <input class="input" id="f_name" type="text" placeholder="workflow" autocomplete="off"/>
+        </div>
+        <div class="field">
+          <label>Port *</label>
+          <input class="input" id="f_port" type="number" value="9000"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <input class="input" id="f_label" type="text" placeholder="Workflow 1"/>
+      </div>
+      <div class="field">
+        <label>Path to main.py *</label>
+        <input class="input" id="f_path" type="text" placeholder="/home/dorna/.../projects/workflow/main.py"/>
+      </div>
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">
+          <input type="checkbox" id="chkAdv"/> Advanced
+        </label>
+      </div>
+      <div id="advSection">
+        <div class="field">
+          <label>Extra args</label>
+          <input class="input" id="f_args" type="text" placeholder="--job batch.xlsx"/>
+          <div class="hint">Appended to: <span class="mono">sudo python3 main.py --port ...</span></div>
+        </div>
+        <div class="field">
+          <label>Node URL</label>
+          <input class="input" id="f_nodeUrl" type="text" placeholder="http://192.168.1.x:9000"/>
+          <div class="hint">Leave empty to use this orchestrator. Set for remote machines.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="btnModalCancel">Cancel</button>
+      <button class="btn btn-primary" id="btnModalConfirm">Add workspace</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="theme.js"></script>
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>
