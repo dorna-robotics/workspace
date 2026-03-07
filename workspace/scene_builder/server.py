@@ -726,6 +726,34 @@ class CatalogHandler(tornado.web.RequestHandler):
         items = sorted(COMPONENT_MAP.keys())
         self.write({"ok": True, "items": items})
 
+
+class CategoriesHandler(tornado.web.RequestHandler):
+    """Return components grouped by folder category."""
+    def get(self):
+        categories = []
+        if not os.path.isdir(COMPONENTS_DIR):
+            self.write({"ok": True, "categories": categories})
+            return
+        for folder in sorted(os.listdir(COMPONENTS_DIR)):
+            folder_path = os.path.join(COMPONENTS_DIR, folder)
+            if not os.path.isdir(folder_path) or folder.startswith("_") or folder.startswith("."):
+                continue
+            cat_name = folder.replace("_", " ").lower()
+            items = []
+            for fn in sorted(os.listdir(folder_path)):
+                if not fn.endswith(".py") or fn.startswith("_"):
+                    continue
+                fp = os.path.join(folder_path, fn)
+                try:
+                    src = open(fp, "r", encoding="utf-8", errors="ignore").read()
+                except Exception:
+                    continue
+                for m in REGISTER_RE.finditer(src):
+                    items.append(m.group(1))
+            if items:
+                categories.append({"name": cat_name, "items": items})
+        self.write({"ok": True, "categories": categories})
+
 class TypeMetaHandler(tornado.web.RequestHandler):
     """Return anchors + options for a component type."""
     def get(self):
@@ -889,6 +917,7 @@ app.add_handlers(r".*$", [(r"/save_config", SaveConfigHandler)])
 
 # catalog endpoint (CAD/*.glb)
 app.add_handlers(r".*$", [(r"/api/catalog", CatalogHandler)])
+app.add_handlers(r".*$", [(r"/api/categories", CategoriesHandler)])
 app.add_handlers(r".*$", [(r"/api/type_meta", TypeMetaHandler)])
 app.add_handlers(r".*$", [(r"/api/instantiate", InstantiateHandler)])
 app.add_handlers(r".*$", [(r"/api/rails", RailsHandler)])
