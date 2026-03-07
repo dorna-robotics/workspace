@@ -707,7 +707,7 @@ class IndexHandler(tornado.web.RequestHandler):
     def get(self):
         self.render('index.html')
 
-PORT = int(os.environ.get("PORT", "5001"))
+PORT = int(os.environ.get("PORT", "5000"))
 DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
 
 sio = socketio.AsyncServer(async_mode="tornado", cors_allowed_origins="*")
