@@ -38,7 +38,7 @@ const frame       = $("ws3dFrame");
 const placeholder = $("viewerPlaceholder");
 const toastArea   = $("toastArea");
 
-document.title = `${wsName} — Dorna Lab`;
+document.title = `${wsName} — Dorna Workspace`;
 wsNameEl.textContent = wsName;
 
 // ---- Toast ----
