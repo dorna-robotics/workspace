@@ -15,6 +15,7 @@ function wsColor(name) {
 const wsGrid    = document.getElementById("wsGrid");
 const wsCount   = document.getElementById("wsCount");
 const toastArea = document.getElementById("toastArea");
+const wsSearch  = document.getElementById("wsSearch");
 
 document.getElementById("orchUrl").textContent = window.location.origin;
 
@@ -194,10 +195,24 @@ function render() {
   });
 }
 
+// ---- Search filter ----
+function applySearch() {
+  const q = (wsSearch?.value || "").trim().toLowerCase();
+  wsGrid.querySelectorAll(".ws-card[data-name]").forEach(card => {
+    const ws = workspaces.find(w => w.name === card.getAttribute("data-name"));
+    if (!ws) return;
+    const haystack = [ws.name, ws.label, ws.path_to_file].join(" ").toLowerCase();
+    card.style.display = (!q || haystack.includes(q)) ? "" : "none";
+  });
+}
+
+wsSearch?.addEventListener("input", applySearch);
+
 // ---- Poll ----
 async function poll() {
   await refreshStatuses();
   render();
+  applySearch();
 }
 
 // ---- Add Workspace Modal ----
@@ -251,6 +266,6 @@ document.getElementById("btnModalConfirm").addEventListener("click", async () =>
   try {
     await loadWorkspaces();
     await poll();
-    setInterval(poll, POLL_MS);
+    setInterval(async () => { await poll(); }, POLL_MS);
   } catch (err) { toast(String(err), "bad"); }
 })();

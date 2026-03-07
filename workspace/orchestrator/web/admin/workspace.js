@@ -9,6 +9,8 @@ if (!wsName) window.location.replace("index.html");
 let wsInfo      = null;
 let lastLogs    = "";
 let iframeReady = false;
+let iframeUrl   = "";
+let iframeLoadedWhileRunning = false;
 
 // ---- DOM refs ----
 const $  = id => document.getElementById(id);
@@ -106,7 +108,7 @@ function updateStatusUI(st) {
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
   renderControls(launched, running);
-  updateIframe(launched);
+  updateIframe(launched, running);
 }
 
 function renderControls(launched, running) {
@@ -141,24 +143,31 @@ function renderControls(launched, running) {
   }
 }
 
-function updateIframe(launched) {
+function updateIframe(launched, running) {
   if (!wsInfo) return;
   if (!launched) {
     if (iframeReady) {
       iframeReady = false;
+      iframeUrl   = "";
+      iframeLoadedWhileRunning = false;
       frame.src = "about:blank";
       placeholder.style.display = "";
     }
     return;
   }
-  if (!iframeReady) {
+  const theme = document.documentElement.getAttribute("data-theme") || "dark";
+  const targetUrl = wsViewerUrl(wsInfo) + "/?theme=" + theme;
+
+  // (Re)load if: first load, URL changed, or server became running after a premature load
+  const needsLoad = !iframeReady || iframeUrl !== targetUrl || (running && !iframeLoadedWhileRunning);
+  if (needsLoad) {
     iframeReady = true;
+    iframeUrl   = targetUrl;
+    iframeLoadedWhileRunning = running;
     frame.addEventListener("load", () => {
-      const theme = document.documentElement.getAttribute("data-theme") || "dark";
-      frame.contentWindow.postMessage({ type: "theme", value: theme }, "*");
+      frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
     }, { once: true });
-    const theme = document.documentElement.getAttribute("data-theme") || "dark";
-    frame.src = wsViewerUrl(wsInfo) + "/?theme=" + theme;
+    frame.src = targetUrl;
     placeholder.style.display = "none";
   }
 }

@@ -299,7 +299,7 @@ class Orchestrator:
 
         self.start_workspace_process(name)
 
-        ready = self.wait_until_ready(name, timeout=8.0)
+        ready = self.wait_until_ready(name, timeout=30.0)
         if not ready:
             ws.last_error = f"Workspace {name} launched but not ready. Check logs: {ws.log_path}"
             raise RuntimeError(ws.last_error)
@@ -413,8 +413,20 @@ class Orchestrator:
             out["started_at"] = ws.started_at
             out["uptime_s"] = uptime_s
             out["_orch"] = {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"}
-            out["last_error"] = out.get("last_error") or ws.last_error
+            ws.last_error = out.get("last_error") or None
+            out["last_error"] = ws.last_error
             return out
+        except requests.exceptions.ConnectionError:
+            # Process is running but HTTP server not ready yet — normal during startup
+            return {
+                "state": "LAUNCHED_NOT_READY",
+                "last_error": ws.last_error,
+                "port": ws.port,
+                "log": ws.log_path,
+                "started_at": ws.started_at,
+                "uptime_s": uptime_s,
+                "_orch": {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"},
+            }
         except Exception as e:
             ws.last_error = f"Failed to get status: {e}"
             return {

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Dorna Lab — Admin</title>
   <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"dark"); })();</script>
+  <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="stylesheet" href="style.css"/>
   <style>
     .main {
@@ -21,12 +22,12 @@
       padding-bottom: 12px;
       border-bottom: 1px solid var(--border2);
     }
-    .section-header h2 { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .section-header h2 { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
     .section-header .count {
       font-size: 11px; font-weight: 600;
       color: var(--muted);
       background: var(--surface2);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border2);
       border-radius: 20px;
       padding: 1px 8px;
       font-family: var(--mono);
@@ -42,35 +43,30 @@
     /* ---- Workspace card ---- */
     .ws-card {
       background: var(--surface);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border2);
       border-radius: var(--radius);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: box-shadow 0.18s, border-color 0.18s, transform 0.18s;
-      /* Left status stripe via inset box-shadow — default = border color */
+      transition: box-shadow 0.18s, border-color 0.18s, transform 0.15s;
       box-shadow: inset 3px 0 0 var(--border2);
     }
     .ws-card:hover {
       border-color: var(--border);
-      box-shadow: inset 3px 0 0 var(--border), 0 6px 24px rgba(0,0,0,0.35);
+      box-shadow: inset 3px 0 0 var(--border), 0 6px 24px rgba(0,0,0,0.4);
       transform: translateY(-1px);
     }
-    /* Running: green left stripe + subtle ambient glow */
     .ws-card.is-running {
-      border-color: var(--border);
-      box-shadow: inset 3px 0 0 var(--green), 0 0 0 1px rgba(63,185,80,0.06), 0 4px 16px rgba(0,0,0,0.2);
+      box-shadow: inset 3px 0 0 var(--green), 0 0 0 1px rgba(63,185,80,0.05), 0 4px 16px rgba(0,0,0,0.25);
     }
     .ws-card.is-running:hover {
-      box-shadow: inset 3px 0 0 var(--green), 0 8px 28px rgba(0,0,0,0.35);
+      box-shadow: inset 3px 0 0 var(--green), 0 8px 28px rgba(0,0,0,0.4);
     }
-    /* Error: red left stripe */
     .ws-card.is-error {
-      border-color: var(--border);
       box-shadow: inset 3px 0 0 var(--red);
     }
     .ws-card.is-error:hover {
-      box-shadow: inset 3px 0 0 var(--red), 0 6px 24px rgba(0,0,0,0.35);
+      box-shadow: inset 3px 0 0 var(--red), 0 6px 24px rgba(0,0,0,0.4);
     }
 
     .wc-head {
@@ -81,7 +77,7 @@
     }
     .wc-info { flex: 1; min-width: 0; }
     .wc-name {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -96,7 +92,7 @@
       font-weight: 600;
       color: var(--muted);
       background: var(--surface2);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border2);
       border-radius: 4px;
       padding: 2px 7px;
       letter-spacing: 0.4px;
@@ -123,18 +119,18 @@
     .wc-err {
       font-size: 11px;
       color: var(--red);
-      background: rgba(248,81,73,0.08);
-      border: 1px solid rgba(248,81,73,0.25);
-      border-radius: 4px;
+      background: rgba(248,81,73,0.07);
+      border: 1px solid rgba(248,81,73,0.22);
+      border-radius: 6px;
       padding: 2px 8px;
     }
 
     .wc-footer {
       margin-top: auto;
       padding: 10px 14px;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid var(--border2);
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       background: var(--surface2);
     }
@@ -147,9 +143,37 @@
       padding: 80px 20px;
       color: var(--muted);
     }
-    .empty-icon { font-size: 36px; margin-bottom: 16px; opacity: 0.2; }
+    .empty-icon { font-size: 36px; margin-bottom: 16px; opacity: 0.15; }
     .empty-state h3 { color: var(--text); margin-bottom: 6px; font-size: 15px; font-weight: 600; }
     .empty-state p { font-size: 13px; line-height: 1.6; }
+
+    /* ---- Search ---- */
+    .ws-search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .ws-search-wrap svg {
+      position: absolute;
+      left: 9px;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .ws-search {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 5px 10px 5px 28px;
+      outline: none;
+      width: 200px;
+      transition: border-color 0.12s, box-shadow 0.12s, width 0.2s;
+    }
+    .ws-search:focus { border-color: var(--accent); box-shadow: var(--glow); width: 260px; }
+    .ws-search::placeholder { color: var(--muted); }
+    [data-theme="light"] .ws-search { background: #fff; border-color: var(--border); }
 
     /* ---- Modal extras ---- */
     #advSection { flex-direction: column; gap: 14px; display: none; }
@@ -198,6 +222,11 @@
   <div class="section-header">
     <h2>Workspaces</h2>
     <span class="count" id="wsCount"></span>
+    <div class="spacer"></div>
+    <div class="ws-search-wrap">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="ws-search" id="wsSearch" type="text" placeholder="Search workspaces…" autocomplete="off" spellcheck="false"/>
+    </div>
   </div>
   <div class="ws-grid" id="wsGrid"></div>
 </main>
@@ -220,7 +249,7 @@
         </div>
         <div class="field">
           <label>Port *</label>
-          <input class="input" id="f_port" type="number" value="9000"/>
+          <input class="input" id="f_port" type="number" value="5010"/>
         </div>
       </div>
       <div class="field">
