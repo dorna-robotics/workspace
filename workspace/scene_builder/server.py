@@ -690,6 +690,7 @@ def instantiate_component_blueprint(type_name: str, options: dict):
                 "pose": pose,
                 "anchors": anchors,
                 "collisionLocal": collision_local,
+                "boxForGrip": bool(getattr(solid, "box_for_grip", False)),
             })
 
     return {"solids": solids}

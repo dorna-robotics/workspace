@@ -70,11 +70,11 @@
       camera.up.set(0,0,1);
       camera.position.set(2400, 900, 1200);
 
-      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-      renderer.setPixelRatio(1);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.LinearToneMapping;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 0.9;
       viewerEl.appendChild(renderer.domElement);
 
@@ -142,6 +142,12 @@
           new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false })
         );
       }
+
+      // --- Render on demand (declared early so markDirty is available) ---
+      let _needsRender = true;
+      let _lastRenderMs = 0;
+      const IDLE_RENDER_INTERVAL = 500;
+      function markDirty() { _needsRender = true; }
 
       // grid: 6000 × 6000, theme-aware
       let _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, DARK_GRID.minor, DARK_GRID.major);
@@ -216,10 +222,10 @@
       // Collision meshes are parented under each solid holder so they follow drag/moves.
       let showCollisionBoxes = false;
 
-      function makeCollisionMeshLocal(pose, scale) {
+      function makeCollisionMeshLocal(pose, scale, boxForGrip) {
         const geom = new THREE.BoxGeometry(scale[0], scale[1], scale[2]);
         const mat = new THREE.MeshBasicMaterial({
-          color: 0xff3344,
+          color: boxForGrip ? 0x3388ff : 0xff3344,
           transparent: true,
           opacity: 0.28,
           depthWrite: false
@@ -244,12 +250,12 @@
         }
       }
 
-      function fillCollisionGroup(group, boxes) {
+      function fillCollisionGroup(group, boxes, boxForGrip) {
         clearCollisionGroup(group);
         if (!Array.isArray(boxes)) return;
         for (const box of boxes) {
           if (!box?.pose || !box?.scale) continue;
-          const mesh = makeCollisionMeshLocal(box.pose, box.scale);
+          const mesh = makeCollisionMeshLocal(box.pose, box.scale, boxForGrip);
           group.add(mesh);
         }
       }
@@ -602,6 +608,20 @@
       let downInfo = null; // {button,x,y,time}
 
       renderer.domElement.addEventListener("pointerdown", (e) => {
+        // Check for resize handle drag
+        if (e.button === 0 && __resizeHandleGroup) {
+          setPointerFromEvent(e);
+          const raycaster = new THREE.Raycaster();
+          raycaster.setFromCamera(pointer, camera);
+          const handleMeshes = [];
+          __resizeHandleGroup.traverse(o => { if (o.isMesh && o.userData.__isResizeHandle) handleMeshes.push(o); });
+          const hits = raycaster.intersectObjects(handleMeshes, false);
+          if (hits.length) {
+            __onResizePointerDown(hits[0].object, e);
+            e.stopPropagation();
+            return;
+          }
+        }
         downInfo = {
           button: e.button,
           x: e.clientX,
@@ -615,6 +635,7 @@
       });
 
       renderer.domElement.addEventListener("pointerup", (e) => {
+        if (__resizeDrag) { __onResizePointerUp(); return; }
         if (!downInfo) return;
         const dt = performance.now() - downInfo.time;
         const dx = Math.abs(e.clientX - downInfo.x);
@@ -961,10 +982,12 @@ if (node) {
       }
 
       renderer.domElement.addEventListener("pointermove", (e) => {
+        if (__resizeDrag) { __onResizePointerMove(e); markDirty(); return; }
         setPointerFromEvent(e);
         const hit = pickFirstMesh();
+        const isResizeHandle = hit?.object?.userData?.__isResizeHandle;
         renderer.domElement.style.cursor =
-          (hit && hit.object?.isMesh) ? "pointer" : "default";
+          isResizeHandle ? "ew-resize" : (hit && hit.object?.isMesh) ? "pointer" : "default";
 
         // Hover highlight
         const name = (hit && hit.object?.isMesh) ? __resolveComponentName(hit) : null;
@@ -1006,7 +1029,8 @@ if (node) {
       }
 
       // ---- Add edge overlay to all meshes (updated: uses userData) ----
-      function addEdgeOverlay(node) {
+      function addEdgeOverlay(node, edgeColor) {
+        const _edgeColor = edgeColor || 0x000000;
         node.traverse(obj => {
           if (!obj.isMesh) return;
 
@@ -1027,7 +1051,7 @@ if (node) {
           // add new edge overlay
           const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 30);
           const edgesMat = new THREE.LineBasicMaterial({
-            color: 0x000000,
+            color: _edgeColor,
             toneMapped: false
           });
           const edgeLines = new THREE.LineSegments(edgesGeo, edgesMat);
@@ -1106,7 +1130,7 @@ if (node) {
               __col.userData = __col.userData || {};
               __col.userData.__isCollisionGroup = true;
               holder.add(__col);
-              fillCollisionGroup(__col, m.collisionLocal || []);
+              fillCollisionGroup(__col, m.collisionLocal || [], m.boxForGrip);
 
               root.add(holder);
 
@@ -1122,6 +1146,23 @@ if (node) {
                   addEdgeOverlay(gltf.scene);
                   // Use root.name (not closure `name`) so renames during async load are picked up
                   try { const cn = root.name; gltf.scene.traverse(o=>{ if(!o.userData) o.userData={}; o.userData.componentName = cn; }); } catch(e) {}
+                  // collision_box: scale GLB (base 10×10×10 centered at origin) to match size
+                  if (spec.type === "collision_box") {
+                    const comp = window.builderState.components[root.name];
+                    const sz = (comp && comp.size) || [100, 100, 100];
+                    gltf.scene.scale.set(sz[0] / 10, sz[1] / 10, sz[2] / 10);
+                    gltf.scene.position.set(0, 0, sz[2] / 2);
+                    gltf.scene.userData.__colBoxGltf = true;
+                    // Make faces transparent, keep edges visible
+                    gltf.scene.traverse(o => {
+                      if (o.isMesh) {
+                        o.material = new THREE.MeshBasicMaterial({
+                          color: 0xaaaaaa, transparent: true, opacity: 0.06,
+                          depthWrite: false, side: THREE.DoubleSide
+                        });
+                      }
+                    });
+                  }
                   holder.add(gltf.scene);
                   registerPickables(gltf.scene);
                 },
@@ -1170,6 +1211,24 @@ if (node) {
 
                 root.add(gltf.scene);
 
+                // collision_box: scale GLB (base 10×10×10 centered at origin) to match requested size
+                if (spec.type === "collision_box") {
+                  const comp = window.builderState.components[root.name];
+                  const sz = (comp && comp.size) || [100, 100, 100];
+                  gltf.scene.scale.set(sz[0] / 10, sz[1] / 10, sz[2] / 10);
+                  gltf.scene.position.set(0, 0, sz[2] / 2);
+                  gltf.scene.userData.__colBoxGltf = true;
+                  // Make faces transparent, keep edges visible
+                  gltf.scene.traverse(o => {
+                    if (o.isMesh) {
+                      o.material = new THREE.MeshBasicMaterial({
+                        color: 0xaaaaaa, transparent: true, opacity: 0.06,
+                        depthWrite: false, side: THREE.DoubleSide
+                      });
+                    }
+                  });
+                }
+
                 // Collision boxes (single-solid components)
                 if (Array.isArray(spec.collisionLocal)) {
                   let __col = root.getObjectByName("__collision__");
@@ -1181,7 +1240,7 @@ if (node) {
                     __col.userData.__isCollisionGroup = true;
                     root.add(__col);
                   }
-                  fillCollisionGroup(__col, spec.collisionLocal);
+                  fillCollisionGroup(__col, spec.collisionLocal, spec.boxForGrip);
                 }
 
                 registerPickables(gltf.scene);
@@ -1240,7 +1299,7 @@ if (node) {
             __col.userData.__isCollisionGroup = true;
             root.add(__col);
           }
-          fillCollisionGroup(__col, spec.collisionLocal);
+          fillCollisionGroup(__col, spec.collisionLocal, spec.boxForGrip);
           // Make the collision meshes pickable so we can click/select the object
           __col.traverse(o => { if (o.isMesh) { o.userData.componentName = root.name; pickableMeshes.add(o); } });
         }
@@ -1985,17 +2044,24 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   let collisionLocalSingle = [];
   if (blueprint && Array.isArray(blueprint.solids) && blueprint.solids.length) {
     try { collisionLocalSingle = blueprint.solids[0].collisionLocal || []; } catch (e) { collisionLocalSingle = []; }
+    let boxForGripSingle = false;
+    try { boxForGripSingle = !!blueprint.solids[0].boxForGrip; } catch (e) {}
     meshes = [];
     for (const s of blueprint.solids) {
       if (s && s.solid && s.anchors && Object.keys(s.anchors).length) {
         anchorsBySolid[s.solid] = s.anchors;
       }
       if (s && s.glb) {
-        meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [] });
+        meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [], boxForGrip: !!s.boxForGrip });
       }
     }
     // If we got at least one mesh, do multi-mesh rendering.
-    if (!meshes.length) meshes = null;
+    if (!meshes.length) {
+      meshes = null;
+      // No solid has a GLB — clear glb so the no-mesh branch in upsertObject handles it
+      const anyGlb = blueprint.solids.some(s => s && s.glb);
+      if (!anyGlb) glb = null;
+    }
     // For single-mesh fallback, pick the first available GLB
     if (!glb) {
       for (const s of blueprint.solids) {
@@ -2017,6 +2083,7 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
     meshUrl: meshes ? null : glb,
     meshes: meshes,
     collisionLocal: meshes ? null : (collisionLocalSingle || []),
+    boxForGrip: meshes ? false : (boxForGripSingle || false),
     pose: [0,0,((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 300),0,0,0],
     visible: true,
     anchors,
@@ -2126,13 +2193,15 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
   let collisionLocalSingle = [];
   if (blueprint && Array.isArray(blueprint.solids) && blueprint.solids.length) {
     try { collisionLocalSingle = blueprint.solids[0].collisionLocal || []; } catch (e) { collisionLocalSingle = []; }
+    let boxForGripSingle = false;
+    try { boxForGripSingle = !!blueprint.solids[0].boxForGrip; } catch (e) {}
     meshes = [];
     for (const s of blueprint.solids) {
       if (s && s.solid && s.anchors && Object.keys(s.anchors).length) {
         anchorsBySolid[s.solid] = s.anchors;
       }
       if (s && s.glb) {
-        meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [] });
+        meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [], boxForGrip: !!s.boxForGrip });
       }
     }
     if (!meshes.length) {
@@ -2160,6 +2229,7 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
     meshUrl: meshes ? null : glb,
     meshes: meshes,
     collisionLocal: meshes ? null : (collisionLocalSingle || []),
+    boxForGrip: meshes ? false : (boxForGripSingle || false),
     pose: [0,0,((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 300),0,0,0],
     visible: true,
     anchors,
@@ -3076,7 +3146,223 @@ function updateSidebarProps(name) {
   }
 }
 
+// ── Collision box resize handles ──
+let __resizeHandleGroup = null;
+let __resizeHandleTarget = null;
+let __resizeDrag = null;
+
+const HANDLE_RADIUS = 5;
+const HANDLE_COLOR = 0x44aaff;
+const HANDLE_HOVER_COLOR = 0x88ccff;
+
+function __createResizeHandles(name) {
+  __removeResizeHandles();
+  const obj = objectsByName.get(name);
+  if (!obj) return;
+  const comp = window.builderState.components[name];
+  if (!comp || comp.type !== "collision_box") return;
+  const size = comp.size || [100, 100, 100];
+  const [sx, sy, sz] = size;
+
+  const group = new THREE.Group();
+  group.name = "__resizeHandles__";
+  group.userData.__isResizeHandleGroup = true;
+
+  const faces = [
+    { axis: 0, sign:  1, pos: [ sx/2,    0, sz/2] },
+    { axis: 0, sign: -1, pos: [-sx/2,    0, sz/2] },
+    { axis: 1, sign:  1, pos: [    0, sy/2, sz/2] },
+    { axis: 1, sign: -1, pos: [    0,-sy/2, sz/2] },
+    { axis: 2, sign:  1, pos: [    0,    0, sz  ] },
+    { axis: 2, sign: -1, pos: [    0,    0, 0   ] },
+  ];
+
+  const minDim = Math.min(sx, sy, sz);
+  const handleR = Math.max(2, Math.min(HANDLE_RADIUS, minDim * 0.12));
+  const geom = new THREE.SphereGeometry(handleR, 12, 12);
+  for (const f of faces) {
+    const mat = new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true, opacity: 0.85 });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(f.pos[0], f.pos[1], f.pos[2]);
+    mesh.renderOrder = 30;
+    mesh.userData = { __isResizeHandle: true, axis: f.axis, sign: f.sign, componentName: name };
+    group.add(mesh);
+    pickableMeshes.add(mesh);
+  }
+
+  obj.add(group);
+  __resizeHandleGroup = group;
+  __resizeHandleTarget = name;
+  markDirty();
+}
+
+function __removeResizeHandles() {
+  if (__resizeHandleGroup) {
+    __resizeHandleGroup.traverse(o => {
+      if (o.isMesh) {
+        pickableMeshes.delete(o);
+        o.geometry?.dispose?.();
+        o.material?.dispose?.();
+      }
+    });
+    __resizeHandleGroup.parent?.remove(__resizeHandleGroup);
+    __resizeHandleGroup = null;
+    __resizeHandleTarget = null;
+    markDirty();
+  }
+}
+
+function __updateResizeHandlePositions(size) {
+  if (!__resizeHandleGroup) return;
+  const [sx, sy, sz] = size;
+  const positions = [
+    [ sx/2,    0, sz/2],
+    [-sx/2,    0, sz/2],
+    [    0, sy/2, sz/2],
+    [    0,-sy/2, sz/2],
+    [    0,    0, sz  ],
+    [    0,    0, 0   ],
+  ];
+  let i = 0;
+  __resizeHandleGroup.children.forEach(c => {
+    if (c.isMesh && c.userData.__isResizeHandle && i < positions.length) {
+      c.position.set(positions[i][0], positions[i][1], positions[i][2]);
+      i++;
+    }
+  });
+}
+
+function __rebuildCollisionBox(name, size) {
+  const obj = objectsByName.get(name);
+  if (!obj) return;
+  const [sx, sy, sz] = size;
+
+  // Find and scale the gltf.scene node tagged with __colBoxGltf
+  let gltfNode = null;
+  obj.traverse(o => { if (o.userData?.__colBoxGltf) gltfNode = o; });
+  if (gltfNode) {
+    gltfNode.scale.set(sx / 10, sy / 10, sz / 10);
+    gltfNode.position.set(0, 0, sz / 2);
+  }
+
+  // Find or create collision group
+  let colGroup = null;
+  obj.traverse(o => { if (o.userData?.__isCollisionGroup) colGroup = o; });
+  if (!colGroup) {
+    colGroup = new THREE.Group();
+    colGroup.name = "__collision__";
+    colGroup.visible = showCollisionBoxes;
+    colGroup.userData.__isCollisionGroup = true;
+    obj.add(colGroup);
+  }
+
+  const boxes = [{ pose: [0, 0, sz / 2, 0, 0, 0], scale: [sx, sy, sz] }];
+  fillCollisionGroup(colGroup, boxes, false);
+  // Re-register collision meshes as pickable
+  colGroup.traverse(o => {
+    if (o.isMesh) { o.userData.componentName = name; pickableMeshes.add(o); }
+  });
+  markDirty();
+}
+
+// Pointer handlers for resize drag
+function __onResizePointerDown(handleMesh, event) {
+  const name = handleMesh.userData.componentName;
+  const comp = window.builderState.components[name];
+  if (!comp) return;
+  const size = [...(comp.size || [100, 100, 100])];
+  const axis = handleMesh.userData.axis; // 0=x, 1=y, 2=z
+  const sign = handleMesh.userData.sign;
+
+  // World position of handle
+  const handleWorld = new THREE.Vector3();
+  handleMesh.getWorldPosition(handleWorld);
+
+  // Create drag plane perpendicular to camera but through the handle
+  const camDir = new THREE.Vector3();
+  camera.getWorldDirection(camDir);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, handleWorld);
+
+  const rc = new THREE.Raycaster();
+  const startPoint = new THREE.Vector3();
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  rc.setFromCamera(ndc, camera);
+  rc.ray.intersectPlane(plane, startPoint);
+
+  // Get the object's world axis direction
+  const obj = objectsByName.get(name);
+  const axisVec = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
+  if (obj) axisVec.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()));
+
+  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec };
+  controls.enabled = false;
+}
+
+function __onResizePointerMove(event) {
+  if (!__resizeDrag) return;
+  const { name, axis, sign, startSize, plane, startPoint, axisVec } = __resizeDrag;
+
+  const rc = new THREE.Raycaster();
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  rc.setFromCamera(ndc, camera);
+  const point = new THREE.Vector3();
+  if (!rc.ray.intersectPlane(plane, point)) return;
+
+  const delta = point.clone().sub(startPoint);
+  const dist = delta.dot(axisVec) * sign;
+
+  const newSize = [...startSize];
+  newSize[axis] = Math.max(1, startSize[axis] + dist);
+
+  __rebuildCollisionBox(name, newSize);
+  __updateResizeHandlePositions(newSize);
+  markDirty();
+}
+
+function __onResizePointerUp() {
+  if (!__resizeDrag) return;
+  const { name } = __resizeDrag;
+  controls.enabled = true;
+
+  // Read final size from current handle positions
+  const obj = objectsByName.get(name);
+  if (obj) {
+    let colGroup = null;
+    obj.traverse(o => { if (o.userData?.__isCollisionGroup) colGroup = o; });
+    if (colGroup && colGroup.children.length) {
+      const box = colGroup.children[0];
+      const geom = box.geometry;
+      if (geom && geom.parameters) {
+        const finalSize = [geom.parameters.width, geom.parameters.height, geom.parameters.depth];
+        // Store in builderState
+        const comp = window.builderState.components[name];
+        if (comp) comp.size = finalSize;
+        // Emit update
+        socket.emit("upstream_update", { [name]: { builder: { size: finalSize } } });
+      }
+    }
+  }
+
+  __resizeDrag = null;
+  markDirty();
+}
+
 function setSelected(name) {
+  // Update resize handles
+  if (name && window.builderState.components[name]?.type === "collision_box") {
+    __createResizeHandles(name);
+  } else {
+    __removeResizeHandles();
+  }
+
   window.builderState.selectedName = name;
 
   // Selection can come from multi-solid meshes. Prefer builderState meta, but fall back to scene userdata.
@@ -3786,7 +4072,7 @@ function moveSelected() {
 // Thumbnails: single shared WebGL renderer, JPEG for localStorage (small), PNG in memory (crisp).
 // Fixes Chrome's ~16 WebGL context limit and ~5MB localStorage quota.
 const THUMB_SIZE = 256;
-const THUMB_VERSION = "edge_v5";
+const THUMB_VERSION = "edge_v7";
 const _thumbCache = new Map();
 
 // Shared offscreen renderer (1 WebGL context for all thumbnails)
@@ -4161,14 +4447,7 @@ function openInsertMenu() {
     for (const type of items) {
       const glb = "/static/CAD/" + type + ".glb";
       const tile = mkTile({ name: type, iconSvg: "", onClick: () => openCreatePanel(type) });
-      if (type === "collision_box") {
-        const iconWrap = document.createElement("div");
-        iconWrap.style.cssText = "width:96px;height:96px;border-radius:12px;background:var(--surface3);display:flex;align-items:center;justify-content:center;";
-        iconWrap.innerHTML = `<svg width="56" height="56" viewBox="0 0 56 56"><defs><linearGradient id="cbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff5555" stop-opacity="0.45"/><stop offset="100%" stop-color="#ff3344" stop-opacity="0.35"/></linearGradient></defs><rect x="8" y="14" width="30" height="30" rx="2" fill="url(#cbg)" stroke="#ff3344" stroke-width="1.5"/><polyline points="8,14 18,6 48,6 38,14" fill="url(#cbg)" stroke="#ff3344" stroke-width="1.5"/><polyline points="38,14 48,6 48,36 38,44" fill="url(#cbg)" stroke="#ff3344" stroke-width="1.5"/><line x1="8" y1="14" x2="38" y2="14" stroke="#ff3344" stroke-width="1" opacity="0.5"/></svg>`;
-        tile.querySelector("div").replaceWith(iconWrap);
-      } else {
-        tile.querySelector("div").replaceWith(mkThumbIcon(type, glb));
-      }
+      tile.querySelector("div").replaceWith(mkThumbIcon(type, glb));
       allTiles.push({ type, tile });
     }
 
@@ -4205,10 +4484,7 @@ async function openCreatePanel(typeName) {
   const _cancelBg = _isLight ? "#f6f6f6"  : "#1e2430";
   const _cancelBord= _isLight ? "1px solid rgba(0,0,0,0.12)" : "1px solid rgba(255,255,255,0.12)";
 
-  // Collision box: unified side panel
-  if (typeName === "collision_box") {
-    return __openCollisionBoxPanel();
-  }
+  const isCollisionBox = (typeName === "collision_box");
 
   // fetch metadata (anchors + options + glb guess)
   let meta = { type: typeName, options: [], anchors: {}, glb: null };
@@ -4438,6 +4714,39 @@ async function openCreatePanel(typeName) {
     form.appendChild(wrap);
   }
 
+  // --- Size fields for collision_box ---
+  let __sizeXInput = null, __sizeYInput = null, __sizeZInput = null;
+  if (isCollisionBox) {
+    const sizeLab = document.createElement("div");
+    sizeLab.textContent = "SIZE (mm)";
+    sizeLab.style.cssText = "grid-column:1/-1;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.5;margin-top:4px;";
+    form.appendChild(sizeLab);
+    for (const axis of ["X", "Y", "Z"]) {
+      const wrap = document.createElement("div");
+      wrap.style.display = "flex";
+      wrap.style.alignItems = "center";
+      wrap.style.justifyContent = "space-between";
+      wrap.style.gap = "10px";
+      wrap.style.border = _rowBord;
+      wrap.style.borderRadius = "12px";
+      wrap.style.padding = "10px 12px";
+      wrap.style.background = _rowBg;
+      const lab = document.createElement("div");
+      lab.textContent = axis;
+      lab.style.fontSize = "13px";
+      lab.style.fontWeight = "650";
+      lab.style.opacity = "0.9";
+      const inp = document.createElement("input");
+      inp.type = "number"; inp.value = "100"; inp.min = "1"; inp.step = "1";
+      inp.style.cssText = `flex:1;padding:8px 10px;border-radius:10px;border:${_inputBord};background:${_inputBg};color:${_cardClr};font-size:13px;font-weight:600;`;
+      wrap.appendChild(lab); wrap.appendChild(inp);
+      form.appendChild(wrap);
+      if (axis === "X") __sizeXInput = inp;
+      else if (axis === "Y") __sizeYInput = inp;
+      else __sizeZInput = inp;
+    }
+  }
+
   // --- has_cap checkbox (only for tube types with a matching cap) ---
   let __capCheckbox = null;
   if (__capType) {
@@ -4468,7 +4777,7 @@ async function openCreatePanel(typeName) {
     form.appendChild(capWrap);
   }
 
-  // preview: 3 views (isometric, front, side) in a horizontal strip
+  // preview: 3 views (isometric, front, side) in a horizontal strip — skip for collision_box (no GLB)
   const prev = document.createElement("div");
   prev.style.display = "flex";
   prev.style.gap = "8px";
@@ -4544,6 +4853,14 @@ async function openCreatePanel(typeName) {
     for (const k in fields) {
       const { opt, input } = fields[k];
       if (opt && opt.kind === "bool") optsOut[k] = !!input.checked;
+    }
+    // Collision box size
+    if (isCollisionBox && __sizeXInput && __sizeYInput && __sizeZInput) {
+      optsOut.size = [
+        parseFloat(__sizeXInput.value) || 100,
+        parseFloat(__sizeYInput.value) || 100,
+        parseFloat(__sizeZInput.value) || 100
+      ];
     }
     // Rail dropdown -> has_rail + rail_cfg
     if (__railSelect) {
@@ -6071,8 +6388,8 @@ ensureBuilderBar();
 
       // --- ViewCube (matches orchestrator exactly) ---
       const vcCanvas = document.getElementById("viewCubeCanvas");
-      const vcRenderer = new THREE.WebGLRenderer({ canvas: vcCanvas, antialias: false, alpha: true, powerPreference: "high-performance" });
-      vcRenderer.setPixelRatio(1);
+      const vcRenderer = new THREE.WebGLRenderer({ canvas: vcCanvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+      vcRenderer.setPixelRatio(window.devicePixelRatio);
       vcRenderer.setSize(130, 130);
       vcRenderer.setClearColor(0x000000, 0);
 
@@ -6249,11 +6566,7 @@ ensureBuilderBar();
         snapCamera(pos, tgt, up);
       });
 
-      // --- Render on demand ---
-      let _needsRender = true;
-      let _lastRenderMs = 0;
-      const IDLE_RENDER_INTERVAL = 500; // fallback: re-render every 500ms even if idle
-      function markDirty() { _needsRender = true; }
+      // --- Render on demand (listeners) ---
       controls.addEventListener("change", markDirty);
       renderer.domElement.addEventListener("pointermove", markDirty);
 
@@ -6700,7 +7013,7 @@ async function runPatternFill() {
   const meshes = [];
   for (const s of (blueprint.solids || [])) {
     if (s?.solid && s?.anchors) anchorsBySolid[s.solid] = s.anchors;
-    if (s?.glb) meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [] });
+    if (s?.glb) meshes.push({ meshUrl: s.glb, pose: s.pose || [0,0,0,0,0,0], solidName: s.solid, collisionLocal: s.collisionLocal || [], boxForGrip: !!s.boxForGrip });
   }
   const childSolid = p.sourceSolid || (Object.keys(anchorsBySolid)[0] || "solid_0");
   const childAnchors = anchorsBySolid[childSolid] || {};
