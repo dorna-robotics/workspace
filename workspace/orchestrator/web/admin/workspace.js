@@ -90,6 +90,9 @@ async function refreshLogs() {
     const j    = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs?tail=400`);
     const text = typeof j === "string" ? j : (j?.text || "");
     if (text === lastLogs) return;
+    // Skip update if user is selecting text inside the log
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && logPre.contains(sel.anchorNode) && !sel.isCollapsed) return;
     lastLogs = text;
     logPre.innerHTML = colorizeLogs(text);
     if (_logFollowing) logPre.scrollTop = logPre.scrollHeight;

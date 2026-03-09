@@ -1146,22 +1146,25 @@ if (node) {
                   addEdgeOverlay(gltf.scene);
                   // Use root.name (not closure `name`) so renames during async load are picked up
                   try { const cn = root.name; gltf.scene.traverse(o=>{ if(!o.userData) o.userData={}; o.userData.componentName = cn; }); } catch(e) {}
-                  // collision_box: scale GLB (base 10×10×10 centered at origin) to match size
+                  // collision_box: keep GLB at original size (small red cube as handle),
+                  // add a separate transparent wireframe box sized to match the collision
                   if (spec.type === "collision_box") {
                     const comp = window.builderState.components[root.name];
                     const sz = (comp && comp.size) || [100, 100, 100];
-                    gltf.scene.scale.set(sz[0] / 10, sz[1] / 10, sz[2] / 10);
-                    gltf.scene.position.set(0, 0, sz[2] / 2);
-                    gltf.scene.userData.__colBoxGltf = true;
-                    // Make faces transparent, keep edges visible
-                    gltf.scene.traverse(o => {
-                      if (o.isMesh) {
-                        o.material = new THREE.MeshBasicMaterial({
-                          color: 0xaaaaaa, transparent: true, opacity: 0.06,
-                          depthWrite: false, side: THREE.DoubleSide
-                        });
-                      }
+                    // Add procedural transparent box with edge overlay
+                    const boxGeom = new THREE.BoxGeometry(sz[0], sz[1], sz[2]);
+                    const boxMat = new THREE.MeshBasicMaterial({
+                      color: 0xaaaaaa, transparent: true, opacity: 0.06,
+                      depthWrite: false, side: THREE.DoubleSide
                     });
+                    const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+                    boxMesh.position.set(0, 0, sz[2] / 2);
+                    const vizGroup = new THREE.Group();
+                    vizGroup.name = "__colBoxViz__";
+                    vizGroup.userData.__colBoxViz = true;
+                    vizGroup.add(boxMesh);
+                    addEdgeOverlay(vizGroup);
+                    holder.add(vizGroup);
                   }
                   holder.add(gltf.scene);
                   registerPickables(gltf.scene);
@@ -1211,22 +1214,23 @@ if (node) {
 
                 root.add(gltf.scene);
 
-                // collision_box: scale GLB (base 10×10×10 centered at origin) to match requested size
+                // collision_box: keep GLB at original size, add procedural transparent box
                 if (spec.type === "collision_box") {
                   const comp = window.builderState.components[root.name];
                   const sz = (comp && comp.size) || [100, 100, 100];
-                  gltf.scene.scale.set(sz[0] / 10, sz[1] / 10, sz[2] / 10);
-                  gltf.scene.position.set(0, 0, sz[2] / 2);
-                  gltf.scene.userData.__colBoxGltf = true;
-                  // Make faces transparent, keep edges visible
-                  gltf.scene.traverse(o => {
-                    if (o.isMesh) {
-                      o.material = new THREE.MeshBasicMaterial({
-                        color: 0xaaaaaa, transparent: true, opacity: 0.06,
-                        depthWrite: false, side: THREE.DoubleSide
-                      });
-                    }
+                  const boxGeom = new THREE.BoxGeometry(sz[0], sz[1], sz[2]);
+                  const boxMat = new THREE.MeshBasicMaterial({
+                    color: 0xaaaaaa, transparent: true, opacity: 0.06,
+                    depthWrite: false, side: THREE.DoubleSide
                   });
+                  const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+                  boxMesh.position.set(0, 0, sz[2] / 2);
+                  const vizGroup = new THREE.Group();
+                  vizGroup.name = "__colBoxViz__";
+                  vizGroup.userData.__colBoxViz = true;
+                  vizGroup.add(boxMesh);
+                  addEdgeOverlay(vizGroup);
+                  root.add(vizGroup);
                 }
 
                 // Collision boxes (single-solid components)
@@ -1847,8 +1851,21 @@ function ensureBuilderBar() {
   const btnFlipY  = mkAction(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-4 4 4 4"/><path d="M16 7l4 4-4 4"/><line x1="12" y1="3" x2="12" y2="21" opacity=".3"/></svg> Flip Y`, () => flipSelectedAxis("y"), "Flip 90° Y");
   const btnFlipZ  = mkAction(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4m0 16v-4M4 12H0m20 0h-4"/><circle cx="12" cy="12" r="4" opacity=".4"/></svg> Flip Z`, () => flipSelectedAxis("z"), "Flip 90° Z");
 
-  // Row 1: Delete + Edit
-  for (const b of [btnRemove, btnEdit]) actions.appendChild(b);
+  const btnHide = mkAction(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Hide`, () => {
+    const sel = window.builderState?.selectedName;
+    if (sel) { __toggleObjectVisibility(sel); __updateHideBtn(); }
+  }, "Hide/show in scene");
+  function __updateHideBtn() {
+    const sel = window.builderState?.selectedName;
+    const hidden = sel && __hiddenObjects.has(sel);
+    btnHide.innerHTML = hidden
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg> Show'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Hide';
+  }
+  window.__builderUpdateHideBtn = __updateHideBtn;
+
+  // Row 1: Delete + Edit + Hide
+  for (const b of [btnRemove, btnEdit, btnHide]) actions.appendChild(b);
 
   // Row 2: Flip X / Y / Z on one line
   const flipRow = document.createElement("div");
@@ -1873,22 +1890,21 @@ function ensureBuilderBar() {
 
 // Shared theme variables for all dynamic panels
 function _sbPanelTheme() {
-  // Read the live data-theme attribute so panels always match what the user sees,
-  // regardless of whether localStorage is stale (e.g. after a reboot).
+  // Use CSS custom properties so panels auto-update when the theme toggles.
   const isLight = (document.documentElement.getAttribute("data-theme") || "dark") === "light";
   return {
     isLight,
-    panelBg:    isLight ? "rgba(255,255,255,0.97)" : "rgba(13,17,23,0.97)",
-    panelBord:  isLight ? "1px solid rgba(0,0,0,0.12)"  : "1px solid rgba(255,255,255,0.10)",
-    color:      isLight ? "#1f2328"  : "#e6edf3",
-    inputBg:    isLight ? "#f6f8fa"  : "#1a2535",
-    inputBord:  isLight ? "1px solid rgba(0,0,0,0.15)"  : "1px solid rgba(255,255,255,0.12)",
-    rowBg:      isLight ? "#f0f4f8"  : "#161b22",
-    rowBord:    isLight ? "1px solid rgba(0,0,0,0.08)"  : "1px solid rgba(255,255,255,0.08)",
-    listBord:   isLight ? "1px solid rgba(0,0,0,0.10)"  : "1px solid rgba(255,255,255,0.08)",
-    listBg:     isLight ? "rgba(0,0,0,0.02)"            : "rgba(255,255,255,0.03)",
-    itemBord:   isLight ? "1px solid rgba(0,0,0,0.06)"  : "1px solid rgba(255,255,255,0.05)",
-    cancelBg:   isLight ? "#f0f2f5"  : "#1e2430",
+    panelBg:    "var(--panel-bg)",
+    panelBord:  "1px solid var(--panel-bord)",
+    color:      "var(--panel-color)",
+    inputBg:    "var(--panel-input-bg)",
+    inputBord:  "1px solid var(--panel-input-bord)",
+    rowBg:      "var(--panel-row-bg)",
+    rowBord:    "1px solid var(--panel-row-bord)",
+    listBord:   "1px solid var(--panel-list-bord)",
+    listBg:     "var(--panel-list-bg)",
+    itemBord:   "1px solid var(--panel-item-bord)",
+    cancelBg:   "var(--panel-cancel-bg)",
   };
 }
 
@@ -2435,9 +2451,9 @@ function openAnchorPickPanel(opts) {
       item.style.cursor = "pointer";
       item.style.userSelect = "none";
       item.style.fontSize = "12px";
-      item.style.borderBottom = "1px solid rgba(255,255,255,0.06)";
-      item.style.color = "#e6edf3";
-      item.onmouseenter = () => item.style.background = "rgba(90,160,255,0.10)";
+      item.style.borderBottom = "1px solid var(--panel-item-bord)";
+      item.style.color = "var(--panel-color)";
+      item.onmouseenter = () => item.style.background = "var(--panel-hover)";
       item.onmouseleave = () => item.style.background = "transparent";
       item.onclick = () => {
         try {
@@ -2520,8 +2536,8 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
   const SIDEBAR_W = 264;
   const HEADER_H  = 52;
   const MODAL_W   = 380;
-  const DIM       = th.isLight ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.45)";
-  const DIVIDER   = th.isLight ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)";
+  const DIM       = "var(--panel-dim)";
+  const DIVIDER   = "var(--panel-divider)";
 
   const modal = document.createElement("div");
   modal.id = "attachModal";
@@ -2540,7 +2556,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     boxShadow: "0 16px 56px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3)",
     fontFamily: "system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif",
     color: th.color,
-    colorScheme: th.isLight ? "light" : "dark",
+    colorScheme: "light dark",
     zIndex: "10010",
     animation: "attachModalIn 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards",
   });
@@ -2663,7 +2679,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
         rowArrow.style.cssText = `opacity:${isSel ? "1" : "0"};font-size:16px;line-height:1;color:#4f9cf9;transition:opacity 0.1s;flex-shrink:0`;
         row.appendChild(rowLabel);
         row.appendChild(rowArrow);
-        row.onmouseenter = () => { if (!isSel) row.style.background = th.isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)"; rowArrow.style.opacity = "1"; };
+        row.onmouseenter = () => { if (!isSel) row.style.background = "var(--panel-hover)"; rowArrow.style.opacity = "1"; };
         row.onmouseleave = () => { if (!isSel) row.style.background = ""; rowArrow.style.opacity = isSel ? "1" : "0"; };
         row.onclick = () => onSelect(n);
         list.appendChild(row);
@@ -2983,9 +2999,9 @@ function _openTargetObjectPickPanel_legacy(childName) {
       item.style.cursor = "pointer";
       item.style.userSelect = "none";
       item.style.fontSize = "12px";
-      item.style.borderBottom = "1px solid rgba(255,255,255,0.06)";
-      item.style.color = "#e6edf3";
-      item.onmouseenter = () => item.style.background = "rgba(90,160,255,0.10)";
+      item.style.borderBottom = "1px solid var(--panel-item-bord)";
+      item.style.color = "var(--panel-color)";
+      item.onmouseenter = () => item.style.background = "var(--panel-hover)";
       item.onmouseleave = () => item.style.background = "transparent";
       item.onclick = () => {
         try {
@@ -3101,39 +3117,112 @@ function isOccupiedPlatePose(x, y, z=0) {
   return false;
 }
 
+const __hiddenObjects = new Set();
+
+function __toggleObjectVisibility(name) {
+  const obj = objectsByName.get(name);
+  if (!obj) return;
+  if (__hiddenObjects.has(name)) {
+    // Restore: make visible + re-add to pick list
+    __hiddenObjects.delete(name);
+    obj.traverse(o => {
+      if (o.isMesh) {
+        o.material.opacity = o.material.__origOpacity ?? 1;
+        o.material.transparent = o.material.opacity < 1;
+        o.material.__origOpacity = undefined;
+        pickableMeshes.add(o);
+      }
+    });
+  } else {
+    // Hide: ghost + remove from pick list so clicks pass through
+    __hiddenObjects.add(name);
+    obj.traverse(o => {
+      if (o.isMesh) {
+        if (o.material.__origOpacity === undefined) o.material.__origOpacity = o.material.opacity;
+        o.material.transparent = true;
+        o.material.opacity = 0.08;
+        pickableMeshes.delete(o);
+      }
+    });
+  }
+  markDirty();
+  updateObjectList();
+}
+
+function __showAllHidden() {
+  for (const name of [...__hiddenObjects]) {
+    __toggleObjectVisibility(name);
+  }
+}
+
 function updateObjectList() {
   const list = document.getElementById("sbObjectList");
   if (!list) return;
+  const searchEl = document.getElementById("sbObjectSearch");
+  const filter = (searchEl?.value || "").trim().toLowerCase();
+
+  // Show/hide the "Show all hidden" button with count
+  const showAllBtn = document.getElementById("sbShowAll");
+  if (showAllBtn) {
+    const n = __hiddenObjects.size;
+    showAllBtn.style.display = n ? "" : "none";
+    showAllBtn.textContent = `Show all hidden (${n})`;
+    if (!showAllBtn.__wired) {
+      showAllBtn.__wired = true;
+      showAllBtn.addEventListener("click", __showAllHidden);
+    }
+  }
   const comps = window.builderState?.components || {};
-  const names = Object.keys(comps).sort();
+  const names = Object.keys(comps).sort().filter(n => !filter || n.toLowerCase().includes(filter) || (comps[n]?.type || "").toLowerCase().includes(filter));
   if (!names.length) {
-    list.innerHTML = '<div class="sb-empty">No components yet</div>';
+    list.innerHTML = '<div class="sb-empty">' + (filter ? "No matches" : "No components yet") + '</div>';
     return;
   }
   const selected = window.builderState?.selectedName;
   list.innerHTML = "";
   for (const name of names) {
-    const meta = comps[name];
+    const isHidden = __hiddenObjects.has(name);
+
     const item = document.createElement("div");
     item.className = "sb-object-item" + (name === selected ? " active" : "");
-    const nameEl = document.createElement("span");
-    nameEl.textContent = name;
-    const typeEl = document.createElement("span");
-    typeEl.className = "sb-object-type";
-    typeEl.textContent = meta?.type || "";
-    item.appendChild(nameEl);
-    item.appendChild(typeEl);
+    if (isHidden) item.style.opacity = "0.4";
+
+    const label = document.createElement("span");
+    label.className = "sb-object-label";
+    label.textContent = name;
+    label.title = name;
+
+    const eyeBtn = document.createElement("button");
+    eyeBtn.className = "sb-eye-btn" + (isHidden ? " is-hidden" : "");
+    eyeBtn.title = isHidden ? "Show" : "Hide";
+    eyeBtn.innerHTML = isHidden
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    eyeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      __toggleObjectVisibility(name);
+    });
+
+    item.appendChild(label);
+    item.appendChild(eyeBtn);
     item.addEventListener("click", () => {
-      try {
-        const obj = objectsByName.get(name);
-        if (obj) setSelected(name);
-        else setSelected(name);
-      } catch(e) {}
+      try { setSelected(name); } catch(e) {}
     });
     list.appendChild(item);
   }
 }
 window.updateObjectList = updateObjectList;
+
+// Wire up search input (bind once, retry if element not ready)
+(function __wireObjectSearch() {
+  const el = document.getElementById("sbObjectSearch");
+  if (el && !el.__wired) {
+    el.__wired = true;
+    el.addEventListener("input", () => updateObjectList());
+  } else if (!el) {
+    setTimeout(__wireObjectSearch, 100);
+  }
+})();
 
 function updateSidebarProps(name) {
   const nameEl = document.getElementById("sbPropName");
@@ -3237,13 +3326,27 @@ function __rebuildCollisionBox(name, size) {
   if (!obj) return;
   const [sx, sy, sz] = size;
 
-  // Find and scale the gltf.scene node tagged with __colBoxGltf
-  let gltfNode = null;
-  obj.traverse(o => { if (o.userData?.__colBoxGltf) gltfNode = o; });
-  if (gltfNode) {
-    gltfNode.scale.set(sx / 10, sy / 10, sz / 10);
-    gltfNode.position.set(0, 0, sz / 2);
+  // Rebuild the procedural transparent viz box
+  let vizNode = null;
+  obj.traverse(o => { if (o.userData?.__colBoxViz) vizNode = o; });
+  if (vizNode) {
+    vizNode.traverse(o => { if (o.isMesh) { pickableMeshes.delete(o); o.geometry?.dispose(); o.material?.dispose(); } });
+    vizNode.parent?.remove(vizNode);
   }
+  const boxGeom = new THREE.BoxGeometry(sx, sy, sz);
+  const boxMat = new THREE.MeshBasicMaterial({
+    color: 0xaaaaaa, transparent: true, opacity: 0.06,
+    depthWrite: false, side: THREE.DoubleSide
+  });
+  const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+  boxMesh.position.set(0, 0, sz / 2);
+  boxMesh.userData.componentName = name;
+  const newViz = new THREE.Group();
+  newViz.name = "__colBoxViz__";
+  newViz.userData.__colBoxViz = true;
+  newViz.add(boxMesh);
+  addEdgeOverlay(newViz);
+  obj.add(newViz);
 
   // Find or create collision group
   let colGroup = null;
@@ -3320,7 +3423,7 @@ function __onResizePointerMove(event) {
   const dist = delta.dot(axisVec) * sign;
 
   const newSize = [...startSize];
-  newSize[axis] = Math.max(1, startSize[axis] + dist);
+  newSize[axis] = Math.round(Math.max(1, startSize[axis] + dist) * 10) / 10;
 
   __rebuildCollisionBox(name, newSize);
   __updateResizeHandlePositions(newSize);
@@ -3341,7 +3444,8 @@ function __onResizePointerUp() {
       const box = colGroup.children[0];
       const geom = box.geometry;
       if (geom && geom.parameters) {
-        const finalSize = [geom.parameters.width, geom.parameters.height, geom.parameters.depth];
+        const _q = v => Math.round(v * 10) / 10;
+        const finalSize = [_q(geom.parameters.width), _q(geom.parameters.height), _q(geom.parameters.depth)];
         // Store in builderState
         const comp = window.builderState.components[name];
         if (comp) comp.size = finalSize;
@@ -3373,6 +3477,7 @@ function setSelected(name) {
 
   updateObjectList();
   updateSidebarProps(name);
+  try { if (window.__builderUpdateHideBtn) window.__builderUpdateHideBtn(); } catch(e) {}
 
   const enabled = !!(name && (meta || sceneObj));
   if (window.__builderSetActionsEnabled) window.__builderSetActionsEnabled(enabled);
@@ -3482,7 +3587,7 @@ function removeSelected() {
 
   const msg = document.createElement("div");
   msg.textContent = `"${name}" has ${children.size} child object(s) anchored to it.`;
-  msg.style.cssText = `font-size:13px;color:${th.isLight ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.5)"};margin-bottom:16px`;
+  msg.style.cssText = `font-size:13px;color:var(--panel-dim);margin-bottom:16px`;
 
   const row = document.createElement("label");
   row.style.display = "flex";
@@ -4737,7 +4842,7 @@ async function openCreatePanel(typeName) {
       lab.style.fontWeight = "650";
       lab.style.opacity = "0.9";
       const inp = document.createElement("input");
-      inp.type = "number"; inp.value = "100"; inp.min = "1"; inp.step = "1";
+      inp.type = "number"; inp.value = "100"; inp.min = "1"; inp.step = "0.1";
       inp.style.cssText = `flex:1;padding:8px 10px;border-radius:10px;border:${_inputBord};background:${_inputBg};color:${_cardClr};font-size:13px;font-weight:600;`;
       wrap.appendChild(lab); wrap.appendChild(inp);
       form.appendChild(wrap);
@@ -4856,10 +4961,11 @@ async function openCreatePanel(typeName) {
     }
     // Collision box size
     if (isCollisionBox && __sizeXInput && __sizeYInput && __sizeZInput) {
+      const _q = v => Math.round(v * 10) / 10;
       optsOut.size = [
-        parseFloat(__sizeXInput.value) || 100,
-        parseFloat(__sizeYInput.value) || 100,
-        parseFloat(__sizeZInput.value) || 100
+        _q(parseFloat(__sizeXInput.value) || 100),
+        _q(parseFloat(__sizeYInput.value) || 100),
+        _q(parseFloat(__sizeZInput.value) || 100)
       ];
     }
     // Rail dropdown -> has_rail + rail_cfg
@@ -5586,7 +5692,7 @@ function __openCollisionBoxPanel() {
     lab.textContent = label;
     lab.style.cssText = "width:18px;font-size:12px;font-weight:700;";
     const inp = document.createElement("input");
-    inp.type = "number"; inp.value = "100"; inp.min = "1"; inp.step = "1";
+    inp.type = "number"; inp.value = "100"; inp.min = "1"; inp.step = "0.1";
     inp.style.cssText = `flex:1;padding:6px 8px;border-radius:8px;border:${th.inputBord};font-size:12px;font-weight:600;background:${th.inputBg};color:${th.color};`;
     const btn = document.createElement("button");
     btn.textContent = autoLabel;
@@ -5683,9 +5789,10 @@ function __openCollisionBoxPanel() {
   createBtn.style.cssText = "opacity:0.4;pointer-events:none;";
   createBtn.addEventListener("click", () => {
     if (!selectedTarget || !selectedAnchor) return;
-    const sx = parseFloat(xRow.inp.value) || 100;
-    const sy = parseFloat(yRow.inp.value) || 100;
-    const sz = parseFloat(zRow.inp.value) || 100;
+    const _q = v => Math.round(v * 10) / 10;
+    const sx = _q(parseFloat(xRow.inp.value) || 100);
+    const sy = _q(parseFloat(yRow.inp.value) || 100);
+    const sz = _q(parseFloat(zRow.inp.value) || 100);
     __closeCollisionBoxPanel();
     __spawnCollisionBox(selectedTarget, selectedAnchor, selectedSolid, [sx, sy, sz]);
   });
@@ -6346,8 +6453,12 @@ ensureBuilderBar();
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
-  // Update every 1.5 seconds
-  setInterval(updateConfigPreview, 1500);
+  // Update every 1.5 seconds — skip if user is selecting text inside the pre
+  setInterval(() => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && pre && pre.contains(sel.anchorNode) && !sel.isCollapsed) return;
+    updateConfigPreview();
+  }, 1500);
   window.__updateConfigPreview = updateConfigPreview;
   // Initial render
   if (pre) updateConfigPreview();
