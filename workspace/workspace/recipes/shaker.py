@@ -30,5 +30,12 @@ class Shaker(Recipe):
         
 
     def shake(self, duration=5):
-        time.sleep(duration)
-        return 0
+        start = time.time()
+        while True:
+            # exit condition
+            current = time.time()
+            if current - start >= duration and self.component.toggle_state() == "start":
+                break
+            
+            # toggle
+            self.toggle()

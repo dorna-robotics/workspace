@@ -1,17 +1,25 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
-
+import time
 
 class Shaker:
     DEFAULTS = dict(
         anchors={},
+        # limit
+        toggle_range = [0, 180], # [start, end] angle in degree
+        toggle_period = 1, # second, time to toggle from one state to another
         # cfg
-        radius = 0,
-        output_enable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_disable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_close = [[[None, None, 0.1]]], # [[pin, index, time]]
-        output_open = [[[None, None, 0.1]]], # [[pin, index, time]]
+        output_start = [[None, None, 0.1]], # [[pin, index, time]]
+        output_end = [[None, None, 0.1]], # [[pin, index, time]]
+        output_close = {
+            "A1": [[None, None, 0.1]], # [[pin, index, time]]
+            "A2": [[None, None, 0.1]], # [[pin, index, time]]
+        },
+        output_open ={
+            "A1": [[None, None, 0.1]], # [[pin, index, time]]
+            "A2": [[None, None, 0.1]], # [[pin, index, time]]
+        },
     )
     def __init__(self, name: str, workspace, type=None, **kwargs):
         # prm
@@ -30,17 +38,35 @@ class Shaker:
 
 
         # enable and disable
-        self.output_enable = prm["output_enable"]
-        self.output_disable = prm["output_disable"]
+        self.output_start = prm["output_start"]
+        self.output_end = prm["output_end"]
         self.output_close = prm["output_close"]
-        self.output_open = prm["output_open"]
-        # io state
-        self._output_state = None
+        self.output_open = prm["output_open"]        
+        self._toggle_state = "start" # start or end
 
-    
+        # motion
+        self.toggle_range = prm["toggle_range"]
+        self.toggle_period = prm["toggle_period"]
+        self.joint = prm["toggle_range"][0] # current angle
+
+        
     # set or get output state
-    def output_state(self, state=None):
+    def toggle_state(self, state=None):
         if state is None:
-            return self._output_state
-        self._output_state = state
-        return self._output_state
+            return self._toggle_state
+        self._toggle_state = state
+        return self._toggle_state
+
+
+    def toggle(self):
+        start = time.time()
+        while True:
+            current = time.time()
+            if current - start >= self.toggle_period:
+                break
+            ratio = (current - start) / self.toggle_period
+            self.joint = self.toggle_range[0] + (self.toggle_range[1] - self.toggle_range[0]) * ratio if self._toggle_state == "start" else self.toggle_range[1] - (self.toggle_range[1] - self.toggle_range[0]) * ratio
+            time.sleep(0.03)
+        
+        self.joint = self.toggle_range[1] if self._toggle_state == "start" else self.toggle_range[0]
+        self._toggle_state = "end" if self._toggle_state == "start" else "start"

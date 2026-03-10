@@ -15,9 +15,6 @@ class Shaker2slot(Shaker):
             {"body":[
                 {"pose":[0.0, 38.25, 85.0, 0.0, 0.0, 0.0], "scale":[140.0, 141.5, 170.0]},
         ]},
-        # cfg
-        num_slots = 16,
-        vaj=[300, 4000, 10000],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -35,4 +32,6 @@ class Shaker2slot(Shaker):
             workspace=workspace,
             **prm
         )
+
+
 

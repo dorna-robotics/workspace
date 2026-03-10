@@ -1,13 +1,13 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.pipettor.pipettor import Pipettor
+from workspace.components.gripper.gripper import Gripper
 from workspace.components.pipettor.keyto_wrapper import Keyto
 
 
 
 @register("pipettor_sp28_40mm")
-class PipettorSP2840mm(Pipettor):
+class PipettorSP2840mm(Gripper):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174+1, 0, 0, 0], "tip": [0, 0, 185.375-1.25, 0, 0, 0]}},
         collision_box = {"body":[
@@ -21,7 +21,7 @@ class PipettorSP2840mm(Pipettor):
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(Pipettor.DEFAULTS) # default
+        prm = deepcopy(Gripper.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs
