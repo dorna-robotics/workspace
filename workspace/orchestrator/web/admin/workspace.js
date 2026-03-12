@@ -256,11 +256,34 @@ async function init() {
   }
 }
 
-$("btnRefreshLogs").addEventListener("click", refreshLogs);
-$("btnFollowLogs")?.addEventListener("click", () => {
+$("btnRefreshLogs").addEventListener("click", (e) => { e.stopPropagation(); refreshLogs(); });
+$("btnFollowLogs")?.addEventListener("click", (e) => {
+  e.stopPropagation();
   _logFollowing = true;
   logPre.scrollTop = logPre.scrollHeight;
   _updateFollowBtn();
+});
+
+// Collapse / expand — clicking anywhere on the header row toggles
+let _logsExpanded = false;
+$("btnToggleLogs").addEventListener("click", () => {
+  _logsExpanded = !_logsExpanded;
+  logPre.style.display = _logsExpanded ? "" : "none";
+  const chevron = document.getElementById("logChevron");
+  if (chevron) chevron.classList.toggle("open", _logsExpanded);
+  if (_logsExpanded) refreshLogs();
+});
+
+// Clear logs — stop propagation so it doesn't also toggle collapse
+$("btnClearLogs").addEventListener("click", async (e) => {
+  e.stopPropagation();
+  try {
+    await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
+    lastLogs = "";
+    logPre.innerHTML = "";
+  } catch (e) {
+    toast("Failed to clear logs", "bad");
+  }
 });
 
 init();

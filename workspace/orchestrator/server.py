@@ -622,6 +622,18 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
             self.set_status(400)
             self.write({"error": str(e)})
 
+    async def delete(self, name):
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            ws = self.orch.workspaces[name]
+            if os.path.isfile(ws.log_path):
+                open(ws.log_path, "w").close()
+            self.write({"ok": True})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
 
 # -------------------- Tornado HTTP Server --------------------
 

@@ -285,6 +285,7 @@ class Display:
 
     def _connect_bg(self):
         """Connect to socket.io in a background thread (non-blocking)."""
+        first = True
         while not self._stop_event.is_set():
             try:
                 # transports only here, NOT in Client()
@@ -296,7 +297,9 @@ class Display:
                 # If connect succeeds, break; reconnection is handled by the client
                 return
             except Exception as e:
-                print("[Display] connect failed, retrying in 2s:", e)
+                if first:
+                    print("[Display] connect failed, retrying in background:", e)
+                    first = False
                 time.sleep(2.0)
 
     # ----------------------------------------------------

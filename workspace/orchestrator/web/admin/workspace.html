@@ -82,8 +82,10 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ---- Logs ---- */
-    .log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; user-select: none; }
     .log-header .section-label { margin: 0; }
+    .log-header .btn { cursor: pointer; }
+    #logChevron.open { transform: rotate(90deg); }
 
     #logPre {
       background: var(--bg);
@@ -190,13 +192,15 @@
       </div>
 
       <div>
-        <div class="log-header">
+        <div class="log-header" id="btnToggleLogs" title="Expand logs">
           <div class="section-label">Logs</div>
+          <svg id="logChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnFollowLogs" title="Jump to latest" style="display:none">↓</button>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnRefreshLogs" title="Refresh logs">↺</button>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnClearLogs" title="Clear logs">✕</button>
         </div>
-        <pre id="logPre">(loading...)</pre>
+        <pre id="logPre" style="display:none">(loading...)</pre>
       </div>
 
     </div>

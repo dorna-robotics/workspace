@@ -14,7 +14,8 @@
       "Bash(git checkout HEAD -- workspace/workspace/components/collision_box/__init__.py workspace/workspace/components/collision_box/collision_box.py)",
       "Bash(git checkout HEAD -- workspace/static/CAD/collision_box.glb)",
       "Bash(git checkout HEAD -- workspace/scene_builder/web/app.js)",
-      "Bash(git add workspace/orchestrator/web/admin/workspace.html workspace/orchestrator/web/admin/workspace.js workspace/scene_builder/web/app.js workspace/scene_builder/web/index.html workspace/scene_builder/web/style.css workspace/static/CAD/collision_box.glb)"
+      "Bash(git add workspace/orchestrator/web/admin/workspace.html workspace/orchestrator/web/admin/workspace.js workspace/scene_builder/web/app.js workspace/scene_builder/web/index.html workspace/scene_builder/web/style.css workspace/static/CAD/collision_box.glb)",
+      "Bash(grep -n \"Display.*connect\\\\|connect failed\" /tmp/*.log)"
     ]
   }
 }
