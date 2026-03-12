@@ -32,9 +32,7 @@ class Shaker:
         self.type = type
 
         # assembly
-        self.assembly = {
-            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
-        }
+        self.assembly = {}
 
 
         # enable and disable
@@ -58,15 +56,21 @@ class Shaker:
         return self._toggle_state
 
 
-    def toggle(self):
+    def toggle(self, stop_event=None):
         start = time.time()
         while True:
             current = time.time()
             if current - start >= self.toggle_period:
                 break
+            if stop_event is not None and stop_event.is_set():
+                return  # exit mid-toggle cleanly; caller handles going to start
             ratio = (current - start) / self.toggle_period
             self.joint = self.toggle_range[0] + (self.toggle_range[1] - self.toggle_range[0]) * ratio if self._toggle_state == "start" else self.toggle_range[1] - (self.toggle_range[1] - self.toggle_range[0]) * ratio
             time.sleep(0.03)
-        
+
         self.joint = self.toggle_range[1] if self._toggle_state == "start" else self.toggle_range[0]
         self._toggle_state = "end" if self._toggle_state == "start" else "start"
+
+
+    def update_pose(self):
+        self.assembly["rotating"].attach_to(parent=self.assembly["body"], parent_anchor="output", child_anchor="input", offset=[0, 0, 0, 0, self.joint, 0], offset_frame="parent")

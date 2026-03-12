@@ -1069,6 +1069,63 @@ class Recipe:
         return True
 
 
+    # pattern is in the world frame
+    def vibrate(self, pattern=[[2.5,0,0],[-2.5,0,0]], cnt=5, vaj=[300, 10000, 20000], **kwargs):
+        rt = self.rt
+        rt.checkpoint()
+
+        # current joint
+        current_joint = rt.joint()
+
+        # convert pattern to flange
+        pattern = [
+            dorna_pose.transform_pose(
+                p+self.core.assembly["robot_flange"].pose("output")[3:],
+                from_frame=[0, 0, 0, 0, 0, 0],
+                to_frame=[0, 0, 0]+self.core.assembly["robot_flange"].pose("output")[3:],
+            )
+            for p in pattern
+        ]
+
+        joint_list = []
+        # form joint list
+        for p in pattern:
+            J, C = self.core.IK(
+                target_solid=self.core.assembly["robot_flange"],
+                target_anchor="output",
+                target_offset=p,
+                tool_solid=None,
+                tool_anchor=None,
+                tool_offset=[0, 0, 0, 0, 0, 0],
+                base_distance=self.base_distance,
+                rail_step=self.rail_step,
+                rail_span=self.rail_span,
+                left_approach=self.left_approach,
+                ref_joints=self.ref_joints,
+            )
+
+            if C == 2:
+                joint_list.append(J)
+            else:
+                print("🔴 could not find a valid approach")
+                return False
+
+        # consider counts
+        joint_list = cnt * joint_list
+        # add current joint to the end
+        joint_list.append(current_joint)
+
+        # run the jmove
+        for J in joint_list:
+            rt.jmove(
+                joint=J,
+                vel=vaj[0] * self.speed_factor,
+                accel=vaj[1] * self.speed_factor,
+                jerk=vaj[2] * self.speed_factor,
+            )
+        return True
+
+
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
         # check if tool is there
         tool = self.tool_attached_to_the_robot()
