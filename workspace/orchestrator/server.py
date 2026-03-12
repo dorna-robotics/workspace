@@ -206,7 +206,11 @@ class Orchestrator:
         if self.is_launched(name):
             return
 
-        cmd = ["sudo", "python3", ws.path_to_file, "--port", str(ws.port)]
+        import sys, platform
+        if platform.system() == "Windows":
+            cmd = [sys.executable, ws.path_to_file, "--port", str(ws.port)]
+        else:
+            cmd = ["sudo", "python3", ws.path_to_file, "--port", str(ws.port)]
         if ws.args:
             cmd += shlex.split(ws.args)
 
