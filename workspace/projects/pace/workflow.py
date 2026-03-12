@@ -77,9 +77,9 @@ def workflow_fn(*, workspace, core):
     # Source 40 ml tubes (read-only input rack)
     source = [
         ["rack_40ml_1", "A1"],
-        #["rack_40ml_1", "A2"],
-        #["rack_40ml_1", "A3"],
-        #["rack_40ml_1", "A4"],
+        ["rack_40ml_1", "A2"],
+        ["rack_40ml_1", "A3"],
+        ["rack_40ml_1", "A4"],
     ]
 
     # Working 40 ml tubes (intermediate rack used during processing)
@@ -356,7 +356,7 @@ def workflow_fn(*, workspace, core):
         rcp["decapper_5"].pick(approach=False)
 
         # shake
-        rcp["decapper_5"].shake()
+        rcp["decapper_5"].vibrate()
 
         # final barcode / visual inspection
         rcp["inspector_1"].present(approach=True)
