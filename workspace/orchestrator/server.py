@@ -695,14 +695,20 @@ async def broadcast_status(orch: Orchestrator):
         if msg == _ws_last_snapshot:
             return  # nothing changed, skip
         _ws_last_snapshot = msg
-        dead = []
-        for c in list(_ws_clients):
+        async def _safe_send(c, m):
             try:
-                await c.write_message(msg)
+                await c.write_message(m)
             except Exception:
-                dead.append(c)
-        for c in dead:
-            _ws_clients.discard(c)
+                _ws_clients.discard(c)
+
+        tasks = []
+        for c in list(_ws_clients):
+            if not c.ws_connection:
+                _ws_clients.discard(c)
+            else:
+                tasks.append(asyncio.ensure_future(_safe_send(c, msg)))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
     except Exception:
         pass
 
@@ -747,6 +753,19 @@ class OrchestratorHTTPServer:
 
     def run(self):
         self.app.listen(self.port, address=self.host)
+
+        # Suppress noisy WebSocketClosedError from Tornado's internal tasks
+        _orig_handler = asyncio.get_event_loop().get_exception_handler()
+        def _ws_exception_handler(loop, context):
+            exc = context.get("exception")
+            if exc and "WebSocketClosedError" in type(exc).__name__:
+                return  # silently ignore
+            if _orig_handler:
+                _orig_handler(loop, context)
+            else:
+                loop.default_exception_handler(context)
+        asyncio.get_event_loop().set_exception_handler(_ws_exception_handler)
+
         # Start WS broadcast loop
         tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, self.orch)
         print(f"Orchestrator server running on {self.host}:{self.port}")
