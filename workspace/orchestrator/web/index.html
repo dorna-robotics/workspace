@@ -627,7 +627,25 @@
         for (const m of e.flange) { collisionFlangeGroup.remove(m); m.geometry.dispose(); m.material.dispose(); }
         collisionMeshesByKey.delete(key);
       }
+      // Signature for collision data — skip rebuild when unchanged
+      const collisionSigByKey = new Map();
+
+      function collisionSig(boxes) {
+        if (!boxes || !boxes.length) return "";
+        // Fast signature: count + first/last pose values
+        let s = boxes.length.toString();
+        for (const b of boxes) {
+          if (b?.pose) s += "|" + b.pose.join(",");
+        }
+        return s;
+      }
+
       function updateCollisionMeshesFor(key, worldBoxes, flangeBoxes, meta) {
+        // Skip rebuild if collision data hasn't changed
+        const newSig = collisionSig(worldBoxes) + ";" + collisionSig(flangeBoxes);
+        if (collisionSigByKey.get(key) === newSig) return;
+        collisionSigByKey.set(key, newSig);
+
         clearCollisionMeshesFor(key);
         const entry = { world: [], flange: [] };
         for (const box of (worldBoxes||[])) {
@@ -848,8 +866,11 @@
         }
         if (Array.isArray(spec.pose) && spec.pose.length === 6) {
           const [x,y,z,rx,ry,rz] = spec.pose;
-          root.position.set(x,y,z);
-          root.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
+          // Skip if pose unchanged (avoid matrix recomputation)
+          const p = root.position;
+          if (p.x !== x || p.y !== y || p.z !== z) p.set(x,y,z);
+          const q = rodriguesDegToQuaternion(rx,ry,rz);
+          if (!root.quaternion.equals(q)) root.quaternion.copy(q);
         }
         if (typeof spec.visible === "boolean")              root.visible = spec.visible;
         if (spec.anchors && typeof spec.anchors === "object") root.userData.anchors = spec.anchors;
@@ -866,16 +887,17 @@
         }
       }
 
-      // ── Socket.IO ─────────────────────────────────────────────────────────
+      // ── Socket.IO + Frame Batching ────────────────────────────────────────
+      // Queue all incoming updates; apply once per animation frame so multiple
+      // socket events between frames are merged (last-write-wins per object).
       const socket = io({ path: "/socket.io/", transports: ["websocket"], forceNew: true, timeout: 10000 });
 
       let _hasMeshData = false;
       let _resyncTimer = null;
+      const _pendingUpdates = {};  // name → spec (merged between frames)
 
       socket.on("connect", () => {
-        // Actively ask for a snapshot — don't rely solely on the server pushing it
         socket.emit("request_snapshot");
-        // If we still have no mesh data after 3s, keep asking (Display may not be ready yet)
         _resyncTimer = setInterval(() => {
           if (!_hasMeshData) socket.emit("request_snapshot");
         }, 3000);
@@ -887,16 +909,32 @@
       });
 
       socket.on("scene_update", (payload) => {
-        const entries  = Object.entries(payload || {});
-        if (!_hasMeshData && entries.some(([, s]) => s?.meshUrl)) {
-          _hasMeshData = true;
-          clearInterval(_resyncTimer);
+        if (!payload) return;
+        for (const [n, s] of Object.entries(payload)) {
+          if (!s) continue;
+          // Merge: later fields overwrite earlier ones for same object
+          const prev = _pendingUpdates[n];
+          _pendingUpdates[n] = prev ? Object.assign(prev, s) : s;
+          // Track mesh data arrival
+          if (!_hasMeshData && s.meshUrl) {
+            _hasMeshData = true;
+            clearInterval(_resyncTimer);
+          }
         }
-        for (const [n, s] of entries) upsertObject(n, s || {});
       });
+
+      function flushPendingUpdates() {
+        const keys = Object.keys(_pendingUpdates);
+        if (!keys.length) return;
+        for (const n of keys) {
+          upsertObject(n, _pendingUpdates[n]);
+          delete _pendingUpdates[n];
+        }
+      }
 
       // ── Animate ───────────────────────────────────────────────────────────
       function animate() {
+        flushPendingUpdates();
         updateSnap();
         controls.update();
         updateAnchorsNow();

@@ -69,6 +69,7 @@ class WorkspaceInfo:
 
         # Orchestrator-level timing / error
         self.started_at: Optional[float] = None  # unix seconds; starts at LAUNCH for local
+        self.finished_at: Optional[float] = None  # unix seconds; set when process stops
         self.last_error: Optional[str] = None
 
     def is_remote(self) -> bool:
@@ -86,8 +87,9 @@ class WorkspaceInfo:
 
 class Orchestrator:
     """Manages multiple workspaces as local OS processes OR remote orchestrator proxies."""
-    def __init__(self):
+    def __init__(self, port: int = 5000):
         self.workspaces: Dict[str, WorkspaceInfo] = {}
+        self._orch_port = port
 
     # ---------------- Persistence ----------------
 
@@ -215,7 +217,7 @@ class Orchestrator:
         if ws.args:
             cmd += shlex.split(ws.args)
 
-        env = os.environ.copy()  # keep env normal; no PORT needed anymore
+        env = os.environ.copy()
         
         # log cap + append marker
         _truncate_log_if_needed(ws.log_path, MAX_LOG_BYTES)
@@ -233,6 +235,7 @@ class Orchestrator:
         )
 
         ws.started_at = time.time()
+        ws.finished_at = None
         ws.last_error = None
 
     def wait_until_ready(self, name: str, timeout: float = 8.0) -> bool:
@@ -332,7 +335,8 @@ class Orchestrator:
 
         if ws.process is None or ws.process.poll() is not None:
             ws.process = None
-            ws.started_at = None
+            if ws.started_at and not ws.finished_at:
+                ws.finished_at = time.time()
             return
 
         ws.process.terminate()
@@ -342,7 +346,7 @@ class Orchestrator:
             ws.process.kill()
             ws.process.wait()
         ws.process = None
-        ws.started_at = None
+        ws.finished_at = time.time()
 
     def relaunch_workspace(self, name: str):
         ws = self.workspaces[name]
@@ -402,18 +406,20 @@ class Orchestrator:
                 ws.last_error = f"Remote status failed: {e}"
                 return {"state": "REMOTE_OFFLINE", "last_error": ws.last_error, "_orch": {"node_url": ws.node_url, "mode": "remote"}}
 
-        uptime_s = (time.time() - ws.started_at) if ws.started_at else None
-
         if not self.is_launched(name):
+            # Frozen uptime: show how long it ran (started → finished)
+            frozen_uptime = (ws.finished_at - ws.started_at) if (ws.started_at and ws.finished_at) else None
             return {
                 "state": "NOT_LAUNCHED",
                 "last_error": ws.last_error,
                 "port": ws.port,
                 "log": ws.log_path,
                 "started_at": ws.started_at,
-                "uptime_s": uptime_s,
+                "uptime_s": frozen_uptime,
                 "_orch": {"launched": False, "port": ws.port, "log": ws.log_path, "mode": "local"},
             }
+
+        uptime_s = (time.time() - ws.started_at) if ws.started_at else None
 
         url = f"http://127.0.0.1:{ws.port}/status"
         try:
@@ -547,6 +553,7 @@ class WorkspaceCmdHandler(AuthedHandler):
             out = None
 
             if cmd == "launch":
+                _ws_step_cache.pop(name, None)
                 out = await loop.run_in_executor(_cmd_pool, self.orch.launch_workspace, name)
             elif cmd == "start":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name)
@@ -558,6 +565,7 @@ class WorkspaceCmdHandler(AuthedHandler):
                 out = await loop.run_in_executor(_cmd_pool, self.orch.stop_workspace, name)
                 out = out or {"status": "ok", "killed": True}
             elif cmd in ("restart", "relaunch"):
+                _ws_step_cache.pop(name, None)
                 out = await loop.run_in_executor(_cmd_pool, self.orch.relaunch_workspace, name)
             else:
                 raise ValueError("Unknown cmd")
@@ -603,6 +611,9 @@ class WorkspaceStatusHandler(tornado.web.RequestHandler):
                 raise ValueError(f"Unknown workspace: {name}")
             loop = asyncio.get_running_loop()
             st = await loop.run_in_executor(_status_pool, self.orch.get_status, name)
+            # Inject cached steps if runtime no longer provides them
+            if not st.get("step") and _ws_step_cache.get(name):
+                st["step"] = _ws_step_cache[name]
             self.write(st)
         except Exception as e:
             self.set_status(400)
@@ -640,6 +651,8 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
 
 _ws_clients: set = set()
 _ws_last_snapshot: str = ""   # JSON of last broadcast (skip if unchanged)
+_ws_prev_states: dict = {}    # name → last known runtime state (for auto-kill on completion)
+_ws_step_cache: dict = {}     # name → last known step data (survives process kill)
 
 class StatusWebSocket(tornado.websocket.WebSocketHandler):
     """Clients connect here for instant status pushes instead of polling."""
@@ -664,7 +677,11 @@ class StatusWebSocket(tornado.websocket.WebSocketHandler):
                 except Exception as e:
                     return n, {"state": "OFFLINE", "last_error": str(e)}
             pairs = await asyncio.gather(*[fetch_one(n) for n in names])
-            msg = json.dumps({"type": "status", "statuses": dict(pairs)})
+            statuses = dict(pairs)
+            for n, st in statuses.items():
+                if not st.get("step") and _ws_step_cache.get(n):
+                    st["step"] = _ws_step_cache[n]
+            msg = json.dumps({"type": "status", "statuses": statuses})
             if self.ws_connection:
                 await self.write_message(msg)
         except Exception:
@@ -680,8 +697,6 @@ class StatusWebSocket(tornado.websocket.WebSocketHandler):
 async def broadcast_status(orch: Orchestrator):
     """Fetch all statuses and push to every connected WS client."""
     global _ws_last_snapshot
-    if not _ws_clients:
-        return
     try:
         loop = asyncio.get_running_loop()
         names = list(orch.workspaces.keys())
@@ -691,7 +706,32 @@ async def broadcast_status(orch: Orchestrator):
             except Exception as e:
                 return n, {"state": "OFFLINE", "last_error": str(e)}
         pairs = await asyncio.gather(*[fetch_one(n) for n in names])
-        msg = json.dumps({"type": "status", "statuses": dict(pairs)}, sort_keys=True)
+        statuses = dict(pairs)
+
+        # Cache step data from live statuses; restore when process is gone
+        for name, st in statuses.items():
+            if st.get("step"):
+                _ws_step_cache[name] = st["step"]
+            elif _ws_step_cache.get(name) and not st.get("step"):
+                st["step"] = _ws_step_cache[name]
+
+        # Auto-kill: when workflow finishes (RUNNING/ACTIVE → IDLE), kill process
+        # so user must Launch fresh next time (clean world_state)
+        for name, st in statuses.items():
+            cur = (st.get("state") or "").upper()
+            prev = _ws_prev_states.get(name, "")
+            if prev in ("RUNNING", "ACTIVE") and cur == "IDLE":
+                try:
+                    await loop.run_in_executor(_cmd_pool, orch.stop_workspace, name)
+                    st["state"] = "NOT_LAUNCHED"
+                    st["last_error"] = None
+                except Exception:
+                    pass
+            _ws_prev_states[name] = cur
+
+        if not _ws_clients:
+            return
+        msg = json.dumps({"type": "status", "statuses": statuses}, sort_keys=True)
         if msg == _ws_last_snapshot:
             return  # nothing changed, skip
         _ws_last_snapshot = msg
@@ -724,7 +764,7 @@ async def _ws_poll_loop(orch: Orchestrator):
 
 class OrchestratorHTTPServer:
     def __init__(self, host="0.0.0.0", port=9000):
-        self.orch = Orchestrator()
+        self.orch = Orchestrator(port=port)
         self.orch.load_registry()
 
         self.host = host

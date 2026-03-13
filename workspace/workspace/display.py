@@ -29,6 +29,10 @@ class Display:
         self._inflight = False
         self._pending = None
 
+        # delta compression: cache last sent pose per object
+        self._last_sent = {}  # key → (pose_tuple, collision_hash)
+
+    
         # socket.io client
         self.sio = socketio.Client(
             reconnection=True,
@@ -72,7 +76,8 @@ class Display:
             self._period = 1.0 / self.fps
 
     def send_snapshot(self):
-        """Force a full snapshot send (manual)."""
+        """Force a full snapshot send (manual). Clears delta cache."""
+        self._last_sent.clear()
         try:
             snap = self._build_snapshot()
             self._emit_update(snap)
@@ -157,7 +162,7 @@ class Display:
         return batch
 
     def _build_pose_frame(self):
-        """Only pose + visible; DO NOT delete meshUrl."""
+        """Only pose + visible; DO NOT delete meshUrl. Delta: skip unchanged objects."""
         try:
             poses = self.workspace.compute_world_poses()
         except Exception as e:
@@ -167,24 +172,33 @@ class Display:
         world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
 
         out = {}
+        total = 0
         for comp_name, comp in getattr(self.workspace, "components", {}).items():
             assembly = getattr(comp, "assembly", {}) or {}
             for solid_name, _solid in assembly.items():
                 key = f"{comp_name}_{solid_name}"
+                total += 1
                 p = poses.get(key, [0, 0, 0, 0, 0, 0])
-                item = {
-                    "pose": p,
-                    # DO NOT send meshUrl
-                    # DO NOT send componentName / solidName
-                    "visible": True
-                }
-                key_boxes = (comp_name, solid_name)
-                # Always send collision arrays (possibly empty) so stale
-                # collision meshes get removed on detach/topology changes.
-                item["collisionWorld"] = world_boxes_by_solid.get(key_boxes, [])
-                item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
-                out[key] = item
+                key_boxes = (comp_name, solid_name)
+                cw = world_boxes_by_solid.get(key_boxes, [])
+                cf = flange_boxes_by_solid.get(key_boxes, [])
+
+                # Delta check: skip if pose and collision unchanged
+                pose_t = tuple(p) if isinstance(p, list) else p
+                col_sig = (len(cw), len(cf))
+                prev = self._last_sent.get(key)
+                if prev is not None and prev[0] == pose_t and prev[1] == col_sig:
+                    continue  # unchanged — skip
+
+                self._last_sent[key] = (pose_t, col_sig)
+                out[key] = {
+                    "pose": p,
+                    "visible": True,
+                    "collisionWorld": cw,
+                    "collisionFlange": cf,
+                }
+
         return out
 
     def _collision_boxes_by_solid(self, padding=0.0):
@@ -231,11 +245,11 @@ class Display:
             return
 
         try:
-            # ensure JSON serializable / small
             encoded = json.dumps(payload)
         except Exception as e:
             print("[Display] json.dumps failed:", e)
             return
+
 
         with self._state_lock:
             if self._inflight:
@@ -269,7 +283,8 @@ class Display:
             try:
                 if not self._inflight and self.sio.connected:
                     frame = self._build_pose_frame()
-                    self._emit_update(frame)
+                    if frame:  # delta: skip emit if nothing changed
+                        self._emit_update(frame)
             except Exception as e:
                 print("[Display] error in main loop:", e)
 
@@ -277,7 +292,6 @@ class Display:
             delay = next_t - time.perf_counter()
 
             if delay < -period:
-                # we fell behind; reset schedule
                 next_t = time.perf_counter() + period
                 delay = period
             if delay > 0:

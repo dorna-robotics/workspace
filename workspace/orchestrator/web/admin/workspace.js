@@ -13,6 +13,7 @@ let iframeUrl   = "";
 // Adaptive poll: fast when active, slow when idle
 let _pollTimer  = null;
 let _lastState  = "";
+let _wasRunning = false;  // track if we were just running (for auto-kill transition)
 
 // Live uptime: interpolate locally between polls
 let _uptimeBase = null;   // uptime_s from last server response
@@ -117,12 +118,20 @@ function updateStatusUI(st) {
   // Live uptime: store base so the 1s ticker can interpolate
   if (st?.uptime_s != null) {
     _uptimeBase = Number(st.uptime_s);
-    _uptimeAt   = performance.now();
+    // Only tick live when launched; freeze the display when not launched
+    _uptimeAt = launched ? performance.now() : null;
     uptimeVal.textContent = fmtUptime(_uptimeBase) || "—";
   } else {
     _uptimeBase = null;
+    _uptimeAt = null;
     uptimeVal.textContent = "—";
   }
+  // Track running→idle for auto-kill transition UI
+  const prevUpper = _lastState.toUpperCase();
+  const curUpper  = state.toUpperCase();
+  if (prevUpper === "RUNNING" && curUpper === "IDLE") _wasRunning = true;
+  if (curUpper !== "IDLE") _wasRunning = false;
+
   _lastState = state;
   startedVal.textContent = fmtTimestamp(st?.started_at) || "—";
 
@@ -137,9 +146,102 @@ function updateStatusUI(st) {
   // Accent the header border with state colour
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
+  renderStep(st?.step, running);
   renderControls(state, launched, running);
-  updateIframe(launched);
+  updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
+}
+
+let _prevStepCount = 0;
+let _prevStepRunning = false;
+let _stepsExpanded = true;
+
+// ---- Direct step WebSocket to runtime ----
+let _stepWs = null;
+let _stepWsClosed = false;
+let _stepWsRetryMs = 1000;
+let _stepWsUrl = "";
+
+function connectStepWS(runtimeUrl) {
+  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/steps";
+  if (_stepWs && _stepWsUrl === wsUrl) return;  // already connected
+  disconnectStepWS();
+  _stepWsUrl = wsUrl;
+  _stepWsClosed = false;
+  _stepWsRetryMs = 1000;
+  _tryStepWS();
+}
+
+function _tryStepWS() {
+  if (_stepWsClosed || !_stepWsUrl) return;
+  const ws = new WebSocket(_stepWsUrl);
+  _stepWs = ws;
+  ws.onopen = () => { _stepWsRetryMs = 1000; };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (Array.isArray(msg.steps) && msg.steps.length) {
+        const running = isRunning(_lastState);
+        renderStep({ steps: msg.steps }, running);
+      }
+    } catch {}
+  };
+  ws.onclose = () => {
+    if (_stepWsClosed) return;
+    setTimeout(_tryStepWS, _stepWsRetryMs);
+    _stepWsRetryMs = Math.min(_stepWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectStepWS() {
+  _stepWsClosed = true;
+  if (_stepWs) { try { _stepWs.close(); } catch {} _stepWs = null; }
+  _stepWsUrl = "";
+}
+
+function renderStep(step, running) {
+  const section = $("stepSection");
+  const el = $("stepTimeline");
+  const badge = $("stepCountBadge");
+  if (!section || !el) return;
+
+  const steps = step?.steps;
+  if (!steps || !steps.length) {
+    if (_prevStepCount > 0) {
+      el.innerHTML = `<div class="step-empty">No steps yet</div>`;
+      if (badge) badge.textContent = "";
+      _prevStepCount = 0;
+    }
+    return;
+  }
+
+  if (badge) badge.textContent = `${steps.length}`;
+
+  // Only rebuild if step count or running state changed
+  if (steps.length === _prevStepCount && running === _prevStepRunning) return;
+  _prevStepCount = steps.length;
+  _prevStepRunning = running;
+
+  // Auto-expand when first step arrives
+  if (steps.length === 1 && !_stepsExpanded) {
+    _stepsExpanded = true;
+    el.style.display = "";
+    const chev = $("stepChevron");
+    if (chev) chev.classList.add("open");
+  }
+
+  el.innerHTML = steps.map((s, i) => {
+    // Support both new {label, level} objects and legacy plain strings
+    const label = typeof s === "string" ? s : (s.label || "");
+    const level = (typeof s === "object" && s.level) ? s.level : "info";
+    const isLast = i === steps.length - 1;
+    const cls = (isLast && running) ? "active" : "done";
+    return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
+  }).join("");
+
+  // Auto-scroll to latest
+  el.scrollTop = el.scrollHeight;
 }
 
 function renderControls(state, launched, running) {
@@ -168,12 +270,17 @@ function renderControls(state, launched, running) {
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
   } else if (s === "LAUNCHED_NOT_READY") {
-    // Server process is starting — show a spinner label and only a Kill escape hatch
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
     controls.appendChild(lbl);
     addBtn("Kill", "kill", { danger: true });
+  } else if (s === "IDLE" && _wasRunning) {
+    // Workflow just finished — auto-kill is about to fire, show brief "Finishing" state
+    const lbl = document.createElement("span");
+    lbl.className = "ctrl-starting";
+    lbl.textContent = "Finishing…";
+    controls.appendChild(lbl);
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
@@ -182,14 +289,16 @@ function renderControls(state, launched, running) {
   }
 }
 
-function updateIframe(launched) {
+function updateIframe(state, launched) {
   if (!wsInfo) return;
-  if (!launched) {
+  const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
+  if (!ready) {
     if (iframeReady) {
       iframeReady = false;
       iframeUrl   = "";
       frame.src   = "about:blank";
       placeholder.style.display = "";
+      disconnectStepWS();
     }
     return;
   }
@@ -203,6 +312,7 @@ function updateIframe(launched) {
     }, { once: true });
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
+    connectStepWS(targetUrl);
   }
 }
 
@@ -277,6 +387,15 @@ async function init() {
     toast(String(err), "bad");
   }
 }
+
+// Collapse / expand steps
+$("btnToggleSteps")?.addEventListener("click", () => {
+  _stepsExpanded = !_stepsExpanded;
+  const el = $("stepTimeline");
+  if (el) el.style.display = _stepsExpanded ? "" : "none";
+  const chevron = $("stepChevron");
+  if (chevron) chevron.classList.toggle("open", _stepsExpanded);
+});
 
 $("btnRefreshLogs").addEventListener("click", (e) => { e.stopPropagation(); refreshLogs(); });
 $("btnFollowLogs")?.addEventListener("click", (e) => {

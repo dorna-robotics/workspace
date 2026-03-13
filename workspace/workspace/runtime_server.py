@@ -7,6 +7,7 @@ from typing import Callable, Any, Optional
 
 import tornado.ioloop
 import tornado.web
+import tornado.websocket
 from tornado import autoreload
 import socketio
 
@@ -175,7 +176,53 @@ class StatusHandler(tornado.web.RequestHandler):
         self.rt = rt
 
     async def get(self):
-        self.write({"state": self.rt.state, "last_error": self.rt.status.last_error})
+        out = {"state": self.rt.state, "last_error": self.rt.status.last_error}
+        si = self.rt.step_info
+        if si:
+            out["step"] = si
+        self.write(out)
+
+
+# --------------------------------------------------
+# Step WebSocket — push step updates to dashboard
+# --------------------------------------------------
+_step_ws_clients: set = set()
+
+
+class StepWebSocket(tornado.websocket.WebSocketHandler):
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        _step_ws_clients.add(self)
+        # Send current steps immediately on connect
+        rt = self._rt
+        si = rt.step_info
+        try:
+            self.write_message(json.dumps({"steps": si["steps"] if si else []}))
+        except Exception:
+            pass
+
+    def on_close(self):
+        _step_ws_clients.discard(self)
+
+    def initialize(self, rt: Runtime):
+        self._rt = rt
+
+
+def _broadcast_steps(steps: list):
+    """Called from rt.on_step (workflow thread) — schedule send on IO loop."""
+    ioloop = tornado.ioloop.IOLoop.current()
+    msg = json.dumps({"steps": steps})
+
+    def _send():
+        for c in list(_step_ws_clients):
+            try:
+                c.write_message(msg)
+            except Exception:
+                _step_ws_clients.discard(c)
+
+    ioloop.add_callback(_send)
 
 
 # --------------------------------------------------
@@ -229,6 +276,7 @@ class RuntimeServer:
                 workspace=self.workspace,
             )),
             (r"/status", StatusHandler, dict(rt=self.rt)),
+            (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
 
             # health
             (r"/healthz", HealthHandler),
@@ -243,6 +291,9 @@ class RuntimeServer:
             }),
         ]
 
+        # Wire step push: rt.on_step → broadcast to all step WS clients
+        self.rt.on_step = _broadcast_steps
+
         self.app = tornado.web.Application(routes, debug=DEV_NOCACHE)
 
     def run(self):
@@ -251,6 +302,19 @@ class RuntimeServer:
         print(" - viewer:", self.web_dir)
         print(" - static:", self.static_dir)
         print(" - DEV_NOCACHE =", DEV_NOCACHE)
+
+        # Suppress WebSocketClosedError noise from Tornado internals
+        import asyncio
+        _orig = asyncio.get_event_loop().get_exception_handler()
+        def _suppress_ws_closed(loop, ctx):
+            exc = ctx.get("exception")
+            if exc and "WebSocketClosedError" in type(exc).__name__:
+                return
+            if _orig:
+                _orig(loop, ctx)
+            else:
+                loop.default_exception_handler(ctx)
+        asyncio.get_event_loop().set_exception_handler(_suppress_ws_closed)
 
         # autoreload for dev
         for p in (self.web_dir, self.static_dir):

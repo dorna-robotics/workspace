@@ -65,6 +65,10 @@ class Runtime:
         self._workflow_thread: Optional[threading.Thread] = None
 
         self.on_state_change: Optional[Callable[[RTState, RTState], None]] = None
+        self.on_step: Optional[Callable[[list], None]] = None
+
+        # workflow step tracking
+        self._steps: list = []  # list of step labels (timeline)
 
     # ---------------------------------------------------------------------
     # Status helpers
@@ -103,6 +107,41 @@ class Runtime:
                 pass
 
     # ---------------------------------------------------------------------
+    # Workflow step tracking
+    # ---------------------------------------------------------------------
+
+    _STEP_LEVELS = ("info", "success", "warning", "error")
+
+    def step(self, label: str, level: str = "info") -> None:
+        """Mark a workflow step. Accumulates as a timeline in the dashboard.
+
+        level: 'info' (default), 'success', 'warning', or 'error'.
+        """
+        if level not in self._STEP_LEVELS:
+            level = "info"
+        entry = {"label": str(label), "level": level}
+        with self._lock:
+            self._steps.append(entry)
+            steps_snapshot = list(self._steps)
+        cb = self.on_step
+        if cb is not None:
+            try:
+                cb(steps_snapshot)
+            except Exception:
+                pass
+        self.checkpoint()
+
+    @property
+    def step_info(self) -> Optional[dict]:
+        with self._lock:
+            if not self._steps:
+                return None
+            return {"steps": list(self._steps)}
+
+    def _clear_steps(self) -> None:
+        self._steps.clear()
+
+    # ---------------------------------------------------------------------
     # Control API
     # ---------------------------------------------------------------------
 
@@ -124,6 +163,7 @@ class Runtime:
 
             self._start_token += 1
             self._status.last_error = None
+            self._clear_steps()
             self._set_state(RTState.IDLE)
             self._cv.notify_all()
 

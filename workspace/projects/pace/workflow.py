@@ -77,9 +77,9 @@ def workflow_fn(*, workspace, core):
     # Source 40 ml tubes (read-only input rack)
     source = [
         ["rack_40ml_1", "A1"],
-        ["rack_40ml_1", "A2"],
-        ["rack_40ml_1", "A3"],
-        ["rack_40ml_1", "A4"],
+        #["rack_40ml_1", "A2"],
+        #["rack_40ml_1", "A3"],
+        #["rack_40ml_1", "A4"],
     ]
 
     # Working 40 ml tubes (intermediate rack used during processing)
@@ -174,17 +174,20 @@ def workflow_fn(*, workspace, core):
     shake_duration     = 10000 # seconds — total shaking time per batch
     inspection_frq     = 4     # number of rotation steps during tube inspection
     inspection_rot     = 90    # degrees — rotation angle per inspection step
-    speed_factor       = 5     # global motion speed multiplier (1 = full speed)
+    speed_factor       = 10     # global motion speed multiplier (1 = full speed)
 
     # ── Build recipes ─────────────────────────────────────────────────────────
+    rt = workspace.rt
     rcp = create_recipes(workspace, core, speed_factor=speed_factor)
 
     # =========================================================================
     # PHASE 1 — Weigh, inspect and decap source tubes
     # =========================================================================
+    rt.step("Mounting gripper and preparing source tubes")
     rcp["tool_rack_1"].pick()  # mount gripper
 
     for i in range(len(source)):
+        rt.step(f"Inspecting, weighing & decapping source tube {i+1}/{len(source)}")
         rcp[source[i][0]].pick_from(source[i][1])   # pick source tube
 
         # inspect (rotate N times for full barcode / visual scan)
@@ -211,9 +214,11 @@ def workflow_fn(*, workspace, core):
     # =========================================================================
     # PHASE 2 — Dose solvent into 40 ml working tubes
     # =========================================================================
+    rt.step("Mounting dosing needle for solvent transfer")
     rcp["tool_rack_4"].pick()  # mount dosing needle
 
     for i in range(len(source)):
+        rt.step(f"Dosing solvent into 40 ml tube {i+1}/{len(source)} and rinsing needle")
         # dose into sample tube
         rcp[dosing_40ml[i][0]].immerse(dist=immerse_40ml_dist, anchor=dosing_40ml[i][1])
         rcp[dosing_40ml[i][0]].dispense(vol=10)
@@ -234,6 +239,7 @@ def workflow_fn(*, workspace, core):
     # =========================================================================
     # PHASE 3 — Re-cap working tubes and load onto shakers
     # =========================================================================
+    rt.step("Re-capping tubes and loading shakers")
     rcp["tool_rack_1"].pick()  # mount gripper
 
     for i in range(len(source)):
@@ -249,6 +255,7 @@ def workflow_fn(*, workspace, core):
         rcp[shaker[i][0]].place(shaker[i][1])
 
     # start shaking all loaded slots (non-blocking — robot continues)
+    rt.step("Starting shakers — dissolution in progress")
     for i in range(len(source)):
         rcp[shaker[i][0]].shake(duration=shake_duration)
 
@@ -257,6 +264,7 @@ def workflow_fn(*, workspace, core):
     # =========================================================================
     # PHASE 4 — Feed new caps while shakers run in background
     # =========================================================================
+    rt.step("Feeding caps from feeder while shakers run")
     rcp["tool_rack_3"].pick()  # mount suction cup
 
     for i in range(len(source)):
@@ -270,6 +278,7 @@ def workflow_fn(*, workspace, core):
     # =========================================================================
     # PHASE 5 — Stop shakers, decap, dose into 2 ml vials, re-cap and return
     # =========================================================================
+    rt.step("Stopping shakers and retrieving dissolved tubes")
     rcp["tool_rack_1"].pick()  # mount gripper
 
     # stop all shakers (blocking — waits for each to return to start position)
@@ -277,6 +286,7 @@ def workflow_fn(*, workspace, core):
         rcp[shaker[i][0]].stop_shaking()
 
     for i in range(len(source)):
+        rt.step(f"Decapping shaker tube {i+1}/{len(source)} and returning to rack")
         rcp[shaker[i][0]].pick(shaker[i][1])    # pick tube from shaker
 
         # inspect
@@ -296,9 +306,11 @@ def workflow_fn(*, workspace, core):
     rcp["tool_rack_1"].place()  # unmount gripper
 
     # dose into 2 ml vials
+    rt.step("Mounting needle — dispensing into 2 ml vials")
     rcp["tool_rack_4"].pick()  # mount dosing needle
 
     for i in range(len(source)):
+        rt.step(f"Dosing 2 ml vials from tube {i+1}/{len(source)} and rinsing")
         # dose from 40 ml working tube
         rcp[dosing_40ml[i][0]].immerse(dist=immerse_40ml_dist, anchor=dosing_40ml[i][1], padding=150)
         rcp[dosing_40ml[i][0]].dispense(vol=10)
@@ -327,6 +339,7 @@ def workflow_fn(*, workspace, core):
     rcp["tool_rack_4"].place()  # unmount dosing needle
 
     # re-cap 40 ml working tubes and return to source rack
+    rt.step("Re-capping 40 ml tubes and returning to source rack")
     rcp["tool_rack_1"].pick()  # mount gripper
 
     for i in range(len(source)):
@@ -342,11 +355,13 @@ def workflow_fn(*, workspace, core):
     rcp["tool_rack_1"].place()  # unmount gripper
 
     # =========================================================================
-    # PHASE 6 — Cap, inspect and return 2 ml end vials
+    # PHASE 6 — Cap, inspect & return 2 ml vials
     # =========================================================================
+    rt.step("Capping and inspecting 2 ml output vials")
     rcp["tool_rack_2"].pick()  # mount gripper (2 ml compatible)
 
     for i in range(len(source)):
+        rt.step(f"Capping, shaking & inspecting vial {i+1}/{len(source)}")
         rcp[rack_2ml_end[i][0]].pick_from(rack_2ml_end[i][1])
 
         # cap with pre-fed cap
@@ -366,3 +381,4 @@ def workflow_fn(*, workspace, core):
         rcp[rack_2ml_end[i][0]].place_in(rack_2ml_end[i][1])   # return to output rack
 
     rcp["tool_rack_2"].place()  # unmount gripper
+    rt.step("Workflow complete — all vials processed", level="success")
