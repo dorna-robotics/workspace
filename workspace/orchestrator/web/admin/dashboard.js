@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl } from "./api.js";
+import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
 
 let workspaces = [];
 let prevStates = {};   // name → last known state string (for transition toasts)
@@ -159,9 +159,9 @@ function render() {
             : state.toUpperCase() === "LAUNCHED_NOT_READY"
             ? `<span class="wc-starting">Starting…</span>
                <button class="btn btn-sm btn-danger action-btn" data-cmd="kill" title="Kill process">Kill</button>`
-            : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start"   title="Start"   ${running  ? "disabled" : ""}>▶</button>
-               <button class="btn btn-sm action-btn"             data-cmd="pause"   title="Pause"   ${!running ? "disabled" : ""}>⏸</button>
-               <button class="btn btn-sm action-btn"             data-cmd="relaunch" title="Relaunch">↻</button>
+            : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start"   title="Start"   ${running  ? "disabled" : ""}><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+               <button class="btn btn-sm action-btn"             data-cmd="pause"   title="Pause"   ${!running ? "disabled" : ""}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/></svg></button>
+               <button class="btn btn-sm action-btn"             data-cmd="relaunch" title="Relaunch"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill"    title="Kill process">Kill</button>`
           }
           <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove from registry">✕</button>
@@ -226,7 +226,7 @@ function applySearch() {
 
 wsSearch?.addEventListener("input", applySearch);
 
-// ---- Poll ----
+// ---- Poll (fallback when WS is not connected) ----
 async function poll() {
   await refreshStatuses();
   if (!firstPoll) checkStateTransitions();
@@ -235,13 +235,35 @@ async function poll() {
   applySearch();
 }
 
+let _wsConnected = false;
+
 function schedulePoll() {
+  if (_wsConnected) return;  // WS handles updates — no polling needed
   const hasActive = workspaces.some(w =>
     ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes((w.lastStatus?.state || "").toUpperCase())
   );
   clearTimeout(pollTimer);
   pollTimer = setTimeout(async () => { await poll(); schedulePoll(); }, hasActive ? 2000 : 6000);
 }
+
+// ---- WebSocket live updates ----
+function applyWsStatuses(statuses) {
+  workspaces.forEach(ws => {
+    ws.lastStatus = statuses[ws.name] || { state: "OFFLINE" };
+  });
+  if (!firstPoll) checkStateTransitions();
+  firstPoll = false;
+  render();
+  applySearch();
+}
+
+try {
+  connectStatusWS((statuses) => {
+    _wsConnected = true;
+    clearTimeout(pollTimer);  // stop polling — WS is live
+    applyWsStatuses(statuses);
+  });
+} catch (_) { /* WS unavailable — polling handles it */ }
 
 // ---- Add Workspace Modal ----
 const modal = document.getElementById("modalOverlay");
@@ -254,8 +276,11 @@ document.getElementById("btnModalClose").addEventListener("click",  () => modal.
 document.getElementById("btnModalCancel").addEventListener("click", () => modal.classList.remove("show"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("show"); });
 
-document.getElementById("chkAdv").addEventListener("change", function () {
-  document.getElementById("advSection").style.display = this.checked ? "flex" : "none";
+document.getElementById("chkAdv").addEventListener("click", function () {
+  const adv = document.getElementById("advSection");
+  const open = adv.style.display === "flex";
+  adv.style.display = open ? "none" : "flex";
+  document.getElementById("advChevron").style.transform = open ? "" : "rotate(90deg)";
 });
 
 document.getElementById("btnModalConfirm").addEventListener("click", async () => {

@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl } from "./api.js";
+import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -139,6 +139,7 @@ function updateStatusUI(st) {
 
   renderControls(state, launched, running);
   updateIframe(launched);
+  if (typeof updatePendantUI === "function") updatePendantUI();
 }
 
 function renderControls(state, launched, running) {
@@ -212,8 +213,20 @@ new MutationObserver(() => {
   frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-// ---- Adaptive poll ----
+// ---- Adaptive poll (fallback when WS not connected) ----
+let _wsConnected = false;
+
 function scheduleWsPoll() {
+  if (_wsConnected) {
+    // WS handles status — only poll logs
+    clearTimeout(_pollTimer);
+    const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
+    _pollTimer = setTimeout(async () => {
+      await refreshLogs();
+      scheduleWsPoll();
+    }, active ? 1500 : 4000);
+    return;
+  }
   const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
   clearTimeout(_pollTimer);
   _pollTimer = setTimeout(async () => {
@@ -221,6 +234,15 @@ function scheduleWsPoll() {
     scheduleWsPoll();
   }, active ? 1500 : 4000);
 }
+
+// ---- WebSocket live status ----
+try {
+  connectStatusWS((statuses) => {
+    _wsConnected = true;
+    const st = statuses[wsName];
+    if (st) updateStatusUI(st);
+  });
+} catch (_) { /* WS unavailable — polling handles it */ }
 
 // ---- Live uptime ticker (1 s interval, no server call) ----
 setInterval(() => {
@@ -285,5 +307,93 @@ $("btnClearLogs").addEventListener("click", async (e) => {
     toast("Failed to clear logs", "bad");
   }
 });
+
+// ---- Pendant mode ----
+let _pendantMode = false;
+const pendantOverlay = $("pendantOverlay");
+
+// Audio feedback — Web Audio API (no files needed)
+const _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function pendantBeep(freq = 880, duration = 0.08, type = "sine", vol = 0.12) {
+  try {
+    const osc = _audioCtx.createOscillator();
+    const gain = _audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, _audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(_audioCtx.destination);
+    osc.start();
+    osc.stop(_audioCtx.currentTime + duration);
+  } catch(_) {}
+}
+function pendantClickSound()   { pendantBeep(660, 0.04, "sine", 0.10); }
+function pendantSuccessSound() { pendantBeep(1000, 0.1, "sine", 0.08); }
+function pendantErrorSound()   { pendantBeep(280, 0.12, "square", 0.10); setTimeout(() => pendantBeep(220, 0.15, "square", 0.08), 100); }
+
+// Haptic vibration for touch devices
+function pendantVibrate(ms = 30) {
+  try { navigator.vibrate?.(ms); } catch(_) {}
+}
+
+function togglePendant(on) {
+  _pendantMode = on !== undefined ? on : !_pendantMode;
+  pendantOverlay.style.display = _pendantMode ? "" : "none";
+  if (_pendantMode) {
+    // Resume audio context (required after user gesture)
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+    updatePendantUI();
+  }
+}
+
+function updatePendantUI() {
+  if (!_pendantMode) return;
+  const state = (_lastState || "").toUpperCase();
+  const variant = stateVariant(state);
+  const running = isRunning(state);
+  const launched = isLaunched(state);
+
+  const stateEl = $("pendantState");
+  if (stateEl) {
+    stateEl.setAttribute("data-variant", variant);
+    const textEl = stateEl.querySelector(".pendant-state-text");
+    if (textEl) textEl.textContent = state || "—";
+  }
+
+  // Enable/disable buttons based on state
+  $("pendantStart").disabled   = !launched || running;
+  $("pendantPause").disabled   = !running;
+  $("pendantRelaunch").disabled = false;
+  $("pendantKill").disabled    = !launched;
+}
+
+// Wire pendant buttons
+document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const cmd = btn.dataset.cmd;
+    btn.disabled = true;
+    btn.classList.add("pendant-pressed");
+    pendantClickSound();
+    pendantVibrate(40);
+    setTimeout(() => btn.classList.remove("pendant-pressed"), 400);
+    try {
+      await sendCmd(cmd);
+      pendantSuccessSound();
+      pendantVibrate(20);
+      toast(`${cmd} sent`, "ok");
+      await refreshStatus();
+      updatePendantUI();
+    } catch (err) {
+      pendantErrorSound();
+      pendantVibrate([50, 30, 50]); // double buzz for error
+      toast(String(err), "bad");
+    }
+    updatePendantUI();
+  });
+});
+
+$("btnPendant").addEventListener("click", () => togglePendant(true));
+$("pendantExit").addEventListener("click", () => togglePendant(false));
 
 init();

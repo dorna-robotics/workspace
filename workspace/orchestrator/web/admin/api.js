@@ -66,6 +66,40 @@ export function esc(s) {
     .replace(/"/g,  "&quot;");
 }
 
+/**
+ * Connect to the live status WebSocket.
+ * onStatus(statuses) is called with the full {name: statusObj} map.
+ * Returns { close() } handle. Auto-reconnects on drop.
+ */
+export function connectStatusWS(onStatus) {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const url = `${proto}//${window.location.host}/ws/status`;
+  let ws = null;
+  let closed = false;
+  let retryMs = 1000;
+
+  function connect() {
+    if (closed) return;
+    ws = new WebSocket(url);
+    ws.onopen = () => { retryMs = 1000; };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "status" && msg.statuses) onStatus(msg.statuses);
+      } catch {}
+    };
+    ws.onclose = () => {
+      if (closed) return;
+      setTimeout(connect, retryMs);
+      retryMs = Math.min(retryMs * 1.5, 8000);
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  connect();
+  return { close() { closed = true; ws?.close(); } };
+}
+
 export function wsViewerUrl(ws) {
   try {
     const host = ws.node_url ? new URL(ws.node_url).hostname : window.location.hostname;

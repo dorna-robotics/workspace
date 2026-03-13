@@ -12,6 +12,7 @@ from typing import Dict, Optional, List
 import requests
 import tornado.web
 import tornado.ioloop
+import tornado.websocket
 
 _status_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="orch-status")
 _cmd_pool    = ThreadPoolExecutor(max_workers=4, thread_name_prefix="orch-cmd")
@@ -543,27 +544,27 @@ class WorkspaceCmdHandler(AuthedHandler):
                 raise ValueError(f"Unknown workspace: {name}")
 
             loop = asyncio.get_running_loop()
+            out = None
 
             if cmd == "launch":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.launch_workspace, name)
-                self.write(out); return
-            if cmd == "start":
+            elif cmd == "start":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name)
-                self.write(out); return
-            if cmd == "pause":
+            elif cmd == "pause":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
-                self.write(out); return
-            if cmd == "resume":
+            elif cmd == "resume":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.resume_runtime, name)
-                self.write(out); return
-            if cmd == "kill":
+            elif cmd == "kill":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.stop_workspace, name)
-                self.write(out or {"status": "ok", "killed": True}); return
-            if cmd in ("restart", "relaunch"):
+                out = out or {"status": "ok", "killed": True}
+            elif cmd in ("restart", "relaunch"):
                 out = await loop.run_in_executor(_cmd_pool, self.orch.relaunch_workspace, name)
-                self.write(out); return
+            else:
+                raise ValueError("Unknown cmd")
 
-            raise ValueError("Unknown cmd")
+            self.write(out)
+            # Broadcast updated status to all WS clients immediately
+            asyncio.ensure_future(broadcast_status(self.orch))
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -635,6 +636,84 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
+# -------------------- WebSocket live-push --------------------
+
+_ws_clients: set = set()
+_ws_last_snapshot: str = ""   # JSON of last broadcast (skip if unchanged)
+
+class StatusWebSocket(tornado.websocket.WebSocketHandler):
+    """Clients connect here for instant status pushes instead of polling."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    def check_origin(self, origin):
+        return True  # allow any origin (same LAN)
+
+    def open(self):
+        _ws_clients.add(self)
+        # Send current status immediately on connect
+        asyncio.ensure_future(self._send_current())
+
+    async def _send_current(self):
+        try:
+            loop = asyncio.get_running_loop()
+            names = list(self.orch.workspaces.keys())
+            async def fetch_one(n):
+                try:
+                    return n, await loop.run_in_executor(_status_pool, self.orch.get_status, n)
+                except Exception as e:
+                    return n, {"state": "OFFLINE", "last_error": str(e)}
+            pairs = await asyncio.gather(*[fetch_one(n) for n in names])
+            msg = json.dumps({"type": "status", "statuses": dict(pairs)})
+            if self.ws_connection:
+                self.write_message(msg)
+        except Exception:
+            pass
+
+    def on_message(self, message):
+        pass  # clients don't send anything
+
+    def on_close(self):
+        _ws_clients.discard(self)
+
+
+async def broadcast_status(orch: Orchestrator):
+    """Fetch all statuses and push to every connected WS client."""
+    global _ws_last_snapshot
+    if not _ws_clients:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        names = list(orch.workspaces.keys())
+        async def fetch_one(n):
+            try:
+                return n, await loop.run_in_executor(_status_pool, orch.get_status, n)
+            except Exception as e:
+                return n, {"state": "OFFLINE", "last_error": str(e)}
+        pairs = await asyncio.gather(*[fetch_one(n) for n in names])
+        msg = json.dumps({"type": "status", "statuses": dict(pairs)}, sort_keys=True)
+        if msg == _ws_last_snapshot:
+            return  # nothing changed, skip
+        _ws_last_snapshot = msg
+        dead = []
+        for c in _ws_clients:
+            try:
+                c.write_message(msg)
+            except Exception:
+                dead.append(c)
+        for c in dead:
+            _ws_clients.discard(c)
+    except Exception:
+        pass
+
+
+async def _ws_poll_loop(orch: Orchestrator):
+    """Server-side periodic broadcast — catches external state changes."""
+    while True:
+        await asyncio.sleep(2)
+        await broadcast_status(orch)
+
+
 # -------------------- Tornado HTTP Server --------------------
 
 class OrchestratorHTTPServer:
@@ -661,10 +740,15 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/cmd", WorkspaceCmdHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
+
+            # ---- WebSocket live status ----
+            (r"/ws/status", StatusWebSocket, dict(orch=self.orch)),
         ])
 
     def run(self):
         self.app.listen(self.port, address=self.host)
+        # Start WS broadcast loop
+        tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, self.orch)
         print(f"Orchestrator server running on {self.host}:{self.port}")
         print(f"GUI: http://{self.host}:{self.port}/web/orchestrator.html")
         if ORCH_TOKEN:

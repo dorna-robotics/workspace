@@ -195,9 +195,9 @@
   <div class="brand">
     <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="26"/>
   </div>
-  <span class="pill off" style="margin-left:2px">
+  <span class="pill off" style="min-width:0;overflow:hidden;text-overflow:ellipsis">
     <span class="dot ok"></span>
-    <span class="mono" id="orchUrl"></span>
+    <span class="mono" id="orchUrl" style="overflow:hidden;text-overflow:ellipsis"></span>
   </span>
   <div class="spacer"></div>
   <button class="btn btn-primary btn-sm" id="btnAdd">+ Add Workspace</button>
@@ -270,11 +270,10 @@
         <label>Path to main.py *</label>
         <input class="input" id="f_path" type="text" placeholder="/home/dorna/.../projects/workflow/main.py"/>
       </div>
-      <div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">
-          <input type="checkbox" id="chkAdv"/> Advanced
-        </label>
-      </div>
+      <button type="button" id="chkAdv" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.3px;background:none;border:none;padding:4px 0;font-family:var(--font)">
+        <svg id="advChevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s"><polyline points="9 18 15 12 9 6"/></svg>
+        Advanced
+      </button>
       <div id="advSection">
         <div class="field">
           <label>Extra args</label>

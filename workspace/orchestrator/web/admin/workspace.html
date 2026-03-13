@@ -39,11 +39,13 @@
       border-radius: 6px;
       transition: background 0.1s, color 0.1s;
       text-decoration: none;
+      position: relative;
+      z-index: 1;
     }
     .back-link:hover { background: var(--surface2); color: var(--text); }
-    .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; }
-    .ws-title-block { min-width: 0; }
-    .ws-title    { font-size: 14px; font-weight: 600; line-height: 1.2; }
+    .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
+    .ws-title-block { min-width: 0; flex: 1; overflow: hidden; position: relative; z-index: 1; }
+    .ws-title    { font-size: 14px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ws-subtitle { font-size: 11px; color: var(--muted); }
 
     /* ---- Body ---- */
@@ -65,7 +67,11 @@
       padding: 16px 14px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 24px;
+    }
+    .sidebar-scroll > div + div {
+      padding-top: 4px;
+      border-top: 1px solid var(--border2);
     }
 
     /* ---- Controls ---- */
@@ -136,14 +142,39 @@
     .ph-icon { font-size: 48px; opacity: 0.12; margin-bottom: 4px; }
     .viewer-placeholder h3 { font-size: 14px; color: var(--muted); font-weight: 500; }
     .viewer-placeholder p  { font-size: 12px; }
+
+    /* ---- Mobile ---- */
+    @media (max-width: 768px) {
+      html, body { height: auto; overflow: auto; }
+      .ws-header { gap: 8px; padding: 0 10px; }
+      .back-link { font-size: 11px; padding: 4px 6px; }
+      .vdivider { display: none; }
+      .ws-title { font-size: 12px; }
+      .ws-subtitle { font-size: 10px; }
+
+      .ws-body { flex-direction: column; flex: none; overflow: visible; }
+      .sidebar { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border2); flex: none; overflow: visible; }
+      .sidebar-scroll { overflow: visible; }
+      .viewer-area { flex: none; height: 60vh; }
+
+      #controls { gap: 4px; }
+      #controls .btn { font-size: 10px; padding: 3px 8px; }
+
+      #logPre { height: 200px; font-size: 10px; overflow-y: auto; }
+    }
+
+    @media (max-width: 480px) {
+      .ws-header { height: 44px; min-height: 44px; }
+      .sidebar-scroll { padding: 10px; gap: 14px; }
+      .meta-row { font-size: 11px; padding: 6px 10px; }
+      .meta-val { max-width: 140px; font-size: 11px; }
+      .meta-val.path { font-size: 9px; }
+    }
   </style>
 </head>
 <body>
 
 <header class="ws-header">
-  <div class="brand">
-    <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="26"/>
-  </div>
   <a href="index.html" class="back-link">← Workspaces</a>
   <div class="vdivider"></div>
   <div class="ws-title-block">
@@ -153,6 +184,7 @@
   <span class="pill off" id="statePill"><span class="dot"></span>—</span>
   <div class="spacer"></div>
   <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme">○</button>
+  <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
 </header>
 
 <div class="ws-body">
@@ -215,6 +247,33 @@
     </div>
   </div>
 
+</div>
+
+<!-- Pendant mode overlay -->
+<div class="pendant-overlay" id="pendantOverlay" style="display:none">
+  <div class="pendant-state" id="pendantState">
+    <span class="pendant-dot"></span>
+    <span class="pendant-state-text">—</span>
+  </div>
+  <div class="pendant-buttons">
+    <button class="pendant-btn pendant-start"   id="pendantStart"   data-cmd="start">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span>Start</span>
+    </button>
+    <button class="pendant-btn pendant-pause"   id="pendantPause"   data-cmd="pause">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      <span>Pause</span>
+    </button>
+    <button class="pendant-btn pendant-relaunch" id="pendantRelaunch" data-cmd="relaunch">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      <span>Relaunch</span>
+    </button>
+    <button class="pendant-btn pendant-kill"    id="pendantKill"    data-cmd="kill">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+      <span>Kill</span>
+    </button>
+  </div>
+  <button class="pendant-exit" id="pendantExit">✕ Exit Pendant</button>
 </div>
 
 <div class="toast-area" id="toastArea"></div>
