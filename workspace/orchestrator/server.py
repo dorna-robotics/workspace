@@ -666,7 +666,7 @@ class StatusWebSocket(tornado.websocket.WebSocketHandler):
             pairs = await asyncio.gather(*[fetch_one(n) for n in names])
             msg = json.dumps({"type": "status", "statuses": dict(pairs)})
             if self.ws_connection:
-                self.write_message(msg)
+                await self.write_message(msg)
         except Exception:
             pass
 
@@ -696,9 +696,9 @@ async def broadcast_status(orch: Orchestrator):
             return  # nothing changed, skip
         _ws_last_snapshot = msg
         dead = []
-        for c in _ws_clients:
+        for c in list(_ws_clients):
             try:
-                c.write_message(msg)
+                await c.write_message(msg)
             except Exception:
                 dead.append(c)
         for c in dead:
