@@ -315,7 +315,15 @@ class Runtime:
     def call(self, fn: Callable[..., T], *a: Any, checkpoint: bool = True, **k: Any) -> T:
         if checkpoint:
             self.checkpoint()
-        return fn(*a, **k)
+        while True:
+            result = fn(*a, **k)
+            # Motion commands return int status: >=1 ok, <0 alarm/error
+            if not isinstance(result, (int, float)) or result >= 0:
+                return result
+            # Alarm — pause and wait for user to clear and resume
+            self.step(f"Robot alarm (code {int(result)}) — clear alarm and resume when ready", level="error")
+            self.pause()
+            self.checkpoint()  # blocks until user resumes
 
     def sleep(self, seconds: float = 0.0, *, checkpoint: bool = True, step: float = 0.05, val: Optional[float] = None) -> None:
         if val is not None:

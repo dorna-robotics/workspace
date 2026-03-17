@@ -26,7 +26,7 @@ class Config:
         ["rack_40ml_2", "B2"],
         ["rack_40ml_2", "B3"],
         ["rack_40ml_2", "B4"],
-    ])
+])
     cap_holder: list = field(default_factory=lambda: [
         "decapper_1",
         "decapper_2",

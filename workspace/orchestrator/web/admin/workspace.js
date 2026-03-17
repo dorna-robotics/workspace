@@ -242,6 +242,96 @@ function renderStep(step, running) {
 
   // Auto-scroll to latest
   el.scrollTop = el.scrollHeight;
+
+  // Check for new warning/error level steps → show banner
+  const lastStep = steps[steps.length - 1];
+  const lastLevel = (typeof lastStep === "object" && lastStep.level) ? lastStep.level : "info";
+  const lastLabel = typeof lastStep === "string" ? lastStep : (lastStep.label || "");
+  if ((lastLevel === "error" || lastLevel === "warning") && lastLabel !== _lastBannerMsg) {
+    _lastBannerMsg = lastLabel;
+    _showBanner(lastLabel, lastLevel);
+  } else if (lastLevel === "info") {
+    _hideBanner();
+  }
+}
+
+let _lastBannerMsg = "";
+
+function _showBanner(msg, level) {
+  // Main banner
+  const banner = $("alarmBanner");
+  const text = $("alarmText");
+  if (banner && text) {
+    text.textContent = msg;
+    banner.style.display = "";
+    banner.setAttribute("data-level", level);
+    // Push page and pendant overlay down so banner doesn't cover them
+    const h = banner.offsetHeight;
+    document.body.style.paddingTop = h + "px";
+    const overlay = $("pendantOverlay");
+    if (overlay) overlay.style.top = h + "px";
+    const exitBtn = $("pendantExit");
+    if (exitBtn) exitBtn.style.top = (h + 16) + "px";
+  }
+  // Pendant banner
+  const pAlarm = $("pendantAlarm");
+  const pText = $("pendantAlarmText");
+  if (pAlarm && pText) {
+    pText.textContent = msg;
+    pAlarm.style.display = "";
+    pAlarm.setAttribute("data-level", level);
+  }
+  // Audio + notification for errors only
+  if (level === "error") {
+    _alarmBeep();
+    _alarmNotify(msg);
+  }
+}
+
+function _hideBanner() {
+  const banner = $("alarmBanner");
+  if (banner) banner.style.display = "none";
+  document.body.style.paddingTop = "";
+  const overlay = $("pendantOverlay");
+  if (overlay) overlay.style.top = "";
+  const exitBtn = $("pendantExit");
+  if (exitBtn) exitBtn.style.top = "";
+  const pAlarm = $("pendantAlarm");
+  if (pAlarm) pAlarm.style.display = "none";
+}
+
+function _alarmBeep() {
+  try {
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+    // Two-tone alarm: high-low-high
+    [[880, 0.15], [0, 0.05], [660, 0.15], [0, 0.05], [880, 0.15]].reduce((t, [freq, dur]) => {
+      if (freq > 0) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "square";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + dur);
+      }
+      return t + dur;
+    }, now);
+  } catch {}
+}
+
+function _alarmNotify(msg) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    new Notification("Robot Alarm", { body: msg, icon: "favicon.png" });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then(p => {
+      if (p === "granted") new Notification("Robot Alarm", { body: msg, icon: "favicon.png" });
+    });
+  }
 }
 
 function renderControls(state, launched, running) {
@@ -558,5 +648,12 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
+
+// Alarm dismiss
+$("alarmDismiss").addEventListener("click", () => _hideBanner());
+
+// Expose for console testing
+window._showBanner = _showBanner;
+window._hideBanner = _hideBanner;
 
 init();

@@ -21,13 +21,41 @@ function setTheme(theme) {
 // Apply on load (in case inline script ran before button existed)
 setTheme(localStorage.getItem(KEY) || "dark");
 
-// Wire up the button
+// ── Fullscreen ──────────────────────────────────────────────────────────────
+
+const FS_EXPAND = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+const FS_SHRINK = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+
+function updateFsButton() {
+  const btn = document.getElementById("btnFullscreen");
+  if (!btn) return;
+  const isFs = !!document.fullscreenElement;
+  btn.title = isFs ? "Exit fullscreen" : "Fullscreen";
+  btn.innerHTML = isFs ? FS_SHRINK : FS_EXPAND;
+}
+
+document.addEventListener("fullscreenchange", updateFsButton);
+
+// ── Wire up buttons ─────────────────────────────────────────────────────────
+
 document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("btnTheme");
-  if (btn) {
-    btn.addEventListener("click", () => {
+  const btnTheme = document.getElementById("btnTheme");
+  if (btnTheme) {
+    btnTheme.addEventListener("click", () => {
       const current = document.documentElement.getAttribute("data-theme") || "dark";
       setTheme(current === "dark" ? "light" : "dark");
     });
+  }
+
+  const btnFs = document.getElementById("btnFullscreen");
+  if (btnFs) {
+    btnFs.addEventListener("click", () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen();
+      }
+    });
+    updateFsButton();
   }
 });
