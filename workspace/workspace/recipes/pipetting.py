@@ -1,6 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 from dorna2 import pose as dorna_pose
 import time
 
@@ -36,13 +36,13 @@ class PipettingSite(Recipe):
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        if not self.pick_from(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
-            return False
+        if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
+            raise RecipeError("pick_tip failed — could not pick from anchor")
         
         # check if tip is there
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
         
         # make sure tip exists
         if not pipette._simulation_mode:  
@@ -60,7 +60,7 @@ class PipettingSite(Recipe):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
         
         actions = []
         # no simulation
@@ -96,7 +96,7 @@ class PipettingSite(Recipe):
         # check if pipette is there
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
         
         # tip solid
         tip_solid = self.solid_attached_to_tool(pipette)
@@ -111,7 +111,7 @@ class PipettingSite(Recipe):
         tool_tip_z_offset = tip_length - depth
 
         # motion
-        return self.pick_from(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=2, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=2, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
 
 
     # given the component, go on top of the source
@@ -125,7 +125,7 @@ class PipettingSite(Recipe):
         # check if pipette is there
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
 
         # tip solid
         tip_solid = self.solid_attached_to_tool(pipette)
@@ -148,7 +148,7 @@ class PipettingSite(Recipe):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
         
         # simulation
         if pipette._simulation_mode:
@@ -162,7 +162,7 @@ class PipettingSite(Recipe):
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
-            return False
+            raise RecipeError("no pipette attached to the robot")
 
         # simulation
         if pipette._simulation_mode:

@@ -21,34 +21,24 @@ class DispenseArm(Recipe):
     # bring the arm down
     def down(self):
         rt = self.rt
-        rt.checkpoint()
-
         if self.component.output_state() != 1:
+            rt.checkpoint()
             rt.output(config=self.component.output_enable)
             self.component.output_state(1)
-
-        rt.checkpoint()
         return True
 
     # bring the arm up
     def up(self):
         rt = self.rt
-        rt.checkpoint()
-
         if self.component.output_state() != 0:
+            rt.checkpoint()
             rt.output(config=self.component.output_disable)
             self.component.output_state(0)
-
-        rt.checkpoint()
         return True
 
     # dispense (pause-aware)
     def dispense(self, sleep=1.5):
         rt = self.rt
         rt.checkpoint()
-
-        # IMPORTANT: do NOT use time.sleep here
         rt.delay(sleep)
-
-        rt.checkpoint()
         return 0

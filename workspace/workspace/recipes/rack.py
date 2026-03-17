@@ -27,23 +27,23 @@ class Rack(Recipe):
         )
         
 
-    def pick_from(self, anchor, **kwargs):
+    def pick(self, anchor, **kwargs):
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        return super().pick_from(anchor, solid_name=solid_name, component=component, **kwargs)
+        return super().pick(anchor, solid_name=solid_name, component=component, **kwargs)
    
              
 
-    def place_in(self, anchor, soft_approach=True, **kwargs):
+    def place(self, anchor, soft_approach=True, **kwargs):
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        return super().place_in(anchor, solid_name=solid_name, component=component, soft_approach=soft_approach, **kwargs)
+        return super().place(anchor, solid_name=solid_name, component=component, soft_approach=soft_approach, **kwargs)
 

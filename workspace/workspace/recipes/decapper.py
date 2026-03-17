@@ -1,7 +1,7 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 
 
 class Decapper(Recipe):
@@ -25,10 +25,10 @@ class Decapper(Recipe):
         )
 
     def place(self, approach=True, exit=True, padding=30, **kwargs):
-        return self.place_in(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
+        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
 
     def pick(self, approach=True, exit=True, padding=30, **kwargs):
-        return self.pick_from(anchor="place", approach=approach, exit=exit, padding=padding, **kwargs)
+        return super().pick(anchor="place", approach=approach, exit=exit, padding=padding, **kwargs)
 
     def decap(
         self,
@@ -45,7 +45,6 @@ class Decapper(Recipe):
         **kwargs,
     ):
         rt = self.rt
-        rt.checkpoint()
 
         # pick parameters
         motion_prm = self.pick_setting(
@@ -60,7 +59,7 @@ class Decapper(Recipe):
             **kwargs,
         )
         if not motion_prm:
-            return False
+            raise RecipeError("decap failed — could not compute pick parameters")
 
         # tube and cap
         if len(motion_prm["load_list"]) != 2:
@@ -72,7 +71,7 @@ class Decapper(Recipe):
 
         # cap type
         if component_cap.cap_type != "screw":
-            return False
+            raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
 
         # height cap
         height_cap = abs(
@@ -94,9 +93,7 @@ class Decapper(Recipe):
 
         # run the motion (touch already uses runtime internally in your updated Recipe)
         if not self.touch(**motion_prm):
-            return False
-
-        rt.checkpoint()
+            raise RecipeError("decap failed — touch motion failed")
 
         # chunks
         twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
@@ -106,8 +103,6 @@ class Decapper(Recipe):
         z_offset = 0
 
         for chunk in chunks:
-            rt.checkpoint()
-
             z_offset += -component_cap.pitch * chunk / max_rotation
 
             # inverse kinematic
@@ -125,8 +120,7 @@ class Decapper(Recipe):
                 left_approach=self.left_approach,
             )
             if C != 2:
-                print("Could not find valid joints to decap")
-                return False
+                raise RecipeError("could not find valid joints to decap")
 
             # end joint
             J[5] = j5_start - chunk
@@ -134,32 +128,30 @@ class Decapper(Recipe):
 
         # move, starting from max_rotation/2
         for i in range(len(joint_list)):
-            rt.checkpoint()
-
             # enable gripper (IO through runtime)
             if tool.output_state() != 1:
+                rt.checkpoint()
                 rt.output(config=tool.output_enable)
                 tool.output_state(1)
 
             # uncap (motion through runtime)
+            rt.checkpoint()
             rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
 
             if i < len(joint_list) - 1:
-                rt.checkpoint()
-
                 # disable gripper
                 if tool.output_state() != 0:
+                    rt.checkpoint()
                     rt.output(config=tool.output_disable)
                     tool.output_state(0)
 
                 # go to start
                 J_start = joint_list[i][:]
                 J_start[5] = j5_start
+                rt.checkpoint()
                 rt.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 
             elif exit:
-                rt.checkpoint()
-
                 # IK go up
                 J, C = self.core.IK(
                     target_solid=tool.assembly[next(iter(tool.assembly))],
@@ -175,21 +167,19 @@ class Decapper(Recipe):
                     left_approach=self.left_approach,
                 )
                 if C != 2:
-                    print("Could not find valid joints to decap")
-                    return False
+                    raise RecipeError("could not find valid joints for exit")
 
                 # adjust j5
                 J[5] = joint_list[i][5]
 
                 # go up
+                rt.checkpoint()
                 rt.lmove(
                     joint=J,
                     vel=self.lmove_vaj[0] * self.speed_factor,
                     accel=self.lmove_vaj[1] * self.speed_factor,
                     jerk=self.lmove_vaj[2] * self.speed_factor,
                 )
-
-        rt.checkpoint()
 
         # attach
         solid_cap.attach_to(
@@ -216,35 +206,30 @@ class Decapper(Recipe):
         **kwargs,
     ):
         rt = self.rt
-        rt.checkpoint()
 
         # ref joints
         if self.ref_joints is None:
-            print("No reference joints defined")
-            return False
+            raise RecipeError("no reference joints defined")
 
         # tool
         tool = self.tool_attached_to_the_robot()
         if tool is None:
-            print("No tool attached to the robot")
-            return False
+            raise RecipeError("no tool attached to the robot")
 
         # cap in tool
         solid_cap = self.solid_attached_to_tool(tool)
         if solid_cap is None:
-            print("No item in the gripper")
-            return False
+            raise RecipeError("no item in the gripper")
         component_cap = self.workspace.components[solid_cap.component]
 
         # cap type
         if component_cap.cap_type != "screw":
-            return False
+            raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
 
         # tube in the anchor
         solid_tube = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
         if solid_tube is None:
-            print(f"No item found in position {anchor}")
-            return False
+            raise RecipeError(f"no item found in position {anchor}")
         component_tube = self.workspace.components[solid_tube.component]
 
         # height_cap
@@ -288,16 +273,12 @@ class Decapper(Recipe):
             **kwargs,
         )
         if not place_prm:
-            print("Not able to place")
-            return False
+            raise RecipeError("cap failed — could not compute place parameters")
 
         # adjust j5 in the approach
         place_prm["approach_j5"] = j5_start
         if not self.touch(**place_prm):
-            print("Not able to place")
-            return False
-
-        rt.checkpoint()
+            raise RecipeError("cap failed — touch motion failed")
 
         # run chunks
         twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
@@ -307,8 +288,6 @@ class Decapper(Recipe):
         z_offset = 0
 
         for chunk in chunks:
-            rt.checkpoint()
-
             z_offset += component_cap.pitch * chunk / max_rotation
 
             # inverse kinematic
@@ -326,8 +305,7 @@ class Decapper(Recipe):
                 left_approach=self.left_approach,
             )
             if C != 2:
-                print("Could not find valid joints to cap")
-                return False
+                raise RecipeError("could not find valid joints to cap")
 
             # end joint
             J[5] = j5_start + chunk
@@ -335,32 +313,30 @@ class Decapper(Recipe):
 
         # move, starting from -rotation/2
         for i in range(len(joint_list)):
-            rt.checkpoint()
-
             # tighten cap
+            rt.checkpoint()
             rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
 
             # disable gripper
             if tool.output_state() != 0:
+                rt.checkpoint()
                 rt.output(config=tool.output_disable)
                 tool.output_state(0)
 
             if i < len(joint_list) - 1:
-                rt.checkpoint()
-
                 # go to start
                 J_start = joint_list[i][:]
                 J_start[5] = j5_start
+                rt.checkpoint()
                 rt.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
 
                 # enable gripper
                 if tool.output_state() != 1:
+                    rt.checkpoint()
                     rt.output(config=tool.output_enable)
                     tool.output_state(1)
 
             elif exit:
-                rt.checkpoint()
-
                 # IK go up
                 J, C = self.core.IK(
                     target_solid=tool.assembly[next(iter(tool.assembly))],
@@ -376,18 +352,16 @@ class Decapper(Recipe):
                     left_approach=self.left_approach,
                 )
                 if C != 2:
-                    print("Could not find valid joints to decap")
-                    return False
+                    raise RecipeError("could not find valid joints for exit")
 
                 # go up
+                rt.checkpoint()
                 rt.lmove(
                     joint=J,
                     vel=self.lmove_vaj[0] * self.speed_factor,
                     accel=self.lmove_vaj[1] * self.speed_factor,
                     jerk=self.lmove_vaj[2] * self.speed_factor,
                 )
-
-        rt.checkpoint()
 
         # attach cap to body
         solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")

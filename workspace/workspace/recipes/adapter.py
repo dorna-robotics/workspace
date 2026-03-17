@@ -1,6 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 
 
 class Adapter(Recipe):
@@ -32,11 +32,11 @@ class Adapter(Recipe):
         )
         
 
-    def pick_from(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, **kwargs):
+    def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, **kwargs):
         # pick parameters
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
-            return False
+            raise RecipeError("pick_setting failed — could not compute pick parameters")
 
         # update approach
         motion_prm["approach_path"] = [[10, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0], 
@@ -47,11 +47,11 @@ class Adapter(Recipe):
         return self.touch(**motion_prm)
 
 
-    def place_in(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", **kwargs):
+    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", **kwargs):
             # place parameters
             motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, soft_approach=True, **kwargs)
             if not motion_prm:
-                return False
+                raise RecipeError("place_setting failed — could not compute place parameters")
 
             # update exit
             motion_prm["exit_path"] = [[10, 0, motion_prm["height_load"], 0, 0, 0], 

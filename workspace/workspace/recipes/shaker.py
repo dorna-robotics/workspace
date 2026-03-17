@@ -73,8 +73,8 @@ class Shaker(Recipe):
         comp.update_pose()
 
     def pick(self, anchor="A1", solid_name="rotating", **kwargs):
-        return super().pick_from(anchor=anchor, solid_name=solid_name, **kwargs)
+        return super().pick(anchor=anchor, solid_name=solid_name, **kwargs)
 
 
     def place(self, anchor="A1", solid_name="rotating", **kwargs):
-        return super().place_in(anchor=anchor, solid_name=solid_name, **kwargs)
+        return super().place(anchor=anchor, solid_name=solid_name, **kwargs)

@@ -119,6 +119,7 @@ class Runtime:
         """
         if level not in self._STEP_LEVELS:
             level = "info"
+        print(f"[STEP][{level}] {label}")
         entry = {"label": str(label), "level": level}
         with self._lock:
             self._steps.append(entry)

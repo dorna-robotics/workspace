@@ -1,6 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 
 
 class Hotel(Recipe):
@@ -42,14 +42,14 @@ class Hotel(Recipe):
         )
         
     
-    def pick_from(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, **kwargs):
+    def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, **kwargs):
         # anchor
         anchor = f"place_{level}"
 
         # pick parameters
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
-            return False
+            raise RecipeError("pick_setting failed — could not compute pick parameters")
 
         # update approach
         motion_prm["approach_path"] = [[self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0], 
@@ -65,14 +65,14 @@ class Hotel(Recipe):
         return self.touch(**motion_prm)
 
 
-    def place_in(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", **kwargs):
+    def place(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", **kwargs):
             # anchor
             anchor = f"place_{level}"
 
             # place parameters
             motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
             if not motion_prm:
-                return False
+                raise RecipeError("place_setting failed — could not compute place parameters")
 
             # update approach
             motion_prm["approach_path"] = [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0], 

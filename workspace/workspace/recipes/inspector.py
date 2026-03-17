@@ -49,7 +49,7 @@ class FixedInspector(Recipe):
     present the robot to the insepction component
     """
     def present(self, approach=True, padding=50, load_anchor="center", **kwargs):
-        return self.place_in(
+        return self.place(
             anchor="place",
             solid_name="body",
             approach=approach,

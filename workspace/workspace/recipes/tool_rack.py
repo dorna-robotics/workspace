@@ -1,7 +1,7 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 
 class ToolRack(Recipe):
     DEFAULTS = dict(
@@ -34,19 +34,16 @@ class ToolRack(Recipe):
     def pick(self, anchor="place", solid_name="body", padding=80, gap=2, **kwargs):
         # ref joints
         if self.ref_joints is None:
-            print("no reference joints defined")
-            return False
-        
+            raise RecipeError("no reference joints defined")
+
         # check if the robot has a tool changer
         if not self.core.has_tool_changer:
-            print("no tool changer attached to the robot")
-            return False
-        
+            raise RecipeError("no tool changer attached to the robot")
+
         # next we verify there is a tool to pick
         tool = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
         if tool is None:
-            print(f"no item found in position {anchor}")
-            return False
+            raise RecipeError(f"no item found in position {anchor}")
         
         # offset height
         height_offset = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
@@ -89,27 +86,23 @@ class ToolRack(Recipe):
     def place(self, anchor="place", solid_name="body", padding=80, gap=2, **kwargs):
         # ref joints
         if self.ref_joints is None:
-            print("no reference joints defined")
-            return False
+            raise RecipeError("no reference joints defined")
 
         # check if the robot has a tool changer
         if not self.core.has_tool_changer:
-            print("no tool changer attached to the robot")
-            return False
-        
-        # check if there is a tool in tool change ror not        
+            raise RecipeError("no tool changer attached to the robot")
+
+        # check if there is a tool in tool change ror not
         if self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor) is not None:
-            print(f"Item found in position {anchor}")
-            return False
-        
+            raise RecipeError(f"position {anchor} is already occupied")
+
         # next we find the tool attached to the robot
         tool = None
         for child in self.core.tool_changer_robot_side.children["tool_changer_connection"]:
             tool = child["child_solid"]
             break
         if tool is None:
-            print("Could not find tool attached to robot")
-            return False
+            raise RecipeError("no tool attached to robot")
         
         # offset height
         height_offset = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 

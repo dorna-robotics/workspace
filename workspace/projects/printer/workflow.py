@@ -112,10 +112,10 @@ def workflow_fn(*, workspace, core):
 
             # print
             print("print tube")
-            rcp["falcon_rack"].pick_from(tube_index)
+            rcp["falcon_rack"].pick(tube_index)
             rcp["decapper"].place()
 
-            rcp["falcon_rack"].pick_from(cap_index)
+            rcp["falcon_rack"].pick(cap_index)
 
             rcp["decapper"].cap(exit=False)
             rcp["decapper"].pick(approach=False, tool_tcp_z_offset=decapper_tool_tcp_z_offset)
@@ -132,7 +132,7 @@ def workflow_fn(*, workspace, core):
             for _ in range(inspection_frq):
                 rcp["inspector"].rotate(rotation=inspection_rot)
 
-            rcp["falcon_rack"].place_in(
+            rcp["falcon_rack"].place(
                 tube_index,
                 gravity_offset=falcon_rack_gravity_offset,
                 soft_approach=True,
@@ -143,12 +143,12 @@ def workflow_fn(*, workspace, core):
             tube_index = tube_list[index]
             cap_index = cap_list[index]
 
-            rcp["falcon_rack"].pick_from(tube_index)
+            rcp["falcon_rack"].pick(tube_index)
 
             rcp["decapper"].place(exit=False)
             rcp["decapper"].decap(approach=False)
 
-            rcp["falcon_rack"].place_in(
+            rcp["falcon_rack"].place(
                 cap_index,
                 offset=cap_offset,
                 soft_approach=True,
@@ -157,7 +157,7 @@ def workflow_fn(*, workspace, core):
 
             rcp["decapper"].pick(tool_tcp_z_offset=decapper_tool_tcp_z_offset)
 
-            rcp["falcon_rack"].place_in(
+            rcp["falcon_rack"].place(
                 tube_index,
                 gravity_offset=falcon_rack_gravity_offset,
                 soft_approach=True,

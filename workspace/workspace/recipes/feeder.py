@@ -1,6 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
 
 
 class Feeder(Recipe):
@@ -44,11 +44,8 @@ class Feeder(Recipe):
 
     # mix: mix the feeder for certain turns and shift the slots
     def mix(self, **kwargs):
-        rt = self.rt
-        rt.checkpoint()
-
-        # current joint (pause-aware gateway)
-        current_joint = rt.joint()
+        # current joint
+        current_joint = self.rt.joint()
 
         # new_joint
         new_joint = current_joint[:]
@@ -62,7 +59,6 @@ class Feeder(Recipe):
     # rotate the feeder to move to the nth slot from the current
     def roate_in_step(self, step=1, **kwargs):
         rt = self.rt
-        rt.checkpoint()
 
         # current joint
         current_joint = rt.joint()
@@ -77,6 +73,7 @@ class Feeder(Recipe):
         new_joint[axis] = (step + current_steps) * (360 / self.component.num_slots) + self.pick_offset
 
         # motion
+        rt.checkpoint()
         return rt.jmove(
             joint=new_joint,
             vel=self.vaj_mix[0],
@@ -100,8 +97,7 @@ class Feeder(Recipe):
         tool_tip_z_offset=0,
         **kwargs
     ):
-        self.rt.checkpoint()
-        return self.pick_from(
+        return super().pick(
             anchor=anchor,
             solid_name=solid_name,
             component=component,
@@ -118,7 +114,6 @@ class Feeder(Recipe):
         )
 
     def above(self, anchor="place", solid_name="body", component=None, padding=25, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
-        self.rt.checkpoint()
         return super().above(
             anchor=anchor,
             solid_name=solid_name,
@@ -137,7 +132,6 @@ class Feeder(Recipe):
     """
     def present_cap(self, inspector, **kwargs):
         rt = self.rt
-        rt.checkpoint()
 
         # empty index list
         if not self.index_list:
@@ -145,22 +139,16 @@ class Feeder(Recipe):
 
         # loop over index list
         for step, preset in self.index_list:
-            rt.checkpoint()
-
             # object exists
             if inspector.detect(**preset, **kwargs):
-                rt.checkpoint()
                 # move the feeder to that position
                 self.roate_in_step(step=step)
+                rt.checkpoint()
                 rt.delay(0.5)   # pause-aware
                 return True
 
-        rt.checkpoint()
-
         # mix
         self.mix()
-
-        rt.checkpoint()
 
         # run recursively
         return self.present_cap(inspector=inspector, **kwargs)
