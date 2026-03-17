@@ -213,18 +213,49 @@ function render() {
   });
 }
 
-// ---- Search filter ----
-function applySearch() {
+// ---- Filter tags ----
+let _activeFilter = "all";
+
+function wsCategory(ws) {
+  const state = (ws.lastStatus?.state || "").toUpperCase();
+  if (isRunning(state)) return "running";
+  if (["ERROR","FAILED","OFFLINE","REMOTE_OFFLINE"].includes(state)) return "error";
+  if (["NOT_LAUNCHED",""].includes(state)) return "offline";
+  return "idle";
+}
+
+function updateFilterCounts() {
+  const counts = { all: workspaces.length, running: 0, idle: 0, error: 0, offline: 0 };
+  workspaces.forEach(ws => { counts[wsCategory(ws)]++; });
+  const el = (id) => document.getElementById(id);
+  el("filterAll").textContent = counts.all;
+  el("filterRunning").textContent = counts.running;
+  el("filterIdle").textContent = counts.idle;
+  el("filterError").textContent = counts.error;
+  el("filterOffline").textContent = counts.offline;
+}
+
+document.getElementById("filterBar").addEventListener("click", (e) => {
+  const tag = e.target.closest(".filter-tag");
+  if (!tag) return;
+  _activeFilter = tag.dataset.filter;
+  document.querySelectorAll(".filter-tag").forEach(t => t.classList.toggle("active", t.dataset.filter === _activeFilter));
+  applyFilters();
+});
+
+// ---- Search + state filter ----
+function applyFilters() {
   const q = (wsSearch?.value || "").trim().toLowerCase();
   wsGrid.querySelectorAll(".ws-card[data-name]").forEach(card => {
     const ws = workspaces.find(w => w.name === card.getAttribute("data-name"));
     if (!ws) return;
-    const haystack = [ws.name, ws.label, ws.path_to_file].join(" ").toLowerCase();
-    card.style.display = (!q || haystack.includes(q)) ? "" : "none";
+    const matchesSearch = !q || [ws.name, ws.label, ws.path_to_file].join(" ").toLowerCase().includes(q);
+    const matchesFilter = _activeFilter === "all" || wsCategory(ws) === _activeFilter;
+    card.style.display = (matchesSearch && matchesFilter) ? "" : "none";
   });
 }
 
-wsSearch?.addEventListener("input", applySearch);
+wsSearch?.addEventListener("input", applyFilters);
 
 // ---- Poll (fallback when WS is not connected) ----
 async function poll() {
@@ -232,7 +263,8 @@ async function poll() {
   if (!firstPoll) checkStateTransitions();
   firstPoll = false;
   render();
-  applySearch();
+  updateFilterCounts();
+  applyFilters();
 }
 
 let _wsConnected = false;
@@ -254,7 +286,8 @@ function applyWsStatuses(statuses) {
   if (!firstPoll) checkStateTransitions();
   firstPoll = false;
   render();
-  applySearch();
+  updateFilterCounts();
+  applyFilters();
 }
 
 try {
