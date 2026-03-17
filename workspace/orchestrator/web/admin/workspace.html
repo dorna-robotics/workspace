@@ -336,6 +336,7 @@
           <svg id="stepChevron" class="open" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <span class="step-count-badge" id="stepCountBadge"></span>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         </div>
         <div id="stepTimeline" class="step-timeline"><div class="step-empty">No steps yet</div></div>
       </div>
@@ -345,9 +346,10 @@
           <div class="section-label">Logs</div>
           <svg id="logChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
-          <button class="btn btn-ghost btn-sm btn-icon" id="btnFollowLogs" title="Jump to latest" style="display:none">↓</button>
-          <button class="btn btn-ghost btn-sm btn-icon" id="btnRefreshLogs" title="Refresh logs">↺</button>
-          <button class="btn btn-ghost btn-sm btn-icon" id="btnClearLogs" title="Clear logs">✕</button>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnFollowLogs" title="Jump to latest" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyLogs" title="Copy logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnRefreshLogs" title="Refresh logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnClearLogs" title="Clear logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <pre id="logPre" style="display:none">(loading...)</pre>
       </div>

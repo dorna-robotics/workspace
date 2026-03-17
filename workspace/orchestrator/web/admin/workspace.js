@@ -427,6 +427,50 @@ $("btnClearLogs").addEventListener("click", async (e) => {
   }
 });
 
+// Copy helper — matches scene builder pattern (checkmark on success, fallback for non-HTTPS)
+function _copyToClipboard(text, btn) {
+  const origHtml = btn.innerHTML;
+  const showSuccess = () => {
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    setTimeout(() => { btn.innerHTML = origHtml; }, 1500);
+  };
+  const fallback = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px;top:-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (ok) showSuccess(); else toast("Copy failed", "bad");
+    } catch(e) { toast("Copy failed", "bad"); }
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(showSuccess).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+// Copy logs
+$("btnCopyLogs").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const text = logPre.textContent || "";
+  if (!text.trim()) { toast("Nothing to copy", "warn"); return; }
+  _copyToClipboard(text, e.currentTarget);
+});
+
+// Copy steps
+$("btnCopySteps").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const timeline = $("stepTimeline");
+  const cards = timeline.querySelectorAll(".step-card .step-text");
+  if (!cards.length) { toast("No steps to copy", "warn"); return; }
+  const lines = Array.from(cards).map(el => el.textContent.trim());
+  _copyToClipboard(lines.join("\n"), e.currentTarget);
+});
+
 // ---- Pendant mode ----
 let _pendantMode = false;
 const pendantOverlay = $("pendantOverlay");
