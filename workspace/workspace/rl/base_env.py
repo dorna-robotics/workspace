@@ -262,11 +262,12 @@ class BaseLabEnv(gym.Env):
 
             if name in self._background:
                 already_done = self._completed[0, si] == 1.0
+                timer_started = self._bg_timers.get(name, -1) >= 0
                 requires_met = all(
                     self._completed[t, r] == 1.0
                     for t in range(self.n_items) for r in reqs
                 )
-                if not already_done and requires_met:
+                if not already_done and not timer_started and requires_met:
                     mask[si * self.n_items] = True
             else:
                 for ii in range(self.n_items):
