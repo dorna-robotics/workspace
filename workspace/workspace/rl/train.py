@@ -5,10 +5,12 @@
 #
 # Usage:
 #   sudo python3 workspace/rl/train.py --project pace_atomic --count 4 --steps 200000
+#   sudo python3 workspace/rl/train.py --project pace_atomic --count 4 --steps 1000000 --n_envs 8
 
 import argparse
 from pathlib import Path
 
+import torch
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
@@ -106,32 +108,53 @@ class LogCallback(BaseCallback):
         return True
 
 
-def train(project: str, n_items: int, total_steps: int, out: Path, resume: bool = False):
+def _make_vec_env(project: str, n_items: int, n_envs: int):
+    """Create vectorized environment for parallel training."""
+    from stable_baselines3.common.vec_env import SubprocVecEnv
+
+    def make_fn():
+        def _init():
+            env = _make_env(project, n_items)
+            return ActionMasker(env, _mask_fn)
+        return _init
+
+    return SubprocVecEnv([make_fn() for _ in range(n_envs)])
+
+
+def train(project: str, n_items: int, total_steps: int, out: Path,
+          resume: bool = False, n_envs: int = 1):
     raw_env = _make_env(project, n_items)
     cfg     = _auto_config(raw_env)
-    env     = ActionMasker(raw_env, _mask_fn)
+    device  = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if n_envs > 1:
+        env = _make_vec_env(project, n_items, n_envs)
+    else:
+        env = ActionMasker(raw_env, _mask_fn)
 
     print(f"  actions={raw_env.action_space.n}  obs={raw_env.observation_space.shape[0]}  "
-          f"net={cfg['net_arch']}  lr={cfg['learning_rate']}  batch={cfg['batch_size']}")
+          f"net={cfg['net_arch']}  lr={cfg['learning_rate']}  batch={cfg['batch_size']}  "
+          f"device={device}  envs={n_envs}")
 
     if resume and out.exists():
-        model = MaskablePPO.load(str(out), env=env)
+        model = MaskablePPO.load(str(out), env=env, device=device)
         print(f"Resuming from {out}  |  +{total_steps:,} steps")
     else:
         model = MaskablePPO(
             "MlpPolicy", env,
             verbose=0,
+            device=device,
             n_steps=cfg["n_steps"],
             batch_size=cfg["batch_size"],
             n_epochs=15,
             learning_rate=cfg["learning_rate"],
             policy_kwargs=dict(net_arch=cfg["net_arch"]),
         )
-        print(f"Training for {total_steps:,} steps  |  items={n_items}  |  saving to {out}")
+        print(f"Training for {total_steps:,} steps  |  count={n_items}  |  saving to {out}")
 
     model.learn(
         total_timesteps=total_steps,
-        callback=LogCallback(cfg["n_steps"], total_steps, patience=25),
+        callback=LogCallback(cfg["n_steps"] * n_envs, total_steps, patience=25),
         reset_num_timesteps=not resume,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -148,7 +171,10 @@ if __name__ == "__main__":
     parser.add_argument("--out",    type=Path, default=None)
     parser.add_argument("--resume", action="store_true",
                         help="Resume training from existing model")
+    parser.add_argument("--n_envs", type=int, default=1,
+                        help="Number of parallel environments (use 8-16 on Colab)")
     args = parser.parse_args()
 
     out = args.out or (_PROJECTS_DIR / args.project / "5_rl" / "models" / "policy.zip")
-    train(args.project, n_items=args.count, total_steps=args.steps, out=out, resume=args.resume)
+    train(args.project, n_items=args.count, total_steps=args.steps, out=out,
+          resume=args.resume, n_envs=args.n_envs)
