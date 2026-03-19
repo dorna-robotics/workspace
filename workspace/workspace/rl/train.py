@@ -154,7 +154,7 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
 
     model.learn(
         total_timesteps=total_steps,
-        callback=LogCallback(cfg["n_steps"], total_steps, patience=25),
+        callback=LogCallback(2048, total_steps, patience=25),
         reset_num_timesteps=not resume,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
