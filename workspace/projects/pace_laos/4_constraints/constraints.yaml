@@ -1,54 +1,31 @@
-# pace_laos/constraints/constraints.yaml
-# Defines what is allowed (hard) and what is preferred (soft).
-# Hard constraints are enforced via action masking — agent cannot violate them.
-# Soft constraints are enforced via reward penalties — agent learns to avoid them.
+# 4_constraints/constraints.yaml
 
-# ── Hard constraints (action masking) ─────────────────────────────────────────
-hard:
+rewards:
+  per_step:    -1.0
+  goal_state:   50.0
+  completion:  200.0
+  background:    5.0
 
-  - name: cap_tube_pairing
-    description: cap_i must always go back to tube_i — prevents cross-contamination
-    type: pairing
-    rule: cap_index == tube_index
+constraints:
 
-  - name: index_preserved
-    description: tube_i must use positions at index i across all mappings
-    type: ordered_placement
-    applies_to: [source, working, shaker_slots, dosing_40ml, dosing_2ml_end, dosing_2ml_middle, rack_2ml_end]
-    rule: item_index == slot_index
+  - name: current_tool
+    type: enum
+    observe: true
+    penalty: -25.0
+    values: [gripper_large, needle, feeder_tool, gripper_2ml]
+    map:
+      inspected:      gripper_large
+      dosed_40ml:     needle
+      loaded_shaker:  gripper_large
+      shaken:         feeder_tool
+      cap_fed:        feeder_tool
+      retrieved:      gripper_large
+      dosed_2ml:      needle
+      recapped_final: gripper_large
+      capped_2ml:     gripper_2ml
 
-  - name: tool_required
-    description: each stage can only execute if the correct tool is mounted
-    type: tool_match
-    rule: mounted_tool == stage.tool
-
-  - name: stage_sequence
-    description: a stage cannot start unless all its requires are complete for that tube
-    type: sequence
-    rule: all(requires) must be true before action
-
-  - name: item_type_placement
-    description: tube goes to rack, cap goes to decapper, vial goes to vial rack
-    type: type_match
-    rule: held_item_type == destination_type
-
-# ── Soft constraints (reward penalties) ───────────────────────────────────────
-soft:
-
-  - name: minimize_tool_swaps
-    description: unnecessary tool swaps waste time
-    type: efficiency
-    penalty: 15
-    condition: tool_swap_not_required_by_next_stage
-
+reward_rules:
   - name: fill_idle_time
-    description: feed caps during shake instead of waiting idle
-    type: scheduling
-    reward: 20
-    condition: shaker_running and feeder_tool_mounted and caps_remaining
-
-  - name: batch_same_tool
-    description: complete all actions for current tool before switching
-    type: batching
-    reward: 10
-    condition: same_tool_actions_available
+    when: cap_fed
+    while_incomplete: shaken
+    reward: 20.0

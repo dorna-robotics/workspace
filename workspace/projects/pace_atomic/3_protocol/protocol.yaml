@@ -1,0 +1,189 @@
+# 3_protocol/protocol.yaml
+# Atomic style — each state is one recipe call.
+# No workflow phase methods needed — workflow.py just registers lambdas.
+# The RL learns optimal ordering from these dependencies.
+
+states:
+
+  # ── Inspect & decap ───────────────────────────────────────────────────────
+  - name: source_rack.pick
+    requires: []
+
+  - name: inspector.present
+    requires: [source_rack.pick]
+
+  - name: scale.place
+    requires: [inspector.present]
+
+  - name: scale.weight
+    requires: [scale.place]
+
+  - name: scale.pick
+    requires: [scale.weight]
+
+  - name: decapper.place
+    requires: [scale.pick]
+
+  - name: decapper.decap
+    requires: [decapper.place]
+
+  - name: cap_holder.place
+    requires: [decapper.decap]
+
+  - name: decapper.pick
+    requires: [cap_holder.place]
+
+  - name: working_rack.place
+    requires: [decapper.pick]
+
+  # ── Dose 40ml ─────────────────────────────────────────────────────────────
+  - name: doser_40ml.immerse
+    requires: [working_rack.place]
+
+  - name: doser_40ml.dispense
+    requires: [doser_40ml.immerse]
+
+  - name: doser_40ml.retract
+    requires: [doser_40ml.dispense]
+
+  # ── Load shaker ───────────────────────────────────────────────────────────
+  - name: working_rack.pick
+    requires: [doser_40ml.retract]
+
+  - name: decapper.place_cap
+    requires: [working_rack.pick]
+
+  - name: cap_holder.pick
+    requires: [decapper.place_cap]
+
+  - name: decapper.cap
+    requires: [cap_holder.pick]
+
+  - name: decapper.pick_cap
+    requires: [decapper.cap]
+
+  - name: shaker.place
+    requires: [decapper.pick_cap]
+
+  # ── Shake (background) ────────────────────────────────────────────────────
+  - name: shaker.shake
+    background: true
+    duration: shake_duration
+    duration_steps: [5, 15]     # simulated steps for training (randomized per episode)
+    requires: [shaker.place]
+
+  # ── Feed caps (fills idle shake time) ─────────────────────────────────────
+  - name: autosampler.above
+    optional: true
+    requires: []
+
+  - name: autosampler.present_cap
+    optional: true
+    requires: [autosampler.above]
+
+  - name: autosampler.pick
+    optional: true
+    requires: [autosampler.present_cap]
+
+  - name: cap_feeder.place
+    optional: true
+    requires: [autosampler.pick]
+
+  # ── Retrieve & decap ──────────────────────────────────────────────────────
+  - name: shaker.pick
+    requires: [shaker.shake]
+
+  - name: inspector.present_2
+    requires: [shaker.pick]
+
+  - name: decapper.place_2
+    requires: [inspector.present_2]
+
+  - name: decapper.decap_2
+    requires: [decapper.place_2]
+
+  - name: cap_holder.place_2
+    requires: [decapper.decap_2]
+
+  - name: decapper.pick_2
+    requires: [cap_holder.place_2]
+
+  - name: working_rack.place_2
+    requires: [decapper.pick_2]
+
+  # ── Dose 2ml ──────────────────────────────────────────────────────────────
+  - name: doser_40ml.immerse_2
+    requires: [working_rack.place_2]
+
+  - name: doser_40ml.dispense_2
+    requires: [doser_40ml.immerse_2]
+
+  - name: doser_40ml.retract_2
+    requires: [doser_40ml.dispense_2]
+
+  - name: doser_2ml_middle.immerse
+    requires: [doser_40ml.retract_2]
+
+  - name: doser_2ml_middle.dispense
+    requires: [doser_2ml_middle.immerse]
+
+  - name: doser_2ml_middle.retract
+    requires: [doser_2ml_middle.dispense]
+
+  - name: doser_2ml_end.immerse
+    requires: [doser_2ml_middle.retract]
+
+  - name: doser_2ml_end.dispense
+    requires: [doser_2ml_end.immerse]
+
+  - name: doser_2ml_end.retract
+    requires: [doser_2ml_end.dispense]
+
+  # ── Recap & return 40ml ───────────────────────────────────────────────────
+  - name: working_rack.pick_2
+    requires: [doser_2ml_end.retract]
+
+  - name: decapper.place_final
+    requires: [working_rack.pick_2]
+
+  - name: cap_holder.pick_2
+    requires: [decapper.place_final]
+
+  - name: decapper.cap_final
+    requires: [cap_holder.pick_2]
+
+  - name: decapper.pick_final
+    requires: [decapper.cap_final]
+
+  - name: source_rack.place
+    requires: [decapper.pick_final]
+
+  # ── Cap & inspect 2ml ─────────────────────────────────────────────────────
+  - name: rack_2ml.pick
+    requires: [cap_feeder.place, doser_2ml_end.retract]
+
+  - name: decapper.place_2ml
+    requires: [rack_2ml.pick]
+
+  - name: cap_feeder.pick
+    requires: [decapper.place_2ml]
+
+  - name: decapper.cap_2ml
+    requires: [cap_feeder.pick]
+
+  - name: decapper.pick_2ml
+    requires: [decapper.cap_2ml]
+
+  - name: decapper.vibrate
+    requires: [decapper.pick_2ml]
+
+  - name: inspector.present_3
+    requires: [decapper.vibrate]
+
+  - name: rack_2ml.place
+    requires: [inspector.present_3]
+
+# ── Goal ──────────────────────────────────────────────────────────────────────
+goal:
+  - source_rack.place
+  - rack_2ml.place
