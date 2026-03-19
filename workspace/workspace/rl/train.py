@@ -101,7 +101,7 @@ class LogCallback(BaseCallback):
                 self._flat_count = 0
             else:
                 self._flat_count += 1
-                if self._flat_count >= self.patience:
+                if self.patience > 0 and self._flat_count >= self.patience:
                     print(f"\nEarly stop — no improvement for {self.patience} intervals "
                           f"(best={self._best_avg:+.1f})", flush=True)
                     return False
@@ -122,7 +122,7 @@ def _make_vec_env(project: str, n_items: int, n_envs: int):
 
 
 def train(project: str, n_items: int, total_steps: int, out: Path,
-          resume: bool = False, n_envs: int = 1):
+          resume: bool = False, n_envs: int = 1, no_early_stop: bool = False):
     raw_env = _make_env(project, n_items)
     cfg     = _auto_config(raw_env)
     device  = "cuda" if torch.cuda.is_available() else "cpu"
@@ -154,7 +154,7 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
 
     model.learn(
         total_timesteps=total_steps,
-        callback=LogCallback(2048, total_steps, patience=25),
+        callback=LogCallback(2048, total_steps, patience=0 if no_early_stop else 25),
         reset_num_timesteps=not resume,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -173,8 +173,10 @@ if __name__ == "__main__":
                         help="Resume training from existing model")
     parser.add_argument("--n_envs", type=int, default=1,
                         help="Number of parallel environments (use 8-16 on Colab)")
+    parser.add_argument("--no_early_stop", action="store_true",
+                        help="Disable early stopping — run full steps")
     args = parser.parse_args()
 
     out = args.out or (_PROJECTS_DIR / args.project / "5_rl" / "models" / "policy.zip")
     train(args.project, n_items=args.count, total_steps=args.steps, out=out,
-          resume=args.resume, n_envs=args.n_envs)
+          resume=args.resume, n_envs=args.n_envs, no_early_stop=args.no_early_stop)
