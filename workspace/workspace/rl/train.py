@@ -110,7 +110,7 @@ class LogCallback(BaseCallback):
 
 def _make_vec_env(project: str, n_items: int, n_envs: int):
     """Create vectorized environment for parallel training."""
-    from stable_baselines3.common.vec_env import SubprocVecEnv
+    from stable_baselines3.common.vec_env import DummyVecEnv
 
     def make_fn():
         def _init():
@@ -118,7 +118,7 @@ def _make_vec_env(project: str, n_items: int, n_envs: int):
             return ActionMasker(env, _mask_fn)
         return _init
 
-    return SubprocVecEnv([make_fn() for _ in range(n_envs)])
+    return DummyVecEnv([make_fn() for _ in range(n_envs)])
 
 
 def train(project: str, n_items: int, total_steps: int, out: Path,
