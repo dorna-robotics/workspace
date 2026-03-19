@@ -94,7 +94,7 @@ class LogCallback(BaseCallback):
             avg_r = sum(self._ep_rewards[-20:]) / len(self._ep_rewards[-20:])
             avg_l = sum(self._ep_lens[-20:])    / len(self._ep_lens[-20:])
             print(f"[{pct:5.1f}%] step={self.num_timesteps:>7}  "
-                  f"avg_reward={avg_r:+.1f}  avg_len={avg_l:.0f}")
+                  f"avg_reward={avg_r:+.1f}  avg_len={avg_l:.0f}", flush=True)
 
             if avg_r > self._best_avg + self.min_delta:
                 self._best_avg   = avg_r
@@ -103,7 +103,7 @@ class LogCallback(BaseCallback):
                 self._flat_count += 1
                 if self._flat_count >= self.patience:
                     print(f"\nEarly stop — no improvement for {self.patience} intervals "
-                          f"(best={self._best_avg:+.1f})")
+                          f"(best={self._best_avg:+.1f})", flush=True)
                     return False
         return True
 
@@ -134,11 +134,11 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
 
     print(f"  actions={raw_env.action_space.n}  obs={raw_env.observation_space.shape[0]}  "
           f"net={cfg['net_arch']}  lr={cfg['learning_rate']}  batch={cfg['batch_size']}  "
-          f"device={device}  envs={n_envs}")
+          f"device={device}  envs={n_envs}", flush=True)
 
     if resume and out.exists():
         model = MaskablePPO.load(str(out), env=env, device=device)
-        print(f"Resuming from {out}  |  +{total_steps:,} steps")
+        print(f"Resuming from {out}  |  +{total_steps:,} steps", flush=True)
     else:
         model = MaskablePPO(
             "MlpPolicy", env,
@@ -150,7 +150,7 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
             learning_rate=cfg["learning_rate"],
             policy_kwargs=dict(net_arch=cfg["net_arch"]),
         )
-        print(f"Training for {total_steps:,} steps  |  count={n_items}  |  saving to {out}")
+        print(f"Training for {total_steps:,} steps  |  count={n_items}  |  saving to {out}", flush=True)
 
     model.learn(
         total_timesteps=total_steps,
@@ -159,7 +159,7 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(out))
-    print(f"\nDone — model saved to {out}")
+    print(f"\nDone — model saved to {out}", flush=True)
 
 
 if __name__ == "__main__":
