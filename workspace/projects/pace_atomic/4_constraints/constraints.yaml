@@ -13,6 +13,7 @@ rewards:
   goal_state:   50.0
   completion:  200.0
   background:    5.0
+  idle:          -2.0     # per second of idle time — pushes RL to fill background wait
 
 # ── Constraints ────────────────────────────────────────────────────────────────
 constraints:
@@ -20,7 +21,7 @@ constraints:
   - name: current_tool
     type: enum
     observe: true
-    penalty: -25.0
+    penalty: -15.0
     options: [gripper, needle, feeder_tool, gripper_2ml]
     map:
       # inspect & decap
