@@ -40,8 +40,12 @@ class RLRunner:
                     # string reference to params key (e.g. "shake_duration")
                     duration_sec = getattr(cfg, d, 0)
                 elif isinstance(d, list):
-                    # [min, max] range — use max for real-world safety
-                    duration_sec = d[1]
+                    # [min, max] range — use cfg value if available, else midpoint
+                    if cfg and isinstance(d, list):
+                        # check if there's a matching params key
+                        duration_sec = (d[0] + d[1]) / 2
+                    else:
+                        duration_sec = (d[0] + d[1]) / 2
                 elif isinstance(d, (int, float)):
                     duration_sec = d
                 self._background[s["name"]] = duration_sec
@@ -61,16 +65,15 @@ class RLRunner:
         for _ in range(max_steps):
             mask = env.action_masks()
             if not np.any(mask):
-                # check if we're waiting for a background task to finish
                 if bg_active:
+                    # wait for all active background tasks
                     for bg_name, (start, dur) in list(bg_active.items()):
                         remaining = dur - (time.time() - start)
                         if remaining > 0:
                             self.rt.step(f"Waiting {remaining:.0f}s for {bg_name}")
                             self.rt.delay(remaining)
-                        bg_active.pop(bg_name)
-                    # after waiting, the env timer should have expired via steps
-                    # step the env to tick timers
+                    bg_active.clear()
+                    # step env to tick timers forward (use first valid action after wait)
                     continue
                 break
 
@@ -82,24 +85,23 @@ class RLRunner:
 
             if state_name in self._background:
                 duration_sec = self._background[state_name]
-                self.rt.step(f"RL → {state_name} [background, {duration_sec}s]")
+                self.rt.step(f"RL → {state_name} [background, {duration_sec:.0f}s]")
                 if handler:
                     handler(0)
                 bg_active[state_name] = (time.time(), duration_sec)
                 for t in range(n_items):
                     completed[state_name].add(t)
             else:
-                # if a background task is running, check if dependent state needs to wait
+                # check if this state depends on a background state that's still running
+                state_reqs = self._env._requires.get(state_name, [])
                 for bg_name, (start, dur) in list(bg_active.items()):
-                    remaining = dur - (time.time() - start)
-                    if remaining > 0:
-                        # check if this state depends on the background state
-                        bg_idx = self._state_names.index(bg_name) if bg_name in self._state_names else -1
-                        state_reqs = self._env._requires.get(state_name, [])
-                        if bg_idx in state_reqs:
+                    bg_idx = self._state_names.index(bg_name) if bg_name in self._state_names else -1
+                    if bg_idx in state_reqs:
+                        remaining = dur - (time.time() - start)
+                        if remaining > 0:
                             self.rt.step(f"Waiting {remaining:.0f}s for {bg_name}")
                             self.rt.delay(remaining)
-                    bg_active.pop(bg_name, None)
+                        bg_active.pop(bg_name)
 
                 self.rt.step(f"RL → {state_name} [{item_i + 1}/{n_items}]")
                 if handler:
