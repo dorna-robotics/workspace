@@ -139,6 +139,23 @@ constraints:
       - cap_feeder.pick
       - decapper.pick_2ml
     block_on_false:
+      - scale.place
+      - decapper.place
+      - cap_holder.place
+      - working_rack.place
+      - shaker.place
+      - decapper.place_cap
+      - cap_holder.place_2
+      - working_rack.place_2
+      - source_rack.place
+      - cap_feeder.place
+      - decapper.place_2
+      - decapper.place_final
+      - decapper.place_2ml
+      - rack_2ml.place
+      - decapper.cap
+      - decapper.cap_final
+      - decapper.cap_2ml
 
 # ── Reward rules ───────────────────────────────────────────────────────────────
 # reward_rules:

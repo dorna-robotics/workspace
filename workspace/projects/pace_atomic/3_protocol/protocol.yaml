@@ -69,7 +69,7 @@ states:
   - name: shaker.shake
     background: true
     duration: shake_duration
-    duration_steps: [5, 15]     # simulated steps for training (randomized per episode)
+    # duration_steps: [5, 15]     # disabled — adds training noise, enable when model is stable
     requires: [shaker.place]
 
   # ── Feed caps (fills idle shake time) ─────────────────────────────────────
