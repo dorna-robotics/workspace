@@ -142,7 +142,9 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
 
     if resume and out.exists():
         model = MaskablePPO.load(str(out), env=env, device=device)
-        print(f"Resuming from {out}  |  +{total_steps:,} steps", flush=True)
+        start_steps = model.num_timesteps
+        target_steps = start_steps + total_steps
+        print(f"Resuming from {out}  |  at {start_steps:,}  |  +{total_steps:,} steps", flush=True)
     else:
         model = MaskablePPO(
             "MlpPolicy", env,
@@ -154,12 +156,14 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
             learning_rate=cfg["learning_rate"],
             policy_kwargs=dict(net_arch=cfg["net_arch"]),
         )
+        start_steps = 0
+        target_steps = total_steps
         print(f"Training for {total_steps:,} steps  |  count={n_items}  |  saving to {out}", flush=True)
 
     model.learn(
-        total_timesteps=total_steps,
-        callback=LogCallback(2048, total_steps, patience=0 if no_early_stop else 25),
-        reset_num_timesteps=not resume,
+        total_timesteps=target_steps,
+        callback=LogCallback(2048, target_steps, patience=0 if no_early_stop else 25),
+        reset_num_timesteps=False,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(out))
