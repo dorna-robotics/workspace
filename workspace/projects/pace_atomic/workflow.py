@@ -73,7 +73,7 @@ class Workflow(BaseWorkflow):
         r("cap_feeder.place",        tool(F, lambda i: rcp[cfg.cap_feeder[i][0]].place(cfg.cap_feeder[i][1])))
 
         # ── Retrieve & decap ─────────────────────────────────────────────────
-        r("shaker.pick",          tool(G, lambda i: rcp[cfg.shaker_slots[i][0]].pick(cfg.shaker_slots[i][1])))
+        r("shaker.pick",          tool(G, lambda i: (rcp[cfg.shaker_slots[i][0]].stop_shaking(), rcp[cfg.shaker_slots[i][0]].pick(cfg.shaker_slots[i][1]))))
         r("inspector.present_2",  tool(G, lambda i: rcp["inspector"].present(approach=True)))
         r("decapper.place_2",     tool(G, lambda i: rcp["decapper_5"].place(exit=False)))
         r("decapper.decap_2",     tool(G, lambda i: rcp["decapper_5"].decap(approach=False)))

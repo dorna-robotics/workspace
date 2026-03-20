@@ -34,10 +34,16 @@ class RLRunner:
         self._background  = {}
         for s in self._states:
             if s.get("background"):
-                duration_key = s.get("duration")
+                d = s.get("duration")
                 duration_sec = 0
-                if duration_key and cfg:
-                    duration_sec = getattr(cfg, duration_key, 0)
+                if isinstance(d, str) and cfg:
+                    # string reference to params key (e.g. "shake_duration")
+                    duration_sec = getattr(cfg, d, 0)
+                elif isinstance(d, list):
+                    # [min, max] range — use max for real-world safety
+                    duration_sec = d[1]
+                elif isinstance(d, (int, float)):
+                    duration_sec = d
                 self._background[s["name"]] = duration_sec
 
     def register(self, state_name: str, handler: Callable):
