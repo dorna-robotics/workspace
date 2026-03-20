@@ -37,7 +37,7 @@ class BaseWorkflow:
         constraints = base_dir / "4_constraints" / "constraints.yaml"
         model       = base_dir / "5_rl" / "models" / "policy.zip"
 
-        self.runner = RLRunner(self.rt, protocol, constraints, n_items, model_path=model)
+        self.runner = RLRunner(self.rt, protocol, constraints, n_items, model_path=model, cfg=self.cfg)
         self._register_all()
 
     # ── Loading ─────────────────────────────────────────────────────────────

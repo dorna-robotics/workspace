@@ -92,7 +92,9 @@ constraints:
       - source_rack.pick
       - scale.pick
       - decapper.decap
+      - decapper.pick
       - cap_holder.pick
+      - cap_holder.pick_2
       - working_rack.pick
       - decapper.pick_cap
       - shaker.pick
@@ -126,7 +128,9 @@ constraints:
       - source_rack.pick
       - scale.pick
       - decapper.decap
+      - decapper.pick
       - cap_holder.pick
+      - cap_holder.pick_2
       - working_rack.pick
       - decapper.pick_cap
       - shaker.pick

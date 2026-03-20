@@ -1,7 +1,10 @@
 # workspace/rl/infer.py
 # RLRunner — generic inference runner.
 # Constructs env from project YAML files, no env.py needed.
+# The RL model decides action ORDER.
+# This runner enforces real-world TIMING for background states.
 
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -15,11 +18,12 @@ from workspace.rl.base_env import BaseLabEnv
 class RLRunner:
 
     def __init__(self, rt, protocol_path: Path, constraints_path: Path,
-                 n_items: int, model_path: Path):
+                 n_items: int, model_path: Path, cfg=None):
         self.rt       = rt
         self._env     = BaseLabEnv(protocol_path, constraints_path, n_items=n_items)
         self._model   = MaskablePPO.load(str(model_path))
         self._handlers: dict[str, Callable] = {}
+        self._cfg     = cfg
 
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
@@ -27,7 +31,14 @@ class RLRunner:
         self._states      = data["states"]
         self._goal        = set(data["goal"])
         self._state_names = [s["name"] for s in self._states]
-        self._background  = {s["name"] for s in self._states if s.get("background")}
+        self._background  = {}
+        for s in self._states:
+            if s.get("background"):
+                duration_key = s.get("duration")
+                duration_sec = 0
+                if duration_key and cfg:
+                    duration_sec = getattr(cfg, duration_key, 0)
+                self._background[s["name"]] = duration_sec
 
     def register(self, state_name: str, handler: Callable):
         self._handlers[state_name] = handler
@@ -38,9 +49,23 @@ class RLRunner:
         completed: dict[str, set[int]] = {n: set() for n in self._state_names}
         max_steps = n_items * len(self._state_names) * 3
 
+        # track real-time background tasks: {state_name: (start_time, duration_sec)}
+        bg_active: dict[str, tuple[float, float]] = {}
+
         for _ in range(max_steps):
             mask = env.action_masks()
             if not np.any(mask):
+                # check if we're waiting for a background task to finish
+                if bg_active:
+                    for bg_name, (start, dur) in list(bg_active.items()):
+                        remaining = dur - (time.time() - start)
+                        if remaining > 0:
+                            self.rt.step(f"Waiting {remaining:.0f}s for {bg_name}")
+                            self.rt.delay(remaining)
+                        bg_active.pop(bg_name)
+                    # after waiting, the env timer should have expired via steps
+                    # step the env to tick timers
+                    continue
                 break
 
             action, _ = self._model.predict(obs, action_masks=mask, deterministic=True)
@@ -50,12 +75,26 @@ class RLRunner:
             handler    = self._handlers.get(state_name)
 
             if state_name in self._background:
-                self.rt.step(f"RL → {state_name} [background]")
+                duration_sec = self._background[state_name]
+                self.rt.step(f"RL → {state_name} [background, {duration_sec}s]")
                 if handler:
-                    handler()
+                    handler(0)
+                bg_active[state_name] = (time.time(), duration_sec)
                 for t in range(n_items):
                     completed[state_name].add(t)
             else:
+                # if a background task is running, check if dependent state needs to wait
+                for bg_name, (start, dur) in list(bg_active.items()):
+                    remaining = dur - (time.time() - start)
+                    if remaining > 0:
+                        # check if this state depends on the background state
+                        bg_idx = self._state_names.index(bg_name) if bg_name in self._state_names else -1
+                        state_reqs = self._env._requires.get(state_name, [])
+                        if bg_idx in state_reqs:
+                            self.rt.step(f"Waiting {remaining:.0f}s for {bg_name}")
+                            self.rt.delay(remaining)
+                    bg_active.pop(bg_name, None)
+
                 self.rt.step(f"RL → {state_name} [{item_i + 1}/{n_items}]")
                 if handler:
                     handler(item_i)

@@ -45,8 +45,13 @@ class Workflow(BaseWorkflow):
                 rcp["inspector"].rotate(rotation=cfg.inspection_rot)
 
         def _rinse_needle():
-            rcp[cfg.rinse[0]].immerse(dist=cfg.rinse_dist, anchor=cfg.rinse[1])
-            rcp[cfg.rinse[0]].retract(dist=cfg.rinse_dist, anchor=cfg.rinse[1])
+            for j in range(len(cfg.dosing_clean)):
+                rcp[cfg.dosing_clean[j][0]].immerse(dist=cfg.immerse_40ml_dist, anchor=cfg.dosing_clean[j][1])
+                rcp[cfg.dosing_clean[j][0]].dispense(vol=10)
+                rcp[cfg.dosing_clean[j][0]].retract(dist=cfg.retract_40ml_dist, anchor=cfg.dosing_clean[j][1])
+                rcp[cfg.dosing_waste[0][0]].immerse(dist=cfg.immerse_40ml_dist, anchor=cfg.dosing_waste[0][1], padding=10)
+                rcp[cfg.dosing_waste[0][0]].dispense(vol=10)
+                rcp[cfg.dosing_waste[0][0]].retract(dist=cfg.retract_40ml_dist, anchor=cfg.dosing_waste[0][1])
 
         # ── Phase handlers ────────────────────────────────────────────────
 
