@@ -20,7 +20,7 @@ from workspace.rl.base_env import BaseLabEnv
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
 
-def _make_env(project: str, n_items: int) -> BaseLabEnv:
+def _make_env(project: str, n_items: int, max_items: int = None) -> BaseLabEnv:
     """Construct env directly from project YAML files."""
     base = _PROJECTS_DIR / project
     protocol    = base / "3_protocol" / "protocol.yaml"
@@ -29,8 +29,10 @@ def _make_env(project: str, n_items: int) -> BaseLabEnv:
         raise FileNotFoundError(f"No protocol.yaml at {protocol}")
     # scale max_steps with problem size
     n_states = len(__import__("yaml").safe_load(open(protocol))["states"])
-    max_steps = n_states * n_items * 3
-    return BaseLabEnv(protocol, constraints, n_items=n_items, max_steps=max_steps)
+    effective_max = max_items or n_items
+    max_steps = n_states * effective_max * 3
+    return BaseLabEnv(protocol, constraints, n_items=n_items,
+                      max_items=max_items, max_steps=max_steps)
 
 
 def _auto_config(env: BaseLabEnv) -> dict:
@@ -108,13 +110,13 @@ class LogCallback(BaseCallback):
         return True
 
 
-def _make_vec_env(project: str, n_items: int, n_envs: int):
+def _make_vec_env(project: str, n_items: int, max_items: int, n_envs: int):
     """Create vectorized environment for parallel training."""
     from stable_baselines3.common.vec_env import DummyVecEnv
 
     def make_fn():
         def _init():
-            env = _make_env(project, n_items)
+            env = _make_env(project, n_items, max_items)
             return ActionMasker(env, _mask_fn)
         return _init
 
@@ -122,19 +124,21 @@ def _make_vec_env(project: str, n_items: int, n_envs: int):
 
 
 def train(project: str, n_items: int, total_steps: int, out: Path,
-          resume: bool = False, n_envs: int = 1, no_early_stop: bool = False):
-    raw_env = _make_env(project, n_items)
+          resume: bool = False, n_envs: int = 1, no_early_stop: bool = False,
+          max_items: int = None):
+    raw_env = _make_env(project, n_items, max_items)
     cfg     = _auto_config(raw_env)
     device  = "cuda" if torch.cuda.is_available() else "cpu"
 
     if n_envs > 1:
-        env = _make_vec_env(project, n_items, n_envs)
+        env = _make_vec_env(project, n_items, max_items, n_envs)
     else:
         env = ActionMasker(raw_env, _mask_fn)
 
+    effective_max = max_items or n_items
     print(f"  actions={raw_env.action_space.n}  obs={raw_env.observation_space.shape[0]}  "
           f"net={cfg['net_arch']}  lr={cfg['learning_rate']}  batch={cfg['batch_size']}  "
-          f"device={device}  envs={n_envs}", flush=True)
+          f"device={device}  envs={n_envs}  items=1-{effective_max}", flush=True)
 
     if resume and out.exists():
         model = MaskablePPO.load(str(out), env=env, device=device)
@@ -166,7 +170,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True,
                         help="Project folder name under workspace/projects/")
-    parser.add_argument("--count", type=int,  default=4)
+    parser.add_argument("--count", type=int,  default=4,
+                        help="Default item count (also min when --max_count is set)")
+    parser.add_argument("--max_count", type=int, default=None,
+                        help="Max items — randomizes 1 to max_count per episode")
     parser.add_argument("--steps", type=int,  default=200_000)
     parser.add_argument("--out",    type=Path, default=None)
     parser.add_argument("--resume", action="store_true",
@@ -179,4 +186,5 @@ if __name__ == "__main__":
 
     out = args.out or (_PROJECTS_DIR / args.project / "5_rl" / "models" / "policy.zip")
     train(args.project, n_items=args.count, total_steps=args.steps, out=out,
-          resume=args.resume, n_envs=args.n_envs, no_early_stop=args.no_early_stop)
+          resume=args.resume, n_envs=args.n_envs, no_early_stop=args.no_early_stop,
+          max_items=args.max_count)

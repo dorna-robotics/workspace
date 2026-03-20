@@ -18,9 +18,11 @@ from workspace.rl.base_env import BaseLabEnv
 class RLRunner:
 
     def __init__(self, rt, protocol_path: Path, constraints_path: Path,
-                 n_items: int, model_path: Path, cfg=None):
+                 n_items: int, model_path: Path, cfg=None, max_items: int = None):
         self.rt       = rt
-        self._env     = BaseLabEnv(protocol_path, constraints_path, n_items=n_items)
+        self._n_items = n_items
+        self._env     = BaseLabEnv(protocol_path, constraints_path,
+                                   n_items=n_items, max_items=max_items)
         self._model   = MaskablePPO.load(str(model_path))
         self._handlers: dict[str, Callable] = {}
         self._cfg     = cfg
@@ -55,7 +57,7 @@ class RLRunner:
 
     def run(self, n_items: int):
         env = self._env
-        obs, _ = env.reset()
+        obs, _ = env.reset(options={"n_items": n_items})
         completed: dict[str, set[int]] = {n: set() for n in self._state_names}
         max_steps = n_items * len(self._state_names) * 3
 

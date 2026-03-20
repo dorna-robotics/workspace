@@ -28,11 +28,16 @@ class BaseLabEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, protocol_path: Path, constraints_path: Path = None,
-                 n_items: int = 4, max_steps: int = 200):
+                 n_items: int = 4, max_items: int = None, max_steps: int = 200):
         super().__init__()
 
-        self.n_items   = n_items
-        self.max_steps = max_steps
+        # max_items: observation/action space size (fixed for neural network)
+        # n_items: default active items (can be randomized per episode if max_items > 1)
+        self.max_items    = max_items or n_items
+        self.n_items      = self.max_items  # obs/action space uses max_items
+        self._default_items = n_items
+        self._active_items  = n_items  # randomized per episode
+        self.max_steps    = max_steps
 
         # ── Load protocol ───────────────────────────────────────────────────
         with open(protocol_path) as f:
@@ -150,11 +155,12 @@ class BaseLabEnv(gym.Env):
                 })
 
         # ── Observation & action spaces ─────────────────────────────────────
-        self._n_actions = self._n_states * n_items
+        self._n_actions = self._n_states * self.max_items
         self.action_space = spaces.Discrete(self._n_actions)
 
         # observation:
-        #   completed matrix (n_items × n_states)
+        #   active_items (1 float, normalized by max_items)
+        #   completed matrix (max_items × n_states)
         #   per background: [active (0/1), remaining (0-1)]
         #   per action: [duration_this_episode (normalized 0-1)]
         #   bool constraints (1 float each)
@@ -164,7 +170,8 @@ class BaseLabEnv(gym.Env):
         self._n_dur_obs    = self._n_states  # one duration per state
         self._max_duration = 200.0  # normalization cap for durations
 
-        obs_size = (n_items * self._n_states
+        obs_size = (1  # active_items count
+                    + self.max_items * self._n_states
                     + self._n_bg_obs
                     + self._n_dur_obs
                     + sum(1 for b in self._bools if b["observe"])
@@ -178,7 +185,22 @@ class BaseLabEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        self._completed  = np.zeros((self.n_items, self._n_states), dtype=np.float32)
+
+        # randomize active items per episode (1 to max_items)
+        if self.max_items > 1:
+            self._active_items = self.np_random.integers(1, self.max_items + 1)
+        else:
+            self._active_items = 1
+
+        # override with fixed count if provided in options
+        if options and "n_items" in options:
+            self._active_items = options["n_items"]
+
+        self._completed  = np.zeros((self.max_items, self._n_states), dtype=np.float32)
+        # mark inactive items as already completed (so they don't block goals)
+        for t in range(self._active_items, self.max_items):
+            self._completed[t, :] = 1.0
+
         self._step_count = 0
         self._clock      = 0.0  # simulated clock in seconds
 
@@ -335,12 +357,12 @@ class BaseLabEnv(gym.Env):
                 timer_started = self._bg_timers.get(name, -1.0) >= 0
                 requires_met = all(
                     self._completed[t, r] == 1.0
-                    for t in range(self.n_items) for r in reqs
+                    for t in range(self._active_items) for r in reqs
                 )
                 if not already_done and not timer_started and requires_met:
                     mask[si * self.n_items] = True
             else:
-                for ii in range(self.n_items):
+                for ii in range(self._active_items):  # only active items
                     action       = si * self.n_items + ii
                     already_done = self._completed[ii, si] == 1.0
                     requires_met = all(self._completed[ii, r] == 1.0 for r in reqs)
@@ -378,7 +400,9 @@ class BaseLabEnv(gym.Env):
         return total
 
     def _obs(self) -> np.ndarray:
-        parts = [self._completed.flatten()]
+        # active items count (normalized)
+        parts = [np.array([self._active_items / self.max_items], dtype=np.float32)]
+        parts.append(self._completed.flatten())
 
         # background timers: [active (0/1), remaining (0-1)]
         for bg_name in self._bg_durations:
