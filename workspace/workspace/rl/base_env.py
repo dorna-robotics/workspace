@@ -6,9 +6,14 @@
 #   - 4_constraints/constraints.yaml → rewards, constraints, reward rules
 #
 # Constraint types (defined in YAML, no code changes needed):
-#   bool — true_on / false_on / block
+#   bool — true_on / false_on / block_on_true / block_on_false
 #   int  — add_on / sub_on / block / max
-#   enum — values / map / penalty
+#   enum — options / map / penalty
+#
+# Clock-based time simulation:
+#   Each action has a duration (seconds). Background tasks have a duration.
+#   The env tracks a simulated clock. Background tasks complete when their
+#   real time is up. The RL learns to fill idle time with useful actions.
 
 from pathlib import Path
 
@@ -46,12 +51,39 @@ class BaseLabEnv(gym.Env):
         self._background = {s["name"] for s in self._states if s.get("background")}
         self._optional   = {s["name"] for s in self._states if s.get("optional")}
 
-        # background duration config: {state_name: [min_steps, max_steps]}
+        # ── Action durations (seconds) ────────────────────────────────────
+        # Each action has a duration: [min, max] randomized per episode
+        # or a fixed number. Default: [10, 10] (no randomization)
+        # Background states use 1.0s action duration (just trigger) —
+        # their real duration is the background timer, not the action.
+        self._action_durations = {}   # state_name → (min_s, max_s)
+        for s in self._states:
+            if s.get("background"):
+                # background trigger is near-instant
+                self._action_durations[s["name"]] = (1.0, 1.0)
+                continue
+            d = s.get("duration")
+            if d is None:
+                self._action_durations[s["name"]] = (10.0, 10.0)
+            elif isinstance(d, list):
+                self._action_durations[s["name"]] = (float(d[0]), float(d[1]))
+            elif isinstance(d, str):
+                self._action_durations[s["name"]] = (10.0, 10.0)
+            else:
+                self._action_durations[s["name"]] = (float(d), float(d))
+
+        # background duration config: {state_name: (min_s, max_s)}
         self._bg_durations = {}
         for s in self._states:
-            if s.get("background") and s.get("duration_steps"):
-                d = s["duration_steps"]
-                self._bg_durations[s["name"]] = (d[0], d[1]) if isinstance(d, list) else (d, d)
+            if s.get("background"):
+                d = s.get("duration")
+                if isinstance(d, list):
+                    self._bg_durations[s["name"]] = (float(d[0]), float(d[1]))
+                elif isinstance(d, (int, float)):
+                    self._bg_durations[s["name"]] = (float(d), float(d))
+                else:
+                    # string ref or missing — use default
+                    self._bg_durations[s["name"]] = (60.0, 120.0)
 
         # ── Load constraints (optional) ─────────────────────────────────────
         cfg = {}
@@ -67,6 +99,7 @@ class BaseLabEnv(gym.Env):
         self._rw_goal_state = rw.get("goal_state",  50.0)
         self._rw_completion = rw.get("completion", 200.0)
         self._rw_background = rw.get("background",   5.0)
+        self._rw_idle       = rw.get("idle",         -0.5)  # penalty per second idle
 
         # reward rules
         self._reward_rules = cfg.get("reward_rules", [])
@@ -82,13 +115,13 @@ class BaseLabEnv(gym.Env):
 
             if ctype == "bool":
                 self._bools.append({
-                    "name":            c["name"],
-                    "observe":         observe,
-                    "true_on":         set(c.get("true_on", [])),
-                    "false_on":        set(c.get("false_on", [])),
+                    "name":           c["name"],
+                    "observe":        observe,
+                    "true_on":        set(c.get("true_on", [])),
+                    "false_on":       set(c.get("false_on", [])),
                     "block_on_true":  set(c.get("block_on_true") or c.get("block_when_true") or c.get("block") or []),
                     "block_on_false": set(c.get("block_on_false") or c.get("block_when_false") or []),
-                    "value":           False,
+                    "value":          False,
                 })
 
             elif ctype == "int":
@@ -120,11 +153,20 @@ class BaseLabEnv(gym.Env):
         self._n_actions = self._n_states * n_items
         self.action_space = spaces.Discrete(self._n_actions)
 
-        # 2 floats per background timer: [active, progress]
-        self._n_bg_obs = len(self._bg_durations) * 2
+        # observation:
+        #   completed matrix (n_items × n_states)
+        #   per background: [active (0/1), remaining (0-1)]
+        #   per action: [duration_this_episode (normalized 0-1)]
+        #   bool constraints (1 float each)
+        #   int constraints (1 float each, normalized)
+        #   enum constraints (one-hot each)
+        self._n_bg_obs     = len(self._bg_durations) * 2
+        self._n_dur_obs    = self._n_states  # one duration per state
+        self._max_duration = 200.0  # normalization cap for durations
 
         obs_size = (n_items * self._n_states
                     + self._n_bg_obs
+                    + self._n_dur_obs
                     + sum(1 for b in self._bools if b["observe"])
                     + sum(1 for i in self._ints  if i["observe"])
                     + sum(e["n_values"] for e in self._enums if e["observe"]))
@@ -138,6 +180,8 @@ class BaseLabEnv(gym.Env):
         super().reset(seed=seed)
         self._completed  = np.zeros((self.n_items, self._n_states), dtype=np.float32)
         self._step_count = 0
+        self._clock      = 0.0  # simulated clock in seconds
+
         for b in self._bools:
             b["value"] = False
         for i in self._ints:
@@ -145,8 +189,25 @@ class BaseLabEnv(gym.Env):
         for e in self._enums:
             e["value"] = 0
 
-        # background timers: {state_name: steps_remaining}  (-1 = not started)
-        self._bg_timers = {name: -1 for name in self._bg_durations}
+        # background timers: {state_name: end_time}  (-1 = not started)
+        self._bg_timers = {name: -1.0 for name in self._bg_durations}
+
+        # randomize action durations for this episode
+        self._episode_durations = {}
+        for name, (lo, hi) in self._action_durations.items():
+            if lo == hi:
+                self._episode_durations[name] = lo
+            else:
+                self._episode_durations[name] = self.np_random.uniform(lo, hi)
+
+        # randomize background durations for this episode
+        self._episode_bg_durations = {}
+        for name, (lo, hi) in self._bg_durations.items():
+            if lo == hi:
+                self._episode_bg_durations[name] = lo
+            else:
+                self._episode_bg_durations[name] = self.np_random.uniform(lo, hi)
+
         return self._obs(), {}
 
     def step(self, action: int):
@@ -157,12 +218,16 @@ class BaseLabEnv(gym.Env):
         reward     = self._rw_per_step
         terminated = False
 
+        # advance clock by action duration
+        action_dur = self._episode_durations.get(state_name, 10.0)
+        self._clock += action_dur
+
         # mark state complete
         if state_name in self._background:
             if state_name in self._bg_durations:
-                # start timer — doesn't complete until countdown reaches 0
-                lo, hi = self._bg_durations[state_name]
-                self._bg_timers[state_name] = self.np_random.integers(lo, hi + 1)
+                # start background timer — completes at clock + bg_duration
+                bg_dur = self._episode_bg_durations.get(state_name, 60.0)
+                self._bg_timers[state_name] = self._clock + bg_dur
             else:
                 # no duration — complete instantly
                 for t in range(self.n_items):
@@ -192,9 +257,7 @@ class BaseLabEnv(gym.Env):
         for e in self._enums:
             mapped = e["map"].get(state_name)
             if mapped is not None:
-                # support single value or list of acceptable values
                 if isinstance(mapped, list):
-                    # multiple options — no penalty if current value is acceptable
                     acceptable = {e["value_idx"].get(v, 0) for v in mapped}
                     if e["value"] not in acceptable:
                         new_val = e["value_idx"].get(mapped[0], 0)
@@ -215,17 +278,24 @@ class BaseLabEnv(gym.Env):
 
         self._step_count += 1
 
-        # tick background timers
-        for bg_name, timer in list(self._bg_timers.items()):
-            if timer > 0:
-                self._bg_timers[bg_name] -= 1
-            if self._bg_timers[bg_name] == 0:
-                # timer done — mark complete
-                si_bg = self._idx[bg_name]
-                for t in range(self.n_items):
-                    self._completed[t, si_bg] = 1.0
-                reward += self._rw_background
-                self._bg_timers[bg_name] = -1  # done
+        # check background timers — complete if clock passed end_time
+        self._resolve_bg_timers()
+
+        # auto-advance clock if no valid non-bg-dependent actions remain
+        # (robot is idle, waiting for background to finish)
+        mask_after = self.action_masks()
+        if not mask_after.any() and not terminated:
+            # find earliest background end_time
+            earliest = None
+            for bg_name, end_time in self._bg_timers.items():
+                if end_time > 0:
+                    if earliest is None or end_time < earliest:
+                        earliest = end_time
+            if earliest is not None and earliest > self._clock:
+                idle_seconds = earliest - self._clock
+                reward += self._rw_idle * idle_seconds  # penalize idle time
+                self._clock = earliest
+                self._resolve_bg_timers()
 
         goal_done = all(
             np.all(self._completed[:, self._idx[g]] == 1.0)
@@ -262,7 +332,7 @@ class BaseLabEnv(gym.Env):
 
             if name in self._background:
                 already_done = self._completed[0, si] == 1.0
-                timer_started = self._bg_timers.get(name, -1) >= 0
+                timer_started = self._bg_timers.get(name, -1.0) >= 0
                 requires_met = all(
                     self._completed[t, r] == 1.0
                     for t in range(self.n_items) for r in reqs
@@ -278,12 +348,21 @@ class BaseLabEnv(gym.Env):
                         mask[action] = True
         return mask
 
-    # ── Override in subclass for complex logic ──────────────────────────────
+    def _resolve_bg_timers(self):
+        """Complete any background timers whose end_time has been reached."""
+        for bg_name, end_time in list(self._bg_timers.items()):
+            if end_time > 0 and self._clock >= end_time:
+                si_bg = self._idx[bg_name]
+                for t in range(self.n_items):
+                    self._completed[t, si_bg] = 1.0
+                self._bg_timers[bg_name] = -1.0
+
+    # ── Override in subclass for complex logic ────────────────────────────
 
     def reward_shaping(self, state_name: str, item_i: int) -> float:
         return 0.0
 
-    # ── Internals ───────────────────────────────────────────────────────────
+    # ── Internals ─────────────────────────────────────────────────────────
 
     def _eval_reward_rules(self, state_name: str) -> float:
         total = 0.0
@@ -301,21 +380,24 @@ class BaseLabEnv(gym.Env):
     def _obs(self) -> np.ndarray:
         parts = [self._completed.flatten()]
 
-        # background timers: [active (0/1), progress (0-1)]
+        # background timers: [active (0/1), remaining (0-1)]
         for bg_name in self._bg_durations:
-            timer = self._bg_timers.get(bg_name, -1)
-            lo, hi = self._bg_durations[bg_name]
-            max_dur = hi
-            if timer > 0:
-                active = 1.0
-                progress = 1.0 - (timer / max_dur)  # 0 = just started, 1 = almost done
-            elif timer == 0:
-                active = 0.0
-                progress = 1.0
+            end_time = self._bg_timers.get(bg_name, -1.0)
+            max_dur  = self._episode_bg_durations.get(bg_name, 60.0)
+            if end_time > 0:
+                remaining = max(0.0, end_time - self._clock)
+                active   = 1.0
+                progress = 1.0 - (remaining / max_dur) if max_dur > 0 else 1.0
             else:
-                active = 0.0
-                progress = 0.0
+                active   = 0.0
+                progress = 0.0 if end_time < 0 else 1.0  # -1 = not started, done otherwise
             parts.append(np.array([active, progress], dtype=np.float32))
+
+        # action durations for this episode (normalized)
+        dur_obs = np.zeros(self._n_states, dtype=np.float32)
+        for i, name in enumerate(self._state_names):
+            dur_obs[i] = self._episode_durations.get(name, 10.0) / self._max_duration
+        parts.append(dur_obs)
 
         for b in self._bools:
             if b["observe"]:

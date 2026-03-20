@@ -2,185 +2,240 @@
 # Atomic style — each state is one recipe call.
 # No workflow phase methods needed — workflow.py just registers lambdas.
 # The RL learns optimal ordering from these dependencies.
+#
+# duration: [min, max] in seconds — randomized per episode during training.
+#   The RL sees each action's duration and learns to fill idle time.
 
 states:
 
   # ── Inspect & decap ───────────────────────────────────────────────────────
   - name: source_rack.pick
+    duration: [5, 15]
     requires: []
 
   - name: inspector.present
+    duration: [5, 15]
     requires: [source_rack.pick]
 
   - name: scale.place
+    duration: [5, 15]
     requires: [inspector.present]
 
   - name: scale.weight
+    duration: [5, 15]
     requires: [scale.place]
 
   - name: scale.pick
+    duration: [5, 15]
     requires: [scale.weight]
 
   - name: decapper.place
+    duration: [5, 15]
     requires: [scale.pick]
 
   - name: decapper.decap
+    duration: [5, 15]
     requires: [decapper.place]
 
   - name: cap_holder.place
+    duration: [5, 15]
     requires: [decapper.decap]
 
   - name: decapper.pick
+    duration: [5, 15]
     requires: [cap_holder.place]
 
   - name: working_rack.place
+    duration: [5, 15]
     requires: [decapper.pick]
 
   # ── Dose 40ml ─────────────────────────────────────────────────────────────
   - name: doser_40ml.immerse
+    duration: [5, 15]
     requires: [working_rack.place]
 
   - name: doser_40ml.dispense
+    duration: [5, 15]
     requires: [doser_40ml.immerse]
 
   - name: doser_40ml.retract
+    duration: [5, 15]
     requires: [doser_40ml.dispense]
 
   # ── Load shaker ───────────────────────────────────────────────────────────
   - name: working_rack.pick
+    duration: [5, 15]
     requires: [doser_40ml.retract]
 
   - name: decapper.place_cap
+    duration: [5, 15]
     requires: [working_rack.pick]
 
   - name: cap_holder.pick
+    duration: [5, 15]
     requires: [decapper.place_cap]
 
   - name: decapper.cap
+    duration: [5, 15]
     requires: [cap_holder.pick]
 
   - name: decapper.pick_cap
+    duration: [5, 15]
     requires: [decapper.cap]
 
   - name: shaker.place
+    duration: [5, 15]
     requires: [decapper.pick_cap]
 
   # ── Shake (background) ────────────────────────────────────────────────────
   - name: shaker.shake
     background: true
-    duration: shake_duration
-    # duration_steps: [5, 15]     # disabled — adds training noise, enable when model is stable
+    duration: [60, 180]
     requires: [shaker.place]
 
   # ── Feed caps (fills idle shake time) ─────────────────────────────────────
   - name: autosampler.above
+    duration: [5, 15]
     optional: true
     requires: []
 
   - name: autosampler.present_cap
+    duration: [5, 15]
     optional: true
     requires: [autosampler.above]
 
   - name: autosampler.pick
+    duration: [5, 15]
     optional: true
     requires: [autosampler.present_cap]
 
   - name: cap_feeder.place
+    duration: [5, 15]
     optional: true
     requires: [autosampler.pick]
 
   # ── Retrieve & decap ──────────────────────────────────────────────────────
   - name: shaker.pick
+    duration: [5, 15]
     requires: [shaker.shake]
 
   - name: inspector.present_2
+    duration: [5, 15]
     requires: [shaker.pick]
 
   - name: decapper.place_2
+    duration: [5, 15]
     requires: [inspector.present_2]
 
   - name: decapper.decap_2
+    duration: [5, 15]
     requires: [decapper.place_2]
 
   - name: cap_holder.place_2
+    duration: [5, 15]
     requires: [decapper.decap_2]
 
   - name: decapper.pick_2
+    duration: [5, 15]
     requires: [cap_holder.place_2]
 
   - name: working_rack.place_2
+    duration: [5, 15]
     requires: [decapper.pick_2]
 
   # ── Dose 2ml ──────────────────────────────────────────────────────────────
   - name: doser_40ml.immerse_2
+    duration: [5, 15]
     requires: [working_rack.place_2]
 
   - name: doser_40ml.dispense_2
+    duration: [5, 15]
     requires: [doser_40ml.immerse_2]
 
   - name: doser_40ml.retract_2
+    duration: [5, 15]
     requires: [doser_40ml.dispense_2]
 
   - name: doser_2ml_middle.immerse
+    duration: [5, 15]
     requires: [doser_40ml.retract_2]
 
   - name: doser_2ml_middle.dispense
+    duration: [5, 15]
     requires: [doser_2ml_middle.immerse]
 
   - name: doser_2ml_middle.retract
+    duration: [5, 15]
     requires: [doser_2ml_middle.dispense]
 
   - name: doser_2ml_end.immerse
+    duration: [5, 15]
     requires: [doser_2ml_middle.retract]
 
   - name: doser_2ml_end.dispense
+    duration: [5, 15]
     requires: [doser_2ml_end.immerse]
 
   - name: doser_2ml_end.retract
+    duration: [5, 15]
     requires: [doser_2ml_end.dispense]
 
   # ── Recap & return 40ml ───────────────────────────────────────────────────
   - name: working_rack.pick_2
+    duration: [5, 15]
     requires: [doser_2ml_end.retract]
 
   - name: decapper.place_final
+    duration: [5, 15]
     requires: [working_rack.pick_2]
 
   - name: cap_holder.pick_2
+    duration: [5, 15]
     requires: [decapper.place_final]
 
   - name: decapper.cap_final
+    duration: [5, 15]
     requires: [cap_holder.pick_2]
 
   - name: decapper.pick_final
+    duration: [5, 15]
     requires: [decapper.cap_final]
 
   - name: source_rack.place
+    duration: [5, 15]
     requires: [decapper.pick_final]
 
   # ── Cap & inspect 2ml ─────────────────────────────────────────────────────
   - name: rack_2ml.pick
+    duration: [5, 15]
     requires: [cap_feeder.place, doser_2ml_end.retract]
 
   - name: decapper.place_2ml
+    duration: [5, 15]
     requires: [rack_2ml.pick]
 
   - name: cap_feeder.pick
+    duration: [5, 15]
     requires: [decapper.place_2ml]
 
   - name: decapper.cap_2ml
+    duration: [5, 15]
     requires: [cap_feeder.pick]
 
   - name: decapper.pick_2ml
+    duration: [5, 15]
     requires: [decapper.cap_2ml]
 
   - name: decapper.vibrate
+    duration: [5, 15]
     requires: [decapper.pick_2ml]
 
   - name: inspector.present_3
+    duration: [5, 15]
     requires: [decapper.vibrate]
 
   - name: rack_2ml.place
+    duration: [5, 15]
     requires: [inspector.present_3]
 
 # ── Goal ──────────────────────────────────────────────────────────────────────

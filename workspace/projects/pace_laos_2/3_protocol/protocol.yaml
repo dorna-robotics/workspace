@@ -1,47 +1,58 @@
 # 3_protocol/protocol.yaml
 # Grouped states — each state is a phase with multiple recipe calls inside.
-# The RL learns optimal ordering of phases and tool batching.
+# The RL learns optimal ordering of phases, tool batching, and idle time filling.
+#
+# duration: [min, max] in seconds — randomized per episode during training.
+#   The RL sees each action's duration and learns to fill idle time with
+#   shorter actions. At inference, real durations are used.
 
 states:
 
   - name: inspected
     description: pick tube, inspect, weigh, decap, place in working rack
+    duration: [5, 15]
     requires: []
 
   - name: dosed_40ml
     description: dose solvent into working tube
+    duration: [5, 15]
     requires: [inspected]
 
   - name: loaded_shaker
     description: recap tube and place on shaker
+    duration: [5, 15]
     requires: [dosed_40ml]
 
   - name: shaken
     description: shaker runs — no robot needed, RL fills idle time
     background: true
-    duration: shake_duration
-    duration_steps: [3, 8]      # randomized per episode — RL learns time concept
+    duration: [60, 180]
     requires: [loaded_shaker]
 
   - name: cap_fed
     description: feed one cap from autosampler to cap holder
+    duration: [5, 15]
     optional: true
-    requires: []                # can happen anytime — RL decides when
+    requires: []
 
   - name: retrieved
     description: pick from shaker, inspect, decap, place in working rack
+    duration: [5, 15]
     requires: [shaken]
 
   - name: dosed_2ml
     description: dose from 40ml into 2ml vials
+    duration: [5, 15]
     requires: [retrieved]
 
   - name: recapped_final
     description: recap 40ml tube and return to source rack
+    duration: [5, 15]
     requires: [dosed_2ml]
 
   - name: capped_2ml
     description: cap 2ml vial, inspect, place in rack
+    duration: [5, 15]
     requires: [cap_fed, dosed_2ml]
 
 goal:
