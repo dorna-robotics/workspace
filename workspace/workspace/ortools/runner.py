@@ -134,9 +134,9 @@ class ORRunner:
                     if req in bg_active:
                         self._wait_bg(req, bg_active)
 
-                # ── Pre-check ─────────────────────────────────────────────
+                # ── Pre-checks ────────────────────────────────────────────
                 pre = s.get("pre")
-                if pre and not self._run_check(pre, item_i, "pre", state_name, on_fail):
+                if pre and not self._run_checks(pre, item_i, "pre", state_name, on_fail):
                     continue  # skip this task — user will resume after clearing
 
                 handler = self._handlers.get(state_name)
@@ -155,10 +155,10 @@ class ORRunner:
                         handler(item_i)
                     completed[state_name].add(item_i)
 
-                # ── Post-check ────────────────────────────────────────────
+                # ── Post-checks ───────────────────────────────────────────
                 post = s.get("post")
                 if post and not is_bg:
-                    self._run_check(post, item_i, "post", state_name, on_fail)
+                    self._run_checks(post, item_i, "post", state_name, on_fail)
 
             if not self._horizon:
                 break
@@ -175,32 +175,40 @@ class ORRunner:
 
     # ── Check execution ───────────────────────────────────────────────────────
 
-    def _run_check(
+    def _run_checks(
         self,
-        check_name: str,
+        checks,           # str or list[str] from protocol.yaml
         item_i: int,
         stage: str,
         state_name: str,
         on_fail: str,
     ) -> bool:
         """
-        Run a named check. Returns True if passed, False if failed.
-        On failure, shows a message and pauses the runtime.
+        Run one or more named checks. Returns True only if ALL pass.
+        Stops at the first failure, pauses the runtime, and returns False.
+
+        `checks` can be a single name or a list — both work:
+            pre: decapper_empty
+            pre: [decapper_empty, gripper_has_tube]
         """
-        fn = self._checks.get(check_name)
-        if fn is None:
-            return True  # no function registered → skip silently
+        names = [checks] if isinstance(checks, str) else checks
 
-        passed, msg = fn(item_i, self._cfg)
+        for name in names:
+            fn = self._checks.get(name)
+            if fn is None:
+                continue  # not registered → skip silently
 
-        if not passed:
-            self.rt.step(
-                f"Check failed [{stage}:{state_name}] — {msg} — waiting for user",
-                level="warning",
-            )
-            self.rt.pause()
+            passed, msg = fn(item_i, self._cfg)
 
-        return passed
+            if not passed:
+                self.rt.step(
+                    f"Check failed [{stage}:{state_name}:{name}] — {msg} — waiting for user",
+                    level="warning",
+                )
+                self.rt.pause()
+                return False
+
+        return True
 
     # ── Background wait helper ────────────────────────────────────────────────
 

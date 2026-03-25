@@ -28,8 +28,8 @@ states:
     description: recap tube and place on shaker
     duration: [5, 15]
     requires: [dosed_40ml]
-    pre:     shaker_slot_empty        # shaker slot clear before loading
-    post:    tube_on_shaker           # tube confirmed on shaker
+    pre:     [shaker_slot_empty, tube_in_working_rack]   # multiple conditions
+    post:    tube_on_shaker
     on_fail: pause
 
   - name: shaken
