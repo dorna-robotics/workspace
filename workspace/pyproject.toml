@@ -18,7 +18,8 @@ dependencies = [
   "tornado",            # server.py (AsyncServer with Tornado)
   "Jinja2",
   "mergedeep",
-  "pyserial", 
+  "pyserial",
+  "ortools>=9.4,<9.10", # CP-SAT scheduler — upper bound keeps numpy 1.x compatible
 ]
 
 [tool.setuptools.packages.find]
