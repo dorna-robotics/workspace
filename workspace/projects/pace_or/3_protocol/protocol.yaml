@@ -1,0 +1,58 @@
+# pace_or/3_protocol/protocol.yaml
+# Same protocol as pace_laos_2 — OR-Tools reads this to build the schedule.
+# No changes needed; the scheduler is generic over any protocol.yaml.
+#
+# duration: [min, max] used for CP-SAT makespan estimation (midpoint).
+# background: true means the robot is free while this state runs.
+
+states:
+
+  - name: inspected
+    description: pick tube, inspect, weigh, decap, place in working rack
+    duration: [5, 15]
+    requires: []
+
+  - name: dosed_40ml
+    description: dose solvent into working tube
+    duration: [5, 15]
+    requires: [inspected]
+
+  - name: loaded_shaker
+    description: recap tube and place on shaker
+    duration: [5, 15]
+    requires: [dosed_40ml]
+
+  - name: shaken
+    description: shaker runs — robot is free, OR-Tools fills idle time
+    background: true
+    duration: [60, 180]
+    requires: [loaded_shaker]
+
+  - name: cap_fed
+    description: feed one cap from autosampler to cap holder
+    duration: [5, 15]
+    requires: []
+
+  - name: retrieved
+    description: pick from shaker, inspect, decap, place in working rack
+    duration: [5, 15]
+    requires: [shaken]
+
+  - name: dosed_2ml
+    description: dose from 40ml into 2ml vials
+    duration: [5, 15]
+    requires: [retrieved]
+
+  - name: recapped_final
+    description: recap 40ml tube and return to source rack
+    duration: [5, 15]
+    requires: [dosed_2ml]
+
+  - name: capped_2ml
+    description: cap 2ml vial, inspect, place in rack
+    duration: [5, 15]
+    requires: [cap_fed, dosed_2ml]
+
+goal:
+  - recapped_final
+  - capped_2ml

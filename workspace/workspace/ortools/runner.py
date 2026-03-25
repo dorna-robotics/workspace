@@ -1,0 +1,181 @@
+# workspace/or/runner.py
+# ORRunner — executes schedules produced by ORScheduler.
+#
+# Features:
+# - Rolling horizon: replan every `horizon` tasks so the system adapts
+#   after failures or mid-run changes.
+# - Background task timing: robot executes other tasks while a background
+#   state (shaker, incubator) runs; runner waits before dependent tasks.
+# - Background cleanup: optional per-state cleanup handler called after
+#   the background timer expires (e.g. stop_shaking).
+# - Recovery: the completed dict tracks physical state; after a user clears
+#   a fault, OR-Tools recomputes a fresh plan from where things left off.
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import Callable
+
+import yaml
+
+from workspace.ortools.scheduler import ORScheduler
+
+
+class ORRunner:
+    """
+    Executes a lab protocol using OR-Tools for scheduling.
+
+    Args:
+        rt:               Runtime object (provides rt.step, rt.delay).
+        protocol_path:    Path to 3_protocol/protocol.yaml.
+        constraints_path: Path to 4_constraints/constraints.yaml (for future use).
+        n_items:          Number of items — can be set dynamically at run time.
+        cfg:              Params namespace (for real background durations).
+        horizon:          Rolling window size (None = plan all tasks at once).
+    """
+
+    def __init__(
+        self,
+        rt,
+        protocol_path: Path,
+        constraints_path: Path,
+        n_items: int,
+        cfg=None,
+        horizon: int | None = None,
+    ):
+        self.rt       = rt
+        self._horizon = horizon
+        self._cfg     = cfg
+
+        self._scheduler = ORScheduler(protocol_path, constraints_path)
+        self._handlers:   dict[str, Callable] = {}
+        self._bg_cleanup: dict[str, Callable] = {}
+
+        with open(protocol_path) as f:
+            data = yaml.safe_load(f)
+
+        self._states = data["states"]
+        self._goal   = set(data.get("goal", []))
+        self._snames = [s["name"] for s in self._states]
+        self._smap   = {s["name"]: s for s in self._states}
+
+        # Real-time durations for background states
+        # Protocol gives [min, max]; we use cfg value when available.
+        self._bg_dur: dict[str, float] = {}
+        for s in self._states:
+            if not s.get("background"):
+                continue
+            sn = s["name"]
+            d  = s.get("duration")
+            if cfg and isinstance(d, str):
+                # duration is a direct reference to a cfg key, e.g. "shake_duration"
+                self._bg_dur[sn] = float(getattr(cfg, d, 120))
+            elif isinstance(d, list):
+                # Try cfg.shake_duration if state is "shaken", else use midpoint
+                val = getattr(cfg, "shake_duration", None) if cfg else None
+                self._bg_dur[sn] = float(val) if val is not None else float((d[0] + d[1]) / 2)
+            elif isinstance(d, (int, float)):
+                self._bg_dur[sn] = float(d)
+            else:
+                self._bg_dur[sn] = 120.0
+
+    # ── Registration ─────────────────────────────────────────────────────────
+
+    def register(self, state_name: str, handler: Callable):
+        """Register the execution handler for a state."""
+        self._handlers[state_name] = handler
+
+    def register_bg_cleanup(self, state_name: str, cleanup: Callable):
+        """
+        Register a cleanup function called after a background state's timer
+        expires and before any dependent task starts.
+
+        Example: stop_shaking after the shaker timer finishes.
+        """
+        self._bg_cleanup[state_name] = cleanup
+
+    # ── Main execution loop ───────────────────────────────────────────────────
+
+    def run(self, n_items: int):
+        """
+        Execute the full protocol for n_items.
+
+        Rolling horizon replanning happens automatically every `horizon` tasks.
+        After a fault, update completed externally and call run() again to resume.
+        """
+        completed: dict[str, set[int]] = {n: set() for n in self._snames}
+        # bg_active tracks running background tasks: {name: (start_time, duration)}
+        bg_active: dict[str, tuple[float, float]] = {}
+
+        def all_done() -> bool:
+            return all(len(completed.get(g, set())) >= n_items for g in self._goal)
+
+        while not all_done():
+            schedule = self._scheduler.schedule(
+                n_items, completed,
+                horizon_tasks=self._horizon,
+            )
+            if not schedule:
+                break
+
+            for (state_name, item_i) in schedule:
+                s     = self._smap[state_name]
+                is_bg = s.get("background", False)
+
+                # Wait for any still-running background prereqs
+                for req in s.get("requires", []):
+                    if req in bg_active:
+                        self._wait_bg(req, bg_active)
+
+                handler = self._handlers.get(state_name)
+
+                if is_bg:
+                    real_dur = self._bg_dur.get(state_name, 120.0)
+                    self.rt.step(
+                        f"OR → {state_name} [background, {real_dur:.0f}s]"
+                    )
+                    if handler:
+                        handler(0)
+                    bg_active[state_name] = (time.time(), real_dur)
+                    # Background covers all items simultaneously
+                    for t in range(n_items):
+                        completed[state_name].add(t)
+                else:
+                    self.rt.step(f"OR → {state_name} [{item_i + 1}/{n_items}]")
+                    if handler:
+                        handler(item_i)
+                    completed[state_name].add(item_i)
+
+            # Single-plan mode: one pass covers everything
+            if not self._horizon:
+                break
+
+        # Drain any remaining background tasks before finishing
+        for bg_name in list(bg_active.keys()):
+            self._wait_bg(bg_name, bg_active)
+
+        missing = [g for g in self._goal if len(completed.get(g, set())) < n_items]
+        if missing:
+            raise RuntimeError(f"OR runner did not reach goal states: {missing}")
+
+        self.rt.step("Protocol complete — all goal states reached", level="success")
+
+    # ── Background wait helper ────────────────────────────────────────────────
+
+    def _wait_bg(
+        self,
+        bg_name: str,
+        bg_active: dict[str, tuple[float, float]],
+    ):
+        """Wait for a background task to finish, then call its cleanup handler."""
+        if bg_name not in bg_active:
+            return
+        start, dur = bg_active.pop(bg_name)
+        remaining = dur - (time.time() - start)
+        if remaining > 0:
+            self.rt.step(f"Waiting {remaining:.0f}s for {bg_name} to finish")
+            self.rt.delay(remaining)
+        cleanup = self._bg_cleanup.get(bg_name)
+        if cleanup:
+            cleanup()

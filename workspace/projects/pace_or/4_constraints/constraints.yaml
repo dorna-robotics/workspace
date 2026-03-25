@@ -1,0 +1,22 @@
+# pace_or/4_constraints/constraints.yaml
+# Tool map for OR-Tools projects.
+# Reward fields (per_step, goal_state, etc.) are not used by OR-Tools
+# but kept for format compatibility if needed in future hybrid mode.
+#
+# The `map` block is read by the workflow for tool enforcement via _with().
+
+constraints:
+
+  - name: current_tool
+    type: enum
+    options: [gripper, needle, feeder_tool, gripper_2ml]
+    map:
+      inspected:      gripper
+      dosed_40ml:     needle
+      loaded_shaker:  gripper
+      shaken:         feeder_tool
+      cap_fed:        feeder_tool
+      retrieved:      gripper
+      dosed_2ml:      needle
+      recapped_final: gripper
+      capped_2ml:     gripper_2ml
