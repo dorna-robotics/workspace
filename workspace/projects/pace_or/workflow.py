@@ -1,13 +1,23 @@
 # pace_or/workflow.py — grouped states, OR-Tools scheduler.
 # Handlers are identical to pace_laos_2.
 # Key differences vs pace_laos_2:
-#   - Imports BaseWorkflow from workspace.or.workflow (no policy.zip)
+#   - Imports BaseWorkflow from workspace.ortools.workflow (no policy.zip)
 #   - shaken handler only STARTS the shakers; runner handles timing + cleanup
 #   - n_items is a constructor parameter (easy to pass from camera at runtime)
+#   - Pre/post checks imported from 5_verify/checks.py and registered here
 
 import time
 from pathlib import Path
 from workspace.ortools.workflow import BaseWorkflow
+from verify.checks import (
+    source_tube_present,
+    tube_in_working_rack,
+    shaker_slot_empty,
+    tube_on_shaker,
+    cap_holder_empty,
+    cap_in_holder,
+    tube_in_2ml_rack,
+)
 
 _BASE_DIR = Path(__file__).parent
 
@@ -153,6 +163,16 @@ class Workflow(BaseWorkflow):
 
         # Cleanup: stop shakers after runner's timer expires
         self.runner.register_bg_cleanup("shaken", stop_shaken)
+
+        # ── Register checks (pre/post from protocol.yaml) ─────────────────
+        rc = self.runner.register_check
+        rc("source_tube_present",  source_tube_present)
+        rc("tube_in_working_rack", tube_in_working_rack)
+        rc("shaker_slot_empty",    shaker_slot_empty)
+        rc("tube_on_shaker",       tube_on_shaker)
+        rc("cap_holder_empty",     cap_holder_empty)
+        rc("cap_in_holder",        cap_in_holder)
+        rc("tube_in_2ml_rack",     tube_in_2ml_rack)
 
 
 def workflow_fn(*, workspace, core):

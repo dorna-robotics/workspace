@@ -1,15 +1,16 @@
-# workspace/or/runner.py
+# workspace/ortools/runner.py
 # ORRunner — executes schedules produced by ORScheduler.
 #
 # Features:
+# - Pre/post checks: runs verification functions before/after each action.
+#   Checks are defined in 5_verify/checks.py and registered via register_check().
+# - on_fail: "pause" stops the run and waits for user to clear the issue.
 # - Rolling horizon: replan every `horizon` tasks so the system adapts
 #   after failures or mid-run changes.
 # - Background task timing: robot executes other tasks while a background
 #   state (shaker, incubator) runs; runner waits before dependent tasks.
 # - Background cleanup: optional per-state cleanup handler called after
 #   the background timer expires (e.g. stop_shaking).
-# - Recovery: the completed dict tracks physical state; after a user clears
-#   a fault, OR-Tools recomputes a fresh plan from where things left off.
 
 from __future__ import annotations
 
@@ -27,10 +28,10 @@ class ORRunner:
     Executes a lab protocol using OR-Tools for scheduling.
 
     Args:
-        rt:               Runtime object (provides rt.step, rt.delay).
+        rt:               Runtime object (provides rt.step, rt.delay, rt.pause).
         protocol_path:    Path to 3_protocol/protocol.yaml.
-        constraints_path: Path to 4_constraints/constraints.yaml (for future use).
-        n_items:          Number of items — can be set dynamically at run time.
+        constraints_path: Path to 4_constraints/constraints.yaml.
+        n_items:          Number of items — set dynamically at run time.
         cfg:              Params namespace (for real background durations).
         horizon:          Rolling window size (None = plan all tasks at once).
     """
@@ -48,9 +49,10 @@ class ORRunner:
         self._horizon = horizon
         self._cfg     = cfg
 
-        self._scheduler = ORScheduler(protocol_path, constraints_path)
+        self._scheduler  = ORScheduler(protocol_path, constraints_path)
         self._handlers:   dict[str, Callable] = {}
         self._bg_cleanup: dict[str, Callable] = {}
+        self._checks:     dict[str, Callable] = {}  # name → fn(item_i, cfg) -> (bool, str)
 
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
@@ -61,7 +63,6 @@ class ORRunner:
         self._smap   = {s["name"]: s for s in self._states}
 
         # Real-time durations for background states
-        # Protocol gives [min, max]; we use cfg value when available.
         self._bg_dur: dict[str, float] = {}
         for s in self._states:
             if not s.get("background"):
@@ -69,10 +70,8 @@ class ORRunner:
             sn = s["name"]
             d  = s.get("duration")
             if cfg and isinstance(d, str):
-                # duration is a direct reference to a cfg key, e.g. "shake_duration"
                 self._bg_dur[sn] = float(getattr(cfg, d, 120))
             elif isinstance(d, list):
-                # Try cfg.shake_duration if state is "shaken", else use midpoint
                 val = getattr(cfg, "shake_duration", None) if cfg else None
                 self._bg_dur[sn] = float(val) if val is not None else float((d[0] + d[1]) / 2)
             elif isinstance(d, (int, float)):
@@ -86,13 +85,20 @@ class ORRunner:
         """Register the execution handler for a state."""
         self._handlers[state_name] = handler
 
-    def register_bg_cleanup(self, state_name: str, cleanup: Callable):
+    def register_check(self, name: str, fn: Callable):
         """
-        Register a cleanup function called after a background state's timer
-        expires and before any dependent task starts.
+        Register a verification check function.
 
-        Example: stop_shaking after the shaker timer finishes.
+        fn signature: (item_i: int, cfg) -> (bool, str)
+          - bool:  True = passed, False = failed
+          - str:   human-readable status message shown in the dashboard
+
+        Check names are referenced in protocol.yaml under pre/post fields.
         """
+        self._checks[name] = fn
+
+    def register_bg_cleanup(self, state_name: str, cleanup: Callable):
+        """Register a cleanup function called after a background state finishes."""
         self._bg_cleanup[state_name] = cleanup
 
     # ── Main execution loop ───────────────────────────────────────────────────
@@ -105,7 +111,6 @@ class ORRunner:
         After a fault, update completed externally and call run() again to resume.
         """
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
-        # bg_active tracks running background tasks: {name: (start_time, duration)}
         bg_active: dict[str, tuple[float, float]] = {}
 
         def all_done() -> bool:
@@ -120,25 +125,28 @@ class ORRunner:
                 break
 
             for (state_name, item_i) in schedule:
-                s     = self._smap[state_name]
-                is_bg = s.get("background", False)
+                s       = self._smap[state_name]
+                is_bg   = s.get("background", False)
+                on_fail = s.get("on_fail", "pause")
 
                 # Wait for any still-running background prereqs
                 for req in s.get("requires", []):
                     if req in bg_active:
                         self._wait_bg(req, bg_active)
 
+                # ── Pre-check ─────────────────────────────────────────────
+                pre = s.get("pre")
+                if pre and not self._run_check(pre, item_i, "pre", state_name, on_fail):
+                    continue  # skip this task — user will resume after clearing
+
                 handler = self._handlers.get(state_name)
 
                 if is_bg:
                     real_dur = self._bg_dur.get(state_name, 120.0)
-                    self.rt.step(
-                        f"OR → {state_name} [background, {real_dur:.0f}s]"
-                    )
+                    self.rt.step(f"OR → {state_name} [background, {real_dur:.0f}s]")
                     if handler:
                         handler(0)
                     bg_active[state_name] = (time.time(), real_dur)
-                    # Background covers all items simultaneously
                     for t in range(n_items):
                         completed[state_name].add(t)
                 else:
@@ -147,7 +155,11 @@ class ORRunner:
                         handler(item_i)
                     completed[state_name].add(item_i)
 
-            # Single-plan mode: one pass covers everything
+                # ── Post-check ────────────────────────────────────────────
+                post = s.get("post")
+                if post and not is_bg:
+                    self._run_check(post, item_i, "post", state_name, on_fail)
+
             if not self._horizon:
                 break
 
@@ -160,6 +172,35 @@ class ORRunner:
             raise RuntimeError(f"OR runner did not reach goal states: {missing}")
 
         self.rt.step("Protocol complete — all goal states reached", level="success")
+
+    # ── Check execution ───────────────────────────────────────────────────────
+
+    def _run_check(
+        self,
+        check_name: str,
+        item_i: int,
+        stage: str,
+        state_name: str,
+        on_fail: str,
+    ) -> bool:
+        """
+        Run a named check. Returns True if passed, False if failed.
+        On failure, shows a message and pauses the runtime.
+        """
+        fn = self._checks.get(check_name)
+        if fn is None:
+            return True  # no function registered → skip silently
+
+        passed, msg = fn(item_i, self._cfg)
+
+        if not passed:
+            self.rt.step(
+                f"Check failed [{stage}:{state_name}] — {msg} — waiting for user",
+                level="warning",
+            )
+            self.rt.pause()
+
+        return passed
 
     # ── Background wait helper ────────────────────────────────────────────────
 

@@ -1,9 +1,11 @@
 # pace_or/3_protocol/protocol.yaml
-# Same protocol as pace_laos_2 — OR-Tools reads this to build the schedule.
-# No changes needed; the scheduler is generic over any protocol.yaml.
+# OR-Tools reads this to build the schedule.
 #
-# duration: [min, max] used for CP-SAT makespan estimation (midpoint).
-# background: true means the robot is free while this state runs.
+# pre:     check function name to run BEFORE the action (must pass to proceed)
+# post:    check function name to run AFTER the action (verifies success)
+# on_fail: what to do if a check fails — "pause" stops and waits for user
+#
+# Check functions are defined in 5_verify/checks.py and registered in workflow.py.
 
 states:
 
@@ -11,16 +13,24 @@ states:
     description: pick tube, inspect, weigh, decap, place in working rack
     duration: [5, 15]
     requires: []
+    pre:     source_tube_present      # tube is at source position
+    post:    tube_in_working_rack     # tube ended up in working rack
+    on_fail: pause
 
   - name: dosed_40ml
     description: dose solvent into working tube
     duration: [5, 15]
     requires: [inspected]
+    pre:     tube_in_working_rack
+    on_fail: pause
 
   - name: loaded_shaker
     description: recap tube and place on shaker
     duration: [5, 15]
     requires: [dosed_40ml]
+    pre:     shaker_slot_empty        # shaker slot clear before loading
+    post:    tube_on_shaker           # tube confirmed on shaker
+    on_fail: pause
 
   - name: shaken
     description: shaker runs — robot is free, OR-Tools fills idle time
@@ -32,26 +42,37 @@ states:
     description: feed one cap from autosampler to cap holder
     duration: [5, 15]
     requires: []
+    pre:     cap_holder_empty         # cap holder slot is empty
+    on_fail: pause
 
   - name: retrieved
     description: pick from shaker, inspect, decap, place in working rack
     duration: [5, 15]
     requires: [shaken]
+    pre:     tube_on_shaker
+    post:    tube_in_working_rack
+    on_fail: pause
 
   - name: dosed_2ml
     description: dose from 40ml into 2ml vials
     duration: [5, 15]
     requires: [retrieved]
+    pre:     tube_in_working_rack
+    on_fail: pause
 
   - name: recapped_final
     description: recap 40ml tube and return to source rack
     duration: [5, 15]
     requires: [dosed_2ml]
+    on_fail: pause
 
   - name: capped_2ml
     description: cap 2ml vial, inspect, place in rack
     duration: [5, 15]
     requires: [cap_fed, dosed_2ml]
+    pre:     cap_in_holder
+    post:    tube_in_2ml_rack
+    on_fail: pause
 
 goal:
   - recapped_final
