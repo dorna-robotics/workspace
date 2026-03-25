@@ -11,7 +11,7 @@ _BASE_DIR = Path(__file__).parent
 class Workflow(BaseWorkflow):
 
     def __init__(self, workspace, core):
-        super().__init__(workspace, core, _BASE_DIR, n_items=1)
+        super().__init__(workspace, core, _BASE_DIR, n_items=2)
 
     def _register_all(self):
         r   = self.runner.register
