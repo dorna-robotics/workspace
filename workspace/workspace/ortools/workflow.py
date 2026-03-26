@@ -81,11 +81,10 @@ class BaseWorkflow:
         self._enum_state:    dict[str, str | None] = {}
         self._enum_handlers: dict[str, Callable]   = {}
 
-        protocol    = base_dir / "3_protocol" / "protocol.yaml"
-        constraints = base_dir / "4_constraints" / "constraints.yaml"
+        protocol = base_dir / "3_protocol" / "protocol.yaml"
 
         self.runner = ORRunner(
-            self.rt, protocol, constraints, n_items,
+            self.rt, protocol, n_items,
             cfg=self.cfg, horizon=horizon,
         )
         self._register_all()

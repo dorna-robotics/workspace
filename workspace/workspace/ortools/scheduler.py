@@ -27,12 +27,12 @@ class ORScheduler:
                     unless A is a background state — then it's global)
 
     Usage:
-        sched = ORScheduler(protocol_path, constraints_path)
+        sched = ORScheduler(protocol_path)
         order = sched.schedule(n_items=4, completed={...})
         # order is [(state_name, item_index), ...] in execution order
     """
 
-    def __init__(self, protocol_path: Path, constraints_path: Path | None = None):
+    def __init__(self, protocol_path: Path):
         with open(protocol_path) as f:
             proto = yaml.safe_load(f)
 

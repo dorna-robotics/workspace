@@ -40,7 +40,6 @@ class ORRunner:
         self,
         rt,
         protocol_path: Path,
-        constraints_path: Path,
         n_items: int,
         cfg=None,
         horizon: int | None = None,
@@ -49,7 +48,7 @@ class ORRunner:
         self._horizon = horizon
         self._cfg     = cfg
 
-        self._scheduler  = ORScheduler(protocol_path, constraints_path)
+        self._scheduler  = ORScheduler(protocol_path)
         self._handlers:   dict[str, Callable] = {}
         self._bg_cleanup: dict[str, Callable] = {}
         self._checks:     dict[str, Callable] = {}  # name → fn(item_i, cfg) -> (bool, str)
