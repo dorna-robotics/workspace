@@ -1,11 +1,13 @@
 # pace_or/3_protocol/protocol.yaml
-# OR-Tools reads this to build the schedule.
+# Defines the full protocol: states, dependencies, tool, checks.
 #
-# pre:     check function name to run BEFORE the action (must pass to proceed)
-# post:    check function name to run AFTER the action (verifies success)
+# tool:    which tool the robot must hold for this state
+# pre:     check name(s) to run BEFORE executing (single or list)
+# post:    check name(s) to run AFTER executing  (single or list)
 # on_fail: what to do if a check fails — "pause" stops and waits for user
 #
-# Check functions are defined in 5_verify/checks.py and registered in workflow.py.
+# Check functions live in 3_protocol/checks.py (same folder).
+# Step functions live in steps.py.
 
 states:
 
@@ -13,14 +15,16 @@ states:
     description: pick tube, inspect, weigh, decap, place in working rack
     duration: [5, 15]
     requires: []
-    pre:     source_tube_present      # tube is at source position
-    post:    tube_in_working_rack     # tube ended up in working rack
+    tool:    gripper
+    pre:     source_tube_present
+    post:    tube_in_working_rack
     on_fail: pause
 
   - name: dosed_40ml
     description: dose solvent into working tube
     duration: [5, 15]
     requires: [inspected]
+    tool:    needle
     pre:     tube_in_working_rack
     on_fail: pause
 
@@ -28,7 +32,8 @@ states:
     description: recap tube and place on shaker
     duration: [5, 15]
     requires: [dosed_40ml]
-    pre:     [shaker_slot_empty, tube_in_working_rack]   # multiple conditions
+    tool:    gripper
+    pre:     [shaker_slot_empty, tube_in_working_rack]
     post:    tube_on_shaker
     on_fail: pause
 
@@ -37,18 +42,21 @@ states:
     background: true
     duration: [60, 180]
     requires: [loaded_shaker]
+    tool:    feeder_tool
 
   - name: cap_fed
     description: feed one cap from autosampler to cap holder
     duration: [5, 15]
     requires: []
-    pre:     cap_holder_empty         # cap holder slot is empty
+    tool:    feeder_tool
+    pre:     cap_holder_empty
     on_fail: pause
 
   - name: retrieved
     description: pick from shaker, inspect, decap, place in working rack
     duration: [5, 15]
     requires: [shaken]
+    tool:    gripper
     pre:     tube_on_shaker
     post:    tube_in_working_rack
     on_fail: pause
@@ -57,6 +65,7 @@ states:
     description: dose from 40ml into 2ml vials
     duration: [5, 15]
     requires: [retrieved]
+    tool:    needle
     pre:     tube_in_working_rack
     on_fail: pause
 
@@ -64,12 +73,14 @@ states:
     description: recap 40ml tube and return to source rack
     duration: [5, 15]
     requires: [dosed_2ml]
+    tool:    gripper
     on_fail: pause
 
   - name: capped_2ml
     description: cap 2ml vial, inspect, place in rack
     duration: [5, 15]
     requires: [cap_fed, dosed_2ml]
+    tool:    gripper_2ml
     pre:     cap_in_holder
     post:    tube_in_2ml_rack
     on_fail: pause

@@ -88,6 +88,7 @@ class BaseWorkflow:
             cfg=self.cfg, horizon=horizon,
         )
         self._register_all()
+        self._apply_tool_enforcement()
 
     # ── Loading ──────────────────────────────────────────────────────────────
 
@@ -148,6 +149,34 @@ class BaseWorkflow:
     def run(self):
         self.runner.run(self.n)
         self._release_all()
+
+    def _apply_tool_enforcement(self):
+        """
+        Reads tool: field from protocol.yaml and auto-wraps each registered
+        handler with tool pickup/place logic. Called after _register_all().
+        No tool: field = no wrapping, no tool swap.
+        """
+        with open(self._base_dir / "3_protocol" / "protocol.yaml") as f:
+            data = yaml.safe_load(f)
+
+        tool_map = {s["name"]: s["tool"] for s in data["states"] if s.get("tool")}
+        if not tool_map:
+            return
+
+        rcp = self.rcp
+
+        def swap_tool(old, new):
+            if old:
+                rcp[old].place()
+            if new:
+                rcp[new].pick()
+
+        self.on_enum_change("tool", handler=swap_tool)
+
+        for state_name, tool_name in tool_map.items():
+            handler = self.runner._handlers.get(state_name)
+            if handler:
+                self.runner._handlers[state_name] = self._with("tool", tool_name, handler)
 
     def _register_all(self):
         raise NotImplementedError
