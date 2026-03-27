@@ -120,21 +120,16 @@ def make_steps(rcp, cfg, rt, n):
         rcp[cfg.rack_2ml_end[i][0]].place(cfg.rack_2ml_end[i][1])
 
     # ── Return ────────────────────────────────────────────────────────────────
+    # Value is either fn  or  (fn, cleanup_fn) for background states.
 
-    steps = {
+    return {
         "inspected":      inspected,
         "dosed_40ml":     dosed_40ml,
         "loaded_shaker":  loaded_shaker,
-        "shaken":         shaken,
+        "shaken":         (shaken, stop_shaken),   # cleanup called after timer
         "cap_fed":        cap_fed,
         "retrieved":      retrieved,
         "dosed_2ml":      dosed_2ml,
         "recapped_final": recapped_final,
         "capped_2ml":     capped_2ml,
     }
-
-    cleanup = {
-        "shaken": stop_shaken,
-    }
-
-    return steps, cleanup

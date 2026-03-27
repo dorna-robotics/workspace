@@ -80,9 +80,18 @@ class ORRunner:
 
     # ── Registration ─────────────────────────────────────────────────────────
 
-    def register(self, state_name: str, handler: Callable):
-        """Register the execution handler for a state."""
+    def register(self, state_name: str, handler: Callable, cleanup: Callable = None):
+        """
+        Register the execution handler for a state.
+
+        cleanup: optional function called after a background state's timer
+                 expires (e.g. stop_shaking). Only relevant for background states.
+
+                 runner.register("shaken", shaken, cleanup=stop_shaken)
+        """
         self._handlers[state_name] = handler
+        if cleanup:
+            self._bg_cleanup[state_name] = cleanup
 
     def register_check(self, name: str, fn: Callable):
         """
@@ -95,10 +104,6 @@ class ORRunner:
         Check names are referenced in protocol.yaml under pre/post fields.
         """
         self._checks[name] = fn
-
-    def register_bg_cleanup(self, state_name: str, cleanup: Callable):
-        """Register a cleanup function called after a background state finishes."""
-        self._bg_cleanup[state_name] = cleanup
 
     # ── Main execution loop ───────────────────────────────────────────────────
 

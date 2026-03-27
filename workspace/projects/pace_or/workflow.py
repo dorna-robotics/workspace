@@ -28,13 +28,13 @@ class Workflow(BaseWorkflow):
         super().__init__(workspace, core, _BASE_DIR, n_items=n_items, horizon=horizon)
 
     def _register_all(self):
-        steps, cleanup = make_steps(self.rcp, self.cfg, self.rt, self.n)
+        steps = make_steps(self.rcp, self.cfg, self.rt, self.n)
 
         for name, fn in steps.items():
-            self.runner.register(name, fn)
-
-        for name, fn in cleanup.items():
-            self.runner.register_bg_cleanup(name, fn)
+            if isinstance(fn, tuple):
+                self.runner.register(name, fn[0], cleanup=fn[1])
+            else:
+                self.runner.register(name, fn)
 
         rc = self.runner.register_check
         rc("source_tube_present",  source_tube_present)
