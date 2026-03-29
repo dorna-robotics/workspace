@@ -755,7 +755,7 @@ function updatePendantUI() {
   // Step message
   const stepEl = $("pendantStep");
   if (stepEl) {
-    if (_lastStepLabel && running) {
+    if (_lastStepLabel && launched) {
       stepEl.textContent = _lastStepLabel;
       stepEl.className = `pendant-step${_lastStepLevel === "error" ? " err" : _lastStepLevel === "warning" ? " warn" : ""}`;
       stepEl.style.display = "";
