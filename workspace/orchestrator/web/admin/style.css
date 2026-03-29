@@ -468,6 +468,8 @@ a:hover { color: var(--accent-h); }
   color: var(--text);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  pointer-events: auto;
 }
 .toast.ok   { border-color: rgba(63,185,80,0.35);  color: var(--green); background: rgba(63,185,80,0.06); }
 .toast.bad  { border-color: rgba(248,81,73,0.35);   color: var(--red);   background: rgba(248,81,73,0.06); }

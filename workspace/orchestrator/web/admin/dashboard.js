@@ -27,8 +27,9 @@ function toast(msg, type = "ok") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
   el.textContent = msg;
+  el.addEventListener("click", () => el.remove());
   toastArea.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), type === "bad" ? 7000 : 5000);
 }
 
 // ---- API ----
@@ -219,7 +220,7 @@ function render() {
           <strong>${esc(wsViewerUrl(ws).replace(/^https?:\/\//, ""))}</strong>
         </span>
         ${uptime ? `<span class="wc-meta-item"><span>Up</span> <strong>${esc(uptime)}</strong></span>` : ""}
-        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ error</span>` : ""}
+        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ ${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
       </div>
       ${(() => {
         const steps = st.step?.steps;
@@ -241,7 +242,7 @@ function render() {
                <button class="btn btn-sm btn-danger action-btn" data-cmd="kill" title="Kill process">Kill</button>`
             : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start"   title="Start"   ${running  ? "disabled" : ""}><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
                <button class="btn btn-sm action-btn"             data-cmd="pause"   title="Pause"   ${!running ? "disabled" : ""}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/></svg></button>
-               <button class="btn btn-sm action-btn"             data-cmd="relaunch" title="Relaunch"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+               <button class="btn btn-sm action-btn"             data-cmd="relaunch" title="Restart"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill"    title="Kill process">Kill</button>`
           }
           <button class="btn btn-sm btn-icon kwargs-toggle-btn" title="Parameters"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -259,11 +260,12 @@ function render() {
       });
     }
 
-    // Action buttons (launch / kill / relaunch)
+    // Action buttons (launch / kill / restart)
     el.querySelectorAll(".action-btn").forEach(btn => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         const cmd = btn.dataset.cmd;
+        if (cmd === "kill" && !confirm(`Stop "${ws.name}"? This will kill the process.`)) return;
         btn.disabled = true;
         try {
           let kwargs = undefined;

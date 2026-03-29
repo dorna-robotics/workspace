@@ -48,8 +48,9 @@ function toast(msg, type = "ok") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
   el.textContent = msg;
+  el.addEventListener("click", () => el.remove());
   toastArea.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), type === "bad" ? 7000 : 5000);
 }
 
 // ---- Log colorizer ----
@@ -424,6 +425,7 @@ function renderControls(state, launched, running) {
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
+      if (cmd === "kill" && !confirm("Stop the workspace? This will kill the process.")) return;
       b.disabled = true;
       try {
         const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
@@ -455,7 +457,7 @@ function renderControls(state, launched, running) {
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("Relaunch", "relaunch");
+    addBtn("Restart", "relaunch");
     addBtn("Kill",     "kill",     { danger: true });
   }
 
@@ -775,6 +777,7 @@ function updatePendantUI() {
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   btn.addEventListener("click", async () => {
     const cmd = btn.dataset.cmd;
+    if (cmd === "kill" && !confirm("Stop the workspace?")) return;
     btn.disabled = true;
     btn.classList.add("pendant-pressed");
     pendantClickSound();
