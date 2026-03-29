@@ -282,6 +282,8 @@ function renderStep(step, running) {
 
   const steps = step?.steps;
   if (!steps || !steps.length) {
+    _lastStepLabel = "";
+    _lastStepLevel = "info";
     if (_prevStepCount > 0) {
       el.innerHTML = `<div class="step-empty">No steps yet</div>`;
       if (badge) badge.textContent = "";
@@ -317,10 +319,12 @@ function renderStep(step, running) {
   // Auto-scroll to latest
   el.scrollTop = el.scrollHeight;
 
-  // Check for new warning/error level steps → show banner
+  // Track last step for pendant display
   const lastStep = steps[steps.length - 1];
   const lastLevel = (typeof lastStep === "object" && lastStep.level) ? lastStep.level : "info";
   const lastLabel = typeof lastStep === "string" ? lastStep : (lastStep.label || "");
+  _lastStepLabel = lastLabel;
+  _lastStepLevel = lastLevel;
   if ((lastLevel === "error" || lastLevel === "warning") && lastLabel !== _lastBannerMsg) {
     _lastBannerMsg = lastLabel;
     _showBanner(lastLabel, lastLevel);
@@ -330,6 +334,8 @@ function renderStep(step, running) {
 }
 
 let _lastBannerMsg = "";
+let _lastStepLabel = "";
+let _lastStepLevel = "info";
 
 function _showBanner(msg, level) {
   // Main banner
@@ -744,6 +750,18 @@ function updatePendantUI() {
     stateEl.setAttribute("data-variant", variant);
     const textEl = stateEl.querySelector(".pendant-state-text");
     if (textEl) textEl.textContent = state || "—";
+  }
+
+  // Step message
+  const stepEl = $("pendantStep");
+  if (stepEl) {
+    if (_lastStepLabel && running) {
+      stepEl.textContent = _lastStepLabel;
+      stepEl.className = `pendant-step${_lastStepLevel === "error" ? " err" : _lastStepLevel === "warning" ? " warn" : ""}`;
+      stepEl.style.display = "";
+    } else {
+      stepEl.style.display = "none";
+    }
   }
 
   // Enable/disable buttons based on state

@@ -221,6 +221,15 @@ function render() {
         ${uptime ? `<span class="wc-meta-item"><span>Up</span> <strong>${esc(uptime)}</strong></span>` : ""}
         ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ error</span>` : ""}
       </div>
+      ${(() => {
+        const steps = st.step?.steps;
+        if (!steps || !steps.length) return "";
+        const last = steps[steps.length - 1];
+        const label = typeof last === "string" ? last : (last.label || "");
+        const level = (typeof last === "object" && last.level) || "info";
+        if (!label) return "";
+        return `<div class="wc-step-msg${level === "error" ? " err" : level === "warning" ? " warn" : ""}" title="${esc(label)}">${esc(label)}</div>`;
+      })()}
       <div class="wc-footer">
         <a class="btn btn-primary btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
         <div class="spacer"></div>

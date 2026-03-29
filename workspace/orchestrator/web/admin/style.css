@@ -799,6 +799,21 @@ a:hover { color: var(--accent-h); }
 }
 
 /* Alarm inside pendant */
+/* Step message in pendant */
+.pendant-step {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--muted);
+  max-width: min(90vw, 500px);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+.pendant-step.warn { color: var(--amber); }
+.pendant-step.err  { color: var(--red); }
+
 .pendant-alarm {
   display: flex;
   align-items: center;
