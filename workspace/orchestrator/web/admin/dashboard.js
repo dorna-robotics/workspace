@@ -197,7 +197,7 @@ function render() {
       el.setAttribute("data-name", ws.name);
     }
 
-    el.className = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : ""}`;
+    el.className = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
 
     el.innerHTML = `
       <div class="wc-head">
