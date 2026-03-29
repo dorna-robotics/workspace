@@ -419,6 +419,7 @@ function renderControls(state, launched, running) {
         await sendCmd(cmd, kwargs);
         toast(`${cmd} sent`, "ok");
         await refreshStatus();
+        if (cmd === "start") loadRunParams();
       } catch (err) {
         toast(String(err), "bad");
         b.disabled = false;
@@ -549,7 +550,7 @@ async function init() {
     pathVal.textContent = wsInfo.path_to_file;
     pathVal.title       = wsInfo.path_to_file;
 
-    await Promise.all([refreshStatus(), refreshLogs()]);
+    await Promise.all([refreshStatus(), refreshLogs(), loadRunParams()]);
     scheduleWsPoll();
   } catch (err) {
     toast(String(err), "bad");
@@ -564,6 +565,44 @@ $("btnToggleSteps")?.addEventListener("click", () => {
   const chevron = $("stepChevron");
   if (chevron) chevron.classList.toggle("open", _stepsExpanded);
 });
+
+// ---- Run Parameters section ----
+let _paramsExpanded = false;
+const paramsPre = $("paramsPre");
+
+$("btnToggleParams")?.addEventListener("click", () => {
+  _paramsExpanded = !_paramsExpanded;
+  paramsPre.style.display = _paramsExpanded ? "" : "none";
+  const chevron = $("paramsChevron");
+  if (chevron) chevron.classList.toggle("open", _paramsExpanded);
+});
+
+$("btnCopyParams")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const text = paramsPre.textContent || "";
+  if (!text.trim() || text === "(no parameters)") { toast("No parameters to copy", "warn"); return; }
+  _copyToClipboard(text, e.currentTarget);
+});
+
+function formatParamsYaml(values) {
+  if (!values || !Object.keys(values).length) return "(no parameters)";
+  return Object.entries(values).map(([k, v]) => {
+    if (v === null || v === undefined) return `${k}: null`;
+    if (typeof v === "object") return `${k}: ${JSON.stringify(v)}`;
+    if (typeof v === "string" && v === "") return `${k}: ""`;
+    return `${k}: ${v}`;
+  }).join("\n");
+}
+
+async function loadRunParams() {
+  try {
+    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
+    const values = j.kwargs_values || {};
+    paramsPre.textContent = formatParamsYaml(values);
+  } catch {
+    paramsPre.textContent = "(could not load)";
+  }
+}
 
 $("btnRefreshLogs").addEventListener("click", (e) => { e.stopPropagation(); refreshLogs(); });
 $("btnFollowLogs")?.addEventListener("click", (e) => {
