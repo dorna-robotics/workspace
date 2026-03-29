@@ -1,15 +1,16 @@
 # orchestrator_server.py
 import asyncio
-import shlex
 import os
 import json
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Thread
 from typing import Dict, Optional, List
 
 import requests
+import yaml
 import tornado.web
 import tornado.ioloop
 import tornado.websocket
@@ -51,15 +52,17 @@ def _truncate_log_if_needed(path: str, max_bytes: int):
 
 class WorkspaceInfo:
     """Holds workspace process info and metadata."""
-    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = "", args: str = ""):
+    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = "", kwargs_values: Optional[Dict] = None):
         self.name = name
         self.path_to_file = path_to_file
         self.port = int(port)
         self.label = label or ""
-        self.args = (args or "").strip()
 
         # If set => this workspace is remote, and commands/status/logs are proxied to that orchestrator
         self.node_url: Optional[str] = node_url.strip().rstrip("/") if node_url else None
+
+        # Last-used kwargs values (persisted across runs)
+        self.kwargs_values: Dict = kwargs_values or {}
 
         # Local process handle (only for local workspaces)
         self.process: Optional[subprocess.Popen] = None
@@ -75,14 +78,52 @@ class WorkspaceInfo:
     def is_remote(self) -> bool:
         return bool(self.node_url)
 
+    def launch_config(self) -> Optional[Dict]:
+        """Read launch.yaml from the workspace directory and return kwargs schema."""
+        try:
+            launch_path = Path(self.path_to_file).parent / "launch.yaml"
+            if not launch_path.is_file():
+                return None
+            with open(launch_path) as f:
+                data = yaml.safe_load(f)
+            return data.get("kwargs") if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def file_kwargs_keys(self) -> set:
+        """Return the set of kwargs keys that are type=file."""
+        schema = self.launch_config() or {}
+        return {k for k, v in schema.items() if isinstance(v, dict) and v.get("type") == "file"}
+
+    def clear_uploads(self):
+        """Remove the _uploads folder and clear file kwargs from kwargs_values."""
+        try:
+            upload_dir = Path(self.path_to_file).parent / "_uploads"
+            if upload_dir.is_dir():
+                import shutil
+                shutil.rmtree(upload_dir, ignore_errors=True)
+        except Exception:
+            pass
+        # Clear file kwargs from stored values
+        file_keys = self.file_kwargs_keys()
+        for k in file_keys:
+            self.kwargs_values.pop(k, None)
+
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "name": self.name,
             "label": self.label,
             "path_to_file": self.path_to_file,
             "port": self.port,
             "node_url": self.node_url or "",
         }
+        if self.kwargs_values:
+            # Don't persist file paths — they must be re-uploaded each run
+            file_keys = self.file_kwargs_keys()
+            filtered = {k: v for k, v in self.kwargs_values.items() if k not in file_keys}
+            if filtered:
+                d["kwargs_values"] = filtered
+        return d
 
 
 class Orchestrator:
@@ -122,6 +163,7 @@ class Orchestrator:
                         port=int(item.get("port", 0)),
                         node_url=item.get("node_url") or None,
                         label=item.get("label", "") or "",
+                        kwargs_values=item.get("kwargs_values") or {},
                         sync_remote=False,   # IMPORTANT: don't re-add remotely on startup
                         persist=False,       # we'll persist once after bulk load
                     )
@@ -141,14 +183,14 @@ class Orchestrator:
         port: int,
         node_url: Optional[str] = None,
         label: str = "",
-        args: str = "",
+        kwargs_values: Optional[Dict] = None,
         sync_remote: bool = True,
         persist: bool = True,
     ):
         if name in self.workspaces:
             raise ValueError(f"Workspace {name} already exists.")
 
-        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=int(port), node_url=node_url, label=label, args=args)
+        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=int(port), node_url=node_url, label=label, kwargs_values=kwargs_values)
 
         # Local workspace must have a valid file path
         if not ws.is_remote():
@@ -157,7 +199,7 @@ class Orchestrator:
 
         # For remote, optionally add the workspace on the remote orchestrator too
         if ws.is_remote() and sync_remote:
-            payload = {"name": name, "path_to_file": path_to_file, "port": int(port), "args": (args or "").strip()}
+            payload = {"name": name, "path_to_file": path_to_file, "port": int(port)}
             if label:
                 payload["label"] = label
             try:
@@ -209,13 +251,14 @@ class Orchestrator:
         if self.is_launched(name):
             return
 
+        # Fresh start — clear any stale uploads from a previous run
+        ws.clear_uploads()
+
         import sys, platform
         if platform.system() == "Windows":
             cmd = [sys.executable, ws.path_to_file, "--port", str(ws.port)]
         else:
             cmd = ["sudo", "python3", ws.path_to_file, "--port", str(ws.port)]
-        if ws.args:
-            cmd += shlex.split(ws.args)
 
         env = os.environ.copy()
         
@@ -269,9 +312,12 @@ class Orchestrator:
     def _auth_headers(self) -> Dict[str, str]:
         return {"X-Orch-Token": ORCH_TOKEN} if ORCH_TOKEN else {}
 
-    def _proxy_cmd_to_node(self, ws: WorkspaceInfo, cmd: str):
+    def _proxy_cmd_to_node(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None):
         url = self._orch_url(ws, f"/workspace/{requests.utils.quote(ws.name)}/cmd")
-        r = requests.post(url, json={"cmd": cmd}, timeout=10, headers=self._auth_headers())
+        payload = {"cmd": cmd}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        r = requests.post(url, json=payload, timeout=10, headers=self._auth_headers())
         r.raise_for_status()
         return r.json()
 
@@ -348,6 +394,10 @@ class Orchestrator:
         ws.process = None
         ws.finished_at = time.time()
 
+        # Clear uploaded files — user must re-upload next run
+        ws.clear_uploads()
+        self.save_registry()
+
     def relaunch_workspace(self, name: str):
         ws = self.workspaces[name]
 
@@ -361,22 +411,31 @@ class Orchestrator:
 
     # ---------------- Runtime commands ----------------
 
-    def _send_runtime_cmd_local(self, ws: WorkspaceInfo, cmd: str):
+    def _send_runtime_cmd_local(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None):
         url = f"http://127.0.0.1:{ws.port}/cmd"
-        r = requests.post(url, json={"cmd": cmd}, timeout=4)
+        payload = {"cmd": cmd}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        r = requests.post(url, json=payload, timeout=4)
         r.raise_for_status()
         return r.json()
 
-    def start_runtime(self, name: str):
+    def start_runtime(self, name: str, kwargs: Optional[Dict] = None):
         ws = self.workspaces[name]
         if ws.is_remote():
-            return self._proxy_cmd_to_node(ws, "start")
+            return self._proxy_cmd_to_node(ws, "start", kwargs=kwargs)
 
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched. Send cmd=launch first.")
         if not self.wait_until_ready(name, timeout=2.0):
             raise RuntimeError(f"Workspace {name} is launched but not responding. Check logs: {ws.log_path}")
-        return self._send_runtime_cmd_local(ws, "start")
+
+        # Persist kwargs for next run
+        if kwargs is not None:
+            ws.kwargs_values = kwargs
+            self.save_registry()
+
+        return self._send_runtime_cmd_local(ws, "start", kwargs=kwargs)
 
     def pause_runtime(self, name: str):
         ws = self.workspaces[name]
@@ -505,14 +564,13 @@ class AddWorkspaceHandler(AuthedHandler):
             return
         try:
             data = json.loads(self.request.body.decode())
-            args = data.get("args", "")
             name = data["name"]
             path_to_file = data["path_to_file"]
             port = int(data["port"])
             node_url = data.get("node_url")
             label = data.get("label", "") or ""
 
-            self.orch.add_workspace(name, path_to_file, port, node_url=node_url, label=label, args=args, sync_remote=True, persist=True)
+            self.orch.add_workspace(name, path_to_file, port, node_url=node_url, label=label, sync_remote=True, persist=True)
             self.write({"status": "ok"})
         except Exception as e:
             self.set_status(400)
@@ -530,6 +588,106 @@ class RemoveWorkspaceHandler(AuthedHandler):
             data = json.loads(self.request.body.decode())
             name = data["name"]
             self.write(self.orch.remove_workspace(name))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class LaunchConfigHandler(tornado.web.RequestHandler):
+    """Returns the kwargs schema from the workspace's launch.yaml."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name):
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            ws = self.orch.workspaces[name]
+            schema = ws.launch_config()
+            self.write({"kwargs_schema": schema or {}, "kwargs_values": ws.kwargs_values or {}})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+
+class FileUploadHandler(AuthedHandler):
+    """Upload a file for a kwargs field. Saves to <project_dir>/_uploads/<field>/."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self, name, field):
+        if not self.ensure_auth():
+            return
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            ws = self.orch.workspaces[name]
+
+            if not self.request.files or "file" not in self.request.files:
+                raise ValueError("No file uploaded")
+
+            uploaded = self.request.files["file"][0]
+            filename = os.path.basename(uploaded["filename"])
+            if not filename:
+                raise ValueError("Empty filename")
+
+            if ws.is_remote():
+                # Forward upload to remote node
+                import io
+                url = self.orch._orch_url(ws, f"/workspace/{requests.utils.quote(name)}/upload/{requests.utils.quote(field)}")
+                r = requests.post(
+                    url,
+                    files={"file": (filename, io.BytesIO(uploaded["body"]), uploaded.get("content_type", "application/octet-stream"))},
+                    timeout=30,
+                    headers=self.orch._auth_headers(),
+                )
+                r.raise_for_status()
+                result = r.json()
+            else:
+                # Save locally to project _uploads dir
+                project_dir = os.path.dirname(ws.path_to_file)
+                upload_dir = os.path.join(project_dir, "_uploads", field)
+                os.makedirs(upload_dir, exist_ok=True)
+
+                # Remove old files for this field
+                for old in os.listdir(upload_dir):
+                    try:
+                        os.remove(os.path.join(upload_dir, old))
+                    except Exception:
+                        pass
+
+                dest = os.path.join(upload_dir, filename)
+                with open(dest, "wb") as f:
+                    f.write(uploaded["body"])
+                result = {"status": "ok", "path": dest, "filename": filename}
+
+            # Store the path in kwargs_values
+            ws.kwargs_values[field] = result["path"]
+            self.orch.save_registry()
+
+            self.write(result)
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class UpdateKwargsHandler(AuthedHandler):
+    """Update stored kwargs_values for a workspace."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self, name):
+        if not self.ensure_auth():
+            return
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            data = json.loads(self.request.body.decode())
+            ws = self.orch.workspaces[name]
+            ws.kwargs_values = data.get("kwargs_values", {})
+            self.orch.save_registry()
+            self.write({"status": "ok"})
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -556,7 +714,8 @@ class WorkspaceCmdHandler(AuthedHandler):
                 _ws_step_cache.pop(name, None)
                 out = await loop.run_in_executor(_cmd_pool, self.orch.launch_workspace, name)
             elif cmd == "start":
-                out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name)
+                kwargs = data.get("kwargs")
+                out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name, kwargs)
             elif cmd == "pause":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
             elif cmd == "resume":
@@ -786,6 +945,9 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/cmd", WorkspaceCmdHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=self.orch)),
 
             # ---- WebSocket live status ----
             (r"/ws/status", StatusWebSocket, dict(orch=self.orch)),

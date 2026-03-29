@@ -271,7 +271,7 @@ class Runtime:
     # Workflow thread
     # ---------------------------------------------------------------------
 
-    def run_workflow_thread(self, workflow_fn: Callable[..., Any], *, workspace: Any):
+    def run_workflow_thread(self, workflow_fn: Callable[..., Any], *, workspace: Any, **extra_kwargs):
         """Run a workflow in its own internal thread, managed by this runtime."""
         if self._workflow_thread and self._workflow_thread.is_alive():
             raise RuntimeError("Workflow thread already running!")
@@ -281,7 +281,7 @@ class Runtime:
                 try:
                     self.wait_for_start()
                     self.mark_running()
-                    workflow_fn(workspace=workspace, core=workspace.components["core"])
+                    workflow_fn(workspace=workspace, core=workspace.components["core"], **extra_kwargs)
                     self.mark_idle()
                 except KillRequested:
                     return

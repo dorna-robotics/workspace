@@ -153,8 +153,9 @@ class CmdHandler(tornado.web.RequestHandler):
             self.rt.start()
             th = self._workflow_thread_holder.get("thread")
             if th is None or not th.is_alive():
+                extra_kwargs = data.get("kwargs") or {}
                 self._workflow_thread_holder["thread"] = self.rt.run_workflow_thread(
-                    self.workflow_fn, workspace=self.workspace
+                    self.workflow_fn, workspace=self.workspace, **extra_kwargs
                 )
 
         elif cmd == "pause":

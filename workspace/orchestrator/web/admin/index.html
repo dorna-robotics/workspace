@@ -185,69 +185,54 @@
     .ws-search::placeholder { color: var(--muted); }
     [data-theme="light"] .ws-search { background: #fff; border-color: var(--border); }
 
-    /* ---- Filter tags ---- */
-    .filter-bar {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
+    /* ---- Kwargs form ---- */
+    .kwargs-form { display: flex; flex-direction: column; gap: 14px; }
+    .kwargs-form .kw-field { display: flex; flex-direction: column; gap: 4px; }
+    .kwargs-form .kw-label-row {
+      display: flex; align-items: center; gap: 6px;
     }
-    .filter-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 4px 12px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: var(--font);
-      border-radius: 20px;
-      border: 1px solid var(--border2);
-      background: var(--surface);
-      color: var(--muted);
-      cursor: pointer;
-      transition: all 0.15s;
-      user-select: none;
+    .kwargs-form .kw-label {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .filter-tag:hover {
-      border-color: var(--border);
-      background: var(--surface2);
-      color: var(--text);
+    .kwargs-form .kw-optional {
+      font-size: 10px; font-weight: 400; color: var(--muted);
+      text-transform: none; letter-spacing: 0;
     }
-    .filter-tag .filter-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      flex-shrink: 0;
+    .kwargs-form .kw-input-row {
+      display: flex; align-items: flex-start; gap: 6px;
     }
-    .filter-tag .filter-count {
-      font-family: var(--mono);
-      font-size: 10px;
-      opacity: 0.7;
+    .kwargs-form .kw-input-row .input { flex: 1; min-width: 0; }
+    .kwargs-form .kw-input-row textarea.input { line-height: 1.5; }
+    .kwargs-form .kw-reset {
+      background: none; border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--muted); cursor: pointer; padding: 5px 6px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+      flex-shrink: 0; margin-left: auto;
     }
-    .filter-tag[data-filter="all"]     .filter-dot { background: var(--muted); }
-    .filter-tag[data-filter="running"] .filter-dot { background: var(--green); }
-    .filter-tag[data-filter="idle"]    .filter-dot { background: var(--amber); }
-    .filter-tag[data-filter="error"]   .filter-dot { background: var(--red); }
-    .filter-tag[data-filter="offline"] .filter-dot { background: var(--muted); opacity: 0.4; }
+    .kwargs-form .kw-reset:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+    [data-theme="light"] .kwargs-form .kw-reset { background: #fff; border-color: var(--border); }
+    [data-theme="light"] .kwargs-form .kw-reset:hover { background: var(--surface2); }
+    .kwargs-form .kw-hint {
+      font-size: 11px; color: var(--muted); line-height: 1.4;
+    }
+    .kwargs-empty {
+      font-size: 12px; color: var(--muted); padding: 16px 0; text-align: center;
+    }
+    .kwargs-banner {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 500; color: var(--muted);
+      font-style: italic;
+      border-left: 3px solid var(--border2);
+      padding: 6px 12px; margin-bottom: 6px;
+    }
+    .kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
+    .kwargs-banner.frozen {
+      color: var(--amber); border-left-color: var(--amber);
+    }
+    .kwargs-banner.frozen svg { opacity: 0.7; }
 
-    .filter-tag.active {
-      border-color: var(--accent);
-      background: rgba(79,156,249,0.1);
-      color: var(--text);
-    }
-    .filter-tag[data-filter="running"].active { border-color: var(--green); background: rgba(63,185,80,0.1); }
-    .filter-tag[data-filter="idle"].active    { border-color: var(--amber); background: rgba(227,179,65,0.1); }
-    .filter-tag[data-filter="error"].active   { border-color: var(--red);   background: rgba(248,81,73,0.1); }
-    .filter-tag[data-filter="offline"].active { border-color: var(--muted); background: rgba(139,148,158,0.1); }
-
-    [data-theme="light"] .filter-tag { background: #fff; }
-    [data-theme="light"] .filter-tag.active { background: rgba(0,100,220,0.06); }
-    [data-theme="light"] .filter-tag[data-filter="running"].active { background: rgba(35,134,54,0.08); }
-    [data-theme="light"] .filter-tag[data-filter="idle"].active    { background: rgba(191,144,0,0.08); }
-    [data-theme="light"] .filter-tag[data-filter="error"].active   { background: rgba(207,34,46,0.08); }
-
-    /* ---- Modal extras ---- */
-    #advSection { flex-direction: column; gap: 14px; display: none; }
   </style>
 </head>
 <body>
@@ -267,36 +252,27 @@
 </header>
 
 <main class="main">
-  <!-- Stats bar -->
   <div class="stats-bar" id="statsBar">
-    <div class="stat-item">
+    <div class="stat-item active" data-filter="all">
       <div class="stat-label">Total</div>
       <div class="stat-value off" id="statTotal">—</div>
     </div>
-    <div class="stat-item">
+    <div class="stat-item" data-filter="running">
       <div class="stat-label">Running</div>
-      <div class="stat-value ok"  id="statRunning">—</div>
+      <div class="stat-value ok" id="statRunning">—</div>
     </div>
-    <div class="stat-item">
+    <div class="stat-item" data-filter="idle">
       <div class="stat-label">Idle</div>
       <div class="stat-value warn" id="statIdle">—</div>
     </div>
-    <div class="stat-item">
+    <div class="stat-item" data-filter="error">
       <div class="stat-label">Errors</div>
       <div class="stat-value bad" id="statErrors">—</div>
     </div>
-    <div class="stat-item">
+    <div class="stat-item" data-filter="offline">
       <div class="stat-label">Offline</div>
       <div class="stat-value off" id="statOffline">—</div>
     </div>
-  </div>
-
-  <div class="filter-bar" id="filterBar">
-    <button class="filter-tag active" data-filter="all"><span class="filter-dot"></span> All <span class="filter-count" id="filterAll"></span></button>
-    <button class="filter-tag" data-filter="running"><span class="filter-dot"></span> Running <span class="filter-count" id="filterRunning"></span></button>
-    <button class="filter-tag" data-filter="idle"><span class="filter-dot"></span> Idle <span class="filter-count" id="filterIdle"></span></button>
-    <button class="filter-tag" data-filter="error"><span class="filter-dot"></span> Error <span class="filter-count" id="filterError"></span></button>
-    <button class="filter-tag" data-filter="offline"><span class="filter-dot"></span> Offline <span class="filter-count" id="filterOffline"></span></button>
   </div>
 
   <div class="section-header">
@@ -328,39 +304,45 @@
           <input class="input" id="f_name" type="text" placeholder="workflow" autocomplete="off"/>
         </div>
         <div class="field">
+          <label>Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <input class="input" id="f_label" type="text" placeholder="Workflow 1"/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Node URL <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <input class="input" id="f_nodeUrl" type="text" placeholder="http://10.0.0.2:5000"/>
+          <div class="hint">Remote orchestrator URL. Leave empty for local.</div>
+        </div>
+        <div class="field">
           <label>Port *</label>
           <input class="input" id="f_port" type="number" value="5010"/>
         </div>
       </div>
       <div class="field">
-        <label>Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
-        <input class="input" id="f_label" type="text" placeholder="Workflow 1"/>
-      </div>
-      <div class="field">
         <label>Path to main.py *</label>
         <input class="input" id="f_path" type="text" placeholder="/home/dorna/.../projects/workflow/main.py"/>
-      </div>
-      <button type="button" id="chkAdv" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.3px;background:none;border:none;padding:4px 0;font-family:var(--font)">
-        <svg id="advChevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s"><polyline points="9 18 15 12 9 6"/></svg>
-        Advanced
-      </button>
-      <div id="advSection">
-        <div class="field">
-          <label>Extra args</label>
-          <input class="input" id="f_args" type="text" placeholder="--job batch.xlsx"/>
-          <div class="hint">Appended to: <span class="mono">sudo python3 main.py --port ...</span></div>
-        </div>
-        <div class="field">
-          <label>Node URL</label>
-          <input class="input" id="f_nodeUrl" type="text" placeholder="http://192.168.1.x:9000"/>
-          <div class="hint">Leave empty to use this orchestrator. Set for remote machines.</div>
-        </div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn" id="btnModalCancel">Cancel</button>
       <button class="btn btn-primary" id="btnModalConfirm">Add workspace</button>
     </div>
+  </div>
+</div>
+
+<!-- Parameters Modal -->
+<div class="modal-overlay" id="paramsModalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="paramsModalTitle">Parameters</h3>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnParamsClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="kwargs-form" id="paramsForm"></div>
+    </div>
+    <div class="modal-foot" id="paramsModalFoot"></div>
   </div>
 </div>
 

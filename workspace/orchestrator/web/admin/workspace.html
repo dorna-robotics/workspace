@@ -277,6 +277,54 @@
       .meta-val { max-width: 140px; font-size: 11px; }
       .meta-val.path { font-size: 9px; }
     }
+
+    /* ---- Kwargs form (parameters modal) ---- */
+    .kwargs-form { display: flex; flex-direction: column; gap: 14px; }
+    .kwargs-form .kw-field { display: flex; flex-direction: column; gap: 4px; }
+    .kwargs-form .kw-label-row {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .kwargs-form .kw-label {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .kwargs-form .kw-optional {
+      font-size: 10px; font-weight: 400; color: var(--muted);
+      text-transform: none; letter-spacing: 0;
+    }
+    .kwargs-form .kw-input-row {
+      display: flex; align-items: flex-start; gap: 6px;
+    }
+    .kwargs-form .kw-input-row .input { flex: 1; min-width: 0; }
+    .kwargs-form .kw-input-row textarea.input { line-height: 1.5; }
+    .kwargs-form .kw-reset {
+      background: none; border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--muted); cursor: pointer; padding: 5px 6px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+      flex-shrink: 0; margin-left: auto;
+    }
+    .kwargs-form .kw-reset:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+    [data-theme="light"] .kwargs-form .kw-reset { background: #fff; border-color: var(--border); }
+    [data-theme="light"] .kwargs-form .kw-reset:hover { background: var(--surface2); }
+    .kwargs-form .kw-hint {
+      font-size: 11px; color: var(--muted); line-height: 1.4;
+    }
+    .kwargs-empty {
+      font-size: 12px; color: var(--muted); padding: 16px 0; text-align: center;
+    }
+    .kwargs-banner {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 500; color: var(--muted);
+      font-style: italic;
+      border-left: 3px solid var(--border2);
+      padding: 6px 12px; margin-bottom: 6px;
+    }
+    .kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
+    .kwargs-banner.frozen {
+      color: var(--amber); border-left-color: var(--amber);
+    }
+    .kwargs-banner.frozen svg { opacity: 0.7; }
   </style>
 </head>
 <body>
@@ -405,7 +453,26 @@
       <span>Kill</span>
     </button>
   </div>
+  <button class="pendant-secondary" id="pendantParams">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Parameters
+  </button>
   <button class="pendant-exit" id="pendantExit">✕ Exit Pendant</button>
+</div>
+
+<!-- Parameters Modal -->
+<div class="modal-overlay" id="paramsModalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="paramsModalTitle">Parameters</h3>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnParamsClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="kwargs-form" id="paramsForm"></div>
+    </div>
+    <div class="modal-foot" id="paramsModalFoot"></div>
+  </div>
 </div>
 
 <div class="toast-area" id="toastArea"></div>
