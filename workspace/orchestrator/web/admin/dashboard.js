@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 let workspaces = [];
@@ -211,7 +211,7 @@ function render() {
         </div>
         <span class="pill ${variant}">
           <span class="dot ${variant}${running ? " pulse" : ""}"></span>
-          ${esc(state)}
+          ${esc(stateLabel(state))}
         </span>
       </div>
       <div class="wc-meta">

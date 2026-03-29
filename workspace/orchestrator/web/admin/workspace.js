@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 const params  = new URLSearchParams(window.location.search);
@@ -185,7 +185,7 @@ function updateStatusUI(st) {
   const launched = isLaunched(state);
 
   statePill.className = `pill ${variant}`;
-  statePill.innerHTML = `<span class="dot ${variant}${running ? " pulse" : ""}"></span>${esc(state)}`;
+  statePill.innerHTML = `<span class="dot ${variant}${running ? " pulse" : ""}"></span>${esc(stateLabel(state))}`;
 
   // Live uptime: store base so the 1s ticker can interpolate
   if (st?.uptime_s != null) {
@@ -751,7 +751,7 @@ function updatePendantUI() {
   if (stateEl) {
     stateEl.setAttribute("data-variant", variant);
     const textEl = stateEl.querySelector(".pendant-state-text");
-    if (textEl) textEl.textContent = state || "—";
+    if (textEl) textEl.textContent = stateLabel(state);
   }
 
   // Step message

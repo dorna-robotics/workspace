@@ -32,6 +32,12 @@ export function stateVariant(state) {
   return "warn"; // IDLE, READY, PAUSED, LAUNCHED_NOT_READY, etc.
 }
 
+export function stateLabel(state) {
+  const s = String(state || "").toUpperCase();
+  if (s === "IDLE") return "READY";
+  return s || "—";
+}
+
 export function isRunning(state) {
   return ["RUNNING", "ACTIVE"].includes(String(state || "").toUpperCase());
 }
