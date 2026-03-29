@@ -202,6 +202,70 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   });
 }
 
+export function validateKwargsForm(container, schema) {
+  const errors = [];
+  container.querySelectorAll("[data-kw-key]").forEach(el => {
+    const key = el.dataset.kwKey;
+    const type = el.dataset.kwType;
+    const spec = schema?.[key] || {};
+    const optional = spec.optional || false;
+    const field = el.closest(".kw-field") || el.closest(".kw-input-row");
+
+    // Clear previous error
+    el.classList.remove("input-error");
+    if (field) field.querySelector(".kw-error")?.remove();
+
+    let err = null;
+
+    if (type === "file" || type === "bool" || type === "choice") {
+      // no validation needed
+    } else if (type === "int") {
+      if (el.value !== "" && (isNaN(parseInt(el.value, 10)) || el.value.includes("."))) {
+        err = "Must be a whole number";
+      } else if (el.value !== "" && spec.min !== undefined && parseInt(el.value, 10) < spec.min) {
+        err = `Min: ${spec.min}`;
+      } else if (el.value !== "" && spec.max !== undefined && parseInt(el.value, 10) > spec.max) {
+        err = `Max: ${spec.max}`;
+      } else if (el.value === "" && !optional) {
+        err = "Required";
+      }
+    } else if (type === "float") {
+      if (el.value !== "" && isNaN(parseFloat(el.value))) {
+        err = "Must be a number";
+      } else if (el.value !== "" && spec.min !== undefined && parseFloat(el.value) < spec.min) {
+        err = `Min: ${spec.min}`;
+      } else if (el.value !== "" && spec.max !== undefined && parseFloat(el.value) > spec.max) {
+        err = `Max: ${spec.max}`;
+      } else if (el.value === "" && !optional) {
+        err = "Required";
+      }
+    } else if (type === "textarea") {
+      // try JSON parse if non-empty
+      if (el.value.trim() !== "") {
+        try { JSON.parse(el.value); } catch {
+          // not JSON — that's fine, stored as string
+        }
+      }
+    } else if (type === "str") {
+      if (el.value === "" && !optional) {
+        err = "Required";
+      }
+    }
+
+    if (err) {
+      errors.push({ key, message: err });
+      el.classList.add("input-error");
+      if (field) {
+        const errEl = document.createElement("div");
+        errEl.className = "kw-error";
+        errEl.textContent = err;
+        field.appendChild(errEl);
+      }
+    }
+  });
+  return errors;
+}
+
 export function readKwargsForm(container) {
   const kwargs = {};
   container.querySelectorAll("[data-kw-key]").forEach(el => {

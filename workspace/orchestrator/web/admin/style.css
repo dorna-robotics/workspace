@@ -425,12 +425,14 @@ a:hover { color: var(--accent-h); }
 .kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
 .kwargs-banner.frozen { color: var(--amber); border-left-color: var(--amber); }
 .kwargs-banner.frozen svg { opacity: 0.7; }
+.kwargs-form .input-error { border-color: var(--red) !important; }
+.kwargs-form .kw-error { font-size: 10px; color: var(--red); font-weight: 600; }
 
 /* ---- Modal mobile ---- */
 @media (max-width: 600px) {
   .modal-overlay { padding: 8px; }
   .modal {
-    width: calc(100vw - 16px);
+    width: calc(100% - 16px);
     max-height: calc(100vh - 16px);
     max-height: calc(100dvh - 16px);
     border-radius: 12px;

@@ -1,5 +1,5 @@
 import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
-import { renderKwargsForm, readKwargsForm } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -111,6 +111,8 @@ async function openParamsModal(frozen) {
         toast("Reset to defaults", "ok");
       });
       $("btnParamsSave").addEventListener("click", async () => {
+        const errs = validateKwargsForm(paramsForm, schema);
+        if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
         const vals = readKwargsForm(paramsForm);
         try {
           await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {

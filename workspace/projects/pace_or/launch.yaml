@@ -5,11 +5,9 @@
 scene: [1_scene/base.j2, 1_scene/layout.j2]
 
 # kwargs — passed to workflow_fn at runtime.
-# Supported types: int, float, str, bool, choice
-# Fields: type, default, label, hint, placeholder, optional, options (choice), min/max (int/float)
+# Supported types: int, float, str, bool, choice, textarea, file
+# Fields: type, default, label, hint, placeholder, optional, accept, options, min, max, rows
 kwargs:
-
-  # ---- int ----
   n_items:
     type: int
     default: 4
@@ -18,7 +16,6 @@ kwargs:
     min: 1
     max: 20
 
-  # ---- int (optional, nullable) ----
   horizon:
     type: int
     default: null
@@ -27,99 +24,3 @@ kwargs:
     placeholder: plan all at once
     optional: true
     min: 1
-
-  # ---- file (upload) ----
-  print_data:
-    type: file
-    label: Print data
-    hint: Upload a CSV file with print labels and values.
-    accept: "*"
-
-  # ---- float ----
-  speed_factor:
-    type: float
-    default: 1.0
-    label: Speed factor
-    hint: Multiplier for robot motion speed. 1.0 = normal.
-    min: 0.1
-    max: 3.0
-
-  # ---- str ----
-  job_name:
-    type: str
-    default: ""
-    label: Job name
-    hint: Optional label for this run, used in logs.
-    placeholder: e.g. batch-042
-    optional: true
-
-  # ---- bool ----
-  dry_run:
-    type: bool
-    default: false
-    label: Dry run
-    hint: Simulate the workflow without moving the robot.
-
-  # ---- choice ----
-  strategy:
-    type: choice
-    default: balanced
-    label: Scheduling strategy
-    hint: Algorithm used by the OR solver.
-    options: [fast, balanced, thorough]
-
-  # ---- textarea (multi-line / JSON) ----
-  custom_config:
-    type: textarea
-    default: {"slots": [1, 2, 3], "reverse": false}
-    label: Custom config
-    hint: JSON object passed directly to the solver. Must be valid JSON.
-    placeholder: '{"key": "value"}'
-    rows: 4
-
-  # ---- extra fields to test scrolling ----
-  retry_count:
-    type: int
-    default: 3
-    label: Retry count
-    hint: Number of times to retry a failed step before aborting.
-    min: 0
-    max: 10
-
-  timeout:
-    type: float
-    default: 30.0
-    label: Step timeout (s)
-    hint: Max seconds to wait for a single step to complete.
-    min: 1.0
-    max: 120.0
-
-  output_dir:
-    type: str
-    default: /tmp/results
-    label: Output directory
-    hint: Where to write run artifacts and reports.
-    placeholder: /path/to/output
-
-  verbose_logging:
-    type: bool
-    default: true
-    label: Verbose logging
-    hint: Log detailed step-by-step information.
-
-  pick_method:
-    type: choice
-    default: vacuum
-    label: Pick method
-    hint: How the gripper picks up items.
-    options: [vacuum, mechanical, magnetic]
-
-  place_offset_z:
-    type: float
-    default: 0.0
-    label: Place Z offset (mm)
-    hint: Vertical offset added to every place position.
-    optional: true
-    placeholder: no offset
-    min: -10.0
-    max: 10.0

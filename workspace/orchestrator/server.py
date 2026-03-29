@@ -276,6 +276,7 @@ class Orchestrator:
             stderr=subprocess.STDOUT,
             text=True,
         )
+        ws._log_f = log_f  # keep handle so we can close it on stop
 
         ws.started_at = time.time()
         ws.finished_at = None
@@ -383,6 +384,10 @@ class Orchestrator:
             ws.process = None
             if ws.started_at and not ws.finished_at:
                 ws.finished_at = time.time()
+            if hasattr(ws, "_log_f") and ws._log_f:
+                try: ws._log_f.close()
+                except Exception: pass
+                ws._log_f = None
             return
 
         ws.process.terminate()
@@ -393,6 +398,14 @@ class Orchestrator:
             ws.process.wait()
         ws.process = None
         ws.finished_at = time.time()
+
+        # Close log file handle
+        if hasattr(ws, "_log_f") and ws._log_f:
+            try:
+                ws._log_f.close()
+            except Exception:
+                pass
+            ws._log_f = None
 
         # Clear uploaded files — user must re-upload next run
         ws.clear_uploads()
@@ -921,6 +934,16 @@ async def _ws_poll_loop(orch: Orchestrator):
 
 # -------------------- Tornado HTTP Server --------------------
 
+class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.set_header("Pragma", "no-cache")
+        self.set_header("Expires", "0")
+
+    def compute_etag(self):
+        return None
+
+
 class OrchestratorHTTPServer:
     def __init__(self, host="0.0.0.0", port=9000):
         self.orch = Orchestrator(port=port)
@@ -935,7 +958,7 @@ class OrchestratorHTTPServer:
         self.app = tornado.web.Application([
             # ---- GUI (serve ./web) ----
             (r"/", tornado.web.RedirectHandler, {"url": "/web/admin/index.html"}),
-            (r"/web/(.*)", tornado.web.StaticFileHandler, {"path": web_dir}),
+            (r"/web/(.*)", NoCacheStaticFileHandler, {"path": web_dir}),
 
             # ---- API ----
             (r"/workspaces/status", WorkspacesStatusHandler, dict(orch=self.orch)),

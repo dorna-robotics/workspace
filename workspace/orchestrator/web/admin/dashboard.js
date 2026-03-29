@@ -1,5 +1,5 @@
-import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
-import { renderKwargsForm, readKwargsForm } from "./kwargs.js";
+import { apiFetch, stateVariant, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS } from "./api.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 let workspaces = [];
 let prevStates = {};   // name → last known state string (for transition toasts)
@@ -128,6 +128,8 @@ async function openParamsModal(name, frozen) {
         toast("Reset to defaults", "ok");
       });
       paramsFoot.querySelector("#btnParamsSave").addEventListener("click", async () => {
+        const errs = validateKwargsForm(paramsForm, schema);
+        if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
         const vals = readKwargsForm(paramsForm);
         try {
           await apiFetch(`/workspace/${encodeURIComponent(name)}/kwargs`, {
