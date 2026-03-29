@@ -132,10 +132,22 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .wc-step-msg::before {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      box-shadow: 0 0 6px var(--accent);
     }
     .wc-step-msg.warn { color: var(--amber); }
-    .wc-step-msg.err  { color: var(--red); }
+    .wc-step-msg.warn::before { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .wc-step-msg.err { color: var(--red); }
+    .wc-step-msg.err::before { background: var(--red); box-shadow: 0 0 6px var(--red); }
 
     .wc-footer {
       margin-top: auto;

@@ -801,18 +801,33 @@ a:hover { color: var(--accent-h); }
 /* Alarm inside pendant */
 /* Step message in pendant */
 .pendant-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 16px;
   font-weight: 500;
   color: var(--muted);
   max-width: min(90vw, 500px);
-  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-style: italic;
+  padding: 10px 24px;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: var(--surface);
 }
-.pendant-step.warn { color: var(--amber); }
-.pendant-step.err  { color: var(--red); }
+.pendant-step::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 8px var(--accent);
+}
+.pendant-step.warn { color: var(--amber); border-color: rgba(210,153,34,0.25); }
+.pendant-step.warn::before { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.pendant-step.err { color: var(--red); border-color: rgba(248,81,73,0.25); }
+.pendant-step.err::before { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
 .pendant-alarm {
   display: flex;
