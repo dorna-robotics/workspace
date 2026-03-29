@@ -286,7 +286,7 @@ class RuntimeServer:
             (r"/config_version", ConfigVersionHandler),
 
             # viewer app (SPA)  <-- keep this LAST
-            (r"/(.*)", tornado.web.StaticFileHandler, {
+            (r"/(.*)", NoCacheStaticFileHandler, {
                 "path": self.web_dir,
                 "default_filename": "index.html",
             }),

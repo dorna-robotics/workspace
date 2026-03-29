@@ -503,9 +503,9 @@ a:hover { color: var(--accent-h); }
 }
 .meta-row:last-child { border-bottom: none; }
 .meta-key { color: var(--muted); font-size: 11px; font-weight: 500; flex-shrink: 0; }
-.meta-val { color: var(--text); font-weight: 600; text-align: right; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.meta-val { color: var(--text); font-weight: 500; text-align: right; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-family: var(--mono); }
 .meta-val.err  { color: var(--red); font-size: 11px; }
-.meta-val.path { font-size: 10px; font-family: var(--mono); }
+.meta-val.path { }
 
 /* ── Stats bar ──────────────────────────────────────────────────────────── */
 .stats-bar {
