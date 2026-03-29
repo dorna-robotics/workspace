@@ -560,6 +560,7 @@ a:hover { color: var(--accent-h); }
 .stat-item:has(.stat-value.warn)::before { background: var(--amber); }
 .stat-item:has(.stat-value.warn).active::after { background: var(--amber); }
 .stat-value.off  { color: var(--muted); }
+.stat-item:has(.stat-value.off)::before { background: var(--muted2); }
 .stat-item:has(.stat-value.off).active::after { background: var(--muted); }
 
 /* ── Workspace avatar ───────────────────────────────────────────────────── */
