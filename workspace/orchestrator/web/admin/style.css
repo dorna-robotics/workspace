@@ -249,10 +249,10 @@ a:hover { color: var(--accent-h); }
   .wc-meta-item { font-size: 11px; }
   .wc-meta-item strong { font-size: 10px; }
 
-  /* Card footer: keep all buttons on one line */
-  .wc-footer { padding: 8px 10px; gap: 4px; }
-  .wc-actions { gap: 3px; }
-  .wc-actions .btn { font-size: 10px; padding: 3px 7px; }
+  /* Card footer: bigger tap targets on touch */
+  .wc-footer { padding: 10px 12px; gap: 6px; }
+  .wc-actions { gap: 5px; }
+  .wc-actions .btn { font-size: 12px; padding: 8px 10px; min-height: 36px; min-width: 36px; justify-content: center; }
 
   /* Section header: wrap search to second row */
   .section-header { flex-wrap: wrap; }
@@ -263,7 +263,7 @@ a:hover { color: var(--accent-h); }
 
 @media (max-width: 480px) {
   .brand img { height: 20px; }
-  .topbar .btn-sm { font-size: 10px; padding: 3px 8px; }
+  .topbar .btn-sm { font-size: 11px; padding: 6px 10px; }
 
   .main { padding: 16px 10px; }
   .stats-bar { margin-bottom: 16px; }
