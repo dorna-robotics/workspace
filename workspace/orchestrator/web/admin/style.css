@@ -251,8 +251,8 @@ a:hover { color: var(--accent-h); }
 
   /* Card footer: bigger tap targets on touch */
   .wc-footer { padding: 10px 12px; gap: 6px; }
+  .wc-footer .btn { font-size: 12px; padding: 8px 12px; min-height: 36px; min-width: 36px; justify-content: center; }
   .wc-actions { gap: 5px; }
-  .wc-actions .btn { font-size: 12px; padding: 8px 10px; min-height: 36px; min-width: 36px; justify-content: center; }
 
   /* Section header: wrap search to second row */
   .section-header { flex-wrap: wrap; }
