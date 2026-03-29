@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import importlib
-import types
 from pathlib import Path
 from typing import Callable
 
@@ -42,7 +41,7 @@ class BaseWorkflow:
                 super().__init__(workspace, core, _BASE_DIR, n_items=n_items)
 
             def _register_all(self):
-                r   = self.runner.register
+                r   = self.runner.register_state
                 rcp = self.rcp
                 cfg = self.cfg
                 ...
@@ -68,12 +67,13 @@ class BaseWorkflow:
         workspace,
         core,
         base_dir: Path,
-        n_items: int,
+        states_cls,
+        checks_cls,
+        n_items: int = 4,
         horizon: int | None = None,
     ):
         self._base_dir = base_dir
         self.rt  = workspace.rt
-        self.cfg = self._load_params()
         self.rcp = self._load_recipes(workspace, core)
         self.n   = n_items
 
@@ -85,22 +85,17 @@ class BaseWorkflow:
 
         self.runner = ORRunner(
             self.rt, protocol, n_items,
-            cfg=self.cfg, horizon=horizon,
+            horizon=horizon,
         )
-        self._register_all()
+        self._register_all(states_cls, checks_cls)
         self._apply_tool_enforcement()
 
     # ── Loading ──────────────────────────────────────────────────────────────
 
-    def _load_params(self) -> types.SimpleNamespace:
-        with open(self._base_dir / "2_params" / "params.yaml") as f:
-            data = yaml.safe_load(f)
-        return types.SimpleNamespace(**data)
-
     def _load_recipes(self, workspace, core) -> dict:
-        with open(self._base_dir / "2_params" / "recipes.yaml") as f:
+        with open(self._base_dir / "2_recipes" / "recipes.yaml") as f:
             defs = yaml.safe_load(f)
-        speed = getattr(self.cfg, "speed_factor", 10)
+        speed = 10
         rcp   = {}
         for alias, defn in defs.items():
             cls    = _import_class(defn["class"])
@@ -178,5 +173,8 @@ class BaseWorkflow:
             if handler:
                 self.runner._handlers[state_name] = self._with("tool", tool_name, handler)
 
-    def _register_all(self):
-        raise NotImplementedError
+    def _register_all(self, states_cls, checks_cls):
+        for name, fn in states_cls(self.rcp, self.rt, self.n).make().items():
+            self.runner.register_state(name, fn)
+        for name, fn in checks_cls().make().items():
+            self.runner.register_check(name, fn)

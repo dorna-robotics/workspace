@@ -2,8 +2,8 @@
 # Defines the full protocol: states, dependencies, tool, checks.
 #
 # tool:    which tool the robot must hold for this state
-# pre:     check name(s) to run BEFORE executing (single or list)
-# post:    check name(s) to run AFTER executing  (single or list)
+# pre_check:  check name(s) to run BEFORE executing (single or list)
+# post_check: check name(s) to run AFTER executing  (single or list)
 # on_fail: what to do if a check fails — "pause" stops and waits for user
 #
 # Check functions live in 3_protocol/checks.py (same folder).
@@ -13,76 +13,77 @@ states:
 
   - name: inspected
     description: pick tube, inspect, weigh, decap, place in working rack
-    duration: [5, 15]
+    duration: 10
     requires: []
     tool:    gripper
-    pre:     source_tube_present
-    post:    tube_in_working_rack
+    pre_check:    source_tube_present
+    post_check:   tube_in_working_rack
     on_fail: pause
 
   - name: dosed_40ml
     description: dose solvent into working tube
-    duration: [5, 15]
+    duration: 10
     requires: [inspected]
     tool:    needle
-    pre:     tube_in_working_rack
+    pre_check:    tube_in_working_rack
     on_fail: pause
 
   - name: loaded_shaker
     description: recap tube and place on shaker
-    duration: [5, 15]
+    duration: 10
     requires: [dosed_40ml]
     tool:    gripper
-    pre:     [shaker_slot_empty, tube_in_working_rack]
-    post:    tube_on_shaker
+    pre_check:    [shaker_slot_empty, tube_in_working_rack]
+    post_check:   tube_on_shaker
     on_fail: pause
 
   - name: shaken
     description: shaker runs — robot is free, OR-Tools fills idle time
     background: true
-    duration: [60, 180]
+    duration: 120
     requires: [loaded_shaker]
     tool:    feeder_tool
+    post_check:   stop_shaken
 
   - name: cap_fed
     description: feed one cap from autosampler to cap holder
-    duration: [5, 15]
+    duration: 10
     requires: []
     tool:    feeder_tool
-    pre:     cap_holder_empty
+    pre_check:    cap_holder_empty
     on_fail: pause
 
   - name: retrieved
     description: pick from shaker, inspect, decap, place in working rack
-    duration: [5, 15]
+    duration: 10
     requires: [shaken]
     tool:    gripper
-    pre:     tube_on_shaker
-    post:    tube_in_working_rack
+    pre_check:    tube_on_shaker
+    post_check:   tube_in_working_rack
     on_fail: pause
 
   - name: dosed_2ml
     description: dose from 40ml into 2ml vials
-    duration: [5, 15]
+    duration: 10
     requires: [retrieved]
     tool:    needle
-    pre:     tube_in_working_rack
+    pre_check:    tube_in_working_rack
     on_fail: pause
 
   - name: recapped_final
     description: recap 40ml tube and return to source rack
-    duration: [5, 15]
+    duration: 10
     requires: [dosed_2ml]
     tool:    gripper
     on_fail: pause
 
   - name: capped_2ml
     description: cap 2ml vial, inspect, place in rack
-    duration: [5, 15]
+    duration: 10
     requires: [cap_fed, dosed_2ml]
     tool:    gripper_2ml
-    pre:     cap_in_holder
-    post:    tube_in_2ml_rack
+    pre_check:    cap_in_holder
+    post_check:   tube_in_2ml_rack
     on_fail: pause
 
 goal:

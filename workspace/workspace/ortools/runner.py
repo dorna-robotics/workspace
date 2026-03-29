@@ -41,17 +41,14 @@ class ORRunner:
         rt,
         protocol_path: Path,
         n_items: int,
-        cfg=None,
         horizon: int | None = None,
     ):
         self.rt       = rt
         self._horizon = horizon
-        self._cfg     = cfg
 
         self._scheduler  = ORScheduler(protocol_path)
         self._handlers:   dict[str, Callable] = {}
-        self._bg_cleanup: dict[str, Callable] = {}
-        self._checks:     dict[str, Callable] = {}  # name → fn(item_i, cfg) -> (bool, str)
+        self._checks:     dict[str, Callable] = {}
 
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
@@ -68,30 +65,13 @@ class ORRunner:
                 continue
             sn = s["name"]
             d  = s.get("duration")
-            if cfg and isinstance(d, str):
-                self._bg_dur[sn] = float(getattr(cfg, d, 120))
-            elif isinstance(d, list):
-                val = getattr(cfg, "shake_duration", None) if cfg else None
-                self._bg_dur[sn] = float(val) if val is not None else float((d[0] + d[1]) / 2)
-            elif isinstance(d, (int, float)):
-                self._bg_dur[sn] = float(d)
-            else:
-                self._bg_dur[sn] = 120.0
+            self._bg_dur[sn] = float(d) if isinstance(d, (int, float)) else 120.0
 
     # ── Registration ─────────────────────────────────────────────────────────
 
-    def register(self, state_name: str, handler: Callable, cleanup: Callable = None):
-        """
-        Register the execution handler for a state.
-
-        cleanup: optional function called after a background state's timer
-                 expires (e.g. stop_shaking). Only relevant for background states.
-
-                 runner.register("shaken", shaken, cleanup=stop_shaken)
-        """
+    def register_state(self, state_name: str, handler: Callable):
+        """Register the execution handler for a state."""
         self._handlers[state_name] = handler
-        if cleanup:
-            self._bg_cleanup[state_name] = cleanup
 
     def register_check(self, name: str, fn: Callable):
         """
@@ -139,8 +119,8 @@ class ORRunner:
                         self._wait_bg(req, bg_active)
 
                 # ── Pre-checks ────────────────────────────────────────────
-                pre = s.get("pre")
-                if pre and not self._run_checks(pre, item_i, "pre", state_name, on_fail):
+                pre = s.get("pre_check")
+                if pre and not self._run_checks(pre, item_i, "pre_check", state_name, on_fail):
                     continue  # skip this task — user will resume after clearing
 
                 handler = self._handlers.get(state_name)
@@ -160,9 +140,9 @@ class ORRunner:
                     completed[state_name].add(item_i)
 
                 # ── Post-checks ───────────────────────────────────────────
-                post = s.get("post")
+                post = s.get("post_check")
                 if post and not is_bg:
-                    self._run_checks(post, item_i, "post", state_name, on_fail)
+                    self._run_checks(post, item_i, "post_check", state_name, on_fail)
 
             if not self._horizon:
                 break
@@ -202,7 +182,7 @@ class ORRunner:
             if fn is None:
                 continue  # not registered → skip silently
 
-            passed, msg = fn(item_i, self._cfg)
+            passed, msg = fn(item_i)
 
             if not passed:
                 self.rt.step(
@@ -229,6 +209,9 @@ class ORRunner:
         if remaining > 0:
             self.rt.step(f"Waiting {remaining:.0f}s for {bg_name} to finish")
             self.rt.delay(remaining)
-        cleanup = self._bg_cleanup.get(bg_name)
-        if cleanup:
-            cleanup()
+        post = self._smap.get(bg_name, {}).get("post_check")
+        if post:
+            for name in ([post] if isinstance(post, str) else post):
+                cleanup = self._handlers.get(name)
+                if cleanup:
+                    cleanup()

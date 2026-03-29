@@ -44,10 +44,8 @@ class ORScheduler:
     # ── Duration helpers ─────────────────────────────────────────────────────
 
     def _duration(self, state_name: str) -> int:
-        """Midpoint of [min, max] duration, in integer seconds."""
-        d = self._smap[state_name].get("duration", [10, 10])
-        if isinstance(d, list):
-            return max(1, int((d[0] + d[1]) / 2))
+        """Duration in integer seconds."""
+        d = self._smap[state_name].get("duration", 10)
         return max(1, int(d))
 
     # ── Public interface ─────────────────────────────────────────────────────
