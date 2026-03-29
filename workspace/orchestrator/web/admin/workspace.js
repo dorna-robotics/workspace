@@ -598,9 +598,9 @@ function formatParamsYaml(values) {
 
 async function loadRunParams() {
   try {
-    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
-    const values = j.kwargs_values || {};
-    paramsPre.textContent = formatParamsYaml(values);
+    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/last_run_kwargs`);
+    const values = j.last_run_kwargs;
+    paramsPre.textContent = values ? formatParamsYaml(values) : "(no parameters — not started yet)";
   } catch {
     paramsPre.textContent = "(could not load)";
   }

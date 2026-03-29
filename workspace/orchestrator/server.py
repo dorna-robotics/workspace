@@ -61,8 +61,11 @@ class WorkspaceInfo:
         # If set => this workspace is remote, and commands/status/logs are proxied to that orchestrator
         self.node_url: Optional[str] = node_url.strip().rstrip("/") if node_url else None
 
-        # Last-used kwargs values (persisted across runs)
+        # Saved kwargs values (user-configured defaults, persisted in registry)
         self.kwargs_values: Dict = kwargs_values or {}
+
+        # Last-run kwargs (in-memory only, set on start, cleared on kill)
+        self.last_run_kwargs: Optional[Dict] = None
 
         # Local process handle (only for local workspaces)
         self.process: Optional[subprocess.Popen] = None
@@ -118,9 +121,10 @@ class WorkspaceInfo:
             "node_url": self.node_url or "",
         }
         if self.kwargs_values:
-            # Don't persist file paths — they must be re-uploaded each run
+            # Only persist keys that exist in current launch.yaml, excluding file types
+            schema = self.launch_config() or {}
             file_keys = self.file_kwargs_keys()
-            filtered = {k: v for k, v in self.kwargs_values.items() if k not in file_keys}
+            filtered = {k: v for k, v in self.kwargs_values.items() if k in schema and k not in file_keys}
             if filtered:
                 d["kwargs_values"] = filtered
         return d
@@ -407,7 +411,8 @@ class Orchestrator:
                 pass
             ws._log_f = None
 
-        # Clear uploaded files — user must re-upload next run
+        # Clear run state
+        ws.last_run_kwargs = None
         ws.clear_uploads()
         self.save_registry()
 
@@ -443,10 +448,11 @@ class Orchestrator:
         if not self.wait_until_ready(name, timeout=2.0):
             raise RuntimeError(f"Workspace {name} is launched but not responding. Check logs: {ws.log_path}")
 
-        # Persist kwargs for next run
+        # Save kwargs for next run + record what was actually sent
         if kwargs is not None:
             ws.kwargs_values = kwargs
             self.save_registry()
+        ws.last_run_kwargs = kwargs or ws.kwargs_values.copy() or None
 
         return self._send_runtime_cmd_local(ws, "start", kwargs=kwargs)
 
@@ -701,6 +707,22 @@ class UpdateKwargsHandler(AuthedHandler):
             ws.kwargs_values = data.get("kwargs_values", {})
             self.orch.save_registry()
             self.write({"status": "ok"})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class LastRunKwargsHandler(tornado.web.RequestHandler):
+    """Returns the kwargs that were sent on the last start command (in-memory only)."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name):
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            ws = self.orch.workspaces[name]
+            self.write({"last_run_kwargs": ws.last_run_kwargs})
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -970,6 +992,7 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/last_run_kwargs", LastRunKwargsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=self.orch)),
 
             # ---- WebSocket live status ----
