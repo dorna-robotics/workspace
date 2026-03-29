@@ -185,54 +185,6 @@
     .ws-search::placeholder { color: var(--muted); }
     [data-theme="light"] .ws-search { background: #fff; border-color: var(--border); }
 
-    /* ---- Kwargs form ---- */
-    .kwargs-form { display: flex; flex-direction: column; gap: 14px; }
-    .kwargs-form .kw-field { display: flex; flex-direction: column; gap: 4px; }
-    .kwargs-form .kw-label-row {
-      display: flex; align-items: center; gap: 6px;
-    }
-    .kwargs-form .kw-label {
-      font-size: 12px; font-weight: 600; color: var(--text);
-      text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    .kwargs-form .kw-optional {
-      font-size: 10px; font-weight: 400; color: var(--muted);
-      text-transform: none; letter-spacing: 0;
-    }
-    .kwargs-form .kw-input-row {
-      display: flex; align-items: flex-start; gap: 6px;
-    }
-    .kwargs-form .kw-input-row .input { flex: 1; min-width: 0; }
-    .kwargs-form .kw-input-row textarea.input { line-height: 1.5; }
-    .kwargs-form .kw-reset {
-      background: none; border: 1px solid var(--border2); border-radius: 6px;
-      color: var(--muted); cursor: pointer; padding: 5px 6px;
-      display: flex; align-items: center; justify-content: center;
-      transition: background 0.12s, color 0.12s, border-color 0.12s;
-      flex-shrink: 0; margin-left: auto;
-    }
-    .kwargs-form .kw-reset:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
-    [data-theme="light"] .kwargs-form .kw-reset { background: #fff; border-color: var(--border); }
-    [data-theme="light"] .kwargs-form .kw-reset:hover { background: var(--surface2); }
-    .kwargs-form .kw-hint {
-      font-size: 11px; color: var(--muted); line-height: 1.4;
-    }
-    .kwargs-empty {
-      font-size: 12px; color: var(--muted); padding: 16px 0; text-align: center;
-    }
-    .kwargs-banner {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 11px; font-weight: 500; color: var(--muted);
-      font-style: italic;
-      border-left: 3px solid var(--border2);
-      padding: 6px 12px; margin-bottom: 6px;
-    }
-    .kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
-    .kwargs-banner.frozen {
-      color: var(--amber); border-left-color: var(--amber);
-    }
-    .kwargs-banner.frozen svg { opacity: 0.7; }
-
   </style>
 </head>
 <body>
