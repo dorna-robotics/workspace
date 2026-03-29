@@ -43,7 +43,7 @@ async function loadWorkspaces() {
       port:         Number(s.port || 0),
       path_to_file: s.path_to_file || "",
       node_url:     (s.node_url || "").trim(),
-      kwargs_values: s.kwargs_values || {},
+      kwargs_values: prev?.kwargs_values || {},
       lastStatus:   prev?.lastStatus || { state: "unknown" },
     };
   });
@@ -121,13 +121,13 @@ async function openParamsModal(name, frozen) {
         <button class="btn" id="btnParamsCancel">Cancel</button>
         <div class="spacer"></div>
         <button class="btn" id="btnParamsReset">Reset All</button>
-        <button class="btn btn-primary" id="btnParamsSave">Save</button>`;
+        <button class="btn btn-primary" id="btnParamsSet">Set</button>`;
       paramsFoot.querySelector("#btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
       paramsFoot.querySelector("#btnParamsReset").addEventListener("click", () => {
         renderKwargsForm(paramsForm, schema, {}, false, name);
         toast("Reset to defaults", "ok");
       });
-      paramsFoot.querySelector("#btnParamsSave").addEventListener("click", async () => {
+      paramsFoot.querySelector("#btnParamsSet").addEventListener("click", async () => {
         const errs = validateKwargsForm(paramsForm, schema);
         if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
         const vals = readKwargsForm(paramsForm);
@@ -136,7 +136,7 @@ async function openParamsModal(name, frozen) {
             method: "POST", body: JSON.stringify({ kwargs_values: vals })
           });
           ws.kwargs_values = vals;
-          toast("Parameters saved", "ok");
+          toast("Parameters set", "ok");
           paramsModal.classList.remove("show");
         } catch (err) { toast(String(err), "bad"); }
       });

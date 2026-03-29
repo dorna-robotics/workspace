@@ -104,13 +104,13 @@ async function openParamsModal(frozen) {
         <button class="btn" id="btnParamsCancel">Cancel</button>
         <div class="spacer"></div>
         <button class="btn" id="btnParamsReset">Reset All</button>
-        <button class="btn btn-primary" id="btnParamsSave">Save</button>`;
+        <button class="btn btn-primary" id="btnParamsSet">Set</button>`;
       $("btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
       $("btnParamsReset").addEventListener("click", () => {
         renderKwargsForm(paramsForm, schema, {}, false, wsName);
         toast("Reset to defaults", "ok");
       });
-      $("btnParamsSave").addEventListener("click", async () => {
+      $("btnParamsSet").addEventListener("click", async () => {
         const errs = validateKwargsForm(paramsForm, schema);
         if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
         const vals = readKwargsForm(paramsForm);
@@ -119,7 +119,7 @@ async function openParamsModal(frozen) {
             method: "POST", body: JSON.stringify({ kwargs_values: vals })
           });
           _wsKwargsValues = vals;
-          toast("Parameters saved", "ok");
+          toast("Parameters set", "ok");
           paramsModal.classList.remove("show");
         } catch (err) { toast(String(err), "bad"); }
       });
@@ -545,7 +545,7 @@ async function init() {
     }
 
     wsLabelEl.textContent = wsInfo.label || "";
-    _wsKwargsValues = wsInfo.kwargs_values || {};
+    _wsKwargsValues = {};
     const fullUrl = wsViewerUrl(wsInfo);
     urlVal.textContent = fullUrl;
     urlVal.title       = fullUrl;

@@ -52,7 +52,7 @@ def _truncate_log_if_needed(path: str, max_bytes: int):
 
 class WorkspaceInfo:
     """Holds workspace process info and metadata."""
-    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = "", kwargs_values: Optional[Dict] = None):
+    def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = ""):
         self.name = name
         self.path_to_file = path_to_file
         self.port = int(port)
@@ -61,8 +61,8 @@ class WorkspaceInfo:
         # If set => this workspace is remote, and commands/status/logs are proxied to that orchestrator
         self.node_url: Optional[str] = node_url.strip().rstrip("/") if node_url else None
 
-        # Saved kwargs values (persisted in registry)
-        self.kwargs_values: Dict = kwargs_values or {}
+        # Current kwargs values (in-memory, set via modal, sent on start)
+        self.kwargs_values: Dict = {}
 
         # Local process handle (only for local workspaces)
         self.process: Optional[subprocess.Popen] = None
@@ -110,21 +110,13 @@ class WorkspaceInfo:
             self.kwargs_values.pop(k, None)
 
     def to_dict(self) -> Dict:
-        d = {
+        return {
             "name": self.name,
             "label": self.label,
             "path_to_file": self.path_to_file,
             "port": self.port,
             "node_url": self.node_url or "",
         }
-        if self.kwargs_values:
-            # Only persist keys that exist in current launch.yaml, excluding file types
-            schema = self.launch_config() or {}
-            file_keys = self.file_kwargs_keys()
-            filtered = {k: v for k, v in self.kwargs_values.items() if k in schema and k not in file_keys}
-            if filtered:
-                d["kwargs_values"] = filtered
-        return d
 
 
 class Orchestrator:
@@ -164,7 +156,6 @@ class Orchestrator:
                         port=int(item.get("port", 0)),
                         node_url=item.get("node_url") or None,
                         label=item.get("label", "") or "",
-                        kwargs_values=item.get("kwargs_values") or {},
                         sync_remote=False,   # IMPORTANT: don't re-add remotely on startup
                         persist=False,       # we'll persist once after bulk load
                     )
@@ -184,14 +175,13 @@ class Orchestrator:
         port: int,
         node_url: Optional[str] = None,
         label: str = "",
-        kwargs_values: Optional[Dict] = None,
         sync_remote: bool = True,
         persist: bool = True,
     ):
         if name in self.workspaces:
             raise ValueError(f"Workspace {name} already exists.")
 
-        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=int(port), node_url=node_url, label=label, kwargs_values=kwargs_values)
+        ws = WorkspaceInfo(name=name, path_to_file=path_to_file, port=int(port), node_url=node_url, label=label)
 
         # Local workspace must have a valid file path
         if not ws.is_remote():
@@ -409,7 +399,6 @@ class Orchestrator:
             ws._log_f = None
 
         ws.clear_uploads()
-        self.save_registry()
 
     def relaunch_workspace(self, name: str):
         ws = self.workspaces[name]
@@ -445,7 +434,6 @@ class Orchestrator:
 
         if kwargs is not None:
             ws.kwargs_values = kwargs
-            self.save_registry()
 
         return self._send_runtime_cmd_local(ws, "start", kwargs=kwargs)
 
@@ -674,9 +662,8 @@ class FileUploadHandler(AuthedHandler):
                     f.write(uploaded["body"])
                 result = {"status": "ok", "path": dest, "filename": filename}
 
-            # Store the path in kwargs_values
+            # Store the path in kwargs_values (in-memory)
             ws.kwargs_values[field] = result["path"]
-            self.orch.save_registry()
 
             self.write(result)
         except Exception as e:
@@ -698,7 +685,6 @@ class UpdateKwargsHandler(AuthedHandler):
             data = json.loads(self.request.body.decode())
             ws = self.orch.workspaces[name]
             ws.kwargs_values = data.get("kwargs_values", {})
-            self.orch.save_registry()
             self.write({"status": "ok"})
         except Exception as e:
             self.set_status(400)
