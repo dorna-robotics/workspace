@@ -221,6 +221,9 @@ function updateStatusUI(st) {
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
+
+  // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
+  if (prevUpper !== curUpper) loadRunParams();
 }
 
 let _prevStepCount = 0;
@@ -421,7 +424,7 @@ function renderControls(state, launched, running) {
         await sendCmd(cmd, kwargs);
         toast(`${cmd} sent`, "ok");
         await refreshStatus();
-        if (cmd === "start") loadRunParams();
+        if (cmd === "launch") loadRunParams();
       } catch (err) {
         toast(String(err), "bad");
         b.disabled = false;
@@ -597,11 +600,15 @@ function formatParamsYaml(values) {
 }
 
 async function loadRunParams() {
+  // Only show params when workspace is launched
+  if (!isLaunched(_lastState)) {
+    paramsPre.textContent = "(not launched)";
+    return;
+  }
   try {
     const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
     const schema = j.kwargs_schema || {};
     const values = j.kwargs_values || {};
-    // Only show keys that exist in the current schema
     const filtered = {};
     for (const k of Object.keys(schema)) {
       filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
