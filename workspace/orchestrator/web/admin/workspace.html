@@ -271,34 +271,6 @@
     .viewer-placeholder h3 { font-size: 14px; color: var(--muted); font-weight: 500; }
     .viewer-placeholder p  { font-size: 12px; }
 
-    .viewer-toolbar {
-      position: absolute;
-      top: 10px; right: 10px;
-      display: flex; gap: 5px;
-      z-index: 2;
-    }
-    .viewer-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px;
-      border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(0,0,0,0.45);
-      color: rgba(255,255,255,0.7);
-      cursor: pointer;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      transition: background 0.12s, color 0.12s, border-color 0.12s;
-    }
-    .viewer-btn:hover { background: rgba(0,0,0,0.65); color: #fff; border-color: rgba(255,255,255,0.25); }
-    .viewer-btn.off { color: rgba(255,255,255,0.25); }
-    .viewer-btn.off:hover { color: rgba(255,255,255,0.5); }
-    [data-theme="light"] .viewer-btn {
-      background: rgba(255,255,255,0.7); border-color: var(--border);
-      color: var(--muted);
-    }
-    [data-theme="light"] .viewer-btn:hover { background: rgba(255,255,255,0.9); color: var(--text); }
-    [data-theme="light"] .viewer-btn.off { color: var(--muted2); }
-
     /* ---- Mobile ---- */
     @media (max-width: 768px) {
       html, body { height: auto; overflow: auto; }
@@ -427,11 +399,6 @@
   </aside>
 
   <div class="viewer-area">
-    <div class="viewer-toolbar">
-      <button class="viewer-btn" id="btnToggle3d" title="Toggle 3D viewer">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      </button>
-    </div>
     <iframe id="ws3dFrame" src="about:blank"></iframe>
     <div class="viewer-placeholder" id="viewerPlaceholder">
       <div class="ph-icon">⬡</div>

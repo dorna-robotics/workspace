@@ -463,7 +463,7 @@ function renderControls(state, launched, running) {
 }
 
 function updateIframe(state, launched) {
-  if (!wsInfo || !_3dEnabled) return;
+  if (!wsInfo) return;
   const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
   if (!ready) {
     if (iframeReady) {
@@ -788,29 +788,7 @@ $("pendantParams").addEventListener("click", () => {
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
 
-// ---- 3D viewer toggle ----
-let _3dEnabled = true;
-const btn3d = $("btnToggle3d");
 
-btn3d.addEventListener("click", () => {
-  _3dEnabled = !_3dEnabled;
-  btn3d.classList.toggle("off", !_3dEnabled);
-  btn3d.title = _3dEnabled ? "Disable 3D viewer" : "Enable 3D viewer";
-  if (_3dEnabled) {
-    frame.style.display = "";
-    // Re-trigger iframe load if workspace is launched
-    if (iframeReady) {
-      iframeReady = false;
-      updateIframe(_lastState, isLaunched(_lastState));
-    }
-  } else {
-    frame.style.display = "none";
-    frame.src = "about:blank";
-    iframeReady = false;
-    iframeUrl = "";
-    disconnectStepWS();
-  }
-});
 
 // Alarm dismiss
 $("alarmDismiss").addEventListener("click", () => _hideBanner());
