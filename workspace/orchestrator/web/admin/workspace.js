@@ -598,9 +598,15 @@ function formatParamsYaml(values) {
 
 async function loadRunParams() {
   try {
-    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/last_run_kwargs`);
-    const values = j.last_run_kwargs;
-    paramsPre.textContent = values ? formatParamsYaml(values) : "(no parameters — not started yet)";
+    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
+    const schema = j.kwargs_schema || {};
+    const values = j.kwargs_values || {};
+    // Only show keys that exist in the current schema
+    const filtered = {};
+    for (const k of Object.keys(schema)) {
+      filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
+    }
+    paramsPre.textContent = Object.keys(schema).length ? formatParamsYaml(filtered) : "(no parameters defined)";
   } catch {
     paramsPre.textContent = "(could not load)";
   }
