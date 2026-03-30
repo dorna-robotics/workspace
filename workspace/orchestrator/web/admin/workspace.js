@@ -747,6 +747,9 @@ function updatePendantUI() {
   const running = isRunning(state);
   const launched = isLaunched(state);
 
+  // Tint the overlay background based on state
+  pendantOverlay.setAttribute("data-variant", variant);
+
   const stateEl = $("pendantState");
   if (stateEl) {
     stateEl.setAttribute("data-variant", variant);
