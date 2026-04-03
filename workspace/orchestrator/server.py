@@ -95,6 +95,15 @@ class WorkspaceInfo:
         schema = self.launch_config() or {}
         return {k for k, v in schema.items() if isinstance(v, dict) and v.get("type") == "file"}
 
+    def close_log(self):
+        """Close the log file handle if open."""
+        if hasattr(self, "_log_f") and self._log_f:
+            try:
+                self._log_f.close()
+            except Exception:
+                pass
+            self._log_f = None
+
     def clear_uploads(self):
         """Remove the _uploads folder and clear file kwargs from kwargs_values."""
         try:
@@ -375,10 +384,7 @@ class Orchestrator:
             ws.process = None
             if ws.started_at and not ws.finished_at:
                 ws.finished_at = time.time()
-            if hasattr(ws, "_log_f") and ws._log_f:
-                try: ws._log_f.close()
-                except Exception: pass
-                ws._log_f = None
+            ws.close_log()
             return
 
         ws.process.terminate()
@@ -390,14 +396,7 @@ class Orchestrator:
         ws.process = None
         ws.finished_at = time.time()
 
-        # Close log file handle
-        if hasattr(ws, "_log_f") and ws._log_f:
-            try:
-                ws._log_f.close()
-            except Exception:
-                pass
-            ws._log_f = None
-
+        ws.close_log()
         ws.clear_uploads()
 
     def relaunch_workspace(self, name: str):

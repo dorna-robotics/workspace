@@ -40,27 +40,24 @@ sio = socketio.AsyncServer(
 
 # GLOBAL world state (viewer)
 world_state = {}
-def has_meshurl(state: dict) -> bool:
-    return any(isinstance(v, dict) and v.get("meshUrl") for v in state.values())
+def _has_meshurl(d: dict) -> bool:
+    try:
+        return any(isinstance(v, dict) and ("meshUrl" in v) for v in d.values())
+    except Exception:
+        return False
 
 
 def merge_into_state(state, payload):
     """
     Safely merges incoming pose frames or snapshots.
-
-    CRITICAL FIX:
-    - If previous world_state contains meshUrl, and
-      the incoming update does NOT contain meshUrl,
-      we KEEP the existing meshUrl.
+    Preserves meshUrl and identity fields from previous state if the
+    incoming update doesn't include them.
     """
     for name, spec in payload.items():
         prev = state.get(name, {})
 
-        # preserve meshUrl
         if "meshUrl" in prev and "meshUrl" not in spec:
             spec["meshUrl"] = prev["meshUrl"]
-
-        # preserve optional identity fields if you use them
         if "componentName" in prev and "componentName" not in spec:
             spec["componentName"] = prev["componentName"]
         if "solidName" in prev and "solidName" not in spec:
@@ -72,20 +69,10 @@ def merge_into_state(state, payload):
 
 @sio.event
 async def connect(sid, environ, auth):
-    # If we already have a complete state, send it to this client
     if world_state:
         await sio.emit("scene_update", world_state, room=sid)
-
-    # If we don't yet have meshUrl in state, force Display to resend snapshot
     if not _has_meshurl(world_state):
         await sio.emit("request_snapshot")
-
-
-def _has_meshurl(d: dict) -> bool:
-    try:
-        return any(isinstance(v, dict) and ("meshUrl" in v) for v in d.values())
-    except Exception:
-        return False
 
 
 @sio.event
