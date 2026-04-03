@@ -83,7 +83,7 @@ class BaseWorkflow:
         states_cls,
         checks_cls,
         batch_size: int = 1,
-        horizon: int = 20,
+        horizon: int = 60,
         **kwargs,
     ):
         self._base_dir = base_dir

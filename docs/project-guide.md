@@ -289,7 +289,7 @@ The orchestrator launches this with `sudo python3 main.py --port 5010`.
 | Parameter | Used by | Description |
 |-----------|---------|-------------|
 | `batch_size` | BaseWorkflow → scheduler | Number of items to process (default: 1) |
-| `horizon` | BaseWorkflow → scheduler | Rolling window: replan every N tasks (default: 20) |
+| `horizon` | BaseWorkflow → scheduler | Rolling window: replan every N tasks (default: 60). Rarely needs changing — only expose in launch.yaml if you have a specific reason. |
 | Everything else | States | Passed to `States.__init__(**kwargs)` — use whatever you need |
 
 ---
