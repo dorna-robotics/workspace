@@ -69,6 +69,7 @@ class Runtime:
 
         # workflow step tracking
         self._steps: list = []  # list of step labels (timeline)
+        self._progress: int = -1  # -1 = no progress, 0-100 = percentage
 
     # ---------------------------------------------------------------------
     # Status helpers
@@ -110,15 +111,32 @@ class Runtime:
     # Workflow step tracking
     # ---------------------------------------------------------------------
 
-    _STEP_LEVELS = ("info", "success", "warning", "error")
+    _STEP_LEVELS = ("info", "success", "warning", "error", "progress")
 
-    def step(self, label: str, level: str = "info") -> None:
+    def step(self, label, level: str = "info") -> None:
         """Mark a workflow step. Accumulates as a timeline in the dashboard.
 
-        level: 'info' (default), 'success', 'warning', or 'error'.
+        level: 'info' (default), 'success', 'warning', 'error', or 'progress'.
+        For progress: label is a number 0-100 (percentage).
         """
         if level not in self._STEP_LEVELS:
             level = "info"
+
+        if level == "progress":
+            # Progress: label is a number 0-100, stored separately, not in timeline
+            val = max(0, min(100, int(label)))
+            print(f"[STEP][progress] {val}%")
+            with self._lock:
+                self._progress = val
+                steps_snapshot = list(self._steps)
+            cb = self.on_step
+            if cb is not None:
+                try:
+                    cb(steps_snapshot)
+                except Exception:
+                    pass
+            return  # no checkpoint for progress updates
+
         print(f"[STEP][{level}] {label}")
         entry = {"label": str(label), "level": level}
         with self._lock:
@@ -135,12 +153,16 @@ class Runtime:
     @property
     def step_info(self) -> Optional[dict]:
         with self._lock:
-            if not self._steps:
+            if not self._steps and self._progress < 0:
                 return None
-            return {"steps": list(self._steps)}
+            d = {"steps": list(self._steps)}
+            if self._progress >= 0:
+                d["progress"] = self._progress
+            return d
 
     def _clear_steps(self) -> None:
         self._steps.clear()
+        self._progress = -1
 
     # ---------------------------------------------------------------------
     # Control API

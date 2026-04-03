@@ -219,6 +219,7 @@ function updateStatusUI(st) {
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
   renderStep(st?.step, running);
+  updateProgress(st?.step?.progress, launched);
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
@@ -413,6 +414,29 @@ function _alarmNotify(msg) {
       if (p === "granted") new Notification("Robot Alarm", { body: msg, icon: "favicon.png" });
     });
   }
+}
+
+let _lastProgress = -1;
+function updateProgress(progress, launched) {
+  const section = $("progressSection");
+  const fill = $("progressFill");
+  const label = $("progressLabel");
+  if (!section || !fill || !label) return;
+
+  if (progress == null || progress < 0 || !launched) {
+    if (_lastProgress >= 0) {
+      section.style.display = "none";
+      _lastProgress = -1;
+    }
+    return;
+  }
+
+  const p = Math.min(100, Math.max(0, progress));
+  section.style.display = "";
+  fill.style.width = p + "%";
+  fill.classList.toggle("done", p >= 100);
+  label.textContent = p + "%";
+  _lastProgress = p;
 }
 
 function renderControls(state, launched, running) {
@@ -766,6 +790,21 @@ function updatePendantUI() {
       stepEl.style.display = "";
     } else {
       stepEl.style.display = "none";
+    }
+  }
+
+  // Pendant progress bar
+  const pendantProg = $("pendantProgress");
+  const pendantFill = $("pendantProgressFill");
+  const pendantLabel = $("pendantProgressLabel");
+  if (pendantProg && pendantFill && pendantLabel) {
+    if (_lastProgress >= 0 && launched) {
+      pendantProg.style.display = "";
+      pendantFill.style.width = _lastProgress + "%";
+      pendantFill.classList.toggle("done", _lastProgress >= 100);
+      pendantLabel.textContent = _lastProgress + "%";
+    } else {
+      pendantProg.style.display = "none";
     }
   }
 

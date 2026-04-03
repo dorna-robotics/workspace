@@ -231,6 +231,11 @@ function render() {
         if (!label) return "";
         return `<div class="wc-step-msg${level === "error" ? " err" : level === "warning" ? " warn" : ""}" title="${esc(label)}">${esc(label)}</div>`;
       })()}
+      ${(() => {
+        const p = st.step?.progress;
+        if (p == null || p < 0) return "";
+        return `<div class="wc-progress"><div class="progress-bar"><div class="progress-bar-fill${p >= 100 ? " done" : ""}" style="width:${Math.min(100, Math.max(0, p))}%"></div></div></div>`;
+      })()}
       <div class="wc-footer">
         <a class="btn btn-primary btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
         <div class="spacer"></div>
