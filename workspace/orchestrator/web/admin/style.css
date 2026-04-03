@@ -813,43 +813,48 @@ a:hover { color: var(--accent-h); }
 }
 
 /* Start — green */
+/* Start — green */
 .pendant-start {
-  color: var(--green);
-  background: rgba(52,199,89,0.08);
+  color: #fff;
+  background: rgba(52,199,89,0.25);
+  box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.4);
 }
 .pendant-start:hover:not(:disabled) {
-  background: rgba(52,199,89,0.16);
-  box-shadow: 0 0 24px rgba(52,199,89,0.12);
+  background: rgba(52,199,89,0.35);
+  box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.5), 0 0 30px rgba(52,199,89,0.15);
 }
 
 /* Pause — amber */
 .pendant-pause {
-  color: var(--amber);
-  background: rgba(255,159,10,0.08);
+  color: #fff;
+  background: rgba(255,159,10,0.25);
+  box-shadow: inset 0 0 0 1.5px rgba(255,159,10,0.4);
 }
 .pendant-pause:hover:not(:disabled) {
-  background: rgba(255,159,10,0.16);
-  box-shadow: 0 0 24px rgba(255,159,10,0.12);
+  background: rgba(255,159,10,0.35);
+  box-shadow: inset 0 0 0 1.5px rgba(255,159,10,0.5), 0 0 30px rgba(255,159,10,0.15);
 }
 
-/* Relaunch — blue */
+/* Restart — blue */
 .pendant-relaunch {
-  color: var(--accent);
-  background: rgba(10,132,255,0.08);
+  color: #fff;
+  background: rgba(10,132,255,0.25);
+  box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.4);
 }
 .pendant-relaunch:hover:not(:disabled) {
-  background: rgba(10,132,255,0.16);
-  box-shadow: 0 0 24px rgba(10,132,255,0.12);
+  background: rgba(10,132,255,0.35);
+  box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.5), 0 0 30px rgba(10,132,255,0.15);
 }
 
 /* Kill — red */
 .pendant-kill {
-  color: var(--red);
-  background: rgba(255,69,58,0.08);
+  color: #fff;
+  background: rgba(255,69,58,0.25);
+  box-shadow: inset 0 0 0 1.5px rgba(255,69,58,0.4);
 }
 .pendant-kill:hover:not(:disabled) {
-  background: rgba(255,69,58,0.16);
-  box-shadow: 0 0 24px rgba(255,69,58,0.12);
+  background: rgba(255,69,58,0.35);
+  box-shadow: inset 0 0 0 1.5px rgba(255,69,58,0.5), 0 0 30px rgba(255,69,58,0.15);
 }
 
 /* Pressed feedback — flash effect */
@@ -992,14 +997,14 @@ a:hover { color: var(--accent-h); }
 }
 
 /* Light theme pendant overrides */
-[data-theme="light"] .pendant-start { background: rgba(36,138,61,0.06); }
-[data-theme="light"] .pendant-start:hover:not(:disabled) { background: rgba(36,138,61,0.12); }
-[data-theme="light"] .pendant-pause { background: rgba(199,124,10,0.06); }
-[data-theme="light"] .pendant-pause:hover:not(:disabled) { background: rgba(199,124,10,0.12); }
-[data-theme="light"] .pendant-relaunch { background: rgba(0,122,255,0.06); }
-[data-theme="light"] .pendant-relaunch:hover:not(:disabled) { background: rgba(0,122,255,0.12); }
-[data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.06); }
-[data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.12); }
+[data-theme="light"] .pendant-start { background: rgba(36,138,61,0.12); color: var(--green); box-shadow: inset 0 0 0 1.5px rgba(36,138,61,0.3); }
+[data-theme="light"] .pendant-start:hover:not(:disabled) { background: rgba(36,138,61,0.2); box-shadow: inset 0 0 0 1.5px rgba(36,138,61,0.45); }
+[data-theme="light"] .pendant-pause { background: rgba(199,124,10,0.12); color: var(--amber); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.3); }
+[data-theme="light"] .pendant-pause:hover:not(:disabled) { background: rgba(199,124,10,0.2); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.45); }
+[data-theme="light"] .pendant-relaunch { background: rgba(0,122,255,0.12); color: var(--accent); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.3); }
+[data-theme="light"] .pendant-relaunch:hover:not(:disabled) { background: rgba(0,122,255,0.2); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.45); }
+[data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.12); color: var(--red); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.3); }
+[data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.2); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.45); }
 [data-theme="light"] .pendant-secondary { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 [data-theme="light"] .pendant-btn { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 [data-theme="light"] .pendant-state { background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
