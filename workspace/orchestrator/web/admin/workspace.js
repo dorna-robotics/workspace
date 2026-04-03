@@ -218,8 +218,14 @@ function updateStatusUI(st) {
   // Accent the header border with state colour
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
-  renderStep(st?.step, running);
-  updateProgress(st?.step?.progress, launched);
+  // Clear everything when not launched (auto-kill resets to clean state)
+  if (curUpper === "NOT_LAUNCHED") {
+    renderStep(null, false);
+    updateProgress(null, false);
+  } else {
+    renderStep(st?.step, running);
+    updateProgress(st?.step?.progress, launched);
+  }
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
