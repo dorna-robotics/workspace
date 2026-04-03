@@ -33,7 +33,7 @@ class BaseWorkflow:
         # enum handlers: {constraint_name: {"enter": fn, "exit": fn}}
         self._enum_handlers = {}
 
-        protocol    = base_dir / "3_protocol" / "protocol.yaml"
+        protocol    = base_dir / "protocol" / "protocol.yaml"
         constraints = base_dir / "4_constraints" / "constraints.yaml"
         model       = base_dir / "5_rl" / "models" / "policy.zip"
 
@@ -43,12 +43,12 @@ class BaseWorkflow:
     # ── Loading ─────────────────────────────────────────────────────────────
 
     def _load_params(self) -> types.SimpleNamespace:
-        with open(self._base_dir / "2_params" / "params.yaml") as f:
+        with open(self._base_dir / "params" / "params.yaml") as f:
             data = yaml.safe_load(f)
         return types.SimpleNamespace(**data)
 
     def _load_recipes(self, workspace, core) -> dict:
-        with open(self._base_dir / "2_params" / "recipes.yaml") as f:
+        with open(self._base_dir / "params" / "recipes.yaml") as f:
             defs = yaml.safe_load(f)
         speed = getattr(self.cfg, "speed_factor", 10)
         rcp = {}

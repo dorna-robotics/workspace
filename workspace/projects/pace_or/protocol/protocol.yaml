@@ -1,4 +1,4 @@
-# pace_or/3_protocol/protocol.yaml
+# pace_or/protocol/protocol.yaml
 # Defines the full protocol: states, dependencies, tool, checks.
 #
 # tool:    which tool the robot must hold for this state
@@ -6,7 +6,7 @@
 # post_check: check name(s) to run AFTER executing  (single or list)
 # on_fail: what to do if a check fails — "pause" stops and waits for user
 #
-# Check functions live in 3_protocol/checks.py (same folder).
+# Check functions live in protocol/checks.py (same folder).
 # Step functions live in steps.py.
 
 states:

@@ -81,7 +81,7 @@ class BaseWorkflow:
         self._enum_state:    dict[str, str | None] = {}
         self._enum_handlers: dict[str, Callable]   = {}
 
-        protocol = base_dir / "3_protocol" / "protocol.yaml"
+        protocol = base_dir / "protocol" / "protocol.yaml"
 
         self.runner = ORRunner(
             self.rt, protocol, n_items,
@@ -93,7 +93,7 @@ class BaseWorkflow:
     # ── Loading ──────────────────────────────────────────────────────────────
 
     def _load_recipes(self, workspace, core) -> dict:
-        with open(self._base_dir / "2_recipes" / "recipes.yaml") as f:
+        with open(self._base_dir / "recipes" / "recipes.yaml") as f:
             defs = yaml.safe_load(f)
         speed = 10
         rcp   = {}
@@ -151,7 +151,7 @@ class BaseWorkflow:
         handler with tool pickup/place logic. Called after _register_all().
         No tool: field = no wrapping, no tool swap.
         """
-        with open(self._base_dir / "3_protocol" / "protocol.yaml") as f:
+        with open(self._base_dir / "protocol" / "protocol.yaml") as f:
             data = yaml.safe_load(f)
 
         tool_map = {s["name"]: s["tool"] for s in data["states"] if s.get("tool")}

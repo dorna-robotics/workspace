@@ -2,7 +2,7 @@
 # Generic Gymnasium environment for LAOS RL training.
 #
 # Reads everything from two YAML files:
-#   - 3_protocol/protocol.yaml      → states, dependencies, goals
+#   - protocol/protocol.yaml      → states, dependencies, goals
 #   - 4_constraints/constraints.yaml → rewards, constraints, reward rules
 #
 # Constraint types (defined in YAML, no code changes needed):

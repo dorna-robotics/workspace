@@ -1,5 +1,5 @@
 # runner.py
-# ProtocolRunner — reads 3_protocol/protocol.yaml and executes it.
+# ProtocolRunner — reads protocol/protocol.yaml and executes it.
 #
 # How it works:
 #   1. Loads states + dependency graph from protocol.yaml

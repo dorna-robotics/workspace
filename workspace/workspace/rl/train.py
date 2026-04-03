@@ -23,7 +23,7 @@ _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 def _make_env(project: str, n_items: int, max_items: int = None) -> BaseLabEnv:
     """Construct env directly from project YAML files."""
     base = _PROJECTS_DIR / project
-    protocol    = base / "3_protocol" / "protocol.yaml"
+    protocol    = base / "protocol" / "protocol.yaml"
     constraints = base / "4_constraints" / "constraints.yaml"
     if not protocol.exists():
         raise FileNotFoundError(f"No protocol.yaml at {protocol}")

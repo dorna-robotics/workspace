@@ -2,7 +2,7 @@
 # Project configuration and launch parameters.
 # The orchestrator reads this file to set up the workspace and GUI.
 
-scene: [1_scene/base.j2, 1_scene/layout.j2]
+scene: [scene/base.j2, scene/layout.j2]
 
 # kwargs — passed to workflow_fn at runtime.
 # Supported types: int, float, str, bool, choice, textarea, file

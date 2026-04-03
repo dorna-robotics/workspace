@@ -1,7 +1,7 @@
-# 2_recipes/recipes.yaml
+# recipes/recipes.yaml
 # Maps recipe aliases → class + kwargs passed to the constructor.
-# Aliases are referenced in params.yaml and workflow.py.
-# component names (e.g. tool_rack_144mm_1) come from 1_scene/base.j2.
+# Aliases are referenced in workflow.py.
+# component names (e.g. tool_rack_144mm_1) come from scene/base.j2.
 #
 # speed_factor is injected at runtime from params.yaml.
 

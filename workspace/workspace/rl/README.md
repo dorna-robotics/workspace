@@ -10,11 +10,11 @@ You define **what** exists (scene), **how** to operate it (recipes), **what stat
 
 ```
 projects/your_project/
-├── 1_scene/           ← hardware layout (Jinja2 templates)
-├── 2_params/
+├── scene/           ← hardware layout (Jinja2 templates)
+├── recipes/
 │   ├── params.yaml    ← positions, run parameters
 │   └── recipes.yaml   ← component aliases → recipe classes
-├── 3_protocol/
+├── protocol/
 │   └── protocol.yaml  ← state dependency graph
 ├── 4_constraints/
 │   └── constraints.yaml ← rewards, constraints, reward rules
@@ -26,13 +26,13 @@ projects/your_project/
 
 ## How to create a new project
 
-### Step 1: Scene — `1_scene/`
+### Step 1: Scene — `scene/`
 
 Define the physical components on the robot rail. Copy `base.j2` and `layout.j2` from an existing project and modify.
 
 These are real hardware names like `adapter_plate_amber_40ml_4x7_1`, `decapper_5`. Only this layer knows these names — everything else uses aliases.
 
-### Step 2: Recipes — `2_params/recipes.yaml`
+### Step 2: Recipes — `recipes/recipes.yaml`
 
 Give each component a human-readable alias and tell the system which recipe class to use:
 
@@ -47,10 +47,10 @@ source_rack:
 Fields:
 - `source_rack` — your alias. Used in params.yaml, protocol.yaml, constraints.yaml, and workflow.py.
 - `class` — full Python import path to the recipe class. This tells the system HOW to interact with this component (pick, place, decap, etc.). No hardcoded import map needed — the system imports it dynamically.
-- `kwargs.component` — the hardware name from `1_scene/`. This is the only place where the scene name appears outside of `1_scene/`.
+- `kwargs.component` — the hardware name from `scene/`. This is the only place where the scene name appears outside of `scene/`.
 - Other kwargs — recipe-specific parameters (approach distances, rail spans, etc.).
 
-### Step 3: Params — `2_params/params.yaml`
+### Step 3: Params — `recipes/params.yaml`
 
 Define positions and run parameters. Use the aliases from recipes.yaml:
 
@@ -69,7 +69,7 @@ source:
 
 Accessed in workflow.py as `cfg.source[i][0]` (alias) and `cfg.source[i][1]` (anchor).
 
-### Step 4: Protocol — `3_protocol/protocol.yaml`
+### Step 4: Protocol — `protocol/protocol.yaml`
 
 Define the states each item must reach and their dependencies:
 
@@ -317,20 +317,20 @@ Point the orchestrator to `main.py`. The trained model decides execution order a
 All names flow from one file to the next:
 
 ```
-1_scene/layout.j2
+scene/layout.j2
     │
     │ component: adapter_plate_amber_40ml_4x7_1
     ↓
-2_params/recipes.yaml
+recipes/recipes.yaml
     │
     │ alias: source_rack  →  class: workspace.recipes.rack.Rack
     │                         kwargs.component: adapter_plate_amber_40ml_4x7_1
     ↓
-2_params/params.yaml
+recipes/params.yaml
     │
     │ source: [[source_rack, A1], [source_rack, A2]]
     ↓
-3_protocol/protocol.yaml
+protocol/protocol.yaml
     │
     │ state name: source_rack.pick  (any string, alias.method by convention)
     │ requires: []

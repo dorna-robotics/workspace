@@ -29,8 +29,7 @@ class ORRunner:
 
     Args:
         rt:               Runtime object (provides rt.step, rt.delay, rt.pause).
-        protocol_path:    Path to 3_protocol/protocol.yaml.
-        constraints_path: Path to 4_constraints/constraints.yaml.
+        protocol_path:    Path to protocol/protocol.yaml.
         n_items:          Number of items — set dynamically at run time.
         cfg:              Params namespace (for real background durations).
         horizon:          Rolling window size (None = plan all tasks at once).
