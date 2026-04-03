@@ -599,12 +599,9 @@ a:hover { color: var(--accent-h); }
 .wc-progress-label { font-size: 11px; font-weight: 600; font-family: var(--mono); color: var(--muted); flex-shrink: 0; }
 
 /* Sidebar progress */
-.sidebar-progress { margin-top: 4px; }
-.sidebar-progress-label {
-  font-size: 11px; color: var(--muted); margin-bottom: 4px;
-  display: flex; justify-content: space-between;
-}
-.sidebar-progress-label span { font-family: var(--mono); font-weight: 600; color: var(--text); }
+.sidebar-progress { margin-top: 4px; display: flex; align-items: center; gap: 10px; }
+.sidebar-progress .progress-bar { flex: 1; }
+.sidebar-progress > span { font-size: 11px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* Pendant progress */
 .pendant-progress {
