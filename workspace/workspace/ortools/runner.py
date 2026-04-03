@@ -208,11 +208,10 @@ class ORRunner:
 
             if not passed:
                 if on_fail == "skip":
-                    self.rt.step(f"Check failed [{name}] — skipping", level="warning")
+                    pass
                 elif callable(on_fail):
                     on_fail(item_i, name)
                 else:
-                    self.rt.step(f"Check failed [{name}] — paused", level="warning")
                     self.rt.pause()
                 return False
 

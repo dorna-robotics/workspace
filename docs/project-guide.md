@@ -125,8 +125,8 @@ Controls what happens when a `pre_check` or `post_check` fails on a state.
 
 | Value | Behavior |
 |-------|----------|
-| `"pause"` (default) | Pause and wait for operator to fix and resume |
-| `"skip"` | Log a warning and skip the task |
+| `"pause"` (default) | Pause and wait for operator to resume |
+| `"skip"` | Skip the task and continue |
 
 For custom behavior, register a handler in Python:
 
