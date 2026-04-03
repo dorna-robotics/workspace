@@ -862,36 +862,56 @@ a:hover { color: var(--accent-h); }
   100% { filter: brightness(1); }
 }
 
-/* Step message in pendant */
-.pendant-step {
+/* Pendant info area (steps + progress) */
+.pendant-info {
+  width: min(520px, 90vw);
   display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--muted);
-  max-width: min(90vw, 500px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 12px 28px;
-  border: none;
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  flex-direction: column;
+  gap: 12px;
 }
-.pendant-step::before {
-  content: "";
+.pendant-steps {
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 10px 0;
+  box-shadow: var(--shadow-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.pendant-steps:empty { display: none; }
+.pendant-step-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0.4;
+}
+.pendant-step-card.active { color: var(--text); opacity: 1; font-weight: 600; }
+.pendant-step-card.done { opacity: 0.5; }
+.pendant-step-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--muted);
+  opacity: 0.4;
   flex-shrink: 0;
-  box-shadow: 0 0 10px var(--accent);
+  margin-top: 6px;
 }
-.pendant-step.warn { color: var(--amber); }
-.pendant-step.warn::before { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
-.pendant-step.err { color: var(--red); }
-.pendant-step.err::before { background: var(--red); box-shadow: 0 0 10px var(--red); }
+.pendant-step-card.active .pendant-step-dot {
+  background: var(--accent); opacity: 1;
+  box-shadow: 0 0 8px var(--accent);
+}
+.pendant-step-card.active[data-level="success"] .pendant-step-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.pendant-step-card.active[data-level="warning"] .pendant-step-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.pendant-step-card.active[data-level="error"] .pendant-step-dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.pendant-step-card.done .pendant-step-dot { opacity: 0.6; }
+.pendant-step-card.done[data-level="success"] .pendant-step-dot { background: var(--green); opacity: 0.7; }
+.pendant-step-card.done[data-level="warning"] .pendant-step-dot { background: var(--amber); opacity: 0.7; }
+.pendant-step-card.done[data-level="error"] .pendant-step-dot { background: var(--red); opacity: 0.7; }
+.pendant-step-card[data-level="warning"] { color: var(--amber); }
+.pendant-step-card[data-level="error"] { color: var(--red); }
 
 .pendant-alarm {
   display: flex;
@@ -967,6 +987,9 @@ a:hover { color: var(--accent-h); }
   .pendant-state-text { font-size: 12px; }
   .pendant-exit { top: 10px; right: 10px; padding: 8px 16px; font-size: 13px; }
   .pendant-secondary { padding: 10px 22px; font-size: 14px; }
+  .pendant-info { width: 95vw; }
+  .pendant-steps { max-height: 140px; }
+  .pendant-step-card { font-size: 12px; padding: 3px 12px; }
 }
 
 /* Light theme pendant overrides */

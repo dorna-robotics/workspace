@@ -781,15 +781,28 @@ function updatePendantUI() {
     if (textEl) textEl.textContent = stateLabel(state);
   }
 
-  // Step message
-  const stepEl = $("pendantStep");
-  if (stepEl) {
-    if (_lastStepLabel && launched) {
-      stepEl.textContent = _lastStepLabel;
-      stepEl.className = `pendant-step${_lastStepLevel === "error" ? " err" : _lastStepLevel === "warning" ? " warn" : ""}`;
-      stepEl.style.display = "";
+  // Step timeline in pendant
+  const pendantStepsEl = $("pendantSteps");
+  if (pendantStepsEl) {
+    const timeline = $("stepTimeline");
+    if (timeline && launched) {
+      // Mirror the sidebar step cards into pendant
+      const cards = timeline.querySelectorAll(".step-card");
+      if (cards.length) {
+        let html = "";
+        cards.forEach(card => {
+          const text = card.querySelector(".step-text")?.textContent || "";
+          const level = card.dataset.level || "info";
+          const cls = card.classList.contains("active") ? "active" : "done";
+          html += `<div class="pendant-step-card ${cls}" data-level="${level}"><span class="pendant-step-dot"></span><span>${text}</span></div>`;
+        });
+        pendantStepsEl.innerHTML = html;
+        pendantStepsEl.scrollTop = pendantStepsEl.scrollHeight;
+      } else {
+        pendantStepsEl.innerHTML = "";
+      }
     } else {
-      stepEl.style.display = "none";
+      pendantStepsEl.innerHTML = "";
     }
   }
 
