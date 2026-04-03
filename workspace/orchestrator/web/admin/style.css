@@ -591,7 +591,6 @@ a:hover { color: var(--accent-h); }
   border-radius: 4px;
   transition: width 0.3s ease;
 }
-.progress-bar-fill.done { background: var(--green); }
 
 /* Card progress */
 .wc-progress { padding: 0 20px 12px; display: flex; align-items: center; gap: 10px; }
