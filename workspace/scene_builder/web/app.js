@@ -4637,7 +4637,7 @@ async function openCreatePanel(typeName) {
   card.style.animation = "attachModalIn 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards";
 
   const title = document.createElement("div");
-  title.textContent = "Create: " + displayName(typeName);
+  title.textContent = "Add: " + displayName(typeName);
   title.style.fontWeight = "800";
   title.style.fontSize = "18px";
   title.style.marginBottom = "6px";
@@ -5022,7 +5022,7 @@ async function openCreatePanel(typeName) {
 
       try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
     }
-    catch (e) { console.error(e); showToast("Create failed: " + (e?.message||e)); }
+    catch (e) { console.error(e); showToast("Add failed: " + (e?.message||e)); }
   };
 
   row.appendChild(cancel);
