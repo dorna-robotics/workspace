@@ -18,9 +18,7 @@ kwargs:
 
   horizon:
     type: int
-    default: null
+    default: 20
     label: Planning horizon
-    hint: Plan this many items at a time. Empty = plan all at once.
-    placeholder: plan all at once
-    optional: true
+    hint: Replan every N tasks. Lower = more adaptive, higher = more optimal.
     min: 1
