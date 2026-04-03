@@ -295,7 +295,7 @@ a:hover { color: var(--accent-h); }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 5px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -496,8 +496,8 @@ a:hover { color: var(--accent-h); }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
-  padding: 9px 14px;
+  font-size: 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border2);
   gap: 8px;
 }
