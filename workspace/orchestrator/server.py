@@ -866,13 +866,6 @@ async def broadcast_status(orch: Orchestrator):
         pairs = await asyncio.gather(*[fetch_one(n) for n in names])
         statuses = dict(pairs)
 
-        # Cache step data from live statuses; restore when process is gone
-        for name, st in statuses.items():
-            if st.get("step"):
-                _ws_step_cache[name] = st["step"]
-            elif _ws_step_cache.get(name) and not st.get("step"):
-                st["step"] = _ws_step_cache[name]
-
         # Auto-kill: when workflow finishes (RUNNING/ACTIVE → IDLE), kill process
         # so user must Launch fresh next time with new params
         for name, st in statuses.items():
@@ -883,10 +876,18 @@ async def broadcast_status(orch: Orchestrator):
                     await loop.run_in_executor(_cmd_pool, orch.stop_workspace, name)
                     st["state"] = "NOT_LAUNCHED"
                     st["last_error"] = None
+                    st.pop("step", None)
                     _ws_step_cache.pop(name, None)
                 except Exception:
                     pass
             _ws_prev_states[name] = cur
+
+        # Cache step data from live statuses; restore when process is gone
+        for name, st in statuses.items():
+            if st.get("step"):
+                _ws_step_cache[name] = st["step"]
+            elif _ws_step_cache.get(name) and not st.get("step"):
+                st["step"] = _ws_step_cache[name]
 
         if not _ws_clients:
             return
