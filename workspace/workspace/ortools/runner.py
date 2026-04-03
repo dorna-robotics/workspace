@@ -48,6 +48,7 @@ class ORRunner:
         self._scheduler  = ORScheduler(protocol_path)
         self._handlers:   dict[str, Callable] = {}
         self._checks:     dict[str, Callable] = {}
+        self._on_fail:    dict[str, Callable] = {}
 
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
@@ -84,6 +85,15 @@ class ORRunner:
         """
         self._checks[name] = fn
 
+    def register_on_fail(self, state_name: str, fn: Callable):
+        """
+        Register a custom on_fail handler for a state.
+
+        fn signature: (item_i: int, check_name: str, message: str) -> None
+        Overrides on_fail from protocol.yaml for this state.
+        """
+        self._on_fail[state_name] = fn
+
     # ── Main execution loop ───────────────────────────────────────────────────
 
     def run(self, batch_size: int):
@@ -113,7 +123,7 @@ class ORRunner:
             for (state_name, item_i) in schedule:
                 s       = self._smap[state_name]
                 is_bg   = s.get("background", False)
-                on_fail = s.get("on_fail", "pause")
+                on_fail = self._on_fail.get(state_name) or s.get("on_fail", "pause")
 
                 # Wait for any still-running background prereqs
                 for req in s.get("requires", []):
@@ -192,11 +202,24 @@ class ORRunner:
             passed, msg = fn(item_i)
 
             if not passed:
-                self.rt.step(
-                    f"Check failed [{stage}:{state_name}:{name}] — {msg} — waiting for user",
-                    level="warning",
-                )
-                self.rt.pause()
+                if on_fail == "skip":
+                    self.rt.step(
+                        f"Check failed [{stage}:{state_name}:{name}] — {msg} — skipping",
+                        level="warning",
+                    )
+                elif callable(on_fail):
+                    self.rt.step(
+                        f"Check failed [{stage}:{state_name}:{name}] — {msg}",
+                        level="warning",
+                    )
+                    on_fail(item_i, name, msg)
+                else:
+                    # Default: pause and wait for operator
+                    self.rt.step(
+                        f"Check failed [{stage}:{state_name}:{name}] — {msg} — waiting for user",
+                        level="warning",
+                    )
+                    self.rt.pause()
                 return False
 
         return True

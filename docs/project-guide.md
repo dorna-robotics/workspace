@@ -117,7 +117,28 @@ goal: [placed]
 | `background` | No | `true` = runs in parallel, completes all items at once |
 | `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
-| `on_fail` | No | `"pause"` = pause and wait for operator on check failure |
+| `on_fail` | No | What to do when a check fails (see below) |
+
+### on_fail
+
+Controls what happens when a `pre_check` or `post_check` fails on a state.
+
+| Value | Behavior |
+|-------|----------|
+| `"pause"` (default) | Pause and wait for operator to fix and resume |
+| `"skip"` | Log a warning and skip the task |
+
+For custom behavior, register a handler in Python:
+
+```python
+def my_handler(item_i, check_name, message):
+    # Custom recovery logic
+    rt.step(f"Recovering from {check_name}: {message}", level="warning")
+
+runner.register_on_fail("picked", my_handler)
+```
+
+The custom handler overrides the YAML `on_fail` for that state. It receives the item index, which check failed, and the failure message.
 
 ### Goal
 
@@ -127,7 +148,44 @@ If your project processes multiple items (e.g. tubes, vials), pass `batch_size` 
 
 ---
 
-## 4. States — `states.py`
+## 4. Checks — `protocol/checks.py`
+
+Verification functions that run before/after states. The keys in `make()` are the names you reference in `pre_check` and `post_check` in `protocol.yaml`.
+
+```python
+class Checks:
+    def tube_in_rack(self, i):
+        """Check if tube i is in the rack."""
+        return True, f"Tube {i} is in rack"
+
+    def tube_picked(self, i):
+        ok = gripper.has_object()
+        return ok, "Tube picked" if ok else "Gripper empty — pick failed"
+
+    def make(self):
+        return {
+            "tube_in_rack": self.tube_in_rack,   # ← use in protocol.yaml as pre_check: tube_in_rack
+            "tube_picked": self.tube_picked,      # ← use in protocol.yaml as post_check: tube_picked
+        }
+```
+
+```yaml
+# protocol.yaml — references the check names from make()
+states:
+  - name: picked
+    pre_check: tube_in_rack
+    post_check: tube_picked
+    on_fail: pause
+```
+
+- Each check receives `i` (item index) and returns `(passed: bool, message: str)`
+- `True` = check passed, continue
+- `False` = check failed. With `on_fail: "pause"`, the system pauses and shows the failure message in the dashboard. The operator fixes the issue and resumes.
+- Checks are optional — states without `pre_check`/`post_check` just run directly
+
+---
+
+## 5. States — `states.py`
 
 Each state is a function that executes one item.
 
@@ -136,7 +194,7 @@ class States:
     def __init__(self, rcp, rt, n):
         self.rcp = rcp   # Recipe dict from recipes.yaml
         self.rt  = rt     # Runtime (for step, call, sleep)
-        self.n   = n      # Number of items
+        self.n   = n      # Batch size
 
     def picked(self, i):
         """Pick tube i from the rack."""
@@ -158,37 +216,9 @@ class States:
         }
 ```
 
-- `i` is the item index (0 to n-1).
+- `i` is the item index (0 to batch_size-1).
 - Use `rt.call()` for robot commands — it handles alarms automatically.
 - Background states receive `i=0` and run once for all items.
-
----
-
-## 5. Checks — `protocol/checks.py`
-
-Verification functions that run before/after states.
-
-```python
-class Checks:
-    def tube_in_rack(self, i):
-        """Check if tube i is in the rack."""
-        # Return (passed: bool, message: str)
-        return True, f"Tube {i} is in rack"
-
-    def tube_picked(self, i):
-        ok = gripper.has_object()
-        return ok, "Tube picked" if ok else "Gripper empty — pick failed"
-
-    def make(self):
-        return {
-            "tube_in_rack": self.tube_in_rack,
-            "tube_picked": self.tube_picked,
-        }
-```
-
-- Return `(True, msg)` to pass, `(False, msg)` to fail.
-- On failure with `on_fail: "pause"`, the system pauses and waits for the operator.
-- The failure message appears in the dashboard step timeline.
 
 ---
 
