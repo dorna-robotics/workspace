@@ -21,6 +21,18 @@ projects/my_project/
     └── protocol.yaml    # States, dependencies, checks, goals
 ```
 
+### `scene/` — What's on the table
+
+Defines the physical hardware: robots, racks, tools, peripherals. Built using the **Scene Builder** GUI. The Jinja2 templates (`.j2` files) describe every component and its position. This is the source of truth for component names used in recipes.
+
+### `recipes/` — How to use the hardware
+
+Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.
+
+### `protocol/` — What to do and in what order
+
+Defines the workflow as a list of states with dependencies, tool assignments, and checks. The OR-Tools scheduler reads this to figure out the optimal execution order. You don't write the scheduling logic — you just declare "dosed requires picked" and the solver handles the rest.
+
 ---
 
 ## 1. Entry point — `main.py`
