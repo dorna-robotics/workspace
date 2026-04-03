@@ -4643,7 +4643,7 @@ async function openCreatePanel(typeName) {
   title.style.marginBottom = "6px";
 
   const hint = document.createElement("div");
-  hint.textContent = "Set options (if any), then click Create.";
+  hint.textContent = "Set options (if any), then click Add.";
   hint.style.opacity = "0.7";
   hint.style.fontSize = "13px";
   hint.style.marginBottom = "14px";
@@ -4951,7 +4951,7 @@ async function openCreatePanel(typeName) {
 
   const create = document.createElement("button");
   create.className = "btn btn-primary";
-  create.textContent = "Create";
+  create.textContent = "Add";
   create.onclick = async () => {
     // collect values
     const optsOut = {};
@@ -5593,7 +5593,7 @@ function __openCollisionBoxPanel() {
   panel.appendChild(title);
 
   const hint = document.createElement("div");
-  hint.textContent = "Select a target object, pick an anchor, set size, then Create.";
+  hint.textContent = "Select a target object, pick an anchor, set size, then Add.";
   hint.style.cssText = "font-size:11px;opacity:0.6;margin-bottom:10px;flex-shrink:0;";
   panel.appendChild(hint);
 
@@ -5785,7 +5785,7 @@ function __openCollisionBoxPanel() {
 
   const createBtn = document.createElement("button");
   createBtn.className = "btn btn-primary";
-  createBtn.textContent = "Create";
+  createBtn.textContent = "Add";
   createBtn.style.cssText = "opacity:0.4;pointer-events:none;";
   createBtn.addEventListener("click", () => {
     if (!selectedTarget || !selectedAnchor) return;
