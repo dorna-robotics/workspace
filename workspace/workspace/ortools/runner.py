@@ -48,7 +48,6 @@ class ORRunner:
         self._scheduler  = ORScheduler(protocol_path)
         self._handlers:   dict[str, Callable] = {}
         self._checks:     dict[str, Callable] = {}
-        self._on_fail:    dict[str, Callable] = {}
 
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
@@ -85,15 +84,6 @@ class ORRunner:
         """
         self._checks[name] = fn
 
-    def register_on_fail(self, state_name: str, fn: Callable):
-        """
-        Register a custom on_fail handler for a state.
-
-        fn signature: (item_i: int, check_name: str, message: str) -> None
-        Overrides on_fail from protocol.yaml for this state.
-        """
-        self._on_fail[state_name] = fn
-
     # ── Main execution loop ───────────────────────────────────────────────────
 
     def run(self, batch_size: int):
@@ -123,7 +113,6 @@ class ORRunner:
             for (state_name, item_i) in schedule:
                 s       = self._smap[state_name]
                 is_bg   = s.get("background", False)
-                on_fail = self._on_fail.get(state_name) or s.get("on_fail", "pause")
 
                 # Wait for any still-running background prereqs
                 for req in s.get("requires", []):
@@ -132,8 +121,8 @@ class ORRunner:
 
                 # ── Pre-checks ────────────────────────────────────────────
                 pre = s.get("pre_check")
-                if pre and not self._run_checks(pre, item_i, "pre_check", state_name, on_fail):
-                    continue  # skip this task — user will resume after clearing
+                if pre and not self._run_checks(pre, item_i):
+                    continue
 
                 handler = self._handlers.get(state_name)
 
@@ -158,7 +147,7 @@ class ORRunner:
                 # ── Post-checks ───────────────────────────────────────────
                 post = s.get("post_check")
                 if post and not is_bg:
-                    self._run_checks(post, item_i, "post_check", state_name, on_fail)
+                    self._run_checks(post, item_i)
 
             if not self._horizon:
                 break
@@ -176,45 +165,20 @@ class ORRunner:
 
     # ── Check execution ───────────────────────────────────────────────────────
 
-    def _run_checks(
-        self,
-        checks,           # str or list[str] from protocol.yaml
-        item_i: int,
-        stage: str,
-        state_name: str,
-        on_fail: str,
-    ) -> bool:
+    def _run_checks(self, checks, item_i: int) -> bool:
         """
-        Run one or more named checks. Returns True only if ALL pass.
-        Stops at the first failure, pauses the runtime, and returns False.
-
-        `checks` can be a single name or a list — both work:
-            pre: decapper_empty
-            pre: [decapper_empty, gripper_has_tube]
+        Run one or more named checks. Returns True if all pass, False on first failure.
+        The check itself handles messaging and pausing via rt.step() / rt.pause().
         """
         names = [checks] if isinstance(checks, str) else checks
-
         for name in names:
             fn = self._checks.get(name)
             if fn is None:
-                continue  # not registered → skip silently
-
+                continue
             result = fn(item_i)
-            # Support both bool and (bool, str) returns
-            if isinstance(result, tuple):
-                passed = result[0]
-            else:
-                passed = bool(result)
-
+            passed = result[0] if isinstance(result, tuple) else bool(result)
             if not passed:
-                if on_fail == "skip":
-                    pass
-                elif callable(on_fail):
-                    on_fail(item_i, name)
-                else:
-                    self.rt.pause()
                 return False
-
         return True
 
     # ── Background wait helper ────────────────────────────────────────────────

@@ -117,29 +117,6 @@ goal: [placed]
 | `background` | No | `true` = runs in parallel, completes all items at once |
 | `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
-| `on_fail` | No | What to do when a check fails (see below) |
-
-### on_fail
-
-Controls what happens when a `pre_check` or `post_check` fails on a state.
-
-| Value | Behavior |
-|-------|----------|
-| `"pause"` (default) | Pause and wait for operator to resume |
-| `"skip"` | Skip the task and continue |
-
-For custom behavior, register a handler in Python:
-
-```python
-def my_handler(item_i, check_name, message):
-    # Custom recovery logic
-    rt.step(f"Recovering from {check_name}: {message}", level="warning")
-
-runner.register_on_fail("picked", my_handler)
-```
-
-The custom handler overrides the YAML `on_fail` for that state. It receives the item index, which check failed, and the failure message.
-
 ### Goal
 
 The `goal` list defines terminal states. The protocol succeeds when every goal state has been completed.
@@ -180,9 +157,19 @@ states:
 ```
 
 - Each check receives `i` (item index) and returns `True` (passed) or `False` (failed)
-- Use `rt.step()` inside the check to show a custom message to the operator
-- On failure with `on_fail: "pause"` (default), the system pauses and waits for the operator to resume
+- On `False`, the task is skipped and the runner moves to the next task
+- Use `rt.step()` inside the check to show a message to the operator
+- Use `rt.pause()` inside the check if you want to pause and wait for the operator before skipping
 - Checks are optional — states without `pre_check`/`post_check` just run directly
+
+```python
+def tube_picked(self, i):
+    ok = gripper.has_object()
+    if not ok:
+        self.rt.step(f"Tube {i} pick failed — fix and resume", level="warning")
+        self.rt.pause()   # wait for operator, then skip
+    return ok
+```
 
 ---
 
