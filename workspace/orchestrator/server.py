@@ -884,6 +884,7 @@ async def broadcast_status(orch: Orchestrator):
                     await loop.run_in_executor(_cmd_pool, orch.stop_workspace, name)
                     st["state"] = "NOT_LAUNCHED"
                     st["last_error"] = None
+                    _ws_step_cache.pop(name, None)
                 except Exception:
                     pass
             _ws_prev_states[name] = cur
