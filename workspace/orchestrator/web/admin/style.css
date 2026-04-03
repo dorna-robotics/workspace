@@ -870,7 +870,7 @@ a:hover { color: var(--accent-h); }
   gap: 12px;
 }
 .pendant-steps {
-  max-height: 180px;
+  max-height: 90px;
   overflow-y: auto;
   background: var(--surface);
   border-radius: 14px;
@@ -988,7 +988,7 @@ a:hover { color: var(--accent-h); }
   .pendant-exit { top: 10px; right: 10px; padding: 8px 16px; font-size: 13px; }
   .pendant-secondary { padding: 10px 22px; font-size: 14px; }
   .pendant-info { width: 95vw; }
-  .pendant-steps { max-height: 140px; }
+  .pendant-steps { max-height: 70px; }
   .pendant-step-card { font-size: 12px; padding: 3px 12px; }
 }
 
