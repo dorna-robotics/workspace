@@ -473,11 +473,6 @@ function renderControls(state, launched, running) {
     lbl.textContent = "Starting…";
     controls.appendChild(lbl);
     addBtn("Kill", "kill", { danger: true });
-  } else if (s === "IDLE" && _wasRunning) {
-    const lbl = document.createElement("span");
-    lbl.className = "ctrl-starting";
-    lbl.textContent = "Finishing…";
-    controls.appendChild(lbl);
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });

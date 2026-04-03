@@ -874,18 +874,9 @@ async def broadcast_status(orch: Orchestrator):
             elif _ws_step_cache.get(name) and not st.get("step"):
                 st["step"] = _ws_step_cache[name]
 
-        # Auto-kill: when workflow finishes (RUNNING/ACTIVE → IDLE), kill process
-        # so user must Launch fresh next time (clean world_state)
+        # Track state transitions (no auto-kill — let user see completed results)
         for name, st in statuses.items():
             cur = (st.get("state") or "").upper()
-            prev = _ws_prev_states.get(name, "")
-            if prev in ("RUNNING", "ACTIVE") and cur == "IDLE":
-                try:
-                    await loop.run_in_executor(_cmd_pool, orch.stop_workspace, name)
-                    st["state"] = "NOT_LAUNCHED"
-                    st["last_error"] = None
-                except Exception:
-                    pass
             _ws_prev_states[name] = cur
 
         if not _ws_clients:
