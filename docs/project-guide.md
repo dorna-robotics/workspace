@@ -10,14 +10,15 @@ How to create and run a workspace project.
 projects/my_project/
 ├── launch.yaml          # Scene paths + runtime parameters (kwargs)
 ├── main.py              # Entry point
-├── states.py            # State handlers (what the robot does)
 ├── scene/
 │   ├── base.j2          # Hardware layout (Jinja2)
 │   └── layout.j2        # Spatial arrangement
 ├── recipes/
 │   └── recipes.j2       # Component aliases → recipe classes
 └── protocol/
+    ├── __init__.py      # Required (empty file, makes it a Python package)
     ├── protocol.yaml    # States, dependencies, checks, goals
+    ├── states.py        # State handlers (what the robot does)
     └── checks.py        # Verification checks (pre/post)
 ```
 
@@ -171,16 +172,16 @@ def tube_picked(self, i):
 
 ---
 
-## 5. States — `states.py`
+## 5. States — `protocol/states.py`
 
 Each state is a function that executes one item.
 
 ```python
 class States:
-    def __init__(self, rcp, rt, n):
-        self.rcp = rcp   # Recipe dict from recipes.yaml
-        self.rt  = rt     # Runtime (for step, call, sleep)
-        self.n   = n      # Batch size
+    def __init__(self, rcp, rt, batch_size):
+        self.rcp = rcp          # Recipe dict from recipes.yaml
+        self.rt  = rt            # Runtime (for step, call, sleep)
+        self.batch_size = batch_size
 
     def picked(self, i):
         """Pick tube i from the rack."""
@@ -256,7 +257,7 @@ from pathlib import Path
 from workspace.workspace import Workspace
 from workspace.ortools.workflow import BaseWorkflow
 from workspace.runtime_server import RuntimeServer
-from states import States
+from protocol.states import States
 from protocol.checks import Checks
 
 _BASE_DIR = Path(__file__).parent

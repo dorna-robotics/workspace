@@ -91,10 +91,10 @@ RACK_2ML_END = [
 
 class States:
 
-    def __init__(self, rcp, rt, n):
+    def __init__(self, rcp, rt, batch_size):
         self.rcp = rcp
         self.rt  = rt
-        self.n   = n
+        self.batch_size = batch_size
 
     # ── Shared helpers ────────────────────────────────────────────────────────
 
@@ -141,15 +141,15 @@ class States:
         self.rcp[SHAKER_SLOTS[i][0]].place(SHAKER_SLOTS[i][1])
 
     def shaken(self, _):
-        for i in range(self.n):
+        for i in range(self.batch_size):
             self.rcp[SHAKER_SLOTS[i][0]].shake(duration=120)
 
     def stop_shaken(self):
-        for i in range(self.n):
+        for i in range(self.batch_size):
             self.rcp[SHAKER_SLOTS[i][0]].stop_shaking()
 
     def cap_fed(self, i):
-        self.rt.step(f"Feeding cap {i+1}/{self.n} from autosampler")
+        self.rt.step(f"Feeding cap {i+1}/{self.batch_size} from autosampler")
         self.rcp["autosampler"].above(anchor="plate_center")
         self.rcp["autosampler"].present_cap(self.rcp["inspector"])
         self.rcp["autosampler"].pick(approach=False)

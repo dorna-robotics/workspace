@@ -88,7 +88,7 @@ class BaseWorkflow:
         self._base_dir = base_dir
         self.rt  = workspace.rt
         self.rcp = self._load_recipes(workspace, core)
-        self.n   = batch_size
+        self.batch_size = batch_size
 
         # Enum constraint state (tool enforcement)
         self._enum_state:    dict[str, str | None] = {}
@@ -159,7 +159,7 @@ class BaseWorkflow:
     # ── Execution ────────────────────────────────────────────────────────────
 
     def run(self):
-        self.runner.run(self.n)
+        self.runner.run(self.batch_size)
         self._release_all()
 
     def _apply_tool_enforcement(self):
@@ -191,7 +191,7 @@ class BaseWorkflow:
                 self.runner._handlers[state_name] = self._with("tool", tool_name, handler)
 
     def _register_all(self, states_cls, checks_cls):
-        for name, fn in states_cls(self.rcp, self.rt, self.n).make().items():
+        for name, fn in states_cls(self.rcp, self.rt, self.batch_size).make().items():
             self.runner.register_state(name, fn)
         for name, fn in checks_cls().make().items():
             self.runner.register_check(name, fn)

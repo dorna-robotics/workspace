@@ -1,0 +1,25 @@
+# protocol/protocol.yaml
+# Printer workflow: pipette → pick gripper → cap → print → inspect → decap
+
+states:
+  - name: pipetted
+    requires: []
+    tool: tool_rack_1
+
+  - name: capped
+    requires: [pipetted]
+    tool: tool_rack_0
+
+  - name: printed
+    requires: [capped]
+    tool: tool_rack_0
+
+  - name: inspected
+    requires: [printed]
+    tool: tool_rack_0
+
+  - name: decapped
+    requires: [inspected]
+    tool: tool_rack_0
+
+goal: [decapped]
