@@ -609,18 +609,18 @@ a:hover { color: var(--accent-h); }
 /* Pendant progress */
 .pendant-progress {
   width: min(520px, 90vw);
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 .pendant-progress .progress-bar {
+  flex: 1;
   height: 8px;
   border-radius: 8px;
   background: var(--surface);
 }
 .pendant-progress .progress-bar-fill { border-radius: 8px; }
-.pendant-progress-label {
-  font-size: 14px; color: var(--muted); margin-bottom: 8px;
-  display: flex; justify-content: space-between; font-weight: 500;
-}
-.pendant-progress-label span { font-family: var(--mono); font-weight: 600; color: var(--text); }
+.pendant-progress > span { font-size: 16px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* ── Log colors ─────────────────────────────────────────────────────────── */
 .log-err  { color: var(--red); }
