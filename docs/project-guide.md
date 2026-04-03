@@ -178,10 +178,12 @@ Each state is a function that executes one item.
 
 ```python
 class States:
-    def __init__(self, rcp, rt, batch_size):
+    def __init__(self, rcp, rt, batch_size, **kwargs):
         self.rcp = rcp          # Recipe dict from recipes.yaml
         self.rt  = rt            # Runtime (for step, call, sleep)
         self.batch_size = batch_size
+        # Extra kwargs from launch.yaml are available here
+        # e.g. self.dry_run = kwargs.get("dry_run", False)
 
     def picked(self, i):
         """Pick tube i from the rack."""

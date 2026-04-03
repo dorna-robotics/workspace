@@ -91,7 +91,7 @@ RACK_2ML_END = [
 
 class States:
 
-    def __init__(self, rcp, rt, batch_size):
+    def __init__(self, rcp, rt, batch_size, **kwargs):
         self.rcp = rcp
         self.rt  = rt
         self.batch_size = batch_size
