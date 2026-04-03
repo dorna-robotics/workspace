@@ -85,7 +85,6 @@ states:
     requires: []
     tool: gripper
     post_check: tube_picked
-    on_fail: pause
 
   - name: dosed
     duration: 15
@@ -153,7 +152,6 @@ states:
   - name: picked
     pre_check: tube_in_rack
     post_check: tube_picked
-    on_fail: pause
 ```
 
 - Each check receives `i` (item index) and returns `True` (passed) or `False` (failed)
