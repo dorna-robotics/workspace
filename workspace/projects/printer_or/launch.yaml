@@ -10,3 +10,17 @@ kwargs:
     hint: Number of tubes to process
     min: 1
     max: 10
+
+  print_job:
+    type: bool
+    default: true
+    label: Print labels
+    hint: If false, runs dry-run spin instead of printing
+
+  vol:
+    type: int
+    default: 400
+    label: Pipette volume (uL)
+    hint: Volume to aspirate/dispense per tube
+    min: 1
+    max: 1000

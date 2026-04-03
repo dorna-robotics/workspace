@@ -1,5 +1,5 @@
 # protocol/protocol.yaml
-# Printer workflow: pipette → pick gripper → cap → print → inspect → decap
+# Printer workflow: pipette → cap → print → inspect → decap
 
 states:
   - name: pipetted
