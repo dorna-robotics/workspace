@@ -234,7 +234,7 @@ function render() {
       ${(() => {
         const p = st.step?.progress;
         if (p == null || p < 0) return "";
-        return `<div class="wc-progress"><div class="progress-bar"><div class="progress-bar-fill${p >= 100 ? " done" : ""}" style="width:${Math.min(100, Math.max(0, p))}%"></div></div></div>`;
+        return `<div class="wc-progress"><div class="progress-bar"><div class="progress-bar-fill${p >= 100 ? " done" : ""}" style="width:${Math.min(100, Math.max(0, p))}%"></div></div><span class="wc-progress-label">${Math.min(100, Math.max(0, p))}%</span></div>`;
       })()}
       <div class="wc-footer">
         <a class="btn btn-primary btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
