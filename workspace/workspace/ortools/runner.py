@@ -77,9 +77,9 @@ class ORRunner:
         """
         Register a verification check function.
 
-        fn signature: (item_i: int, cfg) -> (bool, str)
-          - bool:  True = passed, False = failed
-          - str:   human-readable status message shown in the dashboard
+        fn signature: (item_i: int) -> bool
+          - True = passed, False = failed
+          - Use rt.step() inside the check for custom messages
 
         Check names are referenced in protocol.yaml under pre/post fields.
         """
@@ -199,26 +199,20 @@ class ORRunner:
             if fn is None:
                 continue  # not registered → skip silently
 
-            passed, msg = fn(item_i)
+            result = fn(item_i)
+            # Support both bool and (bool, str) returns
+            if isinstance(result, tuple):
+                passed = result[0]
+            else:
+                passed = bool(result)
 
             if not passed:
                 if on_fail == "skip":
-                    self.rt.step(
-                        f"Check failed [{stage}:{state_name}:{name}] — {msg} — skipping",
-                        level="warning",
-                    )
+                    self.rt.step(f"Check failed [{name}] — skipping", level="warning")
                 elif callable(on_fail):
-                    self.rt.step(
-                        f"Check failed [{stage}:{state_name}:{name}] — {msg}",
-                        level="warning",
-                    )
-                    on_fail(item_i, name, msg)
+                    on_fail(item_i, name)
                 else:
-                    # Default: pause and wait for operator
-                    self.rt.step(
-                        f"Check failed [{stage}:{state_name}:{name}] — {msg} — waiting for user",
-                        level="warning",
-                    )
+                    self.rt.step(f"Check failed [{name}] — paused", level="warning")
                     self.rt.pause()
                 return False
 

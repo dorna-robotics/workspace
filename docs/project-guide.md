@@ -155,12 +155,13 @@ Verification functions that run before/after states. The keys in `make()` are th
 ```python
 class Checks:
     def tube_in_rack(self, i):
-        """Check if tube i is in the rack."""
-        return True, f"Tube {i} is in rack"
+        return True   # just return True or False
 
     def tube_picked(self, i):
         ok = gripper.has_object()
-        return ok, "Tube picked" if ok else "Gripper empty — pick failed"
+        if not ok:
+            self.rt.step(f"Tube {i} — gripper empty, check manually", level="warning")
+        return ok
 
     def make(self):
         return {
@@ -178,9 +179,9 @@ states:
     on_fail: pause
 ```
 
-- Each check receives `i` (item index) and returns `(passed: bool, message: str)`
-- `True` = check passed, continue
-- `False` = check failed. With `on_fail: "pause"`, the system pauses and shows the failure message in the dashboard. The operator fixes the issue and resumes.
+- Each check receives `i` (item index) and returns `True` (passed) or `False` (failed)
+- Use `rt.step()` inside the check to show a custom message to the operator
+- On failure with `on_fail: "pause"` (default), the system pauses and waits for the operator to resume
 - Checks are optional — states without `pre_check`/`post_check` just run directly
 
 ---
