@@ -283,7 +283,14 @@ if __name__ == "__main__":
 ```
 
 The orchestrator launches this with `sudo python3 main.py --port 5010`.
-`**kwargs` comes from the parameters modal in the GUI.
+
+`**kwargs` comes from the parameters modal in the GUI (`launch.yaml` kwargs). They flow through to `BaseWorkflow` and then to `States`:
+
+| Parameter | Used by | Description |
+|-----------|---------|-------------|
+| `batch_size` | BaseWorkflow → scheduler | Number of items to process (default: 1) |
+| `horizon` | BaseWorkflow → scheduler | Rolling window size for replanning (default: null = plan all at once) |
+| Everything else | States | Passed to `States.__init__(**kwargs)` — use whatever you need |
 
 ---
 
