@@ -96,10 +96,13 @@ class ORRunner:
         """
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
         bg_active: dict[str, tuple[float, float]] = {}
+        total_tasks = len(self._snames) * n_items
+        done_count = 0
 
         def all_done() -> bool:
             return all(len(completed.get(g, set())) >= n_items for g in self._goal)
 
+        self.rt.step(0, level="progress")
         while not all_done():
             schedule = self._scheduler.schedule(
                 n_items, completed,
@@ -133,11 +136,15 @@ class ORRunner:
                     bg_active[state_name] = (time.time(), real_dur)
                     for t in range(n_items):
                         completed[state_name].add(t)
+                    done_count += n_items
                 else:
                     self.rt.step(f"OR → {state_name} [{item_i + 1}/{n_items}]")
                     if handler:
                         handler(item_i)
                     completed[state_name].add(item_i)
+                    done_count += 1
+
+                self.rt.step(int(done_count / total_tasks * 100), level="progress")
 
                 # ── Post-checks ───────────────────────────────────────────
                 post = s.get("post_check")
@@ -155,6 +162,7 @@ class ORRunner:
         if missing:
             raise RuntimeError(f"OR runner did not reach goal states: {missing}")
 
+        self.rt.step(100, level="progress")
         self.rt.step("Protocol complete — all goal states reached", level="success")
 
     # ── Check execution ───────────────────────────────────────────────────────
