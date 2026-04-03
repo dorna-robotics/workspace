@@ -30,7 +30,7 @@ class ORRunner:
     Args:
         rt:               Runtime object (provides rt.step, rt.delay, rt.pause).
         protocol_path:    Path to protocol/protocol.yaml.
-        n_items:          Number of items — set dynamically at run time.
+        batch_size:          Number of items — set dynamically at run time.
         cfg:              Params namespace (for real background durations).
         horizon:          Rolling window size (None = plan all tasks at once).
     """
@@ -39,7 +39,7 @@ class ORRunner:
         self,
         rt,
         protocol_path: Path,
-        n_items: int,
+        batch_size: int,
         horizon: int | None = None,
     ):
         self.rt       = rt
@@ -64,7 +64,7 @@ class ORRunner:
                 continue
             sn = s["name"]
             d  = s.get("duration")
-            self._bg_dur[sn] = float(d) if isinstance(d, (int, float)) else 120.0
+            self._bg_dur[sn] = float(d) if isinstance(d, (int, float)) else 1.0
 
     # ── Registration ─────────────────────────────────────────────────────────
 
@@ -86,25 +86,25 @@ class ORRunner:
 
     # ── Main execution loop ───────────────────────────────────────────────────
 
-    def run(self, n_items: int):
+    def run(self, batch_size: int):
         """
-        Execute the full protocol for n_items.
+        Execute the full protocol for batch_size.
 
         Rolling horizon replanning happens automatically every `horizon` tasks.
         After a fault, update completed externally and call run() again to resume.
         """
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
         bg_active: dict[str, tuple[float, float]] = {}
-        total_tasks = len(self._snames) * n_items
+        total_tasks = len(self._snames) * batch_size
         done_count = 0
 
         def all_done() -> bool:
-            return all(len(completed.get(g, set())) >= n_items for g in self._goal)
+            return all(len(completed.get(g, set())) >= batch_size for g in self._goal)
 
         self.rt.step(0, level="progress")
         while not all_done():
             schedule = self._scheduler.schedule(
-                n_items, completed,
+                batch_size, completed,
                 horizon_tasks=self._horizon,
             )
             if not schedule:
@@ -133,11 +133,11 @@ class ORRunner:
                     if handler:
                         handler(0)
                     bg_active[state_name] = (time.time(), real_dur)
-                    for t in range(n_items):
+                    for t in range(batch_size):
                         completed[state_name].add(t)
-                    done_count += n_items
+                    done_count += batch_size
                 else:
-                    self.rt.step(f"OR → {state_name} [{item_i + 1}/{n_items}]")
+                    self.rt.step(f"OR → {state_name} [{item_i + 1}/{batch_size}]")
                     if handler:
                         handler(item_i)
                     completed[state_name].add(item_i)
@@ -157,7 +157,7 @@ class ORRunner:
         for bg_name in list(bg_active.keys()):
             self._wait_bg(bg_name, bg_active)
 
-        missing = [g for g in self._goal if len(completed.get(g, set())) < n_items]
+        missing = [g for g in self._goal if len(completed.get(g, set())) < batch_size]
         if missing:
             raise RuntimeError(f"OR runner did not reach goal states: {missing}")
 

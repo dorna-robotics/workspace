@@ -16,8 +16,21 @@ from pathlib import Path
 from typing import Callable
 
 import yaml
+from jinja2 import Environment, FileSystemLoader
 
 from workspace.ortools.runner import ORRunner
+
+
+def _load_yaml(base_dir: Path, folder: str, name: str) -> dict:
+    """Load a YAML file, rendering as Jinja2 template first if .j2 exists."""
+    j2_path = base_dir / folder / (name + ".j2")
+    yaml_path = base_dir / folder / (name + ".yaml")
+    if j2_path.is_file():
+        env = Environment(loader=FileSystemLoader(str(base_dir / folder)))
+        rendered = env.get_template(name + ".j2").render()
+        return yaml.safe_load(rendered)
+    with open(yaml_path) as f:
+        return yaml.safe_load(f)
 
 
 def _import_class(dotted_path: str):
@@ -37,8 +50,8 @@ class BaseWorkflow:
         _BASE_DIR = Path(__file__).parent
 
         class Workflow(BaseWorkflow):
-            def __init__(self, workspace, core, n_items=4):
-                super().__init__(workspace, core, _BASE_DIR, n_items=n_items)
+            def __init__(self, workspace, core, batch_size=4):
+                super().__init__(workspace, core, _BASE_DIR, batch_size=batch_size)
 
             def _register_all(self):
                 r   = self.runner.register_state
@@ -50,11 +63,11 @@ class BaseWorkflow:
             wf = Workflow(workspace, core)
             wf.run()
 
-    Dynamic n_items:
-        Pass n_items at construction time.  To get it from a camera, do:
+    Dynamic batch_size:
+        Pass batch_size at construction time.  To get it from a camera, do:
 
             n = camera.count_tubes("source_rack")
-            wf = Workflow(workspace, core, n_items=n)
+            wf = Workflow(workspace, core, batch_size=n)
 
     Rolling horizon:
         Pass horizon=4 to replan every 4 tasks.  The scheduler recomputes
@@ -69,22 +82,28 @@ class BaseWorkflow:
         base_dir: Path,
         states_cls,
         checks_cls,
-        n_items: int = 4,
+        batch_size: int = 1,
         horizon: int | None = None,
     ):
         self._base_dir = base_dir
         self.rt  = workspace.rt
         self.rcp = self._load_recipes(workspace, core)
-        self.n   = n_items
+        self.n   = batch_size
 
         # Enum constraint state (tool enforcement)
         self._enum_state:    dict[str, str | None] = {}
         self._enum_handlers: dict[str, Callable]   = {}
 
+        # Support both protocol.yaml and protocol.j2
+        protocol_j2 = base_dir / "protocol" / "protocol.j2"
         protocol = base_dir / "protocol" / "protocol.yaml"
+        if protocol_j2.is_file():
+            env = Environment(loader=FileSystemLoader(str(base_dir / "protocol")))
+            rendered = env.get_template("protocol.j2").render()
+            protocol.write_text(rendered)
 
         self.runner = ORRunner(
-            self.rt, protocol, n_items,
+            self.rt, protocol, batch_size,
             horizon=horizon,
         )
         self._register_all(states_cls, checks_cls)
@@ -93,15 +112,13 @@ class BaseWorkflow:
     # ── Loading ──────────────────────────────────────────────────────────────
 
     def _load_recipes(self, workspace, core) -> dict:
-        with open(self._base_dir / "recipes" / "recipes.yaml") as f:
-            defs = yaml.safe_load(f)
-        speed = 10
+        defs = _load_yaml(self._base_dir, "recipes", "recipes")
         rcp   = {}
         for alias, defn in defs.items():
             cls    = _import_class(defn["class"])
             kwargs = dict(defn.get("kwargs") or {})
             comp   = workspace.components[kwargs.pop("component")]
-            rcp[alias] = cls(workspace, core, comp, speed_factor=speed, **kwargs)
+            rcp[alias] = cls(workspace, core, comp, **kwargs)
         return rcp
 
     # ── Enum constraint helpers (tool enforcement) ────────────────────────────

@@ -26,13 +26,13 @@ class BaseLabEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, protocol_path: Path, constraints_path: Path = None,
-                 n_items: int = 4, max_items: int = None, max_steps: int = 200):
+                 batch_size: int = 4, max_items: int = None, max_steps: int = 200):
         super().__init__()
 
-        self.max_items      = max_items or n_items
-        self.n_items        = self.max_items
-        self._default_items = n_items
-        self._active_items  = n_items
+        self.max_items      = max_items or batch_size
+        self.batch_size        = self.max_items
+        self._default_items = batch_size
+        self._active_items  = batch_size
         self.max_steps      = max_steps
 
         # ── Load protocol ───────────────────────────────────────────────
@@ -145,8 +145,8 @@ class BaseLabEnv(gym.Env):
         else:
             self._active_items = 1
 
-        if options and "n_items" in options:
-            self._active_items = options["n_items"]
+        if options and "batch_size" in options:
+            self._active_items = options["batch_size"]
 
         self._completed = np.zeros((self.max_items, self._n_states), dtype=np.float32)
         for t in range(self._active_items, self.max_items):
@@ -165,8 +165,8 @@ class BaseLabEnv(gym.Env):
 
     def _execute_one(self, action: int) -> float:
         """Execute a single action, update state, return reward delta."""
-        state_i    = action // self.n_items
-        item_i     = action % self.n_items
+        state_i    = action // self.batch_size
+        item_i     = action % self.batch_size
         state_name = self._state_names[state_i]
 
         reward = self._rw_per_step
@@ -232,7 +232,7 @@ class BaseLabEnv(gym.Env):
             if len(valid) != 1:
                 break
             action     = valid[0]
-            state_i    = action // self.n_items
+            state_i    = action // self.batch_size
             state_name = self._state_names[state_i]
             is_goal    = state_name in self._goal
             is_bg      = state_name in self._background
@@ -289,10 +289,10 @@ class BaseLabEnv(gym.Env):
                     for t in range(self._active_items) for r in reqs
                 )
                 if not already_done and requires_met:
-                    mask[si * self.n_items] = True
+                    mask[si * self.batch_size] = True
             else:
                 for ii in range(self._active_items):
-                    action       = si * self.n_items + ii
+                    action       = si * self.batch_size + ii
                     already_done = self._completed[ii, si] == 1.0
                     requires_met = all(self._completed[ii, r] == 1.0 for r in reqs)
                     if not already_done and requires_met:

@@ -41,8 +41,8 @@ class ProtocolRunner:
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
-    def run(self, n_items: int):
-        """Execute the full protocol for n_items tubes."""
+    def run(self, batch_size: int):
+        """Execute the full protocol for batch_size tubes."""
         completed: set[str] = set()
 
         for state in self._order:
@@ -66,7 +66,7 @@ class ProtocolRunner:
                 raise RuntimeError(f"No handler registered for state '{name}'")
 
             self.rt.step(f"State: {name}")
-            for i in range(n_items):
+            for i in range(batch_size):
                 handler(i)
 
             completed.add(name)

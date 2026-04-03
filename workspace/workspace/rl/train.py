@@ -20,7 +20,7 @@ from workspace.rl.base_env import BaseLabEnv
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
 
-def _make_env(project: str, n_items: int, max_items: int = None) -> BaseLabEnv:
+def _make_env(project: str, batch_size: int, max_items: int = None) -> BaseLabEnv:
     """Construct env directly from project YAML files."""
     base = _PROJECTS_DIR / project
     protocol    = base / "protocol" / "protocol.yaml"
@@ -29,9 +29,9 @@ def _make_env(project: str, n_items: int, max_items: int = None) -> BaseLabEnv:
         raise FileNotFoundError(f"No protocol.yaml at {protocol}")
     # scale max_steps with problem size
     n_states = len(__import__("yaml").safe_load(open(protocol))["states"])
-    effective_max = max_items or n_items
+    effective_max = max_items or batch_size
     max_steps = n_states * effective_max * 3
-    return BaseLabEnv(protocol, constraints, n_items=n_items,
+    return BaseLabEnv(protocol, constraints, batch_size=batch_size,
                       max_items=max_items, max_steps=max_steps)
 
 
@@ -110,32 +110,32 @@ class LogCallback(BaseCallback):
         return True
 
 
-def _make_vec_env(project: str, n_items: int, max_items: int, n_envs: int):
+def _make_vec_env(project: str, batch_size: int, max_items: int, n_envs: int):
     """Create vectorized environment for parallel training."""
     from stable_baselines3.common.vec_env import DummyVecEnv
 
     def make_fn():
         def _init():
-            env = _make_env(project, n_items, max_items)
+            env = _make_env(project, batch_size, max_items)
             return ActionMasker(env, _mask_fn)
         return _init
 
     return DummyVecEnv([make_fn() for _ in range(n_envs)])
 
 
-def train(project: str, n_items: int, total_steps: int, out: Path,
+def train(project: str, batch_size: int, total_steps: int, out: Path,
           resume: bool = False, n_envs: int = 1, no_early_stop: bool = False,
           max_items: int = None):
-    raw_env = _make_env(project, n_items, max_items)
+    raw_env = _make_env(project, batch_size, max_items)
     cfg     = _auto_config(raw_env)
     device  = "cuda" if torch.cuda.is_available() else "cpu"
 
     if n_envs > 1:
-        env = _make_vec_env(project, n_items, max_items, n_envs)
+        env = _make_vec_env(project, batch_size, max_items, n_envs)
     else:
         env = ActionMasker(raw_env, _mask_fn)
 
-    effective_max = max_items or n_items
+    effective_max = max_items or batch_size
     print(f"  actions={raw_env.action_space.n}  obs={raw_env.observation_space.shape[0]}  "
           f"net={cfg['net_arch']}  lr={cfg['learning_rate']}  batch={cfg['batch_size']}  "
           f"device={device}  envs={n_envs}  items=1-{effective_max}", flush=True)
@@ -158,7 +158,7 @@ def train(project: str, n_items: int, total_steps: int, out: Path,
         )
         start_steps = 0
         target_steps = total_steps
-        print(f"Training for {total_steps:,} steps  |  count={n_items}  |  saving to {out}", flush=True)
+        print(f"Training for {total_steps:,} steps  |  count={batch_size}  |  saving to {out}", flush=True)
 
     model.learn(
         total_timesteps=target_steps,
@@ -189,6 +189,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     out = args.out or (_PROJECTS_DIR / args.project / "5_rl" / "models" / "policy.zip")
-    train(args.project, n_items=args.count, total_steps=args.steps, out=out,
+    train(args.project, batch_size=args.count, total_steps=args.steps, out=out,
           resume=args.resume, n_envs=args.n_envs, no_early_stop=args.no_early_stop,
           max_items=args.max_count)

@@ -1,0 +1,144 @@
+core:
+  type: core
+  simulation: True
+  has_camera: False
+  has_rail: True
+  rail_offset: -51.16
+  has_tool_changer: True
+  has_motion_plan: True
+  ip: "192.168.137.100"
+  tool_changer:
+    present: True
+    attach: [] 
+    detach: []
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: D10
+    child_solid: rail_base
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+  robot_attach:
+    rail_carriage_anchor: hole_1
+    robot_A0_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_0:
+  type: fixture_plate
+
+fixture_plate_1:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_3
+    child_solid: body
+    child_anchor: corner_0
+
+fixture_plate_2:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_1
+    child_solid: body
+    child_anchor: corner_0
+
+fixture_plate_3:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_2
+    child_solid: body
+    child_anchor: corner_0
+
+
+tool_rack_0:
+  type: tool_rack_144mm
+  attach:
+    parent_name: fixture_plate_2
+    parent_solid: body
+    parent_anchor: A17
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0,0,0,0,0,90]
+
+
+tool_rack_1:
+  type: tool_rack_192mm
+  attach:
+    parent_name: fixture_plate_2
+    parent_solid: body
+    parent_anchor: H17
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0,0,0,0,0,90]
+
+
+printer:
+  type: printer_axon_1
+  ip: "192.168.137.102"
+  attach:
+    parent_name: fixture_plate_1
+    parent_solid: body
+    parent_anchor: C19
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+
+
+adapter_falcon:
+  type: adapter_plate_falcon_15ml
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: D10
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 90]
+
+
+adapter_sbs_0:
+  type: adapter_plate_sbs
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: C19
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+
+
+adapter_sbs_1:
+  type: adapter_plate_sbs
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: G19
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+
+
+vision_station:
+  type: inspection_horizontal_144mm
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: H2
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 90]
+
+decapper:
+  type: decapper
+  output_enable: [[2, 1, 0.1]]
+  output_disable: [[null, null, 0.25], [2, 0, 0.1]]
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: D6
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, -90]

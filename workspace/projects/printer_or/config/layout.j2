@@ -1,0 +1,92 @@
+gripper_0:
+  type: gripper_tube_large
+  has_tool_changer: True 
+  attach:
+    parent_name: tool_rack_0
+    parent_solid: body
+    parent_anchor: place
+    child_solid: tool_changer_tool_side
+    child_anchor: tool_rack_connection
+
+pipettor:
+  type: pipettor_sp28_40mm
+  has_tool_changer: True
+  port: /dev/ttyUSB0 
+  attach:
+    parent_name: tool_rack_1
+    parent_solid: body
+    parent_anchor: place
+    child_solid: tool_changer_tool_side
+    child_anchor: tool_rack_connection
+
+rack_falcon:
+  type: rack_falcon_15ml
+  rvec_safe: [0, 0, 135]
+  attach:
+    parent_name: adapter_falcon
+    parent_solid: body
+    parent_anchor: place
+    child_solid: body
+    child_anchor: center
+
+
+{% for r in "AB" %}
+{% for c in range(1, 6) %}
+falcon_{{ r }}{{ c }}:
+  type: tube_falcon_15ml
+  attach:
+    parent_name: rack_falcon
+    parent_solid: body
+    parent_anchor: {{ r }}{{ c }}
+    child_solid: body
+    child_anchor: center
+{% endfor %}
+{% endfor %}
+
+{% for r in "CD" %}
+{% for c in range(1, 6) %}
+cap_{{ r }}{{ c }}:
+  type: cap_falcon_15ml
+  attach:
+    parent_name: rack_falcon
+    parent_solid: body
+    parent_anchor: {{ r }}{{ c }}
+    child_solid: body
+    child_anchor: center
+    offset: [0, 0, 109, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+rack_tip:
+  type: rack_axygen_180ul
+  rvec_safe: [0, 0, 180]
+  attach:
+    parent_name: adapter_sbs_0
+    parent_solid: body
+    parent_anchor: place
+    child_solid: body
+    child_anchor: center
+
+
+{% for r in "ABCDEFGH" %}
+{% for c in range(1, 13) %}
+tip{{ r }}{{ c }}:
+  type: tip_axygen_180ul
+  attach:
+    parent_name: rack_tip
+    parent_solid: body
+    parent_anchor: {{ r }}{{ c }}
+    child_solid: body
+    child_anchor: center
+{% endfor %}
+{% endfor %}
+
+tip_waste_bin:
+  type: rack_tip_waste_bin
+  rvec_safe: [0, 0, 180]
+  attach:
+    parent_name: adapter_sbs_1
+    parent_solid: body
+    parent_anchor: place
+    child_solid: body
+    child_anchor: center

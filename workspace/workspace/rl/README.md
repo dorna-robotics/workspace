@@ -55,7 +55,7 @@ Fields:
 Define positions and run parameters. Use the aliases from recipes.yaml:
 
 ```yaml
-n_items: 4
+batch_size: 4
 speed_factor: 10
 shake_duration: 120
 source:
@@ -230,7 +230,7 @@ _BASE_DIR = Path(__file__).parent
 
 class Workflow(BaseWorkflow):
     def __init__(self, workspace, core):
-        super().__init__(workspace, core, _BASE_DIR, n_items=4)
+        super().__init__(workspace, core, _BASE_DIR, batch_size=4)
 
     def _register_all(self):
         r   = self.runner.register
@@ -282,11 +282,11 @@ Options:
 
 **What to expect during training:**
 - `avg_reward` should go UP over time — the RL is learning
-- `avg_len` should stay at the minimum (n_states × n_items + n_background) — optimal from the start
+- `avg_len` should stay at the minimum (n_states × batch_size + n_background) — optimal from the start
 - Early stop triggers when reward plateaus (no improvement for 25 intervals)
 - Reward close to theoretical max = near-optimal tool batching
 
-**Theoretical max reward** = `completion + (n_goal_states × n_items × goal_state) - (min_steps × per_step) - (min_tool_swaps × tool_swap_penalty) + bonuses`
+**Theoretical max reward** = `completion + (n_goal_states × batch_size × goal_state) - (min_steps × per_step) - (min_tool_swaps × tool_swap_penalty) + bonuses`
 
 ### Train on Google Colab (faster)
 

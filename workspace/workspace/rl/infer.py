@@ -18,11 +18,11 @@ from workspace.rl.base_env import BaseLabEnv
 class RLRunner:
 
     def __init__(self, rt, protocol_path: Path, constraints_path: Path,
-                 n_items: int, model_path: Path, cfg=None, max_items: int = None):
+                 batch_size: int, model_path: Path, cfg=None, max_items: int = None):
         self.rt       = rt
-        self._n_items = n_items
+        self._batch_size = batch_size
         self._env     = BaseLabEnv(protocol_path, constraints_path,
-                                   n_items=n_items, max_items=max_items)
+                                   batch_size=batch_size, max_items=max_items)
         self._model   = MaskablePPO.load(str(model_path))
         self._handlers: dict[str, Callable] = {}
         self._cfg     = cfg
@@ -55,11 +55,11 @@ class RLRunner:
     def register(self, state_name: str, handler: Callable):
         self._handlers[state_name] = handler
 
-    def run(self, n_items: int):
+    def run(self, batch_size: int):
         env = self._env
-        obs, _ = env.reset(options={"n_items": n_items})
+        obs, _ = env.reset(options={"batch_size": batch_size})
         completed: dict[str, set[int]] = {n: set() for n in self._state_names}
-        max_steps = n_items * len(self._state_names) * 3
+        max_steps = batch_size * len(self._state_names) * 3
 
         # track real-time background tasks: {state_name: (start_time, duration_sec)}
         bg_active: dict[str, tuple[float, float]] = {}
@@ -80,8 +80,8 @@ class RLRunner:
                 break
 
             action, _ = self._model.predict(obs, action_masks=mask, deterministic=True)
-            state_i    = int(action) // n_items
-            item_i     = int(action) % n_items
+            state_i    = int(action) // batch_size
+            item_i     = int(action) % batch_size
             state_name = self._state_names[state_i]
             handler    = self._handlers.get(state_name)
 
@@ -91,7 +91,7 @@ class RLRunner:
                 if handler:
                     handler(0)
                 bg_active[state_name] = (time.time(), duration_sec)
-                for t in range(n_items):
+                for t in range(batch_size):
                     completed[state_name].add(t)
             else:
                 # check if this state depends on a background state that's still running
@@ -105,7 +105,7 @@ class RLRunner:
                             self.rt.delay(remaining)
                         bg_active.pop(bg_name)
 
-                self.rt.step(f"RL → {state_name} [{item_i + 1}/{n_items}]")
+                self.rt.step(f"RL → {state_name} [{item_i + 1}/{batch_size}]")
                 if handler:
                     handler(item_i)
                 completed[state_name].add(item_i)
@@ -114,7 +114,7 @@ class RLRunner:
             if terminated or truncated:
                 break
 
-        missing = [g for g in self._goal if len(completed.get(g, set())) < n_items]
+        missing = [g for g in self._goal if len(completed.get(g, set())) < batch_size]
         if missing:
             raise RuntimeError(f"RL runner did not reach goal states: {missing}")
 

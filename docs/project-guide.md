@@ -29,38 +29,54 @@ Defines the physical hardware: robots, racks, tools, peripherals. Built using th
 
 ---
 
-## 2. Recipes — `recipes/recipes.yaml`
+## 2. Recipes — `recipes/recipes.yaml` or `recipes.j2`
 
 Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.
 
+Supports both `.yaml` and `.j2` (Jinja2 template). If `recipes.j2` exists, it's rendered first. Use `.j2` to define shared variables like `speed_factor` — change one value, every recipe gets it.
+
 ```yaml
+{% set speed_factor = 1 %}
+{% set base_distance = 200 %}
+
 gripper:
   class: workspace.components.gripper.Gripper
   kwargs:
-    component: gripper_1         # Name from scene/base.j2
+    component: gripper_1
     left_approach: true
+    speed_factor: {{ speed_factor }}
 
 pipette:
-  class: workspace.components.pipette.Pipette
+  class: workspace.components.pipetting_site.PipettingSite
   kwargs:
     component: pipette_1
-    volume: 1000
+    base_distance: {{ base_distance }}
+    speed_factor: {{ speed_factor }}
 
 tube_rack:
   class: workspace.components.rack.Rack
   kwargs:
     component: tube_rack_50ml_1
-    rail_span: 5
-    rail_step: 5
+    base_distance: {{ base_distance }}
+    speed_factor: {{ speed_factor }}
 ```
+
+Each recipe entry has:
+- `class` — full Python import path to the recipe class
+- `kwargs.component` — required, matches a name from `scene/base.j2`
+- Everything else in `kwargs` is recipe-specific and passed to the constructor
+
+The loader creates each recipe as: `cls(workspace, core, component, **kwargs)`
 
 Access in states: `self.rcp["gripper"].pick(i)`
 
 ---
 
-## 3. Protocol — `protocol/protocol.yaml`
+## 3. Protocol — `protocol/protocol.yaml` or `protocol.j2`
 
 Defines the workflow as a list of states with dependencies, tool assignments, and checks. The OR-Tools scheduler reads this to figure out the optimal execution order. You don't write the scheduling logic — you just declare "dosed requires picked" and the solver handles the rest.
+
+Also supports `.j2` format (same as recipes).
 
 ```yaml
 states:
@@ -95,9 +111,9 @@ goal: [placed]
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Must match a key in `states.py` `make()` |
-| `duration` | Yes | Estimated seconds (used by scheduler) |
+| `duration` | No | Estimated seconds (used by scheduler, default: 1) |
 | `requires` | No | List of state names that must complete first |
-| `tool` | No | Recipe alias — auto-swapped between states |
+| `tool` | No | Tool name from the tool changer (recipe alias, e.g. `gripper`). When two consecutive states need different tools, the robot auto-swaps via the tool rack. |
 | `background` | No | `true` = runs in parallel, completes all items at once |
 | `pre_check` | No | Check name or list of names, run before handler |
 | `post_check` | No | Check name or list of names, run after handler |
@@ -105,7 +121,9 @@ goal: [placed]
 
 ### Goal
 
-The `goal` list defines terminal states. The protocol succeeds when every item has reached all goal states.
+The `goal` list defines terminal states. The protocol succeeds when every goal state has been completed.
+
+If your project processes multiple items (e.g. tubes, vials), pass `batch_size` via `launch.yaml` kwargs. Each state runs once per item (index 0 to n-1). The protocol finishes when all items reach every goal state. If `batch_size` is not set, it defaults to 1 — each state runs once, like a simple sequence.
 
 ---
 
@@ -180,7 +198,7 @@ class Checks:
 scene: [scene/base.j2, scene/layout.j2]
 
 kwargs:
-  n_items:
+  batch_size:
     type: int
     default: 4
     label: Number of tubes

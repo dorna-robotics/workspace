@@ -21,12 +21,12 @@ def _import_class(path: str):
 
 class BaseWorkflow:
 
-    def __init__(self, workspace, core, base_dir: Path, n_items: int):
+    def __init__(self, workspace, core, base_dir: Path, batch_size: int):
         self._base_dir = base_dir
         self.rt  = workspace.rt
         self.cfg = self._load_params()
         self.rcp = self._load_recipes(workspace, core)
-        self.n   = n_items
+        self.n   = batch_size
 
         # enum state tracking: {constraint_name: current_value}
         self._enum_state = {}
@@ -37,7 +37,7 @@ class BaseWorkflow:
         constraints = base_dir / "4_constraints" / "constraints.yaml"
         model       = base_dir / "5_rl" / "models" / "policy.zip"
 
-        self.runner = RLRunner(self.rt, protocol, constraints, n_items, model_path=model, cfg=self.cfg)
+        self.runner = RLRunner(self.rt, protocol, constraints, batch_size, model_path=model, cfg=self.cfg)
         self._register_all()
 
     # ── Loading ─────────────────────────────────────────────────────────────

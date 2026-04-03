@@ -28,7 +28,7 @@ class ORScheduler:
 
     Usage:
         sched = ORScheduler(protocol_path)
-        order = sched.schedule(n_items=4, completed={...})
+        order = sched.schedule(batch_size=4, completed={...})
         # order is [(state_name, item_index), ...] in execution order
     """
 
@@ -44,15 +44,15 @@ class ORScheduler:
     # ── Duration helpers ─────────────────────────────────────────────────────
 
     def _duration(self, state_name: str) -> int:
-        """Duration in integer seconds."""
-        d = self._smap[state_name].get("duration", 10)
+        """Duration in integer seconds. Defaults to 1 if not specified."""
+        d = self._smap[state_name].get("duration", 0)
         return max(1, int(d))
 
     # ── Public interface ─────────────────────────────────────────────────────
 
     def schedule(
         self,
-        n_items: int,
+        batch_size: int,
         completed: dict[str, set[int]] | None = None,
         horizon_tasks: int | None = None,
     ) -> list[tuple[str, int]]:
@@ -60,7 +60,7 @@ class ORScheduler:
         Compute optimal execution order for all remaining tasks.
 
         Args:
-            n_items:       Number of items (tubes) to process.
+            batch_size:       Number of items (tubes) to process.
             completed:     {state_name: {item_indices already done}}.
                            Pass None to schedule everything from scratch.
             horizon_tasks: If set, return only the first N tasks (rolling window).
@@ -72,13 +72,13 @@ class ORScheduler:
         if completed is None:
             completed = {n: set() for n in self._snames}
 
-        tasks = self._pending_tasks(n_items, completed)
+        tasks = self._pending_tasks(batch_size, completed)
         if not tasks:
             return []
 
-        result = self._solve_cpsat(tasks, n_items, completed)
+        result = self._solve_cpsat(tasks, batch_size, completed)
         if result is None:
-            result = self._topological_sort(tasks, n_items, completed)
+            result = self._topological_sort(tasks, batch_size, completed)
 
         return result[:horizon_tasks] if horizon_tasks else result
 
@@ -86,7 +86,7 @@ class ORScheduler:
 
     def _pending_tasks(
         self,
-        n_items: int,
+        batch_size: int,
         completed: dict[str, set[int]],
     ) -> list[tuple[str, int]]:
         tasks = []
@@ -97,7 +97,7 @@ class ORScheduler:
                 if 0 not in completed.get(sn, set()):
                     tasks.append((sn, 0))
             else:
-                for i in range(n_items):
+                for i in range(batch_size):
                     if i not in completed.get(sn, set()):
                         tasks.append((sn, i))
         return tasks
@@ -107,7 +107,7 @@ class ORScheduler:
     def _solve_cpsat(
         self,
         tasks: list[tuple[str, int]],
-        n_items: int,
+        batch_size: int,
         completed: dict[str, set[int]],
     ) -> list[tuple[str, int]] | None:
 
@@ -155,7 +155,7 @@ class ORScheduler:
                 elif is_bg:
                     # Background task must wait for ALL items of the prereq
                     # (e.g. shaken must start only after ALL items are loaded)
-                    for j in range(n_items):
+                    for j in range(batch_size):
                         req_key = (req, j)
                         if req_key in ends:
                             model.Add(starts[(sn, i)] >= ends[req_key])
@@ -184,7 +184,7 @@ class ORScheduler:
     def _topological_sort(
         self,
         tasks: list[tuple[str, int]],
-        n_items: int,
+        batch_size: int,
         completed: dict[str, set[int]],
     ) -> list[tuple[str, int]]:
         task_set  = set(tasks)
@@ -215,7 +215,7 @@ class ORScheduler:
                         keys = [(req, 0)]
                     elif is_bg:
                         # This is a background task — must wait for ALL items
-                        keys = [(req, j) for j in range(n_items)]
+                        keys = [(req, j) for j in range(batch_size)]
                     else:
                         keys = [(req, i)]
 
