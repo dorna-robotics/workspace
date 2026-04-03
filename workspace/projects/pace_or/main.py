@@ -8,7 +8,7 @@ from workspace.workspace import Workspace
 from workspace.ortools.workflow import BaseWorkflow
 from workspace.runtime_server import RuntimeServer
 from states import States
-from checks import Checks
+from protocol.checks import Checks
 
 _BASE_DIR = Path(__file__).parent
 

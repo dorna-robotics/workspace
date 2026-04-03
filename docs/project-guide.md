@@ -11,14 +11,14 @@ projects/my_project/
 ├── launch.yaml          # Scene paths + runtime parameters (kwargs)
 ├── main.py              # Entry point
 ├── states.py            # State handlers (what the robot does)
-├── checks.py            # Verification checks (pre/post)
 ├── scene/
 │   ├── base.j2          # Hardware layout (Jinja2)
 │   └── layout.j2        # Spatial arrangement
 ├── recipes/
-│   └── recipes.yaml     # Component aliases → recipe classes
+│   └── recipes.j2       # Component aliases → recipe classes
 └── protocol/
-    └── protocol.yaml    # States, dependencies, checks, goals
+    ├── protocol.yaml    # States, dependencies, checks, goals
+    └── checks.py        # Verification checks (pre/post)
 ```
 
 ---
@@ -115,8 +115,8 @@ goal: [placed]
 | `requires` | No | List of state names that must complete first |
 | `tool` | No | Tool name from the tool changer (recipe alias, e.g. `gripper`). When two consecutive states need different tools, the robot auto-swaps via the tool rack. |
 | `background` | No | `true` = runs in parallel, completes all items at once |
-| `pre_check` | No | Check name or list of names, run before handler |
-| `post_check` | No | Check name or list of names, run after handler |
+| `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
+| `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
 | `on_fail` | No | `"pause"` = pause and wait for operator on check failure |
 
 ### Goal
@@ -164,7 +164,7 @@ class States:
 
 ---
 
-## 5. Checks — `checks.py`
+## 5. Checks — `protocol/checks.py`
 
 Verification functions that run before/after states.
 
@@ -241,7 +241,7 @@ from workspace.workspace import Workspace
 from workspace.ortools.workflow import BaseWorkflow
 from workspace.runtime_server import RuntimeServer
 from states import States
-from checks import Checks
+from protocol.checks import Checks
 
 _BASE_DIR = Path(__file__).parent
 
