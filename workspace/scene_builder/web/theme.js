@@ -1,5 +1,4 @@
-// Theme management — mirrors orchestrator admin/theme.js
-// (no iframe postMessage needed; theme applied via data-theme attribute)
+// Theme + Fullscreen — matches orchestrator admin/theme.js
 
 const KEY = "orch_theme";
 
@@ -9,7 +8,6 @@ const MOON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke
 function setTheme(theme) {
   localStorage.setItem(KEY, theme);
   document.documentElement.setAttribute("data-theme", theme);
-  // Notify same-page listeners (storage event only fires in other tabs)
   window.dispatchEvent(new StorageEvent("storage", { key: KEY, newValue: theme }));
   const btn = document.getElementById("btnTheme");
   if (btn) {
@@ -20,12 +18,41 @@ function setTheme(theme) {
 
 setTheme(localStorage.getItem(KEY) || "dark");
 
+// ── Fullscreen ──────────────────────────────────────────────────────────────
+
+const FS_EXPAND = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+const FS_SHRINK = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+
+function updateFsButton() {
+  const btn = document.getElementById("btnFullscreen");
+  if (!btn) return;
+  const isFs = !!document.fullscreenElement;
+  btn.title = isFs ? "Exit fullscreen" : "Fullscreen";
+  btn.innerHTML = isFs ? FS_SHRINK : FS_EXPAND;
+}
+
+document.addEventListener("fullscreenchange", updateFsButton);
+
+// ── Wire up buttons ─────────────────────────────────────────────────────────
+
 document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("btnTheme");
-  if (btn) {
-    btn.addEventListener("click", () => {
+  const btnTheme = document.getElementById("btnTheme");
+  if (btnTheme) {
+    btnTheme.addEventListener("click", () => {
       const current = document.documentElement.getAttribute("data-theme") || "dark";
       setTheme(current === "dark" ? "light" : "dark");
     });
+  }
+
+  const btnFs = document.getElementById("btnFullscreen");
+  if (btnFs) {
+    btnFs.addEventListener("click", () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen();
+      }
+    });
+    updateFsButton();
   }
 });
