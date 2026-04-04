@@ -10,16 +10,13 @@ How to create and run a workspace project.
 projects/my_project/
 ├── launch.yaml          # Scene paths + runtime parameters (kwargs)
 ├── main.py              # Entry point
-├── scene/
-│   ├── base.j2          # Hardware layout (Jinja2)
-│   └── layout.j2        # Spatial arrangement
-├── recipes/
-│   └── recipes.j2       # Component aliases → recipe classes
-└── protocol/
-    ├── __init__.py      # Required (empty file, makes it a Python package)
-    ├── protocol.yaml    # States, dependencies, checks, goals
-    ├── states.py        # State handlers (what the robot does)
-    └── checks.py        # Verification checks (pre/post)
+├── protocol.yaml        # States, dependencies, checks, goals
+├── states.py            # State handlers (what the robot does)
+├── checks.py            # Verification checks (pre/post)
+├── recipes.j2           # Component aliases → recipe classes (or recipes.yaml)
+└── scene/
+    ├── base.j2          # Hardware layout (Jinja2)
+    └── layout.j2        # Spatial arrangement
 ```
 
 ---
@@ -30,7 +27,7 @@ Defines the physical hardware: robots, racks, tools, peripherals. Built using th
 
 ---
 
-## 2. Recipes — `recipes/recipes.yaml` or `recipes.j2`
+## 2. Recipes — `recipes.yaml` or `recipes.j2`
 
 Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.
 
@@ -73,7 +70,7 @@ Access in states: `self.rcp["gripper"].pick(i)`
 
 ---
 
-## 3. Protocol — `protocol/protocol.yaml` or `protocol.j2`
+## 3. Protocol — `protocol.yaml` or `protocol.j2`
 
 Defines the workflow as a list of states with dependencies, tool assignments, and checks. The OR-Tools scheduler reads this to figure out the optimal execution order. You don't write the scheduling logic — you just declare "dosed requires picked" and the solver handles the rest.
 
@@ -125,7 +122,7 @@ If your project processes multiple items (e.g. tubes, vials), pass `batch_size` 
 
 ---
 
-## 4. Checks — `protocol/checks.py`
+## 4. Checks — `checks.py`
 
 Verification functions that run before/after states. The keys in `make()` are the names you reference in `pre_check` and `post_check` in `protocol.yaml`.
 
@@ -172,7 +169,7 @@ def tube_picked(self, i):
 
 ---
 
-## 5. States — `protocol/states.py`
+## 5. States — `states.py`
 
 Each state is a function that executes one item.
 
@@ -259,8 +256,8 @@ from pathlib import Path
 from workspace.workspace import Workspace
 from workspace.ortools.workflow import BaseWorkflow
 from workspace.runtime_server import RuntimeServer
-from protocol.states import States
-from protocol.checks import Checks
+from states import States
+from checks import Checks
 
 _BASE_DIR = Path(__file__).parent
 
@@ -366,7 +363,7 @@ Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send 
 1. Copy `projects/pace_or/` as a template
 2. Edit `scene/` — define your hardware layout
 3. Edit `recipes/recipes.yaml` — map component aliases
-4. Edit `protocol/protocol.yaml` — define states, dependencies, goals
+4. Edit `protocol.yaml` — define states, dependencies, goals
 5. Write `states.py` — implement each state handler
 6. Write `checks.py` — implement verification checks
 7. Edit `launch.yaml` — set scene paths and kwargs

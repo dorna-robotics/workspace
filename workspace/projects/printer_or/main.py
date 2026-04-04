@@ -7,8 +7,8 @@ import yaml
 from workspace.workspace import Workspace
 from workspace.ortools.workflow import BaseWorkflow
 from workspace.runtime_server import RuntimeServer
-from protocol.states import States
-from protocol.checks import Checks
+from states import States
+from checks import Checks
 
 _BASE_DIR = Path(__file__).parent
 

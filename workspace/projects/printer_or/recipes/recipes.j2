@@ -1,62 +1,62 @@
 {% set speed_factor = 1 %}
 
 tool_rack_1:
-  class: workspace.components.tool_rack.ToolRack
+  class: workspace.recipes.tool_rack.ToolRack
   kwargs:
     component: tool_rack_1
     left_approach: true
     speed_factor: {{ speed_factor }}
 
 tool_rack_0:
-  class: workspace.components.tool_rack.ToolRack
+  class: workspace.recipes.tool_rack.ToolRack
   kwargs:
     component: tool_rack_0
     left_approach: true
     speed_factor: {{ speed_factor }}
 
 waste_bin:
-  class: workspace.components.pipetting_site.PipettingSite
+  class: workspace.recipes.pipetting.PipettingSite
   kwargs:
     component: adapter_sbs_1
     base_distance: 250
     speed_factor: {{ speed_factor }}
 
 tip_rack:
-  class: workspace.components.pipetting_site.PipettingSite
+  class: workspace.recipes.pipetting.PipettingSite
   kwargs:
     component: adapter_sbs_0
     base_distance: 250
     speed_factor: {{ speed_factor }}
 
 falcon_pipette:
-  class: workspace.components.pipetting_site.PipettingSite
+  class: workspace.recipes.pipetting.PipettingSite
   kwargs:
     component: adapter_falcon
     base_distance: 200
     speed_factor: {{ speed_factor }}
 
 falcon_rack:
-  class: workspace.components.rack.Rack
+  class: workspace.recipes.rack.Rack
   kwargs:
     component: adapter_falcon
     base_distance: 200
     speed_factor: {{ speed_factor }}
 
 decapper:
-  class: workspace.components.decapper.Decapper
+  class: workspace.recipes.decapper.Decapper
   kwargs:
     component: decapper
     base_distance: 200
     speed_factor: {{ speed_factor }}
 
 printer:
-  class: workspace.components.printer.Printer
+  class: workspace.recipes.printer.Printer
   kwargs:
     component: printer
     speed_factor: {{ speed_factor }}
 
 inspector:
-  class: workspace.components.inspector.FixedInspector
+  class: workspace.recipes.inspector.FixedInspector
   kwargs:
     component: vision_station
     detection_preset: {}

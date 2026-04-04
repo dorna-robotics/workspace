@@ -21,12 +21,12 @@ from jinja2 import Environment, FileSystemLoader
 from workspace.ortools.runner import ORRunner
 
 
-def _load_yaml(base_dir: Path, folder: str, name: str) -> dict:
+def _load_yaml(base_dir: Path, name: str) -> dict:
     """Load a YAML file, rendering as Jinja2 template first if .j2 exists."""
-    j2_path = base_dir / folder / (name + ".j2")
-    yaml_path = base_dir / folder / (name + ".yaml")
+    j2_path = base_dir / (name + ".j2")
+    yaml_path = base_dir / (name + ".yaml")
     if j2_path.is_file():
-        env = Environment(loader=FileSystemLoader(str(base_dir / folder)))
+        env = Environment(loader=FileSystemLoader(str(base_dir)))
         rendered = env.get_template(name + ".j2").render()
         return yaml.safe_load(rendered)
     with open(yaml_path) as f:
@@ -97,10 +97,10 @@ class BaseWorkflow:
         self._enum_handlers: dict[str, Callable]   = {}
 
         # Support both protocol.yaml and protocol.j2
-        protocol_j2 = base_dir / "protocol" / "protocol.j2"
-        protocol = base_dir / "protocol" / "protocol.yaml"
+        protocol_j2 = base_dir / "protocol.j2"
+        protocol = base_dir / "protocol.yaml"
         if protocol_j2.is_file():
-            env = Environment(loader=FileSystemLoader(str(base_dir / "protocol")))
+            env = Environment(loader=FileSystemLoader(str(base_dir)))
             rendered = env.get_template("protocol.j2").render()
             protocol.write_text(rendered)
 
@@ -114,7 +114,7 @@ class BaseWorkflow:
     # ── Loading ──────────────────────────────────────────────────────────────
 
     def _load_recipes(self, workspace, core) -> dict:
-        defs = _load_yaml(self._base_dir, "recipes", "recipes")
+        defs = _load_yaml(self._base_dir, "recipes")
         rcp   = {}
         for alias, defn in defs.items():
             cls    = _import_class(defn["class"])
@@ -170,7 +170,7 @@ class BaseWorkflow:
         handler with tool pickup/place logic. Called after _register_all().
         No tool: field = no wrapping, no tool swap.
         """
-        with open(self._base_dir / "protocol" / "protocol.yaml") as f:
+        with open(self._base_dir / "protocol.yaml") as f:
             data = yaml.safe_load(f)
 
         tool_map = {s["name"]: s["tool"] for s in data["states"] if s.get("tool")}
