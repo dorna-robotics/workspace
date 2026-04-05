@@ -6900,7 +6900,7 @@ ensureBuilderBar();
 
         // Vertical drag → rotate around camera's right axis (elevation)
         const right = new THREE.Vector3().crossVectors(camera.up, offset).normalize();
-        const elevation = new THREE.Quaternion().setFromAxisAngle(right, dy * sensitivity);
+        const elevation = new THREE.Quaternion().setFromAxisAngle(right, -dy * sensitivity);
         const newOffset = offset.clone().applyQuaternion(elevation);
         // Prevent flipping past poles
         const newUp = camera.up.clone().applyQuaternion(elevation);
