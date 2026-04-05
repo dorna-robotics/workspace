@@ -391,13 +391,13 @@
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
 
-        // Dark outline for contrast on any background
-        ctx.strokeStyle = "rgba(0,0,0,0.9)";
+        // White outline for contrast on dark backgrounds
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
         ctx.lineWidth = 6;
         ctx.lineJoin = "round";
         ctx.strokeText(text, pad, pad);
 
-        // White fill — readable on dark and light scenes
+        // Fill color
         ctx.fillStyle = color;
         ctx.fillText(text, pad, pad);
 
@@ -547,8 +547,8 @@
           const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
           const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
 
-          const label = makeAnchorLabel(displayName, "#ffffff");
-          label.material.opacity = 0.8;
+          const label = makeAnchorLabel(displayName, "#000000");
+          label.material.opacity = 0.9;
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
