@@ -6887,7 +6887,7 @@ ensureBuilderBar();
 
         // Map pixel drag on the small cube to camera orbit
         // Larger multiplier = cube feels 1:1 with finger
-        const sensitivity = 0.04;
+        const sensitivity = 0.012;
         const dist = camera.position.distanceTo(controls.target);
         const offset = camera.position.clone().sub(controls.target);
 
