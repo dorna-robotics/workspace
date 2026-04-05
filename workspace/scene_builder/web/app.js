@@ -391,13 +391,7 @@
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
 
-        // White outline for contrast on dark backgrounds
-        ctx.strokeStyle = "rgba(255,255,255,0.85)";
-        ctx.lineWidth = 6;
-        ctx.lineJoin = "round";
-        ctx.strokeText(text, pad, pad);
-
-        // Fill color
+        // Fill color — no outline
         ctx.fillStyle = color;
         ctx.fillText(text, pad, pad);
 
@@ -549,6 +543,7 @@
 
           const label = makeAnchorLabel(displayName, "#000000");
           label.material.opacity = 0.9;
+          label.userData.__baseScale = label.scale.clone();
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
@@ -1172,16 +1167,16 @@ if (node) {
               const l = __hoveredAnchorPick.userData.__labelSprite;
               if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
               if (r) { r.material.opacity = 0.0; }
-              if (l) { l.material.opacity = 0.8; }
+              if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
             }
-            // Hover new — grow, glow, brighten label
+            // Hover new — grow dot, glow ring, enlarge label
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
               const l = newHover.userData.__labelSprite;
               if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
               if (r) { r.material.opacity = 0.4; }
-              if (l) { l.material.opacity = 1.0; }
+              if (l && l.userData.__baseScale) { l.material.opacity = 1.0; l.scale.copy(l.userData.__baseScale).multiplyScalar(1.5); }
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1196,7 +1191,7 @@ if (node) {
           const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
-          if (l) { l.material.opacity = 0.8; }
+          if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
