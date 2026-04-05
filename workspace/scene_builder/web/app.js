@@ -6870,50 +6870,18 @@ ensureBuilderBar();
         vcHoveredHit = null; vcApplyHighlight(null);
         vcCanvas.style.cursor = "default";
       });
-      // ViewCube: click to snap, drag to orbit
-      let vcDrag = null;
-      vcCanvas.addEventListener("mousedown", (e) => {
-        vcDrag = { x: e.clientX, y: e.clientY, dragged: false };
-      });
-      vcCanvas.addEventListener("mousemove", (e) => {
-        if (!vcDrag) return;
-        const dx = e.clientX - vcDrag.x;
-        const dy = e.clientY - vcDrag.y;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) vcDrag.dragged = true;
-        if (!vcDrag.dragged) return;
-        vcDrag.x = e.clientX;
-        vcDrag.y = e.clientY;
-        // Orbit the main camera
-        const speed = 0.01;
-        const spherical = new THREE.Spherical().setFromVector3(
-          camera.position.clone().sub(controls.target)
-        );
-        spherical.theta -= dx * speed;
-        spherical.phi   -= dy * speed;
-        spherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, spherical.phi));
-        camera.position.copy(
-          new THREE.Vector3().setFromSpherical(spherical).add(controls.target)
-        );
-        camera.lookAt(controls.target);
-        controls.update();
-        markDirty();
-      });
-      window.addEventListener("mouseup", () => {
-        if (vcDrag && !vcDrag.dragged) {
-          // Was a click, not a drag — do snap
-          vcRaycaster.setFromCamera(vcPointer, vcCamera);
-          const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
-          if (hits.length) {
-            const hit = hits[0];
-            const type = hit.object.userData.vcType;
-            let d;
-            if (type === "corner" || type === "edge") d = hit.object.userData.vcDir;
-            else { const n = VC_FACE_NORMALS[hit.face.materialIndex]; d = n; }
-            const [pos, tgt, up] = vcSnapFromDir(d[0], d[1], d[2]);
-            snapCamera(pos, tgt, up);
-          }
-        }
-        vcDrag = null;
+      vcCanvas.addEventListener("click", (e) => {
+        vcSetPointer(e);
+        vcRaycaster.setFromCamera(vcPointer, vcCamera);
+        const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
+        if (!hits.length) return;
+        const hit = hits[0];
+        const type = hit.object.userData.vcType;
+        let d;
+        if (type === "corner" || type === "edge") d = hit.object.userData.vcDir;
+        else { const n = VC_FACE_NORMALS[hit.face.materialIndex]; d = n; }
+        const [pos, tgt, up] = vcSnapFromDir(d[0], d[1], d[2]);
+        snapCamera(pos, tgt, up);
       });
 
       // --- Render on demand (listeners) ---
