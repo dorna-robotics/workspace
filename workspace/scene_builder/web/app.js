@@ -1007,13 +1007,17 @@ if (node) {
 
       // ---- Hover highlight ----
       let __hoveredName = null;
-      const __HOVER_EDGE_COLOR = new THREE.Color(0x00aaff);
+      const __HOVER_EDGE_BLUE = new THREE.Color(0x0a84ff);
+      const __HOVER_EDGE_GREEN = new THREE.Color(0x34c759);
       const __DEFAULT_EDGE_COLOR = new THREE.Color(0x000000);
 
       function __setHoverHighlight(name, on) {
         const root = name ? objectsByName.get(name) : null;
         if (!root) return;
-        const color = on ? __HOVER_EDGE_COLOR : __DEFAULT_EDGE_COLOR;
+        const mode = window.builderState?.mode || "IDLE";
+        const isTargetMode = mode === "PICK_TARGET_OBJECT" || mode === "PICK_TARGET_ANCHOR";
+        const hoverColor = isTargetMode ? __HOVER_EDGE_GREEN : __HOVER_EDGE_BLUE;
+        const color = on ? hoverColor : __DEFAULT_EDGE_COLOR;
         root.traverse(o => {
           if (o.isMesh && o.userData.__edgeLines) {
             o.userData.__edgeLines.material.color.copy(color);
