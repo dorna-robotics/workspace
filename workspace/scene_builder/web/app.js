@@ -2096,6 +2096,13 @@ function ensureBuilderBar() {
 }
 
 // Shared theme variables for all dynamic panels
+// Apply consistent .input styling to dynamically created form elements
+function _sbStyleInput(el) {
+  el.className = (el.className ? el.className + " " : "") + "input";
+  el.style.width = "";  // let CSS handle it
+  return el;
+}
+
 function _sbPanelTheme() {
   // Use CSS custom properties so panels auto-update when the theme toggles.
   const isLight = (document.documentElement.getAttribute("data-theme") || "dark") === "light";
@@ -2584,14 +2591,8 @@ function openAnchorPickPanel(opts) {
     solidLabel.style.fontSize = "12px";
 
     const solidSelect = document.createElement("select");
+    _sbStyleInput(solidSelect);
     solidSelect.style.flex = "1";
-    solidSelect.style.padding = "8px 10px";
-    solidSelect.style.borderRadius = "12px";
-    solidSelect.style.border = th.inputBord;
-    solidSelect.style.fontWeight = "700";
-    solidSelect.style.fontSize = "12px";
-    solidSelect.style.background = th.inputBg;
-    solidSelect.style.color = th.color;
     for (const s of opts.solids) {
       const optEl = document.createElement("option");
       optEl.value = s;
@@ -2928,10 +2929,8 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     lbl.textContent = "Solid";
     lbl.style.cssText = `font-size:12px;font-weight:600;color:${th.color};white-space:nowrap`;
     const sel = document.createElement("select");
-    Object.assign(sel.style, {
-      flex: "1", padding: "7px 10px", borderRadius: "8px",
-      border: th.inputBord, background: th.inputBg, color: th.color, fontSize: "13px",
-    });
+    _sbStyleInput(sel);
+    sel.style.flex = "1";
     for (const s of solidKeys) {
       const opt = document.createElement("option"); opt.value = s; opt.textContent = s;
       sel.appendChild(opt);
@@ -4741,14 +4740,9 @@ async function openCreatePanel(typeName) {
   const nameInput = document.createElement("input");
   nameInput.type = "text";
   nameInput.value = __computeDefaultName(typeName);
+  _sbStyleInput(nameInput);
   nameInput.style.flex = "1";
-  nameInput.style.padding = "8px 10px";
-  nameInput.style.borderRadius = "10px";
-  nameInput.style.border = _inputBord;
-  nameInput.style.background = _inputBg;
-  nameInput.style.color = _cardClr;
-  nameInput.style.fontSize = "13px";
-  nameInput.style.fontFamily = "'SF Mono', 'Fira Code', 'Consolas', monospace";
+  nameInput.style.fontFamily = "var(--mono)";
 
   nameRow.appendChild(nameLabel);
   nameRow.appendChild(nameInput);
@@ -4791,13 +4785,7 @@ async function openCreatePanel(typeName) {
     railLab.style.opacity = "0.9";
 
     __railSelect = document.createElement("select");
-    __railSelect.style.padding = "6px 10px";
-    __railSelect.style.borderRadius = "10px";
-    __railSelect.style.border = _inputBord;
-    __railSelect.style.background = _inputBg;
-    __railSelect.style.color = _cardClr;
-    __railSelect.style.fontSize = "13px";
-    __railSelect.style.cursor = "pointer";
+    _sbStyleInput(__railSelect);
 
     // Start with "No Rail" + loading placeholder
     const noRailOpt = document.createElement("option");
@@ -4862,12 +4850,8 @@ async function openCreatePanel(typeName) {
       input = document.createElement("input");
       input.type = "text";
       input.value = (opt.default === undefined || opt.default === null) ? "" : (typeof opt.default === "object" ? JSON.stringify(opt.default) : String(opt.default));
+      _sbStyleInput(input);
       input.style.flex = "1";
-      input.style.padding = "8px 10px";
-      input.style.borderRadius = "10px";
-      input.style.border = _inputBord;
-      input.style.background = _inputBg;
-      input.style.color = _cardClr;
     }
     fields[opt.name] = { opt, input };
     wrap.appendChild(lab);
@@ -7045,12 +7029,8 @@ function openPatternSourceAnchorMenu(sourceName, anchorsBySolid) {
     solidRow.appendChild(lab);
 
     const sel = document.createElement("select");
+    _sbStyleInput(sel);
     sel.style.flex = "1";
-    sel.style.padding = "8px 10px";
-    sel.style.borderRadius = "10px";
-    sel.style.border = "1px solid rgba(255,255,255,0.12)";
-    sel.style.background = "rgba(0,0,0,0.25)";
-    sel.style.color = "#fff";
     for (const s of solids) {
       const opt = document.createElement("option");
       opt.value = s;
