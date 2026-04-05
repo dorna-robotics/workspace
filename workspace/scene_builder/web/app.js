@@ -2331,18 +2331,6 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   try { upsertObject(name, spec); } catch (e) {}
   window.builderState.placedOrder.push(name);
 
-  // Focus camera on the new object
-  try {
-    const spawnPos = new THREE.Vector3(0, 0, 500);
-    const camDist = camera.position.distanceTo(controls.target);
-    const dir = camera.position.clone().sub(controls.target).normalize();
-    snapCamera(
-      spawnPos.clone().add(dir.multiplyScalar(Math.min(camDist, 1500))),
-      spawnPos,
-      new THREE.Vector3(0, 0, 1)
-    );
-  } catch (e) {}
-
   // Undo step #1: creation (so undo after an attach will first un-attach, then delete)
   try {
     __pushUndo({
