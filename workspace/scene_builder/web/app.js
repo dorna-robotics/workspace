@@ -536,7 +536,7 @@
             ? `${solidKey}:${name}`
             : String(name);
 
-          const size = 14;
+          const size = 7;
           const axes = makeAxesHelperAlwaysOnTop(size);
 
           // Determine anchor color based on builder mode
