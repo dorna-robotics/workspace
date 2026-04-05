@@ -513,6 +513,7 @@
           const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
 
           const label = makeTextSprite(displayName, 80, labelBg, "#fff", 0.85);
+          label.visible = false;  // hidden by default, shown on hover
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
@@ -557,6 +558,7 @@
           // Store refs for hover effect
           pick.userData.__dotMesh = dot;
           pick.userData.__ringMesh = ring;
+          pick.userData.__labelSprite = label;
           pick.userData.__dotColor = anchorColor;
           anchorsLayer.add(pick);
 
@@ -1038,11 +1040,9 @@ if (node) {
 
       // ── Ghost preview for anchor attachment ──────────────────────────────
       let __ghostObj = null;
-      let __ghostLine = null;
 
       function __clearGhost() {
         if (__ghostObj) { scene.remove(__ghostObj); __ghostObj = null; }
-        if (__ghostLine) { scene.remove(__ghostLine); __ghostLine.geometry?.dispose(); __ghostLine.material?.dispose(); __ghostLine = null; }
       }
 
       function __showGhostPreview(parentAnchorName, parentSolidKey) {
@@ -1111,23 +1111,6 @@ if (node) {
           const srcWorldOffset = srcPL.clone().applyQuaternion(newChildQ);
           ghost.position.copy(dstWorldPos.clone().sub(srcWorldOffset));
 
-          // Dashed line from child current pos to ghost pos
-          const childWorldPos = new THREE.Vector3();
-          childObj.getWorldPosition(childWorldPos);
-          const lineGeo = new THREE.BufferGeometry().setFromPoints([childWorldPos, dstWorldPos]);
-          const lineMat = new THREE.LineDashedMaterial({
-            color: 0x0a84ff,
-            dashSize: 6,
-            gapSize: 4,
-            transparent: true,
-            opacity: 0.5,
-            depthTest: false,
-          });
-          const line = new THREE.Line(lineGeo, lineMat);
-          line.computeLineDistances();
-          line.renderOrder = 901;
-          scene.add(line);
-          __ghostLine = line;
         } catch (e) {
           __clearGhost();
         }
@@ -1147,20 +1130,23 @@ if (node) {
         if (wantAnchorHitZones()) {
           const newHover = isAnchorHit ? hit.object : null;
           if (newHover !== __hoveredAnchorPick) {
-            // Unhover previous — shrink back
+            // Unhover previous — shrink back, hide label
             if (__hoveredAnchorPick) {
               const d = __hoveredAnchorPick.userData.__dotMesh;
               const r = __hoveredAnchorPick.userData.__ringMesh;
+              const l = __hoveredAnchorPick.userData.__labelSprite;
               if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
               if (r) { r.material.opacity = 0.0; }
+              if (l) { l.visible = false; }
             }
-            // Hover new — grow and glow
+            // Hover new — grow, glow, show label
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
+              const l = newHover.userData.__labelSprite;
               if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
               if (r) { r.material.opacity = 0.4; }
-              // Show ghost preview when hovering target anchor
+              if (l) { l.visible = true; }
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1172,8 +1158,10 @@ if (node) {
         } else if (__hoveredAnchorPick) {
           const d = __hoveredAnchorPick.userData.__dotMesh;
           const r = __hoveredAnchorPick.userData.__ringMesh;
+          const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
+          if (l) { l.visible = false; }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
