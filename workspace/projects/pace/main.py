@@ -8,7 +8,7 @@ from workspace.runtime_server import RuntimeServer
 def main():
     # port
     p = argparse.ArgumentParser()
-    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
+    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "5000")))
     args = p.parse_args()
     port = int(args.port)
 
