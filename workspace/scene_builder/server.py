@@ -847,7 +847,7 @@ class RailsHandler(tornado.web.RequestHandler):
                 src = open(core_fp, "r", encoding="utf-8", errors="ignore").read()
                 # Find all rail_hd_*mm type references
                 found = set(re.findall(r'rail_hd_\d+mm', src))
-                for rail_type in sorted(found):
+                for rail_type in sorted(found, key=lambda r: int(re.search(r'\d+', r).group())):
                     # Check that the base GLB exists
                     glb_path = os.path.join(STATIC_DIR, "CAD", f"{rail_type}_base.glb")
                     if not os.path.exists(glb_path):
