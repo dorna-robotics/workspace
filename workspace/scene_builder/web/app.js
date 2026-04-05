@@ -6870,18 +6870,67 @@ ensureBuilderBar();
         vcHoveredHit = null; vcApplyHighlight(null);
         vcCanvas.style.cursor = "default";
       });
-      vcCanvas.addEventListener("click", (e) => {
-        vcSetPointer(e);
-        vcRaycaster.setFromCamera(vcPointer, vcCamera);
-        const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
-        if (!hits.length) return;
-        const hit = hits[0];
-        const type = hit.object.userData.vcType;
-        let d;
-        if (type === "corner" || type === "edge") d = hit.object.userData.vcDir;
-        else { const n = VC_FACE_NORMALS[hit.face.materialIndex]; d = n; }
-        const [pos, tgt, up] = vcSnapFromDir(d[0], d[1], d[2]);
-        snapCamera(pos, tgt, up);
+      // ViewCube interaction: click to snap, drag to orbit
+      let vcDrag = null;
+      vcCanvas.addEventListener("pointerdown", (e) => {
+        vcDrag = { x: e.clientX, y: e.clientY, dragged: false };
+        vcCanvas.setPointerCapture(e.pointerId);
+      });
+      vcCanvas.addEventListener("pointermove", (e) => {
+        if (!vcDrag) return;
+        const dx = e.clientX - vcDrag.x;
+        const dy = e.clientY - vcDrag.y;
+        if (!vcDrag.dragged && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) vcDrag.dragged = true;
+        if (!vcDrag.dragged) return;
+        vcDrag.x = e.clientX;
+        vcDrag.y = e.clientY;
+
+        // Map pixel drag on the small cube to camera orbit
+        // Larger multiplier = cube feels 1:1 with finger
+        const sensitivity = 0.04;
+        const dist = camera.position.distanceTo(controls.target);
+        const offset = camera.position.clone().sub(controls.target);
+
+        // Horizontal drag → rotate around world Z (azimuth)
+        const azimuth = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1), -dx * sensitivity
+        );
+        offset.applyQuaternion(azimuth);
+        camera.up.applyQuaternion(azimuth);
+
+        // Vertical drag → rotate around camera's right axis (elevation)
+        const right = new THREE.Vector3().crossVectors(camera.up, offset).normalize();
+        const elevation = new THREE.Quaternion().setFromAxisAngle(right, dy * sensitivity);
+        const newOffset = offset.clone().applyQuaternion(elevation);
+        // Prevent flipping past poles
+        const newUp = camera.up.clone().applyQuaternion(elevation);
+        if (newUp.dot(new THREE.Vector3(0, 0, 1)) > 0.05) {
+          offset.copy(newOffset);
+          camera.up.copy(newUp);
+        }
+
+        camera.position.copy(controls.target).add(offset);
+        camera.lookAt(controls.target);
+        controls.update();
+        markDirty();
+      });
+      vcCanvas.addEventListener("pointerup", (e) => {
+        if (vcDrag && !vcDrag.dragged) {
+          // Click — snap to face/edge/corner
+          vcSetPointer(e);
+          vcRaycaster.setFromCamera(vcPointer, vcCamera);
+          const hits = vcRaycaster.intersectObjects(vcAllMeshes, false);
+          if (hits.length) {
+            const hit = hits[0];
+            const type = hit.object.userData.vcType;
+            let d;
+            if (type === "corner" || type === "edge") d = hit.object.userData.vcDir;
+            else { const n = VC_FACE_NORMALS[hit.face.materialIndex]; d = n; }
+            const [pos, tgt, up] = vcSnapFromDir(d[0], d[1], d[2]);
+            snapCamera(pos, tgt, up);
+          }
+        }
+        vcDrag = null;
       });
 
       // --- Render on demand (listeners) ---
