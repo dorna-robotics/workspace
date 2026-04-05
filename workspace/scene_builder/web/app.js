@@ -517,12 +517,12 @@
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
 
-          // Visible anchor dot — glowing sphere
-          const dotGeo = new THREE.SphereGeometry(3.5, 16, 16);
+          // Visible anchor dot — small by default, grows on hover
+          const dotGeo = new THREE.SphereGeometry(1.5, 16, 16);
           const dotMat = new THREE.MeshBasicMaterial({
             color: anchorColor,
             transparent: true,
-            opacity: 0.85,
+            opacity: 0.6,
             depthTest: false,
           });
           const dot = new THREE.Mesh(dotGeo, dotMat);
@@ -530,12 +530,12 @@
           dot.frustumCulled = false;
           anchorsLayer.add(dot);
 
-          // Glow ring around the dot
-          const ringGeo = new THREE.RingGeometry(5, 8, 24);
+          // Glow ring — hidden by default, appears on hover
+          const ringGeo = new THREE.RingGeometry(4, 7, 24);
           const ringMat = new THREE.MeshBasicMaterial({
             color: anchorColor,
             transparent: true,
-            opacity: 0.2,
+            opacity: 0.0,
             depthTest: false,
             side: THREE.DoubleSide,
           });
@@ -1046,27 +1046,27 @@ if (node) {
         if (wantAnchorHitZones()) {
           const newHover = isAnchorHit ? hit.object : null;
           if (newHover !== __hoveredAnchorPick) {
-            // Unhover previous
+            // Unhover previous — shrink back
             if (__hoveredAnchorPick) {
               const d = __hoveredAnchorPick.userData.__dotMesh;
               const r = __hoveredAnchorPick.userData.__ringMesh;
-              if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.85; }
-              if (r) { r.scale.set(1, 1, 1); r.material.opacity = 0.2; }
+              if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
+              if (r) { r.material.opacity = 0.0; }
             }
-            // Hover new
+            // Hover new — grow and glow
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
-              if (d) { d.scale.set(1.8, 1.8, 1.8); d.material.opacity = 1.0; }
-              if (r) { r.scale.set(1.5, 1.5, 1.5); r.material.opacity = 0.5; }
+              if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
+              if (r) { r.material.opacity = 0.4; }
             }
             __hoveredAnchorPick = newHover;
           }
         } else if (__hoveredAnchorPick) {
           const d = __hoveredAnchorPick.userData.__dotMesh;
           const r = __hoveredAnchorPick.userData.__ringMesh;
-          if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.85; }
-          if (r) { r.scale.set(1, 1, 1); r.material.opacity = 0.2; }
+          if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
+          if (r) { r.material.opacity = 0.0; }
           __hoveredAnchorPick = null;
         }
 
