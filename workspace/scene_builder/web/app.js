@@ -512,8 +512,8 @@
           const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
           const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
 
-          const label = makeTextSprite(displayName, 80, labelBg, "#fff", 0.85);
-          label.visible = false;  // hidden by default, shown on hover
+          const label = makeTextSprite(displayName, 64, labelBg, "#fff", 0.35);
+          label.scale.multiplyScalar(0.7);  // small by default, grows on hover
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
@@ -1130,23 +1130,23 @@ if (node) {
         if (wantAnchorHitZones()) {
           const newHover = isAnchorHit ? hit.object : null;
           if (newHover !== __hoveredAnchorPick) {
-            // Unhover previous — shrink back, hide label
+            // Unhover previous — shrink back, dim label
             if (__hoveredAnchorPick) {
               const d = __hoveredAnchorPick.userData.__dotMesh;
               const r = __hoveredAnchorPick.userData.__ringMesh;
               const l = __hoveredAnchorPick.userData.__labelSprite;
               if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
               if (r) { r.material.opacity = 0.0; }
-              if (l) { l.visible = false; }
+              if (l) { l.material.opacity = 0.35; l.scale.set(l.scale.x / 1.4, l.scale.y / 1.4, 1); }
             }
-            // Hover new — grow, glow, show label
+            // Hover new — grow, glow, enlarge label
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
               const l = newHover.userData.__labelSprite;
               if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
               if (r) { r.material.opacity = 0.4; }
-              if (l) { l.visible = true; }
+              if (l) { l.material.opacity = 1.0; l.scale.set(l.scale.x * 1.4, l.scale.y * 1.4, 1); }
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1161,7 +1161,7 @@ if (node) {
           const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
-          if (l) { l.visible = false; }
+          if (l) { l.material.opacity = 0.35; l.scale.set(l.scale.x / 1.4, l.scale.y / 1.4, 1); }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
