@@ -1032,6 +1032,103 @@ if (node) {
         return null;
       }
 
+      // ── Ghost preview for anchor attachment ──────────────────────────────
+      let __ghostObj = null;
+      let __ghostLine = null;
+
+      function __clearGhost() {
+        if (__ghostObj) { scene.remove(__ghostObj); __ghostObj = null; }
+        if (__ghostLine) { scene.remove(__ghostLine); __ghostLine.geometry?.dispose(); __ghostLine.material?.dispose(); __ghostLine = null; }
+      }
+
+      function __showGhostPreview(parentAnchorName, parentSolidKey) {
+        __clearGhost();
+        const pending = window.builderState?.pending;
+        if (!pending || window.builderState.mode !== "PICK_TARGET_ANCHOR") return;
+
+        const childName = pending.name;
+        const childObj = objectsByName.get(childName);
+        const targetName = window.builderState.targetName;
+        const parentObj = targetName ? objectsByName.get(targetName) : null;
+        if (!childObj || !parentObj) return;
+
+        try {
+          // Clone the child as a ghost
+          const ghost = childObj.clone(true);
+          ghost.traverse(c => {
+            if (c.isMesh && c.material) {
+              c.material = c.material.clone();
+              c.material.transparent = true;
+              c.material.opacity = 0.3;
+              c.material.depthWrite = false;
+              c.material.color?.setHex(0x0a84ff);
+            }
+          });
+          ghost.renderOrder = 900;
+          scene.add(ghost);
+          __ghostObj = ghost;
+
+          // Compute snap position using the same math as __snapChildToParentAnchor
+          const childSolid = pending.childSolid || null;
+          const childAnchor = pending.sourceAnchor;
+          const parentSolid = parentSolidKey || window.builderState.pending?.parentSolid || null;
+
+          const __getAnchorsLocal = (obj, preferredSolid) => {
+            const ud = obj?.userData || {};
+            const ab = (ud.anchorsBySolid && typeof ud.anchorsBySolid === "object") ? ud.anchorsBySolid : null;
+            if (preferredSolid && ab && ab[preferredSolid]) return ab[preferredSolid];
+            if (ud.anchors && typeof ud.anchors === "object" && Object.keys(ud.anchors).length) return ud.anchors;
+            if (!ab) return {};
+            const solid = (ud.solidName && ab[ud.solidName]) ? ud.solidName : Object.keys(ab)[0];
+            return (solid && ab[solid]) ? ab[solid] : {};
+          };
+
+          const childAnchors = __getAnchorsLocal(childObj, childSolid);
+          const parentAnchors = __getAnchorsLocal(parentObj, parentSolid);
+
+          // Find anchor arrays
+          const srcArr = childAnchors[childAnchor] || Object.values(childAnchors).find((v, i) => Object.keys(childAnchors)[i] === childAnchor);
+          const dstArr = parentAnchors[parentAnchorName] || Object.values(parentAnchors).find((v, i) => Object.keys(parentAnchors)[i] === parentAnchorName);
+
+          if (!srcArr || !dstArr || srcArr.length < 6 || dstArr.length < 6) { __clearGhost(); return; }
+
+          const srcPL = new THREE.Vector3(srcArr[0], srcArr[1], srcArr[2]);
+          const srcQL = rodriguesDegToQuaternion(srcArr[3], srcArr[4], srcArr[5]);
+          const dstPL = new THREE.Vector3(dstArr[0], dstArr[1], dstArr[2]);
+          const dstQL = rodriguesDegToQuaternion(dstArr[3], dstArr[4], dstArr[5]);
+
+          const dstWorldPos = parentObj.localToWorld(dstPL.clone());
+          const parentWorldQ = new THREE.Quaternion();
+          parentObj.getWorldQuaternion(parentWorldQ);
+          const dstWorldQ = parentWorldQ.clone().multiply(dstQL);
+          const newChildQ = dstWorldQ.clone().multiply(srcQL.clone().invert());
+
+          ghost.quaternion.copy(newChildQ);
+          const srcWorldOffset = srcPL.clone().applyQuaternion(newChildQ);
+          ghost.position.copy(dstWorldPos.clone().sub(srcWorldOffset));
+
+          // Dashed line from child current pos to ghost pos
+          const childWorldPos = new THREE.Vector3();
+          childObj.getWorldPosition(childWorldPos);
+          const lineGeo = new THREE.BufferGeometry().setFromPoints([childWorldPos, dstWorldPos]);
+          const lineMat = new THREE.LineDashedMaterial({
+            color: 0x0a84ff,
+            dashSize: 6,
+            gapSize: 4,
+            transparent: true,
+            opacity: 0.5,
+            depthTest: false,
+          });
+          const line = new THREE.Line(lineGeo, lineMat);
+          line.computeLineDistances();
+          line.renderOrder = 901;
+          scene.add(line);
+          __ghostLine = line;
+        } catch (e) {
+          __clearGhost();
+        }
+      }
+
       let __hoveredAnchorPick = null;
       renderer.domElement.addEventListener("pointermove", (e) => {
         if (__resizeDrag) { __onResizePointerMove(e); markDirty(); return; }
@@ -1059,6 +1156,12 @@ if (node) {
               const r = newHover.userData.__ringMesh;
               if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
               if (r) { r.material.opacity = 0.4; }
+              // Show ghost preview when hovering target anchor
+              if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
+                __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
+              }
+            } else {
+              __clearGhost();
             }
             __hoveredAnchorPick = newHover;
           }
@@ -1068,6 +1171,7 @@ if (node) {
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
           __hoveredAnchorPick = null;
+          __clearGhost();
         }
 
         // Hover highlight
