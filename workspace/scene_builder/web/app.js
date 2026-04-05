@@ -2314,7 +2314,7 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
     meshes: meshes,
     collisionLocal: meshes ? null : (collisionLocalSingle || []),
     boxForGrip: meshes ? false : (boxForGripSingle || false),
-    pose: [0,0,((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 300),0,0,0],
+    pose: [0, 0, ((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 500), 0, 0, 0],
     visible: true,
     anchors,
     anchorsBySolid,
@@ -2330,6 +2330,18 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   try { socket.emit("upstream_update", { [name]: spec }); } catch (e) {}
   try { upsertObject(name, spec); } catch (e) {}
   window.builderState.placedOrder.push(name);
+
+  // Focus camera on the new object
+  try {
+    const spawnPos = new THREE.Vector3(0, 0, 500);
+    const camDist = camera.position.distanceTo(controls.target);
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    snapCamera(
+      spawnPos.clone().add(dir.multiplyScalar(Math.min(camDist, 1500))),
+      spawnPos,
+      new THREE.Vector3(0, 0, 1)
+    );
+  } catch (e) {}
 
   // Undo step #1: creation (so undo after an attach will first un-attach, then delete)
   try {
@@ -2460,7 +2472,7 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
     meshes: meshes,
     collisionLocal: meshes ? null : (collisionLocalSingle || []),
     boxForGrip: meshes ? false : (boxForGripSingle || false),
-    pose: [0,0,((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 300),0,0,0],
+    pose: [0, 0, ((type === "fixture_plate" && !window.builderState.lastFixturePlate) ? 0 : 500), 0, 0, 0],
     visible: true,
     anchors,
     anchorsBySolid,
