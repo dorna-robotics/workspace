@@ -377,6 +377,41 @@
         return spr;
       }
 
+      function makeAnchorLabel(text, color = "#0a84ff", fontPx = 56) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const font = `bold ${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.font = font;
+        const metrics = ctx.measureText(text);
+        const pad = 8;
+        canvas.width  = Math.ceil(metrics.width + pad * 2);
+        canvas.height = Math.ceil(fontPx * 1.3 + pad * 2);
+
+        ctx.font = font;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+
+        // Dark outline for contrast on any background
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.lineWidth = 4;
+        ctx.lineJoin = "round";
+        ctx.strokeText(text, pad, pad);
+
+        // Colored fill
+        ctx.fillStyle = color;
+        ctx.fillText(text, pad, pad);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+        const spr = new THREE.Sprite(mat);
+        const scale = 0.08;
+        spr.scale.set(canvas.width * scale, canvas.height * scale, 1);
+        spr.renderOrder = 999;
+        spr.frustumCulled = false;
+        return spr;
+      }
+
       function makeAxesHelperAlwaysOnTop(size) {
         const axes = new THREE.AxesHelper(size);
         axes.traverse(child => {
@@ -512,8 +547,8 @@
           const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
           const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
 
-          const label = makeTextSprite(displayName, 64, labelBg, "#fff", 0.35);
-          label.scale.multiplyScalar(0.7);  // small by default, grows on hover
+          const label = makeAnchorLabel(displayName, anchorColorCSS);
+          label.material.opacity = 0.5;  // subtle by default, pops on hover
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
@@ -1137,16 +1172,16 @@ if (node) {
               const l = __hoveredAnchorPick.userData.__labelSprite;
               if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
               if (r) { r.material.opacity = 0.0; }
-              if (l) { l.material.opacity = 0.35; l.scale.set(l.scale.x / 1.4, l.scale.y / 1.4, 1); }
+              if (l) { l.material.opacity = 0.5; }
             }
-            // Hover new — grow, glow, enlarge label
+            // Hover new — grow, glow, brighten label
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
               const l = newHover.userData.__labelSprite;
               if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
               if (r) { r.material.opacity = 0.4; }
-              if (l) { l.material.opacity = 1.0; l.scale.set(l.scale.x * 1.4, l.scale.y * 1.4, 1); }
+              if (l) { l.material.opacity = 1.0; }
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1161,7 +1196,7 @@ if (node) {
           const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
-          if (l) { l.material.opacity = 0.35; l.scale.set(l.scale.x / 1.4, l.scale.y / 1.4, 1); }
+          if (l) { l.material.opacity = 0.5; }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
