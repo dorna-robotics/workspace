@@ -727,39 +727,46 @@ select.input { cursor: pointer; }
 .ctrl-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
-  border: none;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.55);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(8,14,24,0.80);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s, color 0.12s, transform 0.1s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.55);
   outline: none;
 }
 .ctrl-btn:hover {
-  background: rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.85);
-  transform: translateY(-1px);
+  background: rgba(40,60,90,0.90);
+  border-color: rgba(255,255,255,0.22);
 }
 .ctrl-btn:active { transform: scale(0.93); }
 .ctrl-btn.active {
-  background: rgba(10,132,255,0.25);
-  color: var(--accent);
+  background: rgba(50,110,210,0.30);
+  border-color: rgba(79,156,249,0.60);
+  color: #79b8ff;
 }
 .ctrl-btn svg { display: block; }
 
 [data-theme="light"] .ctrl-btn {
-  background: rgba(0,0,0,0.05);
-  color: rgba(0,0,0,0.4);
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(0,0,0,0.12);
+  color: #1a1a1a;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
 }
 [data-theme="light"] .ctrl-btn:hover {
-  background: rgba(0,0,0,0.1);
-  color: rgba(0,0,0,0.7);
+  background: rgba(230,235,245,0.95);
+  border-color: rgba(0,0,0,0.22);
+  color: #1a2035;
 }
 [data-theme="light"] .ctrl-btn.active {
-  background: rgba(0,122,255,0.12);
+  background: rgba(37,99,235,0.10);
+  border-color: rgba(37,99,235,0.40);
   color: var(--accent);
 }
 
