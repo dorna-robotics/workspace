@@ -396,6 +396,16 @@
           activeAnchors.items.forEach(it => {
             anchorsLayer.remove(it.axes);
             if (it.label) anchorsLayer.remove(it.label);
+            if (it.dot) {
+              anchorsLayer.remove(it.dot);
+              if (it.dot.geometry) it.dot.geometry.dispose();
+              if (it.dot.material) it.dot.material.dispose();
+            }
+            if (it.ring) {
+              anchorsLayer.remove(it.ring);
+              if (it.ring.geometry) it.ring.geometry.dispose();
+              if (it.ring.material) it.ring.material.dispose();
+            }
             if (it.pick) {
               anchorsLayer.remove(it.pick);
               pickableMeshes.delete(it.pick);
@@ -491,30 +501,69 @@
             ? `${solidKey}:${name}`
             : String(name);
 
-          const size = 18;
+          const size = 14;
           const axes = makeAxesHelperAlwaysOnTop(size);
-          const label = makeTextSprite(displayName, 90, "#000", "#fff", 0.65);
+
+          // Determine anchor color based on builder mode
+          const mode = window.builderState?.mode || "IDLE";
+          const isChildMode = mode === "PICK_CHILD_ANCHOR";
+          const isTargetMode = mode === "PICK_TARGET_ANCHOR";
+          const anchorColor = isChildMode ? 0x0a84ff : isTargetMode ? 0x34c759 : 0x0a84ff;
+          const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
+          const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
+
+          const label = makeTextSprite(displayName, 80, labelBg, "#fff", 0.85);
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
 
-          // clickable (nearly invisible) pick sphere
-          const pickGeo = new THREE.SphereGeometry(6, 12, 12);
-          const pickMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.02, depthTest: false });
+          // Visible anchor dot — glowing sphere
+          const dotGeo = new THREE.SphereGeometry(3.5, 16, 16);
+          const dotMat = new THREE.MeshBasicMaterial({
+            color: anchorColor,
+            transparent: true,
+            opacity: 0.85,
+            depthTest: false,
+          });
+          const dot = new THREE.Mesh(dotGeo, dotMat);
+          dot.renderOrder = 997;
+          dot.frustumCulled = false;
+          anchorsLayer.add(dot);
+
+          // Glow ring around the dot
+          const ringGeo = new THREE.RingGeometry(5, 8, 24);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: anchorColor,
+            transparent: true,
+            opacity: 0.2,
+            depthTest: false,
+            side: THREE.DoubleSide,
+          });
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.renderOrder = 996;
+          ring.frustumCulled = false;
+          anchorsLayer.add(ring);
+
+          // Clickable pick sphere (larger than dot for easy clicking)
+          const pickGeo = new THREE.SphereGeometry(8, 12, 12);
+          const pickMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.01, depthTest: false });
           const pick = new THREE.Mesh(pickGeo, pickMat);
           pick.renderOrder = 998;
           pick.frustumCulled = false;
           pick.userData.__isAnchorPick = true;
           pick.userData.anchorName = name;
           pick.userData.ownerName = obj?.name || "";
-          // For multi-solid assemblies, record which solid this anchor belongs to.
           if (solidKey) pick.userData.solidKey = solidKey;
+          // Store refs for hover effect
+          pick.userData.__dotMesh = dot;
+          pick.userData.__ringMesh = ring;
+          pick.userData.__dotColor = anchorColor;
           anchorsLayer.add(pick);
 
           // register for raycast picking
           pickableMeshes.add(pick);
 
-          items.push({ name: displayName, rawName: name, solidKey, pLocal, qLocal, axes, label, pick });
+          items.push({ name: displayName, rawName: name, solidKey, pLocal, qLocal, axes, label, pick, dot, ring });
         }
 
         // Extract data
@@ -555,8 +604,10 @@
           it.axes.position.copy(pWorld);
           it.axes.quaternion.copy(qWorld);
           if (it.pick) { it.pick.position.copy(pWorld); it.pick.quaternion.copy(qWorld); }
+          if (it.dot) { it.dot.position.copy(pWorld); }
+          if (it.ring) { it.ring.position.copy(pWorld); it.ring.lookAt(camera.position); }
           if (it.label) {
-            it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,22));
+            it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,18));
           }
         }
       }
@@ -981,16 +1032,46 @@ if (node) {
         return null;
       }
 
+      let __hoveredAnchorPick = null;
       renderer.domElement.addEventListener("pointermove", (e) => {
         if (__resizeDrag) { __onResizePointerMove(e); markDirty(); return; }
         setPointerFromEvent(e);
         const hit = pickFirstMesh();
         const isResizeHandle = hit?.object?.userData?.__isResizeHandle;
+        const isAnchorHit = hit?.object?.userData?.__isAnchorPick;
         renderer.domElement.style.cursor =
-          isResizeHandle ? "ew-resize" : (hit && hit.object?.isMesh) ? "pointer" : "default";
+          isResizeHandle ? "ew-resize" : isAnchorHit ? "pointer" : (hit && hit.object?.isMesh) ? "pointer" : "default";
+
+        // Anchor hover effect
+        if (wantAnchorHitZones()) {
+          const newHover = isAnchorHit ? hit.object : null;
+          if (newHover !== __hoveredAnchorPick) {
+            // Unhover previous
+            if (__hoveredAnchorPick) {
+              const d = __hoveredAnchorPick.userData.__dotMesh;
+              const r = __hoveredAnchorPick.userData.__ringMesh;
+              if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.85; }
+              if (r) { r.scale.set(1, 1, 1); r.material.opacity = 0.2; }
+            }
+            // Hover new
+            if (newHover) {
+              const d = newHover.userData.__dotMesh;
+              const r = newHover.userData.__ringMesh;
+              if (d) { d.scale.set(1.8, 1.8, 1.8); d.material.opacity = 1.0; }
+              if (r) { r.scale.set(1.5, 1.5, 1.5); r.material.opacity = 0.5; }
+            }
+            __hoveredAnchorPick = newHover;
+          }
+        } else if (__hoveredAnchorPick) {
+          const d = __hoveredAnchorPick.userData.__dotMesh;
+          const r = __hoveredAnchorPick.userData.__ringMesh;
+          if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.85; }
+          if (r) { r.scale.set(1, 1, 1); r.material.opacity = 0.2; }
+          __hoveredAnchorPick = null;
+        }
 
         // Hover highlight
-        const name = (hit && hit.object?.isMesh) ? __resolveComponentName(hit) : null;
+        const name = (hit && hit.object?.isMesh && !isAnchorHit) ? __resolveComponentName(hit) : null;
         if (name !== __hoveredName) {
           if (__hoveredName) __setHoverHighlight(__hoveredName, false);
           __hoveredName = name;
