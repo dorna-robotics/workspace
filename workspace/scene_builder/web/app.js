@@ -377,13 +377,13 @@
         return spr;
       }
 
-      function makeAnchorLabel(text, color = "#0a84ff", fontPx = 56) {
+      function makeAnchorLabel(text, color = "#ffffff", fontPx = 72) {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const font = `bold ${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
         ctx.font = font;
         const metrics = ctx.measureText(text);
-        const pad = 8;
+        const pad = 12;
         canvas.width  = Math.ceil(metrics.width + pad * 2);
         canvas.height = Math.ceil(fontPx * 1.3 + pad * 2);
 
@@ -392,12 +392,12 @@
         ctx.textBaseline = "top";
 
         // Dark outline for contrast on any background
-        ctx.strokeStyle = "rgba(0,0,0,0.7)";
-        ctx.lineWidth = 4;
+        ctx.strokeStyle = "rgba(0,0,0,0.9)";
+        ctx.lineWidth = 6;
         ctx.lineJoin = "round";
         ctx.strokeText(text, pad, pad);
 
-        // Colored fill
+        // White fill — readable on dark and light scenes
         ctx.fillStyle = color;
         ctx.fillText(text, pad, pad);
 
@@ -405,7 +405,7 @@
         tex.colorSpace = THREE.SRGBColorSpace;
         const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
         const spr = new THREE.Sprite(mat);
-        const scale = 0.08;
+        const scale = 0.09;
         spr.scale.set(canvas.width * scale, canvas.height * scale, 1);
         spr.renderOrder = 999;
         spr.frustumCulled = false;
@@ -547,8 +547,8 @@
           const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
           const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
 
-          const label = makeAnchorLabel(displayName, anchorColorCSS);
-          label.material.opacity = 0.5;  // subtle by default, pops on hover
+          const label = makeAnchorLabel(displayName, "#ffffff");
+          label.material.opacity = 0.8;
 
           anchorsLayer.add(axes);
           anchorsLayer.add(label);
@@ -1172,7 +1172,7 @@ if (node) {
               const l = __hoveredAnchorPick.userData.__labelSprite;
               if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
               if (r) { r.material.opacity = 0.0; }
-              if (l) { l.material.opacity = 0.5; }
+              if (l) { l.material.opacity = 0.8; }
             }
             // Hover new — grow, glow, brighten label
             if (newHover) {
@@ -1196,7 +1196,7 @@ if (node) {
           const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
-          if (l) { l.material.opacity = 0.5; }
+          if (l) { l.material.opacity = 0.8; }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
