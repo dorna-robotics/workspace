@@ -1,0 +1,20 @@
+# syringe_or/launch.yaml
+
+scene: [scene/base.j2, scene/layout.j2]
+
+kwargs:
+  batch_size:
+    type: int
+    default: 4
+    label: Batch size
+    hint: Number of hotel levels to process
+    min: 1
+    max: 10
+
+  run_per_rack:
+    type: int
+    default: 1
+    label: Tubes per rack
+    hint: Number of tubes to process per SBS rack
+    min: 1
+    max: 48
