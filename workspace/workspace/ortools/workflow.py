@@ -161,26 +161,26 @@ class BaseWorkflow:
     # ── Execution ────────────────────────────────────────────────────────────
 
     def run(self):
-        from workspace.runtime import StopRequested, KillRequested
+        from workspace.runtime import EndRequested, KillRequested
         try:
             self.runner.run(self.batch_size)
-        except StopRequested:
-            self.rt.step("Stopping — cleaning up", level="warning")
+        except EndRequested:
+            self.rt.step("Ending — cleaning up", level="warning")
         except KillRequested:
             raise  # let kill propagate immediately
         finally:
             try:
                 self._release_all()
-            except (StopRequested, KillRequested):
+            except (EndRequested, KillRequested):
                 pass
             except Exception:
                 pass
 
         # If stopped, run the trigger:stop handler
-        if self.rt.stopped and self.runner.has_trigger("stop"):
+        if self.rt.ending and self.runner.has_trigger("end"):
             try:
-                self.runner.run_trigger("stop")
-            except (StopRequested, KillRequested):
+                self.runner.run_trigger("end")
+            except (EndRequested, KillRequested):
                 pass
             except Exception:
                 pass

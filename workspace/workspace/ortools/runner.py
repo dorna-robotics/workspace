@@ -110,7 +110,7 @@ class ORRunner:
         Rolling horizon replanning happens automatically every `horizon` tasks.
         After a fault, update completed externally and call run() again to resume.
         """
-        from workspace.runtime import StopRequested
+        from workspace.runtime import EndRequested
 
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
         bg_active: dict[str, tuple[float, float]] = {}
@@ -183,7 +183,7 @@ class ORRunner:
             self.rt.step(100, level="progress")
             self.rt.step("Protocol complete — all goal states reached", level="success")
 
-        except StopRequested:
+        except EndRequested:
             # Graceful stop — re-raise for workflow to handle
             raise
 

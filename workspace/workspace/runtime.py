@@ -14,7 +14,7 @@ class RTState(str, Enum):
     IDLE = "IDLE"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
-    STOPPING = "STOPPING"
+    ENDING = "ENDING"
     ERROR = "ERROR"
     KILLED = "KILLED"
 
@@ -22,8 +22,8 @@ class RTState(str, Enum):
 class KillRequested(SystemExit):
     """Raised to terminate the gate/worker thread immediately (cooperative thread-exit)."""
 
-class StopRequested(Exception):
-    """Raised to gracefully stop the workflow — finish current action, run trigger:stop handler, then exit."""
+class EndRequested(Exception):
+    """Raised to gracefully end the workflow — finish current action, run trigger:end handler, then exit."""
 
 
 @dataclass
@@ -63,7 +63,7 @@ class Runtime:
         self._killed = False
 
         # stop flag (graceful stop — finish current action then stop)
-        self._stopped = False
+        self._ending = False
 
         # prevent concurrent worker() runs
         self._in_worker = False
@@ -215,19 +215,19 @@ class Runtime:
                 self._set_state(RTState.RUNNING)
                 self._cv.notify_all()
 
-    def stop(self) -> None:
-        """Request graceful stop — current action finishes, then StopRequested is raised at next checkpoint."""
+    def end(self) -> None:
+        """Request graceful stop — current action finishes, then EndRequested is raised at next checkpoint."""
         with self._lock:
-            if self._killed or self._stopped:
+            if self._killed or self._ending:
                 return
-            self._stopped = True
-            self._set_state(RTState.STOPPING)
+            self._ending = True
+            self._set_state(RTState.ENDING)
             # If paused, resume so the checkpoint can see the stop flag
             self._cv.notify_all()
 
     @property
-    def stopped(self) -> bool:
-        return self._stopped
+    def ending(self) -> bool:
+        return self._ending
 
     def kill(self) -> None:
         """Kill runtime and join workflow thread."""
@@ -249,7 +249,7 @@ class Runtime:
         """Reset runtime after kill() or stop()."""
         with self._lock:
             self._killed = False
-            self._stopped = False
+            self._ending = False
             self._status.last_error = None
             self._status.state = RTState.IDLE
             self._cv.notify_all()
@@ -350,8 +350,8 @@ class Runtime:
             while True:
                 if self._killed:
                     raise KillRequested()
-                if self._stopped:
-                    raise StopRequested()
+                if self._ending:
+                    raise EndRequested()
                 st = self._status.state
                 if st == RTState.PAUSED:
                     self._cv.wait()

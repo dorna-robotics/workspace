@@ -102,7 +102,7 @@ states:
 
   - name: shutdown
     requires: [initialized]
-    trigger: stop
+    trigger: end
 
 goal: [placed]
 ```
@@ -118,7 +118,7 @@ goal: [placed]
 | `background` | No | `true` = runs in parallel, completes all items at once |
 | `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
-| `trigger` | No | `"stop"` — state is not scheduled, only runs when the trigger fires. The Stop button in the GUI runs the `trigger: stop` state. If not defined, Stop button is hidden. |
+| `trigger` | No | `"end"` — state is not scheduled, only runs when the trigger fires. The End button in the GUI runs the `trigger: end` state. If not defined, Stop button is hidden. |
 ### Goal
 
 The `goal` list defines terminal states. The protocol succeeds when every goal state has been completed.
@@ -352,7 +352,7 @@ Called automatically after every `rt.step()` and `rt.call()`. Use manually in lo
 3. Set name, port, path to `main.py`
 4. Click the **gear icon** → set parameters → **Set**
 5. Click **Launch** → **Start**
-6. To end gracefully: **Stop** (finishes current action → runs shutdown → exits)
+6. To end gracefully: **End** (finishes current action → runs shutdown → exits)
 7. To emergency halt: **Kill** (instant stop, may leave robot in dirty state)
 
 ### From the command line

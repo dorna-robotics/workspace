@@ -35,12 +35,12 @@ export function stateVariant(state) {
 export function stateLabel(state) {
   const s = String(state || "").toUpperCase();
   if (s === "IDLE") return "READY";
-  if (s === "STOPPING") return "STOPPING";
+  if (s === "ENDING") return "ENDING";
   return s || "—";
 }
 
-export function isStopping(state) {
-  return String(state || "").toUpperCase() === "STOPPING";
+export function isEnding(state) {
+  return String(state || "").toUpperCase() === "ENDING";
 }
 
 export function isRunning(state) {

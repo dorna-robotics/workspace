@@ -145,8 +145,8 @@ class CmdHandler(tornado.web.RequestHandler):
                     self.workflow_fn, workspace=self.workspace, **extra_kwargs
                 )
 
-        elif cmd == "stop":
-            self.rt.stop()
+        elif cmd == "end":
+            self.rt.end()
         elif cmd == "pause":
             self.rt.pause()
         elif cmd == "resume":

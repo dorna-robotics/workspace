@@ -467,13 +467,13 @@ class Orchestrator:
             raise RuntimeError(f"Workspace {name} is not launched.")
         return self._send_runtime_cmd_local(ws, "resume")
 
-    def stop_runtime(self, name: str):
+    def end_runtime(self, name: str):
         ws = self.workspaces[name]
         if ws.is_remote():
-            return self._proxy_cmd_to_node(ws, "stop")
+            return self._proxy_cmd_to_node(ws, "end")
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched.")
-        return self._send_runtime_cmd_local(ws, "stop")
+        return self._send_runtime_cmd_local(ws, "end")
 
     def get_status(self, name: str):
         ws = self.workspaces[name]
@@ -626,8 +626,8 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
                 raise ValueError(f"Unknown workspace: {name}")
             ws = self.orch.workspaces[name]
             schema = ws.launch_config()
-            has_stop = ws.has_trigger("stop")
-            self.write({"kwargs_schema": schema or {}, "kwargs_values": ws.kwargs_values or {}, "has_stop": has_stop})
+            has_end = ws.has_trigger("end")
+            self.write({"kwargs_schema": schema or {}, "kwargs_values": ws.kwargs_values or {}, "has_end": has_end})
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -739,8 +739,8 @@ class WorkspaceCmdHandler(AuthedHandler):
             elif cmd == "start":
                 kwargs = data.get("kwargs")
                 out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name, kwargs)
-            elif cmd == "stop":
-                out = await loop.run_in_executor(_cmd_pool, self.orch.stop_runtime, name)
+            elif cmd == "end":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.end_runtime, name)
             elif cmd == "pause":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
             elif cmd == "resume":
