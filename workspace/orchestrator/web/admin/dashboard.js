@@ -238,7 +238,7 @@ function render() {
         return `<div class="wc-progress"><div class="progress-bar"><div class="progress-bar-fill${p >= 100 ? " done" : ""}" style="width:${Math.min(100, Math.max(0, p))}%"></div></div><span class="wc-progress-label">${Math.min(100, Math.max(0, p))}%</span></div>`;
       })()}
       <div class="wc-footer">
-        <a class="btn btn-primary btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
+        <a class="btn btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
         <div class="wc-actions">
           ${!launched
             ? `<div class="spacer"></div><button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>
