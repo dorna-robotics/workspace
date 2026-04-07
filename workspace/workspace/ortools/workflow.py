@@ -165,24 +165,21 @@ class BaseWorkflow:
         try:
             self.runner.run(self.batch_size)
         except EndRequested:
-            self.rt.step("Ending — cleaning up", level="warning")
+            pass
         except KillRequested:
-            raise  # let kill propagate immediately
-        finally:
-            try:
-                self._release_all()
-            except (EndRequested, KillRequested):
-                pass
-            except Exception:
-                pass
+            raise
 
-        # If stopped, run the trigger:stop handler
         if self.rt.ending and self.runner.has_trigger("end"):
+            # User-defined end handler — full control, no auto cleanup
             try:
                 self.runner.run_trigger("end")
             except (EndRequested, KillRequested):
                 pass
-            except Exception:
+        else:
+            # No end handler — auto release tools
+            try:
+                self._release_all()
+            except (EndRequested, KillRequested):
                 pass
 
     def _apply_tool_enforcement(self):
