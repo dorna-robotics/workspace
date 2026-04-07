@@ -195,7 +195,6 @@
     .log-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer; user-select: none; }
     .log-header .section-label { margin: 0; }
     .log-header .btn { cursor: pointer; }
-    #logChevron.open, #stepChevron.open, #paramsChevron.open { transform: rotate(90deg); }
 
     .params-pre {
       background: var(--bg);
@@ -358,7 +357,7 @@
       <div id="paramsSection">
         <div class="log-header" id="btnToggleParams" title="Toggle parameters">
           <div class="section-label">Run Parameters</div>
-          <svg id="paramsChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg id="paramsChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="section-chevron"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyParams" title="Copy parameters"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         </div>
@@ -378,7 +377,7 @@
       <div id="stepSection">
         <div class="log-header" id="btnToggleSteps" title="Toggle progress">
           <div class="section-label">Steps</div>
-          <svg id="stepChevron" class="open" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg id="stepChevron" class="section-chevron open" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <span class="step-count-badge" id="stepCountBadge"></span>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
@@ -389,7 +388,7 @@
       <div>
         <div class="log-header" id="btnToggleLogs" title="Expand logs">
           <div class="section-label">Logs</div>
-          <svg id="logChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;opacity:0.45;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg id="logChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="section-chevron"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnFollowLogs" title="Jump to latest" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyLogs" title="Copy logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
@@ -441,7 +440,7 @@
       <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
       <span>Pause</span>
     </button>
-    <button class="pendant-btn pendant-relaunch" id="pendantLaunch" data-cmd="launch">
+    <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       <span>Launch</span>
     </button>
@@ -450,7 +449,7 @@
       <span>End</span>
     </button>
   </div>
-  <div style="display:flex;gap:12px;align-items:center">
+  <div class="pendant-secondary-row">
     <button class="pendant-secondary pendant-kill-btn" id="pendantKill" data-cmd="kill">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       Kill

@@ -232,9 +232,9 @@
   <div class="brand">
     <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="26"/>
   </div>
-  <span class="pill off" style="min-width:0;overflow:hidden;text-overflow:ellipsis">
+  <span class="pill off truncate" style="min-width:0">
     <span class="dot ok"></span>
-    <span class="mono" id="orchUrl" style="overflow:hidden;text-overflow:ellipsis"></span>
+    <span class="mono truncate" id="orchUrl"></span>
   </span>
   <div class="spacer"></div>
   <button class="btn btn-primary btn-sm" id="btnAdd">+ Add Workspace</button>
@@ -295,13 +295,13 @@
           <input class="input" id="f_name" type="text" placeholder="workflow" autocomplete="off"/>
         </div>
         <div class="field">
-          <label>Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <label>Label <span class="label-optional">(optional)</span></label>
           <input class="input" id="f_label" type="text" placeholder="Workflow 1"/>
         </div>
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Node URL <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <label>Node URL <span class="label-optional">(optional)</span></label>
           <input class="input" id="f_nodeUrl" type="text" placeholder="http://10.0.0.2:5000"/>
           <div class="hint">Leave empty for local.</div>
         </div>

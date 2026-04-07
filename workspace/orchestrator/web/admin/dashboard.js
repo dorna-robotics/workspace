@@ -213,7 +213,7 @@ function render() {
           <span class="dot ${variant}${running ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
         </span>
-        <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove from registry" style="margin-left:4px">✕</button>
+        <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove">✕</button>
       </div>
       <div class="wc-meta">
         <span class="wc-meta-item" title="${esc(wsViewerUrl(ws))}">

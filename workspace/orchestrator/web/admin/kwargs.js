@@ -55,11 +55,10 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
     if (type === "file") {
       const fileWrap = document.createElement("div");
-      fileWrap.style.cssText = "display:flex;align-items:center;gap:8px;flex:1";
+      fileWrap.className = "kw-file-wrap";
 
       const fileLabel = document.createElement("span");
-      fileLabel.className = "kw-hint";
-      fileLabel.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal";
+      fileLabel.className = "kw-file-label";
       const currentFile = (val && typeof val === "string") ? val.split("/").pop() : "";
       fileLabel.textContent = currentFile || "No file selected";
       fileLabel.title = val || "";
@@ -127,7 +126,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       input.checked = val === true || val === "true";
       input.dataset.kwKey = key;
       input.dataset.kwType = "bool";
-      input.style.cssText = "width:auto";
+      input.className = "kw-checkbox";
       if (frozen) input.disabled = true;
     } else if (type === "textarea") {
       input = document.createElement("textarea");
@@ -137,7 +136,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       input.placeholder = spec.placeholder || (optional ? "empty = null" : "");
       input.dataset.kwKey = key;
       input.dataset.kwType = "textarea";
-      input.style.cssText = "resize:vertical;font-family:var(--mono);font-size:11px";
+      input.className += " kw-textarea";
       if (frozen) input.readOnly = true;
     } else if (type === "choice" && Array.isArray(spec.options)) {
       input = document.createElement("select");
