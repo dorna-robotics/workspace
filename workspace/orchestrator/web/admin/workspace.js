@@ -478,7 +478,6 @@ function renderControls(state, launched, running) {
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
     controls.appendChild(lbl);
-    addBtn("Kill", "kill", { danger: true });
   } else if (s === "IDLE" && _wasRunning) {
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
@@ -489,11 +488,15 @@ function renderControls(state, launched, running) {
     lbl.className = "ctrl-starting";
     lbl.textContent = "Ending…";
     controls.appendChild(lbl);
-    addBtn("Kill", "kill", { danger: true });
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("End",     "end",     { danger: true });
+    addBtn("End",      "end",      { danger: true });
+  }
+
+  // Kill always available when launched
+  if (launched) {
+    addBtn("Kill", "kill", {});
   }
 
   // Gear button for parameters — always last, matches bordered btn style
@@ -843,7 +846,6 @@ function updatePendantUI() {
   $("pendantStart").disabled   = running || ending;
   $("pendantPause").disabled   = !running || ending;
   $("pendantEnd").disabled     = ending;
-  $("pendantKill").disabled    = !launched;
 }
 
 // Wire pendant buttons
@@ -871,6 +873,20 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     }
     updatePendantUI();
   });
+});
+
+// Pendant Kill button (secondary, separate from pendant-btn grid)
+$("pendantKill").addEventListener("click", async () => {
+  if (!confirm("Kill the process? This is an emergency stop.")) return;
+  try {
+    await sendCmd("kill");
+    pendantErrorSound();
+    toast("kill sent", "ok");
+    await refreshStatus();
+    updatePendantUI();
+  } catch (err) {
+    toast(String(err), "bad");
+  }
 });
 
 // Pendant params button
