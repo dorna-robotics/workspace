@@ -239,7 +239,7 @@ function render() {
       })()}
       <div class="wc-footer">
         <a class="btn btn-primary btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
-        <div class="spacer"></div>
+        ${launched ? "" : '<div class="spacer"></div>'}
         <div class="wc-actions${launched ? " is-launched" : ""}">
           ${!launched
             ? `<button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>
