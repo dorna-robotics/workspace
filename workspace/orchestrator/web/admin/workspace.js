@@ -834,10 +834,15 @@ function updatePendantUI() {
 
   // Enable/disable buttons based on state
   const ending = state.toUpperCase() === "ENDING";
-  $("pendantLaunch").disabled  = launched;
-  $("pendantStart").disabled   = !launched || running || ending;
+  // Show/hide buttons based on what's valid
+  $("pendantLaunch").style.display = !launched ? "" : "none";
+  $("pendantStart").style.display  = launched ? "" : "none";
+  $("pendantPause").style.display  = launched ? "" : "none";
+  $("pendantEnd").style.display    = launched ? "" : "none";
+  // Disable states
+  $("pendantStart").disabled   = running || ending;
   $("pendantPause").disabled   = !running || ending;
-  $("pendantEnd").disabled    = !launched || ending;
+  $("pendantEnd").disabled     = ending;
   $("pendantKill").disabled    = !launched;
 }
 

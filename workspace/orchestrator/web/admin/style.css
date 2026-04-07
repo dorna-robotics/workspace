@@ -957,6 +957,10 @@ a:hover { color: var(--accent-h); }
   color: var(--text);
 }
 .pendant-secondary:active { transform: scale(0.97); }
+.pendant-kill-btn { color: var(--red); }
+.pendant-kill-btn:hover { color: var(--red); background: rgba(255,69,58,0.12); }
+[data-theme="light"] .pendant-kill-btn { color: var(--red); }
+[data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
 
 /* Exit button */
 .pendant-exit {
