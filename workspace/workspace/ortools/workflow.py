@@ -169,18 +169,18 @@ class BaseWorkflow:
         except KillRequested:
             raise
 
+        # Run end trigger if defined
         if self.rt.ending and self.runner.has_trigger("end"):
-            # User-defined end handler — full control, no auto cleanup
             try:
                 self.runner.run_trigger("end")
             except (EndRequested, KillRequested):
                 pass
-        else:
-            # No end handler — auto release tools
-            try:
-                self._release_all()
-            except (EndRequested, KillRequested):
-                pass
+
+        # Always release tools as safety net
+        try:
+            self._release_all()
+        except (EndRequested, KillRequested):
+            pass
 
     def _apply_tool_enforcement(self):
         """
@@ -191,7 +191,7 @@ class BaseWorkflow:
         with open(self._base_dir / "protocol.yaml") as f:
             data = yaml.safe_load(f)
 
-        tool_map = {s["name"]: s["tool"] for s in data["states"] if s.get("tool")}
+        tool_map = {s["name"]: s.get("tool") for s in data["states"] if "tool" in s}
         if not tool_map:
             return
 
