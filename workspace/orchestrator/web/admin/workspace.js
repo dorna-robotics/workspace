@@ -484,11 +484,17 @@ function renderControls(state, launched, running) {
     lbl.className = "ctrl-starting";
     lbl.textContent = "Finishing…";
     controls.appendChild(lbl);
+  } else if (s === "STOPPING") {
+    const lbl = document.createElement("span");
+    lbl.className = "ctrl-starting";
+    lbl.textContent = "Stopping…";
+    controls.appendChild(lbl);
+    addBtn("Kill", "kill", { danger: true });
   } else {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("Restart", "relaunch");
-    addBtn("Kill",     "kill",     { danger: true });
+    addBtn("Stop",     "stop",     { danger: true });
+    addBtn("Kill",     "kill",     {});
   }
 
   // Gear button for parameters — always last, matches bordered btn style
@@ -828,9 +834,10 @@ function updatePendantUI() {
   }
 
   // Enable/disable buttons based on state
-  $("pendantStart").disabled   = !launched || running;
-  $("pendantPause").disabled   = !running;
-  $("pendantRelaunch").disabled = false;
+  const stopping = state.toUpperCase() === "STOPPING";
+  $("pendantStart").disabled   = !launched || running || stopping;
+  $("pendantPause").disabled   = !running || stopping;
+  $("pendantStop").disabled    = !launched || stopping;
   $("pendantKill").disabled    = !launched;
 }
 

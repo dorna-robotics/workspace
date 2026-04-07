@@ -78,6 +78,21 @@ class WorkspaceInfo:
     def is_remote(self) -> bool:
         return bool(self.node_url)
 
+    def has_trigger(self, trigger_name: str) -> bool:
+        """Check if the protocol has a trigger state with the given name."""
+        try:
+            protocol_path = Path(self.path_to_file).parent / "protocol.yaml"
+            if not protocol_path.is_file():
+                return False
+            with open(protocol_path) as f:
+                data = yaml.safe_load(f)
+            for s in (data.get("states") or []):
+                if s.get("trigger") == trigger_name:
+                    return True
+            return False
+        except Exception:
+            return False
+
     def launch_config(self) -> Optional[Dict]:
         """Read launch.yaml from the workspace directory and return kwargs schema."""
         try:
@@ -452,6 +467,14 @@ class Orchestrator:
             raise RuntimeError(f"Workspace {name} is not launched.")
         return self._send_runtime_cmd_local(ws, "resume")
 
+    def stop_runtime(self, name: str):
+        ws = self.workspaces[name]
+        if ws.is_remote():
+            return self._proxy_cmd_to_node(ws, "stop")
+        if not self.is_launched(name):
+            raise RuntimeError(f"Workspace {name} is not launched.")
+        return self._send_runtime_cmd_local(ws, "stop")
+
     def get_status(self, name: str):
         ws = self.workspaces[name]
 
@@ -603,7 +626,8 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
                 raise ValueError(f"Unknown workspace: {name}")
             ws = self.orch.workspaces[name]
             schema = ws.launch_config()
-            self.write({"kwargs_schema": schema or {}, "kwargs_values": ws.kwargs_values or {}})
+            has_stop = ws.has_trigger("stop")
+            self.write({"kwargs_schema": schema or {}, "kwargs_values": ws.kwargs_values or {}, "has_stop": has_stop})
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
@@ -715,6 +739,8 @@ class WorkspaceCmdHandler(AuthedHandler):
             elif cmd == "start":
                 kwargs = data.get("kwargs")
                 out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name, kwargs)
+            elif cmd == "stop":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.stop_runtime, name)
             elif cmd == "pause":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
             elif cmd == "resume":

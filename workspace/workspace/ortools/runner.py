@@ -54,6 +54,9 @@ class ORRunner:
 
         self._states = data["states"]
         self._goal   = set(data.get("goal", []))
+        # Separate normal states from trigger states
+        self._trigger_states = {s["name"]: s for s in self._states if s.get("trigger")}
+        self._states = [s for s in self._states if not s.get("trigger")]
         self._snames = [s["name"] for s in self._states]
         self._smap   = {s["name"]: s for s in self._states}
 
@@ -86,6 +89,20 @@ class ORRunner:
 
     # ── Main execution loop ───────────────────────────────────────────────────
 
+    def has_trigger(self, trigger_name: str) -> bool:
+        """Check if a trigger state is defined in the protocol."""
+        return any(s.get("trigger") == trigger_name for s in self._trigger_states.values())
+
+    def run_trigger(self, trigger_name: str):
+        """Execute a trigger state (e.g. 'stop'). Called outside normal scheduling."""
+        for sname, s in self._trigger_states.items():
+            if s.get("trigger") == trigger_name:
+                handler = self._handlers.get(sname)
+                if handler:
+                    self.rt.step(f"→ {sname}")
+                    handler(0)
+                return
+
     def run(self, batch_size: int):
         """
         Execute the full protocol for batch_size.
@@ -93,6 +110,8 @@ class ORRunner:
         Rolling horizon replanning happens automatically every `horizon` tasks.
         After a fault, update completed externally and call run() again to resume.
         """
+        from workspace.runtime import StopRequested
+
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
         bg_active: dict[str, tuple[float, float]] = {}
         total_tasks = len(self._snames) * batch_size
@@ -102,66 +121,71 @@ class ORRunner:
             return all(len(completed.get(g, set())) >= batch_size for g in self._goal)
 
         self.rt.step(0, level="progress")
-        while not all_done():
-            schedule = self._scheduler.schedule(
-                batch_size, completed,
-                horizon_tasks=self._horizon,
-            )
-            if not schedule:
-                break
+        try:
+            while not all_done():
+                schedule = self._scheduler.schedule(
+                    batch_size, completed,
+                    horizon_tasks=self._horizon,
+                )
+                if not schedule:
+                    break
 
-            for (state_name, item_i) in schedule:
-                s       = self._smap[state_name]
-                is_bg   = s.get("background", False)
+                for (state_name, item_i) in schedule:
+                    s       = self._smap[state_name]
+                    is_bg   = s.get("background", False)
 
-                # Wait for any still-running background prereqs
-                for req in s.get("requires", []):
-                    if req in bg_active:
-                        self._wait_bg(req, bg_active)
+                    # Wait for any still-running background prereqs
+                    for req in s.get("requires", []):
+                        if req in bg_active:
+                            self._wait_bg(req, bg_active)
 
-                # ── Pre-checks ────────────────────────────────────────────
-                pre = s.get("pre_check")
-                if pre and not self._run_checks(pre, item_i):
-                    continue
+                    # ── Pre-checks ────────────────────────────────────────────
+                    pre = s.get("pre_check")
+                    if pre and not self._run_checks(pre, item_i):
+                        continue
 
-                handler = self._handlers.get(state_name)
+                    handler = self._handlers.get(state_name)
 
-                if is_bg:
-                    real_dur = self._bg_dur.get(state_name, 120.0)
-                    self.rt.step(f"OR → {state_name} [background, {real_dur:.0f}s]")
-                    if handler:
-                        handler(0)
-                    bg_active[state_name] = (time.time(), real_dur)
-                    for t in range(batch_size):
-                        completed[state_name].add(t)
-                    done_count += batch_size
-                else:
-                    self.rt.step(f"OR → {state_name} [{item_i + 1}/{batch_size}]")
-                    if handler:
-                        handler(item_i)
-                    completed[state_name].add(item_i)
-                    done_count += 1
+                    if is_bg:
+                        real_dur = self._bg_dur.get(state_name, 120.0)
+                        self.rt.step(f"OR → {state_name} [background, {real_dur:.0f}s]")
+                        if handler:
+                            handler(0)
+                        bg_active[state_name] = (time.time(), real_dur)
+                        for t in range(batch_size):
+                            completed[state_name].add(t)
+                        done_count += batch_size
+                    else:
+                        self.rt.step(f"OR → {state_name} [{item_i + 1}/{batch_size}]")
+                        if handler:
+                            handler(item_i)
+                        completed[state_name].add(item_i)
+                        done_count += 1
 
-                self.rt.step(int(done_count / total_tasks * 100), level="progress")
+                    self.rt.step(int(done_count / total_tasks * 100), level="progress")
 
-                # ── Post-checks ───────────────────────────────────────────
-                post = s.get("post_check")
-                if post and not is_bg:
-                    self._run_checks(post, item_i)
+                    # ── Post-checks ───────────────────────────────────────────
+                    post = s.get("post_check")
+                    if post and not is_bg:
+                        self._run_checks(post, item_i)
 
-            if not self._horizon:
-                break
+                if not self._horizon:
+                    break
 
-        # Drain any remaining background tasks before finishing
-        for bg_name in list(bg_active.keys()):
-            self._wait_bg(bg_name, bg_active)
+            # Drain any remaining background tasks before finishing
+            for bg_name in list(bg_active.keys()):
+                self._wait_bg(bg_name, bg_active)
 
-        missing = [g for g in self._goal if len(completed.get(g, set())) < batch_size]
-        if missing:
-            raise RuntimeError(f"OR runner did not reach goal states: {missing}")
+            missing = [g for g in self._goal if len(completed.get(g, set())) < batch_size]
+            if missing:
+                raise RuntimeError(f"OR runner did not reach goal states: {missing}")
 
-        self.rt.step(100, level="progress")
-        self.rt.step("Protocol complete — all goal states reached", level="success")
+            self.rt.step(100, level="progress")
+            self.rt.step("Protocol complete — all goal states reached", level="success")
+
+        except StopRequested:
+            # Graceful stop — re-raise for workflow to handle
+            raise
 
     # ── Check execution ───────────────────────────────────────────────────────
 
