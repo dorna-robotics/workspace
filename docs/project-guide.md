@@ -114,7 +114,7 @@ goal: [placed]
 | `name` | Yes | Must match a key in `states.py` `make()` |
 | `duration` | No | Estimated seconds (used by scheduler, default: 1) |
 | `requires` | No | List of state names that must complete first |
-| `tool` | No | Tool name from the tool changer (recipe alias, e.g. `gripper`). When two consecutive states need different tools, the robot auto-swaps via the tool rack. |
+| `tool` | No | Controls which tool the robot holds. Not set = keep current tool. `tool: gripper` = swap to gripper. `tool: null` = return current tool, run bare. The system auto-swaps via the tool rack between states. |
 | `background` | No | `true` = runs in parallel, completes all items at once |
 | `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
