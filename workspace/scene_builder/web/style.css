@@ -709,6 +709,7 @@ select.input { cursor: pointer; }
   box-shadow: 0 4px 24px rgba(0,0,0,0.5);
   width: 130px;
   height: 130px;
+  touch-action: none;
 }
 
 /* ── Control panel (top-right of viewer) ───────────────────────────────── */

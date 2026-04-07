@@ -6706,10 +6706,13 @@ ensureBuilderBar();
       // ViewCube interaction: click to snap, drag to orbit
       let vcDrag = null;
       vcCanvas.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         vcDrag = { x: e.clientX, y: e.clientY, dragged: false };
         vcCanvas.setPointerCapture(e.pointerId);
       });
       vcCanvas.addEventListener("pointermove", (e) => {
+        e.preventDefault();
         if (!vcDrag) return;
         const dx = e.clientX - vcDrag.x;
         const dy = e.clientY - vcDrag.y;
