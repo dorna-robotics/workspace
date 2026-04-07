@@ -494,7 +494,6 @@ function renderControls(state, launched, running) {
     addBtn("Start",    "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
     addBtn("Stop",     "stop",     { danger: true });
-    addBtn("Kill",     "kill",     {});
   }
 
   // Gear button for parameters — always last, matches bordered btn style
@@ -835,6 +834,7 @@ function updatePendantUI() {
 
   // Enable/disable buttons based on state
   const stopping = state.toUpperCase() === "STOPPING";
+  $("pendantLaunch").disabled  = launched;
   $("pendantStart").disabled   = !launched || running || stopping;
   $("pendantPause").disabled   = !running || stopping;
   $("pendantStop").disabled    = !launched || stopping;
