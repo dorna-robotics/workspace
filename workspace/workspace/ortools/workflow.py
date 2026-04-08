@@ -169,18 +169,27 @@ class BaseWorkflow:
         except KillRequested:
             raise
 
-        # Run end trigger if defined
-        if self.rt.ending and self.runner.has_trigger("end"):
+        # End cleanup: suppress EndRequested so trigger:end and release can do real work.
+        # KillRequested still honored (force kill takes priority).
+        if self.rt.ending:
+            self.rt._in_cleanup = True
             try:
-                self.runner.run_trigger("end")
+                if self.runner.has_trigger("end"):
+                    self.runner.run_trigger("end")
+                self._release_all()
+            except KillRequested:
+                raise
+            except Exception:
+                import traceback
+                traceback.print_exc()
+            finally:
+                self.rt._in_cleanup = False
+        else:
+            # Normal completion — release tools
+            try:
+                self._release_all()
             except (EndRequested, KillRequested):
                 pass
-
-        # Always release tools as safety net
-        try:
-            self._release_all()
-        except (EndRequested, KillRequested):
-            pass
 
     def _apply_tool_enforcement(self):
         """

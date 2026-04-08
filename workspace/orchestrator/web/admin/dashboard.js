@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 let workspaces = [];
@@ -271,7 +271,19 @@ function render() {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         const cmd = btn.dataset.cmd;
-        if (cmd === "kill" && !confirm(`Stop "${ws.name}"? This will kill the process.`)) return;
+        if (cmd === "end" && !await confirmDialog({
+          title: `End "${ws.name}"?`,
+          message: "The current action will finish, then the workflow will stop gracefully.",
+          confirm: "End Workflow",
+          icon: "end",
+          variant: "danger",
+        })) return;
+        if (cmd === "kill" && !await confirmDialog({
+          title: `Kill "${ws.name}"?`,
+          message: "This will immediately terminate the process. Any running workflow will be aborted.",
+          confirm: "Kill Process",
+          icon: "kill",
+        })) return;
         btn.disabled = true;
         try {
           let kwargs = undefined;
@@ -296,7 +308,13 @@ function render() {
         toast("Kill the workspace before removing.", "warn");
         return;
       }
-      if (!confirm(`Remove "${ws.name}" from registry?`)) return;
+      if (!await confirmDialog({
+        title: `Remove "${ws.name}"?`,
+        message: "This will unregister the workspace from the dashboard.",
+        confirm: "Remove",
+        icon: "remove",
+        remember: "remove_workspace",
+      })) return;
       try {
         await apiFetch("/remove_workspace", { method: "POST", body: JSON.stringify({ name: ws.name }) });
         workspaces = workspaces.filter(w => w.name !== ws.name);

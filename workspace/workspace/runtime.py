@@ -65,6 +65,9 @@ class Runtime:
         # stop flag (graceful stop — finish current action then stop)
         self._ending = False
 
+        # cleanup flag — suppresses EndRequested in checkpoint() during trigger:end / release
+        self._in_cleanup = False
+
         # prevent concurrent worker() runs
         self._in_worker = False
 
@@ -250,6 +253,7 @@ class Runtime:
         with self._lock:
             self._killed = False
             self._ending = False
+            self._in_cleanup = False
             self._status.last_error = None
             self._status.state = RTState.IDLE
             self._cv.notify_all()
@@ -357,7 +361,7 @@ class Runtime:
             while True:
                 if self._killed:
                     raise KillRequested()
-                if self._ending:
+                if self._ending and not self._in_cleanup:
                     raise EndRequested()
                 st = self._status.state
                 if st == RTState.PAUSED:

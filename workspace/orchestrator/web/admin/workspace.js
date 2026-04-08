@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
 
 const params  = new URLSearchParams(window.location.search);
@@ -455,7 +455,19 @@ function renderControls(state, launched, running) {
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
-      if (cmd === "kill" && !confirm("Stop the workspace? This will kill the process.")) return;
+      if (cmd === "end" && !await confirmDialog({
+        title: "End Workflow?",
+        message: "The current action will finish, then the workflow will stop gracefully.",
+        confirm: "End Workflow",
+        icon: "end",
+        variant: "danger",
+      })) return;
+      if (cmd === "kill" && !await confirmDialog({
+        title: "Kill Process?",
+        message: "This will immediately terminate the workspace. Any running workflow will be aborted.",
+        confirm: "Kill Process",
+        icon: "kill",
+      })) return;
       b.disabled = true;
       try {
         const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
@@ -852,7 +864,19 @@ function updatePendantUI() {
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   btn.addEventListener("click", async () => {
     const cmd = btn.dataset.cmd;
-    if (cmd === "kill" && !confirm("Stop the workspace?")) return;
+    if (cmd === "end" && !await confirmDialog({
+      title: "End Workflow?",
+      message: "The current action will finish, then the workflow will stop gracefully.",
+      confirm: "End Workflow",
+      icon: "end",
+      variant: "danger",
+    })) return;
+    if (cmd === "kill" && !await confirmDialog({
+      title: "Kill Process?",
+      message: "This will immediately terminate the workspace.",
+      confirm: "Kill Process",
+      icon: "kill",
+    })) return;
     btn.disabled = true;
     btn.classList.add("pendant-pressed");
     pendantClickSound();
@@ -877,7 +901,12 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
 
 // Pendant Kill button (secondary, separate from pendant-btn grid)
 $("pendantKill").addEventListener("click", async () => {
-  if (!confirm("Kill the process? This is an emergency stop.")) return;
+  if (!await confirmDialog({
+    title: "Emergency Stop",
+    message: "Kill the process immediately? This cannot be undone.",
+    confirm: "Kill Now",
+    icon: "kill",
+  })) return;
   try {
     await sendCmd("kill");
     pendantErrorSound();
