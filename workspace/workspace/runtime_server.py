@@ -146,7 +146,12 @@ class CmdHandler(tornado.web.RequestHandler):
                 )
 
         elif cmd == "end":
-            self.rt.end()
+            th = self._workflow_thread_holder.get("thread")
+            if th is None or not th.is_alive():
+                # No workflow running — just kill directly
+                self.rt.kill()
+            else:
+                self.rt.end()
         elif cmd == "pause":
             self.rt.pause()
         elif cmd == "resume":
