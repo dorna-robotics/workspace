@@ -261,6 +261,8 @@ class Runtime:
     def mark_running(self) -> None:
         if self._killed:
             raise KillRequested()
+        if self._ending:
+            raise EndRequested()
         self._set_state_with_callback(RTState.RUNNING)
 
     def mark_idle(self) -> None:
