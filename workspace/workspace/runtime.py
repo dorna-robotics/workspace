@@ -331,6 +331,9 @@ class Runtime:
                     self.mark_idle()
                 except KillRequested:
                     return
+                except EndRequested:
+                    self.mark_idle()
+                    return
                 except Exception as ex:
                     self.mark_error(ex)
                     import traceback
