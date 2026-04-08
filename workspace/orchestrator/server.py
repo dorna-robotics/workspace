@@ -897,7 +897,7 @@ async def broadcast_status(orch: Orchestrator):
         for name, st in statuses.items():
             cur = (st.get("state") or "").upper()
             prev = _ws_prev_states.get(name, "")
-            if prev in ("RUNNING", "ACTIVE") and cur == "IDLE":
+            if prev in ("RUNNING", "ACTIVE", "ENDING") and cur == "IDLE":
                 try:
                     await loop.run_in_executor(_cmd_pool, orch.stop_workspace, name)
                     st["state"] = "NOT_LAUNCHED"
