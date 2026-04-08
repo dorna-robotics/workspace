@@ -272,11 +272,13 @@ class Runtime:
         self._set_state_with_callback(RTState.ERROR, err=f"{type(ex).__name__}: {ex}")
 
     def wait_for_start(self) -> None:
-        """Block until start token; exits if killed."""
+        """Block until start token; exits if killed or ended."""
         with self._lock:
             while True:
                 if self._killed:
                     raise KillRequested()
+                if self._ending:
+                    raise EndRequested()
                 if self._seen_start_token != self._start_token:
                     self._seen_start_token = self._start_token
                     return
