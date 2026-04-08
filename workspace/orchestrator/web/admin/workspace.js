@@ -1,5 +1,5 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -75,6 +75,7 @@ const paramsForm  = $("paramsForm");
 const paramsFoot  = $("paramsModalFoot");
 
 $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove("show"));
+$("btnParamsLoad").addEventListener("click", () => loadKwargsFromFile(paramsForm, toast));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
 async function openParamsModal(frozen) {
@@ -89,6 +90,7 @@ async function openParamsModal(frozen) {
   }
 
   paramsTitle.textContent = `Parameters — ${wsName}`;
+  $("btnParamsLoad").style.display = frozen ? "none" : "";
 
   if (fetchError) {
     paramsForm.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
@@ -858,6 +860,7 @@ function updatePendantUI() {
   $("pendantStart").disabled   = !launched || running || ending;
   $("pendantPause").disabled   = !running || ending;
   $("pendantEnd").disabled     = !launched || ending;
+  $("pendantKill").disabled    = !launched;
 }
 
 // Wire pendant buttons

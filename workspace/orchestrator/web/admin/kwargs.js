@@ -265,6 +265,73 @@ export function validateKwargsForm(container, schema) {
   return errors;
 }
 
+/**
+ * Load values from a YAML/JSON file into the kwargs form.
+ * Only fills fields that exist in the form — everything else is ignored.
+ * Returns a Promise that resolves when done.
+ */
+export function loadKwargsFromFile(container, toastFn) {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".yaml,.yml,.json";
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.addEventListener("change", async () => {
+      const file = input.files[0];
+      input.remove();
+      if (!file) { resolve(false); return; }
+      try {
+        const text = await file.text();
+        let data;
+        if (file.name.endsWith(".json")) {
+          data = JSON.parse(text);
+        } else {
+          data = {};
+          for (const line of text.split("\n")) {
+            const m = line.match(/^\s*([a-zA-Z_]\w*)\s*:\s*(.+?)\s*$/);
+            if (m) {
+              let val = m[2].replace(/^["']|["']$/g, "");
+              if (val === "true") val = true;
+              else if (val === "false") val = false;
+              else if (val !== "" && !isNaN(Number(val))) val = Number(val);
+              data[m[1]] = val;
+            }
+          }
+        }
+
+        let filled = 0;
+        container.querySelectorAll("[data-kw-key]").forEach(el => {
+          const key = el.dataset.kwKey;
+          if (!(key in data)) return;
+          const val = data[key];
+          const type = el.dataset.kwType;
+          if (type === "bool") {
+            el.checked = val === true || val === "true";
+          } else if (type === "file") {
+            // skip file fields — can't set from yaml
+          } else {
+            el.value = (val === null || val === undefined) ? "" : val;
+          }
+          filled++;
+        });
+
+        if (toastFn) toastFn(
+          filled ? `Loaded ${filled} parameter${filled > 1 ? "s" : ""} from ${file.name}` : "No matching parameters found",
+          filled ? "ok" : "warn"
+        );
+        resolve(true);
+      } catch (err) {
+        if (toastFn) toastFn(`Failed to parse ${file.name}: ${err.message}`, "bad");
+        resolve(false);
+      }
+    });
+
+    input.click();
+  });
+}
+
 export function readKwargsForm(container) {
   const kwargs = {};
   container.querySelectorAll("[data-kw-key]").forEach(el => {

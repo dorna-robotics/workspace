@@ -596,14 +596,12 @@ a:hover { color: var(--accent-h); }
   animation: toast-in 0.2s cubic-bezier(0.2,0.9,0.3,1);
   max-width: 340px;
   color: var(--text);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   cursor: pointer;
   pointer-events: auto;
 }
-.toast.ok   { color: var(--green); background: rgba(52,199,89,0.12); }
-.toast.bad  { color: var(--red);   background: rgba(255,69,58,0.12); }
-.toast.warn { color: var(--amber); background: rgba(255,159,10,0.12); }
+.toast.ok   { color: var(--green); background: rgba(52,199,89,0.18); border: 1px solid rgba(52,199,89,0.25); }
+.toast.bad  { color: var(--red);   background: rgba(255,69,58,0.18); border: 1px solid rgba(255,69,58,0.25); }
+.toast.warn { color: var(--amber); background: rgba(255,159,10,0.18); border: 1px solid rgba(255,159,10,0.25); }
 
 [data-theme="light"] .toast     { background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.12); color: var(--text); }
 [data-theme="light"] .toast.ok  { background: rgba(36,138,61,0.08); color: var(--green); }

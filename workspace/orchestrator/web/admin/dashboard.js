@@ -1,5 +1,5 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
 let prevStates = {};   // name → last known state string (for transition toasts)
@@ -89,6 +89,7 @@ const paramsTitle    = document.getElementById("paramsModalTitle");
 const paramsFoot     = document.getElementById("paramsModalFoot");
 
 document.getElementById("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove("show"));
+document.getElementById("btnParamsLoad").addEventListener("click", () => loadKwargsFromFile(paramsForm, toast));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
 async function openParamsModal(name, frozen) {
@@ -106,6 +107,7 @@ async function openParamsModal(name, frozen) {
   }
 
   paramsTitle.textContent = `Parameters — ${name}`;
+  document.getElementById("btnParamsLoad").style.display = frozen ? "none" : "";
 
   if (fetchError) {
     paramsForm.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
@@ -420,6 +422,40 @@ document.getElementById("btnAdd").addEventListener("click", () => {
 document.getElementById("btnModalClose").addEventListener("click",  () => modal.classList.remove("show"));
 document.getElementById("btnModalCancel").addEventListener("click", () => modal.classList.remove("show"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("show"); });
+
+// Load from file (YAML or JSON)
+const fileInput = document.getElementById("fileInput");
+document.getElementById("btnLoadFile").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  fileInput.value = "";
+  try {
+    const text = await file.text();
+    let data;
+    if (file.name.endsWith(".json")) {
+      data = JSON.parse(text);
+    } else {
+      // Simple YAML key: value parser (no dependency needed for flat config)
+      data = {};
+      for (const line of text.split("\n")) {
+        const m = line.match(/^\s*([a-zA-Z_]\w*)\s*:\s*(.+?)\s*$/);
+        if (m) data[m[1]] = m[2].replace(/^["']|["']$/g, "");
+      }
+    }
+    const map = { name: "f_name", label: "f_label", port: "f_port", path: "f_path", node_url: "f_nodeUrl" };
+    let filled = 0;
+    for (const [key, id] of Object.entries(map)) {
+      if (data[key] != null && String(data[key]).trim()) {
+        document.getElementById(id).value = String(data[key]).trim();
+        filled++;
+      }
+    }
+    toast(filled ? `Loaded ${filled} field${filled > 1 ? "s" : ""} from ${file.name}` : "No matching fields found", filled ? "ok" : "warn");
+  } catch (err) {
+    toast(`Failed to parse ${file.name}: ${err.message}`, "bad");
+  }
+});
 
 document.getElementById("btnModalConfirm").addEventListener("click", async () => {
   const name    = document.getElementById("f_name").value.trim();
