@@ -473,6 +473,16 @@ class Orchestrator:
             return self._proxy_cmd_to_node(ws, "end")
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched.")
+
+        # Check current state — if not running, just use the existing kill flow
+        try:
+            r = requests.get(f"http://127.0.0.1:{ws.port}/status", timeout=2)
+            state = r.json().get("state", "").upper()
+            if state in ("IDLE", "NOT_LAUNCHED", ""):
+                return self.stop_workspace(name)
+        except Exception:
+            pass
+
         return self._send_runtime_cmd_local(ws, "end")
 
     def get_status(self, name: str):
