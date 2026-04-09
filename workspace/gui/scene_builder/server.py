@@ -100,7 +100,7 @@ def _inv_T(T):
     return _inv_T_fallback(T)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(BASE_DIR)
+PARENT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))  # workspace/ root (up from gui/scene_builder/)
 
 WS_PKG_DIR = os.path.join(PARENT_DIR, "workspace")
 COMPONENTS_DIR = os.path.join(WS_PKG_DIR, "components")

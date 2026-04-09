@@ -24,8 +24,8 @@ import tornado.websocket
 GUI_DIR = os.path.dirname(os.path.abspath(__file__))
 WS_ROOT = os.path.dirname(GUI_DIR)  # workspace/
 
-ORCH_WEB_DIR = os.path.join(WS_ROOT, "orchestrator", "web", "admin")
-SB_WEB_DIR = os.path.join(WS_ROOT, "scene_builder", "web")
+ORCH_WEB_DIR = os.path.join(GUI_DIR, "orchestrator", "web", "admin")
+SB_WEB_DIR = os.path.join(GUI_DIR, "scene_builder", "web")
 STATIC_DIR = os.path.join(WS_ROOT, "static")
 
 # Ensure workspace package is importable
@@ -35,7 +35,7 @@ if WS_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 # Import orchestrator
 # ---------------------------------------------------------------------------
-from orchestrator.server import (
+from gui.orchestrator.server import (
     Orchestrator,
     NoCacheStaticFileHandler,
     WorkspacesListHandler,
@@ -55,7 +55,7 @@ from orchestrator.server import (
 # ---------------------------------------------------------------------------
 # Import scene builder (triggers dorna2 patches + component scanning)
 # ---------------------------------------------------------------------------
-from scene_builder.server import (
+from gui.scene_builder.server import (
     sio as sb_sio,
     CatalogHandler,
     CategoriesHandler,

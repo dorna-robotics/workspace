@@ -13,7 +13,7 @@ requires-python = ">=3.8"
 dependencies = [
   "numpy",              # used in core.py and SimulationAPI
   "pyyaml",             # Workspace likely loads config.yaml
-  "python-socketio",    # display.py client + server.py
+"python-socketio",    # display.py client + server.py
   "websocket-client",   # ensures WS transport for the python-socketio client
   "tornado",            # server.py (AsyncServer with Tornado)
   "Jinja2",

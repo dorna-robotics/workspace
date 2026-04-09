@@ -17,10 +17,10 @@ from workspace.runtime import Runtime
 # Viewer/Static paths
 # --------------------------------------------------
 # runtime_server.py is inside:  .../workspace/workspace/workspace/runtime_server.py
-# web/ and static/ are here:    .../workspace/workspace/orchestrator/web  and  .../workspace/workspace/static
+# web/ and static/ are here:    .../workspace/workspace/gui/orchestrator/web  and  .../workspace/workspace/static
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WEB_DIR = os.path.join(BASE_DIR, "orchestrator", "web")
+WEB_DIR = os.path.join(BASE_DIR, "gui", "orchestrator", "web")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
