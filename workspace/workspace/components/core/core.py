@@ -160,6 +160,10 @@ class Core:
 
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        # License check — must pass before anything else
+        from workspace.license import verify
+        verify()
+
         # prm
         prm = deepcopy(self.DEFAULTS) # default
         merge(prm, cfg) # config

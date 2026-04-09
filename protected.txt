@@ -1,0 +1,7 @@
+# Files to compile to .so in the release build.
+# One path per line, relative to workspace/ (the package root).
+# Edit this list to add/remove protected files.
+
+workspace/license.py
+workspace/runtime.py
+workspace/components/core/core.py

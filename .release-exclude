@@ -1,0 +1,8 @@
+# Files and folders excluded from the release repo.
+# One pattern per line (relative to repo root).
+
+.secret.key
+protected.txt
+.release-exclude
+scripts/
+docs/internal/
