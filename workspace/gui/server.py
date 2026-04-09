@@ -153,7 +153,7 @@ LANDING_HTML = """<!DOCTYPE html>
     </nav>
     <div class="spacer"></div>
     <button class="btn" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-    <button class="btn" id="btnTheme" title="Toggle theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+    <button class="btn" id="btnTheme" title="Toggle theme"></button>
   </header>
   <main class="main">
     <div class="container">
@@ -174,19 +174,40 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
   </main>
   <script>
-    // Theme toggle
-    const theme = localStorage.getItem("theme") || "dark";
-    if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+    const KEY = "orch_theme";
+    const SUN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>';
+    const MOON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    const FS_EXPAND = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    const FS_SHRINK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+
+    function setTheme(theme) {
+      localStorage.setItem(KEY, theme);
+      document.documentElement.setAttribute("data-theme", theme);
+      const btn = document.getElementById("btnTheme");
+      if (btn) {
+        btn.title = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+        btn.innerHTML = theme === "dark" ? SUN : MOON;
+      }
+    }
+    setTheme(localStorage.getItem(KEY) || "dark");
+
     document.getElementById("btnTheme").addEventListener("click", () => {
-      const isLight = document.documentElement.getAttribute("data-theme") === "light";
-      document.documentElement.setAttribute("data-theme", isLight ? "" : "light");
-      localStorage.setItem("theme", isLight ? "dark" : "light");
+      const current = document.documentElement.getAttribute("data-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
     });
-    // Fullscreen toggle
+
+    function updateFsButton() {
+      const btn = document.getElementById("btnFullscreen");
+      if (!btn) return;
+      btn.title = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
+      btn.innerHTML = document.fullscreenElement ? FS_SHRINK : FS_EXPAND;
+    }
+    document.addEventListener("fullscreenchange", updateFsButton);
     document.getElementById("btnFullscreen").addEventListener("click", () => {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-      else document.exitFullscreen();
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
     });
+    updateFsButton();
   </script>
 </body>
 </html>"""
