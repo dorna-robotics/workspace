@@ -96,24 +96,48 @@ LANDING_HTML = """<!DOCTYPE html>
     }
     a { color: var(--accent); text-decoration: none; }
 
+    /* App Nav Sidebar */
+    .app-nav {
+      position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
+      background: var(--surface); border-right: 1px solid var(--border2);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 12px 0; gap: 4px; z-index: 200;
+      transition: width 0.2s cubic-bezier(0.2, 0.9, 0.3, 1); overflow: hidden;
+    }
+    .app-nav:hover { width: 160px; }
+    [data-theme="light"] .app-nav { background: #fff; }
+    .app-nav-brand {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 4px 12px 12px; margin-bottom: 4px;
+      border-bottom: 1px solid var(--border2);
+      text-decoration: none; color: var(--text); white-space: nowrap; overflow: hidden;
+    }
+    .app-nav-brand img { width: 24px; height: 24px; border-radius: 5px; flex-shrink: 0; }
+    .app-nav-brand span { font-size: 13px; font-weight: 700; letter-spacing: -0.3px; opacity: 0; transition: opacity 0.15s; }
+    .app-nav:hover .app-nav-brand span { opacity: 1; }
+    .app-nav-link {
+      display: flex; align-items: center; gap: 10px;
+      width: calc(100% - 12px); padding: 8px 12px; margin: 0 6px;
+      border-radius: 8px; color: var(--muted); text-decoration: none;
+      font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden;
+      transition: color 0.12s, background 0.12s;
+    }
+    .app-nav-link:hover { color: var(--text); background: var(--surface2); }
+    .app-nav-link.active { color: var(--accent); background: var(--accent-dim); }
+    [data-theme="light"] .app-nav-link.active { color: var(--accent); background: rgba(0,122,255,0.08); }
+    .app-nav-link svg { flex-shrink: 0; }
+    .app-nav-link span { opacity: 0; transition: opacity 0.15s; }
+    .app-nav:hover .app-nav-link span { opacity: 1; }
+
     /* Topbar */
     .topbar {
       display: flex; align-items: center; gap: 12px;
       padding: 0 20px; height: 54px; min-height: 54px;
       border-bottom: 1px solid var(--border2);
       background: rgba(28,28,30,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      flex-shrink: 0;
+      flex-shrink: 0; margin-left: 48px;
     }
     [data-theme="light"] .topbar { background: rgba(255,255,255,0.85); }
-    .brand-link { display: flex; align-items: center; flex-shrink: 0; opacity: 0.85; transition: opacity 0.15s; }
-    .brand-link:hover { opacity: 1; }
-    .brand-link img { border-radius: 4px; }
-    .topbar-nav { display: flex; gap: 2px; margin-left: 4px; }
-    .topbar-nav-link {
-      padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--muted);
-      border-radius: 8px; text-decoration: none; transition: color 0.12s, background 0.12s;
-    }
-    .topbar-nav-link:hover { color: var(--text); background: var(--surface2); }
     .spacer { flex: 1; }
     .btn {
       display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px;
@@ -125,7 +149,8 @@ LANDING_HTML = """<!DOCTYPE html>
 
     /* Main content */
     .main {
-      flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 40px 20px; margin-left: 48px;
     }
     .container { text-align: center; }
     h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
@@ -145,12 +170,18 @@ LANDING_HTML = """<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <nav class="app-nav">
+    <a href="/" class="app-nav-brand"><img src="/vendor/favicon.png" alt="Dorna"/><span>Dorna</span></a>
+    <a href="/orchestrator/" class="app-nav-link">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span>Orchestrator</span>
+    </a>
+    <a href="/scene-builder/" class="app-nav-link">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span>Scene Builder</span>
+    </a>
+  </nav>
   <header class="topbar">
-    <a href="/" class="brand-link"><img src="/vendor/favicon.png" alt="Dorna" height="22"/></a>
-    <nav class="topbar-nav">
-      <a href="/orchestrator/" class="topbar-nav-link">Orchestrator</a>
-      <a href="/scene-builder/" class="topbar-nav-link">Scene Builder</a>
-    </nav>
     <div class="spacer"></div>
     <button class="btn" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     <button class="btn" id="btnTheme" title="Toggle theme"></button>

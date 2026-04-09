@@ -31,27 +31,49 @@
     .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
     .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
     .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
-    .brand-link {
-      display: flex; align-items: center; flex-shrink: 0; opacity: 0.85;
-      transition: opacity 0.15s;
+    /* App Nav Sidebar */
+    .app-nav {
+      position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
+      background: var(--surface); border-right: 1px solid var(--border2);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 12px 0; gap: 4px; z-index: 200;
+      transition: width 0.2s cubic-bezier(0.2, 0.9, 0.3, 1); overflow: hidden;
     }
-    .brand-link:hover { opacity: 1; }
-    .brand-link img { border-radius: 4px; }
-
-    .topbar-nav { display: flex; gap: 2px; margin-left: 4px; }
-    .topbar-nav-link {
-      padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--muted);
-      border-radius: 8px; text-decoration: none;
+    .app-nav:hover { width: 160px; }
+    [data-theme="light"] .app-nav { background: #fff; }
+    .app-nav-brand {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 4px 12px 12px; margin-bottom: 4px;
+      border-bottom: 1px solid var(--border2);
+      text-decoration: none; color: var(--text); white-space: nowrap; overflow: hidden;
+    }
+    .app-nav-brand img { width: 24px; height: 24px; border-radius: 5px; flex-shrink: 0; }
+    .app-nav-brand span { font-size: 13px; font-weight: 700; letter-spacing: -0.3px; opacity: 0; transition: opacity 0.15s; }
+    .app-nav:hover .app-nav-brand span { opacity: 1; }
+    .app-nav-link {
+      display: flex; align-items: center; gap: 10px;
+      width: calc(100% - 12px); padding: 8px 12px; margin: 0 6px;
+      border-radius: 8px; color: var(--muted); text-decoration: none;
+      font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden;
       transition: color 0.12s, background 0.12s;
     }
-    .topbar-nav-link:hover { color: var(--text); background: var(--surface2); }
-    .topbar-nav-link.active { color: var(--text); font-weight: 600; }
+    .app-nav-link:hover { color: var(--text); background: var(--surface2); }
+    .app-nav-link.active { color: var(--accent); background: var(--accent-dim); }
+    .app-nav-link svg { flex-shrink: 0; }
+    .app-nav-link span { opacity: 0; transition: opacity 0.15s; }
+    .app-nav:hover .app-nav-link span { opacity: 1; }
+
+    .ws-header { margin-left: 48px; }
+    body { padding-left: 48px; }
 
     .back-link {
-      display: inline-flex; align-items: center; gap: 4px;
-      margin-left: 4px;
-      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 5px;
+      color: var(--muted); font-size: 12px; font-weight: 500;
+      padding: 5px 10px; border-radius: 8px;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none; position: relative; z-index: 1;
     }
+    .back-link:hover { background: var(--surface2); color: var(--text); }
     .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
     .ws-title-block { min-width: 0; flex: 1; overflow: hidden; position: relative; z-index: 1; }
     .ws-title    { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -273,6 +295,9 @@
 
     /* ---- Mobile ---- */
     @media (max-width: 768px) {
+      .app-nav { display: none; }
+      body { padding-left: 0; }
+      .ws-header { margin-left: 0; }
       html, body { height: auto; overflow: auto; }
       .ws-header { gap: 8px; padding: 0 10px; }
       .back-link { font-size: 11px; padding: 4px 6px; }
@@ -311,13 +336,20 @@
   </button>
 </div>
 
+<nav class="app-nav">
+  <a href="/" class="app-nav-brand"><img src="favicon.png" alt="Dorna"/><span>Dorna</span></a>
+  <a href="/orchestrator/" class="app-nav-link active">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <span>Orchestrator</span>
+  </a>
+  <a href="/scene-builder/" class="app-nav-link">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    <span>Scene Builder</span>
+  </a>
+</nav>
+
 <header class="ws-header">
-  <a href="/" class="brand-link"><img src="favicon.png" alt="Dorna" height="22"/></a>
-  <nav class="topbar-nav">
-    <a href="/orchestrator/" class="topbar-nav-link">Orchestrator</a>
-    <a href="/scene-builder/" class="topbar-nav-link">Scene Builder</a>
-  </nav>
-  <a href="index.html" class="topbar-nav-link back-link"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Workspaces</a>
+  <a href="index.html" class="back-link"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Workspaces</a>
   <div class="vdivider"></div>
   <div class="ws-title-block">
     <div class="ws-title" id="wsName">—</div>
