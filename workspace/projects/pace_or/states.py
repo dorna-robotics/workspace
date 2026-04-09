@@ -91,10 +91,10 @@ RACK_2ML_END = [
 
 class States:
 
-    def __init__(self, rcp, rt, batch_size, **kwargs):
+    def __init__(self, rcp, rt, **kwargs):
         self.rcp = rcp
         self.rt  = rt
-        self.batch_size = batch_size
+        self.batch_size = kwargs.get("batch_size", 1)
 
     # ── Shared helpers ────────────────────────────────────────────────────────
 

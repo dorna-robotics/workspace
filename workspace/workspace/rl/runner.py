@@ -29,7 +29,8 @@ class ProtocolRunner:
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
 
-        self._states: list[dict] = data["states"]
+        raw = data["states"]
+        self._states: list[dict] = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
         self._goal: list[str] = data["goal"]
         self._order = self._topological_sort()
 

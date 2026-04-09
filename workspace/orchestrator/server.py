@@ -86,7 +86,9 @@ class WorkspaceInfo:
                 return False
             with open(protocol_path) as f:
                 data = yaml.safe_load(f)
-            for s in (data.get("states") or []):
+            raw = data.get("states") or []
+            states = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
+            for s in states:
                 if s.get("trigger") == trigger_name:
                     return True
             return False

@@ -4,12 +4,12 @@ How to create and run a workspace project.
 
 ---
 
-## Project structure
+## 1. Project structure
 
 ```
 projects/my_project/
+├── main.py              # Entry point — ties everything together
 ├── launch.yaml          # Scene paths + runtime parameters (kwargs)
-├── main.py              # Entry point
 ├── protocol.yaml        # States, dependencies, checks, goals
 ├── states.py            # State handlers (what the robot does)
 ├── checks.py            # Verification checks (pre/post)
@@ -19,15 +19,114 @@ projects/my_project/
     └── layout.j2        # Spatial arrangement
 ```
 
+To create a new project, copy `projects/pace_or/` as a template and edit each file. The sections below explain them in detail.
+
+### `main.py` — entry point
+
+This is how all the pieces connect:
+
+```python
+import os, argparse, yaml
+from pathlib import Path
+from workspace.workspace import Workspace
+from workspace.ortools.workflow import BaseWorkflow
+from workspace.runtime_server import RuntimeServer
+from states import States
+from checks import Checks
+
+_BASE_DIR = Path(__file__).parent
+
+def workflow_fn(*, workspace, core, **kwargs):
+    BaseWorkflow(workspace, core, _BASE_DIR, States, Checks, **kwargs).run()
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "5010")))
+    args = p.parse_args()
+
+    with open(_BASE_DIR / "launch.yaml") as f:
+        launch = yaml.safe_load(f)
+
+    ws = Workspace(config_path=launch["scene"], port=args.port)
+    RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()
+
+if __name__ == "__main__":
+    main()
+```
+
+- `launch.yaml` defines the scene files and runtime parameters
+- `Workspace` loads the scene and creates the runtime
+- `RuntimeServer` exposes start/pause/end/kill commands and serves the 3D viewer
+- `workflow_fn` is called on **Start** — it receives `**kwargs` from the Parameters modal and passes them to `BaseWorkflow`, which passes them to `States` and `Checks`
+- The orchestrator launches this with `sudo python3 main.py --port 5010`
+
 ---
 
-## 1. Scene — `scene/`
+## 2. Scene — `scene/`
 
 Defines the physical hardware: robots, racks, tools, peripherals. Built using the **Scene Builder** GUI. The Jinja2 templates (`.j2` files) describe every component and its position. This is the source of truth for component names used in recipes.
 
 ---
 
-## 2. Recipes — `recipes.yaml` or `recipes.j2`
+## 3. Launch config — `launch.yaml`
+
+Two top-level keys:
+
+| Key | Description |
+|-----|-------------|
+| `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
+| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. |
+
+```yaml
+scene: [scene/base.j2, scene/layout.j2]
+
+kwargs:
+  batch_size:
+    type: int
+    default: 4
+    label: Number of tubes
+    hint: How many tubes to include in the schedule
+    min: 1
+    max: 20
+
+  horizon:
+    type: int
+    default: null
+    label: Planning horizon
+    hint: Empty = plan all at once
+    placeholder: plan all at once
+    optional: true
+    min: 1
+```
+
+### Kwarg field properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `default` | No | Pre-filled value. `null` = empty |
+| `label` | No | Display name in the modal (defaults to the key name) |
+| `hint` | No | Help text shown below the input |
+| `placeholder` | No | Greyed-out text inside the input when empty |
+| `optional` | No | `true` = field can be left empty, sent as `null` |
+| `min` / `max` | No | Numeric bounds (for `int` and `float` types) |
+| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — checkbox <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) |
+
+### How kwargs flow
+
+All kwargs defined here are passed to `States.__init__(rcp, rt, **kwargs)` and `Checks.__init__(rcp, rt, **kwargs)`. Use `kwargs.get("my_param", default)` to access them.
+
+Two reserved keys are also used by the scheduler if present:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `batch_size` | `1` | Number of items to process. Each state runs once per item (index 0 to n-1). |
+| `horizon` | `60` | Rolling window size for replanning. `null` = plan all tasks at once. |
+
+If `batch_size` or `horizon` are in your kwargs, they override the defaults for the scheduler. They are still passed to States and Checks like everything else.
+
+---
+
+## 4. Recipes — `recipes.yaml` or `recipes.j2`
 
 Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.
 
@@ -70,229 +169,175 @@ Access in states: `self.rcp["gripper"].pick(i)`
 
 ---
 
-## 3. Protocol — `protocol.yaml` or `protocol.j2`
+## 5. Protocol — `protocol.yaml` or `protocol.j2`
 
-Defines the workflow as a list of states with dependencies, tool assignments, and checks. The OR-Tools scheduler reads this to figure out the optimal execution order. You don't write the scheduling logic — you just declare "dosed requires picked" and the solver handles the rest.
+Defines the workflow states with dependencies, tool assignments, and checks. The OR-Tools scheduler reads this to figure out the optimal execution order. You don't write the scheduling logic — you just declare "dosed requires picked" and the solver handles the rest.
 
 Also supports `.j2` format (same as recipes).
 
 ```yaml
 states:
-  - name: picked
+  picked:
     duration: 8
     requires: []
     tool: gripper
     post_check: tube_picked
 
-  - name: dosed
+  dosed:
     duration: 15
     requires: [picked]
     tool: pipette
     pre_check: tube_in_rack
 
-  - name: placed
+  placed:
     duration: 6
     requires: [dosed]
     tool: gripper
 
-  - name: shaken
+  shaken:
     duration: 5
     requires: [placed]
     background: true
 
-  - name: shutdown
-    requires: [initialized]
+  shutdown:
     trigger: end
 
 goal: [placed]
+
+tool_swap_duration: 10
 ```
+
+Each key under `states` is the state name — must match a key in `states.py` `make()`.
 
 ### Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Must match a key in `states.py` `make()` |
 | `duration` | No | Estimated seconds (used by scheduler, default: 1) |
 | `requires` | No | List of state names that must complete first |
-| `tool` | No | Controls which tool the robot holds. Not set = keep current tool. `tool: gripper` = swap to gripper. `tool: null` = return current tool, run bare. The system auto-swaps via the tool rack between states. |
-| `background` | No | `true` = runs in parallel, completes all items at once |
-| `pre_check` | No | Check name or list — must match a key in `checks.py` `make()` |
-| `post_check` | No | Check name or list — must match a key in `checks.py` `make()` |
-| `trigger` | No | `"end"` — state is not scheduled, only runs when the trigger fires. The End button in the GUI runs the `trigger: end` state. If not defined, Stop button is hidden. |
+| `tool` | No | Which tool the robot holds. Auto-swaps via tool rack between states. <br>• **not set** — keep current tool, no swap <br>• **`tool: gripper`** — swap to named tool <br>• **`tool: null`** — return current tool, run bare |
+| `background` | No | `true` = runs in parallel, completes all items at once (default: `false`) |
+| `pre_check` | No | Check name or list — runs **before** the tool swap and state handler. If it fails, the state is skipped entirely (no tool swap happens). Must match a key in `checks.py` `make()` |
+| `post_check` | No | Check name or list — runs **after** the state handler completes. Must match a key in `checks.py` `make()` |
+| `trigger` | No | `"end"` — state is not scheduled, only runs on End signal. <br>• When End is pressed, the current action finishes, then this state runs before the process is killed <br>• Use it for cleanup (return tools, home robot, safe position) <br>• If not defined, End just kills the process after the current action finishes |
+
 ### Goal
 
-The `goal` list defines terminal states. The protocol succeeds when every goal state has been completed.
+The `goal` list defines which states mark the protocol as done. Goal names must be states defined in the `states` section of the same YAML file.
 
-If your project processes multiple items (e.g. tubes, vials), pass `batch_size` via `launch.yaml` kwargs. Each state runs once per item (index 0 to n-1). The protocol finishes when all items reach every goal state. If `batch_size` is not set, it defaults to 1 — each state runs once, like a simple sequence.
+- A state is "completed" when its handler returns without raising an exception — no return value is checked
+- The protocol finishes when every goal state has run for every item in the batch
+- If `batch_size` is not set, it defaults to 1 — each state runs once, like a simple sequence
+- If your project processes multiple items (e.g. tubes, vials), pass `batch_size` via `launch.yaml` kwargs — each state runs once per item (index 0 to n-1)
 
----
+### Tool swap duration
 
-## 4. Checks — `checks.py`
-
-Verification functions that run before/after states. The keys in `make()` are the names you reference in `pre_check` and `post_check` in `protocol.yaml`.
-
-```python
-class Checks:
-    def tube_in_rack(self, i):
-        return True   # just return True or False
-
-    def tube_picked(self, i):
-        ok = gripper.has_object()
-        if not ok:
-            self.rt.step(f"Tube {i} — gripper empty, check manually", level="warning")
-        return ok
-
-    def make(self):
-        return {
-            "tube_in_rack": self.tube_in_rack,   # ← use in protocol.yaml as pre_check: tube_in_rack
-            "tube_picked": self.tube_picked,      # ← use in protocol.yaml as post_check: tube_picked
-        }
-```
-
-```yaml
-# protocol.yaml — references the check names from make()
-states:
-  - name: picked
-    pre_check: tube_in_rack
-    post_check: tube_picked
-```
-
-- Each check receives `i` (item index) and returns `True` (passed) or `False` (failed)
-- On `False`, the task is skipped and the runner moves to the next task
-- Use `rt.step()` inside the check to show a message to the operator
-- Use `rt.pause()` inside the check if you want to pause and wait for the operator before skipping
-- Checks are optional — states without `pre_check`/`post_check` just run directly
-
-```python
-def tube_picked(self, i):
-    ok = gripper.has_object()
-    if not ok:
-        self.rt.step(f"Tube {i} pick failed — fix and resume", level="warning")
-        self.rt.pause()   # wait for operator, then skip
-    return ok
-```
+`tool_swap_duration` (top-level, optional) — estimated seconds to swap between tools (default: `0`). When set, the scheduler adds this as a penalty between consecutive tasks that use different tools, so it naturally batches same-tool work together to minimize total time.
 
 ---
 
-## 5. States — `states.py`
+## 6. States — `states.py`
 
-Each state is a function that executes one item.
+Implements what the robot actually does for each state defined in `protocol.yaml`.
+
+### Structure
+
+- **`__init__(self, rcp, rt, **kwargs)`** — called once when the workflow starts
+  - `rcp` — recipe dict from `recipes.yaml` (e.g. `rcp["gripper"]`)
+  - `rt` — runtime object (for `rt.call()`, `rt.step()`, `rt.sleep()`)
+  - `**kwargs` — all kwargs from `launch.yaml`, access via `kwargs.get("my_param", default)`
+- **State handlers** — one method per state, each must accept `i`
+  - `i` is the item index (`0` to `batch_size - 1`), passed by the runner
+  - The runner calls your handler once per item — you don't loop yourself
+  - You must accept `i` even if you don't use it
+  - Background states always receive `i=0` and run once for all items
+- **`make()`** — returns a dict mapping state names to handler methods. Keys must match the state names in `protocol.yaml`
+
+### Example
 
 ```python
 class States:
-    def __init__(self, rcp, rt, batch_size, **kwargs):
-        self.rcp = rcp          # Recipe dict from recipes.yaml
-        self.rt  = rt            # Runtime (for step, call, sleep)
-        self.batch_size = batch_size
-        # Extra kwargs from launch.yaml are available here
-        # e.g. self.dry_run = kwargs.get("dry_run", False)
+    def __init__(self, rcp, rt, **kwargs):
+        self.rcp = rcp
+        self.rt  = rt
+        # Access any kwarg from launch.yaml — these are just examples:
+        # self.dry_run = kwargs.get("dry_run", False)
+        # self.speed = kwargs.get("speed", 100)
 
     def picked(self, i):
         """Pick tube i from the rack."""
-        self.rt.call(self.rcp["gripper"].pick, i)
+        self.rcp["gripper"].pick(i)
 
     def dosed(self, i):
         """Dose 40ml into tube i."""
-        self.rt.call(self.rcp["pipette"].dose, volume=40)
+        self.rcp["pipette"].dose(volume=40)
 
     def placed(self, i):
         """Place tube i into output rack."""
-        self.rt.call(self.rcp["gripper"].place, i)
+        self.rcp["gripper"].place(i)
+
+    def homed(self, i):
+        """Home the robot — same action regardless of i."""
+        self.rcp["robot"].home()
 
     def make(self):
         return {
             "picked": self.picked,
             "dosed": self.dosed,
             "placed": self.placed,
+            "homed": self.homed,
         }
 ```
 
-- `i` is the item index (0 to batch_size-1).
-- Use `rt.call()` for robot commands — it handles alarms automatically.
-- Background states receive `i=0` and run once for all items.
-
 ---
 
-## 6. Launch config — `launch.yaml`
+## 7. Checks — `checks.py`
 
-```yaml
-scene: [scene/base.j2, scene/layout.j2]
+Verification functions that run before/after states. Same signature as States — receives `rcp`, `rt`, and all `**kwargs`.
 
-kwargs:
-  batch_size:
-    type: int
-    default: 4
-    label: Number of tubes
-    hint: How many tubes to include in the schedule
-    min: 1
-    max: 20
+### Structure
 
-  horizon:
-    type: int
-    default: null
-    label: Planning horizon
-    hint: Empty = plan all at once
-    placeholder: plan all at once
-    optional: true
-    min: 1
-```
+- **`__init__(self, rcp, rt, **kwargs)`** — same as States, has access to recipes, runtime, and all kwargs
+- **Check methods** — each accepts `i` (item index) and returns `True` (passed) or `False` (failed)
+- **`make()`** — returns a dict mapping check names to methods. Keys are referenced in `pre_check` / `post_check` in `protocol.yaml`
 
-### Supported kwarg types
-
-| Type | Widget | Notes |
-|------|--------|-------|
-| `int` | Number input | `min`, `max`, `step=1` |
-| `float` | Number input | `min`, `max`, `step=any` |
-| `str` | Text input | |
-| `bool` | Checkbox | |
-| `choice` | Dropdown | Requires `options: [a, b, c]` |
-| `textarea` | Multi-line text | `rows` (default 4), tries JSON parse |
-| `file` | File upload | `accept: ".csv,.xlsx"` |
-
-Optional fields: set `optional: true`. Empty = `null`.
-
----
-
-## 7. Entry point — `main.py`
+### Example
 
 ```python
-import os, argparse, yaml
-from pathlib import Path
-from workspace.workspace import Workspace
-from workspace.ortools.workflow import BaseWorkflow
-from workspace.runtime_server import RuntimeServer
-from states import States
-from checks import Checks
+class Checks:
+    def __init__(self, rcp, rt, **kwargs):
+        self.rcp = rcp
+        self.rt  = rt
 
-_BASE_DIR = Path(__file__).parent
+    def tube_in_rack(self, i):
+        return True
 
-def workflow_fn(*, workspace, core, **kwargs):
-    BaseWorkflow(workspace, core, _BASE_DIR, States, Checks, **kwargs).run()
+    def tube_picked(self, i):
+        ok = self.rcp["gripper"].has_object()
+        if not ok:
+            self.rt.step(f"Tube {i} pick failed — fix and resume", level="warning")
+            self.rt.pause()   # wait for operator, then skip
+        return ok
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "5010")))
-    args = p.parse_args()
-
-    with open(_BASE_DIR / "launch.yaml") as f:
-        launch = yaml.safe_load(f)
-
-    ws = Workspace(config_path=launch["scene"], port=args.port)
-    RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()
-
-if __name__ == "__main__":
-    main()
+    def make(self):
+        return {
+            "tube_in_rack": self.tube_in_rack,
+            "tube_picked": self.tube_picked,
+        }
 ```
 
-The orchestrator launches this with `sudo python3 main.py --port 5010`.
+```yaml
+# protocol.yaml — references the check names from make()
+states:
+  picked:
+    pre_check: tube_in_rack
+    post_check: tube_picked
+```
 
-`**kwargs` comes from the parameters modal in the GUI (`launch.yaml` kwargs). They flow through to `BaseWorkflow` and then to `States`:
-
-| Parameter | Used by | Description |
-|-----------|---------|-------------|
-| `batch_size` | BaseWorkflow → scheduler | Number of items to process (default: 1) |
-| `horizon` | BaseWorkflow → scheduler | Rolling window: replan every N tasks (default: 60). Rarely needs changing — only expose in launch.yaml if you have a specific reason. |
-| Everything else | States | Passed to `States.__init__(**kwargs)` — use whatever you need |
+- On `False`, the task is skipped and the runner moves to the next task
+- Use `self.rt.step()` inside the check to show a message to the operator
+- Use `self.rt.pause()` if you want to pause and wait for the operator before skipping
+- Checks are optional — states without `pre_check`/`post_check` just run directly
 
 ---
 
@@ -318,14 +363,19 @@ rt.step(45, level="progress")                        # progress bar (0-100)
 
 ### Robot commands
 
+In States, call recipe methods directly — recipes handle robot commands and checkpoints internally:
+
 ```python
-rt.call(robot.jmove, target_joints)
+self.rcp["gripper"].pick(i)
 ```
 
-Wraps any function. If the return value is negative (robot alarm), it:
-1. Logs an error-level step
-2. Pauses the runtime
-3. Waits for the operator to clear the alarm and resume
+If you need to call a raw robot command outside of a recipe, call it directly on `rt` — it proxies any method to `robot_api` and wraps it with checkpoint and alarm handling automatically:
+
+```python
+self.rt.jmove(j0=0, j1=0, j2=0, j3=0, j4=0, j5=0)
+```
+
+If the robot returns a negative value (alarm), `rt` will automatically log an error, pause, and wait for the operator to clear and resume.
 
 ### Sleep
 
@@ -363,16 +413,3 @@ sudo python3 projects/my_project/main.py --port 5010
 
 Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send start/pause/kill commands.
 
----
-
-## 10. Creating a new project — checklist
-
-1. Copy `projects/pace_or/` as a template
-2. Edit `scene/` — define your hardware layout
-3. Edit `recipes/recipes.yaml` — map component aliases
-4. Edit `protocol.yaml` — define states, dependencies, goals
-5. Write `states.py` — implement each state handler
-6. Write `checks.py` — implement verification checks
-7. Edit `launch.yaml` — set scene paths and kwargs
-8. Update `main.py` imports if you renamed classes
-9. Add workspace in orchestrator → set params → launch → start

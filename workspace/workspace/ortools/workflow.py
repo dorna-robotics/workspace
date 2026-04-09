@@ -90,7 +90,8 @@ class BaseWorkflow:
         self.rt  = workspace.rt
         self.rcp = self._load_recipes(workspace, core)
         self.batch_size = batch_size
-        self.kwargs = kwargs
+        # All kwargs passed to States — nothing held back
+        self.kwargs = {**kwargs, "batch_size": batch_size, "horizon": horizon}
 
         # Enum constraint state (tool enforcement)
         self._enum_state:    dict[str, str | None] = {}
@@ -200,7 +201,9 @@ class BaseWorkflow:
         with open(self._base_dir / "protocol.yaml") as f:
             data = yaml.safe_load(f)
 
-        tool_map = {s["name"]: s.get("tool") for s in data["states"] if "tool" in s}
+        raw = data["states"]
+        states = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
+        tool_map = {s["name"]: s.get("tool") for s in states if "tool" in s}
         if not tool_map:
             return
 
@@ -220,7 +223,7 @@ class BaseWorkflow:
                 self.runner._handlers[state_name] = self._with("tool", tool_name, handler)
 
     def _register_all(self, states_cls, checks_cls):
-        for name, fn in states_cls(self.rcp, self.rt, self.batch_size, **self.kwargs).make().items():
+        for name, fn in states_cls(self.rcp, self.rt, **self.kwargs).make().items():
             self.runner.register_state(name, fn)
-        for name, fn in checks_cls().make().items():
+        for name, fn in checks_cls(self.rcp, self.rt, **self.kwargs).make().items():
             self.runner.register_check(name, fn)

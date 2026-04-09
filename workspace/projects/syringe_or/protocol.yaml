@@ -2,22 +2,22 @@
 # Syringe workflow: hotel pick → feed caps → cap+dispense → hotel place
 
 states:
-  - name: hotel_picked
+  hotel_picked:
     description: Pick SBS plate from hotel level
     requires: []
     tool: tool_rack_2
 
-  - name: caps_fed
+  caps_fed:
     description: Pick caps from feeder and place in cap holder
     requires: [hotel_picked]
     tool: tool_rack_1
 
-  - name: capped_dispensed
+  capped_dispensed:
     description: Cap tubes with dispensing
     requires: [caps_fed]
     tool: tool_rack_0
 
-  - name: hotel_placed
+  hotel_placed:
     description: Return SBS plate to hotel
     requires: [capped_dispensed]
     tool: tool_rack_2

@@ -36,17 +36,23 @@ class ORScheduler:
         with open(protocol_path) as f:
             proto = yaml.safe_load(f)
 
-        self._states = proto["states"]
+        raw = proto["states"]
+        self._states = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
         self._goal   = set(proto.get("goal", []))
         self._smap   = {s["name"]: s for s in self._states}
         self._snames = [s["name"] for s in self._states]
+        self._swap_dur = int(proto.get("tool_swap_duration", 0))
 
-    # ── Duration helpers ─────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _duration(self, state_name: str) -> int:
         """Duration in integer seconds. Defaults to 1 if not specified."""
         d = self._smap[state_name].get("duration", 0)
         return max(1, int(d))
+
+    def _tool(self, state_name: str) -> str | None:
+        """Tool name for a state, or None if not set."""
+        return self._smap[state_name].get("tool")
 
     # ── Public interface ─────────────────────────────────────────────────────
 
@@ -112,7 +118,8 @@ class ORScheduler:
     ) -> list[tuple[str, int]] | None:
 
         model   = cp_model.CpModel()
-        horizon = sum(self._duration(sn) for sn, _ in tasks) + 1
+        swap    = self._swap_dur
+        horizon = sum(self._duration(sn) for sn, _ in tasks) + swap * len(tasks) + 1
 
         starts    = {}
         ends      = {}
@@ -164,6 +171,24 @@ class ORScheduler:
                     req_key = (req, i)
                     if req_key in ends:
                         model.Add(starts[(sn, i)] >= ends[req_key])
+
+        # Tool swap penalty: if two foreground tasks use different tools,
+        # the solver must leave a gap of tool_swap_duration between them.
+        if swap > 0:
+            fg = [(sn, i) for (sn, i) in tasks if not self._smap[sn].get("background")]
+            for idx_a, (sn_a, i_a) in enumerate(fg):
+                tool_a = self._tool(sn_a)
+                if tool_a is None:
+                    continue
+                for idx_b in range(idx_a + 1, len(fg)):
+                    sn_b, i_b = fg[idx_b]
+                    tool_b = self._tool(sn_b)
+                    if tool_b is None or tool_a == tool_b:
+                        continue
+                    # Different tools — whichever runs first, the other must wait swap_dur
+                    a_first = model.NewBoolVar(f"sw_{idx_a}_{idx_b}")
+                    model.Add(starts[(sn_b, i_b)] >= ends[(sn_a, i_a)] + swap).OnlyEnforceIf(a_first)
+                    model.Add(starts[(sn_a, i_a)] >= ends[(sn_b, i_b)] + swap).OnlyEnforceIf(a_first.Not())
 
         # Minimize makespan
         makespan = model.NewIntVar(0, horizon, "makespan")

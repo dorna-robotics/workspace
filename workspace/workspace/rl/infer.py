@@ -30,7 +30,8 @@ class RLRunner:
         with open(protocol_path) as f:
             data = yaml.safe_load(f)
 
-        self._states      = data["states"]
+        raw = data["states"]
+        self._states      = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
         self._goal        = set(data["goal"])
         self._state_names = [s["name"] for s in self._states]
         self._background  = {}

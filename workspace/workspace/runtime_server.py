@@ -107,6 +107,26 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
         return None if DEV_NOCACHE else super().compute_etag()
 
 
+class FallbackStaticHandler(NoCacheStaticFileHandler):
+    """Serves from multiple directories — first match wins."""
+
+    def initialize(self, paths: list[str]):
+        self._paths = [p for p in paths if os.path.isdir(p)]
+        super().initialize(self._paths[0] if self._paths else "")
+
+    def get_absolute_path(self, root, path):
+        for d in self._paths:
+            full = os.path.join(d, path)
+            if os.path.isfile(full):
+                return full
+        return super().get_absolute_path(root, path)
+
+    def validate_absolute_path(self, root, absolute_path):
+        if os.path.isfile(absolute_path):
+            return absolute_path
+        return super().validate_absolute_path(root, absolute_path)
+
+
 class ConfigVersionHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "application/json")
@@ -259,8 +279,11 @@ class RuntimeServer:
             # realtime (viewer)
             (r"/socket.io/", socketio.get_tornado_handler(sio)),
 
-            # static assets (meshes/textures/etc)
-            (r"/static/(.*)", NoCacheStaticFileHandler, {"path": self.static_dir}),
+            # static assets (meshes/textures/etc) — project-local first, library fallback
+            (r"/static/(.*)", FallbackStaticHandler, {"paths": [
+                os.getcwd(),        # project-local: my_project/CAD/
+                self.static_dir,    # library: workspace/static/CAD/
+            ]}),
 
             # runtime API
             (r"/cmd", CmdHandler, dict(

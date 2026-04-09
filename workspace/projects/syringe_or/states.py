@@ -1,8 +1,8 @@
 class States:
-    def __init__(self, rcp, rt, batch_size, **kwargs):
+    def __init__(self, rcp, rt, **kwargs):
         self.rcp = rcp
         self.rt  = rt
-        self.batch_size = batch_size
+        self.batch_size = kwargs.get("batch_size", 1)
 
         # Tube/cap layout
         self.tube_list = [f"{r}{c}" for r in "ABCDEF" for c in range(1, 9)]

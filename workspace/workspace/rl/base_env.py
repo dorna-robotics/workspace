@@ -39,7 +39,8 @@ class BaseLabEnv(gym.Env):
         with open(protocol_path) as f:
             protocol = yaml.safe_load(f)
 
-        self._states: list[dict] = protocol["states"]
+        raw = protocol["states"]
+        self._states: list[dict] = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
         self._goal: set[str]     = set(protocol["goal"])
         self._state_names        = [s["name"] for s in self._states]
         self._n_states           = len(self._state_names)

@@ -2,23 +2,23 @@
 # Printer workflow: pipette → cap → print → inspect → decap
 
 states:
-  - name: pipetted
+  pipetted:
     requires: []
     tool: tool_rack_1
 
-  - name: capped
+  capped:
     requires: [pipetted]
     tool: tool_rack_0
 
-  - name: printed
+  printed:
     requires: [capped]
     tool: tool_rack_0
 
-  - name: inspected
+  inspected:
     requires: [printed]
     tool: tool_rack_0
 
-  - name: decapped
+  decapped:
     requires: [inspected]
     tool: tool_rack_0
 

@@ -10,8 +10,7 @@
 # Step functions live in steps.py.
 
 states:
-
-  - name: inspected
+  inspected:
     description: pick tube, inspect, weigh, decap, place in working rack
     duration: 10
     requires: []
@@ -20,7 +19,7 @@ states:
     post_check:   tube_in_working_rack
     on_fail: pause
 
-  - name: dosed_40ml
+  dosed_40ml:
     description: dose solvent into working tube
     duration: 10
     requires: [inspected]
@@ -28,7 +27,7 @@ states:
     pre_check:    tube_in_working_rack
     on_fail: pause
 
-  - name: loaded_shaker
+  loaded_shaker:
     description: recap tube and place on shaker
     duration: 10
     requires: [dosed_40ml]
@@ -37,7 +36,7 @@ states:
     post_check:   tube_on_shaker
     on_fail: pause
 
-  - name: shaken
+  shaken:
     description: shaker runs — robot is free, OR-Tools fills idle time
     background: true
     duration: 120
@@ -45,7 +44,7 @@ states:
     tool:    feeder_tool
     post_check:   stop_shaken
 
-  - name: cap_fed
+  cap_fed:
     description: feed one cap from autosampler to cap holder
     duration: 10
     requires: []
@@ -53,7 +52,7 @@ states:
     pre_check:    cap_holder_empty
     on_fail: pause
 
-  - name: retrieved
+  retrieved:
     description: pick from shaker, inspect, decap, place in working rack
     duration: 10
     requires: [shaken]
@@ -62,7 +61,7 @@ states:
     post_check:   tube_in_working_rack
     on_fail: pause
 
-  - name: dosed_2ml
+  dosed_2ml:
     description: dose from 40ml into 2ml vials
     duration: 10
     requires: [retrieved]
@@ -70,14 +69,14 @@ states:
     pre_check:    tube_in_working_rack
     on_fail: pause
 
-  - name: recapped_final
+  recapped_final:
     description: recap 40ml tube and return to source rack
     duration: 10
     requires: [dosed_2ml]
     tool:    gripper
     on_fail: pause
 
-  - name: capped_2ml
+  capped_2ml:
     description: cap 2ml vial, inspect, place in rack
     duration: 10
     requires: [cap_fed, dosed_2ml]

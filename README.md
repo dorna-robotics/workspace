@@ -1,3 +1,13 @@
+# Installation
+
+Install the workspace package (run once, or after a fresh OS setup):
+
+```bash
+sudo pip3 install --break-system-packages -e /home/dorna/Downloads/workspace/workspace/
+```
+
+This installs it as an editable package — code changes are live, no reinstall needed.
+
 # Remote access
 ```
 ssh -p 52022 <device_username>@<your_public_ip>

@@ -11,6 +11,10 @@
 
 class Checks:
 
+    def __init__(self, rcp, rt, **kwargs):
+        self.rcp = rcp
+        self.rt  = rt
+
     def source_tube_present(self, item_i) -> tuple[bool, str]:
         """Tube is present at the source rack position before picking."""
         # TODO: camera.detect("tube", SOURCE[item_i])
