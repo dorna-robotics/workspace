@@ -52,10 +52,10 @@ git push
 ```bash
 # Clone the release repo
 cd /home/dorna/Downloads
-git clone https://github.com/dorna/workspace-release.git workspace
+git clone https://github.com/dorna/workspace-release.git workspace-release
 
 # Install as editable package
-cd workspace/workspace
+cd workspace-release/workspace
 sudo pip3 install --break-system-packages -e .
 ```
 
@@ -81,7 +81,7 @@ Should print: `License OK.`
 
 ```bash
 # Start the orchestrator
-cd /home/dorna/Downloads/workspace/workspace
+cd /home/dorna/Downloads/workspace-release/workspace
 sudo python3 orchestrator/server.py
 
 # Open in browser

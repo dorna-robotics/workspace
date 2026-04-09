@@ -7,7 +7,7 @@ How to update your Dorna Workspace to the latest version.
 ## Update
 
 ```bash
-cd /home/dorna/Downloads/workspace
+cd /home/dorna/Downloads/workspace-release
 git pull
 cd workspace
 sudo pip3 install --break-system-packages -e .
@@ -26,7 +26,7 @@ After updating, verify everything works:
 sudo python3 -m workspace.license verify
 
 # Start the orchestrator
-cd /home/dorna/Downloads/workspace/workspace
+cd /home/dorna/Downloads/workspace-release/workspace
 sudo python3 orchestrator/server.py
 ```
 
