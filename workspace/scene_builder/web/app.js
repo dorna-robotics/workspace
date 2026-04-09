@@ -32,6 +32,9 @@
     import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
     import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
 
+    // -------- API base path --------
+    const SB_API = "/scene-builder/api";
+
     // -------- cache-busting --------
     function versioned(url) {
       const v = (window.__CONFIG_VERSION__ || Date.now());
@@ -40,7 +43,7 @@
     }
     async function getVersion() {
       try {
-        const r = await fetch("/config_version", { cache: "no-store" });
+        const r = await fetch(SB_API + "/config_version", { cache: "no-store" });
         const j = await r.json();
         window.__CONFIG_VERSION__ = j?.version || String(Date.now());
       } catch {
@@ -1570,7 +1573,7 @@ if (node) {
 
       // --- Socket.IO hookup ---
       const socket = io({
-        path: "/socket.io/",
+        path: "/scene-builder/socket.io/",
         transports: ["websocket"],
         forceNew: true,
         timeout: 10000
@@ -2256,7 +2259,7 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   // Instantiate component server-side (simulation-style) so anchors match exactly.
   let blueprint = null;
   try {
-    const res = await fetch("/api/instantiate", {
+    const res = await fetch(SB_API + "/instantiate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, options: (options && typeof options === "object") ? options : {} })
@@ -2406,7 +2409,7 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
   // Instantiate server-side so anchors/options match exactly.
   let blueprint = null;
   try {
-    const res = await fetch("/api/instantiate", {
+    const res = await fetch(SB_API + "/instantiate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, options: (options && typeof options === "object") ? options : {} })
@@ -4382,7 +4385,7 @@ async function _loadThumbModel(modelKey, glbUrl) {
   if (_thumbMultiPart.has(modelKey)) {
     // Fetch the blueprint to get proper world poses for each solid
     try {
-      const res = await fetch("/api/instantiate", {
+      const res = await fetch(SB_API + "/instantiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: modelKey, options: {} })
@@ -4582,7 +4585,7 @@ function openInsertMenu() {
   (async () => {
     let items = [];
     try {
-      const res = await fetch("/api/categories", { cache: "no-store" });
+      const res = await fetch(SB_API + "/categories", { cache: "no-store" });
       const js = await res.json();
       if (js && js.ok && Array.isArray(js.categories) && js.categories.length) {
         _serverCategories = js.categories;
@@ -4591,7 +4594,7 @@ function openInsertMenu() {
     } catch (e) {}
     if (!items.length) {
       try {
-        const res = await fetch("/api/catalog", { cache: "no-store" });
+        const res = await fetch(SB_API + "/catalog", { cache: "no-store" });
         const js = await res.json();
         if (js && js.ok && Array.isArray(js.items)) items = js.items;
       } catch (e) {}
@@ -4649,7 +4652,7 @@ async function openCreatePanel(typeName) {
   // fetch metadata (anchors + options + glb guess)
   let meta = { type: typeName, options: [], anchors: {}, glb: null };
   try {
-    const res = await fetch("/api/type_meta?type=" + encodeURIComponent(typeName), { cache: "no-store" });
+    const res = await fetch(SB_API + "/type_meta?type=" + encodeURIComponent(typeName), { cache: "no-store" });
     const js = await res.json();
     if (js && js.ok && js.meta) meta = js.meta;
   } catch (e) {}
@@ -4660,7 +4663,7 @@ async function openCreatePanel(typeName) {
   if (String(typeName).startsWith("tube_")) {
     const candidate = "cap_" + typeName.slice(5);
     try {
-      const cr = await fetch("/api/type_meta?type=" + encodeURIComponent(candidate), { cache: "no-store" });
+      const cr = await fetch(SB_API + "/type_meta?type=" + encodeURIComponent(candidate), { cache: "no-store" });
       const cj = await cr.json();
       if (cj && cj.ok && cj.meta) {
         // Check tube has "place" anchor and cap has "center" anchor (in any solid)
@@ -4796,7 +4799,7 @@ async function openCreatePanel(typeName) {
     // Fetch available rails from server and populate dropdown
     (async () => {
       try {
-        const res = await fetch("/api/rails");
+        const res = await fetch(SB_API + "/rails");
         const data = await res.json();
         if (data.ok && Array.isArray(data.rails)) {
           for (const r of data.rails) {
@@ -7191,7 +7194,7 @@ async function runPatternFill() {
   // Cache blueprint once for speed
   let blueprint = null;
   try {
-    const res = await fetch("/api/instantiate", {
+    const res = await fetch(SB_API + "/instantiate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: srcType, options: srcOptions })

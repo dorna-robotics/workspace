@@ -21,8 +21,12 @@ ls /dev/ttyUSB*
 # Server
 ```bash
 cd /home/dorna/Downloads/workspace/workspace
-sudo python3 server.py
+sudo python3 gui/server.py
 ```
+
+This starts both the orchestrator and scene builder on one port:
+- Orchestrator: `http://<ip>:5000/orchestrator/`
+- Scene Builder: `http://<ip>:5000/scene-builder/`
 
 # pick or place function
 Grippers has an anchor called `tcp`

@@ -397,7 +397,7 @@ Called automatically after every `rt.step()` and `rt.call()`. Use manually in lo
 
 ### From the orchestrator GUI
 
-1. Open `http://<ip>:5000`
+1. Open `http://<ip>:5000/orchestrator/`
 2. Click **+ Add Workspace**
 3. Set name, port, path to `main.py`
 4. Click the **gear icon** → set parameters → **Set**

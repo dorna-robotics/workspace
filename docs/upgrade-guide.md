@@ -25,9 +25,9 @@ After updating, verify everything works:
 # Check the license is still valid
 sudo python3 -m workspace.license verify
 
-# Start the orchestrator
+# Start the server
 cd /home/dorna/Downloads/workspace-release/workspace
-sudo python3 orchestrator/server.py
+sudo python3 gui/server.py
 ```
 
 ---

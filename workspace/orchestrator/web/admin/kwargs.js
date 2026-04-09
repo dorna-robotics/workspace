@@ -82,7 +82,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           try {
             const fd = new FormData();
             fd.append("file", fileInput.files[0]);
-            const resp = await fetch(`/workspace/${encodeURIComponent(wsName)}/upload/${encodeURIComponent(key)}`, {
+            const resp = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/upload/${encodeURIComponent(key)}`, {
               method: "POST",
               body: fd,
             });

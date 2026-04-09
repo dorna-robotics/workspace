@@ -102,7 +102,7 @@ Should print: `License OK. Tier: default`
 ```bash
 # Start the orchestrator
 cd /home/dorna/Downloads/workspace-release/workspace
-sudo python3 orchestrator/server.py
+sudo python3 gui/server.py
 
 # Open in browser
 # http://<pi-ip>:5000

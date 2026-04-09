@@ -1,6 +1,7 @@
 // Shared API utilities — imported by dashboard.js and workspace.js
 
 export const ORIGIN = window.location.origin;
+export const API_BASE = "/orchestrator/api";
 
 export function getToken() {
   return (localStorage.getItem("orch_token") || "").trim();
@@ -16,7 +17,7 @@ export async function apiFetch(path, opts = {}) {
   if (tok) headers["X-Orch-Token"] = tok;
   Object.assign(headers, opts.headers || {});
 
-  const res  = await fetch(ORIGIN + path, { ...opts, headers });
+  const res  = await fetch(ORIGIN + API_BASE + path, { ...opts, headers });
   const text = await res.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text }; }
@@ -84,7 +85,7 @@ export function esc(s) {
  */
 export function connectStatusWS(onStatus) {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${window.location.host}/ws/status`;
+  const url = `${proto}//${window.location.host}/orchestrator/ws/status`;
   let ws = null;
   let closed = false;
   let retryMs = 1000;
