@@ -179,8 +179,9 @@ def make_app(port=5000):
         (r"/scene-builder/socket\.io/(.*)", _socketio.get_tornado_handler(sb_sio)),
         (r"/scene-builder/(.*)", NoCacheStaticFileHandler, {"path": SB_WEB_DIR}),
 
-        # ---- Shared static: CAD files ----
+        # ---- Shared static ----
         (r"/static/(.*)", NoCacheStaticFileHandler, {"path": STATIC_DIR}),
+        (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": os.path.join(GUI_DIR, "vendor")}),
     ]
 
     app = tornado.web.Application(routes)

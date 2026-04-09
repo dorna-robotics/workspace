@@ -30,7 +30,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
-    import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+    import io from "/vendor/socket.io.esm.min.js";
 
     // -------- API base path --------
     const SB_API = "/scene-builder/api";

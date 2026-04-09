@@ -14,8 +14,10 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
+      "three": "/vendor/three.module.js",
+      "three/addons/controls/OrbitControls.js": "/vendor/three-addons/OrbitControls.js",
+      "three/addons/loaders/GLTFLoader.js": "/vendor/three-addons/GLTFLoader.js",
+      "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js"
     }
   }
   </script>
@@ -27,7 +29,7 @@
      ============================================================ -->
 <header class="sb-header">
   <div class="brand">
-    <img src="https://dorna.ai/wp-content/uploads/2023/05/black-horizontal-1.svg" alt="Dorna Lab" height="26"/>
+    <img src="/vendor/dorna-logo.svg" alt="Dorna Lab" height="26"/>
   </div>
   <span class="sb-title">Scene Builder</span>
   <div class="spacer"></div>

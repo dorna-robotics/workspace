@@ -130,8 +130,10 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
+      "three": "/vendor/three.module.js",
+      "three/addons/controls/OrbitControls.js": "/vendor/three-addons/OrbitControls.js",
+      "three/addons/loaders/GLTFLoader.js": "/vendor/three-addons/GLTFLoader.js",
+      "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js"
     }
   }
   </script>
@@ -189,7 +191,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
     import { RGBELoader }    from "three/addons/loaders/RGBELoader.js";
-    import io from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+    import io from "/vendor/socket.io.esm.min.js";
 
     // -------- cache-busting --------
     function versioned(url) {
