@@ -6,7 +6,7 @@ How to build a release, prepare an SD card, and ship a Pi to a customer.
 
 ## Prerequisites
 
-On your build Pi (or any ARM machine):
+On your build machine (must be ARM — a Raspberry Pi):
 
 ```bash
 sudo pip3 install --break-system-packages cython
@@ -26,7 +26,7 @@ bash scripts/build_release.sh
 This will:
 1. Compile files listed in `protected.txt` to `.so`
 2. Sync everything to `/home/dorna/Downloads/workspace-release/`
-3. Remove excluded files (`.secret.key`, `scripts/`, `docs/internal/`, etc.)
+3. Remove excluded files (`.secret.key`, `scripts/`, `docs/internal/`, `license_admin.py`, etc.)
 4. Remove `.py` source for compiled files (only `.so` remains)
 
 Then push to the release repo:
@@ -45,29 +45,48 @@ git push
 ### Flash the base image
 
 1. Flash your standard Raspberry Pi OS image
-2. Boot and complete first-time setup (WiFi, locale, etc.)
+2. Boot and complete first-time setup (WiFi, locale, SSH enabled, etc.)
 
 ### Install the workspace
 
+SSH into the Pi and run:
+
 ```bash
-# Clone the release repo
 cd /home/dorna/Downloads
 git clone https://github.com/dorna/workspace-release.git workspace-release
 
-# Install as editable package
 cd workspace-release/workspace
 sudo pip3 install --break-system-packages -e .
 ```
 
 ### Generate the license
 
+**From your admin machine** (not on the Pi):
+
+```bash
+cd /home/dorna/Downloads/workspace
+bash scripts/license_remote.sh <pi-ip>
+```
+
+For example:
+```bash
+bash scripts/license_remote.sh 192.168.1.50
+bash scripts/license_remote.sh 192.168.1.50 dorna    # custom SSH user
+```
+
+This will:
+1. SSH into the Pi and read the CPU serial
+2. Sign the serial locally on your machine (secret key never leaves your machine)
+3. SSH into the Pi and write the license to `/etc/dorna/.license`
+4. Verify the license was written correctly
+
+**Alternatively**, if you're directly on the Pi with the private repo:
+
 ```bash
 sudo python3 -m workspace.license_admin generate
 ```
 
-This reads the Pi's CPU serial and writes a signed license to `/etc/dorna/.license`.
-
-### Verify
+### Verify (on the Pi)
 
 ```bash
 sudo python3 -m workspace.license verify
@@ -105,7 +124,7 @@ When you push new code to the private repo:
 ```bash
 # In the private repo
 cd /home/dorna/Downloads/workspace
-git pull  # get latest changes
+git pull
 
 # Rebuild release
 bash scripts/build_release.sh
@@ -150,9 +169,26 @@ Update both `.secret.key` and the `_SECRET` value in `workspace/workspace/licens
 
 ---
 
-## 8. Revoking a license
+## 8. Licensing a Pi remotely
+
+From your admin machine:
+
+```bash
+bash scripts/license_remote.sh <pi-ip> [ssh-user]
+```
+
+Requirements:
+- SSH access to the Pi (default user: `dorna`)
+- The private repo with `.secret.key` on your admin machine
+- Python 3 on your admin machine (for HMAC signing)
+
+The script never copies the secret key to the Pi. It reads the serial over SSH, signs locally, and writes the license file back over SSH.
+
+---
+
+## 9. Revoking a license
 
 You can't remotely revoke a license. But:
 - Changing the secret key invalidates all existing licenses
 - A cloned SD card won't work on a different Pi (hardware serial mismatch)
-- To re-license a Pi: SSH in, run `sudo python3 -m workspace.license_admin generate`
+- To re-license a Pi remotely: `bash scripts/license_remote.sh <pi-ip>`
