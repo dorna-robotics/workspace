@@ -2,15 +2,16 @@
 # license_remote.sh — Generate a license on a remote Pi via SSH.
 #
 # Usage:
-#   bash scripts/license_remote.sh <pi-ip> [ssh-user]
+#   bash scripts/license_remote.sh <pi-ip> [tier] [ssh-user]
 #
 # Examples:
-#   bash scripts/license_remote.sh 192.168.1.50
-#   bash scripts/license_remote.sh 192.168.1.50 dorna
+#   bash scripts/license_remote.sh 192.168.1.50                    # default tier
+#   bash scripts/license_remote.sh 192.168.1.50 pro                # pro tier
+#   bash scripts/license_remote.sh 192.168.1.50 default dorna      # custom SSH user
 #
 # What it does:
 #   1. SSH into the Pi, read CPU serial from /proc/cpuinfo
-#   2. Sign the serial locally (secret key never leaves this machine)
+#   2. Sign the serial + tier locally (secret key never leaves this machine)
 #   3. SSH into the Pi, write the license file to /etc/dorna/.license
 #   4. Verify the license works
 
@@ -22,11 +23,13 @@ SECRET_KEY_FILE="$REPO_ROOT/.secret.key"
 LICENSE_PATH="/etc/dorna/.license"
 
 PI_IP="${1:-}"
-PI_USER="${2:-dorna}"
+TIER="${2:-default}"
+PI_USER="${3:-dorna}"
 
 if [ -z "$PI_IP" ]; then
-    echo "Usage: bash scripts/license_remote.sh <pi-ip> [ssh-user]"
-    echo "  ssh-user defaults to 'dorna'"
+    echo "Usage: bash scripts/license_remote.sh <pi-ip> [tier] [ssh-user]"
+    echo "  tier:     default, basic, pro, trial, edu (default: 'default')"
+    echo "  ssh-user: defaults to 'dorna'"
     exit 1
 fi
 
@@ -39,6 +42,7 @@ SECRET_KEY=$(cat "$SECRET_KEY_FILE")
 
 echo "=== Dorna Remote License Generator ==="
 echo "Pi:   $PI_USER@$PI_IP"
+echo "Tier: $TIER"
 echo ""
 
 # Step 1: Read CPU serial from the Pi
@@ -51,31 +55,31 @@ if [ -z "$SERIAL" ]; then
 fi
 echo "  Serial: $SERIAL"
 
-# Step 2: Sign locally
+# Step 2: Sign locally (serial + tier)
 echo "--- Signing license ---"
 SIGNATURE=$(python3 -c "
 import hmac, hashlib
 secret = b'$SECRET_KEY'
-serial = '$SERIAL'
-print(hmac.new(secret, serial.encode(), hashlib.sha256).hexdigest())
+payload = '$SERIAL:$TIER'
+print(hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest())
 ")
 echo "  Signature: ${SIGNATURE:0:16}..."
 
 # Step 3: Write license to the Pi
 echo "--- Writing license to Pi ---"
-ssh "$PI_USER@$PI_IP" "sudo mkdir -p $(dirname $LICENSE_PATH) && echo '$SERIAL
-$SIGNATURE' | sudo tee $LICENSE_PATH > /dev/null"
+ssh "$PI_USER@$PI_IP" "sudo mkdir -p $(dirname $LICENSE_PATH) && printf '%s\n' '$SERIAL' '$TIER' '$SIGNATURE' | sudo tee $LICENSE_PATH > /dev/null"
 echo "  Written to: $LICENSE_PATH"
 
 # Step 4: Verify
 echo "--- Verifying ---"
 VERIFY_RESULT=$(ssh "$PI_USER@$PI_IP" "cat $LICENSE_PATH | head -1")
-if [ "$VERIFY_RESULT" = "$SERIAL" ]; then
-    echo "  License OK."
+VERIFY_TIER=$(ssh "$PI_USER@$PI_IP" "sed -n '2p' $LICENSE_PATH")
+if [ "$VERIFY_RESULT" = "$SERIAL" ] && [ "$VERIFY_TIER" = "$TIER" ]; then
+    echo "  License OK. Tier: $TIER"
 else
     echo "  ERROR: Verification failed!"
     exit 1
 fi
 
 echo ""
-echo "=== Done — $PI_IP is licensed ==="
+echo "=== Done — $PI_IP is licensed (tier: $TIER) ==="

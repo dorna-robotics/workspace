@@ -65,25 +65,26 @@ sudo pip3 install --break-system-packages -e .
 
 ```bash
 cd /home/dorna/Downloads/workspace
-bash scripts/license_remote.sh <pi-ip>
+bash scripts/license_remote.sh <pi-ip> [tier] [ssh-user]
 ```
 
 For example:
 ```bash
-bash scripts/license_remote.sh 192.168.1.50
-bash scripts/license_remote.sh 192.168.1.50 dorna    # custom SSH user
+bash scripts/license_remote.sh 192.168.1.50                   # default tier
+bash scripts/license_remote.sh 192.168.1.50 pro                # pro tier
+bash scripts/license_remote.sh 192.168.1.50 default dorna      # custom SSH user
 ```
 
 This will:
 1. SSH into the Pi and read the CPU serial
-2. Sign the serial locally on your machine (secret key never leaves your machine)
+2. Sign the serial + tier locally on your machine (secret key never leaves your machine)
 3. SSH into the Pi and write the license to `/etc/dorna/.license`
 4. Verify the license was written correctly
 
 **Alternatively**, if you're directly on the Pi with the private repo:
 
 ```bash
-sudo python3 -m workspace.license_admin generate
+sudo python3 -m workspace.license_admin generate [tier]
 ```
 
 ### Verify (on the Pi)
@@ -92,7 +93,7 @@ sudo python3 -m workspace.license_admin generate
 sudo python3 -m workspace.license verify
 ```
 
-Should print: `License OK.`
+Should print: `License OK. Tier: default`
 
 ---
 
@@ -174,7 +175,7 @@ Update both `.secret.key` and the `_SECRET` value in `workspace/workspace/licens
 From your admin machine:
 
 ```bash
-bash scripts/license_remote.sh <pi-ip> [ssh-user]
+bash scripts/license_remote.sh <pi-ip> [tier] [ssh-user]
 ```
 
 Requirements:
@@ -186,9 +187,32 @@ The script never copies the secret key to the Pi. It reads the serial over SSH, 
 
 ---
 
-## 9. Revoking a license
+## 9. License tiers
+
+The tier is stored in the license file and signed — it can't be edited without invalidating the signature. Use `get_tier()` in code to check:
+
+```python
+from workspace.license import get_tier
+tier = get_tier()  # "default", "basic", "pro", etc.
+```
+
+Current tiers (add more as needed):
+
+| Tier | Description |
+|------|-------------|
+| `default` | Full access — no restrictions |
+
+To change a Pi's tier, re-license it:
+
+```bash
+bash scripts/license_remote.sh 192.168.1.50 pro
+```
+
+---
+
+## 10. Revoking a license
 
 You can't remotely revoke a license. But:
 - Changing the secret key invalidates all existing licenses
 - A cloned SD card won't work on a different Pi (hardware serial mismatch)
-- To re-license a Pi remotely: `bash scripts/license_remote.sh <pi-ip>`
+- To re-license a Pi remotely: `bash scripts/license_remote.sh <pi-ip> [tier]`
