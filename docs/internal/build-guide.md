@@ -62,7 +62,7 @@ sudo pip3 install --break-system-packages -e .
 ### Generate the license
 
 ```bash
-sudo python3 -m workspace.license generate
+sudo python3 -m workspace.license_admin generate
 ```
 
 This reads the Pi's CPU serial and writes a signed license to `/etc/dorna/.license`.
@@ -155,4 +155,4 @@ Update both `.secret.key` and the `_SECRET` value in `workspace/workspace/licens
 You can't remotely revoke a license. But:
 - Changing the secret key invalidates all existing licenses
 - A cloned SD card won't work on a different Pi (hardware serial mismatch)
-- To re-license a Pi: SSH in, run `sudo python3 -m workspace.license generate`
+- To re-license a Pi: SSH in, run `sudo python3 -m workspace.license_admin generate`

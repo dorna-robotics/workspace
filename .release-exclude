@@ -6,3 +6,4 @@ protected.txt
 .release-exclude
 scripts/
 docs/internal/
+workspace/workspace/license_admin.py

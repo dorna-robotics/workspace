@@ -1,9 +1,10 @@
 """
-Hardware-locked license system for Dorna Workspace.
+Hardware-locked license verification for Dorna Workspace.
 
-- generate(): reads CPU serial, signs with secret key, writes license file
 - verify(): reads CPU serial + license file, checks signature
-- CLI: sudo python3 -m workspace.license generate
+- This file is compiled to .so in release builds
+
+For license generation, see license_admin.py (private repo only).
 """
 
 import hashlib
@@ -11,7 +12,7 @@ import hmac
 import os
 import sys
 
-# Secret key — embedded here, compiled to .so in release builds
+# Secret key — compiled to .so in release, not readable
 _SECRET = b"IeXIrWk2wHJWvRwTO4dUQTmtZK-n3cXaqIbDem49MzA="
 
 LICENSE_PATH = "/etc/dorna/.license"
@@ -34,19 +35,6 @@ def _sign(serial: str) -> str:
     return hmac.new(_SECRET, serial.encode(), hashlib.sha256).hexdigest()
 
 
-def generate():
-    """Generate a license file for this Pi's CPU serial."""
-    serial = _cpu_serial()
-    signature = _sign(serial)
-
-    os.makedirs(os.path.dirname(LICENSE_PATH), exist_ok=True)
-    with open(LICENSE_PATH, "w") as f:
-        f.write(f"{serial}\n{signature}\n")
-
-    print(f"License generated for serial: {serial}")
-    print(f"Written to: {LICENSE_PATH}")
-
-
 def verify():
     """Verify the license matches this Pi's CPU serial. Raises on failure."""
     serial = _cpu_serial()
@@ -54,7 +42,7 @@ def verify():
     if not os.path.isfile(LICENSE_PATH):
         raise RuntimeError(
             f"No license file found at {LICENSE_PATH}. "
-            f"Run: sudo python3 -m workspace.license generate"
+            f"Contact Dorna support to activate this device."
         )
 
     with open(LICENSE_PATH, "r") as f:
@@ -77,14 +65,11 @@ def verify():
         raise RuntimeError("License signature invalid.")
 
 
-# CLI entry point: sudo python3 -m workspace.license generate
+# CLI: sudo python3 -m workspace.license verify
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "generate":
-        generate()
-    elif len(sys.argv) > 1 and sys.argv[1] == "verify":
+    if len(sys.argv) > 1 and sys.argv[1] == "verify":
         verify()
         print("License OK.")
     else:
         print("Usage:")
-        print("  sudo python3 -m workspace.license generate   # create license for this Pi")
-        print("  sudo python3 -m workspace.license verify     # check license")
+        print("  sudo python3 -m workspace.license verify   # check license")
