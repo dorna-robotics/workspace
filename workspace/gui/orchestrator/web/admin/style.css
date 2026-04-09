@@ -203,24 +203,33 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .topbar {
   background: rgba(255,255,255,0.85);
 }
-.brand {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.brand-link {
   display: flex;
   align-items: center;
-  pointer-events: none;
-  z-index: 0;
+  flex-shrink: 0;
   opacity: 0.85;
+  transition: opacity 0.15s;
 }
+.brand-link:hover { opacity: 1; }
+.brand-link img { border-radius: 4px; }
+
+.topbar-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.topbar-nav-link {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: color 0.12s, background 0.12s;
+}
+.topbar-nav-link:hover { color: var(--text); background: var(--surface2); }
+.topbar-nav-link.active { color: var(--text); font-weight: 600; }
 @media (max-width: 768px) {
-  .brand {
-    position: static;
-    transform: none;
-    pointer-events: auto;
-    opacity: 1;
-  }
-  .brand img { height: 22px; }
   .topbar {
     flex-wrap: wrap;
     height: auto; min-height: 0;

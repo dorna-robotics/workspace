@@ -397,22 +397,32 @@ select.input { cursor: pointer; }
 }
 [data-theme="light"] .sb-header { background: rgba(255,255,255,0.85); }
 
-.sb-header .brand {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.brand-link {
   display: flex;
   align-items: center;
-  pointer-events: none;
+  flex-shrink: 0;
+  opacity: 0.85;
+  transition: opacity 0.15s;
 }
-.sb-header .brand img {
-  height: 26px;
-  width: auto;
-  display: block;
-  filter: brightness(0) invert(1);
-  opacity: 0.9;
+.brand-link:hover { opacity: 1; }
+.brand-link img { border-radius: 4px; }
+
+.topbar-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
 }
-[data-theme="light"] .sb-header .brand img { filter: brightness(0); opacity: 0.8; }
+.topbar-nav-link {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: color 0.12s, background 0.12s;
+}
+.topbar-nav-link:hover { color: var(--text); background: var(--surface2); }
+.topbar-nav-link.active { color: var(--text); font-weight: 600; }
 
 .sb-title {
   font-size: 14px;
