@@ -2059,30 +2059,37 @@ function ensureBuilderBar() {
     setTimeout(() => window.location.reload(), 200);
   });
 
-  // New Scene modal
+  // New Scene modal — styled like Parameters modal
   function _showNewSceneModal() {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
-      overlay.className = "confirm-overlay show";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
       overlay.innerHTML = `
-        <div class="confirm-dialog" style="text-align:left; align-items:stretch; gap:14px;">
-          <div class="confirm-title" style="text-align:center;">New Scene</div>
-          <div class="confirm-message" style="text-align:center; max-width:none;">Start a new scene. Optionally set a project path to load custom components and CAD files.</div>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <label style="font-size:12px; font-weight:600; color:var(--muted);">Project path <span style="font-weight:400;">(optional)</span></label>
-            <input class="input" id="newScenePath" type="text" placeholder="/home/dorna/.../projects/my_project" style="font-size:13px;"/>
-            <div style="font-size:11px; color:var(--muted);">Leave empty for library components only.</div>
+        <div style="width:min(480px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--border2);display:flex;align-items:center;">
+            <h3 style="font-size:16px;font-weight:600;letter-spacing:-0.2px;">New Scene</h3>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm btn-icon" id="nsClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
-          <div class="confirm-actions">
-            <button class="btn confirm-cancel">Cancel</button>
-            <button class="btn confirm-ok-danger">Clear &amp; Start</button>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+            <div style="font-size:13px;color:var(--muted);line-height:1.5;">Start a new scene. Set a project path to include custom components and CAD files from that project.</div>
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Project Path <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+              <input class="input" id="newScenePath" type="text" placeholder="/home/dorna/.../projects/my_project"/>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px;">Leave empty for library components only.</div>
+            </div>
+          </div>
+          <div style="padding:14px 20px;border-top:1px solid var(--border2);display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" id="nsCancel">Cancel</button>
+            <button class="btn btn-primary" id="nsStart">Start</button>
           </div>
         </div>`;
       document.body.appendChild(overlay);
 
       const input = overlay.querySelector("#newScenePath");
-      const cancelBtn = overlay.querySelector(".confirm-cancel");
-      const okBtn = overlay.querySelector(".confirm-ok-danger");
+      const cancelBtn = overlay.querySelector("#nsCancel");
+      const closeBtn = overlay.querySelector("#nsClose");
+      const startBtn = overlay.querySelector("#nsStart");
 
       // Pre-fill with current project path
       try {
@@ -2091,7 +2098,7 @@ function ensureBuilderBar() {
         }).catch(() => {});
       } catch(e) {}
 
-      input.focus();
+      setTimeout(() => input.focus(), 100);
 
       function cleanup(result) {
         overlay.remove();
@@ -2099,11 +2106,12 @@ function ensureBuilderBar() {
       }
 
       cancelBtn.addEventListener("click", () => cleanup(null));
-      okBtn.addEventListener("click", () => cleanup(input.value.trim()));
+      closeBtn.addEventListener("click", () => cleanup(null));
+      startBtn.addEventListener("click", () => cleanup(input.value.trim()));
       overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cleanup(input.value.trim()); } });
       document.addEventListener("keydown", function onKey(e) {
         if (e.key === "Escape") { document.removeEventListener("keydown", onKey); cleanup(null); }
-        if (e.key === "Enter") { document.removeEventListener("keydown", onKey); cleanup(input.value.trim()); }
       });
     });
   }
