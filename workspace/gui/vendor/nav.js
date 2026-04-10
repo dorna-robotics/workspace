@@ -10,8 +10,8 @@
 
   if (!nav) return;
 
-  // Restore saved state (desktop only)
-  if (window.innerWidth > 768 && localStorage.getItem(KEY) === "1") {
+  // Restore saved state (desktop only) — collapsed by default
+  if (window.innerWidth > 768 && localStorage.getItem(KEY) !== "0") {
     nav.classList.add("collapsed");
   }
 

@@ -50,7 +50,7 @@
   letter-spacing: -0.3px;
   transition: opacity 0.15s;
 }
-.app-nav.collapsed .app-nav-brand span { opacity: 0; width: 0; }
+.app-nav.collapsed .app-nav-brand { display: none; }
 
 .app-nav-collapse {
   display: flex;
@@ -63,10 +63,9 @@
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s, opacity 0.15s;
+  transition: background 0.12s, color 0.12s;
 }
 .app-nav-collapse:hover { background: var(--surface2); color: var(--text); }
-.app-nav.collapsed .app-nav-collapse { opacity: 0; width: 0; pointer-events: none; }
 
 /* ── Nav Links ────────────────────────────────────────────────────────── */
 .app-nav-links {
