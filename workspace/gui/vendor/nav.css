@@ -1,0 +1,130 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   App Navigation Sidebar — shared across all pages
+   Include via: <link rel="stylesheet" href="/vendor/nav.css"/>
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.app-nav {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 48px;
+  background: var(--surface);
+  border-right: 1px solid var(--border2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 2px;
+  z-index: 200;
+  transition: width 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  overflow: hidden;
+}
+.app-nav.open { width: 180px; }
+[data-theme="light"] .app-nav { background: #fff; }
+
+/* ── Brand ────────────────────────────────────────────────────────────── */
+.app-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 12px 10px;
+  margin-bottom: 2px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-decoration: none;
+}
+.app-nav-toggle img {
+  width: 24px; height: 24px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.app-nav-toggle span {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.app-nav.open .app-nav-toggle span { opacity: 1; }
+
+/* ── Nav Links ────────────────────────────────────────────────────────── */
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 12px);
+  padding: 9px 12px;
+  margin: 0 6px;
+  border-radius: 10px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: color 0.12s, background 0.12s;
+}
+.app-nav-link:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+.app-nav-link.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 600;
+}
+[data-theme="light"] .app-nav-link.active {
+  background: rgba(0,122,255,0.08);
+}
+.app-nav-link svg { flex-shrink: 0; }
+.app-nav-link span {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.app-nav.open .app-nav-link span { opacity: 1; }
+
+/* ── Overlay (backdrop when sidebar is open) ──────────────────────────── */
+.app-nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 199;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.app-nav-overlay.show { display: block; }
+
+/* ── Layout offset ────────────────────────────────────────────────────── */
+.app-nav ~ * { margin-left: 48px; }
+.app-nav ~ .app-nav-overlay { margin-left: 0; }
+
+/* ── Mobile: sidebar collapsed by default, burger shows ──────────────── */
+@media (max-width: 768px) {
+  .app-nav { width: 0; border-right: none; }
+  .app-nav.open { width: 180px; border-right: 1px solid var(--border2); }
+  .app-nav ~ * { margin-left: 0; }
+  .burger-btn { display: flex !important; }
+}
+
+/* ── Burger button ────────────────────────────────────────────────────── */
+.burger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.burger-btn:hover { background: var(--surface2); color: var(--text); }
