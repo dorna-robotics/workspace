@@ -17,6 +17,10 @@
   overflow: hidden;
 }
 .app-nav.expanded { width: 200px; }
+/* Instant expand on page load (no animation) when saved state is expanded */
+html.nav-expanded .app-nav { width: 200px; transition: none; }
+html.nav-expanded .app-nav-link span { opacity: 1; width: auto; transition: none; }
+html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
 [data-theme="light"] .app-nav { background: #fff; }
 
 /* ── Header (collapse toggle) ─────────────────────────────────────────── */

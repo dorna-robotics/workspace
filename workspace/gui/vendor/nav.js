@@ -14,6 +14,10 @@
   if (window.innerWidth > 768 && localStorage.getItem(KEY) === "1") {
     nav.classList.add("expanded");
   }
+  // Remove instant-load class so transitions work for user interactions
+  requestAnimationFrame(function() {
+    document.documentElement.classList.remove("nav-expanded");
+  });
 
   // Desktop: collapse/expand toggle
   if (collapse) {
