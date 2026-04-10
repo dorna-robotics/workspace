@@ -2024,7 +2024,8 @@ function ensureBuilderBar() {
   const newBtn = document.getElementById("btnNew");
   if (newBtn) newBtn.addEventListener("click", () => {
     if (!confirm("Clear the scene and start fresh?")) return;
-    window.location.reload();
+    try { window.socket?.emit?.("reset_scene"); } catch(e) {}
+    setTimeout(() => window.location.reload(), 200);
   });
 
   const gridBtn = document.getElementById("btnGrid");

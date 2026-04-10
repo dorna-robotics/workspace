@@ -948,6 +948,12 @@ async def connect(sid, environ, auth):
 async def upstream_update(sid, payload):
     merge_into_state(world_state, payload)
     await sio.emit("scene_update", payload)
+
+@sio.event
+async def reset_scene(sid):
+    world_state.clear()
+    await sio.emit("scene_reset")
+    return "ok"
     return "ok"
 
 if __name__ == "__main__":
