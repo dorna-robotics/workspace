@@ -183,6 +183,9 @@ a:hover { color: var(--accent-h); }
 }
 .dot.ok.pulse { animation: pulse-dot 2s ease-in-out infinite; }
 
+/* ── Main content ──────────────────────────────────────────────────────── */
+.main { padding: 28px 48px; }
+
 /* ── Topbar ─────────────────────────────────────────────────────────────── */
 .topbar {
   display: flex;
