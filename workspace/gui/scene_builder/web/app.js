@@ -1586,8 +1586,25 @@ if (node) {
         if (!payload || typeof payload !== "object") return;
         for (const [n, s] of Object.entries(payload)) {
           upsertObject(n, s || {});
-      window.upsertObject = upsertObject;
+          // Sync builder state from server so object list + config work after refresh
+          if (s && !s.delete && s.type) {
+            if (!window.builderState.components[n]) {
+              window.builderState.components[n] = { type: s.type };
+              if (!window.builderState.placedOrder.includes(n)) {
+                window.builderState.placedOrder.push(n);
+              }
+              if (s.type === "fixture_plate" && !window.builderState.lastFixturePlate) {
+                window.builderState.lastFixturePlate = n;
+              }
+            }
+          } else if (s && s.delete) {
+            delete window.builderState.components[n];
+            window.builderState.placedOrder = window.builderState.placedOrder.filter(x => x !== n);
+          }
         }
+      window.upsertObject = upsertObject;
+        try { if (window.updateObjectList) window.updateObjectList(); } catch(e) {}
+        try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
         markDirty();
       });
 
@@ -2355,8 +2372,9 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   // Spawn it as the base plate immediately (no anchor selection flow).
   if (type === "fixture_plate" && !window.builderState.lastFixturePlate) {
     window.builderState.lastFixturePlate = name;
-    // keep any options (none expected for plates) and no attach yet
     window.builderState.components[name] = Object.assign({}, window.builderState.components[name]||{}, { type: "fixture_plate" });
+    try { if (window.updateObjectList) window.updateObjectList(); } catch(e) {}
+    try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
     showToast(`Spawned ${name}. (Base fixture plate)`);
     return name;
   }
