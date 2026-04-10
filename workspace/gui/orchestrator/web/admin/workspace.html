@@ -33,6 +33,7 @@
     .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
     .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
     .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
+    .topbar-actions { display: flex; align-items: center; gap: 4px; }
     /* Nav sidebar loaded from /vendor/nav.css */
     .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
     .ws-title-block { min-width: 0; flex: 1; overflow: hidden; position: relative; z-index: 1; }
@@ -323,9 +324,11 @@
   </div>
   <span class="pill off" id="statePill"><span class="dot"></span>—</span>
   <div class="spacer"></div>
-  <button class="btn btn-ghost btn-sm btn-icon" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-  <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme"></button>
-  <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme"></button>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
+  </div>
 </header>
 
 <div class="ws-body">

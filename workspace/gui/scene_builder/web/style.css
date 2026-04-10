@@ -397,6 +397,7 @@ select.input { cursor: pointer; }
 }
 [data-theme="light"] .sb-header { background: rgba(255,255,255,0.85); }
 
+.topbar-actions { display: flex; align-items: center; gap: 4px; }
 /* Nav sidebar loaded from /vendor/nav.css */
 
 .sb-title {
