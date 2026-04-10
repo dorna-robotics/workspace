@@ -176,13 +176,6 @@ select.input { cursor: pointer; }
   gap: 16px;
 }
 
-.sb-sidebar-footer {
-  padding: 10px 14px;
-  border-top: 1px solid var(--border2);
-  flex-shrink: 0;
-}
-.sb-sidebar-footer .btn { color: var(--muted); font-size: 11px; width: 100%; justify-content: center; }
-
 /* ── Controls row ───────────────────────────────────────────────────────── */
 .sb-controls {
   display: flex;
