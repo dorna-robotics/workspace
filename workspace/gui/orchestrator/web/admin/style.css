@@ -195,9 +195,8 @@ a:hover { color: var(--accent-h); }
   background: rgba(28,28,30,0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: relative;
+  z-index: 10;
   flex-shrink: 0;
 }
 [data-theme="light"] .topbar {

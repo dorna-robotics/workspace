@@ -112,7 +112,7 @@ LANDING_HTML = """<!DOCTYPE html>
       padding: 0 20px; height: 54px; min-height: 54px;
       border-bottom: 1px solid var(--border2);
       background: rgba(28,28,30,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      flex-shrink: 0;
+      position: relative; z-index: 10; flex-shrink: 0;
     }
     [data-theme="light"] .topbar { background: rgba(255,255,255,0.85); }
     @media (max-width: 768px) {
