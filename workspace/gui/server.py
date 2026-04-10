@@ -100,12 +100,18 @@ LANDING_HTML = """<!DOCTYPE html>
     .spacer { flex: 1; }
     .topbar-actions { display: flex; align-items: center; gap: 4px; }
     .btn {
-      display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px;
-      border-radius: 8px; border: none; background: transparent; color: var(--muted);
-      font-family: var(--font); font-size: 12px; cursor: pointer;
-      transition: background 0.12s, color 0.12s;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      font-family: var(--font); font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+      white-space: nowrap; line-height: 1; user-select: none;
     }
-    .btn:hover { background: var(--surface2); color: var(--text); }
+    .btn:hover { background: var(--surface3); border-color: var(--muted2); }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+    .btn-sm { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
+    .btn-icon { padding: 4px 7px; }
 
     /* Topbar */
     .topbar {
@@ -167,8 +173,8 @@ LANDING_HTML = """<!DOCTYPE html>
     <button class="burger-btn" id="btnBurger" title="Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     <div class="spacer"></div>
     <div class="topbar-actions">
-      <button class="btn" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-      <button class="btn" id="btnTheme" title="Toggle theme"></button>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme"></button>
     </div>
   </header>
   <main class="main">
