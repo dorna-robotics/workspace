@@ -82,26 +82,53 @@ LANDING_HTML = """<!DOCTYPE html>
   <style>
     body { min-height: 100vh; display: flex; flex-direction: column; }
 
-    /* Main content */
     .main {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 40px 20px;
+      padding: 40px 24px;
     }
-    .container { text-align: center; }
-    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
-    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
-    .cards { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .container { text-align: center; max-width: 640px; }
+    h1 { font-size: 32px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.8px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      text-align: left;
+    }
     a.card {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      width: 200px; height: 140px;
-      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius);
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 18px;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 14px;
       text-decoration: none; color: var(--text);
-      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.15s;
     }
-    a.card:hover { background: var(--surface2); border-color: var(--accent); transform: translateY(-2px); }
-    .card-icon { margin-bottom: 10px; opacity: 0.7; }
-    .card-label { font-size: 14px; font-weight: 600; }
-    .card-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    a.card:hover {
+      background: var(--surface2); border-color: var(--accent);
+      transform: translateY(-2px); box-shadow: var(--shadow);
+    }
+    .card-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-icon svg { opacity: 0.9; }
+    .card-text { min-width: 0; }
+    .card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
+    .card-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Per-card accent colors */
+    .card-orchestrator .card-icon { background: rgba(10,132,255,0.12); color: var(--accent); }
+    .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
+    .card-lab .card-icon { background: rgba(255,159,10,0.12); color: var(--amber); }
+    .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
+    [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
+    [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
+    [data-theme="light"] .card-lab .card-icon { background: rgba(199,124,10,0.08); }
+    [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
+
+    @media (max-width: 520px) {
+      .cards { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -138,25 +165,21 @@ LANDING_HTML = """<!DOCTYPE html>
       <h1>Dorna Workspace</h1>
       <p class="subtitle">Select an application</p>
       <div class="cards">
-        <a class="card" href="/orchestrator/">
-          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
-          <div class="card-label">Orchestrator</div>
-          <div class="card-hint">Manage workspaces</div>
+        <a class="card card-orchestrator" href="/orchestrator/">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+          <div class="card-text"><div class="card-label">Orchestrator</div><div class="card-hint">Manage workspaces</div></div>
         </a>
-        <a class="card" href="/scene-builder/">
-          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
-          <div class="card-label">Scene Builder</div>
-          <div class="card-hint">Design workspace layout</div>
+        <a class="card card-scene" href="/scene-builder/">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+          <div class="card-text"><div class="card-label">Scene Builder</div><div class="card-hint">Design workspace layout</div></div>
         </a>
-        <a class="card" id="cardLab">
-          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div>
-          <div class="card-label">Dorna Lab</div>
-          <div class="card-hint">Robot control system</div>
+        <a class="card card-lab" id="cardLab">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5.586a1 1 0 01-.293.707L12 12l-2.707-2.707A1 1 0 019 8.586V3z"/><path d="M6.38 14A8 8 0 104 12"/><path d="M12 12v4"/></svg></div>
+          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot control system</div></div>
         </a>
-        <a class="card" id="cardJupyter">
-          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
-          <div class="card-label">Jupyter</div>
-          <div class="card-hint">Notebooks &amp; development</div>
+        <a class="card card-jupyter" id="cardJupyter">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+          <div class="card-text"><div class="card-label">Jupyter</div><div class="card-hint">Notebooks &amp; development</div></div>
         </a>
       </div>
       <script>
