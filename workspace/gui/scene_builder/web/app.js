@@ -2021,6 +2021,30 @@ function ensureBuilderBar() {
   const redoB = document.getElementById("btnRedo");
   if (redoB) redoB.addEventListener("click", () => { try { window.__redo?.(); } catch(e) {} });
 
+  const newBtn = document.getElementById("btnNew");
+  if (newBtn) newBtn.addEventListener("click", () => {
+    const names = Object.keys(window.builderState?.components || {});
+    if (!names.length) return;
+    if (!confirm("Clear all components and start a new scene?")) return;
+    // Delete all components
+    for (const name of [...names]) {
+      try { __deleteComponentByName(name); } catch(e) {}
+    }
+    // Reset builder state
+    const st = window.builderState;
+    st.next = { fixture_plate: 1, sbs_adapter: 1 };
+    st.lastFixturePlate = null;
+    st.placedOrder = [];
+    st.selectedName = null;
+    st.mode = "IDLE";
+    st.pending = null;
+    st.targetName = null;
+    st.undoStack = [];
+    st.redoStack = [];
+    st.specs = {};
+    try { showToast("Scene cleared"); } catch(e) {}
+  });
+
   const gridBtn = document.getElementById("btnGrid");
   if (gridBtn) {
     gridBtn.addEventListener("click", () => {
