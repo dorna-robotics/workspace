@@ -801,3 +801,18 @@ select.input { cursor: pointer; }
   transform: translateX(-50%);
   z-index: 200;
 }
+
+/* ── Mobile ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  html, body { height: auto; overflow: auto; }
+  .sb-header { gap: 8px; padding: 0 10px; }
+  .sb-body { flex-direction: column; overflow: visible; }
+  .sidebar {
+    width: 100%; min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border2);
+    overflow: visible;
+  }
+  .sidebar-scroll { overflow: visible; }
+  .viewer-area { height: 50vh; flex: none; }
+}

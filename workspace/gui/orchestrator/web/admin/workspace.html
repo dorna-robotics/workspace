@@ -277,6 +277,12 @@
       .meta-row { font-size: 11px; padding: 6px 10px; }
       .meta-val { max-width: 140px; font-size: 11px; }
       .meta-val.path { font-size: 9px; }
+      .meta-val.copyable {
+        cursor: pointer; user-select: all;
+        transition: color 0.12s;
+      }
+      .meta-val.copyable:hover { color: var(--accent); }
+      .meta-val.copyable.copied { color: var(--green); }
     }
 
   </style>
@@ -345,11 +351,11 @@
           </div>
           <div class="meta-row">
             <span class="meta-key">URL</span>
-            <span class="meta-val path mono" id="urlVal" title="">—</span>
+            <span class="meta-val path mono copyable" id="urlVal" title="Click to copy">—</span>
           </div>
           <div class="meta-row">
             <span class="meta-key">Path</span>
-            <span class="meta-val path mono" id="pathVal" title="">—</span>
+            <span class="meta-val path mono copyable" id="pathVal" title="Click to copy">—</span>
           </div>
           <div class="meta-row" id="lastErrRow" style="display:none">
             <span class="meta-key">Last error</span>
@@ -487,5 +493,19 @@
 <script type="module" src="theme.js"></script>
 <script type="module" src="workspace.js"></script>
 <script src="/vendor/nav.js"></script>
+<script>
+  document.querySelectorAll(".copyable").forEach(function(el) {
+    el.addEventListener("click", function() {
+      var text = el.textContent.trim();
+      if (!text || text === "—") return;
+      navigator.clipboard.writeText(text).then(function() {
+        el.classList.add("copied");
+        var orig = el.title;
+        el.title = "Copied!";
+        setTimeout(function() { el.classList.remove("copied"); el.title = orig; }, 1200);
+      });
+    });
+  });
+</script>
 </body>
 </html>
