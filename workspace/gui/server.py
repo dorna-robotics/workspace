@@ -115,6 +115,9 @@ LANDING_HTML = """<!DOCTYPE html>
       flex-shrink: 0;
     }
     [data-theme="light"] .topbar { background: rgba(255,255,255,0.85); }
+    @media (max-width: 768px) {
+      .topbar { height: 48px; min-height: 48px; padding: 0 12px; gap: 8px; }
+    }
 
     /* Main content */
     .main {

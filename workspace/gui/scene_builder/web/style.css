@@ -805,7 +805,7 @@ select.input { cursor: pointer; }
 /* ── Mobile ───────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   html, body { height: auto; overflow: auto; }
-  .sb-header { gap: 8px; padding: 0 10px; height: 44px; min-height: 44px; }
+  .sb-header { gap: 8px; padding: 0 12px; height: 48px; min-height: 48px; }
   .sb-body { flex-direction: column; overflow: visible; }
   .sidebar {
     width: 100%; min-width: 0;
