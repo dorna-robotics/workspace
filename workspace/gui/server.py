@@ -174,8 +174,8 @@ LANDING_HTML = """<!DOCTYPE html>
           <div class="card-text"><div class="card-label">Scene Builder</div><div class="card-hint">Design workspace layout</div></div>
         </a>
         <a class="card card-lab" id="cardLab">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5.586a1 1 0 01-.293.707L12 12l-2.707-2.707A1 1 0 019 8.586V3z"/><path d="M6.38 14A8 8 0 104 12"/><path d="M12 12v4"/></svg></div>
-          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot control system</div></div>
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M12 12v6"/><path d="M8 22h8"/><path d="M7 8H3"/><path d="M21 8h-4"/><path d="M12 4V2"/></svg></div>
+          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot control panel</div></div>
         </a>
         <a class="card card-jupyter" id="cardJupyter">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
