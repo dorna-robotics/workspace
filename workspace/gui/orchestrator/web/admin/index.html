@@ -11,7 +11,10 @@
   <style>
     .main {
       padding: 28px 48px;
-      max-width: calc(1200px + 96px); /* content + padding */
+    }
+    .main-inner {
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
     .section-header {
@@ -259,6 +262,7 @@
 </header>
 
 <main class="main">
+<div class="main-inner">
   <div class="stats-bar" id="statsBar">
     <div class="stat-item active" data-filter="all">
       <div class="stat-label">Total</div>
@@ -293,6 +297,7 @@
     <button class="btn btn-primary btn-sm" id="btnAdd">+ Add Workspace</button>
   </div>
   <div class="ws-grid" id="wsGrid"></div>
+</div>
 </main>
 
 <div class="toast-area" id="toastArea"></div>
