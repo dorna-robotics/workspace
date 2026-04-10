@@ -717,7 +717,7 @@ $("btnClearLogs").addEventListener("click", async (e) => {
 function _copyToClipboard(text, btn) {
   const origHtml = btn.innerHTML;
   const showSuccess = () => {
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
     setTimeout(() => { btn.innerHTML = origHtml; }, 1500);
   };
   const fallback = () => {

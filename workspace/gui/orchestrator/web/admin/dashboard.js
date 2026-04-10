@@ -213,7 +213,7 @@ function render() {
           <span class="dot ${variant}${running ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
         </span>
-        <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">
         <span class="wc-meta-item" title="${esc(wsViewerUrl(ws))}">

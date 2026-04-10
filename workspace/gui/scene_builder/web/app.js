@@ -2845,7 +2845,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     wrap.style.cssText = "display:flex;flex-direction:column;gap:6px";
     const inputWrap = document.createElement("div");
     inputWrap.style.cssText = "position:relative";
-    inputWrap.innerHTML = `<svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:0.38" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${th.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+    inputWrap.innerHTML = `<svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:0.38" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${th.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
     const inp = document.createElement("input");
     inp.type = "text";
     inp.placeholder = placeholder || "Search…";
@@ -4455,7 +4455,7 @@ function openInsertMenu() {
   // Search input with icon
   const searchWrap = document.createElement("div");
   searchWrap.className = "sb-insert-search-wrap";
-  searchWrap.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+  searchWrap.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
   const searchInput = document.createElement("input");
   searchInput.className = "sb-insert-search";
   searchInput.type = "text";
@@ -6207,7 +6207,7 @@ ensureBuilderBar();
         const cfg = buildConfigObject();
         const yaml = toYamlString(cfg);
         const onSuccess = () => {
-          copyBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
+          copyBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
           setTimeout(() => { copyBtn.innerHTML = origHtml; }, 1500);
         };
         if (navigator.clipboard && window.isSecureContext) {
