@@ -101,17 +101,18 @@ LANDING_HTML = """<!DOCTYPE html>
     .topbar-actions { display: flex; align-items: center; gap: 4px; }
     .btn {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 6px 12px; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
-      font-family: var(--font); font-size: 12px; font-weight: 500; cursor: pointer;
-      transition: background 0.12s, border-color 0.12s, color 0.12s;
-      white-space: nowrap; line-height: 1; user-select: none;
+      padding: 7px 14px; border-radius: 10px;
+      border: none; background: var(--surface2); color: var(--text);
+      font-family: var(--font); font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s, color 0.15s, opacity 0.15s, transform 0.1s;
+      white-space: nowrap; line-height: 1; user-select: none; letter-spacing: -0.01em;
     }
-    .btn:hover { background: var(--surface3); border-color: var(--muted2); }
-    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
-    .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
-    .btn-sm { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
-    .btn-icon { padding: 4px 7px; }
+    .btn:hover:not(:disabled) { background: var(--surface3); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+    .btn-icon { padding: 5px 8px; }
 
     /* Topbar */
     .topbar {
