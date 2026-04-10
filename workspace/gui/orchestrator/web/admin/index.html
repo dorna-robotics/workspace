@@ -6,8 +6,9 @@
   <title>Dorna Workspace</title>
   <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"dark"); })();</script>
   <link rel="icon" type="image/png" href="favicon.png"/>
-  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
+  <link rel="stylesheet" href="style.css"/>
   <style>
     .main {
       overflow-x: hidden;
@@ -363,7 +364,7 @@
   </div>
 </div>
 
-<script type="module" src="theme.js"></script>
+<script src="/vendor/theme.js"></script>
 <script type="module" src="dashboard.js"></script>
 <script src="/vendor/nav.js"></script>
 </body>

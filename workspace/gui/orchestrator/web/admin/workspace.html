@@ -6,35 +6,18 @@
   <title>Dorna Workspace</title>
   <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"dark"); })();</script>
   <link rel="icon" type="image/png" href="favicon.png"/>
-  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
+  <link rel="stylesheet" href="style.css"/>
   <style>
     html, body { height: 100%; overflow: hidden; }
     body { display: flex; flex-direction: column; }
 
-    /* ---- Header ---- */
-    .ws-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0 20px;
-      height: 54px;
-      min-height: 54px;
-      border-bottom: 1px solid var(--border2);
-      background: rgba(28,28,30,0.85);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      position: relative;
-      z-index: 10;
-      flex-shrink: 0;
-      transition: border-bottom-color 0.3s;
-    }
-    [data-theme="light"] .ws-header { background: rgba(255,255,255,0.85); }
+    /* Header — base styles from /vendor/base.css, overrides here */
+    .ws-header { transition: border-bottom-color 0.3s; }
     .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
     .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
     .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
-    .topbar-actions { display: flex; align-items: center; gap: 4px; }
-    /* Nav sidebar loaded from /vendor/nav.css */
     .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
     .ws-title-block { min-width: 0; flex: 1; overflow: hidden; position: relative; z-index: 1; }
     .ws-title    { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -496,7 +479,7 @@
 
 <div class="toast-area" id="toastArea"></div>
 
-<script type="module" src="theme.js"></script>
+<script src="/vendor/theme.js"></script>
 <script type="module" src="workspace.js"></script>
 <script src="/vendor/nav.js"></script>
 <script>

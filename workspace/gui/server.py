@@ -76,56 +76,10 @@ LANDING_HTML = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dorna Workspace</title>
   <link rel="icon" type="image/png" href="/vendor/favicon.png"/>
+  <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
   <style>
-    :root {
-      --bg: #000000; --surface: #1c1c1e; --surface2: #2c2c2e; --border: #3a3a3c;
-      --border2: #2c2c2e; --text: #f5f5f7; --muted: #8e8e93;
-      --accent: #0a84ff; --accent-h: #409cff;
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-      --radius: 14px;
-    }
-    [data-theme="light"] {
-      --bg: #f2f2f7; --surface: #ffffff; --surface2: #f2f2f7; --border: #d1d1d6;
-      --border2: #e5e5ea; --text: #1d1d1f; --muted: #86868b;
-      --accent: #007aff; --accent-h: #0063cc;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font); background: var(--bg); color: var(--text);
-      -webkit-font-smoothing: antialiased; min-height: 100vh; display: flex; flex-direction: column;
-    }
-    a { color: var(--accent); text-decoration: none; }
-
-    .spacer { flex: 1; }
-    .topbar-actions { display: flex; align-items: center; gap: 4px; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 7px 14px; border-radius: 10px;
-      border: none; background: var(--surface2); color: var(--text);
-      font-family: var(--font); font-size: 13px; font-weight: 500; cursor: pointer;
-      transition: background 0.15s, color 0.15s, opacity 0.15s, transform 0.1s;
-      white-space: nowrap; line-height: 1; user-select: none; letter-spacing: -0.01em;
-    }
-    .btn:hover:not(:disabled) { background: var(--surface3); }
-    .btn:active:not(:disabled) { transform: scale(0.97); }
-    .btn-ghost { background: transparent; color: var(--muted); }
-    .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
-    .btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
-    .btn-icon { padding: 5px 8px; }
-
-    /* Topbar */
-    .topbar {
-      display: flex; align-items: center; gap: 12px;
-      padding: 0 20px; height: 54px; min-height: 54px;
-      border-bottom: 1px solid var(--border2);
-      background: rgba(28,28,30,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      position: relative; z-index: 10; flex-shrink: 0;
-    }
-    [data-theme="light"] .topbar { background: rgba(255,255,255,0.85); }
-    @media (max-width: 768px) {
-      .topbar { height: 48px; min-height: 48px; padding: 0 12px; gap: 8px; }
-    }
+    body { min-height: 100vh; display: flex; flex-direction: column; }
 
     /* Main content */
     .main {
@@ -196,42 +150,7 @@ LANDING_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </main>
-  <script>
-    const KEY = "orch_theme";
-    const SUN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>';
-    const MOON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
-    const FS_EXPAND = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
-    const FS_SHRINK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
-
-    function setTheme(theme) {
-      localStorage.setItem(KEY, theme);
-      document.documentElement.setAttribute("data-theme", theme);
-      const btn = document.getElementById("btnTheme");
-      if (btn) {
-        btn.title = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
-        btn.innerHTML = theme === "dark" ? SUN : MOON;
-      }
-    }
-    setTheme(localStorage.getItem(KEY) || "dark");
-
-    document.getElementById("btnTheme").addEventListener("click", () => {
-      const current = document.documentElement.getAttribute("data-theme") || "dark";
-      setTheme(current === "dark" ? "light" : "dark");
-    });
-
-    function updateFsButton() {
-      const btn = document.getElementById("btnFullscreen");
-      if (!btn) return;
-      btn.title = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
-      btn.innerHTML = document.fullscreenElement ? FS_SHRINK : FS_EXPAND;
-    }
-    document.addEventListener("fullscreenchange", updateFsButton);
-    document.getElementById("btnFullscreen").addEventListener("click", () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else document.documentElement.requestFullscreen();
-    });
-    updateFsButton();
-  </script>
+  <script src="/vendor/theme.js"></script>
   <script src="/vendor/nav.js"></script>
 </body>
 </html>"""
