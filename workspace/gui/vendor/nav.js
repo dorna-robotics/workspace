@@ -6,20 +6,20 @@
   var overlay = document.querySelector(".app-nav-overlay");
   var collapse = document.querySelector(".app-nav-collapse");
   var burger = document.getElementById("btnBurger");
-  var KEY = "nav_collapsed";
+  var KEY = "nav_expanded";
 
   if (!nav) return;
 
-  // Restore saved state (desktop only) — collapsed by default
-  if (window.innerWidth > 768 && localStorage.getItem(KEY) !== "0") {
-    nav.classList.add("collapsed");
+  // Restore saved state (desktop only) — collapsed by default, expanded if saved
+  if (window.innerWidth > 768 && localStorage.getItem(KEY) === "1") {
+    nav.classList.add("expanded");
   }
 
   // Desktop: collapse/expand toggle
   if (collapse) {
     collapse.addEventListener("click", function() {
-      nav.classList.toggle("collapsed");
-      localStorage.setItem(KEY, nav.classList.contains("collapsed") ? "1" : "0");
+      nav.classList.toggle("expanded");
+      localStorage.setItem(KEY, nav.classList.contains("expanded") ? "1" : "0");
     });
   }
 

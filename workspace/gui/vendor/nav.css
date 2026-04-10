@@ -6,7 +6,7 @@
 .app-nav {
   position: fixed;
   left: 0; top: 0; bottom: 0;
-  width: 200px;
+  width: 48px;
   background: var(--surface);
   border-right: 1px solid var(--border2);
   display: flex;
@@ -16,7 +16,7 @@
   transition: width 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
   overflow: hidden;
 }
-.app-nav.collapsed { width: 48px; }
+.app-nav.expanded { width: 200px; }
 [data-theme="light"] .app-nav { background: #fff; }
 
 /* ── Header (collapse toggle) ─────────────────────────────────────────── */
@@ -81,13 +81,14 @@
 .app-nav-link span {
   transition: opacity 0.15s;
 }
-.app-nav.collapsed .app-nav-link span { opacity: 0; width: 0; }
+.app-nav-link span { opacity: 0; width: 0; }
+.app-nav.expanded .app-nav-link span { opacity: 1; width: auto; }
 
 /* ── Layout offset ────────────────────────────────────────────────────── */
-.app-nav ~ * { margin-left: 200px; transition: margin-left 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }
+.app-nav ~ * { margin-left: 48px; transition: margin-left 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .app-nav ~ .app-nav-overlay { margin-left: 0; }
-.app-nav.collapsed ~ * { margin-left: 48px; }
-.app-nav.collapsed ~ .app-nav-overlay { margin-left: 0; }
+.app-nav.expanded ~ * { margin-left: 200px; }
+.app-nav.expanded ~ .app-nav-overlay { margin-left: 0; }
 
 /* ── Overlay (mobile only) ────────────────────────────────────────────── */
 .app-nav-overlay {
