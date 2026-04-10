@@ -1,22 +1,42 @@
-// App Navigation — toggle sidebar on click
+// App Navigation — collapse/expand sidebar, mobile burger
 // Include via: <script src="/vendor/nav.js"></script>
 
 (function() {
-  const nav = document.querySelector(".app-nav");
-  const overlay = document.querySelector(".app-nav-overlay");
-  const toggle = document.querySelector(".app-nav-toggle");
-  const burger = document.getElementById("btnBurger");
+  var nav = document.querySelector(".app-nav");
+  var overlay = document.querySelector(".app-nav-overlay");
+  var collapse = document.querySelector(".app-nav-collapse");
+  var burger = document.getElementById("btnBurger");
+  var KEY = "nav_collapsed";
 
-  function open()  { nav?.classList.add("open"); overlay?.classList.add("show"); }
-  function close() { nav?.classList.remove("open"); overlay?.classList.remove("show"); }
-  function flip()  { nav?.classList.contains("open") ? close() : open(); }
+  if (!nav) return;
 
-  toggle?.addEventListener("click", flip);
-  burger?.addEventListener("click", flip);
-  overlay?.addEventListener("click", close);
+  // Restore saved state (desktop only)
+  if (window.innerWidth > 768 && localStorage.getItem(KEY) === "1") {
+    nav.classList.add("collapsed");
+  }
 
-  // Close on Escape
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") close();
+  // Desktop: collapse/expand toggle
+  if (collapse) {
+    collapse.addEventListener("click", function() {
+      nav.classList.toggle("collapsed");
+      localStorage.setItem(KEY, nav.classList.contains("collapsed") ? "1" : "0");
+    });
+  }
+
+  // Mobile: burger opens sidebar as overlay
+  function mobileOpen()  { nav.classList.add("mobile-open"); overlay && overlay.classList.add("show"); }
+  function mobileClose() { nav.classList.remove("mobile-open"); overlay && overlay.classList.remove("show"); }
+
+  if (burger) {
+    burger.addEventListener("click", function() {
+      nav.classList.contains("mobile-open") ? mobileClose() : mobileOpen();
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener("click", mobileClose);
+  }
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") mobileClose();
   });
 })();

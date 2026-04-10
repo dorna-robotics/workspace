@@ -1,86 +1,87 @@
 /* ══════════════════════════════════════════════════════════════════════════
    App Navigation Sidebar — shared across all pages
-   Include via: <link rel="stylesheet" href="/vendor/nav.css"/>
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
 .app-nav {
   position: fixed;
   left: 0; top: 0; bottom: 0;
-  width: 48px;
+  width: 200px;
   background: var(--surface);
   border-right: 1px solid var(--border2);
   display: flex;
   flex-direction: column;
   padding: 0;
   z-index: 200;
-  transition: width 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: width 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
   overflow: hidden;
 }
-.app-nav.open { width: 180px; }
+.app-nav.collapsed { width: 48px; }
 [data-theme="light"] .app-nav { background: #fff; }
 
-/* ── Brand (static logo, links to home) ───────────────────────────────── */
+/* ── Header (logo + collapse toggle) ──────────────────────────────────── */
+.app-nav-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 10px 10px 14px;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .app-nav-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 12px 6px;
   text-decoration: none;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
+  flex: 1;
+  min-width: 0;
 }
 .app-nav-brand img {
   width: 24px; height: 24px;
-  border-radius: 5px;
+  border-radius: 6px;
   flex-shrink: 0;
 }
 .app-nav-brand span {
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.3px;
-  opacity: 0;
   transition: opacity 0.15s;
 }
-.app-nav.open .app-nav-brand span { opacity: 1; }
+.app-nav.collapsed .app-nav-brand span { opacity: 0; width: 0; }
 
-/* ── Toggle button (hamburger ↔ X) ────────────────────────────────────── */
-.app-nav-toggle {
+.app-nav-collapse {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px; height: 36px;
-  margin: 6px 6px 8px;
+  width: 28px; height: 28px;
   background: none;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, opacity 0.15s;
 }
-.app-nav-toggle:hover { background: var(--surface2); color: var(--text); }
-.app-nav-toggle .nav-icon-open,
-.app-nav-toggle .nav-icon-close { display: none; }
-.app-nav-toggle .nav-icon-open { display: block; }
-.app-nav.open .app-nav-toggle .nav-icon-open { display: none; }
-.app-nav.open .app-nav-toggle .nav-icon-close { display: block; }
+.app-nav-collapse:hover { background: var(--surface2); color: var(--text); }
+.app-nav.collapsed .app-nav-collapse { opacity: 0; width: 0; pointer-events: none; }
 
 /* ── Nav Links ────────────────────────────────────────────────────────── */
 .app-nav-links {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 0 6px;
+  padding: 6px 6px;
+  flex: 1;
 }
 .app-nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 8px;
-  border-radius: 10px;
+  padding: 8px 8px;
+  border-radius: 8px;
   color: var(--muted);
   text-decoration: none;
   font-size: 13px;
@@ -103,26 +104,25 @@
 }
 .app-nav-link svg { flex-shrink: 0; }
 .app-nav-link span {
-  opacity: 0;
   transition: opacity 0.15s;
 }
-.app-nav.open .app-nav-link span { opacity: 1; }
+.app-nav.collapsed .app-nav-link span { opacity: 0; width: 0; }
 
-/* ── Overlay ──────────────────────────────────────────────────────────── */
+/* ── Layout offset ────────────────────────────────────────────────────── */
+.app-nav ~ * { margin-left: 200px; transition: margin-left 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }
+.app-nav ~ .app-nav-overlay { margin-left: 0; }
+.app-nav.collapsed ~ * { margin-left: 48px; }
+.app-nav.collapsed ~ .app-nav-overlay { margin-left: 0; }
+
+/* ── Overlay (mobile only) ────────────────────────────────────────────── */
 .app-nav-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.4);
   z-index: 199;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
 }
 .app-nav-overlay.show { display: block; }
-
-/* ── Layout offset ────────────────────────────────────────────────────── */
-.app-nav ~ * { margin-left: 48px; }
-.app-nav ~ .app-nav-overlay { margin-left: 0; }
 
 /* ── Burger button (topbar, mobile only) ──────────────────────────────── */
 .burger-btn {
@@ -143,7 +143,11 @@
 /* ── Mobile ───────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .app-nav { width: 0; border-right: none; }
-  .app-nav.open { width: 180px; border-right: 1px solid var(--border2); }
-  .app-nav ~ * { margin-left: 0; }
+  .app-nav.mobile-open { width: 220px; border-right: 1px solid var(--border2); }
+  .app-nav.mobile-open .app-nav-brand span,
+  .app-nav.mobile-open .app-nav-link span { opacity: 1 !important; width: auto !important; }
+  .app-nav.mobile-open .app-nav-collapse { opacity: 1; width: 28px; pointer-events: auto; }
+  .app-nav ~ * { margin-left: 0 !important; }
   .burger-btn { display: flex !important; }
+  .app-nav-collapse { display: none; }
 }
