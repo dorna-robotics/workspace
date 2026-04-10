@@ -273,12 +273,29 @@ a:hover { color: var(--accent-h); }
 }
 .app-nav:hover .app-nav-link span { opacity: 1; }
 
+/* Burger button (mobile only) */
+.burger-btn {
+  display: none; background: none; border: none; color: var(--muted);
+  padding: 6px; border-radius: 6px; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.burger-btn:hover { background: var(--surface2); color: var(--text); }
+
+.app-nav-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199;
+}
+.app-nav-overlay.show { display: block; }
+.app-nav.mobile-open { width: 160px; z-index: 200; }
+.app-nav.mobile-open .app-nav-brand span,
+.app-nav.mobile-open .app-nav-link span { opacity: 1; }
+
 /* Push main content right to make room for sidebar */
 .topbar { margin-left: 48px; }
 .main { margin-left: 48px; }
 
 @media (max-width: 768px) {
-  .app-nav { display: none; }
+  .app-nav { width: 0; border: none; }
+  .burger-btn { display: flex; }
   .topbar { margin-left: 0; }
   .main { margin-left: 0; }
 }
