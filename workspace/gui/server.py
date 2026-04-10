@@ -63,6 +63,7 @@ from gui.scene_builder.server import (
     InstantiateHandler,
     RailsHandler,
     SaveConfigHandler,
+    SetProjectHandler,
 )
 import socketio as _socketio
 
@@ -201,6 +202,22 @@ class LandingHandler(tornado.web.RequestHandler):
         self.write(LANDING_HTML)
 
 
+class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
+    """Serves static files — checks project CAD/ folder first, then library static/."""
+    def get_absolute_path(self, root, path):
+        from gui.scene_builder.server import _project_path
+        if _project_path:
+            project_file = os.path.join(_project_path, path)
+            if os.path.isfile(project_file):
+                return project_file
+        return super().get_absolute_path(root, path)
+
+    def validate_absolute_path(self, root, absolute_path):
+        if os.path.isfile(absolute_path):
+            return absolute_path
+        return super().validate_absolute_path(root, absolute_path)
+
+
 class ConfigVersionHandler(tornado.web.RequestHandler):
     def get(self):
         import time as _time
@@ -242,6 +259,7 @@ def make_app(port=5000):
         (r"/scene-builder/api/instantiate", InstantiateHandler),
         (r"/scene-builder/api/rails", RailsHandler),
         (r"/scene-builder/api/save_config", SaveConfigHandler),
+        (r"/scene-builder/api/set_project", SetProjectHandler),
         (r"/scene-builder/api/config_version", ConfigVersionHandler),
 
         # ---- Scene Builder Socket.IO + GUI (catch-all last) ----
@@ -249,8 +267,8 @@ def make_app(port=5000):
         (r"/scene-builder/socket\.io/(.*)", _socketio.get_tornado_handler(sb_sio)),
         (r"/scene-builder/(.*)", NoCacheStaticFileHandler, {"path": SB_WEB_DIR}),
 
-        # ---- Shared static ----
-        (r"/static/(.*)", NoCacheStaticFileHandler, {"path": STATIC_DIR}),
+        # ---- Shared static (project CAD/ first, then library static/) ----
+        (r"/static/(.*)", ProjectAwareStaticHandler, {"path": STATIC_DIR}),
         (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": os.path.join(GUI_DIR, "vendor")}),
     ]
 

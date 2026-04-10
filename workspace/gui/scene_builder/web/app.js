@@ -2040,16 +2040,73 @@ function ensureBuilderBar() {
 
   const newBtn = document.getElementById("btnNew");
   if (newBtn) newBtn.addEventListener("click", async () => {
-    if (!await window.confirmDialog({
-      title: "New Scene",
-      message: "Clear the current scene and start fresh? This cannot be undone.",
-      confirm: "Clear Scene",
-      icon: "remove",
-      variant: "danger",
-    })) return;
+    // Show project path modal
+    const path = await _showNewSceneModal();
+    if (path === null) return; // cancelled
+
+    // Clear server scene state
     try { window.socket?.emit?.("reset_scene"); } catch(e) {}
+
+    // Set project path (can be empty for no project)
+    try {
+      await fetch(SB_API + "/set_project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path }),
+      });
+    } catch(e) {}
+
     setTimeout(() => window.location.reload(), 200);
   });
+
+  // New Scene modal
+  function _showNewSceneModal() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-overlay show";
+      overlay.innerHTML = `
+        <div class="confirm-dialog" style="text-align:left; align-items:stretch; gap:14px;">
+          <div class="confirm-title" style="text-align:center;">New Scene</div>
+          <div class="confirm-message" style="text-align:center; max-width:none;">Start a new scene. Optionally set a project path to load custom components and CAD files.</div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <label style="font-size:12px; font-weight:600; color:var(--muted);">Project path <span style="font-weight:400;">(optional)</span></label>
+            <input class="input" id="newScenePath" type="text" placeholder="/home/dorna/.../projects/my_project" style="font-size:13px;"/>
+            <div style="font-size:11px; color:var(--muted);">Leave empty for library components only.</div>
+          </div>
+          <div class="confirm-actions">
+            <button class="btn confirm-cancel">Cancel</button>
+            <button class="btn confirm-ok-danger">Clear &amp; Start</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const input = overlay.querySelector("#newScenePath");
+      const cancelBtn = overlay.querySelector(".confirm-cancel");
+      const okBtn = overlay.querySelector(".confirm-ok-danger");
+
+      // Pre-fill with current project path
+      try {
+        fetch(SB_API + "/set_project").then(r => r.json()).then(j => {
+          if (j.path) input.value = j.path;
+        }).catch(() => {});
+      } catch(e) {}
+
+      input.focus();
+
+      function cleanup(result) {
+        overlay.remove();
+        resolve(result);
+      }
+
+      cancelBtn.addEventListener("click", () => cleanup(null));
+      okBtn.addEventListener("click", () => cleanup(input.value.trim()));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
+      document.addEventListener("keydown", function onKey(e) {
+        if (e.key === "Escape") { document.removeEventListener("keydown", onKey); cleanup(null); }
+        if (e.key === "Enter") { document.removeEventListener("keydown", onKey); cleanup(input.value.trim()); }
+      });
+    });
+  }
 
   const gridBtn = document.getElementById("btnGrid");
   if (gridBtn) {

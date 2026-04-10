@@ -697,6 +697,29 @@ def instantiate_component_blueprint(type_name: str, options: dict):
 
 COMPONENT_MAP = scan_registered_components()
 
+# Project-local components (set via /api/set_project)
+_project_path = None
+_project_component_map = {}
+
+def scan_project_components(project_dir):
+    """Scan a project's components/ folder for @register types."""
+    out = {}
+    comp_dir = os.path.join(project_dir, "components")
+    if not os.path.isdir(comp_dir):
+        return out
+    for root, _, files in os.walk(comp_dir):
+        for fn in files:
+            if not fn.endswith(".py") or fn.startswith("_"):
+                continue
+            fp = os.path.join(root, fn)
+            try:
+                src = open(fp, "r", encoding="utf-8", errors="ignore").read()
+            except Exception:
+                continue
+            for mm in REGISTER_RE.finditer(src):
+                out[mm.group(1)] = fp
+    return out
+
 STATIC_DIR = os.path.join(PARENT_DIR, "static")
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
@@ -722,37 +745,38 @@ app = tornado.web.Application([
 
 
 class CatalogHandler(tornado.web.RequestHandler):
-    """Return list of registered component types (source of truth = workspace/components)."""
+    """Return list of registered component types (library + project)."""
     def get(self):
-        items = sorted(COMPONENT_MAP.keys())
-        self.write({"ok": True, "items": items})
+        all_types = set(COMPONENT_MAP.keys()) | set(_project_component_map.keys())
+        self.write({"ok": True, "items": sorted(all_types)})
 
 
 class CategoriesHandler(tornado.web.RequestHandler):
     """Return components grouped by folder category."""
     def get(self):
         categories = []
-        if not os.path.isdir(COMPONENTS_DIR):
-            self.write({"ok": True, "categories": categories})
-            return
-        for folder in sorted(os.listdir(COMPONENTS_DIR)):
-            folder_path = os.path.join(COMPONENTS_DIR, folder)
-            if not os.path.isdir(folder_path) or folder.startswith("_") or folder.startswith("."):
-                continue
-            cat_name = folder.replace("_", " ").lower()
-            items = []
-            for fn in sorted(os.listdir(folder_path)):
-                if not fn.endswith(".py") or fn.startswith("_"):
+        if os.path.isdir(COMPONENTS_DIR):
+            for folder in sorted(os.listdir(COMPONENTS_DIR)):
+                folder_path = os.path.join(COMPONENTS_DIR, folder)
+                if not os.path.isdir(folder_path) or folder.startswith("_") or folder.startswith("."):
                     continue
-                fp = os.path.join(folder_path, fn)
-                try:
-                    src = open(fp, "r", encoding="utf-8", errors="ignore").read()
-                except Exception:
-                    continue
-                for m in REGISTER_RE.finditer(src):
-                    items.append(m.group(1))
-            if items:
-                categories.append({"name": cat_name, "items": items})
+                cat_name = folder.replace("_", " ").lower()
+                items = []
+                for fn in sorted(os.listdir(folder_path)):
+                    if not fn.endswith(".py") or fn.startswith("_"):
+                        continue
+                    fp = os.path.join(folder_path, fn)
+                    try:
+                        src = open(fp, "r", encoding="utf-8", errors="ignore").read()
+                    except Exception:
+                        continue
+                    for m in REGISTER_RE.finditer(src):
+                        items.append(m.group(1))
+                if items:
+                    categories.append({"name": cat_name, "items": items})
+        # Add project-local components as a category
+        if _project_component_map:
+            categories.append({"name": "project", "items": sorted(_project_component_map.keys())})
         self.write({"ok": True, "categories": categories})
 
 class TypeMetaHandler(tornado.web.RequestHandler):
@@ -913,8 +937,53 @@ class SaveConfigHandler(tornado.web.RequestHandler):
 
         self.finish({"ok": True, "path": OUT_PATH})
 
+class SetProjectHandler(tornado.web.RequestHandler):
+    """Set the project path — scans components/ and CAD/ folders."""
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    def get(self):
+        """Return current project path."""
+        global _project_path
+        self.write({"ok": True, "path": _project_path})
+
+    def post(self):
+        global _project_path, _project_component_map
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception:
+            self.set_status(400)
+            self.finish({"ok": False, "error": "Invalid JSON"})
+            return
+
+        path = (data.get("path") or "").strip()
+        if path and not os.path.isdir(path):
+            self.set_status(400)
+            self.finish({"ok": False, "error": f"Directory not found: {path}"})
+            return
+
+        _project_path = path or None
+        _project_component_map = scan_project_components(path) if path else {}
+
+        # Merge project components into the global map so instantiate/type_meta work
+        for k, v in _project_component_map.items():
+            COMPONENT_MAP[k] = v
+
+        self.finish({
+            "ok": True,
+            "path": _project_path,
+            "components": sorted(_project_component_map.keys()),
+        })
+
 # patch handler into app
 app.add_handlers(r".*$", [(r"/save_config", SaveConfigHandler)])
+app.add_handlers(r".*$", [(r"/api/set_project", SetProjectHandler)])
 
 # catalog endpoint (CAD/*.glb)
 app.add_handlers(r".*$", [(r"/api/catalog", CatalogHandler)])
