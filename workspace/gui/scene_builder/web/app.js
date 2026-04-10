@@ -2039,8 +2039,14 @@ function ensureBuilderBar() {
   if (redoB) redoB.addEventListener("click", () => { try { window.__redo?.(); } catch(e) {} });
 
   const newBtn = document.getElementById("btnNew");
-  if (newBtn) newBtn.addEventListener("click", () => {
-    if (!confirm("Clear the scene and start fresh?")) return;
+  if (newBtn) newBtn.addEventListener("click", async () => {
+    if (!await window.confirmDialog({
+      title: "New Scene",
+      message: "Clear the current scene and start fresh? This cannot be undone.",
+      confirm: "Clear Scene",
+      icon: "remove",
+      variant: "danger",
+    })) return;
     try { window.socket?.emit?.("reset_scene"); } catch(e) {}
     setTimeout(() => window.location.reload(), 200);
   });
