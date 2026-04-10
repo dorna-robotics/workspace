@@ -217,10 +217,12 @@ a:hover { color: var(--accent-h); }
   .stat-label { font-size: 9px; letter-spacing: 0.5px; }
   .stat-value { font-size: 18px; }
 
-  .main { padding: 20px 16px; }
+  .main { padding: 16px 12px; min-width: 0; }
+  .main-inner { max-width: 100%; min-width: 0; }
 
   /* Workspace cards: full width single column */
-  .ws-grid { grid-template-columns: 1fr; }
+  .ws-grid { grid-template-columns: 1fr; min-width: 0; }
+  .ws-card { min-width: 0; }
 
   /* Card head */
   .wc-head { padding: 10px 12px 6px 14px; }

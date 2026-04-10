@@ -115,11 +115,10 @@
 }
 .burger-btn:hover { background: var(--surface2); color: var(--text); }
 
-/* ── Mobile ───────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .app-nav { width: 0; border-right: none; }
-  .app-nav.mobile-open { width: 220px; border-right: 1px solid var(--border2); }
-  .app-nav.mobile-open .app-nav-brand span,
+/* ── Mobile / Touch ────────────────────────────────────────────────────── */
+@media (max-width: 1024px) and (hover: none), (max-width: 768px) {
+  .app-nav { width: 0 !important; border-right: none; }
+  .app-nav.mobile-open { width: 220px !important; border-right: 1px solid var(--border2); }
   .app-nav.mobile-open .app-nav-link span { opacity: 1 !important; width: auto !important; }
   .app-nav.mobile-open .app-nav-collapse { opacity: 1; width: 28px; pointer-events: auto; }
   .app-nav ~ * { margin-left: 0 !important; }
