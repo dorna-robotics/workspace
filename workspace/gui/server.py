@@ -148,7 +148,22 @@ LANDING_HTML = """<!DOCTYPE html>
           <div class="card-label">Scene Builder</div>
           <div class="card-hint">Design workspace layout</div>
         </a>
+        <a class="card" id="cardLab">
+          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div>
+          <div class="card-label">Dorna Lab</div>
+          <div class="card-hint">Robot control system</div>
+        </a>
+        <a class="card" id="cardJupyter">
+          <div class="card-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+          <div class="card-label">Jupyter</div>
+          <div class="card-hint">Notebooks &amp; development</div>
+        </a>
       </div>
+      <script>
+        var h = window.location.hostname;
+        document.getElementById("cardLab").href = "http://" + h + "/";
+        document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
+      </script>
     </div>
   </main>
   <script src="/vendor/theme.js"></script>
