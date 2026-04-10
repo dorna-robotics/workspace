@@ -22,6 +22,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 WEB_DIR = os.path.join(BASE_DIR, "gui", "orchestrator", "web")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+VENDOR_DIR = os.path.join(BASE_DIR, "gui", "vendor")
 
 DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
 
@@ -284,6 +285,9 @@ class RuntimeServer:
                 os.getcwd(),        # project-local: my_project/CAD/
                 self.static_dir,    # library: workspace/static/CAD/
             ]}),
+
+            # shared vendor assets (Three.js, Socket.IO, etc.)
+            (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": VENDOR_DIR}),
 
             # runtime API
             (r"/cmd", CmdHandler, dict(
