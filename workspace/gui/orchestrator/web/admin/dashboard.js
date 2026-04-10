@@ -20,8 +20,6 @@ const wsCount   = document.getElementById("wsCount");
 const toastArea = document.getElementById("toastArea");
 const wsSearch  = document.getElementById("wsSearch");
 
-document.getElementById("orchUrl").textContent = window.location.origin;
-
 // ---- Toast ----
 function toast(msg, type = "ok") {
   const el = document.createElement("div");
