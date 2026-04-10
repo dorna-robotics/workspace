@@ -19,38 +19,14 @@
 .app-nav.collapsed { width: 48px; }
 [data-theme="light"] .app-nav { background: #fff; }
 
-/* ── Header (logo + collapse toggle) ──────────────────────────────────── */
+/* ── Header (collapse toggle) ─────────────────────────────────────────── */
 .app-nav-header {
   display: flex;
   align-items: center;
-  padding: 14px 10px 10px 14px;
-  gap: 8px;
+  justify-content: center;
+  padding: 10px 6px 4px;
   flex-shrink: 0;
 }
-.app-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  flex: 1;
-  min-width: 0;
-}
-.app-nav-brand img {
-  width: 24px; height: 24px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-.app-nav-brand span {
-  font-family: var(--font);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  transition: opacity 0.15s;
-}
-.app-nav.collapsed .app-nav-brand { display: none; }
 
 .app-nav-collapse {
   display: flex;
@@ -101,7 +77,8 @@
 [data-theme="light"] .app-nav-link.active {
   background: rgba(0,122,255,0.08);
 }
-.app-nav-link svg { flex-shrink: 0; }
+.app-nav-link svg, .app-nav-link img { flex-shrink: 0; }
+.app-nav-link img { width: 18px; height: 18px; border-radius: 4px; }
 .app-nav-link span {
   transition: opacity 0.15s;
 }
