@@ -15,11 +15,6 @@
   burger?.addEventListener("click", flip);
   overlay?.addEventListener("click", close);
 
-  // Close on nav link click (after navigation)
-  nav?.querySelectorAll(".app-nav-link").forEach(link => {
-    link.addEventListener("click", close);
-  });
-
   // Close on Escape
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") close();

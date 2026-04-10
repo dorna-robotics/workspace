@@ -140,15 +140,21 @@ LANDING_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <nav class="app-nav">
-    <button class="app-nav-toggle"><img src="/vendor/favicon.png" alt="Dorna"/><span>Dorna</span></button>
-    <a href="/orchestrator/" class="app-nav-link">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-      <span>Orchestrator</span>
-    </a>
-    <a href="/scene-builder/" class="app-nav-link">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      <span>Scene Builder</span>
-    </a>
+    <a href="/" class="app-nav-brand"><img src="/vendor/favicon.png" alt="Dorna"/><span>Dorna</span></a>
+    <button class="app-nav-toggle" title="Toggle menu">
+      <svg class="nav-icon-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+      <svg class="nav-icon-close" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="app-nav-links">
+      <a href="/orchestrator/" class="app-nav-link">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>Orchestrator</span>
+      </a>
+      <a href="/scene-builder/" class="app-nav-link">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span>Scene Builder</span>
+      </a>
+    </div>
   </nav>
   <div class="app-nav-overlay"></div>
   <header class="topbar">
