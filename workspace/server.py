@@ -13,7 +13,8 @@ from tornado import autoreload
 # --------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-WEB_DIR = os.path.join(BASE_DIR, "orchestrator", "web")
+WEB_DIR = os.path.join(BASE_DIR, "gui", "orchestrator", "web")
+VENDOR_DIR = os.path.join(BASE_DIR, "gui", "vendor")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.yaml")
 
@@ -136,6 +137,7 @@ async def disconnect(sid):
 app = tornado.web.Application([
     (r"/socket.io/", socketio.get_tornado_handler(sio)),
     (r"/static/(.*)", NoCacheStaticFileHandler, {"path": STATIC_DIR}),
+    (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": VENDOR_DIR}),
     (r"/config_version", ConfigVersionHandler),
     (r"/(.*)", tornado.web.StaticFileHandler,
         {"path": WEB_DIR, "default_filename": "index.html"}),
