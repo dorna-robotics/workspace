@@ -33,7 +33,7 @@ class Recipe:
         calibration_name=None,
         calibration=True,
         calibrate_abc=False,
-        calibration_targets={},  # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_targets=None,  # auto-discovers clb_ anchors if None
         calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
         calibration_tool_anchor="tcp",
@@ -69,7 +69,13 @@ class Recipe:
             self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
         else:
             self.calibration_name = prm["calibration_name"]
-        self.calibration_targets = prm["calibration_targets"]
+        if prm["calibration_targets"] is None:
+            self.calibration_targets = {
+                k: [a for a in component.assembly[k].anchors if a.startswith("clb_")]
+                for k in component.assembly
+            }
+        else:
+            self.calibration_targets = prm["calibration_targets"]
         self.calibration_target_offset = prm["calibration_target_offset"]
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
         self.calibration_tool_anchor = prm["calibration_tool_anchor"]
