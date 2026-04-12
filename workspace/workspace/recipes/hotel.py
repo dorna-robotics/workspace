@@ -18,7 +18,7 @@ class Hotel(Recipe):
         rail_span=5, # 5    
         # calibration
         calibrate_abc = True, # True
-        calibration_targets={}, # {solid_name: {anchor_1:..., anchor_2:...},...}
+        calibration_targets=None, # auto-discovers clb_ anchors
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -26,12 +26,6 @@ class Hotel(Recipe):
         prm = deepcopy(Recipe.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, kwargs) # kwargs
-
-        # adjust calibration
-        prm["calibration_targets"] = {
-            k: [s for s in component.assembly[k].anchors if s.startswith("clb_")]
-            for k in component.assembly
-        }
 
         # super init
         super().__init__(
