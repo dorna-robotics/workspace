@@ -160,7 +160,7 @@ class Core:
 
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
-        # License check — must pass before anything else
+        # License check — skipped in dev repo, enforced in release (.so)
         from workspace.license import verify
         verify()
 

@@ -44,6 +44,15 @@ while IFS= read -r line; do
     fi
 
     echo "  Compiling: $line"
+
+    # Flip _DEV = True → False for release builds (restored after compile)
+    _dev_patched=false
+    if grep -q '_DEV = True' "$py_file" 2>/dev/null; then
+        sed -i 's/_DEV = True/_DEV = False/' "$py_file"
+        _dev_patched=true
+        echo "    Set _DEV = False"
+    fi
+
     cython "$py_file" --embed 2>/dev/null || cython "$py_file" 2>/dev/null
 
     # Get the .c file and compile to .so
@@ -58,6 +67,12 @@ while IFS= read -r line; do
 
     # Clean up .c file
     rm -f "$c_file"
+
+    # Restore _DEV = True in source repo
+    if [ "$_dev_patched" = true ]; then
+        sed -i 's/_DEV = False/_DEV = True/' "$py_file"
+    fi
+
     echo "    → $(basename "$so_file")"
 done < "$PROTECTED_FILE"
 

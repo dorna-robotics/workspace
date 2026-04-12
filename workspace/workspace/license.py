@@ -45,8 +45,14 @@ def _sign(serial: str, tier: str) -> str:
     return hmac.new(_SECRET, payload.encode(), hashlib.sha256).hexdigest()
 
 
+# Dev mode — set to True in source repo, compiled away in release .so
+_DEV = True
+
+
 def verify():
     """Verify the license matches this Pi's CPU serial. Raises on failure."""
+    if _DEV:
+        return
     global _cached_tier
     serial = _cpu_serial()
 
