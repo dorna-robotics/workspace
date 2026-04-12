@@ -65,7 +65,10 @@ class Recipe:
         # calibration
         self.calibration = prm["calibration"]
         self.calibrate_abc = prm["calibrate_abc"]
-        self.calibration_name = prm["calibration_name"]
+        if prm["calibration_name"] is None:
+            self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
+        else:
+            self.calibration_name = prm["calibration_name"]
         self.calibration_targets = prm["calibration_targets"]
         self.calibration_target_offset = prm["calibration_target_offset"]
         self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
