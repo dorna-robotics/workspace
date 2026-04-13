@@ -8,7 +8,7 @@ class ToolRack(Recipe):
         # motion
         lmove_vaj=[150, 350, 1500],
         # calibration
-        calibrate_rotation=True,
+        calibrate_abc=True,
         calibration_target_offset=[0, 0, 20, 0, 0, 0],
         calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )

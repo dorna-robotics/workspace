@@ -11,8 +11,8 @@ class States:
         # Config
         self.run_per_rack = kwargs.get("run_per_rack", 1)
         self.hotel_levels = kwargs.get("hotel_levels", 4)
-        self.tube_rack_place_z_offset = 4
-        self.cap_holder_place_z_offset = -15
+        self.tube_rack_gravity_offset = 4
+        self.cap_holder_gravity_offset = -15
         self.cap_holder_tool_tcp_z_offset = 1
         self.decapper_tool_tcp_z_offset = -3
 
@@ -35,7 +35,7 @@ class States:
             rcp["feeder"].pick(approach=False)
             rcp["cap_holder"].place(
                 self.cap_list[idx],
-                place_z_offset=self.cap_holder_place_z_offset,
+                gravity_offset=self.cap_holder_gravity_offset,
             )
 
     def capped_dispensed(self, i):
@@ -65,7 +65,7 @@ class States:
             # Return to plate
             rcp["sbs_plate"].place(
                 self.tube_list[idx],
-                place_z_offset=self.tube_rack_place_z_offset,
+                gravity_offset=self.tube_rack_gravity_offset,
             )
 
     def hotel_placed(self, i):

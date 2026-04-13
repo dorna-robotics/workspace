@@ -26,13 +26,13 @@ class Recipe:
         rail_span=0,  # number of tries around that point positive and negative directions
         # motion
         motion_type="lmove",
-        speed_scale=0.5,
+        speed_factor=0.5,
         jmove_vaj=[200, 500, 3000],  # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
         calibration=True,
-        calibrate_rotation=False,
+        calibrate_abc=False,
         calibration_targets=None,  # auto-discovers clb_ anchors if None
         calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
@@ -58,13 +58,13 @@ class Recipe:
 
         # motion
         self.motion_type = prm["motion_type"]
-        self.speed_scale = prm["speed_scale"]
+        self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
 
         # calibration
         self.calibration = prm["calibration"]
-        self.calibrate_rotation = prm["calibrate_rotation"]
+        self.calibrate_abc = prm["calibrate_abc"]
         if prm["calibration_name"] is None:
             self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
         else:
@@ -182,66 +182,66 @@ class Recipe:
             pose=self.core.calibration.interpolate(
                 pose_in_world,
                 dict_name=self.calibration_name,
-                calibrate_rotation=self.calibrate_rotation,
+                calibrate_abc=self.calibrate_abc,
             )
         )
         anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
         return corrected_pose_frame.pose(in_frame=anchor_frame)
 
-    def _solve_ik(self, target_solid, target_anchor, offset, tool_dict, j5_override=None):
-        """Solve IK for a single offset. Returns joint values or raises."""
-        if self.calibration:
-            offset = self._calibrate_offset(target_solid, target_anchor, offset)
-
-        J, C = self.core.IK(
-            target_solid=target_solid,
-            target_anchor=target_anchor,
-            target_offset=offset,
-            tool_solid=tool_dict["solid"],
-            tool_anchor=tool_dict["anchor"],
-            tool_offset=tool_dict["offset"],
-            base_distance=self.base_distance,
-            rail_step=self.rail_step,
-            rail_span=self.rail_span,
-            ref_joints=self.ref_joints,
-            left_approach=self.left_approach,
-        )
-
-        if j5_override is not None:
-            J[5] = j5_override
-
-        if C != 2:
-            raise RecipeError("could not find a valid pose")
-
-        return J
-
-    def _execute_motion(self, rt, J, tool_dict, vaj_map, use_motion_plan=False):
-        """Execute a single motion step — motion plan, lmove, or jmove."""
-        if use_motion_plan:
-            points = self.core.motion_plan(joint=J)
-            if len(points) == 0:
-                raise RecipeError("no proper path was found")
-            rt.smove(
-                points,
-                vel=vaj_map["jmove"][0] * self.speed_scale,
-                accel=vaj_map["jmove"][1] * self.speed_scale,
-                jerk=vaj_map["jmove"][2] * self.speed_scale,
-            )
-        else:
-            self._do_motion(rt, J, tool_dict, vaj_map)
-
-    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, use_motion_plan=False):
+    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False):
         """Execute a sequence of IK-solved motions along path offsets.
 
-        use_motion_plan: if True, the first step uses collision-free path planning.
-        has_motion_plan: whether the core supports motion planning.
+        has_motion_plan / first_approach: only the first step of an approach
+        may use path planning.
         """
-        for i, offset in enumerate(path):
-            J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
+        for i in range(len(path)):
+            # calibration correction
+            if self.calibration:
+                path[i] = self._calibrate_offset(target_solid, target_anchor, path[i])
+
+            # IK
+            J, C = self.core.IK(
+                target_solid=target_solid,
+                target_anchor=target_anchor,
+                target_offset=path[i],
+                tool_solid=tool_dict["solid"],
+                tool_anchor=tool_dict["anchor"],
+                tool_offset=tool_dict["offset"],
+                base_distance=self.base_distance,
+                rail_step=self.rail_step,
+                rail_span=self.rail_span,
+                ref_joints=self.ref_joints,
+                left_approach=self.left_approach,
+            )
+
+            if j5_override is not None:
+                J[5] = j5_override
+
+            if C != 2:
+                raise RecipeError("could not find a valid pose to approach")
+
             rt.checkpoint()
-            # First step may use motion planning (collision avoidance for the long move)
-            plan_this_step = (i == 0) and use_motion_plan and has_motion_plan
-            self._execute_motion(rt, J, tool_dict, vaj_map, use_motion_plan=plan_this_step)
+            # first approach step may use path planning
+            if i == 0 and first_approach:
+                if has_motion_plan:
+                    points = self.core.motion_plan(joint=J)
+                    if len(points) == 0:
+                        raise RecipeError("no proper path was found")
+                    rt.smove(
+                        points,
+                        vel=vaj_map["jmove"][0] * self.speed_factor,
+                        accel=vaj_map["jmove"][1] * self.speed_factor,
+                        jerk=vaj_map["jmove"][2] * self.speed_factor,
+                    )
+                else:
+                    rt.jmove(
+                        joint=J,
+                        vel=vaj_map["jmove"][0] * self.speed_factor,
+                        accel=vaj_map["jmove"][1] * self.speed_factor,
+                        jerk=vaj_map["jmove"][2] * self.speed_factor,
+                    )
+            else:
+                self._do_motion(rt, J, tool_dict, vaj_map)
 
     def _do_motion(self, rt, J, tool_dict, vaj_map):
         """Dispatch a single motion step based on self.motion_type."""
@@ -255,24 +255,24 @@ class Recipe:
                 )
             rt.lmove(
                 joint=J,
-                vel=vaj_map["lmove"][0] * self.speed_scale,
-                accel=vaj_map["lmove"][1] * self.speed_scale,
-                jerk=vaj_map["lmove"][2] * self.speed_scale,
+                vel=vaj_map["lmove"][0] * self.speed_factor,
+                accel=vaj_map["lmove"][1] * self.speed_factor,
+                jerk=vaj_map["lmove"][2] * self.speed_factor,
                 tool_pose=tool_pose,
             )
         elif self.motion_type == "jmove":
             rt.jmove(
                 joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_scale,
-                accel=vaj_map["jmove"][1] * self.speed_scale,
-                jerk=vaj_map["jmove"][2] * self.speed_scale,
+                vel=vaj_map["jmove"][0] * self.speed_factor,
+                accel=vaj_map["jmove"][1] * self.speed_factor,
+                jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
         else:
             getattr(rt, self.motion_type)(
                 joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_scale,
-                accel=vaj_map["jmove"][1] * self.speed_scale,
-                jerk=vaj_map["jmove"][2] * self.speed_scale,
+                vel=vaj_map["jmove"][0] * self.speed_factor,
+                accel=vaj_map["jmove"][1] * self.speed_factor,
+                jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
 
     def _build_io_config(self, tool, component, trigger_io):
@@ -336,57 +336,6 @@ class Recipe:
             height_load = 0
         return tool, load_list, height_load
 
-    def _compute_heights(self, component, solid_name, anchor, tool, tool_tcp_z_offset=0, tool_tip_z_offset=0, load_list=None, load_anchor="center"):
-        """Compute height_load, height_container, height_tool, and pose_offset.
-
-        Returns dict with: height_load, height_container, height_tool, pose_offset.
-        """
-        # height load (stack of items at anchor)
-        height_load = 0
-        pose_offset = dorna_pose.Pose(pose=[0, 0, 0, 0, 0, 0])
-        if load_list:
-            height_load = abs(
-                dorna_pose.transform_pose(
-                    [0, 0, 0, 0, 0, 0],
-                    from_frame=load_list[0].pose(load_anchor),
-                    to_frame=load_list[-1].pose("top"),
-                )[2]
-            )
-            pose_offset = dorna_pose.Pose(
-                pose=dorna_pose.transform_pose(
-                    [0, 0, 0, 0, 0, 0],
-                    from_frame=load_list[0].pose("center"),
-                    to_frame=component.assembly[solid_name].pose(anchor),
-                )
-            )
-
-        # height container (from place to top of component)
-        height_container = abs(
-            dorna_pose.transform_pose(
-                [0, 0, 0, 0, 0, 0],
-                from_frame=component.assembly[solid_name].pose("top"),
-                to_frame=component.assembly[solid_name].pose("place"),
-            )[2]
-        )
-
-        # height tool
-        tool_body = tool.assembly[next(iter(tool.assembly))]
-        height_tool = abs(
-            dorna_pose.transform_pose(
-                [0, 0, tool_tip_z_offset - tool_tcp_z_offset, 0, 0, 0],
-                from_frame=tool_body.pose("tip"),
-                to_frame=tool_body.pose("tcp"),
-            )[2]
-        )
-
-        return {
-            "height_load": height_load,
-            "height_container": height_container,
-            "height_tool": height_tool,
-            "pose_offset": pose_offset,
-            "tool_body": tool_body,
-        }
-
     # ── Core motion ─────────────────────────────────────────────────────────
 
     def touch(
@@ -440,7 +389,7 @@ class Recipe:
             j5_override=approach_j5,
             vaj_map=vaj_map,
             has_motion_plan=has_motion_plan,
-            use_motion_plan=bool(approach_path),
+            first_approach=bool(approach_path),
         )
 
         # output touch
@@ -486,7 +435,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        two_step_approach=False,
+        soft_approach=False,
         **kwargs,
     ):
         for k, v in kwargs.items():
@@ -502,22 +451,46 @@ class Recipe:
         if tool is None:
             raise RecipeError("no tool attached to the robot")
 
-        # Items stacked at this anchor
+        # hierarchy of items attached to the anchor
+        height_load = 0
+        pose_offset = dorna_pose.Pose(pose=[0, 0, 0, 0, 0, 0])
         load_list = self.solid_hierarchy(
             parent_solid=component.assembly[solid_name], parent_anchor=anchor, connection_anchor="place"
         )
+        if load_list:
+            height_load = abs(
+                dorna_pose.transform_pose(
+                    [0, 0, 0, 0, 0, 0],
+                    from_frame=load_list[0].pose("center"),
+                    to_frame=load_list[-1].pose("top"),
+                )[2]
+            )
+            pose_offset = dorna_pose.Pose(
+                pose=dorna_pose.transform_pose(
+                    [0, 0, 0, 0, 0, 0],
+                    from_frame=load_list[0].pose("center"),
+                    to_frame=component.assembly[solid_name].pose(anchor),
+                )
+            )
 
-        # Compute heights
-        h = self._compute_heights(
-            component, solid_name, anchor, tool,
-            tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
-            load_list=load_list,
+        # height container
+        height_container = abs(
+            dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=component.assembly[solid_name].pose("top"),
+                to_frame=component.assembly[solid_name].pose("place"),
+            )[2]
         )
-        height_load = h["height_load"]
-        height_container = h["height_container"]
-        height_tool = h["height_tool"]
-        pose_offset = h["pose_offset"]
-        tool_body = h["tool_body"]
+
+        # height tool
+        tool_body = tool.assembly[next(iter(tool.assembly))]
+        height_tool = abs(
+            dorna_pose.transform_pose(
+                [0, 0, tool_tip_z_offset - tool_tcp_z_offset, 0, 0, 0],
+                from_frame=tool_body.pose("tip"),
+                to_frame=tool_body.pose("tcp"),
+            )[2]
+        )
 
         # target offset
         target_offset = pose_offset.pose(offset=[0, 0, height_load, 0, 0, 0])
@@ -529,7 +502,7 @@ class Recipe:
                 [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
                 [0, 0, height_load + height_tool + gap, 0, 0, 0],
             ]
-            if not two_step_approach:
+            if not soft_approach:
                 _approach_path = _approach_path[0:1]
             approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
 
@@ -610,7 +583,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        two_step_approach=False,
+        soft_approach=False,
         **kwargs,
     ):
         pick_prm = self.pick_setting(
@@ -619,7 +592,7 @@ class Recipe:
             exit=exit, attachment=attachment, trigger_io=trigger_io,
             padding=padding, gap=gap,
             tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
-            two_step_approach=two_step_approach, **kwargs,
+            soft_approach=soft_approach, **kwargs,
         )
         if not pick_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
@@ -639,8 +612,8 @@ class Recipe:
         padding=50,
         gap=2,
         load_anchor="center",
-        place_z_offset=1,
-        two_step_approach=False,
+        gravity_offset=1,
+        soft_approach=False,
         **kwargs,
     ):
         for k, v in kwargs.items():
@@ -656,14 +629,13 @@ class Recipe:
         if tool is None:
             raise RecipeError("no tool attached to the robot")
 
-        # Items attached to the tool
+        # hierarchy of items attached to the tool
         load_list = [self.solid_attached_to_tool(tool)]
         if load_list[-1] is None:
             raise RecipeError("no item in the gripper")
         load_list += self.solid_hierarchy(parent_solid=load_list[0], parent_anchor="place", connection_anchor="place")
 
-        # Compute heights (for place, use load_anchor and offset-adjusted container height)
-        tool_body = tool.assembly[next(iter(tool.assembly))]
+        # height load
         height_load = abs(
             dorna_pose.transform_pose(
                 [0, 0, 0, 0, 0, 0],
@@ -671,6 +643,8 @@ class Recipe:
                 to_frame=load_list[-1].pose("top"),
             )[2]
         )
+
+        # height container
         height_container = max(
             -dorna_pose.transform_pose(
                 offset,
@@ -679,6 +653,9 @@ class Recipe:
             )[2],
             0,
         )
+
+        # height tool
+        tool_body = tool.assembly[next(iter(tool.assembly))]
         height_tool = abs(
             dorna_pose.transform_pose(
                 [0, 0, 0, 0, 0, 0],
@@ -694,7 +671,7 @@ class Recipe:
                 [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
                 [0, 0, height_container + gap, 0, 0, 0],
             ]
-            if not two_step_approach:
+            if not soft_approach:
                 _approach_path = _approach_path[0:1]
             approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
 
@@ -738,7 +715,7 @@ class Recipe:
 
         # gravity compensation
         target_offset = offset[:]
-        target_offset[2] += place_z_offset
+        target_offset[2] += gravity_offset
 
         return {
             "target_solid": component.assembly[solid_name],
@@ -775,8 +752,8 @@ class Recipe:
         padding=50,
         gap=2,
         load_anchor="center",
-        place_z_offset=1,
-        two_step_approach=False,
+        gravity_offset=1,
+        soft_approach=False,
         **kwargs,
     ):
         place_prm = self.place_setting(
@@ -784,8 +761,8 @@ class Recipe:
             component=component, offset=offset, approach=approach,
             actions=actions, exit=exit, attachment=attachment,
             trigger_io=trigger_io, padding=padding, gap=gap,
-            load_anchor=load_anchor, place_z_offset=place_z_offset,
-            two_step_approach=two_step_approach, **kwargs,
+            load_anchor=load_anchor, gravity_offset=gravity_offset,
+            soft_approach=soft_approach, **kwargs,
         )
         if not place_prm:
             raise RecipeError("place_setting failed — could not compute place parameters")
@@ -861,9 +838,9 @@ class Recipe:
             rt.checkpoint()
             rt.jmove(
                 joint=J,
-                vel=vaj[0] * self.speed_scale,
-                accel=vaj[1] * self.speed_scale,
-                jerk=vaj[2] * self.speed_scale,
+                vel=vaj[0] * self.speed_factor,
+                accel=vaj[1] * self.speed_factor,
+                jerk=vaj[2] * self.speed_factor,
             )
         return True
 
@@ -905,9 +882,9 @@ class Recipe:
             rt.checkpoint()
             rt.jmove(
                 joint=J,
-                vel=self.jmove_vaj[0] * self.speed_scale,
-                accel=self.jmove_vaj[1] * self.speed_scale,
-                jerk=self.jmove_vaj[2] * self.speed_scale,
+                vel=self.jmove_vaj[0] * self.speed_factor,
+                accel=self.jmove_vaj[1] * self.speed_factor,
+                jerk=self.jmove_vaj[2] * self.speed_factor,
             )
         else:
             raise RecipeError("could not find a valid approach to the calibration point")

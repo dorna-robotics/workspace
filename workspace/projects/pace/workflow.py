@@ -86,7 +86,7 @@ class Config:
     shake_duration: float = 120
     inspection_frq: int = 4
     inspection_rot: float = 90
-    speed_scale: float = 10
+    speed_factor: float = 10
 
 
 class Workflow:
@@ -109,49 +109,49 @@ class Workflow:
         self.n = len(self.cfg.source)
 
     def create_recipes(self, workspace, core):
-        sf = self.cfg.speed_scale
+        sf = self.cfg.speed_factor
         return {
             # ── Tool racks ───────────────────────────────────────────────
-            "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_144mm_1"], left_approach=True, speed_scale=sf),
-            "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_144mm_2"], left_approach=True, speed_scale=sf),
-            "tool_rack_3": ToolRack(workspace, core, workspace.components["tool_rack_144mm_3"], left_approach=True, speed_scale=sf),
-            "tool_rack_4": ToolRack(workspace, core, workspace.components["tool_rack_144mm_4"], left_approach=True, base_distance=300, rail_span=5, rail_step=5, speed_scale=sf),
+            "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_144mm_1"], left_approach=True, speed_factor=sf),
+            "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_144mm_2"], left_approach=True, speed_factor=sf),
+            "tool_rack_3": ToolRack(workspace, core, workspace.components["tool_rack_144mm_3"], left_approach=True, speed_factor=sf),
+            "tool_rack_4": ToolRack(workspace, core, workspace.components["tool_rack_144mm_4"], left_approach=True, base_distance=300, rail_span=5, rail_step=5, speed_factor=sf),
 
             # ── Cap handling ─────────────────────────────────────────────
-            "cap_holder_1": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_1"], left_approach=False, base_distance=150, rail_step=5, rail_span=5, speed_scale=sf),
-            "feeder_1":     Feeder(workspace, core, workspace.components["capfeeder_autosampler_2ml_1"], left_approach=False, speed_scale=sf),
+            "cap_holder_1": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_1"], left_approach=False, base_distance=150, rail_step=5, rail_span=5, speed_factor=sf),
+            "feeder_1":     Feeder(workspace, core, workspace.components["capfeeder_autosampler_2ml_1"], left_approach=False, speed_factor=sf),
 
             # ── 40 ml tube racks ─────────────────────────────────────────
-            "rack_40ml_1": Rack(workspace, core, workspace.components["adapter_plate_amber_40ml_4x7_1"], base_distance=75, rail_span=5, rail_step=5, speed_scale=sf),
-            "rack_40ml_2": Rack(workspace, core, workspace.components["adapter_plate_amber_40ml_2x4_1"], base_distance=75, rail_span=5, rail_step=5, speed_scale=sf),
+            "rack_40ml_1": Rack(workspace, core, workspace.components["adapter_plate_amber_40ml_4x7_1"], base_distance=75, rail_span=5, rail_step=5, speed_factor=sf),
+            "rack_40ml_2": Rack(workspace, core, workspace.components["adapter_plate_amber_40ml_2x4_1"], base_distance=75, rail_span=5, rail_step=5, speed_factor=sf),
 
             # ── Scale ────────────────────────────────────────────────────
-            "scale_1": Scale(workspace, core, workspace.components["scale_1"], base_distance=350, speed_scale=sf, rail_step=5, rail_span=5),
+            "scale_1": Scale(workspace, core, workspace.components["scale_1"], base_distance=350, speed_factor=sf, rail_step=5, rail_span=5),
 
             # ── Decappers ────────────────────────────────────────────────
-            "decapper_1": Decapper(workspace, core, workspace.components["decapper_1"], base_distance=200, rail_step=5, rail_span=5, speed_scale=sf),
-            "decapper_2": Decapper(workspace, core, workspace.components["decapper_2"], base_distance=200, rail_step=5, rail_span=5, speed_scale=sf),
-            "decapper_3": Decapper(workspace, core, workspace.components["decapper_3"], base_distance=200, rail_step=5, rail_span=5, speed_scale=sf),
-            "decapper_4": Decapper(workspace, core, workspace.components["decapper_4"], base_distance=200, rail_step=5, rail_span=5, speed_scale=sf),
-            "decapper_5": Decapper(workspace, core, workspace.components["decapper_5"], base_distance=200, rail_step=5, rail_span=5, speed_scale=sf),
+            "decapper_1": Decapper(workspace, core, workspace.components["decapper_1"], base_distance=200, rail_step=5, rail_span=5, speed_factor=sf),
+            "decapper_2": Decapper(workspace, core, workspace.components["decapper_2"], base_distance=200, rail_step=5, rail_span=5, speed_factor=sf),
+            "decapper_3": Decapper(workspace, core, workspace.components["decapper_3"], base_distance=200, rail_step=5, rail_span=5, speed_factor=sf),
+            "decapper_4": Decapper(workspace, core, workspace.components["decapper_4"], base_distance=200, rail_step=5, rail_span=5, speed_factor=sf),
+            "decapper_5": Decapper(workspace, core, workspace.components["decapper_5"], base_distance=200, rail_step=5, rail_span=5, speed_factor=sf),
 
             # ── 40 ml dosing sites ───────────────────────────────────────
-            "doser_40ml_1": DosingSite(workspace, core, workspace.components["adapter_plate_amber_40ml_2x4_1"], base_distance=200, rail_span=5, rail_step=5, speed_scale=sf),
+            "doser_40ml_1": DosingSite(workspace, core, workspace.components["adapter_plate_amber_40ml_2x4_1"], base_distance=200, rail_span=5, rail_step=5, speed_factor=sf),
 
             # ── Shakers ──────────────────────────────────────────────────
-            "shaker_1": Shaker(workspace, core, workspace.components["shaker_2slot_1"], left_approach=False, base_distance=100, rail_step=5, rail_span=5, speed_scale=sf),
-            "shaker_2": Shaker(workspace, core, workspace.components["shaker_2slot_2"], left_approach=False, base_distance=100, rail_step=5, rail_span=5, speed_scale=sf),
+            "shaker_1": Shaker(workspace, core, workspace.components["shaker_2slot_1"], left_approach=False, base_distance=100, rail_step=5, rail_span=5, speed_factor=sf),
+            "shaker_2": Shaker(workspace, core, workspace.components["shaker_2slot_2"], left_approach=False, base_distance=100, rail_step=5, rail_span=5, speed_factor=sf),
 
             # ── 2 ml dosing sites ────────────────────────────────────────
-            "doser_2ml_1": DosingSite(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_2"], base_distance=100, rail_span=5, rail_step=5, speed_scale=sf),
-            "doser_2ml_2": DosingSite(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_3"], base_distance=100, rail_span=5, rail_step=5, speed_scale=sf),
+            "doser_2ml_1": DosingSite(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_2"], base_distance=100, rail_span=5, rail_step=5, speed_factor=sf),
+            "doser_2ml_2": DosingSite(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_3"], base_distance=100, rail_span=5, rail_step=5, speed_factor=sf),
 
             # ── 2 ml tube racks ──────────────────────────────────────────
-            "rack_2ml_1": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_2"], base_distance=100, rail_span=5, rail_step=5, speed_scale=sf),
-            "rack_2ml_2": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_3"], base_distance=100, rail_span=5, rail_step=5, speed_scale=sf),
+            "rack_2ml_1": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_2"], base_distance=100, rail_span=5, rail_step=5, speed_factor=sf),
+            "rack_2ml_2": Rack(workspace, core, workspace.components["adapter_plate_autosampler_2ml_5x10_3"], base_distance=100, rail_span=5, rail_step=5, speed_factor=sf),
 
             # ── Inspector ────────────────────────────────────────────────
-            "inspector_1": FixedInspector(workspace, core, component=workspace.components["inspection_horizontal_144mm_1"], base_distance=200, rail_span=5, rail_step=5, detection_preset={}, speed_scale=sf),
+            "inspector_1": FixedInspector(workspace, core, component=workspace.components["inspection_horizontal_144mm_1"], base_distance=200, rail_span=5, rail_step=5, detection_preset={}, speed_factor=sf),
         }
 
     # ── Shared helpers ───────────────────────────────────────────────────────

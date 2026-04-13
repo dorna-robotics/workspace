@@ -38,12 +38,12 @@ class Rack(Recipe):
    
              
 
-    def place(self, anchor, two_step_approach=True, **kwargs):
+    def place(self, anchor, soft_approach=True, **kwargs):
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        return super().place(anchor, solid_name=solid_name, component=component, two_step_approach=two_step_approach, **kwargs)
+        return super().place(anchor, solid_name=solid_name, component=component, soft_approach=soft_approach, **kwargs)
 

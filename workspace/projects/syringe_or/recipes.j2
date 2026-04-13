@@ -1,25 +1,25 @@
-{% set speed_scale = 1 %}
+{% set speed_factor = 1 %}
 
 tool_rack_2:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs:
     component: tool_rack_2
     left_approach: true
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 tool_rack_1:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs:
     component: tool_rack_1
     left_approach: true
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 tool_rack_0:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs:
     component: tool_rack_0
     left_approach: true
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 hotel:
   class: workspace.recipes.hotel.Hotel
@@ -27,7 +27,7 @@ hotel:
     component: hotel_0
     left_approach: true
     base_distance: 150
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 cap_holder:
   class: workspace.recipes.rack.Rack
@@ -35,7 +35,7 @@ cap_holder:
     component: sbs_adapter_1
     left_approach: false
     base_distance: 50
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 sbs_plate:
   class: workspace.recipes.rack.Rack
@@ -44,32 +44,32 @@ sbs_plate:
     base_distance: 75
     rail_span: 5
     rail_step: 5
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 sbs_adapter:
   class: workspace.recipes.adapter.Adapter
   kwargs:
     component: sbs_adapter_0
     left_approach: true
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 feeder:
   class: workspace.recipes.feeder.Feeder
   kwargs:
     component: feeder
     left_approach: false
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 decapper:
   class: workspace.recipes.decapper.Decapper
   kwargs:
     component: decapper_0
     base_distance: 50
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}
 
 dispense_arm:
   class: workspace.recipes.dispense_arm.DispenseArm
   kwargs:
     component: syringe_dispence_0
     base_distance: 50
-    speed_scale: {{ speed_scale }}
+    speed_factor: {{ speed_factor }}

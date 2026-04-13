@@ -17,7 +17,7 @@ class Hotel(Recipe):
         rail_step=20, #10
         rail_span=5, # 5    
         # calibration
-        calibrate_rotation = True, # True
+        calibrate_abc = True, # True
         calibration_targets=None, # auto-discovers clb_ anchors
     )
 

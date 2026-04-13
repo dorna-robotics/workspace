@@ -13,9 +13,9 @@ class Feeder(Recipe):
         index_list=[],
         # mix
         vaj_mix=[200, 600, 3000],
-        direction_threshold=10000,
+        thr_dir=10000,
         pick_offset=0,
-        feed_steps=21,
+        shift_steps=21,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -31,16 +31,16 @@ class Feeder(Recipe):
         )
 
         # mix sign
-        self.rotation_direction = 1
+        self.mix_dir = 1
 
         # index list
         self.index_list = prm["index_list"]
 
         # mix
         self.vaj_mix = prm["vaj_mix"]
-        self.direction_threshold = prm["direction_threshold"]
+        self.thr_dir = prm["thr_dir"]
         self.pick_offset = prm["pick_offset"]
-        self.feed_steps = prm["feed_steps"]
+        self.shift_steps = prm["shift_steps"]
 
     # mix: mix the feeder for certain turns and shift the slots
     def mix(self, **kwargs):
@@ -51,13 +51,13 @@ class Feeder(Recipe):
         new_joint = current_joint[:]
 
         # change the direction if necessary
-        if abs(new_joint[self.component.axis_cfg["axis"]]) > self.direction_threshold:
-            self.rotation_direction = -1 * self.rotation_direction
+        if abs(new_joint[self.component.axis_cfg["axis"]]) > self.thr_dir:
+            self.mix_dir = -1 * self.mix_dir
 
-        return self.rotate_in_step(step=self.rotation_direction * self.feed_steps, **kwargs)
+        return self.roate_in_step(step=self.mix_dir * self.shift_steps, **kwargs)
 
     # rotate the feeder to move to the nth slot from the current
-    def rotate_in_step(self, step=1, **kwargs):
+    def roate_in_step(self, step=1, **kwargs):
         rt = self.rt
 
         # current joint
@@ -142,7 +142,7 @@ class Feeder(Recipe):
             # object exists
             if inspector.detect(**preset, **kwargs):
                 # move the feeder to that position
-                self.rotate_in_step(step=step)
+                self.roate_in_step(step=step)
                 rt.checkpoint()
                 rt.delay(0.5)   # pause-aware
                 return True

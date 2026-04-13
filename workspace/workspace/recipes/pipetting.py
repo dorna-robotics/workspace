@@ -36,7 +36,7 @@ class PipettingSite(Recipe):
         solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
 
         # motion
-        if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, two_step_approach=True, **kwargs):
+        if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
             raise RecipeError("pick_tip failed — could not pick from anchor")
         
         # check if tip is there
@@ -68,7 +68,7 @@ class PipettingSite(Recipe):
             actions = [[pipette.device.eject_tip, [], {}]]
         
         # motion prm
-        motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, place_z_offset=0, **kwargs)
+        motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=0, **kwargs)
 
         # adjust exit_path
         motion_prm["exit_path"] = [[shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [-shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [shake_travel, 0, motion_prm["height_load"], 0, 0, 0]] + motion_prm["exit_path"]

@@ -9,7 +9,7 @@ from workspace.recipes.decapper import Decapper
 from workspace.recipes.inspector import MobileInspector
 from workspace.recipes.dispense_arm import DispenseArm
 
-def create_recipes(workspace, core, speed_scale=1):
+def create_recipes(workspace, core, speed_factor=1):
     # read detection preset
     detection_preset = json.load(open("config/detection_preset.json"))
     # index list for the feeder
@@ -22,20 +22,20 @@ def create_recipes(workspace, core, speed_scale=1):
         ]
 
     return {
-        "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_2"], left_approach=True, speed_scale=speed_scale),
-        "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_1"], left_approach=True, speed_scale=speed_scale),
-        "tool_rack_0": ToolRack(workspace, core, workspace.components["tool_rack_0"], left_approach=True, speed_scale=speed_scale),
+        "tool_rack_2": ToolRack(workspace, core, workspace.components["tool_rack_2"], left_approach=True, speed_factor=speed_factor),
+        "tool_rack_1": ToolRack(workspace, core, workspace.components["tool_rack_1"], left_approach=True, speed_factor=speed_factor),
+        "tool_rack_0": ToolRack(workspace, core, workspace.components["tool_rack_0"], left_approach=True, speed_factor=speed_factor),
 
-        "hotel": Hotel(workspace, core, workspace.components["hotel_0"], left_approach=True, base_distance=150, speed_scale=speed_scale),
+        "hotel": Hotel(workspace, core, workspace.components["hotel_0"], left_approach=True, base_distance=150, speed_factor=speed_factor),
 
-        "cap_holder": Rack(workspace, core, workspace.components["sbs_adapter_1"], left_approach=False, base_distance=50, speed_scale=speed_scale),
-        "sbs_plate": Rack(workspace, core, workspace.components["sbs_adapter_0"], base_distance=75, rail_span=5, rail_step=5, speed_scale=speed_scale),
+        "cap_holder": Rack(workspace, core, workspace.components["sbs_adapter_1"], left_approach=False, base_distance=50, speed_factor=speed_factor),
+        "sbs_plate": Rack(workspace, core, workspace.components["sbs_adapter_0"], base_distance=75, rail_span=5, rail_step=5, speed_factor=speed_factor),
 
-        "sbs_adapter": Adapter(workspace, core, workspace.components["sbs_adapter_0"], left_approach=True, speed_scale=speed_scale),
+        "sbs_adapter": Adapter(workspace, core, workspace.components["sbs_adapter_0"], left_approach=True, speed_factor=speed_factor),
 
-        "feeder": Feeder(workspace, core, workspace.components["feeder"], left_approach=False, speed_scale=speed_scale, index_list=index_list),
+        "feeder": Feeder(workspace, core, workspace.components["feeder"], left_approach=False, speed_factor=speed_factor, index_list=index_list),
 
-        "decapper": Decapper(workspace, core, workspace.components["decapper_0"], base_distance=50, speed_scale=speed_scale),
-        "inspector": MobileInspector(workspace, core, detection_preset=detection_preset["cap"], speed_scale=speed_scale),
-        "dispense_arm": DispenseArm(workspace, core, workspace.components["syringe_dispence_0"], base_distance=50, speed_scale=speed_scale)
+        "decapper": Decapper(workspace, core, workspace.components["decapper_0"], base_distance=50, speed_factor=speed_factor),
+        "inspector": MobileInspector(workspace, core, detection_preset=detection_preset["cap"], speed_factor=speed_factor),
+        "dispense_arm": DispenseArm(workspace, core, workspace.components["syringe_dispence_0"], base_distance=50, speed_factor=speed_factor)
     }
