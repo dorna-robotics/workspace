@@ -215,10 +215,10 @@ class Recipe:
 
         return J
 
-    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False):
+    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}):
         """Execute a single motion — with optional motion planning for collision avoidance."""
         if use_planning:
-            points = self.core.motion_plan(joint=J)
+            points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if len(points) == 0:
                 raise RecipeError("no proper path was found")
             rt.smove(
@@ -235,17 +235,18 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
 
-    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False):
+    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}):
         """Execute a sequence of IK-solved motions along path offsets.
 
         has_motion_plan / first_approach: only the first step of an approach
         may use path planning.
+        motion_plan_kwargs: extra args passed to core.motion_plan() (padding, gravity_vec, etc.)
         """
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
             if i == 0 and first_approach:
-                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan)
+                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs)
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
@@ -410,6 +411,7 @@ class Recipe:
         exit_j5=None,
         output_exit=[],
         has_motion_plan=None,
+        motion_plan_kwargs={},
         **kwargs,
     ):
         rt = self.rt
@@ -435,6 +437,7 @@ class Recipe:
             vaj_map=vaj_map,
             has_motion_plan=has_motion_plan,
             first_approach=bool(approach_path),
+            motion_plan_kwargs=motion_plan_kwargs,
         )
 
         # output touch
