@@ -197,7 +197,7 @@ class Calibration:
 
     # -------------------- interpolation --------------------
 
-    def interpolate(self, raw_values, threshold=1e-3, power=2.0, dict_name="default", calibrate_abc=False):
+    def interpolate(self, raw_values, threshold=1e-3, power=2.0, dict_name="default", calibrate_rotation=False):
         """
         Inverse-distance interpolation in XYZ, plus quaternion/SLERP for orientation.
 
@@ -267,6 +267,6 @@ class Calibration:
 
         out = np.array([out_xyz[0], out_xyz[1], out_xyz[2], out_abc[0], out_abc[1], out_abc[2]], dtype=float)
 
-        if calibrate_abc:
+        if calibrate_rotation:
             return [float(x) for x in out]
         return [float(x) for x in out[0:3]] + raw_values[3:6]
