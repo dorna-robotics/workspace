@@ -34,7 +34,7 @@ class Printer(Recipe):
 
 
 
-    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", gravity_offset=2, **kwargs):
+    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", place_z_offset=2, **kwargs):
         # tool
         tool = self.tool_attached_to_the_robot()
 
@@ -47,7 +47,7 @@ class Printer(Recipe):
         )
 
         # place
-        return super().place(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, **kwargs)
+        return super().place(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, place_z_offset=place_z_offset, **kwargs)
     
 
     # dry run spin

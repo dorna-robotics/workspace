@@ -26,13 +26,13 @@ class Recipe:
         rail_span=0,  # number of tries around that point positive and negative directions
         # motion
         motion_type="lmove",
-        speed_factor=0.5,
+        speed_scale=0.5,
         jmove_vaj=[200, 500, 3000],  # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
         calibration=True,
-        calibrate_abc=False,
+        calibrate_rotation=False,
         calibration_targets=None,  # auto-discovers clb_ anchors if None
         calibration_target_offset=[0, 0, 8, 0, 0, 0],
         calibration_tool_solid_name="body",
@@ -58,13 +58,13 @@ class Recipe:
 
         # motion
         self.motion_type = prm["motion_type"]
-        self.speed_factor = prm["speed_factor"]
+        self.speed_scale = prm["speed_scale"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
 
         # calibration
         self.calibration = prm["calibration"]
-        self.calibrate_abc = prm["calibrate_abc"]
+        self.calibrate_rotation = prm["calibrate_rotation"]
         if prm["calibration_name"] is None:
             self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
         else:
@@ -182,7 +182,7 @@ class Recipe:
             pose=self.core.calibration.interpolate(
                 pose_in_world,
                 dict_name=self.calibration_name,
-                calibrate_abc=self.calibrate_abc,
+                calibrate_rotation=self.calibrate_rotation,
             )
         )
         anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
@@ -229,16 +229,16 @@ class Recipe:
                         raise RecipeError("no proper path was found")
                     rt.smove(
                         points,
-                        vel=vaj_map["jmove"][0] * self.speed_factor,
-                        accel=vaj_map["jmove"][1] * self.speed_factor,
-                        jerk=vaj_map["jmove"][2] * self.speed_factor,
+                        vel=vaj_map["jmove"][0] * self.speed_scale,
+                        accel=vaj_map["jmove"][1] * self.speed_scale,
+                        jerk=vaj_map["jmove"][2] * self.speed_scale,
                     )
                 else:
                     rt.jmove(
                         joint=J,
-                        vel=vaj_map["jmove"][0] * self.speed_factor,
-                        accel=vaj_map["jmove"][1] * self.speed_factor,
-                        jerk=vaj_map["jmove"][2] * self.speed_factor,
+                        vel=vaj_map["jmove"][0] * self.speed_scale,
+                        accel=vaj_map["jmove"][1] * self.speed_scale,
+                        jerk=vaj_map["jmove"][2] * self.speed_scale,
                     )
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
@@ -255,24 +255,24 @@ class Recipe:
                 )
             rt.lmove(
                 joint=J,
-                vel=vaj_map["lmove"][0] * self.speed_factor,
-                accel=vaj_map["lmove"][1] * self.speed_factor,
-                jerk=vaj_map["lmove"][2] * self.speed_factor,
+                vel=vaj_map["lmove"][0] * self.speed_scale,
+                accel=vaj_map["lmove"][1] * self.speed_scale,
+                jerk=vaj_map["lmove"][2] * self.speed_scale,
                 tool_pose=tool_pose,
             )
         elif self.motion_type == "jmove":
             rt.jmove(
                 joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
+                vel=vaj_map["jmove"][0] * self.speed_scale,
+                accel=vaj_map["jmove"][1] * self.speed_scale,
+                jerk=vaj_map["jmove"][2] * self.speed_scale,
             )
         else:
             getattr(rt, self.motion_type)(
                 joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
+                vel=vaj_map["jmove"][0] * self.speed_scale,
+                accel=vaj_map["jmove"][1] * self.speed_scale,
+                jerk=vaj_map["jmove"][2] * self.speed_scale,
             )
 
     def _build_io_config(self, tool, component, trigger_io):
@@ -435,7 +435,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        two_step_approach=False,
         **kwargs,
     ):
         for k, v in kwargs.items():
@@ -502,7 +502,7 @@ class Recipe:
                 [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
                 [0, 0, height_load + height_tool + gap, 0, 0, 0],
             ]
-            if not soft_approach:
+            if not two_step_approach:
                 _approach_path = _approach_path[0:1]
             approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
 
@@ -583,7 +583,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        two_step_approach=False,
         **kwargs,
     ):
         pick_prm = self.pick_setting(
@@ -592,7 +592,7 @@ class Recipe:
             exit=exit, attachment=attachment, trigger_io=trigger_io,
             padding=padding, gap=gap,
             tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
-            soft_approach=soft_approach, **kwargs,
+            two_step_approach=two_step_approach, **kwargs,
         )
         if not pick_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
@@ -612,8 +612,8 @@ class Recipe:
         padding=50,
         gap=2,
         load_anchor="center",
-        gravity_offset=1,
-        soft_approach=False,
+        place_z_offset=1,
+        two_step_approach=False,
         **kwargs,
     ):
         for k, v in kwargs.items():
@@ -671,7 +671,7 @@ class Recipe:
                 [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
                 [0, 0, height_container + gap, 0, 0, 0],
             ]
-            if not soft_approach:
+            if not two_step_approach:
                 _approach_path = _approach_path[0:1]
             approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
 
@@ -715,7 +715,7 @@ class Recipe:
 
         # gravity compensation
         target_offset = offset[:]
-        target_offset[2] += gravity_offset
+        target_offset[2] += place_z_offset
 
         return {
             "target_solid": component.assembly[solid_name],
@@ -752,8 +752,8 @@ class Recipe:
         padding=50,
         gap=2,
         load_anchor="center",
-        gravity_offset=1,
-        soft_approach=False,
+        place_z_offset=1,
+        two_step_approach=False,
         **kwargs,
     ):
         place_prm = self.place_setting(
@@ -761,8 +761,8 @@ class Recipe:
             component=component, offset=offset, approach=approach,
             actions=actions, exit=exit, attachment=attachment,
             trigger_io=trigger_io, padding=padding, gap=gap,
-            load_anchor=load_anchor, gravity_offset=gravity_offset,
-            soft_approach=soft_approach, **kwargs,
+            load_anchor=load_anchor, place_z_offset=place_z_offset,
+            two_step_approach=two_step_approach, **kwargs,
         )
         if not place_prm:
             raise RecipeError("place_setting failed — could not compute place parameters")
@@ -838,9 +838,9 @@ class Recipe:
             rt.checkpoint()
             rt.jmove(
                 joint=J,
-                vel=vaj[0] * self.speed_factor,
-                accel=vaj[1] * self.speed_factor,
-                jerk=vaj[2] * self.speed_factor,
+                vel=vaj[0] * self.speed_scale,
+                accel=vaj[1] * self.speed_scale,
+                jerk=vaj[2] * self.speed_scale,
             )
         return True
 
@@ -882,9 +882,9 @@ class Recipe:
             rt.checkpoint()
             rt.jmove(
                 joint=J,
-                vel=self.jmove_vaj[0] * self.speed_factor,
-                accel=self.jmove_vaj[1] * self.speed_factor,
-                jerk=self.jmove_vaj[2] * self.speed_factor,
+                vel=self.jmove_vaj[0] * self.speed_scale,
+                accel=self.jmove_vaj[1] * self.speed_scale,
+                jerk=self.jmove_vaj[2] * self.speed_scale,
             )
         else:
             raise RecipeError("could not find a valid approach to the calibration point")

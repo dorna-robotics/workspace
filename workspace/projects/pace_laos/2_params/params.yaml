@@ -10,7 +10,7 @@
 # ── Run parameters ────────────────────────────────────────────────────────────
 num_tubes: 4
 shake_duration: 120
-speed_factor: 10
+speed_scale: 10
 inspection_frq: 4
 inspection_rot: 90
 immerse_40ml_dist: 90

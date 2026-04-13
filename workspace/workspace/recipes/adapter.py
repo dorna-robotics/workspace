@@ -49,7 +49,7 @@ class Adapter(Recipe):
 
     def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", **kwargs):
             # place parameters
-            motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, soft_approach=True, **kwargs)
+            motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, two_step_approach=True, **kwargs)
             if not motion_prm:
                 raise RecipeError("place_setting failed — could not compute place parameters")
 

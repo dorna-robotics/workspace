@@ -25,7 +25,7 @@ class Decapper(Recipe):
         )
 
     def place(self, approach=True, exit=True, padding=30, **kwargs):
-        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
+        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, place_z_offset=0, **kwargs)
 
     def pick(self, approach=True, exit=True, padding=30, **kwargs):
         return super().pick(anchor="place", approach=approach, exit=exit, padding=padding, **kwargs)
@@ -40,7 +40,7 @@ class Decapper(Recipe):
         gap=2,
         lmove_vaj=[1000, 3000, 15000],
         jmove_vaj=[500, 3000, 15000],
-        max_rotation=500,
+        twist_range=500,
         twist=500,
         **kwargs,
     ):
@@ -86,7 +86,7 @@ class Decapper(Recipe):
         tool = motion_prm["tool"]
 
         # j5_start
-        j5_start = max_rotation / 2
+        j5_start = twist_range / 2
 
         # adjust j5 in the approach
         motion_prm["approach_j5"] = j5_start
@@ -96,14 +96,14 @@ class Decapper(Recipe):
             raise RecipeError("decap failed — touch motion failed")
 
         # chunks
-        twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
+        twist_chunks = lambda t: ([t % twist_range] if t % twist_range else []) + [twist_range] * (t // twist_range)
         chunks = twist_chunks(twist or component_cap.twist)  # rewrite twist, with the given twist
 
         joint_list = []
         z_offset = 0
 
         for chunk in chunks:
-            z_offset += -component_cap.pitch * chunk / max_rotation
+            z_offset += -component_cap.pitch * chunk / twist_range
 
             # inverse kinematic
             J, C = self.core.IK(
@@ -126,7 +126,7 @@ class Decapper(Recipe):
             J[5] = j5_start - chunk
             joint_list.append(J[:])
 
-        # move, starting from max_rotation/2
+        # move, starting from twist_range/2
         for i in range(len(joint_list)):
             # enable gripper (IO through runtime)
             if tool.output_state() != 1:
@@ -176,9 +176,9 @@ class Decapper(Recipe):
                 rt.checkpoint()
                 rt.lmove(
                     joint=J,
-                    vel=self.lmove_vaj[0] * self.speed_factor,
-                    accel=self.lmove_vaj[1] * self.speed_factor,
-                    jerk=self.lmove_vaj[2] * self.speed_factor,
+                    vel=self.lmove_vaj[0] * self.speed_scale,
+                    accel=self.lmove_vaj[1] * self.speed_scale,
+                    jerk=self.lmove_vaj[2] * self.speed_scale,
                 )
 
         # attach
@@ -202,7 +202,7 @@ class Decapper(Recipe):
         gap=2,
         lmove_vaj=[1000, 3000, 15000],
         jmove_vaj=[500, 3000, 15000],
-        max_rotation=500,
+        twist_range=500,
         **kwargs,
     ):
         rt = self.rt
@@ -254,7 +254,7 @@ class Decapper(Recipe):
         height_total = height_tube + height_cap
 
         # j5_start
-        j5_start = -max_rotation / 2
+        j5_start = -twist_range / 2
 
         # place setting
         place_prm = self.place_setting(
@@ -268,8 +268,8 @@ class Decapper(Recipe):
             trigger_io=False,
             padding=padding,
             gap=gap,
-            gravity_offset=0,
-            soft_approach=True,
+            place_z_offset=0,
+            two_step_approach=True,
             **kwargs,
         )
         if not place_prm:
@@ -281,14 +281,14 @@ class Decapper(Recipe):
             raise RecipeError("cap failed — touch motion failed")
 
         # run chunks
-        twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
+        twist_chunks = lambda t: ([t % twist_range] if t % twist_range else []) + [twist_range] * (t // twist_range)
         chunks = twist_chunks(int(component_cap.twist))[::-1]
 
         joint_list = []
         z_offset = 0
 
         for chunk in chunks:
-            z_offset += component_cap.pitch * chunk / max_rotation
+            z_offset += component_cap.pitch * chunk / twist_range
 
             # inverse kinematic
             J, C = self.core.IK(
@@ -358,9 +358,9 @@ class Decapper(Recipe):
                 rt.checkpoint()
                 rt.lmove(
                     joint=J,
-                    vel=self.lmove_vaj[0] * self.speed_factor,
-                    accel=self.lmove_vaj[1] * self.speed_factor,
-                    jerk=self.lmove_vaj[2] * self.speed_factor,
+                    vel=self.lmove_vaj[0] * self.speed_scale,
+                    accel=self.lmove_vaj[1] * self.speed_scale,
+                    jerk=self.lmove_vaj[2] * self.speed_scale,
                 )
 
         # attach cap to body

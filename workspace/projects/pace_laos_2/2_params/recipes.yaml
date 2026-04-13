@@ -3,7 +3,7 @@
 # Aliases are referenced in params.yaml and workflow.py.
 # component names (e.g. tool_rack_144mm_1) come from 1_scene/base.j2.
 #
-# speed_factor is injected at runtime from params.yaml.
+# speed_scale is injected at runtime from params.yaml.
 
 gripper:
   class: workspace.recipes.tool_rack.ToolRack

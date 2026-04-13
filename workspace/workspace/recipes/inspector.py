@@ -59,7 +59,7 @@ class FixedInspector(Recipe):
             padding=padding,
             gap=2,
             load_anchor=load_anchor,
-            gravity_offset=0, 
+            place_z_offset=0, 
             **kwargs)
 
     

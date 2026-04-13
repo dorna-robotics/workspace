@@ -50,13 +50,13 @@ class BaseWorkflow:
     def _load_recipes(self, workspace, core) -> dict:
         with open(self._base_dir / "params" / "recipes.yaml") as f:
             defs = yaml.safe_load(f)
-        speed = getattr(self.cfg, "speed_factor", 10)
+        speed = getattr(self.cfg, "speed_scale", 10)
         rcp = {}
         for alias, defn in defs.items():
             cls = _import_class(defn["class"])
             kwargs = dict(defn.get("kwargs") or {})
             comp = workspace.components[kwargs.pop("component")]
-            rcp[alias] = cls(workspace, core, comp, speed_factor=speed, **kwargs)
+            rcp[alias] = cls(workspace, core, comp, speed_scale=speed, **kwargs)
         return rcp
 
     # ── Generic enum enforcement ──────────────────────────────────────────

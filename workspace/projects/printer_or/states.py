@@ -15,11 +15,11 @@ class States:
         self.shake_travel = kwargs.get("shake_travel", 7)
 
         # Mechanical
-        self.falcon_rack_gravity_offset = 3
+        self.falcon_rack_place_z_offset = 3
         self.cap_offset = [0, 0, 111 - 2, 0, 0, 0]
-        self.cap_gravity_offset = 1
+        self.cap_place_z_offset = 1
         self.decapper_tool_tcp_z_offset = -1
-        self.printer_gravity_offset = 4
+        self.printer_place_z_offset = 4
 
         # Inspection
         self.inspection_frq = kwargs.get("inspection_frq", 4)
@@ -70,7 +70,7 @@ class States:
         """Place tube in printer, print or dry-run, pick up."""
         rcp = self.rcp
 
-        rcp["printer"].place(exit=False, gravity_offset=self.printer_gravity_offset)
+        rcp["printer"].place(exit=False, place_z_offset=self.printer_place_z_offset)
 
         if self.print_job:
             rcp["printer"].print_label(
@@ -92,8 +92,8 @@ class States:
 
         rcp["falcon_rack"].place(
             tube,
-            gravity_offset=self.falcon_rack_gravity_offset,
-            soft_approach=True,
+            place_z_offset=self.falcon_rack_place_z_offset,
+            two_step_approach=True,
         )
 
     def decapped(self, i):
@@ -110,8 +110,8 @@ class States:
         rcp["falcon_rack"].place(
             cap,
             offset=self.cap_offset,
-            soft_approach=True,
-            gravity_offset=self.cap_gravity_offset,
+            two_step_approach=True,
+            place_z_offset=self.cap_place_z_offset,
         )
 
         # Pick decapped tube from decapper
@@ -120,8 +120,8 @@ class States:
         # Place tube back in rack
         rcp["falcon_rack"].place(
             tube,
-            gravity_offset=self.falcon_rack_gravity_offset,
-            soft_approach=True,
+            place_z_offset=self.falcon_rack_place_z_offset,
+            two_step_approach=True,
         )
 
     def make(self):
