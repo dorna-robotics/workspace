@@ -11,11 +11,11 @@ class RackMicronic962(Rack):
             {"body":[
                 {"pose":[0, 0, 15, 0, 0, 0], "scale":[129,87,30]}#[xyzabc] , [lx,ly,lz]
         ]},
-        ffset=[0, 0],
-        pitch=[9, 9],
+        offset=[-9*(12-1)/2, -9*(8-1)/2, 3],
+        pitch=[9, 9, 0],
         rvec_safe=[0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("H") + 1)],
-        cols= [i for i in range(1, 13)],
+        cols= [i for i in range(1, 12+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

@@ -35,7 +35,12 @@ class Inspection:
         self.assembly = {
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
-        
+
+        # slot
+        self.slot = {
+           "body": ["place"]
+        }
+
         # simulation
         self.simulation = prm["simulation"]
 

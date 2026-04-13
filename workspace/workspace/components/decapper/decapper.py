@@ -38,6 +38,11 @@ class Decapper:
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
 
+        # slot
+        self.slot = {
+           "body": ["place"] 
+        }
+
         # open and close
         self.output_enable = prm["output_enable"]
         self.output_disable = prm["output_disable"]

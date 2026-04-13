@@ -11,13 +11,11 @@ class RackTipWasteBin(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 66/2, 0.0, 0.0, 0.0], "scale":[127.4, 85, 66]}#[xyzabc] , [lx,ly,lz]
         ]},
-
-        size = [127.4, 85, 66],
-        offset=[0, 0],
-        pitch=[0, 0],
+        offset=[0, 0, 45],
+        pitch=[0, 0, 0],
         rvec_safe = [0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("A") + 1)],
-        cols= [i for i in range(1, 2)],
+        cols= [i for i in range(1, 1+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

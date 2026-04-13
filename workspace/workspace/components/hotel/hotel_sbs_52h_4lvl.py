@@ -13,7 +13,7 @@ class HotelSBS52h4lvl(Hotel):
             {"body":[
                 {"pose":[0, -15, 217.5/2, 0.0, 0.0, 0.0], "scale":  [100, 180, 217.5]},
         ]},
-        size=[150, 100, 52],
+        pitch=[0, 0, 52],
         level=4,
     )
 

@@ -6,7 +6,7 @@ from dorna2 import Solid
 class Tube:
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "place_cap":[0, 0, 0, 0, 0, 0]},
         },
         size = [0, 0, 0] # [dx, dy, dz]
     )
@@ -25,6 +25,11 @@ class Tube:
         self.assembly = {
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, box_for_grip=True, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
-        
+
+        # slot
+        self.slot = {
+            "body": ["place_cap"],
+        }
+
         # size
         self.size = prm["size"]

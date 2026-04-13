@@ -7,7 +7,7 @@ from workspace.components.tube.tube import Tube
 class TubeMicronic075ml(Tube):
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 42, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 42, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "place_cap":[0, 0, 0, 0, 0, 0]},
         },
         collision_box = 
             {"body":[

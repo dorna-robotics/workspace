@@ -11,11 +11,11 @@ class RackFalcon15ml(Rack):
             {"body":[
                 {"pose":[0, 0, 39, 0, 0, 0], "scale":[164, 117, 78]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[0, 0],
-        pitch=[28, 28],
+        offset=[-28*(5-1)/2, -28*(4-1)/2, 4.4],
+        pitch=[28, 28, 0],
         rvec_safe=[0, 0, 45],
         rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
-        cols= [i for i in range(1, 6)],
+        cols= [i for i in range(1, 5+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

@@ -11,11 +11,11 @@ class RackAutosampler2ml(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 27/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 27]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[0, 0],
-        pitch=[14, 14],
+        offset=[-14*(8-1)/2, -14*(6-1)/2, 5],
+        pitch=[14, 14, 0],
         rvec_safe=[0, 0, 45],
         rows=[chr(c) for c in range(ord("A"), ord("F") + 1)],
-        cols= [i for i in range(1, 9)],
+        cols= [i for i in range(1, 8+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

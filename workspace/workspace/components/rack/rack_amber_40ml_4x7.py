@@ -11,8 +11,8 @@ class RackAmber40ml4x7(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 15.0, 0.0, 0.0, 0.0], "scale":[285.0, 165.0, 30.0]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[0, 0],
-        pitch=[40, 40],
+        offset=[-40*(7-1)/2, -40*(4-1)/2, 2],
+        pitch=[40, 40, 0],
         rvec_safe=[0, 0, 45],
         rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
         cols= [i for i in range(1, 7+1)],

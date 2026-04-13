@@ -6,7 +6,7 @@ from dorna2 import Pose
 class Hotel:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "clb": [0, 75, 4, -90, 0, 0]}},
-        size = [150, 100, 52],
+        pitch = [0, 0, 52],
         level=3,
     )
 
@@ -21,22 +21,27 @@ class Hotel:
         self.type = type
 
         # dim
-        self.size = prm["size"]
+        self.pitch = prm["pitch"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
         # levels
         self.level = prm["level"]
         for i in range(self.level):
             # center
-            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
             # top
-            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
             #place
-            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.size[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
             # clb
-            prm["anchors"][next(iter(prm["anchors"]))][f"clb_{i}"] = p.pose("clb", offset=[0, -(i+1)*self.size[2], 0, 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"clb_{i}"] = p.pose("clb", offset=[0, -(i+1)*self.pitch[2], 0, 0, 0, 0])
 
         # assembly
         self.assembly = {
             k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
+        }
+
+        # slot
+        self.slot = {
+           next(iter(prm["anchors"])): [f"place_{i}" for i in range(self.level)] 
         }

@@ -11,11 +11,11 @@ class RackAxygen180ul(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 47/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 47]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[0, 0],
-        pitch=[9, 9],
+        offset=[-9*(8-1)/2, -9*(12-1)/2, 7],
+        pitch=[9, 9, 0],
         rvec_safe=[0, 0, 45], # -135 and -90
         rows=[chr(c) for c in range(ord("A"), ord("H") + 1)],
-        cols= [i for i in range(1, 13)],
+        cols= [i for i in range(1, 12+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

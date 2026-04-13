@@ -41,7 +41,10 @@ class Shaker2slot(Shaker):
             k: Solid(type=f"shaker_{k}", anchors=prm["anchors"][k], component=self.name, **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {})) for k in prm["anchors"]
         }
 
-        #self.update_pose()
+        # slot
+        self.slot = {
+            "rotating": ["A1", "A2"],
+        }
 
 
 

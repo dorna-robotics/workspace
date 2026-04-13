@@ -11,8 +11,8 @@ class RackAutosampler2ml5x10(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 21/2, 0.0, 0.0, 0.0], "scale":[194.0, 101.25, 21]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[0, 0],
-        pitch=[19.18, 19.18],
+        offset=[-19.18*(10-1)/2, -19.18*(5-1)/2, 8],
+        pitch=[19.18, 19.18, 0],
         rvec_safe=[0, 0, 45],
         rows=[chr(c) for c in range(ord("A"), ord("E") + 1)],
         cols= [i for i in range(1, 10+1)],
