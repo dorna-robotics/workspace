@@ -614,7 +614,7 @@ class Recipe:
         )
         if not pick_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
-        return self.touch(**pick_prm)
+        return self.touch(**pick_prm, motion_plan_kwargs=kwargs.get("motion_plan_kwargs", {}))
 
     def place_setting(
         self,
@@ -784,7 +784,7 @@ class Recipe:
         )
         if not place_prm:
             raise RecipeError("place_setting failed — could not compute place parameters")
-        return self.touch(**place_prm)
+        return self.touch(**place_prm, motion_plan_kwargs=kwargs.get("motion_plan_kwargs", {}))
 
     # ── High-level motions ──────────────────────────────────────────────────
 
