@@ -15,7 +15,6 @@ class Adapter(Recipe):
         rail_span=0, # 10        
         # calibration
         calibration_abc=True,
-        calibration_targets={"body": ["clb_0", "clb_1", "clb_2", "clb_3"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
     def __init__(self, workspace, core, component, **kwargs):

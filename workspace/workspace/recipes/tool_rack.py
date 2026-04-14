@@ -10,7 +10,6 @@ class ToolRack(Recipe):
         # calibration
         calibrate_abc=True,
         calibration_target_offset=[0, 0, 20, 0, 0, 0],
-        calibration_targets={"body":["clb_0"]}, # {solid_name: {anchor_1:..., anchor_2:...},...}
     )
 
     def __init__(self, workspace, core, component, **kwargs):

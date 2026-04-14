@@ -10,8 +10,6 @@ class DosingSite(Recipe):
         # IK
         rail_step=20, # 5
         rail_span=5, # 10        
-        # calibration
-        calibration_targets={}
     )
 
     def __init__(self, workspace, core, component, **kwargs):

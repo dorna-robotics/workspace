@@ -18,7 +18,6 @@ class Hotel(Recipe):
         rail_span=5, # 5    
         # calibration
         calibrate_abc = True, # True
-        calibration_targets=None, # auto-discovers clb_ anchors
     )
 
     def __init__(self, workspace, core, component, **kwargs):

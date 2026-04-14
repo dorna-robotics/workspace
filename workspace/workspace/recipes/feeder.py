@@ -54,10 +54,10 @@ class Feeder(Recipe):
         if abs(new_joint[self.component.axis_cfg["axis"]]) > self.thr_dir:
             self.mix_dir = -1 * self.mix_dir
 
-        return self.roate_in_step(step=self.mix_dir * self.shift_steps, **kwargs)
+        return self.rotate_in_step(step=self.mix_dir * self.shift_steps, **kwargs)
 
     # rotate the feeder to move to the nth slot from the current
-    def roate_in_step(self, step=1, **kwargs):
+    def rotate_in_step(self, step=1, **kwargs):
         rt = self.rt
 
         # current joint
@@ -142,7 +142,7 @@ class Feeder(Recipe):
             # object exists
             if inspector.detect(**preset, **kwargs):
                 # move the feeder to that position
-                self.roate_in_step(step=step)
+                self.rotate_in_step(step=step)
                 rt.checkpoint()
                 rt.delay(0.5)   # pause-aware
                 return True

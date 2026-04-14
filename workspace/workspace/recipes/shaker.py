@@ -12,8 +12,6 @@ class Shaker(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5
-        # calibration
-        calibration_targets={"body": ["clb_0"]},
     )
 
     def __init__(self, workspace, core, component, **kwargs):
