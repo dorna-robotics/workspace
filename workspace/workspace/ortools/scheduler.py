@@ -41,7 +41,16 @@ class ORScheduler:
         self._goal   = set(proto.get("goal", []))
         self._smap   = {s["name"]: s for s in self._states}
         self._snames = [s["name"] for s in self._states]
-        self._swap_dur = int(proto.get("tool_swap_duration", 0))
+        self._global_swap_dur = int(proto.get("tool_swap_duration", 0))
+
+    def _swap_dur(self, state_name: str) -> int:
+        """Per-state tool_swap_duration override, falling back to the global value.
+        Represents the gap inserted *before* this state when transitioning from a
+        different tool — i.e. the cost of swapping INTO this state's tool."""
+        s = self._smap.get(state_name)
+        if s and "tool_swap_duration" in s:
+            return int(s["tool_swap_duration"])
+        return self._global_swap_dur
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -117,9 +126,9 @@ class ORScheduler:
         completed: dict[str, set[int]],
     ) -> list[tuple[str, int]] | None:
 
-        model   = cp_model.CpModel()
-        swap    = self._swap_dur
-        horizon = sum(self._duration(sn) for sn, _ in tasks) + swap * len(tasks) + 1
+        model    = cp_model.CpModel()
+        max_swap = max([self._swap_dur(sn) for sn in self._snames] or [0])
+        horizon  = sum(self._duration(sn) for sn, _ in tasks) + max_swap * len(tasks) + 1
 
         starts    = {}
         ends      = {}
@@ -173,8 +182,9 @@ class ORScheduler:
                         model.Add(starts[(sn, i)] >= ends[req_key])
 
         # Tool swap penalty: if two foreground tasks use different tools,
-        # the solver must leave a gap of tool_swap_duration between them.
-        if swap > 0:
+        # the solver leaves a gap equal to the *incoming* state's swap duration
+        # (per-state override falling back to the global tool_swap_duration).
+        if max_swap > 0:
             fg = [(sn, i) for (sn, i) in tasks if not self._smap[sn].get("background")]
             for idx_a, (sn_a, i_a) in enumerate(fg):
                 tool_a = self._tool(sn_a)
@@ -185,10 +195,11 @@ class ORScheduler:
                     tool_b = self._tool(sn_b)
                     if tool_b is None or tool_a == tool_b:
                         continue
-                    # Different tools — whichever runs first, the other must wait swap_dur
+                    swap_into_b = self._swap_dur(sn_b)
+                    swap_into_a = self._swap_dur(sn_a)
                     a_first = model.NewBoolVar(f"sw_{idx_a}_{idx_b}")
-                    model.Add(starts[(sn_b, i_b)] >= ends[(sn_a, i_a)] + swap).OnlyEnforceIf(a_first)
-                    model.Add(starts[(sn_a, i_a)] >= ends[(sn_b, i_b)] + swap).OnlyEnforceIf(a_first.Not())
+                    model.Add(starts[(sn_b, i_b)] >= ends[(sn_a, i_a)] + swap_into_b).OnlyEnforceIf(a_first)
+                    model.Add(starts[(sn_a, i_a)] >= ends[(sn_b, i_b)] + swap_into_a).OnlyEnforceIf(a_first.Not())
 
         # Minimize makespan
         makespan = model.NewIntVar(0, horizon, "makespan")

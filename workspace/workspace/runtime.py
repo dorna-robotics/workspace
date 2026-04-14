@@ -357,12 +357,13 @@ class Runtime:
     # ---------------------------------------------------------------------
 
     def checkpoint(self) -> None:
+        # End is honored only between states (see ORRunner.run), not mid-state,
+        # so partially-completed atomic operations (e.g. tool swaps) can finish.
+        # Kill and Pause are still observed here.
         with self._lock:
             while True:
                 if self._killed:
                     raise KillRequested()
-                if self._ending and not self._in_cleanup:
-                    raise EndRequested()
                 st = self._status.state
                 if st == RTState.PAUSED:
                     self._cv.wait()

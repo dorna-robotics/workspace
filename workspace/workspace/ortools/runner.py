@@ -95,14 +95,39 @@ class ORRunner:
         return any(s.get("trigger") == trigger_name for s in self._trigger_states.values())
 
     def run_trigger(self, trigger_name: str):
-        """Execute a trigger state (e.g. 'stop'). Called outside normal scheduling."""
+        """Execute a trigger state (e.g. 'end'). Called outside normal scheduling.
+        Shares the same lifecycle as scheduled states (pre_check → tool swap →
+        handler → post_check) — only the invocation point differs."""
         for sname, s in self._trigger_states.items():
             if s.get("trigger") == trigger_name:
-                handler = self._handlers.get(sname)
-                if handler:
-                    self.rt.step(f"→ {sname}")
-                    handler(0)
+                self._execute_state(sname, 0, label=f"→ {sname}")
                 return
+
+    def _execute_state(self, state_name: str, item_i: int = 0, *,
+                       label: str = None, run_post: bool = True) -> bool:
+        """Run one state's lifecycle: pre_check → handler → post_check.
+        Tool swapping is handled by the wrapped handler in _handlers (see
+        Workflow._apply_tool_enforcement). Returns False if pre_check skipped it."""
+        s = self._smap.get(state_name) or self._trigger_states.get(state_name)
+        if s is None:
+            return False
+
+        pre = s.get("pre_check")
+        if pre and not self._run_checks(pre, item_i):
+            return False
+
+        handler = self._handlers.get(state_name)
+        if handler:
+            if label:
+                self.rt.step(label)
+            handler(item_i)
+
+        if run_post:
+            post = s.get("post_check")
+            if post:
+                self._run_checks(post, item_i)
+
+        return True
 
     def run(self, batch_size: int):
         """
@@ -132,6 +157,11 @@ class ORRunner:
                     break
 
                 for (state_name, item_i) in schedule:
+                    # End is observed between states so the current state's
+                    # multi-step atomic operations (e.g. tool swap) can complete.
+                    if self.rt.ending and not self.rt._in_cleanup:
+                        raise EndRequested()
+
                     s       = self._smap[state_name]
                     is_bg   = s.get("background", False)
 
@@ -140,35 +170,23 @@ class ORRunner:
                         if req in bg_active:
                             self._wait_bg(req, bg_active)
 
-                    # ── Pre-checks ────────────────────────────────────────────
-                    pre = s.get("pre_check")
-                    if pre and not self._run_checks(pre, item_i):
-                        continue
-
-                    handler = self._handlers.get(state_name)
-
                     if is_bg:
                         real_dur = self._bg_dur.get(state_name, 120.0)
-                        self.rt.step(f"OR → {state_name} [background, {real_dur:.0f}s]")
-                        if handler:
-                            handler(0)
+                        label = f"OR → {state_name} [background, {real_dur:.0f}s]"
+                        if not self._execute_state(state_name, 0, label=label, run_post=False):
+                            continue
                         bg_active[state_name] = (time.time(), real_dur)
                         for t in range(batch_size):
                             completed[state_name].add(t)
                         done_count += batch_size
                     else:
-                        self.rt.step(f"OR → {state_name} [{item_i + 1}/{batch_size}]")
-                        if handler:
-                            handler(item_i)
+                        label = f"OR → {state_name} [{item_i + 1}/{batch_size}]"
+                        if not self._execute_state(state_name, item_i, label=label):
+                            continue
                         completed[state_name].add(item_i)
                         done_count += 1
 
                     self.rt.step(int(done_count / total_tasks * 100), level="progress")
-
-                    # ── Post-checks ───────────────────────────────────────────
-                    post = s.get("post_check")
-                    if post and not is_bg:
-                        self._run_checks(post, item_i)
 
                 if not self._horizon:
                     break

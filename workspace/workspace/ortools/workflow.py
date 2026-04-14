@@ -137,6 +137,10 @@ class BaseWorkflow:
             return
         handler = self._enum_handlers.get(constraint_name)
         if handler:
+            # Invalidate before transition so an interruption mid-handler
+            # leaves state at None (cleanup-safe) rather than stale `current`.
+            # Handlers should advance state as each physical step completes.
+            self._enum_state[constraint_name] = None
             handler(current, value)
         self._enum_state[constraint_name] = value
 
@@ -145,8 +149,8 @@ class BaseWorkflow:
         if current:
             handler = self._enum_handlers.get(constraint_name)
             if handler:
+                self._enum_state[constraint_name] = None
                 handler(current, None)
-            self._enum_state[constraint_name] = None
 
     def _release_all(self):
         for name in list(self._enum_state.keys()):
@@ -176,8 +180,15 @@ class BaseWorkflow:
             self.rt._in_cleanup = True
             try:
                 if self.runner.has_trigger("end"):
+                    # trigger:end is the authoritative cleanup. Its `tool:` field
+                    # controls final tool state:
+                    #   not set      → keep current tool, no swap, no release
+                    #   tool: NAME   → swap to NAME, leave NAME held after trigger
+                    #   tool: null   → release current tool, run trigger bare
                     self.runner.run_trigger("end")
-                self._release_all()
+                # else: no trigger:end → exit immediately after the current state
+                # finished. Tools stay wherever they are; cleanup is the user's
+                # responsibility (define trigger:end with tool: null to release).
             except KillRequested:
                 raise
             except Exception:
@@ -210,10 +221,14 @@ class BaseWorkflow:
         rcp = self.rcp
 
         def swap_tool(old, new):
+            # Update enum state after each physical step so interruption
+            # between place and pick leaves state consistent with the rack.
             if old:
                 rcp[old].place()
+                self._enum_state["tool"] = None
             if new:
                 rcp[new].pick()
+                self._enum_state["tool"] = new
 
         self.on_enum_change("tool", handler=swap_tool)
 

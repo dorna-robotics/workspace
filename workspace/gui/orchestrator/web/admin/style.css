@@ -380,6 +380,7 @@
 .pendant-overlay {
   position: fixed;
   inset: 0;
+  margin-left: 0;
   z-index: 10000;
   background: var(--bg);
   display: flex;

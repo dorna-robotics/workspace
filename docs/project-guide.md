@@ -216,10 +216,11 @@ Each key under `states` is the state name — must match a key in `states.py` `m
 | `duration` | No | Estimated seconds (used by scheduler, default: 1) |
 | `requires` | No | List of state names that must complete first |
 | `tool` | No | Which tool the robot holds. Auto-swaps via tool rack between states. <br>• **not set** — keep current tool, no swap <br>• **`tool: gripper`** — swap to named tool <br>• **`tool: null`** — return current tool, run bare |
+| `tool_swap_duration` | No | Per-state override (seconds) of the global `tool_swap_duration`. Represents the gap inserted *before* this state when transitioning from a different tool. Falls back to the top-level value if unset |
 | `background` | No | `true` = runs in parallel, completes all items at once (default: `false`) |
 | `pre_check` | No | Check name or list — runs **before** the tool swap and state handler. If it fails, the state is skipped entirely (no tool swap happens). Must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — runs **after** the state handler completes. Must match a key in `checks.py` `make()` |
-| `trigger` | No | `"end"` — state is not scheduled, only runs on End signal. <br>• When End is pressed, the current action finishes, then this state runs before the process is killed <br>• Use it for cleanup (return tools, home robot, safe position) <br>• If not defined, End just kills the process after the current action finishes |
+| `trigger` | No | `"end"` — state is not scheduled, only runs on End signal. <br>• A trigger state is **a normal state with a different invocation point** — it goes through the same execution path (`_execute_state` in `runner.py`) as scheduled states, so every state-level field above (`tool`, `pre_check`, `post_check`, etc., plus any future additions) applies naturally <br>• When End is pressed, the current state finishes, then this trigger runs before the process exits <br>• `tool:` on the trigger is the **authoritative final tool state** — no auto-release runs after <br>• If `trigger: end` is **not** defined, End simply exits after the current state finishes — tools are **not** auto-released. To release the held tool on End, define a `trigger: end` state with `tool: null` <br>• Scheduling-only fields (`requires`, `duration`, `tool_swap_duration`, `background`) are ignored on triggers since they're not part of the OR-tools plan <br>• Use it for cleanup (return tools, home robot, safe position) |
 
 ### Goal
 
@@ -233,6 +234,8 @@ The `goal` list defines which states mark the protocol as done. Goal names must 
 ### Tool swap duration
 
 `tool_swap_duration` (top-level, optional) — estimated seconds to swap between tools (default: `0`). When set, the scheduler adds this as a penalty between consecutive tasks that use different tools, so it naturally batches same-tool work together to minimize total time.
+
+Per-state overrides are also supported — add `tool_swap_duration: N` to any individual state to override the global value. The override represents the cost of swapping **into** that state's tool, so when transitioning A→B the gap is B's value, and B→A uses A's value.
 
 ---
 
@@ -391,6 +394,8 @@ rt.checkpoint()  # Blocks if paused, raises KillRequested if killed
 
 Called automatically after every `rt.step()` and `rt.call()`. Use manually in long loops.
 
+Note: `checkpoint()` does **not** raise `EndRequested` — End is observed between states, not mid-state. See [§9 Pause / End / Kill](#pause--end--kill--runtime-control-semantics).
+
 ---
 
 ## 9. Running a project
@@ -412,4 +417,18 @@ sudo python3 projects/my_project/main.py --port 5010
 ```
 
 Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send start/pause/kill commands.
+
+### Pause / End / Kill — runtime control semantics
+
+The runtime exposes three control signals. Each interacts differently with the currently executing state:
+
+| Signal | When it takes effect | What runs after | Use when |
+|---|---|---|---|
+| **Pause** | At the next `rt.checkpoint()` (mid-state OK) | Blocks until you Resume — state continues from where it stopped | You want to inspect, intervene, or wait |
+| **End** | **Between states** — current state runs to completion first | If `trigger: end` is defined → that trigger runs and is the authoritative final cleanup. Otherwise → exit immediately, tools stay where they are | Graceful shutdown — the safe default |
+| **Kill** | At the next `rt.checkpoint()` (mid-state OK) | Nothing — process exits immediately, no cleanup | Emergency halt only — may leave robot/tools in a dirty state |
+
+**Why End is "between states", not mid-state:** many states perform multi-step atomic operations (most importantly tool swaps: `place(old)` then `pick(new)`). Interrupting between those steps would leave the robot in an inconsistent state — e.g. tool placed back but the next pick never happened, while the runtime still thinks a tool is held. End therefore lets the current state finish, then exits cleanly between states.
+
+If you need to stop *immediately* and accept the consequences, use Kill.
 
