@@ -11,7 +11,7 @@ class RackAxygen180ul(Rack):
             {"body":[
                 {"pose":[0.0, 0.0, 47/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 47]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[-9*(8-1)/2, -9*(12-1)/2, 7],
+        offset=[-9*(12-1)/2, -9*(8-1)/2, 7],
         pitch=[9, 9, 0],
         rvec_safe=[0, 0, 45], # -135 and -90
         rows=[chr(c) for c in range(ord("A"), ord("H") + 1)],
