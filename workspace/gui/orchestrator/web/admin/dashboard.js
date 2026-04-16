@@ -201,14 +201,16 @@ function render() {
 
     el.innerHTML = `
       <div class="wc-head">
-        <div class="wc-avatar" style="background:${wsColor(ws.name)}">${esc((ws.name[0]||'?').toUpperCase())}</div>
-        <div class="wc-info">
-          <div class="wc-name">
-            ${esc(ws.name)}
-            ${ws.label ? `<span class="wc-label">${esc(ws.label)}</span>` : ""}
+        <a class="wc-head-link" href="workspace.html?name=${encodeURIComponent(ws.name)}" title="Open ${esc(ws.name)}">
+          <div class="wc-avatar" style="background:${wsColor(ws.name)}">${esc((ws.name[0]||'?').toUpperCase())}</div>
+          <div class="wc-info">
+            <div class="wc-name">
+              ${esc(ws.name)}
+              ${ws.label ? `<span class="wc-label">${esc(ws.label)}</span>` : ""}
+            </div>
+            <div class="wc-path mono">${esc(ws.path_to_file)}</div>
           </div>
-          <div class="wc-path mono">${esc(ws.path_to_file)}</div>
-        </div>
+        </a>
         <span class="pill ${variant}">
           <span class="dot ${variant}${running ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
@@ -238,7 +240,6 @@ function render() {
         return `<div class="wc-progress"><div class="progress-bar"><div class="progress-bar-fill${p >= 100 ? " done" : ""}" style="width:${Math.min(100, Math.max(0, p))}%"></div></div><span class="wc-progress-label">${Math.min(100, Math.max(0, p))}%</span></div>`;
       })()}
       <div class="wc-footer">
-        <a class="btn btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}">Open</a>
         <div class="wc-actions">
           ${!launched
             ? `<div class="spacer"></div><button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>

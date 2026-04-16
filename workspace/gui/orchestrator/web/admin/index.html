@@ -26,6 +26,7 @@
       margin-bottom: 16px;
       padding-bottom: 12px;
     }
+    .section-actions { margin-bottom: 12px; }
     .section-header h2 { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
     .section-header .count {
       font-size: 12px; font-weight: 600;
@@ -95,6 +96,17 @@
       align-items: flex-start;
       gap: 12px;
     }
+    .wc-head-link {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    .wc-head-link:hover .wc-name { color: var(--accent); }
     .wc-info { flex: 1; min-width: 0; }
     .wc-name {
       font-size: 15px;
@@ -229,6 +241,12 @@
     .ws-search::placeholder { color: var(--muted); }
     [data-theme="light"] .ws-search { background: rgba(0,0,0,0.04); }
 
+    /* Keep header items on one row even on narrow screens */
+    @media (max-width: 600px) {
+      .ws-search { width: 140px; }
+      .ws-search:focus { width: 160px; }
+    }
+
   </style>
 </head>
 <body>
@@ -288,6 +306,12 @@
     </div>
   </div>
 
+  <div class="section-actions">
+    <button class="btn btn-primary btn-lg" id="btnAdd" title="Add workspace">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Workspace
+    </button>
+  </div>
   <div class="section-header">
     <h2>Workspaces</h2>
     <span class="count" id="wsCount"></span>
@@ -296,7 +320,6 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input class="ws-search" id="wsSearch" type="text" placeholder="Search workspaces…" autocomplete="off" spellcheck="false"/>
     </div>
-    <button class="btn btn-primary btn-sm" id="btnAdd">+ Add Workspace</button>
   </div>
   <div class="ws-grid" id="wsGrid"></div>
 </div>

@@ -41,12 +41,6 @@
   .wc-footer { padding: 10px 12px; gap: 6px; }
   .wc-footer .btn { font-size: 12px; padding: 8px 12px; min-height: 36px; min-width: 36px; justify-content: center; }
   .wc-actions { gap: 5px; }
-
-  /* Section header: wrap search to second row */
-  .section-header { flex-wrap: wrap; }
-  .ws-search-wrap { width: 100%; order: 10; }
-  .ws-search { width: 100%; }
-  .ws-search:focus { width: 100%; }
 }
 
 @media (max-width: 480px) {

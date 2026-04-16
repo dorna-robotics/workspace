@@ -116,6 +116,7 @@ a:hover { color: var(--accent-h); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
 
 .btn-sm   { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+.btn-lg   { padding: 10px 16px; font-size: 14px; border-radius: 12px; }
 .btn-icon { padding: 5px 8px; }
 .btn.active { background: var(--accent-dim); color: var(--accent); }
 
