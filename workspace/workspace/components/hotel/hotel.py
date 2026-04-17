@@ -7,6 +7,7 @@ class Hotel:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "clb": [0, 75, 4, -90, 0, 0]}},
         pitch = [0, 0, 52],
+        size  = [150, 100, 52],
         level=3,
     )
 
@@ -22,6 +23,7 @@ class Hotel:
 
         # dim
         self.pitch = prm["pitch"]
+        self.size = prm["size"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
         # levels
