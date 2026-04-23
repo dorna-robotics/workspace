@@ -343,6 +343,24 @@ class Recipe:
 
         return tool_enable, tool_disable, component_enable, component_disable
 
+    def _resolve_attached_component(self, anchor="place", solid_name="body"):
+        """Return ``(component, solid_name)`` for the item attached to this
+        recipe's ``self.component.assembly[solid_name]`` at ``anchor``.
+
+        Common indirection pattern for recipes whose component is a holder
+        (pipetting site, dosing site, rack adapter) and the actual motion
+        target is whatever's sitting on it.
+
+        Raises:
+            RecipeError: If nothing is attached at the anchor.
+        """
+        attached = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
+        if attached is None:
+            raise RecipeError(f"no component attached at {solid_name}/{anchor}")
+        component = self.workspace.components[attached.component]
+        resolved_solid_name = next(k for k, v in component.assembly.items() if v is attached)
+        return component, resolved_solid_name
+
     def _get_tool_and_load_height(self):
         """Get the current tool, load_list attached to it, and height_load.
 
@@ -1158,26 +1176,48 @@ class Recipe:
             )
         return True
 
-    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
+    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
         """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
 
-        Two-step: ``above`` to hover at load-height, then ``pick(approach=False)``
-        with tool Z offsets adjusted so the **tip** of the held load goes to
-        (anchor + dist). No attach or IO — used for aspirating, dipping, etc.
+        Two patterns selectable via ``approach``:
+
+        - ``approach=False`` (default): two-phase motion. First hovers at the
+          container top via ``above`` (depth-independent), then dives straight
+          down with ``pick(approach=False)``. Safer when ``dist`` is large
+          because the hover pose ignores depth.
+        - ``approach=True``: single-phase motion via ``pick(approach=True)``,
+          so the full approach corridor (padding/gap waypoints) is used and
+          the depth offset is applied throughout. More efficient when ``dist``
+          is small; requires that ``padding`` comfortably exceeds the load height.
+
+        No attach / IO — used for aspirating, dipping, etc.
 
         Args:
-            dist: Depth below the anchor surface (mm). 0 = tip touches the surface.
+            dist: Depth below the anchor surface (mm). 0 = tip touches surface.
             anchor: Target anchor (default "place").
+            approach: Pattern selector (see above).
             padding: Safe height above the target (mm).
-            exit/attachment/trigger_io: All False by default for this primitive.
+            exit/attachment/trigger_io: All False by default.
 
         Example:
-            >>> rcp["doser"].immerse(dist=10)   # tip 10mm below well surface
+            >>> rcp["doser"].immerse(dist=10)                  # hover+dive
+            >>> rcp["pipetting_site"].immerse(dist=5, approach=True)  # single motion
         """
         _, _, height_load = self._get_tool_and_load_height()
 
         tool_tcp_z_offset = height_load - dist
         tool_tip_z_offset = height_load - dist
+
+        if approach:
+            return self.pick(
+                anchor=anchor, solid_name=solid_name, component=component,
+                approach=True, exit=exit, attachment=attachment, trigger_io=trigger_io,
+                padding=padding,
+                tool_tcp_z_offset=tool_tcp_z_offset,
+                tool_tip_z_offset=tool_tip_z_offset,
+                **kwargs,
+            )
+
         if self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=height_load, tool_tip_z_offset=height_load, **kwargs):
             return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=False, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         raise RecipeError("immerse failed — could not move above target")

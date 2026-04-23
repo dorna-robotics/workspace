@@ -1,7 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe, RecipeError
-from dorna2 import pose as dorna_pose
 import time
 
 class PipettingSite(Recipe):
@@ -102,67 +101,30 @@ class PipettingSite(Recipe):
 
 
     def immerse(self, anchor="place", depth=0, approach=True, padding=50, **kwargs):
-        """Dip the tip ``depth`` mm into the well at ``anchor``.
+        """Dip the tip ``depth`` mm into the well at ``anchor`` of the plate on this site.
 
-        Computes the tip length from the attached tip solid's geometry, then
-        sets tool Z offsets so the tip lands ``depth`` below the well surface.
-        No attach, no IO.
+        Thin wrapper: resolves the plate attached to the site and delegates
+        to ``Recipe.immerse`` with the pipetting pattern (``approach=True``,
+        single-motion with depth-adjusted approach corridor).
         """
-        # find plate component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
-
-        # check if pipette is there
-        pipette = self.tool_attached_to_the_robot()
-        if pipette is None:
-            raise RecipeError("no pipette attached to the robot")
-        
-        # tip solid
-        tip_solid = self.solid_attached_to_tool(pipette)
-
-        # tip length
-        tip_length = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
-                                from_frame=tip_solid.pose("center"),
-                                to_frame=tip_solid.pose("top"))[2])
-
-        # tool offset
-        tool_tcp_z_offset = tip_length - depth
-        tool_tip_z_offset = tip_length - depth
-
-        # motion
-        return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=2, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        component, solid_name = self._resolve_attached_component()
+        return super().immerse(
+            dist=depth, anchor=anchor, solid_name=solid_name, component=component,
+            approach=approach, padding=padding, **kwargs,
+        )
 
 
     def retract(self, anchor="place", padding=50, **kwargs):
-        """Lift the tip out of the well at ``anchor`` — inverse of ``immerse``.
+        """Lift the tip out of the well — inverse of ``immerse``.
 
-        Uses the attached tip's length to compute the offsets so the tip
-        ends up at ``padding`` above the well surface.
+        Thin wrapper: resolves the plate attached to the site and delegates
+        to ``Recipe.retract`` with ``dist=0`` (tip rises exactly by its own length).
         """
-        # find plate component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
-
-        # check if pipette is there
-        pipette = self.tool_attached_to_the_robot()
-        if pipette is None:
-            raise RecipeError("no pipette attached to the robot")
-
-        # tip solid
-        tip_solid = self.solid_attached_to_tool(pipette)
-
-        # tip length
-        tip_length = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], 
-                                from_frame=tip_solid.pose("center"),
-                                to_frame=tip_solid.pose("top"))[2])
-
-        # tool offset
-        tool_tcp_z_offset = tip_length
-        tool_tip_z_offset = tip_length
-
-        return self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
+        component, solid_name = self._resolve_attached_component()
+        return super().retract(
+            dist=0, anchor=anchor, solid_name=solid_name, component=component,
+            padding=padding, **kwargs,
+        )
 
 
     
