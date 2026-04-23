@@ -32,20 +32,14 @@ class DosingSite(Recipe):
         Resolves the plate attached to ``body/place``, then delegates to
         ``Recipe.immerse`` with that plate as the target component.
         """
-        # find plate component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+        component, solid_name = self._resolve_attached_component()
 
         return super().immerse(dist=dist, anchor=anchor, solid_name=solid_name, component=component, **kwargs)
 
 
     def retract(self, dist=0, anchor="place", **kwargs):
         """Lift the held load ``dist`` mm above the plate at this dosing site."""
-        # find plate component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+        component, solid_name = self._resolve_attached_component()
         return super().retract(dist=dist, anchor=anchor, solid_name=solid_name, component=component, **kwargs)
 
 

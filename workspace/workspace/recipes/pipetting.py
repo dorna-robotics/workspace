@@ -36,10 +36,7 @@ class PipettingSite(Recipe):
         Returns:
             True (simulation) or result of ``has_tip()``.
         """
-        # find plate component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+        component, solid_name = self._resolve_attached_component()
 
         # motion
         if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
@@ -66,10 +63,7 @@ class PipettingSite(Recipe):
         Returns:
             True if tip ejected (or motion_result in simulation).
         """
-        # find rack component
-        solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
-        component = self.workspace.components[solid_plate.component]
-        solid_name = next(k for k, v in component.assembly.items() if v is solid_plate)
+        component, solid_name = self._resolve_attached_component()
 
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
