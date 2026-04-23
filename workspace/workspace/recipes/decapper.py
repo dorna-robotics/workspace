@@ -23,9 +23,16 @@ class Decapper(Recipe):
         )
 
     def place(self, approach=True, exit=True, padding=30, **kwargs):
+        """Place a tube into the decapper's ``place`` anchor.
+
+        Thin override of ``Recipe.place`` with ``gravity_offset=0`` (the
+        decapper holds the tube directly — no lift compensation) and a
+        shorter default padding of 30 mm.
+        """
         return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
 
     def pick(self, approach=True, exit=True, padding=30, **kwargs):
+        """Pick a tube from the decapper's ``place`` anchor. Padding defaults to 30 mm."""
         return super().pick(anchor="place", approach=approach, exit=exit, padding=padding, **kwargs)
 
     def decap(
@@ -42,6 +49,19 @@ class Decapper(Recipe):
         twist=500,
         **kwargs,
     ):
+        """Unscrew the cap off a tube sitting at ``anchor``.
+
+        Twists the cap loose in chunks of ``max_rotation`` degrees, ascending by
+        ``pitch/max_rotation`` per degree. Toggles the gripper between chunks
+        to re-bite the cap. On success, the cap is attached to the tool.
+
+        Args:
+            anchor: Anchor holding the capped tube (default "place").
+            padding, gap: Safe-height and near-gap (mm).
+            lmove_vaj, jmove_vaj: [vel, accel, jerk] for linear / joint moves.
+            max_rotation: Maximum j5 swing per chunk (degrees).
+            twist: Total rotation to unscrew (degrees). Defaults to component's.
+        """
         rt = self.rt
 
         # pick parameters
@@ -93,21 +113,24 @@ class Decapper(Recipe):
         if not self.touch(**motion_prm):
             raise RecipeError("decap failed — touch motion failed")
 
-        # chunks
-        twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
-        chunks = twist_chunks(twist or component_cap.twist)  # rewrite twist, with the given twist
+        # chunked unscrew (j5 rotates backward while z rises)
+        last_J = self._screw_motion(
+            tool=tool,
+            pitch=component_cap.pitch,
+            total_twist=twist or component_cap.twist,
+            max_rotation=max_rotation,
+            direction=-1,
+            lmove_vaj=lmove_vaj,
+            jmove_vaj=jmove_vaj,
+            j5_start=j5_start,
+        )
 
-        joint_list = []
-        z_offset = 0
-
-        for chunk in chunks:
-            z_offset += -component_cap.pitch * chunk / max_rotation
-
-            # inverse kinematic
+        # exit (gripper stays ON — we're carrying the cap out)
+        if exit and last_J is not None:
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, z_offset, 0, 0, 0],
+                target_offset=[0, 0, -gap - height_cap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
@@ -118,66 +141,18 @@ class Decapper(Recipe):
                 left_approach=self.left_approach,
             )
             if C != 2:
-                raise RecipeError("could not find valid joints to decap")
+                raise RecipeError("could not find valid joints for exit")
 
-            # end joint
-            J[5] = j5_start - chunk
-            joint_list.append(J[:])
+            # keep the j5 we ended the screw on
+            J[5] = last_J[5]
 
-        # move, starting from max_rotation/2
-        for i in range(len(joint_list)):
-            # enable gripper (IO through runtime)
-            if tool.output_state() != 1:
-                rt.checkpoint()
-                rt.output(config=tool.output_enable)
-                tool.output_state(1)
-
-            # uncap (motion through runtime)
             rt.checkpoint()
-            rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
-
-            if i < len(joint_list) - 1:
-                # disable gripper
-                if tool.output_state() != 0:
-                    rt.checkpoint()
-                    rt.output(config=tool.output_disable)
-                    tool.output_state(0)
-
-                # go to start
-                J_start = joint_list[i][:]
-                J_start[5] = j5_start
-                rt.checkpoint()
-                rt.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
-
-            elif exit:
-                # IK go up
-                J, C = self.core.IK(
-                    target_solid=tool.assembly[next(iter(tool.assembly))],
-                    target_anchor="tcp",
-                    target_offset=[0, 0, -gap - height_cap, 0, 0, 0],
-                    tool_solid=tool.assembly[next(iter(tool.assembly))],
-                    tool_anchor="tcp",
-                    tool_offset=[0, 0, 0, 0, 0, 0],
-                    base_distance=self.base_distance,
-                    rail_step=self.rail_step,
-                    rail_span=self.rail_span,
-                    ref_joints=self.ref_joints,
-                    left_approach=self.left_approach,
-                )
-                if C != 2:
-                    raise RecipeError("could not find valid joints for exit")
-
-                # adjust j5
-                J[5] = joint_list[i][5]
-
-                # go up
-                rt.checkpoint()
-                rt.lmove(
-                    joint=J,
-                    vel=self.lmove_vaj[0] * self.speed_factor,
-                    accel=self.lmove_vaj[1] * self.speed_factor,
-                    jerk=self.lmove_vaj[2] * self.speed_factor,
-                )
+            rt.lmove(
+                joint=J,
+                vel=self.lmove_vaj[0] * self.speed_factor,
+                accel=self.lmove_vaj[1] * self.speed_factor,
+                jerk=self.lmove_vaj[2] * self.speed_factor,
+            )
 
         # attach
         solid_cap.attach_to(
@@ -203,6 +178,12 @@ class Decapper(Recipe):
         max_rotation=500,
         **kwargs,
     ):
+        """Screw the currently-held cap onto the tube at ``anchor``.
+
+        Inverse of ``decap``: lowers while rotating j5 forward in chunks of
+        ``max_rotation`` degrees. Requires the cap to be gripped already and
+        the tube to be present at ``anchor``. Attaches cap → tube on success.
+        """
         rt = self.rt
 
         # ref joints
@@ -278,21 +259,30 @@ class Decapper(Recipe):
         if not self.touch(**place_prm):
             raise RecipeError("cap failed — touch motion failed")
 
-        # run chunks
-        twist_chunks = lambda t: ([t % max_rotation] if t % max_rotation else []) + [max_rotation] * (t // max_rotation)
-        chunks = twist_chunks(int(component_cap.twist))[::-1]
+        # chunked tighten (j5 rotates forward while z descends)
+        last_J = self._screw_motion(
+            tool=tool,
+            pitch=component_cap.pitch,
+            total_twist=component_cap.twist,
+            max_rotation=max_rotation,
+            direction=+1,
+            lmove_vaj=lmove_vaj,
+            jmove_vaj=jmove_vaj,
+            j5_start=j5_start,
+        )
 
-        joint_list = []
-        z_offset = 0
+        # release the cap (gripper OFF) so the exit clears without dragging it
+        if tool.output_state() != 0:
+            rt.checkpoint()
+            rt.output(config=tool.output_disable)
+            tool.output_state(0)
 
-        for chunk in chunks:
-            z_offset += component_cap.pitch * chunk / max_rotation
-
-            # inverse kinematic
+        # exit
+        if exit and last_J is not None:
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, z_offset, 0, 0, 0],
+                target_offset=[0, 0, -height_total - gap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
@@ -303,63 +293,15 @@ class Decapper(Recipe):
                 left_approach=self.left_approach,
             )
             if C != 2:
-                raise RecipeError("could not find valid joints to cap")
+                raise RecipeError("could not find valid joints for exit")
 
-            # end joint
-            J[5] = j5_start + chunk
-            joint_list.append(J[:])
-
-        # move, starting from -rotation/2
-        for i in range(len(joint_list)):
-            # tighten cap
             rt.checkpoint()
-            rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
-
-            # disable gripper
-            if tool.output_state() != 0:
-                rt.checkpoint()
-                rt.output(config=tool.output_disable)
-                tool.output_state(0)
-
-            if i < len(joint_list) - 1:
-                # go to start
-                J_start = joint_list[i][:]
-                J_start[5] = j5_start
-                rt.checkpoint()
-                rt.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
-
-                # enable gripper
-                if tool.output_state() != 1:
-                    rt.checkpoint()
-                    rt.output(config=tool.output_enable)
-                    tool.output_state(1)
-
-            elif exit:
-                # IK go up
-                J, C = self.core.IK(
-                    target_solid=tool.assembly[next(iter(tool.assembly))],
-                    target_anchor="tcp",
-                    target_offset=[0, 0, -height_total - gap, 0, 0, 0],
-                    tool_solid=tool.assembly[next(iter(tool.assembly))],
-                    tool_anchor="tcp",
-                    tool_offset=[0, 0, 0, 0, 0, 0],
-                    base_distance=self.base_distance,
-                    rail_step=self.rail_step,
-                    rail_span=self.rail_span,
-                    ref_joints=self.ref_joints,
-                    left_approach=self.left_approach,
-                )
-                if C != 2:
-                    raise RecipeError("could not find valid joints for exit")
-
-                # go up
-                rt.checkpoint()
-                rt.lmove(
-                    joint=J,
-                    vel=self.lmove_vaj[0] * self.speed_factor,
-                    accel=self.lmove_vaj[1] * self.speed_factor,
-                    jerk=self.lmove_vaj[2] * self.speed_factor,
-                )
+            rt.lmove(
+                joint=J,
+                vel=self.lmove_vaj[0] * self.speed_factor,
+                accel=self.lmove_vaj[1] * self.speed_factor,
+                jerk=self.lmove_vaj[2] * self.speed_factor,
+            )
 
         # attach cap to body
         solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")

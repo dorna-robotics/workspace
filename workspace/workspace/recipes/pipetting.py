@@ -28,6 +28,15 @@ class PipettingSite(Recipe):
 
 
     def pick_tip(self, anchor="place", padding=70, **kwargs):
+        """Pick a disposable tip from the tip-box at ``anchor``.
+
+        Resolves the tip-rack sitting on this pipetting site, delegates to
+        ``pick`` with ``soft_approach=True`` and no IO trigger. On hardware,
+        verifies tip presence via ``pipette.device.has_tip()``.
+
+        Returns:
+            True (simulation) or result of ``has_tip()``.
+        """
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -48,8 +57,16 @@ class PipettingSite(Recipe):
         return True
 
 
-    # the action of ejecting tip
     def eject_tip(self, anchor="A1", shake_travel=5, **kwargs):
+        """Eject the tip into a waste anchor, shaking laterally to dislodge.
+
+        Runs ``place_setting`` with the pipette's ``eject_tip`` device call
+        queued as an action. Prepends a left/right shake (``±shake_travel``)
+        to the exit path. On hardware, verifies tip is gone via ``has_tip()``.
+
+        Returns:
+            True if tip ejected (or motion_result in simulation).
+        """
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -84,8 +101,13 @@ class PipettingSite(Recipe):
             return motion_result
 
 
-    # go on top of the source, and go down for the amount
     def immerse(self, anchor="place", depth=0, approach=True, padding=50, **kwargs):
+        """Dip the tip ``depth`` mm into the well at ``anchor``.
+
+        Computes the tip length from the attached tip solid's geometry, then
+        sets tool Z offsets so the tip lands ``depth`` below the well surface.
+        No attach, no IO.
+        """
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -112,9 +134,12 @@ class PipettingSite(Recipe):
         return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=approach, actions=[], exit=False, attachment=False, trigger_io=False, padding=padding, gap=2, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
 
 
-    # given the component, go on top of the source
-    # anchor of the rack, plate or the item, look for the tube there
     def retract(self, anchor="place", padding=50, **kwargs):
+        """Lift the tip out of the well at ``anchor`` — inverse of ``immerse``.
+
+        Uses the attached tip's length to compute the offsets so the tip
+        ends up at ``padding`` above the well surface.
+        """
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -141,13 +166,13 @@ class PipettingSite(Recipe):
 
 
     
-    # volume is in microliter
     def aspirate(self, vol, speed=200):
+        """Aspirate ``vol`` µL at ``speed`` µL/s. Returns True in simulation."""
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
-        
+
         # simulation
         if pipette._simulation_mode:
             return True
@@ -155,8 +180,8 @@ class PipettingSite(Recipe):
         return pipette.device.aspirate(vol, speed)
 
 
-    # volume is in microliter
     def dispense(self, vol, speed=500, blowout=False):
+        """Dispense ``vol`` µL at ``speed`` µL/s; ``blowout=True`` expels residual volume."""
         # find the pipette
         pipette = self.tool_attached_to_the_robot()
         if pipette is None:

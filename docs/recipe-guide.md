@@ -89,16 +89,108 @@ gripper:
 |--------|-------------|
 | `pick(anchor, ...)` | Approach, grip, lift — attaches solid to tool |
 | `place(anchor, ...)` | Approach, release, exit — detaches solid |
-| `above(anchor, ...)` | Move above a position without touching |
-| `rotate(rotation, ...)` | Rotate J5 by degrees |
-| `vibrate(pattern, ...)` | Execute vibration pattern |
-| `immerse(anchor, depth, ...)` | Lower into a container to a specific depth |
-| `retract(anchor, ...)` | Lift out of a container |
-| `calibrate()` | Run calibration for configured anchors |
+| `above(anchor, padding=...)` | Hover `padding` mm above anchor, no touch |
+| `stand(anchor, offset=[x,y,z,a,b,c])` | Move to an arbitrary offset in the anchor frame |
+| `rotate(rotation, joint, ...)` | Rotate a single joint by degrees |
+| `vibrate(pattern, ...)` | Oscillate the flange through small Cartesian offsets |
+| `immerse(anchor, dist, ...)` | Dip the held load `dist` mm into a container |
+| `retract(anchor, dist, ...)` | Lift the held load out of a container |
+| `calibrate()` | Run guided calibration on configured anchors |
+
+For exact signatures and per-parameter details, call `help(Recipe.<method>)` or read the docstrings in [recipe.py](../workspace/workspace/recipes/recipe.py).
 
 ---
 
-## 4. Creating a custom recipe
+## 4. Motion primitives — when to use what
+
+Several recipe methods all result in robot motion, but they differ in *what they assume, what they do at the target, and how much path planning they invoke.* Pick the one that matches your intent — don't force a harder primitive to do a softer job.
+
+| Primitive | Use when… | Touches target? | Attach/IO? | Planning? |
+|---|---|---|---|---|
+| **`pick(anchor)`** | You want to grip the item at an anchor and carry it away | Yes | Yes — attach load → tool, trigger gripper IO | Yes, on first approach hop |
+| **`place(anchor)`** | You're holding an item and want to release it at an anchor | Yes | Yes — detach load → destination, trigger IO | Yes, on first approach hop |
+| **`above(anchor, padding=N)`** | You want to hover `N` mm above the anchor — e.g. before manual work or camera inspection | No — target_offset is None | No | Yes, on the single hop |
+| **`stand(anchor, offset=[x,y,z,a,b,c])`** | You want to go to a specific pose relative to the anchor — not a standard "above the stack" position | No | No | Yes, on the single hop |
+| **`immerse(anchor, dist=N)`** | You're holding a load (tip, needle) and want to dip it `N` mm into a container | Yes (at computed depth) | No | Yes on the above-leg, no on the dive-leg |
+| **`retract(anchor, dist=N)`** | Inverse of `immerse` — lift the held load out | No | No | Off by default |
+| **`rotate(rotation, joint)`** | Spin one joint without changing Cartesian pose — e.g. rotate j5 to flip a camera view | — | — | No |
+| **`vibrate(pattern)`** | Small back-and-forth Cartesian oscillation — shaking a tip free, mixing | — | — | No |
+
+**Rule of thumb:**
+- Need the gripper to act? → `pick` / `place`.
+- Need a safe pre-positioning point? → `above` (simple) or `stand` (arbitrary offset).
+- Need to interact with liquid? → `immerse` / `retract`.
+- Need joint-level motion, not pose-level? → `rotate` / `vibrate`.
+
+If none of these fit, write a subclass that overrides `pick`/`place` with a custom `approach_path` or `exit_path` (see `adapter.py`, `hotel.py`, `decapper.py`).
+
+---
+
+## 5. How motion is built — `pose_offset`, approach path, and planning
+
+Every pick/place in the framework goes through the same pipeline:
+
+```
+pick_setting/place_setting   →   touch   →   _move_along_path → smove | jmove | lmove
+      ↑ compute waypoints          ↑ execute       ↑ step by step
+```
+
+Understanding three concepts unlocks most customization.
+
+### `pose_offset` — the anchor-local frame
+
+Returned by `pick_setting` in its output dict. It's a `Pose` that represents "the natural reference point at this anchor" — typically the **center of whatever is already stacked there** (e.g. a tube sitting in a rack slot), or the anchor itself if nothing is stacked.
+
+When you call `pose_offset.pose(offset=[x, y, z, a, b, c])`, the framework transforms that offset into the anchor's frame and returns a world-ready pose. This is how `above(padding=50)` works transparently whether the slot is empty or has a tall stack — `pose_offset` absorbs the height math.
+
+`stand(anchor, offset=...)` exposes this directly: the `offset` you pass is in the same frame that `pick_setting` uses internally.
+
+### Approach path vs target offset
+
+- **`approach_path`** — list of waypoints to pre-position the tool above/near the target. Built by `pick_setting` from `padding` and `gap` (and optionally `soft_approach`).
+- **`target_offset`** — the exact final touch-down pose. For `pick`/`place` it's the anchor itself (transformed via `pose_offset`). For `above`/`stand` it's set to `None` so the motion stops at the single waypoint.
+
+Full path consumed by `touch` is `approach_path + [target_offset]` (unless `target_offset` is None).
+
+### Path planning — `has_motion_plan` and `first_approach`
+
+Planning runs **only on the first hop of an approach path**. The gate inside `_move_along_path`:
+
+```python
+if i == 0 and first_approach:
+    _execute_motion_planned(...)   # smove along planned waypoints OR jmove
+else:
+    _do_motion(...)                # jmove or lmove based on self.motion_type
+```
+
+Two flags control this:
+
+- **`has_motion_plan`** — enabled on `core` by default. Overridable per call via `has_motion_plan=False`.
+- **`first_approach`** — internal boolean, True only when `touch` is running an approach path with at least one waypoint. Exit paths and direct `approach=False` calls bypass planning entirely.
+
+So:
+
+| Scenario | Planning runs? |
+|---|---|
+| `pick(...)`, `place(...)`, `above(...)`, `stand(...)` (with core planning on) | Yes — on the first hop |
+| `pick(approach=False, ...)` | No — no approach waypoint exists |
+| Exit from a pick/place | No — exit path always uses direct moves |
+| `retract(...)` | No — `has_motion_plan=False` by default |
+| `rotate(...)`, `vibrate(...)` | No — they issue jmoves directly |
+
+`lmove` (Cartesian straight line) is used only for subsequent waypoints if `self.motion_type == "lmove"`, never on the first planned hop.
+
+For most recipes you never touch these flags. When you do need them:
+- Pass `has_motion_plan=True/False` as a kwarg to override the core default.
+- Pass `motion_plan_kwargs={...}` to forward extra args (padding, gravity_vec) to `core.motion_plan`.
+
+### Parameter guidelines
+
+For numeric parameters like `padding`, `gravity_offset`, `soft_approach`, `tool_tcp_z_offset` — see [parameter-guidelines.md](parameter-guidelines.md) for rules of thumb and gripper-specific recommendations.
+
+---
+
+## 6. Creating a custom recipe
 
 ### Inheriting from Recipe
 
@@ -190,7 +282,7 @@ No changes to `main.py` needed — the recipe loader uses `importlib` which reso
 
 ---
 
-## 5. The DEFAULTS pattern
+## 7. The DEFAULTS pattern
 
 Recipes use a merge chain to resolve parameters:
 
@@ -228,7 +320,7 @@ my_recipe:
 
 ---
 
-## 6. Using `rt` in recipes
+## 8. Using `rt` in recipes
 
 Always use `self.rt` for robot commands and timing — it handles pause, stop, and alarms automatically:
 
@@ -243,7 +335,7 @@ Always use `self.rt` for robot commands and timing — it handles pause, stop, a
 
 ---
 
-## 7. Full example
+## 9. Full example
 
 ```
 my_project/

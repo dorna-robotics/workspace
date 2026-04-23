@@ -26,8 +26,12 @@ class DosingSite(Recipe):
         )
 
 
-    # go on top of the source, and go down for the amount
     def immerse(self, dist=0, anchor="place", **kwargs):
+        """Dip ``dist`` mm into the plate currently sitting on this dosing site.
+
+        Resolves the plate attached to ``body/place``, then delegates to
+        ``Recipe.immerse`` with that plate as the target component.
+        """
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -36,9 +40,8 @@ class DosingSite(Recipe):
         return super().immerse(dist=dist, anchor=anchor, solid_name=solid_name, component=component, **kwargs)
 
 
-    # given the component, go on top of the source
-    # anchor of the rack, plate or the item, look for the tube there
     def retract(self, dist=0, anchor="place", **kwargs):
+        """Lift the held load ``dist`` mm above the plate at this dosing site."""
         # find plate component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -46,14 +49,14 @@ class DosingSite(Recipe):
         return super().retract(dist=dist, anchor=anchor, solid_name=solid_name, component=component, **kwargs)
 
 
-    # volume is in microliter
     def aspirate(self, vol, speed=200):
+        """Aspirate ``vol`` µL at ``speed``. Placeholder (blocks 0.5s), returns 0."""
         time.sleep(0.5)
         return 0
 
 
-    # volume is in microliter
     def dispense(self, vol, speed=500, blowout=False):
+        """Dispense ``vol`` µL at ``speed`` (optional ``blowout``). Placeholder."""
         time.sleep(0.5)
         return 0
 

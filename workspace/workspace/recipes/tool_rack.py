@@ -26,11 +26,18 @@ class ToolRack(Recipe):
         )
 
 
-    """
-    Approaches the tool rack and activates the tool changer
-    to pick up a new tool.
-    """
     def pick(self, anchor="place", solid_name="body", padding=80, gap=2, **kwargs):
+        """Pick a tool from the rack via the tool-changer interface.
+
+        Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
+        a tool. Approaches from above, drops onto the changer's
+        ``tool_changer_connection``, actuates the changer, attaches the tool
+        to the robot side, and retracts.
+
+        Raises:
+            RecipeError: If no tool changer, no tool at anchor, or
+                ``ref_joints`` undefined.
+        """
         # ref joints
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")
@@ -83,6 +90,17 @@ class ToolRack(Recipe):
 
 
     def place(self, anchor="place", solid_name="body", padding=80, gap=2, **kwargs):
+        """Put the currently-held tool back into the rack slot at ``anchor``.
+
+        Inverse of ``pick``. Verifies that the rack slot is free and that the
+        robot is actually holding a tool, then lowers onto the rack,
+        deactivates the changer, transfers the tool solid to the rack, and
+        retracts.
+
+        Raises:
+            RecipeError: If the slot is already occupied, no tool on robot,
+                or no tool changer.
+        """
         # ref joints
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")

@@ -42,8 +42,12 @@ class Feeder(Recipe):
         self.pick_offset = prm["pick_offset"]
         self.shift_steps = prm["shift_steps"]
 
-    # mix: mix the feeder for certain turns and shift the slots
     def mix(self, **kwargs):
+        """Agitate the feeder by rotating ``shift_steps`` in the current direction.
+
+        Reverses direction when the feeder's axis exceeds ``thr_dir`` to keep
+        it within its joint limits. Delegates to ``rotate_in_step``.
+        """
         # current joint
         current_joint = self.rt.joint()
 
@@ -56,8 +60,12 @@ class Feeder(Recipe):
 
         return self.rotate_in_step(step=self.mix_dir * self.shift_steps, **kwargs)
 
-    # rotate the feeder to move to the nth slot from the current
     def rotate_in_step(self, step=1, **kwargs):
+        """Rotate the feeder's axis by ``step`` slots (positive or negative).
+
+        Converts step count to joint degrees via ``num_slots`` (360°/num_slots
+        per step) and issues a single jmove at ``vaj_mix`` speed.
+        """
         rt = self.rt
 
         # current joint
@@ -97,6 +105,7 @@ class Feeder(Recipe):
         tool_tip_z_offset=0,
         **kwargs
     ):
+        """Pick from the feeder's current slot. Thin override, padding defaults to 25 mm."""
         return super().pick(
             anchor=anchor,
             solid_name=solid_name,
@@ -114,6 +123,7 @@ class Feeder(Recipe):
         )
 
     def above(self, anchor="place", solid_name="body", component=None, padding=25, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        """Hover above the feeder pick point. Thin override, padding defaults to 25 mm."""
         return super().above(
             anchor=anchor,
             solid_name=solid_name,
@@ -124,13 +134,21 @@ class Feeder(Recipe):
             **kwargs
         )
 
-    """
-    use inspector to check if cap is present
-    if not mix and run again
-    if yes, present that position to the pick position of the feeder
-    index_list contains a list of indices to check, each element is a (step, preset)
-    """
     def present_cap(self, inspector, **kwargs):
+        """Rotate a slot that contains a cap into the pick position, mixing if needed.
+
+        Iterates through ``self.index_list`` — each entry is ``(step, preset)``
+        where ``preset`` is a kwargs dict for ``inspector.detect``. If detection
+        succeeds at a position, rotates the feeder to ``step`` and returns True.
+        If no slot has a cap, runs ``mix()`` and recurses.
+
+        Args:
+            inspector: An Inspector recipe whose ``detect(**preset)`` returns
+                True when the current view has the desired feature.
+
+        Returns:
+            True once a cap is positioned, False if ``index_list`` is empty.
+        """
         rt = self.rt
 
         # empty index list

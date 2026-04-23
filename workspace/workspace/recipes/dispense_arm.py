@@ -18,8 +18,8 @@ class DispenseArm(Recipe):
             **prm
         )
 
-    # bring the arm down
     def down(self):
+        """Extend the dispense arm downward (drives the component's output HIGH)."""
         rt = self.rt
         if self.component.output_state() != 1:
             rt.checkpoint()
@@ -27,8 +27,8 @@ class DispenseArm(Recipe):
             self.component.output_state(1)
         return True
 
-    # bring the arm up
     def up(self):
+        """Retract the dispense arm upward (drives the component's output LOW)."""
         rt = self.rt
         if self.component.output_state() != 0:
             rt.checkpoint()
@@ -36,8 +36,8 @@ class DispenseArm(Recipe):
             self.component.output_state(0)
         return True
 
-    # dispense (pause-aware)
     def dispense(self, sleep=1.5):
+        """Trigger a dispense cycle by holding for ``sleep`` seconds (pause-aware)."""
         rt = self.rt
         rt.checkpoint()
         rt.delay(sleep)

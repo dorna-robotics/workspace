@@ -26,6 +26,12 @@ class Rack(Recipe):
         
 
     def pick(self, anchor, **kwargs):
+        """Pick from a rack sitting on this adapter plate.
+
+        Resolves the rack component (attached at ``body/place`` of the adapter),
+        then delegates to ``Recipe.pick`` with that rack as the target.
+        ``anchor`` is the well/slot on the rack (e.g. "A1").
+        """
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]
@@ -33,10 +39,11 @@ class Rack(Recipe):
 
         # motion
         return super().pick(anchor, solid_name=solid_name, component=component, **kwargs)
-   
-             
+
+
 
     def place(self, anchor, soft_approach=True, **kwargs):
+        """Place into a rack sitting on this adapter plate (soft-approach on by default)."""
         # find rack component
         solid_plate = self.solid_attached_to_anchor(self.component.assembly["body"], "place")
         component = self.workspace.components[solid_plate.component]

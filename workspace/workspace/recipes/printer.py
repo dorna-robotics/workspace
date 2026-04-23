@@ -28,11 +28,18 @@ class Printer(Recipe):
         
 
     def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, **kwargs):
+        """Pick a printed item off the printer. Thin override, padding=30 mm."""
         return super().pick(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
 
 
 
     def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=30, gap=2, load_anchor="center", gravity_offset=2, **kwargs):
+        """Place a tube on the printer pad, computing the XY offset from the tube radius.
+
+        Reads the held solid's component size to compute the lateral offset
+        via ``printer._place_offset(radius)`` so the tube sits correctly under
+        the print head. Uses ``gravity_offset=2`` for release clearance.
+        """
         # tool
         tool = self.tool_attached_to_the_robot()
 
@@ -48,14 +55,21 @@ class Printer(Recipe):
         return super().place(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, **kwargs)
     
 
-    # dry run spin
     def dry_run_spin(self, count=1):
+        """Cycle the print head without printing — ``count`` times. No-op in simulation."""
         if not self.component._simulation_mode:
             return self.component.device.dry_run_spin(count=count)
         return True
 
-    # real print
     def print_label(self, data, code_type="code128", autorun=True, verify=True):
+        """Print ``data`` as a label with encoding ``code_type`` (e.g. ``"code128"``).
+
+        Args:
+            data: Text to encode.
+            code_type: Barcode/QR encoding family.
+            autorun: If True, advance the label automatically after printing.
+            verify: If True, verify the print with the scanner.
+        """
         if not self.component._simulation_mode:
             from workspace.components.printer.cab_wrapper import CodeType
             return self.component.device.print_one(CodeType(code_type), data, autorun=autorun, verify=verify)

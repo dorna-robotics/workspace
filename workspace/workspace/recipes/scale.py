@@ -27,5 +27,6 @@ class Scale(Recipe):
         )
 
     def weight(self):
+        """Read the scale value. Placeholder (blocks 1s, returns 0) pending device integration."""
         time.sleep(1)
         return 0

@@ -104,6 +104,11 @@ class Recipe:
     # ── Solid / tool queries ────────────────────────────────────────────────
 
     def tool_attached_to_the_robot(self):
+        """Return the tool component currently held by the robot, or None.
+
+        Looks up the tool changer (if present) or the robot flange for the
+        attached tool solid, then resolves it to a workspace component.
+        """
         tool = None
         if self.core.has_tool_changer:
             for child in self.core.tool_changer_robot_side.children["tool_changer_connection"]:
@@ -118,11 +123,17 @@ class Recipe:
         return tool
 
     def solid_attached_to_tool(self, tool):
+        """Return the solid currently gripped by ``tool`` (at its ``tcp`` anchor), or None."""
         for child in tool.assembly[next(iter(tool.assembly))].children["tcp"]:
             return child["child_solid"]
         return None
 
     def solid_attached_to_anchor(self, solid, anchor):
+        """Return the first child solid attached to ``anchor`` on ``solid``, or None.
+
+        Used to check whether a slot/anchor is occupied (e.g. "is there a tube
+        at rack slot A1?").
+        """
         try:
             for child in solid.children[anchor]:
                 return child["child_solid"]
@@ -131,6 +142,8 @@ class Recipe:
         return None
 
     def solid_with_anchor(self, initial_solid, anchor):
+        """Breadth-first search the solid subtree rooted at ``initial_solid`` for
+        one that defines ``anchor``. Returns the matching solid or None."""
         queue = deque([initial_solid])
         visited = set()
         while queue:
@@ -146,6 +159,15 @@ class Recipe:
         return None
 
     def solid_hierarchy(self, parent_solid, parent_anchor, connection_anchor="place"):
+        """Return the stack of solids sitting at ``parent_anchor`` of ``parent_solid``.
+
+        Walks down through ``connection_anchor`` (default "place") repeatedly so
+        that stacked items (e.g. a tube sitting on a cap sitting in a rack)
+        are returned in bottom-up order.
+
+        Returns:
+            List of solids, bottom first. Empty if nothing is attached.
+        """
         load_list = []
         first_child = self.solid_attached_to_anchor(parent_solid, parent_anchor)
         if first_child is None:
@@ -382,6 +404,96 @@ class Recipe:
 
         return height_load, height_container, height_tool, pose_offset, tool_body
 
+    def _screw_motion(self, tool, pitch, total_twist, max_rotation, direction,
+                      lmove_vaj, jmove_vaj, j5_start):
+        """Chunked screw/unscrew motion around the tool TCP's Z-axis.
+
+        Each chunk rotates j5 by ``direction * chunk`` degrees while z
+        advances by ``direction * pitch * chunk / max_rotation``. Between
+        chunks, j5 rewinds to ``j5_start`` so the gripper can re-bite.
+        The gripper is engaged during each screw lmove and released during
+        the rewind jmove. After the final chunk no rewind happens — the
+        caller is responsible for the exit motion and the final gripper state.
+
+        Chunk order: for ``direction = -1`` (unscrew) the small remainder
+        chunk runs first (small initial nudge, then full chunks); for
+        ``direction = +1`` (screw in) the order is reversed (full chunks
+        first, small finish last). Adjust by passing chunks yourself if
+        you need a different pattern.
+
+        Args:
+            tool: Tool component on the robot — must expose
+                ``output_enable``, ``output_disable``, ``output_state``.
+            pitch: Thread pitch (mm per 360°).
+            total_twist: Total rotation to apply (degrees, positive).
+            max_rotation: Maximum j5 swing per chunk (degrees).
+            direction: +1 (screw in) or -1 (unscrew).
+            lmove_vaj: [vel, accel, jerk] for the screw lmoves.
+            jmove_vaj: [vel, accel, jerk] for the rewind jmoves.
+            j5_start: j5 value the robot rewinds to between chunks.
+
+        Returns:
+            The final joint vector reached (copy), or None if no chunks ran.
+
+        Raises:
+            RecipeError: If IK can't find a valid configuration for a chunk.
+        """
+        rt = self.rt
+        tool_body = tool.assembly[next(iter(tool.assembly))]
+        total_twist = int(total_twist)
+
+        # build chunk list: [remainder, max, max, ...]
+        chunks = ([total_twist % max_rotation] if total_twist % max_rotation else []) + \
+                 [max_rotation] * (total_twist // max_rotation)
+        if direction > 0:
+            chunks = chunks[::-1]
+
+        # pre-solve joint list so any IK failure aborts before motion
+        joint_list = []
+        z_offset = 0
+        for chunk in chunks:
+            z_offset += direction * pitch * chunk / max_rotation
+            J, C = self.core.IK(
+                target_solid=tool_body,
+                target_anchor="tcp",
+                target_offset=[0, 0, z_offset, 0, 0, 0],
+                tool_solid=tool_body,
+                tool_anchor="tcp",
+                tool_offset=[0, 0, 0, 0, 0, 0],
+                base_distance=self.base_distance,
+                rail_step=self.rail_step,
+                rail_span=self.rail_span,
+                ref_joints=self.ref_joints,
+                left_approach=self.left_approach,
+            )
+            if C != 2:
+                raise RecipeError("could not find valid joints for screw motion")
+            J[5] = j5_start + direction * chunk
+            joint_list.append(J[:])
+
+        # execute: gripper on during screw, off during rewind
+        for i in range(len(joint_list)):
+            if tool.output_state() != 1:
+                rt.checkpoint()
+                rt.output(config=tool.output_enable)
+                tool.output_state(1)
+
+            rt.checkpoint()
+            rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
+
+            if i < len(joint_list) - 1:
+                if tool.output_state() != 0:
+                    rt.checkpoint()
+                    rt.output(config=tool.output_disable)
+                    tool.output_state(0)
+
+                J_start = joint_list[i][:]
+                J_start[5] = j5_start
+                rt.checkpoint()
+                rt.jmove(joint=J_start, vel=jmove_vaj[0], accel=jmove_vaj[1], jerk=jmove_vaj[2])
+
+        return joint_list[-1][:] if joint_list else None
+
     # ── Core motion ─────────────────────────────────────────────────────────
 
     def touch(
@@ -414,6 +526,36 @@ class Recipe:
         motion_plan_kwargs={},
         **kwargs,
     ):
+        """Universal motion primitive used by pick/place/above/stand/immerse/retract.
+
+        Flow:
+            1. Apply ``output_approach`` IO.
+            2. Move through ``approach_path`` waypoints, then to ``target_offset``.
+               The very first hop can be path-planned if ``has_motion_plan`` is True.
+            3. Apply ``output_touch`` IO, run ``actions``, sleep.
+            4. Attach solids per ``attach`` spec (e.g. gripped item → tool).
+            5. Retract along ``exit_path`` with ``exit_tool`` active.
+            6. Apply ``output_exit`` IO.
+
+        Normally you won't call ``touch`` directly — call ``pick``/``place``/``above``/
+        ``stand`` which build the parameter dict via ``pick_setting`` / ``place_setting``.
+
+        Args:
+            target_solid: Solid that owns the target anchor.
+            target_anchor: Name of the anchor on ``target_solid``.
+            target_offset: [x, y, z, a, b, c] offset applied at touch-down.
+                Set to None to skip the final touch step (used by ``above``/``stand``).
+            approach_path: List of pre-positioning offsets before touch-down.
+            exit_path: List of offsets after touch-down / attach.
+            has_motion_plan: If True, use ``core.motion_plan`` for the first hop.
+                Defaults to ``self.core.has_motion_plan``.
+            motion_plan_kwargs: Dict forwarded to ``core.motion_plan``
+                (e.g. padding, gravity_vec) when planning is on.
+            **kwargs: Absorbs unused keys from pick_setting/place_setting output dicts.
+
+        Returns:
+            True on success.
+        """
         rt = self.rt
         has_motion_plan = self.core.has_motion_plan if has_motion_plan is None else has_motion_plan
         vaj_map = {
@@ -486,6 +628,39 @@ class Recipe:
         soft_approach=False,
         **kwargs,
     ):
+        """Compute the motion-parameter dict that ``pick`` (and friends) feed to ``touch``.
+
+        Call this directly when you need to tweak the returned fields before
+        running the motion (see subclass overrides in ``adapter.py``, ``hotel.py``).
+        Otherwise use ``pick``.
+
+        Args:
+            anchor: Target anchor name on the component (e.g. "place", "A1").
+            solid_name: Which assembly solid owns the anchor (default "body").
+            component: Component to target. Defaults to ``self.component``.
+            approach: If True, build approach waypoints from padding/gap.
+                Set False for a direct one-shot motion (no planning, no hover).
+            actions: List of ``(fn, args, kwargs)`` called during the touch phase.
+            exit: If True, build an exit path retracting to ``padding`` height.
+            attachment: If True, attach the picked solid to the tool at touch-down.
+            trigger_io: If True, build tool/component enable-disable IO lists
+                (``output_approach`` / ``output_touch``).
+            padding: Safe-height above the target (mm) for approach and exit.
+            gap: Clearance above the load used as the soft-approach waypoint (mm).
+            tool_tcp_z_offset: Shift TCP by this Z (mm). Negative = drive deeper;
+                e.g. ``-5`` for suction cups, ``-2`` for decappers.
+            tool_tip_z_offset: Shift tool tip (tip-to-TCP length) by this Z (mm).
+            soft_approach: If True, insert a second approach waypoint just above
+                the load for a vertical final descent (recommended for racks).
+            **kwargs: Any attribute on ``self`` named here is overwritten (e.g.
+                ``speed_factor``, ``motion_type``).
+
+        Returns:
+            Dict with keys: target_solid, target_anchor, target_offset,
+            output_approach, approach_tool, approach_path, output_touch, actions,
+            sleep, attach, exit_tool, exit_path, output_exit, height_tool,
+            height_load, height_container, load_list, tool, pose_offset.
+        """
         for k, v in kwargs.items():
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -585,6 +760,7 @@ class Recipe:
             "height_container": height_container,
             "load_list": load_list,
             "tool": tool,
+            "pose_offset": pose_offset,
         }
 
     def pick(
@@ -604,6 +780,15 @@ class Recipe:
         soft_approach=False,
         **kwargs,
     ):
+        """Pick the item at ``anchor``: approach, close gripper, attach, exit.
+
+        Wraps ``pick_setting(...)`` → ``touch(...)``. See ``pick_setting`` for
+        parameter meanings and tool-specific tips.
+
+        Example:
+            >>> rcp["tube_rack"].pick(anchor="A1")
+            >>> rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)  # suction cup
+        """
         pick_prm = self.pick_setting(
             anchor, solid_name,
             component=component, approach=approach, actions=actions,
@@ -634,6 +819,39 @@ class Recipe:
         soft_approach=False,
         **kwargs,
     ):
+        """Compute the motion-parameter dict for ``place`` / friends.
+
+        Mirror of ``pick_setting`` for the reverse direction: assumes the
+        gripper already holds the load (``solid_attached_to_tool``) and plans
+        waypoints to release it at ``anchor``.
+
+        Args:
+            anchor: Destination anchor on the component.
+            solid_name: Assembly solid owning the anchor (default "body").
+            component: Component to target. Defaults to ``self.component``.
+            offset: [x, y, z, a, b, c] applied to the target pose.
+            approach: If True, build approach waypoints from padding/gap.
+            actions: ``(fn, args, kwargs)`` list run during the touch phase.
+            exit: If True, build an exit path retracting to padding height.
+            attachment: If True, transfer the held solid to the destination
+                anchor on touch-down (so it "lives" there afterwards).
+            trigger_io: If True, build tool/component enable-disable IO lists.
+            padding: Safe-height above the target (mm).
+            gap: Clearance used as the soft-approach waypoint (mm).
+            load_anchor: Anchor on the held solid used as its reference point
+                (default "center").
+            gravity_offset: Z-offset (mm) at touch-down. Positive = release
+                slightly above target (typical for 2/4-finger grippers).
+                Negative = drive deeper (typical for suction cups with leveler).
+                See ``docs/parameter-guidelines.md`` for guidance.
+            soft_approach: If True, insert a second approach waypoint just
+                above the target for a vertical final descent. Recommended
+                for racks.
+            **kwargs: Any attribute on ``self`` named here is overwritten.
+
+        Returns:
+            Dict consumed by ``touch`` — same shape as ``pick_setting`` output.
+        """
         for k, v in kwargs.items():
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -774,6 +992,16 @@ class Recipe:
         soft_approach=False,
         **kwargs,
     ):
+        """Place the held item at ``anchor``: approach, release, detach, exit.
+
+        Wraps ``place_setting(...)`` → ``touch(...)``. See ``place_setting`` for
+        parameter meanings and gripper-specific tips.
+
+        Example:
+            >>> rcp["tube_rack"].place(anchor="A1")
+            >>> rcp["tube_rack"].place(anchor="A1", soft_approach=True)  # racks
+            >>> rcp["tube_rack"].place(anchor="A1", gravity_offset=-10)  # suction elbow
+        """
         place_prm = self.place_setting(
             anchor=anchor, solid_name=solid_name,
             component=component, offset=offset, approach=approach,
@@ -787,8 +1015,23 @@ class Recipe:
         return self.touch(**place_prm, motion_plan_kwargs=kwargs.get("motion_plan_kwargs", {}))
 
     # ── High-level motions ──────────────────────────────────────────────────
-
     def above(self, anchor, solid_name="body", component=None, padding=50, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        """Hover ``padding`` mm above ``anchor`` — no touch, no attach, no IO.
+
+        Uses ``pick_setting`` to compute the safe-above waypoint and stops
+        there. Useful as a pre-positioning step before inspection or manual
+        work. Runs a planned ``smove`` if ``core.has_motion_plan`` is on,
+        otherwise a plain ``jmove``.
+
+        Args:
+            anchor: Target anchor on the component.
+            padding: Height above the container/load top (mm).
+            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts — see pick_setting.
+            **kwargs: Forwarded to pick_setting / touch.
+
+        Example:
+            >>> rcp["inspector_1"].above("place", padding=80)
+        """
         pick_prm = self.pick_setting(
             anchor, solid_name,
             component=component, actions=[], exit=False,
@@ -798,11 +1041,54 @@ class Recipe:
         )
         if not pick_prm:
             raise RecipeError("above failed — could not compute pick parameters")
+        pick_prm.pop("pose_offset", None)
         pick_prm["target_offset"] = None
         pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
         return self.touch(**pick_prm, **kwargs)
 
+    def stand(self, anchor, offset=[0, 0, 0, 0, 0, 0], solid_name="body", component=None, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
+        """Move to a single pose at ``offset`` relative to ``anchor``'s frame.
+
+        Pure positioning primitive — no approach waypoints, no touch-down,
+        no attach, no IO. The offset is interpreted in the anchor's local
+        frame (same convention as ``pick_setting``'s internal waypoints).
+
+        Args:
+            anchor: Target anchor on the component.
+            offset: [x, y, z, a, b, c] in mm + Euler degrees, in the anchor frame.
+                Default = stand exactly at the anchor.
+            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts.
+            **kwargs: Forwarded to pick_setting / touch.
+
+        Example:
+            >>> rcp["inspector_1"].stand("place", offset=[0, 0, 30, 0, 0, 0])
+            >>> rcp["inspector_1"].stand("place", offset=[10, 0, 50, 0, 0, 45])
+        """
+        pick_prm = self.pick_setting(
+            anchor, solid_name,
+            component=component, actions=[], exit=False,
+            attachment=False, trigger_io=False,
+            tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
+            **kwargs,
+        )
+        if not pick_prm:
+            raise RecipeError("stand failed — could not compute parameters")
+        pose_offset = pick_prm.pop("pose_offset")
+        pick_prm["target_offset"] = None
+        pick_prm["approach_path"] = [pose_offset.pose(offset=offset)]
+        return self.touch(**pick_prm, **kwargs)
+
     def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
+        """Rotate a single joint by ``rotation`` degrees (default j5 ±175°).
+
+        Wraps around ``limit`` so the resulting joint stays in range.
+
+        Args:
+            rotation: Degrees to add (can be negative).
+            joint: Joint name, e.g. "j0" .. "j5".
+            limit: [min, max] joint range used for wrap-around.
+            vaj: [velocity, accel, jerk] for the jmove.
+        """
         rt = self.rt
 
         current_joint = rt.joint()
@@ -816,6 +1102,16 @@ class Recipe:
         return True
 
     def vibrate(self, pattern=[[2.5, 0, 0], [-2.5, 0, 0]], cnt=5, vaj=[300, 10000, 20000], **kwargs):
+        """Oscillate the robot flange through a small Cartesian pattern.
+
+        Useful for shaking a tip free, loosening a seal, or mixing.
+
+        Args:
+            pattern: List of [x, y, z] offsets in the flange's output frame.
+                The robot sweeps through them in order.
+            cnt: Repeat count.
+            vaj: [velocity, accel, jerk] for each jmove.
+        """
         rt = self.rt
 
         current_joint = rt.joint()
@@ -863,7 +1159,22 @@ class Recipe:
         return True
 
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
-        _tool, _load_list, height_load = self._get_tool_and_load_height()
+        """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
+
+        Two-step: ``above`` to hover at load-height, then ``pick(approach=False)``
+        with tool Z offsets adjusted so the **tip** of the held load goes to
+        (anchor + dist). No attach or IO — used for aspirating, dipping, etc.
+
+        Args:
+            dist: Depth below the anchor surface (mm). 0 = tip touches the surface.
+            anchor: Target anchor (default "place").
+            padding: Safe height above the target (mm).
+            exit/attachment/trigger_io: All False by default for this primitive.
+
+        Example:
+            >>> rcp["doser"].immerse(dist=10)   # tip 10mm below well surface
+        """
+        _, _, height_load = self._get_tool_and_load_height()
 
         tool_tcp_z_offset = height_load - dist
         tool_tip_z_offset = height_load - dist
@@ -872,7 +1183,21 @@ class Recipe:
         raise RecipeError("immerse failed — could not move above target")
 
     def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=False, **kwargs):
-        _tool, _load_list, height_load = self._get_tool_and_load_height()
+        """Inverse of ``immerse`` — lift the held load ``dist`` mm above ``anchor``.
+
+        Under the hood, calls ``above`` with tool Z offsets shifted so the tip
+        ends up (anchor + load-height + dist) above the surface. No planning
+        by default (has_motion_plan=False).
+
+        Args:
+            dist: Extra lift above the natural load-height clearance (mm).
+            anchor: Reference anchor (default "place").
+            padding: Extra padding applied by ``above`` (mm, default 0).
+
+        Example:
+            >>> rcp["doser"].retract(dist=20)   # lift tip 20mm above surface
+        """
+        _, _, height_load = self._get_tool_and_load_height()
 
         tool_tcp_z_offset = height_load + dist
         tool_tip_z_offset = height_load + dist
@@ -881,6 +1206,16 @@ class Recipe:
     # ── Calibration ─────────────────────────────────────────────────────────
 
     def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):
+        """Guided single-point calibration for one anchor. Interactive — prompts operator.
+
+        Flow:
+            1. Moves the robot to the computed pose (IK-solved).
+            2. Prompts operator to nudge the robot onto the real calibration point.
+            3. Records the corrected joint values and stores the offset in
+               ``core.calibration`` under ``self.calibration_name``.
+
+        Normally called by ``calibrate()`` rather than directly.
+        """
         rt = self.rt
 
         J, C = self.core.IK(
@@ -921,6 +1256,13 @@ class Recipe:
         return True
 
     def calibrate(self, calibration_targets={}):
+        """Run guided calibration on every anchor in ``calibration_targets``.
+
+        ``calibration_targets`` is ``{solid_name: [anchor_name, ...]}``. If not
+        provided, ``self.calibration_targets`` is used (usually auto-discovered
+        from ``clb_*`` anchors on the component). Each anchor triggers a
+        ``calibrate_anchor`` prompt — interactive.
+        """
         tool = self.tool_attached_to_the_robot()
         tool_solid = tool.assembly[self.calibration_tool_solid_name]
 

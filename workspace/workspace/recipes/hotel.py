@@ -36,6 +36,16 @@ class Hotel(Recipe):
         
     
     def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, **kwargs):
+        """Pick a plate from the hotel shelf at ``level`` using a lateral slide-in approach.
+
+        Hotels have side-loaded shelves, so the approach enters from the
+        side (``size[0] + padding`` out in X), slides in, descends, picks.
+        Exit mirrors that path.
+
+        Args:
+            level: Integer shelf level — builds anchor ``place_{level}``.
+            padding, gap: Side offset and clearance (mm).
+        """
         # anchor
         anchor = f"place_{level}"
 
@@ -59,6 +69,11 @@ class Hotel(Recipe):
 
 
     def place(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", **kwargs):
+            """Place a plate into the hotel shelf at ``level`` via a lateral slide-in.
+
+            Mirror of ``pick`` — approaches from the side, slides in, lowers,
+            releases, then exits laterally. See ``pick`` for args.
+            """
             # anchor
             anchor = f"place_{level}"
 
