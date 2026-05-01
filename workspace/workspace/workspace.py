@@ -7,6 +7,7 @@ import numpy as np
 from workspace.display import Display
 from workspace.components import factory as comp_factory
 from workspace.runtime import Runtime
+from workspace.devices import MQTTOrchestrator
 from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
 
 
@@ -43,6 +44,17 @@ class Workspace:
         if core is None:
             raise RuntimeError("Workspace requires a 'core' component for Runtime")
         self.rt = Runtime(core)
+
+        # 1.6) device health bus (MQTT). Best-effort: a missing/unreachable
+        # broker must not block startup — devices will appear once it's up.
+        try:
+            self.devices = MQTTOrchestrator(runtime=self.rt)
+        except Exception as ex:
+            import logging
+            logging.getLogger(__name__).warning(
+                "MQTTOrchestrator unavailable: %s. Device monitoring disabled.", ex,
+            )
+            self.devices = None
 
         # 2) perform attachments (child-side offset)
         for child_name, ccfg in comp_cfgs.items():
@@ -387,6 +399,13 @@ class Workspace:
         try:
             if hasattr(self, "rt") and self.rt is not None:
                 self.rt.stop()
+        except Exception:
+            pass
+
+        # close device bus
+        try:
+            if getattr(self, "devices", None) is not None:
+                self.devices.close()
         except Exception:
             pass
 

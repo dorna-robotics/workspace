@@ -20,6 +20,7 @@ dependencies = [
   "mergedeep",
   "pyserial",
   "ortools>=9.4,<9.10", # CP-SAT scheduler — upper bound keeps numpy 1.x compatible
+  "paho-mqtt>=2.0",     # device health bus per docs/device-mqtt-spec.md
 ]
 
 [tool.setuptools.packages.find]

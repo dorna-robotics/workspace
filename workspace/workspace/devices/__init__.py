@@ -1,6 +1,12 @@
-"""Device protocol + HealthBus — uniform health monitoring for the orchestrator."""
+"""Device integration — MQTT-based health monitoring.
 
-from workspace.devices.protocol import Device, DeviceEvent, DeviceState
-from workspace.devices.health_bus import HealthBus
+See ``docs/device-mqtt-spec.md`` for the wire protocol. Workspace runtime
+consumes device state via :class:`MQTTOrchestrator`.
+"""
 
-__all__ = ["Device", "DeviceEvent", "DeviceState", "HealthBus"]
+from workspace.devices.orchestrator import (
+    DeviceEntry,
+    MQTTOrchestrator,
+)
+
+__all__ = ["MQTTOrchestrator", "DeviceEntry"]
