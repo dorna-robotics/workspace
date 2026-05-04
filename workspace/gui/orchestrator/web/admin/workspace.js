@@ -332,11 +332,26 @@ function _tryDevicesWS() {
     try {
       const msg = JSON.parse(e.data);
       if (msg && msg.type === "device_state" && msg.id) {
+        const prev = _devices.get(msg.id);
         _devices.set(msg.id, msg);
         // Any state event for a pending device clears its "in-flight" mark
         // so the button stops showing "Recovering…" once the cycle ends.
         if (_devicesPending.has(msg.id) && msg.state !== "recovering") {
           _devicesPending.delete(msg.id);
+        }
+        // Operator paging on the rising edge of a critical-down. Same UX
+        // as the step-driven alarm banner (audio + desktop notification),
+        // applied uniformly to every device on the bus — robot, camera,
+        // future printer/pipette/etc. We page only on the transition
+        // (prev state was not down) to avoid spamming when the panel
+        // first loads with already-down devices.
+        if (
+          msg.state === "down"
+          && msg.critical !== false
+          && (!prev || prev.state !== "down")
+        ) {
+          _alarmBeep();
+          _alarmNotify(`${msg.id}: ${(msg.msg || "down").trim()}`);
         }
         renderDevicesPanel();
       }

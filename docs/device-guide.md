@@ -845,9 +845,36 @@ on it (`detect(..., use_last=True)`).
 
 That's the entire pattern. The next read-only device — scale, encoder,
 ADC, lidar — follows exactly the same shape, just with different
-hardware internals. Write devices (printer, pipette, robot) reuse the
-adapter + AutoRecover layers but need a different freshness/verify
-pattern; see §6.
+hardware internals.
+
+### And the robot — same bus, different wrapping
+
+The robot ([dorna2.Dorna](https://github.com/dorna-robotics/dorna2)) is
+also on the bus, via [`RobotStation`](../workspace/workspace/components/core/robot_station.py).
+Same Device protocol, same `MQTTDeviceAdapter` + `AutoRecover` wiring
+in `Core`, same Devices panel UX (red dot + Recover button) — but two
+different failure modes both surface as `state="down"`:
+
+- **Connection lost** — any underlying `ConnectionError` / `OSError`
+  from a wrapped Dorna call (TCP drop, host unreachable). The
+  exception still propagates to the recipe.
+- **Robot alarm** — motion commands return `int < 0` on alarm
+  (limit hit, IK failed, E-stop). The wrapper sets
+  `state="down"` with `msg="alarm code N"`.
+
+Connection drops kick `AutoRecover.trigger()` automatically via the
+state→down edge (IP devices have no hotplug, so the state edge is the
+substitute trigger). Successful calls after a non-`ok` state clear
+state back to `ok` — recipes that auto-retry resolve the panel state
+themselves without operator intervention.
+
+The wrapping is **pure composition** — dorna2 itself is unmodified.
+Recipes calling `core.dorna.move(...)` / `core.dorna.kinematic.inv(...)`
+keep working unchanged; the wrapper proxies via `__getattr__` and
+intercepts return values + exceptions on the way out.
+
+Write devices (printer, pipette) reuse the adapter + AutoRecover
+layers but need a different freshness/verify pattern; see §6.
 
 ---
 

@@ -9,6 +9,8 @@ import dorna2.pose
 from workspace.components.factory import register
 from path_planning import Planner
 from workspace.components.calibration import Calibration
+from workspace.components.core.robot_station import RobotStation
+from workspace.devices import MQTTDeviceAdapter, AutoRecover
 
 
 import time
@@ -235,17 +237,57 @@ class Core:
         if hasattr(self.workspace, "_scene_dirty"):
             self.workspace._scene_dirty = True
 
-        # connect to the robot
+        # Always create a RobotStation — its underlying dorna2.Dorna is
+        # needed for offline kinematic math (``self.dorna.kinematic.inv``)
+        # whether or not we're driving real hardware. Empty IP / sim mode
+        # just skip the connect, so the kinematic side keeps working.
+        # In real mode RobotStation also implements the Device protocol,
+        # so the robot shows up in the Devices panel alongside the camera
+        # and self-heals connection drops via AutoRecover.
         self._simulation_mode = prm["simulation"]
-        self.dorna = Dorna()
-        if self.robot_ip:
-            if self.dorna.connect(self.robot_ip):
-                print(f"✅ {self.name} connected @ {self.robot_ip}")
-            else:
-                # simulation get activated
-                print(f"❌ {self.name} connection failed @ {self.robot_ip}")
-                self._simulation_mode = True
+        self.dorna = RobotStation(ip=self.robot_ip or "", label=self.name)
+        self._robot_adapter = None
+        self._robot_recover = None
 
+        # If we have an IP and aren't already in sim, but the connect
+        # didn't land, fall back to sim so the rest of workspace stays
+        # usable. AutoRecover will still keep retrying in the background
+        # once wired below.
+        if self.robot_ip and not self._simulation_mode and self.dorna.state != "ok":
+            print(f"❌ {self.name} initial robot connect failed; falling back to simulation")
+            self._simulation_mode = True
+
+        # MQTT health publishing + self-healing reconnect loop. Skipped
+        # in simulation (nothing physical to publish) and when there's
+        # no IP to wrap. Mirror of the camera adapter wiring in CameraPool.
+        if self.robot_ip and not self._simulation_mode:
+            try:
+                recover = AutoRecover(
+                    recover_fn=self.dorna.recover,
+                    set_status=self.dorna._set_state,
+                    log_label=f"dorna:{self.robot_ip}",
+                )
+                # Connection drop sets state→down; that edge nudges the
+                # AutoRecover loop, so reconnects start immediately
+                # without polling. IP devices have no hotplug, so this
+                # state-edge hook is the equivalent.
+                self.dorna.on_state_down(recover.trigger)
+                self._robot_recover = recover
+
+                self._robot_adapter = MQTTDeviceAdapter(
+                    self.dorna,
+                    kind="dorna",
+                    critical=True,
+                    meta={"ip": self.robot_ip, "model": prm.get("model", "dorna_ta")},
+                )
+            except Exception:
+                # Adapter / recovery failure must NOT take down Core —
+                # the robot itself is still usable.
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Core[%s]: failed to attach MQTT adapter / AutoRecover for robot",
+                    self.name,
+                )
 
         # optional robot API hookup
         if not self._simulation_mode:
@@ -774,9 +816,25 @@ class Core:
 
 
     def stop(self):
-        # robot
+        # robot — stop the auto-recover loop before closing the
+        # connection, then close the adapter (publishes online: false
+        # via the clean-shutdown path) and finally the underlying
+        # client.
+        if self._robot_recover is not None:
+            try:
+                self._robot_recover.stop()
+            except Exception:
+                pass
+        if self._robot_adapter is not None:
+            try:
+                self._robot_adapter.close()
+            except Exception:
+                pass
         if self.dorna:
-            self.dorna.close()
+            try:
+                self.dorna.close()
+            except Exception:
+                pass
 
         # camera (vision-server client)
         try:
@@ -817,13 +875,16 @@ class Core:
 
     @property
     def device_ids(self) -> list[str]:
-        """Device ids this component depends on. See docs/device-guide.md §8.
+        """Device ids this component depends on. See docs/device-guide.md §9.
 
-        Today: just the robot-mounted camera (when present). Add the
-        robot itself here as ``f"dorna:{self.ip}"`` if/when it gets its
-        own adapter on the device side.
+        Includes the robot itself (Core wraps dorna2.Dorna in a
+        RobotStation that publishes connection + alarm state to the
+        device bus) and the robot-mounted camera, when present. Both
+        appear in the Devices panel for any project that uses Core.
         """
         ids: list[str] = []
+        if self.robot_ip and not self._simulation_mode:
+            ids.append(f"dorna:{self.robot_ip}")
         sn = self.vision.serial_number
         if sn:
             ids.append(f"camera:{sn}")
