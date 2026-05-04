@@ -2,18 +2,24 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
 
-"""
-detection comes in a dictionary of names, and it can run multiple detections at once
-and the result will also return in that format as well
-det_preset = {
-            'roi': {'corners': [], 'inv': False, 'crop': False}, 
-            'detection': {'cmd': 'kp', 'path': 'model/microplate_keypoint.pkl', 'conf': 0.5, 'cls': {}},
-            'sort': {'cmd': 'shuffle', 'max_det': 100},
-            'display': {'label': 0, 'save_img': False, 'save_img_roi': False}
-            }
 
-result = []
 """
+detection_preset shape: a dict configuring a single Detection on the vision server.
+Example:
+    detection_preset = {
+        "roi":       {"corners": [], "inv": False, "crop": False},
+        "detection": {"cmd": "kp", "path": "model/microplate_keypoint.pkl", "conf": 0.5, "cls": {}},
+        "sort":      {"cmd": "shuffle", "max_det": 100},
+        "display":   {"label": 0, "save_img": False, "save_img_roi": False},
+    }
+
+The recipe registers this preset under a single name (default "default") on the
+vision server during construction; ``detect()`` runs it via RPC. Robot motions
+(``present()``, ``rotate()``) always run — only the detection call short-circuits
+in simulation, so workflow timing stays the same with or without hardware.
+"""
+
+
 class FixedInspector(Recipe):
     DEFAULTS = dict(
         base_distance=200,
@@ -21,39 +27,31 @@ class FixedInspector(Recipe):
         target_anchor="place",
     )
 
-    def __init__(self, workspace, core, component, detection_preset = {}, **kwargs):
+    def __init__(self, workspace, core, component, detection_preset=None,
+                 detection_name="default", **kwargs):
         # prm
-        prm = deepcopy(Recipe.DEFAULTS) # default
-        merge(prm, self.DEFAULTS) # self
-        merge(prm, kwargs) # kwargs
+        prm = deepcopy(Recipe.DEFAULTS)
+        merge(prm, self.DEFAULTS)
+        merge(prm, kwargs)
 
         super().__init__(
             workspace=workspace,
             core=core,
             component=component,
-            **prm
+            **prm,
         )
 
-        # detection_preset
-        self.detection_preset = detection_preset
+        # Cache the name we registered the detection under so detect() can
+        # find it. Each FixedInspector instance owns one named detection.
+        self.detection_name = detection_name
+        if detection_preset:
+            self.component.add_detection(self.detection_name, **detection_preset)
 
-        try:
-            from dorna_vision import Detection
-            # init detections
-            self.detection = Detection(camera=self.component.camera, robot=None, **self.detection_preset)
-        except Exception as ex:
-            self.detection
-            print(f"[Detection disabled] {ex}")
-
-    """
-    present the robot to the insepction component
-    """
     def present(self, approach=True, padding=50, load_anchor="center", **kwargs):
-        """Position the held item in front of the fixed inspector's camera.
+        """Position the held item in front of the inspector's camera.
 
-        A lightweight ``place`` (no release, no attach, no IO, gravity_offset=0)
-        that holds the load at the inspector's ``place`` anchor so the camera
-        can see it. Follow with ``detect(...)`` to run inspection.
+        Robot motion runs whether or not we're in simulation — only
+        ``detect()`` returns canned values when the component is offline.
         """
         return self.place(
             anchor="place",
@@ -66,55 +64,34 @@ class FixedInspector(Recipe):
             gap=2,
             load_anchor=load_anchor,
             gravity_offset=0,
-            **kwargs)
-
+            **kwargs,
+        )
 
     def detect(self, retval=True, **kwargs):
-        """Run detection on the inspector's current view.
-
-        Returns ``retval`` (default True) in simulation or when no detection
-        object is configured; otherwise returns whatever ``Detection.run`` yields.
-        """
-        if not self.component.simulation and self.detection is not None:
-            retval = self.detection.run(**kwargs)
-        return retval
-
+        """Forward to the component, which round-trips to the vision server.
+        Returns ``retval`` (default True) in simulation."""
+        return self.component.detect(self.detection_name, retval=retval, **kwargs)
 
     def rotate(self, rotation=90, **kwargs):
-        """Rotate j5 by ``rotation`` degrees — used to flip the camera angle."""
+        """Rotate j5 — used to flip the camera angle."""
         return super().rotate(rotation=rotation, joint="j5", **kwargs)
 
 
 class MobileInspector:
-    def __init__(self, workspace, core, detection_preset = {}, **kwargs):
+    """Robot-mounted camera. Detection runs on the vision server using the
+    Core's camera; this recipe is a thin wrapper around ``core.detect()``.
 
+    Same simulation semantics as FixedInspector: the recipe stays usable when
+    the vision server is unreachable, ``detect()`` just returns canned values.
+    """
+
+    def __init__(self, workspace, core, detection_preset=None,
+                 detection_name="default", **kwargs):
         self.workspace = workspace
         self.core = core
+        self.detection_name = detection_name
+        if detection_preset:
+            self.core.add_detection(self.detection_name, **detection_preset)
 
-        # detection_preset
-        self.detection_preset = detection_preset
-
-        # init detections
-        try:
-            from dorna_vision import Detection
-            # init detections
-            self.detection = Detection(camera=self.core.camera, robot=self.core.robot_api, camera_mount=self.core.camera_mount, **self.detection_preset)
-        except Exception as ex:
-            self.detection = None
-            print(f"[Detection disabled] {ex}")
-
-    
     def detect(self, retval=True, **kwargs):
-        """Run detection through the robot-mounted camera (MobileInspector).
-
-        Re-binds ``detection.robot`` to the current ``core.robot_api`` before
-        running so detection stays consistent across robot reconnections.
-        Returns ``retval`` in simulation.
-        """
-        if not self.core._simulation_mode and self.detection is not None:
-            # ensure Detection always points to the current robot API
-            if self.detection.robot is not self.core.robot_api:
-                self.detection.robot = self.core.robot_api
-
-            retval = self.detection.run(**kwargs)
-        return retval
+        return self.core.detect(self.detection_name, retval=retval, **kwargs)

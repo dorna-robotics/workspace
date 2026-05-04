@@ -284,6 +284,196 @@ function disconnectStepWS() {
   _stepWsUrl = "";
 }
 
+// ── Devices panel (project-scoped) ───────────────────────────────────
+let _devicesWs = null;
+let _devicesWsUrl = "";
+let _devicesWsClosed = true;
+let _devicesWsRetryMs = 1000;
+let _devicesUrl = "";   // base http URL, used for recover POST
+const _devices = new Map();   // id → snapshot
+// Devices we just clicked Recover on. Holds id → {note, until} so the
+// row keeps showing "Recovering…" until the device reports a non-recovering
+// state or the safety deadline passes (handles dropped MQTT replies).
+const _devicesPending = new Map();
+const RECOVER_FALLBACK_MS = 35_000;
+
+function connectDevicesWS(runtimeUrl) {
+  // HTTP fetches and recover commands go through the admin proxy at
+  // /orchestrator/api/workspace/<name>/devices to avoid cross-origin
+  // requests against the workspace's own port. The WebSocket connects
+  // straight to the workspace process — Tornado's WebSocketHandler
+  // accepts cross-origin via check_origin=True, so no proxy needed.
+  _devicesUrl = runtimeUrl;
+  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/devices";
+  if (_devicesWs && _devicesWsUrl === wsUrl) return;
+  disconnectDevicesWS();
+  _devicesWsUrl = wsUrl;
+  _devicesWsClosed = false;
+  _devicesWsRetryMs = 1000;
+  _devices.clear();
+  _tryDevicesWS();
+  // Initial seed via the admin proxy (no CORS).
+  fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices`)
+    .then(r => r.ok ? r.json() : null)
+    .then(payload => {
+      if (!payload || !Array.isArray(payload.devices)) return;
+      for (const d of payload.devices) _devices.set(d.id, d);
+      renderDevicesPanel();
+    })
+    .catch(() => {});
+}
+
+function _tryDevicesWS() {
+  if (_devicesWsClosed || !_devicesWsUrl) return;
+  const ws = new WebSocket(_devicesWsUrl);
+  _devicesWs = ws;
+  ws.onopen = () => { _devicesWsRetryMs = 1000; };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.type === "device_state" && msg.id) {
+        _devices.set(msg.id, msg);
+        // Any state event for a pending device clears its "in-flight" mark
+        // so the button stops showing "Recovering…" once the cycle ends.
+        if (_devicesPending.has(msg.id) && msg.state !== "recovering") {
+          _devicesPending.delete(msg.id);
+        }
+        renderDevicesPanel();
+      }
+    } catch {}
+  };
+  ws.onclose = () => {
+    if (_devicesWsClosed) return;
+    setTimeout(_tryDevicesWS, _devicesWsRetryMs);
+    _devicesWsRetryMs = Math.min(_devicesWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectDevicesWS() {
+  _devicesWsClosed = true;
+  if (_devicesWs) { try { _devicesWs.close(); } catch {} _devicesWs = null; }
+  _devicesWsUrl = "";
+}
+
+function renderDevicesPanel() {
+  const el = $("devicesList");
+  const badge = $("devicesCountBadge");
+  if (!el) return;
+  const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
+  if (badge) badge.textContent = list.length ? `${list.length}` : "";
+  if (!list.length) {
+    el.innerHTML = `<div class="step-empty">No devices declared</div>`;
+    return;
+  }
+  const now = Date.now();
+  el.innerHTML = list.map(d => {
+    const state = d.state || "down";
+    const online = d.online !== false;  // default true for back-compat
+    const pending = _devicesPending.get(d.id);
+    const isPending = !!(pending && pending.until > now);
+    if (pending && pending.until <= now) _devicesPending.delete(d.id);
+
+    // Visual state: pending click overrides server state until the bus
+    // confirms or the safety deadline elapses. Offline devices render
+    // distinctly and hide the recover button.
+    const visualState = isPending ? "recovering" : state;
+    const dotClass = visualState === "ok"
+      ? "ok pulse"
+      : visualState === "recovering"
+        ? "warn pulse"
+        : "bad";
+    const rowClass = visualState === "ok"
+      ? ""
+      : (visualState === "recovering" ? "is-recovering" : "is-down");
+
+    const msg = (pending?.note || d.msg || "").trim();
+    let control = "";
+    if (visualState === "recovering") {
+      control = `<button class="btn btn-sm btn-primary" disabled>Recovering…</button>`;
+    } else if (state !== "ok") {
+      if (online) {
+        control = `<button class="btn btn-sm btn-primary" data-device-act="recover">Recover</button>`;
+      } else {
+        control = `<span class="device-pill">offline</span>`;
+      }
+    }
+
+    return `
+      <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="${escAttr(d.id)}">
+        <span class="dot ${dotClass}"></span>
+        <span class="device-id">${escHtml(d.id)}</span>
+        ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
+        ${control}
+      </div>`;
+  }).join("");
+  // bind recover buttons
+  el.querySelectorAll('[data-device-act="recover"]').forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      const row = ev.currentTarget.closest(".device-row");
+      const id = row?.getAttribute("data-device-id");
+      if (id) recoverDevice(id);
+    });
+  });
+}
+
+async function recoverDevice(deviceId) {
+  // Mark in-flight; UI flips to "Recovering…" immediately and stays there
+  // until the device publishes a non-recovering state (or the deadline).
+  _devicesPending.set(deviceId, {
+    note: "recover requested",
+    until: Date.now() + RECOVER_FALLBACK_MS,
+  });
+  renderDevicesPanel();
+  // Schedule a refresh so the row clears itself after the deadline if
+  // no state event arrives (defensive; normally WS clears it earlier).
+  setTimeout(() => {
+    if (_devicesPending.has(deviceId)) {
+      const p = _devicesPending.get(deviceId);
+      if (p.until <= Date.now()) _devicesPending.delete(deviceId);
+      renderDevicesPanel();
+    }
+  }, RECOVER_FALLBACK_MS + 500);
+
+  try {
+    const r = await fetch(
+      `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices/${encodeURIComponent(deviceId)}/recover`,
+      { method: "POST" },
+    );
+    const reply = await r.json().catch(() => ({}));
+    // Fast-fail (offline service): drop the pending mark so the offline
+    // pill renders and the operator sees the reason.
+    if (reply && reply.offline === true) {
+      _devicesPending.delete(deviceId);
+      renderDevicesPanel();
+      return;
+    }
+    if (reply && reply.ok === false) {
+      _devicesPending.set(deviceId, {
+        note: reply.msg || "recover failed",
+        until: Date.now() + 4000,
+      });
+      renderDevicesPanel();
+    }
+    // ok=true (queued): keep showing "Recovering…" — the WS state events
+    // own the rest of the lifecycle and will clear the pending mark.
+  } catch (e) {
+    _devicesPending.set(deviceId, {
+      note: "request failed",
+      until: Date.now() + 4000,
+    });
+    renderDevicesPanel();
+  }
+}
+
+// Light HTML/attribute escapers used by renderDevicesPanel.
+function escHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+function escAttr(s) { return escHtml(s); }
+
 function renderStep(step, running) {
   const section = $("stepSection");
   const el = $("stepTimeline");
@@ -536,6 +726,7 @@ function updateIframe(state, launched) {
       frame.src   = "about:blank";
       placeholder.style.display = "";
       disconnectStepWS();
+      disconnectDevicesWS();
     }
     return;
   }
@@ -550,6 +741,7 @@ function updateIframe(state, launched) {
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
     connectStepWS(targetUrl);
+    connectDevicesWS(targetUrl);
   }
 }
 
@@ -633,6 +825,16 @@ $("btnToggleSteps")?.addEventListener("click", () => {
   if (el) el.style.display = _stepsExpanded ? "" : "none";
   const chevron = $("stepChevron");
   if (chevron) chevron.classList.toggle("open", _stepsExpanded);
+});
+
+// Collapse / expand devices
+let _devicesExpanded = true;
+$("btnToggleDevices")?.addEventListener("click", () => {
+  _devicesExpanded = !_devicesExpanded;
+  const el = $("devicesList");
+  if (el) el.style.display = _devicesExpanded ? "" : "none";
+  const chevron = $("devicesChevron");
+  if (chevron) chevron.classList.toggle("open", _devicesExpanded);
 });
 
 // ---- Run Parameters section ----

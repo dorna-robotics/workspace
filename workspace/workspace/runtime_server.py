@@ -12,6 +12,7 @@ from tornado import autoreload
 import socketio
 
 from workspace.runtime import Runtime
+from workspace.devices import component_device_ids
 
 # --------------------------------------------------
 # Viewer/Static paths
@@ -203,6 +204,11 @@ class StatusHandler(tornado.web.RequestHandler):
 # --------------------------------------------------
 _step_ws_clients: set = set()
 
+# Captured at server startup so broadcast helpers called from non-IOLoop
+# threads (paho's network thread, the workflow thread) can hop back onto
+# the correct loop. IOLoop.current() from a foreign thread is unreliable.
+_main_ioloop: Optional[tornado.ioloop.IOLoop] = None
+
 
 class StepWebSocket(tornado.websocket.WebSocketHandler):
     def check_origin(self, origin):
@@ -227,7 +233,8 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
 
 def _broadcast_steps(steps: list):
     """Called from rt.on_step (workflow thread) — schedule send on IO loop."""
-    ioloop = tornado.ioloop.IOLoop.current()
+    if _main_ioloop is None:
+        return
     msg = json.dumps({"steps": steps})
 
     def _send():
@@ -237,7 +244,180 @@ def _broadcast_steps(steps: list):
             except Exception:
                 _step_ws_clients.discard(c)
 
-    ioloop.add_callback(_send)
+    _main_ioloop.add_callback(_send)
+
+
+# --------------------------------------------------
+# Device panel — list / recover / release / live state push
+# --------------------------------------------------
+# Project-scoped device view. Walks workspace.components for their
+# `device_ids` declarations (per the DeviceComponent contract in
+# docs/device-guide.md §8), intersects with the bus cache held by
+# workspace.devices (MQTTOrchestrator), and exposes:
+#   GET  /devices               → list of devices this project depends on
+#   POST /devices/<id>/recover  → trigger remote recover
+#   POST /devices/<id>/release  → trigger remote release
+#   WS   /ws/devices            → push device_state events as they happen
+_device_ws_clients: set = set()
+
+
+def _project_device_ids(workspace) -> set[str]:
+    """Union of every component's `device_ids` declaration. Empty if none."""
+    out: set[str] = set()
+    components = getattr(workspace, "components", {}) or {}
+    for comp in components.values():
+        for did in component_device_ids(comp):
+            out.add(did)
+    return out
+
+
+def _project_devices_snapshot(workspace) -> list[dict]:
+    """List of device snapshots this project claims, in stable id order.
+    Each entry is a dict from MQTTOrchestrator.list_devices() (id, state,
+    msg, kind, critical, meta, ts), augmented with `claimed=True`. When
+    the bus has no entry for a claimed id (device service not yet up),
+    a placeholder with state="down", msg="not on bus" is returned so the
+    UI can still show the dependency."""
+    devices = getattr(workspace, "devices", None)
+    claimed = _project_device_ids(workspace)
+    if not claimed:
+        return []
+    bus = {d["id"]: d for d in (devices.list_devices() if devices else [])}
+    out = []
+    for did in sorted(claimed):
+        if did in bus:
+            entry = dict(bus[did])
+            entry["claimed"] = True
+        else:
+            entry = {
+                "id": did,
+                "state": "down",
+                "msg": "not on bus",
+                "kind": did.split(":", 1)[0] if ":" in did else "device",
+                "critical": True,
+                "meta": {},
+                "ts": 0.0,
+                "online": False,
+                "claimed": True,
+            }
+        out.append(entry)
+    return out
+
+
+class DevicesHandler(tornado.web.RequestHandler):
+    """GET /devices → JSON list of project-claimed devices."""
+
+    def initialize(self, workspace):
+        self.workspace = workspace
+
+    def get(self):
+        self.set_header("Content-Type", "application/json")
+        self.set_header("Cache-Control", "no-store")
+        self.write(json.dumps({"devices": _project_devices_snapshot(self.workspace)}))
+
+
+class DeviceCmdHandler(tornado.web.RequestHandler):
+    """POST /devices/<id>/<action>  with action ∈ {recover, release}.
+
+    Forwards through workspace.devices (the MQTTOrchestrator) and returns
+    the device's reply payload. Refuses to act on devices the project
+    doesn't claim — keeps a project from accidentally poking unrelated
+    hardware on the bus.
+    """
+
+    def initialize(self, workspace):
+        self.workspace = workspace
+
+    def post(self, device_id: str, action: str):
+        self.set_header("Content-Type", "application/json")
+        if action not in ("recover", "release"):
+            self.set_status(400)
+            self.write(json.dumps({"ok": False, "msg": f"unknown action: {action}"}))
+            return
+
+        if device_id not in _project_device_ids(self.workspace):
+            self.set_status(403)
+            self.write(json.dumps({
+                "ok": False,
+                "msg": f"device {device_id} is not claimed by this project",
+            }))
+            return
+
+        devices = getattr(self.workspace, "devices", None)
+        if devices is None:
+            self.set_status(503)
+            self.write(json.dumps({"ok": False, "msg": "device bus unavailable"}))
+            return
+
+        # Fire-and-forget: publish the cmd and return immediately. The
+        # device's response flows through state events on /ws/devices,
+        # which is what the panel actually renders. Blocking the HTTP
+        # request on the 30 s reply window is wasted latency and gives
+        # the operator no feedback during the wait.
+        async_fn = getattr(devices, f"{action}_async", None)
+        try:
+            if callable(async_fn):
+                reply = async_fn(device_id)
+            else:
+                reply = getattr(devices, action)(device_id)
+        except Exception as ex:
+            self.set_status(500)
+            self.write(json.dumps({"ok": False, "msg": f"{type(ex).__name__}: {ex}"}))
+            return
+
+        if isinstance(reply, dict) and reply.get("offline"):
+            self.set_status(409)  # Conflict — device service not on bus
+        self.write(json.dumps(reply or {"ok": False, "msg": "no reply"}))
+
+
+class DeviceWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws/devices — push device_state events to the project page.
+
+    On connect, pushes the full project snapshot so a freshly-loaded page
+    sees current state without waiting for the next transition. After
+    that, pushes one event per device update from MQTTOrchestrator's
+    subscription channel (filtered to claimed ids).
+    """
+
+    def check_origin(self, origin):
+        return True
+
+    def initialize(self, workspace):
+        self.workspace = workspace
+
+    def open(self):
+        _device_ws_clients.add(self)
+        try:
+            for entry in _project_devices_snapshot(self.workspace):
+                self.write_message(json.dumps({"type": "device_state", **entry}))
+        except Exception:
+            pass
+
+    def on_close(self):
+        _device_ws_clients.discard(self)
+
+
+def _broadcast_device_event(workspace, event: dict):
+    """Called by MQTTOrchestrator.subscribe (paho's network thread) —
+    fan out to project clients. Filters to ids the project actually
+    claims so panels stay focused."""
+    if not _device_ws_clients or _main_ioloop is None:
+        return
+    if event.get("id") not in _project_device_ids(workspace):
+        return
+    payload = json.dumps({"type": "device_state", **event})
+
+    def _send():
+        for c in list(_device_ws_clients):
+            try:
+                c.write_message(payload)
+            except Exception:
+                _device_ws_clients.discard(c)
+
+    try:
+        _main_ioloop.add_callback(_send)
+    except Exception:
+        pass
 
 
 # --------------------------------------------------
@@ -299,6 +479,11 @@ class RuntimeServer:
             (r"/status", StatusHandler, dict(rt=self.rt)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
 
+            # device panel — see DevicesHandler / DeviceCmdHandler / DeviceWebSocket
+            (r"/devices", DevicesHandler, dict(workspace=self.workspace)),
+            (r"/devices/([^/]+)/(recover|release)", DeviceCmdHandler, dict(workspace=self.workspace)),
+            (r"/ws/devices", DeviceWebSocket, dict(workspace=self.workspace)),
+
             # health
             (r"/healthz", HealthHandler),
 
@@ -315,9 +500,22 @@ class RuntimeServer:
         # Wire step push: rt.on_step → broadcast to all step WS clients
         self.rt.on_step = _broadcast_steps
 
+        # Wire device push: workspace.devices (MQTTOrchestrator) → broadcast
+        # to all device WS clients. The orchestrator's subscribe runs the
+        # callback on paho's network thread; _broadcast_device_event hops
+        # back onto the IO loop before writing.
+        devices = getattr(self.workspace, "devices", None)
+        if devices is not None and hasattr(devices, "subscribe"):
+            try:
+                devices.subscribe(lambda evt: _broadcast_device_event(self.workspace, evt))
+            except Exception:
+                pass
+
         self.app = tornado.web.Application(routes, debug=DEV_NOCACHE)
 
     def run(self):
+        global _main_ioloop
+        _main_ioloop = tornado.ioloop.IOLoop.current()
         self.app.listen(self.port, address=self.host)
         print(f"[runtime] listening at http://127.0.0.1:{self.port}")
         print(" - viewer:", self.web_dir)

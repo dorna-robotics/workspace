@@ -5,7 +5,7 @@ Tracks every device on the bus via retained ``device/<id>/info`` and
 on critical-down transitions, and exposes round-trip ``recover`` /
 ``release`` commands.
 
-See ``docs/device-mqtt-spec.md`` for the topic/payload contract.
+See ``docs/device-guide.md`` (Appendix A for the wire-level protocol).
 """
 
 from __future__ import annotations
@@ -44,6 +44,11 @@ class DeviceEntry:
     critical: bool = True
     meta: dict[str, Any] = field(default_factory=dict)
     ts: float = 0.0
+    # Whether the device service process is alive on the bus. Set True by
+    # any incoming info/state message (something is publishing), flipped
+    # False only by an LWT payload that carries ``online: false``. Used
+    # by recover/release to fast-fail when nobody is listening.
+    online: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +59,7 @@ class DeviceEntry:
             "critical": self.critical,
             "meta": dict(self.meta),
             "ts": self.ts,
+            "online": self.online,
         }
 
 
@@ -188,6 +194,8 @@ class MQTTOrchestrator:
             entry.kind = str(payload.get("kind", entry.kind))
             entry.critical = bool(payload.get("critical", entry.critical))
             entry.meta = dict(payload.get("meta", entry.meta))
+            # info only arrives from a live publisher.
+            entry.online = True
             snapshot = entry.to_dict()
         # Notify subscribers (info changes also count as observable events).
         self._notify(snapshot)
@@ -199,11 +207,16 @@ class MQTTOrchestrator:
                 entry = DeviceEntry(id=device_id)
                 self._devices[device_id] = entry
             old_state = entry.state
+            old_online = entry.online
             entry.state = str(payload.get("state", "down"))
             entry.msg = str(payload.get("msg", ""))
             entry.ts = float(payload.get("ts", time.time()))
+            # Default online=True for back-compat with services that don't
+            # set the field. LWT payloads must include ``online: false``.
+            entry.online = bool(payload.get("online", True))
             critical = entry.critical
             new_state = entry.state
+            new_online = entry.online
             snapshot = entry.to_dict()
 
         # Pause runtime on a critical-down transition (only on the edge).
@@ -281,7 +294,56 @@ class MQTTOrchestrator:
         """Send ``device/<id>/cmd/release`` and wait for the matching reply."""
         return self._send_cmd(device_id, "release", timeout)
 
+    def recover_async(self, device_id: str) -> dict[str, Any]:
+        """Publish ``device/<id>/cmd/recover`` and return immediately.
+
+        Use this from HTTP handlers / UI code: the visual feedback flows
+        through state events rather than the cmd reply, so blocking the
+        request thread on a 30 s reply window is wasted latency.
+        """
+        return self._publish_cmd(device_id, "recover")
+
+    def release_async(self, device_id: str) -> dict[str, Any]:
+        """Publish ``device/<id>/cmd/release`` and return immediately."""
+        return self._publish_cmd(device_id, "release")
+
+    def _publish_cmd(self, device_id: str, action: str) -> dict[str, Any]:
+        """Fire-and-forget publish of a cmd, with offline fast-fail."""
+        with self._lock:
+            entry = self._devices.get(device_id)
+            online = entry.online if entry is not None else False
+        if not online:
+            return {
+                "ok": False,
+                "msg": "device service offline — start the service",
+                "offline": True,
+            }
+        try:
+            self.client.publish(
+                f"device/{device_id}/cmd/{action}",
+                json.dumps({"req_id": str(uuid.uuid4())}),
+                qos=1,
+                retain=False,
+            )
+        except Exception as ex:
+            log.exception("MQTTOrchestrator: publish failed for %s/%s",
+                          device_id, action)
+            return {"ok": False, "msg": f"publish failed: {ex}"}
+        return {"ok": True, "queued": True, "msg": f"{action} sent"}
+
     def _send_cmd(self, device_id: str, action: str, timeout: float) -> dict[str, Any]:
+        # Fast-fail when the device service isn't on the bus — otherwise
+        # we'd block the caller for the full timeout waiting for a reply
+        # that nobody is listening to send.
+        with self._lock:
+            entry = self._devices.get(device_id)
+            online = entry.online if entry is not None else False
+        if not online:
+            return {
+                "ok": False,
+                "msg": "device service offline — start the service",
+                "offline": True,
+            }
         req_id = str(uuid.uuid4())
         pending = _PendingRequest(event=threading.Event())
         with self._lock:

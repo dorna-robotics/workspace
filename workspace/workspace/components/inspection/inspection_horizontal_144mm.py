@@ -23,6 +23,7 @@ class InspectionHorizontal144mm(Inspection):
         },
         # cfg
         camera_serial_number="",
+        vision_server_host="127.0.0.1",
         simulation=True,
     )
 

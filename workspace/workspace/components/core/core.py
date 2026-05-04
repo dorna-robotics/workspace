@@ -138,12 +138,20 @@ class Core:
         rail_offset = 0,
         has_camera = False,
         camera_serial_number = "",
+        # Vision server hosting the robot-mounted camera (typically the
+        # camera Pi). Same MQTT/health story as the Inspection component:
+        # the camera lives on the server, this Core just talks to it via
+        # VisionClient. Default localhost — set to the camera Pi's host
+        # for multi-Pi deploys. has_camera=False keeps the camera in
+        # simulation regardless of the host.
+        vision_server_host = "127.0.0.1",
+        vision_server_port = 80,
         camera_cfg = {
             "stream": {"width":848, "height":480, "fps":15},
             "K": None,
             "D": None,
-            "mode": "bgrd", 
-            "filter": {}, 
+            "mode": "bgrd",
+            "filter": {},
             "exposure": None,
             "native_res": None,
         },
@@ -250,27 +258,22 @@ class Core:
 
         # camera mount
         self.camera_mount = prm["camera_mount"]
+        self.vision_server_host = prm["vision_server_host"]
+        self.vision_server_port = int(prm["vision_server_port"])
 
-        # camera api
-        self.camera = None
-        # connect to the camera
-        if self.has_camera and self.camera_serial_number :
-            try:
-                # import
-                from camera import Camera
-                # init camera
-                self.camera = Camera()
-                if not self.camera.connect(serial_number=self.camera_serial_number, **self.camera_cfg):
-                    self.camera = None
-            except Exception as e:
-                print(f"camera connection failed {e}")
-                self.camera = None
-            
-            # connection status
-            if self.camera is not None:
-                print(f"✅ camera connected @ {self.camera_serial_number}")
-            else:
-                print(f"❌ camera connection failed @ {self.camera_serial_number}")
+        # Robot-mounted camera. Like Inspection, the actual Camera lives on
+        # the vision server; we just hold a VisionClient to it via the
+        # shared VisionStation helper. has_camera=False keeps it in
+        # simulation regardless of host/serial.
+        from workspace.components.inspection.vision_station import VisionStation
+        self.vision = VisionStation(
+            host=self.vision_server_host,
+            port=self.vision_server_port,
+            serial_number=self.camera_serial_number,
+            camera_cfg=self.camera_cfg,
+            simulation=(not self.has_camera) or bool(prm["simulation"]),
+            label=f"{self.name} camera",
+        )
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
@@ -774,10 +777,44 @@ class Core:
         # robot
         if self.dorna:
             self.dorna.close()
-        
-        # camera
-        if self.camera:
-            self.camera.close()
+
+        # camera (vision-server client)
+        try:
+            self.vision.close()
+        except Exception:
+            pass
+
+    # ── Robot-mounted camera detection API ────────────────────────────
+    # Thin wrappers around the shared VisionStation helper (see
+    # workspace/components/inspection/vision_station.py). Mirrors the
+    # Inspection component's surface so recipes that touch either look
+    # identical.
+
+    def add_detection(self, name: str, **detection_preset) -> bool:
+        # Auto-attach the robot host so the server can wire this Detection
+        # to the matching dorna2.Dorna instance for hand-eye geometry.
+        if "robot_host" not in detection_preset and getattr(self, "ip", None):
+            detection_preset["robot_host"] = self.ip
+        return self.vision.add_detection(name, **detection_preset)
+
+    def detect(self, name: str, retval=[], **kwargs):
+        return self.vision.detect(name, retval=retval, **kwargs)
+
+    # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
+
+    @property
+    def device_ids(self) -> list[str]:
+        """Device ids this component depends on. See docs/device-guide.md §8.
+
+        Today: just the robot-mounted camera (when present). Add the
+        robot itself here as ``f"dorna:{self.ip}"`` if/when it gets its
+        own adapter on the device side.
+        """
+        ids: list[str] = []
+        sn = self.vision.serial_number
+        if sn:
+            ids.append(f"camera:{sn}")
+        return ids
 
     def motion_plan(self, joint, seed=1234, padding=0, gravity_vec=None, gravity_thr=5.0):
 

@@ -146,7 +146,14 @@ class WorkspaceInfo:
 
 
 class Orchestrator:
-    """Manages multiple workspaces as local OS processes OR remote orchestrator proxies."""
+    """Manages multiple workspaces as local OS processes OR remote orchestrator proxies.
+
+    Note: device-health monitoring is intentionally per-workspace (each
+    workspace process subscribes to its own broker and exposes its own
+    /devices endpoint). The admin doesn't run a lab-wide MQTT subscriber
+    because workspaces can live on different systems with different brokers
+    — a single admin-side subscriber would only ever see one of them.
+    """
     def __init__(self, port: int = 5000):
         self.workspaces: Dict[str, WorkspaceInfo] = {}
         self._orch_port = port
@@ -763,6 +770,77 @@ class WorkspaceCmdHandler(AuthedHandler):
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
+
+
+class WorkspaceDevicesHandler(tornado.web.RequestHandler):
+    """GET /orchestrator/api/workspace/<name>/devices → proxy to the workspace's /devices.
+    Wraps the workspace's HTTP endpoint so the admin browser doesn't have
+    to reach the workspace port cross-origin (CORS-free)."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name):
+        ws = self.orch.workspaces.get(name)
+        if ws is None:
+            self.set_status(404)
+            self.write({"devices": []})
+            return
+        try:
+            if ws.is_remote():
+                url = self.orch._orch_url(
+                    ws, f"/workspace/{requests.utils.quote(name)}/devices"
+                )
+                r = requests.get(url, timeout=5, headers=self.orch._auth_headers())
+            else:
+                if not ws.port:
+                    self.write({"devices": []})
+                    return
+                r = requests.get(f"http://127.0.0.1:{ws.port}/devices", timeout=5)
+            self.set_header("Content-Type", "application/json")
+            self.write(r.text)
+        except Exception as ex:
+            self.set_status(502)
+            self.write({"devices": [], "error": str(ex)})
+
+
+class WorkspaceDeviceCmdHandler(tornado.web.RequestHandler):
+    """POST /orchestrator/api/workspace/<name>/devices/<id>/<action>.
+
+    Action ∈ {recover, release}. Forwards to the workspace's
+    /devices/<id>/<action> and returns the device's reply payload.
+    """
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self, name, device_id, action):
+        ws = self.orch.workspaces.get(name)
+        if ws is None:
+            self.set_status(404)
+            self.write({"ok": False, "msg": f"Unknown workspace: {name}"})
+            return
+        try:
+            if ws.is_remote():
+                url = self.orch._orch_url(
+                    ws,
+                    f"/workspace/{requests.utils.quote(name)}/devices/"
+                    f"{requests.utils.quote(device_id)}/{action}",
+                )
+                r = requests.post(url, timeout=35, headers=self.orch._auth_headers())
+            else:
+                if not ws.port:
+                    self.set_status(503)
+                    self.write({"ok": False, "msg": "workspace not running"})
+                    return
+                r = requests.post(
+                    f"http://127.0.0.1:{ws.port}/devices/"
+                    f"{requests.utils.quote(device_id)}/{action}",
+                    timeout=35,
+                )
+            self.set_header("Content-Type", "application/json")
+            self.write(r.text)
+        except Exception as ex:
+            self.set_status(502)
+            self.write({"ok": False, "msg": f"{type(ex).__name__}: {ex}"})
 
 
 class WorkspacesStatusHandler(tornado.web.RequestHandler):

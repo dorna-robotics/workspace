@@ -411,6 +411,7 @@ try {
   });
 } catch (_) { /* WS unavailable — polling handles it */ }
 
+
 // ---- Add Workspace Modal ----
 const modal = document.getElementById("modalOverlay");
 

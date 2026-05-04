@@ -50,6 +50,8 @@ from gui.orchestrator.server import (
     FileUploadHandler,
     StatusWebSocket,
     _ws_poll_loop,
+    WorkspaceDevicesHandler,
+    WorkspaceDeviceCmdHandler,
 )
 
 # ---------------------------------------------------------------------------
@@ -246,6 +248,8 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/devices", WorkspaceDevicesHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/devices/([^/]+)/(recover|release)", WorkspaceDeviceCmdHandler, dict(orch=orch)),
 
         # ---- Orchestrator WebSocket + GUI (catch-all last) ----
         (r"/orchestrator/ws/status", StatusWebSocket, dict(orch=orch)),
