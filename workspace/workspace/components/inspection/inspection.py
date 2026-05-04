@@ -90,8 +90,21 @@ class Inspection:
     def add_detection(self, name: str, **detection_preset) -> bool:
         return self.vision.add_detection(name, **detection_preset)
 
-    def detect(self, name: str, retval=[], **kwargs):
-        return self.vision.detect(name, retval=retval, **kwargs)
+    def capture(self, name: str, data=None) -> dict:
+        """Capture a fresh atomic snapshot (camera frames + robot joints)
+        and cache it server-side. Pair with ``detect(name, use_last=True)``
+        so detection runs only on a confirmed-fresh frame. See
+        VisionStation.capture for the reply shape and ``data`` modes.
+        """
+        return self.vision.capture(name, data=data)
+
+    def detect(self, name: str, retval=[], use_last: bool = False, data=None, **kwargs):
+        """Run the named detection. By default, captures a fresh frame
+        first and runs on it (raises ``CameraUnavailableError`` on
+        capture failure). Pass ``use_last=True`` to skip capture and
+        run on the previously cached frame. See VisionStation.detect.
+        """
+        return self.vision.detect(name, retval=retval, use_last=use_last, data=data, **kwargs)
 
     def close(self):
         self.vision.close()

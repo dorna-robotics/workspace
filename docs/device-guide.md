@@ -60,7 +60,7 @@ no base class — just the right attributes and methods at runtime:
 
 | Member | Type | Purpose |
 |---|---|---|
-| `id` | `str` | Stable identifier in `<kind>:<natural-id>` form (see §8). |
+| `id` | `str` | Stable identifier in `<kind>:<natural-id>` form (see §9). |
 | `state` | `str` ∈ `{"ok", "down", "recovering"}` | Current health. Initial value should be `"down"` until a successful connect. |
 | `msg` | `str` | Human-readable detail. Empty when `ok`. |
 | `on_state_change(callback)` | method | Register a `callback(new_state, msg)` listener. The adapter subscribes once during setup. |
@@ -185,8 +185,8 @@ recover = AutoRecover(
 
 adapter = MQTTDeviceAdapter(
     device,
-    kind="mydevice",            # short family name, lowercase (see §8)
-    critical=True,              # see §6
+    kind="mydevice",            # short family name, lowercase (see §9)
+    critical=True,              # see §7
     meta={"location": "bench-A", "model": "X-200"},
     broker_host="orchestrator-pi.local",   # the bus's host
 )
@@ -261,7 +261,7 @@ The panel pill / button stays consistent with state:
 Anything calls `recover.trigger()`:
 
 - **Hotplug** — for USB devices, plug-back fires
-  `cam.on_hardware_available` which calls `recover.trigger()` (see §14).
+  `cam.on_hardware_available` which calls `recover.trigger()` (see §15).
 - **Polling** — for IP devices (printer, robot), have your service ping
   on a timer; first successful ping calls `recover.trigger()`.
 - **Operator click** — the cmd handler in `MQTTDeviceAdapter` calls
@@ -311,7 +311,72 @@ recover.stop()
 
 ---
 
-## 6. Choosing `critical`
+## 6. Data freshness — for read-only devices
+
+For sensors that return data (camera frames, scale readings, encoder
+counts, ADC samples), there's a second contract beyond "device is up":
+**every read must return fresh data or raise — never silently a stale
+or cached value.** Auto-recovery is useless if a frozen sensor keeps
+handing the recipe yesterday's measurement.
+
+The three rules:
+
+### a) Validate inline
+
+Every read should check that the returned data is actually new before
+returning it. Cheap signals depend on the device, but most sensors
+expose at least one of:
+
+- **Sample/frame counter** — monotonic per-read counter from the
+  device. Same number twice = buffer is replaying.
+- **Device timestamp** — on-device clock per sample. Frozen timestamp =
+  hardware clock stalled.
+- **Wall-vs-device drift** — over a long-enough window, the device
+  clock should advance roughly with real time. Sustained drift =
+  underclocking (thermal throttle, bandwidth starvation).
+
+The camera SDK does all three inside ``Camera.frame()`` — see §15 for
+the implementation pattern. Plagiarize it for your sensor.
+
+### b) Reset on pipeline disruption
+
+When the device's pipeline is rebuilt (post-recover, post-reconnect),
+counters/timestamps may restart from zero. Reset your freshness
+baseline whenever the device's ``state`` leaves ``"ok"`` — the next
+"ok" frame establishes a fresh reference. Same-state msg updates
+(e.g. ``"USB disconnected"`` → ``"USB reconnected"``) preserve the
+baseline since no pipeline change happened.
+
+### c) Split capture from process where it helps
+
+If the read is cheap but the **process** step on top of it is heavy
+(detection, FFT, regression), expose them as separate typed RPCs so
+callers can verify the read succeeded before paying the process
+cost. Example: vision splits
+
+```
+detection_capture(name)              → fresh frame or ok=false
+detection_run(name, use_last=True)   → run on the just-captured frame
+```
+
+The orchestrator-side wrapper makes this transparent: ``inspection.detect()``
+auto-captures first by default, raises ``CameraUnavailableError`` on
+capture failure, and only runs detection on a confirmed-fresh frame.
+Recipe code stays clean (``inspection.detect("name")``); the
+bulletproof guarantee lives in the component layer.
+
+### What this is NOT
+
+- A guarantee that the data is **correct** — only that it's **fresh**.
+  Pixel-corrupt-but-novel frames pass freshness checks. Add content
+  validation if your application needs it.
+- Applicable to **write** devices (pipette, printer, robot). Write
+  ops need verify-after-write, not freshness — a different pattern.
+  This section is for sensors only.
+
+---
+
+## 7. Choosing `critical`
 
 | `critical` | Behavior | Use when |
 |---|---|---|
@@ -323,7 +388,7 @@ fine running while the device is offline.
 
 ---
 
-## 7. Where the adapter must live — the only rule
+## 8. Where the adapter must live — the only rule
 
 **Co-locate the adapter with the hardware.** The process that holds the
 USB handle / serial port / TCP socket is the only process that can
@@ -343,7 +408,7 @@ the consequence.
 
 ---
 
-## 8. ID convention
+## 9. ID convention
 
 Every device id is `<kind>:<natural-id>`. Both halves are required.
 
@@ -401,7 +466,7 @@ camera_main:abc         ← underscore in kind
 
 ---
 
-## 9. Workspace-side: declaring the device
+## 10. Workspace-side: declaring the device
 
 Sections 1-7 cover the device service (the process that owns the
 hardware). Now the orchestrator side: how a workspace component tells
@@ -451,7 +516,7 @@ the way for everything else.
 
 ---
 
-## 10. Multi-device components
+## 11. Multi-device components
 
 A component can depend on more than one device — the contract returns a
 **list**, so you just list them all.
@@ -489,7 +554,7 @@ machinery — composition + a list-returning property is the whole story.
 
 ---
 
-## 11. End-to-end example — adding a pipette
+## 12. End-to-end example — adding a pipette
 
 Concrete walkthrough for the next device. Three pieces.
 
@@ -653,7 +718,7 @@ in this guide noting the new `pipette` kind exists. Zero changes to
 
 ---
 
-## 12. Watching the bus (debugging tools)
+## 13. Watching the bus (debugging tools)
 
 The bus uses MQTT under the hood, so the standard MQTT debugging tools
 work for any device:
@@ -687,7 +752,7 @@ When implementing your service:
 
 ---
 
-## 13. Common pitfalls
+## 14. Common pitfalls
 
 - **Forgetting to fire `_set_state("ok", "")` on successful connect.**
   Initial state is `"down"` per the contract; you must transition to ok
@@ -705,12 +770,12 @@ When implementing your service:
   adapter's job. Crossing that line couples the device to the protocol
   and you can't run it standalone for testing.
 - **Putting the adapter on the orchestrator Pi instead of the device's Pi.**
-  Read §7 again. False-positive downs and missed real failures are the
+  Read §8 again. False-positive downs and missed real failures are the
   cost.
 
 ---
 
-## 14. Case study: the camera
+## 15. Case study: the camera
 
 The camera SDK ([github.com/dorna-robotics/camera](https://github.com/dorna-robotics/camera))
 exposes the contract from §2 directly on its `Camera` class:
@@ -735,12 +800,58 @@ orchestrator pauses. When USB comes back, the hotplug callback fires
 rebuilds and state goes `recovering → ok`. Operator-initiated recovers
 re-use the same loop, so manual and automatic paths share one mechanism.
 
-That's the entire pattern. The next device — printer, pipette, scale —
-follows exactly the same shape, just with different hardware internals.
+### Frame-freshness validation (§6 in practice)
+
+`Camera.frame()` runs three checks between `wait_for_frames` returning
+and the alignment step. All three are FPS-independent — they compare
+the device hardware clock against the wall clock, both ticking at 1 Hz
+in real time regardless of stream config:
+
+1. **Frame-number monotonicity.** Same `frame.get_frame_number()` twice
+   = librealsense replaying a buffered frame after the hardware froze.
+2. **Device-clock advancement.** Same `frame.get_timestamp()` twice =
+   the on-device clock stalled.
+3. **Wall-vs-device drift.** Over a ≥ 2 s wall window, the device clock
+   must advance at least 1 s. Catches sustained underclocking (thermal
+   throttle, USB starvation) where checks 1 and 2 pass per-frame but
+   the device falls behind real time.
+
+`_set_state` resets the freshness baseline whenever the state leaves
+`"ok"` (down, recovering), so a rebuilt pipeline doesn't get compared
+against the old pipeline's counters. Same-state msg updates preserve
+the baseline — no pipeline change happened.
+
+Cost: three numeric comparisons per frame. Effect: every caller of
+`get_all` / `frame` either gets fresh data or a clear error — never a
+silent stale frame slipping into detection.
+
+### Capture → run pattern (§6 in practice)
+
+The vision server splits frame acquisition from the detection pipeline
+via two typed RPCs:
+
+```
+detection_capture(name, data=None)   →  {ok: True, ts, has_joint}  or  {ok: False, msg}
+detection_run(name, use_last=True)   →  detection result, computed on the captured frame
+```
+
+The orchestrator-side wrapper in `VisionStation.detect()` makes this
+transparent: by default it captures first, raises `CameraUnavailableError`
+on capture failure, then runs detection on the just-captured frame.
+Recipe code is just `inspection.detect("name")`; the bulletproof
+guarantee lives in the component layer. For efficiency, `capture()` is
+also exposed so callers can grab one frame and run multiple detections
+on it (`detect(..., use_last=True)`).
+
+That's the entire pattern. The next read-only device — scale, encoder,
+ADC, lidar — follows exactly the same shape, just with different
+hardware internals. Write devices (printer, pipette, robot) reuse the
+adapter + AutoRecover layers but need a different freshness/verify
+pattern; see §6.
 
 ---
 
-## 15. Open follow-ups (not blocking new device authors)
+## 16. Open follow-ups (not blocking new device authors)
 
 - **Local UI on each device server.** Each device service should also
   show its own health locally (the vision server's web GUI does this;

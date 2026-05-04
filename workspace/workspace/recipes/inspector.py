@@ -67,9 +67,29 @@ class FixedInspector(Recipe):
             **kwargs,
         )
 
+    def capture(self, data=None) -> dict:
+        """Capture a fresh atomic snapshot for this inspector's detection
+        (camera frames + robot joints) and cache it server-side.
+
+        Pair with ``detect(use_last=True)`` when you want one frame to
+        feed multiple detections, or when you need to branch on capture
+        success before running the (potentially expensive) detection.
+
+        ``detect()`` already calls capture internally by default — only
+        use this when you specifically want the two-step.
+        """
+        return self.component.capture(self.detection_name, data=data)
+
     def detect(self, retval=True, **kwargs):
-        """Forward to the component, which round-trips to the vision server.
-        Returns ``retval`` (default True) in simulation."""
+        """Run the inspector's detection. By default, captures a fresh
+        frame first and runs on it; raises ``CameraUnavailableError``
+        on capture failure (so the recipe never operates on stale data).
+
+        Returns ``retval`` (default True) in simulation. Pass
+        ``use_last=True`` to skip capture and run on the previously-
+        cached frame; pass ``data=...`` (None / dict / server-local
+        path) to bypass the live camera for replay/testing.
+        """
         return self.component.detect(self.detection_name, retval=retval, **kwargs)
 
     def rotate(self, rotation=90, **kwargs):
@@ -93,5 +113,13 @@ class MobileInspector:
         if detection_preset:
             self.core.add_detection(self.detection_name, **detection_preset)
 
+    def capture(self, data=None) -> dict:
+        """Capture a fresh atomic snapshot. See FixedInspector.capture."""
+        return self.core.capture(self.detection_name, data=data)
+
     def detect(self, retval=True, **kwargs):
+        """Run the inspector's detection. Default: captures-then-runs on
+        a fresh frame; raises ``CameraUnavailableError`` on capture
+        failure. See FixedInspector.detect for the full contract.
+        """
         return self.core.detect(self.detection_name, retval=retval, **kwargs)
