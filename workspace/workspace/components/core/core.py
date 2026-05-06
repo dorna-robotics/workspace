@@ -10,7 +10,7 @@ from workspace.components.factory import register
 from path_planning import Planner
 from workspace.components.calibration import Calibration
 from workspace.components.core.robot_station import RobotStation
-from workspace.devices import MQTTDeviceAdapter, AutoRecover
+from workspace.devices import AutoRecover, attach_device
 
 
 import time
@@ -244,25 +244,23 @@ class Core:
         # In real mode RobotStation also implements the Device protocol,
         # so the robot shows up in the Devices panel alongside the camera
         # and self-heals connection drops via AutoRecover.
+        # Authored simulation intent. Failures must NOT flip this — the
+        # operator either authored sim mode or didn't, and an unreachable
+        # robot is a fault to surface (red dot + auto-pause), not a
+        # reason to silently switch to a fake api.
         self._simulation_mode = prm["simulation"]
         self.dorna = RobotStation(ip=self.robot_ip or "", label=self.name)
-        self._robot_adapter = None
-        self._robot_recover = None
+        self._robot_attachment = None
 
-        # If we have an IP and aren't already in sim, but the connect
-        # didn't land, fall back to sim so the rest of workspace stays
-        # usable. AutoRecover will still keep retrying in the background
-        # once wired below.
-        if self.robot_ip and not self._simulation_mode and self.dorna.state != "ok":
-            print(f"❌ {self.name} initial robot connect failed; falling back to simulation")
-            self._simulation_mode = True
-
-        # MQTT health publishing + self-healing reconnect loop. Skipped
-        # in simulation (nothing physical to publish) and when there's
-        # no IP to wrap. Mirror of the camera adapter wiring in CameraPool.
-        if self.robot_ip and not self._simulation_mode:
-            try:
-                recover = AutoRecover(
+        # Always attach the robot to the device bus when an IP exists,
+        # regardless of sim mode and regardless of whether the initial
+        # connect succeeded. ``attach_device`` publishes the robot's
+        # info+state retained, and only wires AutoRecover in real mode.
+        # Sim → green dot + SIM badge. Real + unreachable → red dot,
+        # AutoRecover retries, runtime auto-pauses.
+        if self.robot_ip:
+            def _make_recover() -> AutoRecover:
+                rec = AutoRecover(
                     recover_fn=self.dorna.recover,
                     set_status=self.dorna._set_state,
                     log_label=f"dorna:{self.robot_ip}",
@@ -275,25 +273,28 @@ class Core:
                 # reconnecting (which works, since TCP is fine), then
                 # incorrectly flip the dot back to green ms after it
                 # turned red. Use the connection-specific event instead.
-                self.dorna.on_connection_lost(recover.trigger)
-                self._robot_recover = recover
+                self.dorna.on_connection_lost(rec.trigger)
+                return rec
 
-                self._robot_adapter = MQTTDeviceAdapter(
+            try:
+                self._robot_attachment = attach_device(
                     self.dorna,
                     kind="dorna",
+                    sim=self._simulation_mode,
                     critical=True,
                     meta={"ip": self.robot_ip, "model": prm.get("model", "dorna_ta")},
+                    recover_factory=_make_recover,
                 )
             except Exception:
-                # Adapter / recovery failure must NOT take down Core —
-                # the robot itself is still usable.
+                # Adapter / recovery wiring must NOT take down Core —
+                # the robot is still usable for kinematic math.
                 import logging
                 logging.getLogger(__name__).exception(
-                    "Core[%s]: failed to attach MQTT adapter / AutoRecover for robot",
+                    "Core[%s]: attach_device failed for robot",
                     self.name,
                 )
 
-        # optional robot API hookup
+        # Robot api selection follows the authored sim flag verbatim.
         if not self._simulation_mode:
             print(f"🟡 {self.name} simulation api disabled")
             self.robot_api = self.dorna
@@ -591,6 +592,14 @@ class Core:
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
             print(f"🔵 {self.name} simulation api enabled")
 
+        # Propagate the new sim flag to the bus attachment so the panel
+        # badge updates and AutoRecover suspends/re-arms accordingly.
+        # Done outside the branches so a no-op call (already in target
+        # state) doesn't republish info needlessly — set_sim is itself
+        # idempotent.
+        if self._robot_attachment is not None:
+            self._robot_attachment.set_sim(self._simulation_mode)
+
 
 
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
@@ -820,18 +829,12 @@ class Core:
 
 
     def stop(self):
-        # robot — stop the auto-recover loop before closing the
-        # connection, then close the adapter (publishes online: false
-        # via the clean-shutdown path) and finally the underlying
-        # client.
-        if self._robot_recover is not None:
+        # robot — close the bus attachment first (stops AutoRecover and
+        # publishes online: false via the clean-shutdown path), then
+        # close the underlying dorna client.
+        if self._robot_attachment is not None:
             try:
-                self._robot_recover.stop()
-            except Exception:
-                pass
-        if self._robot_adapter is not None:
-            try:
-                self._robot_adapter.close()
+                self._robot_attachment.close()
             except Exception:
                 pass
         if self.dorna:
@@ -887,12 +890,28 @@ class Core:
         appear in the Devices panel for any project that uses Core.
         """
         ids: list[str] = []
-        if self.robot_ip and not self._simulation_mode:
+        if self.robot_ip:
             ids.append(f"dorna:{self.robot_ip}")
         sn = self.vision.serial_number
         if sn:
             ids.append(f"camera:{sn}")
         return ids
+
+    def device_claim(self, device_id: str) -> str:
+        """Project-level sim/real claim for ``device_id``.
+
+        For the robot, Core IS the bus publisher and the bus already
+        carries the sim flag; this method just mirrors that for any
+        consumer that prefers the workspace-side surface. For the
+        robot-mounted camera, the vision server owns the bus entry —
+        this method is the only place workspace sim intent surfaces.
+        """
+        if self.robot_ip and device_id == f"dorna:{self.robot_ip}":
+            return "sim" if self._simulation_mode else "real"
+        sn = self.vision.serial_number
+        if sn and device_id == f"camera:{sn}":
+            return "sim" if self.vision.simulation else "real"
+        return "real"
 
     def motion_plan(self, joint, seed=1234, padding=0, gravity_vec=None, gravity_thr=5.0):
 

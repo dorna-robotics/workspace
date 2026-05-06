@@ -17,21 +17,23 @@ class States:
         self.rotation_deg = int(kwargs.get("rotation_deg", 10))
 
     def rotated(self, i: int):
-        """Single physical step: rotate j5 by ±``rotation_deg``.
+        """One iteration = one round-trip: +``rotation_deg`` then back.
 
-        Direction alternates per iteration (even = +, odd = -) so the
-        joint oscillates around its starting position rather than
-        drifting in one direction across a long run.
+        Each call is self-cancelling (net displacement zero) so any
+        ``batch_size`` ends the run at the starting joint position. Long
+        QA soaks can run hours without drifting the joint into a limit.
 
         ``rt.step`` surfaces a timeline entry visible in the project
         page; the implicit checkpoint after each ``step`` honors any
         operator-initiated pause from the UI.
         """
         rt = self.rt
-        delta = self.rotation_deg if (i % 2 == 0) else -self.rotation_deg
-        rt.step(f"[#{i}] Rotating j5 by {delta:+d}°", level="info")
-        self.rcp["inspector"].rotate(rotation=delta)
-        rt.step(f"[#{i}] Rotation complete", level="success")
+        delta = self.rotation_deg
+        rt.step(f"[#{i}] Rotating j5 by +{delta}°", level="info")
+        self.rcp["inspector"].rotate(rotation=+delta)
+        rt.step(f"[#{i}] Returning j5 by -{delta}°", level="info")
+        self.rcp["inspector"].rotate(rotation=-delta)
+        rt.step(f"[#{i}] Round-trip complete", level="success")
 
     def register(self, runner):
         """Bind each state handler to its protocol-state name. Called

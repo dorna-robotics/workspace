@@ -124,3 +124,88 @@ export function wsViewerUrl(ws) {
 // confirmDialog is loaded globally from /vendor/confirm.js
 // Re-export for ES module imports in dashboard.js / workspace.js
 export const confirmDialog = window.confirmDialog;
+
+
+// ── Device-fault gate ─────────────────────────────────────────────────
+// Bulletproof guard for Start/Resume actions when one or more critical
+// devices are still down. Two layers:
+//   1. Fetch the workspace's latest /status (which carries
+//      ``devices_summary`` per docs/device-guide.md §10) — never trust
+//      the cached lastStatus snapshot for a safety decision, since a
+//      WS push could be a few seconds stale and the operator's mental
+//      model rewards the freshest read.
+//   2. If the summary reports any blocking ids, show a
+//      ``dangerous=true`` confirm dialog: Cancel auto-focused, Enter
+//      does NOT confirm, structured list of the offending device ids.
+//      Operator must click Confirm explicitly to proceed.
+//
+// Returns: ``true`` when safe to proceed (no blockers, OR operator
+// confirmed). ``false`` when operator canceled. Failure to fetch
+// summary fails OPEN — we don't want a transient HTTP hiccup to
+// permanently block a workspace, and the runtime's own auto-pause
+// path catches a real critical-down at the first state event anyway.
+
+export async function fetchWorkspaceStatus(workspaceName) {
+  try {
+    const res = await fetch(
+      `/orchestrator/api/workspace/${encodeURIComponent(workspaceName)}/status`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Show the device-fault confirmation modal.
+ *
+ * @param {Object} opts
+ * @param {string} opts.workspaceName
+ * @param {string[]} opts.blockingIds  device ids that gate the action
+ * @param {string} opts.action         "Start" or "Resume"
+ * @returns {Promise<boolean>}         true to proceed, false to abort
+ */
+export function deviceFaultConfirmDialog({ workspaceName, blockingIds, action }) {
+  const a = action || "Start";
+  const ids = Array.isArray(blockingIds) ? blockingIds : [];
+  const count = ids.length;
+  return confirmDialog({
+    title: `${a} "${workspaceName}" with ${count} device${count === 1 ? "" : "s"} down?`,
+    message:
+      `${count} critical device${count === 1 ? " is" : "s are"} not OK. ` +
+      `${a === "Resume" ? "Resuming" : "Starting"} now will hit the device${count === 1 ? "" : "s"} ` +
+      `on the first call and the workflow will fail or auto-pause again.`,
+    lines: ids,
+    confirm: `${a} anyway`,
+    cancel: "Cancel",
+    variant: "danger",
+    icon: "warning",
+    dangerous: true,   // Cancel auto-focused; Enter doesn't confirm
+  });
+}
+
+/**
+ * Run the gate. Fetches fresh status, decides if confirmation is
+ * needed, returns true when the caller should proceed.
+ *
+ * @param {string} workspaceName
+ * @param {string} action  "Start" | "Resume"  (used in dialog text)
+ * @returns {Promise<boolean>}
+ */
+export async function deviceFaultGate(workspaceName, action) {
+  const status = await fetchWorkspaceStatus(workspaceName);
+  // Fail-open on fetch failure — see module comment above.
+  if (!status) return true;
+  const summary = status.devices_summary;
+  if (!summary || !summary.blocking || !Array.isArray(summary.blocking_ids)
+      || summary.blocking_ids.length === 0) {
+    return true;
+  }
+  return await deviceFaultConfirmDialog({
+    workspaceName,
+    blockingIds: summary.blocking_ids,
+    action,
+  });
+}

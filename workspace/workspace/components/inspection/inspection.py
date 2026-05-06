@@ -85,6 +85,21 @@ class Inspection:
         sn = self.vision.serial_number
         return [f"camera:{sn}"] if sn else []
 
+    def device_claim(self, device_id: str) -> str:
+        """Project-level sim/real claim for ``device_id``.
+
+        The vision server owns the camera's bus entry (it holds the USB
+        handle), so the workspace cannot truthfully publish the camera
+        as sim. Instead, this method tells the panel + orchestrator
+        that *this project* uses the camera in sim mode — a workspace-
+        side annotation that overlays the daemon's bus state without
+        overwriting it.
+        """
+        sn = self.vision.serial_number
+        if sn and device_id == f"camera:{sn}":
+            return "sim" if self.vision.simulation else "real"
+        return "real"
+
     # ── Convenience wrappers (delegate to the helper) ──────────────────
 
     def add_detection(self, name: str, **detection_preset) -> bool:

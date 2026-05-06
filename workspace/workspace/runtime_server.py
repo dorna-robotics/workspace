@@ -13,6 +13,7 @@ import socketio
 
 from workspace.runtime import Runtime
 from workspace.devices import component_device_ids
+from workspace.devices.component_contract import component_device_claim
 
 # --------------------------------------------------
 # Viewer/Static paths
@@ -188,15 +189,20 @@ class CmdHandler(tornado.web.RequestHandler):
 
 
 class StatusHandler(tornado.web.RequestHandler):
-    def initialize(self, rt: Runtime):
+    def initialize(self, rt: Runtime, workspace=None):
         self.rt = rt
+        self.workspace = workspace
 
     async def get(self):
-        out = {"state": self.rt.state, "last_error": self.rt.status.last_error}
-        si = self.rt.step_info
-        if si:
-            out["step"] = si
-        self.write(out)
+        if self.workspace is not None:
+            self.write(_status_payload(self.rt, self.workspace))
+        else:
+            # Back-compat for callers that didn't wire workspace yet.
+            out = {"state": self.rt.state, "last_error": self.rt.status.last_error}
+            si = self.rt.step_info
+            if si:
+                out["step"] = si
+            self.write(out)
 
 
 # --------------------------------------------------
@@ -280,24 +286,17 @@ class StatusWebSocket(tornado.websocket.WebSocketHandler):
         _status_ws_clients.add(self)
         # Initial snapshot so a freshly-loaded UI doesn't have to wait
         # for the next state transition to populate.
-        rt = self._rt
         try:
-            self.write_message(json.dumps({
-                "state": str(rt._status.state),
-                "last_error": rt._status.last_error,
-                "job_runs": rt._status.job_runs,
-                "job_pauses": rt._status.job_pauses,
-                "job_resumes": rt._status.job_resumes,
-                "kills": rt._status.kills,
-            }))
+            self.write_message(json.dumps(_status_payload(self._rt, self._workspace)))
         except Exception:
             pass
 
     def on_close(self):
         _status_ws_clients.discard(self)
 
-    def initialize(self, rt: Runtime):
+    def initialize(self, rt: Runtime, workspace=None):
         self._rt = rt
+        self._workspace = workspace
 
 
 def _broadcast_status(status: dict):
@@ -340,18 +339,168 @@ def _project_device_ids(workspace) -> set[str]:
     return out
 
 
+def _project_device_claims(workspace) -> dict[str, str]:
+    """Aggregated per-id sim/real claim across every component.
+
+    Aggregation rule: ``"real"`` wins over ``"sim"``. If any component
+    using a device claims it real, the project's net claim is real —
+    auto-pause must respect the strictest claim, never get fooled into
+    skipping a critical-down by a single sim claim from an unrelated
+    component. Devices that no component claims (or that all claim
+    real) end up with ``"real"`` in the dict.
+    """
+    out: dict[str, str] = {}
+    components = getattr(workspace, "components", {}) or {}
+    for comp in components.values():
+        for did in component_device_ids(comp):
+            claim = component_device_claim(comp, did) or "real"
+            existing = out.get(did)
+            # ``real`` is strictest — if any component claims real,
+            # the net claim is real. Otherwise ``sim`` only sticks
+            # when nothing has overridden it with ``real``.
+            if existing == "real":
+                continue
+            out[did] = claim
+    # Anything declared but not claimed → default to real.
+    for did in _project_device_ids(workspace):
+        out.setdefault(did, "real")
+    return out
+
+
+def project_device_claim_resolver(workspace):
+    """Build a ``Callable[[str], str]`` that returns the live claim mode.
+
+    Wires the orchestrator's auto-pause logic into the workspace's
+    aggregated claim map. Always reads fresh from components, so a
+    runtime ``core.simulation(True)`` toggle takes effect on the next
+    bus event without explicit invalidation.
+    """
+    def _resolve(device_id: str) -> str:
+        return _project_device_claims(workspace).get(device_id, "real")
+    return _resolve
+
+
+def _compute_devices_summary(workspace) -> Optional[dict]:
+    """Aggregated device-health view for this project. Used by the
+    dashboard pill and the Start/Resume confirmation gate.
+
+    Each declared device falls into exactly ONE bucket so totals add
+    up cleanly:
+
+        sim         publisher self-flag OR project claim is "sim"
+                    (never blocks; never enters down/recovering/etc.)
+        recovering  state="recovering" (sim takes precedence)
+        offline     online=False (publisher gone — no live truth)
+        down        state="down", online=True, not sim
+        ok          state="ok", online=True, not sim
+
+    A device is **blocking** iff it is critical, not sim, and either
+    down or offline. ``blocking_ids`` lists those ids — the
+    Start/Resume gate uses them verbatim in the confirm dialog so the
+    operator sees exactly what would crash.
+
+    Returns ``None`` (no pill, no gate) when the project declares
+    zero devices — there's nothing to summarize.
+    """
+    snapshot = _project_devices_snapshot(workspace)
+    if not snapshot:
+        return None
+    out = {
+        "total": len(snapshot),
+        "ok": 0,
+        "down": 0,
+        "recovering": 0,
+        "offline": 0,
+        "sim": 0,
+        "blocking": 0,
+        "blocking_ids": [],
+    }
+    for d in snapshot:
+        is_sim = bool(d.get("sim")) or d.get("claim") == "sim"
+        critical = bool(d.get("critical", True))
+        online = d.get("online", True)
+        state = d.get("state", "down")
+        # Bucketing — order matters; first match wins.
+        if is_sim:
+            out["sim"] += 1
+        elif state == "recovering":
+            out["recovering"] += 1
+        elif not online:
+            out["offline"] += 1
+            if critical:
+                out["blocking"] += 1
+                out["blocking_ids"].append(d["id"])
+        elif state == "down":
+            out["down"] += 1
+            if critical:
+                out["blocking"] += 1
+                out["blocking_ids"].append(d["id"])
+        else:
+            out["ok"] += 1
+    return out
+
+
+def _state_value(rt) -> str:
+    """Return the runtime's state as the bare string value.
+
+    ``RTState`` is a ``(str, Enum)`` so JSON encoders serialize it
+    correctly on their own (``json.dumps(RTState.IDLE)`` → ``"IDLE"``)
+    — but ``str(RTState.IDLE)`` returns ``"RTState.IDLE"`` (Enum's
+    qualified name), which silently breaks every consumer that
+    string-compares against ``"IDLE"`` / ``"PAUSED"`` / etc. The
+    orchestrator's auto-kill (in ``broadcast_status``) is the most
+    visible victim: workflow finishes RUNNING→IDLE, but ``cur ==
+    "IDLE"`` becomes ``"RTSTATE.IDLE" == "IDLE"`` → False → no
+    auto-kill → card shows Start instead of Launch.
+
+    Always extract via ``.value`` (or fall back to ``str()`` for
+    non-Enum inputs in tests). One helper, no surprises.
+    """
+    s = getattr(rt._status, "state", None)
+    if s is None:
+        s = getattr(rt, "state", "")
+    return s.value if hasattr(s, "value") else str(s)
+
+
+def _status_payload(rt, workspace) -> dict:
+    """Single source of truth for the workspace's status snapshot.
+
+    Used by HTTP ``/status``, the WS ``/ws/status`` initial push, and
+    every status broadcast. Carries runtime state + the device-summary
+    so the orchestrator dashboard's pill and the Start/Resume gate
+    both have everything they need from one payload.
+    """
+    out: dict = {
+        "state": _state_value(rt),
+        "last_error": rt._status.last_error,
+        "job_runs": rt._status.job_runs,
+        "job_pauses": rt._status.job_pauses,
+        "job_resumes": rt._status.job_resumes,
+        "kills": rt._status.kills,
+    }
+    si = getattr(rt, "step_info", None)
+    if si:
+        out["step"] = si
+    summary = _compute_devices_summary(workspace)
+    if summary is not None:
+        out["devices_summary"] = summary
+    return out
+
+
 def _project_devices_snapshot(workspace) -> list[dict]:
     """List of device snapshots this project claims, in stable id order.
     Each entry is a dict from MQTTOrchestrator.list_devices() (id, state,
-    msg, kind, critical, meta, ts), augmented with `claimed=True`. When
-    the bus has no entry for a claimed id (device service not yet up),
-    a placeholder with state="down", msg="not on bus" is returned so the
-    UI can still show the dependency."""
+    msg, kind, critical, sim, meta, ts), augmented with ``claimed=True``
+    and ``claim`` (the project's sim/real annotation). When the bus has
+    no entry for a claimed id (device service not yet up), a placeholder
+    with state="down", msg="not on bus" is returned so the UI can still
+    show the dependency."""
     devices = getattr(workspace, "devices", None)
     claimed = _project_device_ids(workspace)
     if not claimed:
         return []
     bus = {d["id"]: d for d in (devices.list_devices() if devices else [])}
+    claims = _project_device_claims(workspace)
     out = []
     for did in sorted(claimed):
         if did in bus:
@@ -364,11 +513,17 @@ def _project_devices_snapshot(workspace) -> list[dict]:
                 "msg": "not on bus",
                 "kind": did.split(":", 1)[0] if ":" in did else "device",
                 "critical": True,
+                "sim": False,
                 "meta": {},
                 "ts": 0.0,
                 "online": False,
                 "claimed": True,
             }
+        # Project-level claim mode (real/sim). Independent of bus.sim:
+        # bus.sim is what the *publisher* says about itself; claim is
+        # what *this project* says about how it uses the device. The
+        # panel shows a SIM pill if either is true.
+        entry["claim"] = claims.get(did, "real")
         out.append(entry)
     return out
 
@@ -469,12 +624,17 @@ class DeviceWebSocket(tornado.websocket.WebSocketHandler):
 def _broadcast_device_event(workspace, event: dict):
     """Called by MQTTOrchestrator.subscribe (paho's network thread) —
     fan out to project clients. Filters to ids the project actually
-    claims so panels stay focused."""
+    claims so panels stay focused. Augments each event with the
+    project's claim mode so a single push carries everything the
+    panel needs to render the SIM pill correctly."""
     if not _device_ws_clients or _main_ioloop is None:
         return
-    if event.get("id") not in _project_device_ids(workspace):
+    did = event.get("id")
+    if did not in _project_device_ids(workspace):
         return
-    payload = json.dumps({"type": "device_state", **event})
+    augmented = dict(event)
+    augmented["claim"] = _project_device_claims(workspace).get(did, "real")
+    payload = json.dumps({"type": "device_state", **augmented})
 
     def _send():
         for c in list(_device_ws_clients):
@@ -545,9 +705,9 @@ class RuntimeServer:
                 workflow_thread_holder=self._workflow_thread_holder,
                 workspace=self.workspace,
             )),
-            (r"/status", StatusHandler, dict(rt=self.rt)),
+            (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
-            (r"/ws/status", StatusWebSocket, dict(rt=self.rt)),
+            (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
 
             # device panel — see DevicesHandler / DeviceCmdHandler / DeviceWebSocket
             (r"/devices", DevicesHandler, dict(workspace=self.workspace)),
@@ -569,21 +729,43 @@ class RuntimeServer:
 
         # Wire step push: rt.on_step → broadcast to all step WS clients
         self.rt.on_step = _broadcast_steps
-        # Wire status push: rt.on_status → broadcast RTStatus snapshots
-        # to /ws/status clients. Fires on every state transition + every
-        # last_error update, so the UI button labels / state pill /
-        # error display refresh in real time instead of waiting on the
-        # ~1 Hz HTTP /status polling.
-        self.rt.on_status = _broadcast_status
+
+        # Wire status push: rt.on_status → broadcast a FULL status
+        # payload (runtime state + devices_summary) to /ws/status
+        # clients. Fires on every state transition + every last_error
+        # update. Device-state changes also push status (see device
+        # subscription below) so the dashboard's pill and gate stay
+        # in lockstep with reality without extra fetches.
+        def _push_full_status(_unused_runtime_status=None):
+            try:
+                payload = _status_payload(self.rt, self.workspace)
+            except Exception:
+                # Failure to assemble must NOT break runtime callbacks.
+                # Fall back to runtime-only payload if devices_summary
+                # couldn't be computed. _state_value preserves the
+                # bare-string form so dashboard string-compares work.
+                payload = {
+                    "state": _state_value(self.rt),
+                    "last_error": self.rt._status.last_error,
+                }
+            _broadcast_status(payload)
+        self.rt.on_status = _push_full_status
 
         # Wire device push: workspace.devices (MQTTOrchestrator) → broadcast
         # to all device WS clients. The orchestrator's subscribe runs the
         # callback on paho's network thread; _broadcast_device_event hops
-        # back onto the IO loop before writing.
+        # back onto the IO loop before writing. We ALSO trigger a status
+        # push so the dashboard's devices_summary stays in lockstep.
         devices = getattr(self.workspace, "devices", None)
         if devices is not None and hasattr(devices, "subscribe"):
             try:
-                devices.subscribe(lambda evt: _broadcast_device_event(self.workspace, evt))
+                def _on_device_event(evt):
+                    _broadcast_device_event(self.workspace, evt)
+                    # Refresh the status payload so dashboard pill +
+                    # Start/Resume gate see updated counts within the
+                    # same WS-push latency as the device row itself.
+                    _push_full_status()
+                devices.subscribe(_on_device_event)
             except Exception:
                 pass
 

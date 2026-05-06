@@ -9,13 +9,26 @@ Responsibilities:
   * register the camera on the server during construction,
   * expose ``add_detection``, ``capture``, and ``detect``,
   * make the **capture → run-on-captured-frame** pattern the default for
-    ``detect()`` so recipes never accidentally run on stale or junk data,
-  * collapse failure modes into ``simulation=True`` so the workflow keeps
-    running even when the vision server is unreachable.
+    ``detect()`` so recipes never accidentally run on stale or junk data.
 
-Health monitoring is orthogonal: the vision server publishes the camera's
-state to the device bus via its adapter; the orchestrator consumes those
-events independently of this helper. See ``docs/device-guide.md``.
+Failure model — authored intent is honoured, faults are surfaced loud:
+  * ``simulation=True`` → no server contact. ``detect()`` returns canned
+    values. **Does not publish anything to the device bus.** The camera
+    is owned by the vision server daemon (which holds the USB handle);
+    publishing a competing entry would race with the daemon's truth
+    on retained MQTT topics. Workspace's sim intent for the camera is
+    surfaced as a project-level claim mode (see
+    ``DeviceComponent.device_claim``) so the panel can render a SIM
+    pill on top of the daemon's bus state without overwriting it.
+  * ``simulation=False`` + missing client lib → raise on construct.
+    A missing import is a config error, not a runtime fault.
+  * ``simulation=False`` + server unreachable → raise on construct.
+    The vision server's own bus adapter will surface the camera as
+    red; the workspace must not pretend it's running in sim.
+
+Health monitoring: the vision server is the **sole publisher** for
+``camera:<sn>``. This helper never writes to that topic. See
+``docs/device-guide.md`` §8 (one-publisher-per-id rule).
 """
 
 from __future__ import annotations
@@ -36,17 +49,47 @@ class CameraUnavailableError(RuntimeError):
         self.msg = msg
 
 
+class VisionClientImportError(RuntimeError):
+    """Raised when ``dorna_vision_client`` isn't importable in real mode.
+
+    Distinguished from a runtime connect failure because the fix is a
+    deployment action (install the package), not a recovery loop. Raised
+    eagerly during VisionStation construction so misconfigured projects
+    fail at launch, not on the first ``detect()`` call.
+    """
+
+
+class VisionServerUnreachableError(RuntimeError):
+    """Raised when the vision server can't be reached in real mode.
+
+    The vision server's own MQTT adapter will publish the camera as
+    ``state=down`` on the bus — the panel surfaces the fault there.
+    This exception just stops the workspace from continuing as if
+    everything were fine.
+    """
+
+
 class VisionStation:
-    """Tiny VisionClient wrapper with a simulation fallback.
+    """Tiny VisionClient wrapper. Authored sim stays sim; faults raise.
 
     Args:
         host: Vision server hostname or IP.
         port: Vision server port.
         serial_number: USB serial of the camera the server should manage.
         camera_cfg: Dict forwarded to ``camera_add`` (stream, K, D, mode, ...).
-        simulation: When True (or when host/serial are empty), no client is
-            opened and ``detect()`` returns canned values.
+        simulation: Authored simulation intent. When True (or when host/
+            serial are empty so there's nothing real to talk to), no
+            client is opened, ``detect()`` returns canned values, and
+            the camera is stubbed onto the device bus with a SIM badge.
+            Failures in real mode never flip this — they raise.
         label: Free-form name for log lines (e.g. component name).
+
+    Raises:
+        VisionClientImportError: ``simulation=False`` but the
+            ``dorna_vision_client`` package is not importable.
+        VisionServerUnreachableError: ``simulation=False`` but the
+            vision server's host/port refuses connections or the camera
+            can't be registered.
     """
 
     def __init__(
@@ -65,51 +108,52 @@ class VisionStation:
         self.camera_cfg = dict(camera_cfg or {})
         self.label = label
 
-        # Simulation gate. True when explicitly requested OR when there's
-        # nothing to connect to. Auto-falls back to True if the connect
-        # fails so the component stays usable.
+        # Simulation gate. True when explicitly authored OR when there's
+        # nothing to connect to (no host/serial). Real-mode failures must
+        # NOT flip this to True — that's the silent-demote bug we removed.
         self.simulation = bool(simulation) or not host or not serial_number
         self._client = None
 
-        if not self.simulation:
-            # Try to import the client first — it's a separate Python
-            # package (``dorna_vision_client``) that must be installed
-            # next to ``workspace``. Surface this as a config error
-            # rather than a "server unreachable", since restarting the
-            # vision server won't fix a missing import.
-            try:
-                from dorna_vision_client import VisionClient
-            except ImportError as ex:
-                print(
-                    f"❌ {self.label} dorna_vision_client not installed "
-                    f"({ex}) — install it with:\n"
-                    f"    sudo pip3 install -e /path/to/vision/dorna_vision-client\n"
-                    f"  Falling back to simulation mode for now."
-                )
-                self._client = None
-                self.simulation = True
-                return
+        if self.simulation:
+            # Workspace does NOT publish for the camera — the vision
+            # server owns that bus entry. Workspace sim intent surfaces
+            # via DeviceComponent.device_claim, which the panel reads
+            # alongside the bus snapshot.
+            return
 
-            try:
-                self._client = VisionClient()
-                self._client.connect(host=self.host, port=self.port)
-                self._client.camera_add(
-                    serial_number=self.serial_number,
-                    **self.camera_cfg,
-                )
-                print(
-                    f"✅ {self.label} connected @ {self.host}:{self.port} "
-                    f"(camera {self.serial_number})"
-                )
-            except Exception as ex:
-                print(
-                    f"❌ {self.label} vision server unreachable @ "
-                    f"{self.host}:{self.port}: {type(ex).__name__}: {ex} — "
-                    "falling back to simulation mode"
-                )
-                self._safe_close()
-                self._client = None
-                self.simulation = True
+        # Real mode. Import errors are deployment problems; raise rather
+        # than pretend to run in sim. The orchestrator surfaces the
+        # exception at workspace launch so the operator sees a clear,
+        # actionable failure.
+        try:
+            from dorna_vision_client import VisionClient
+        except ImportError as ex:
+            raise VisionClientImportError(
+                f"{self.label}: dorna_vision_client not installed ({ex}). "
+                f"Install with: sudo pip3 install -e "
+                f"/path/to/vision/dorna_vision-client"
+            ) from ex
+
+        try:
+            self._client = VisionClient()
+            self._client.connect(host=self.host, port=self.port)
+            self._client.camera_add(
+                serial_number=self.serial_number,
+                **self.camera_cfg,
+            )
+            print(
+                f"✅ {self.label} connected @ {self.host}:{self.port} "
+                f"(camera {self.serial_number})"
+            )
+        except Exception as ex:
+            self._safe_close()
+            self._client = None
+            raise VisionServerUnreachableError(
+                f"{self.label}: vision server unreachable @ "
+                f"{self.host}:{self.port}: {type(ex).__name__}: {ex}. "
+                f"The camera will appear red on the device bus when the "
+                f"server is running."
+            ) from ex
 
     # ── Detection lifecycle ────────────────────────────────────────────
 

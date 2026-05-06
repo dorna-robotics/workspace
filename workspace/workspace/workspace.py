@@ -7,7 +7,8 @@ import numpy as np
 from workspace.display import Display
 from workspace.components import factory as comp_factory
 from workspace.runtime import Runtime
-from workspace.devices import MQTTOrchestrator
+from workspace.devices import MQTTOrchestrator, component_device_ids
+from workspace.devices.component_contract import component_device_claim
 from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
 
 
@@ -47,8 +48,27 @@ class Workspace:
 
         # 1.6) device health bus (MQTT). Best-effort: a missing/unreachable
         # broker must not block startup — devices will appear once it's up.
+        # ``claim_resolver`` walks components live so a runtime
+        # ``core.simulation(True)`` toggle takes effect on the next bus
+        # event without explicit refresh. Strictest-claim-wins: any
+        # ``"real"`` claim for a given id beats any ``"sim"`` claim.
+        def _claim_resolver(device_id: str) -> str:
+            comps = (self.components or {}).values()
+            net = None
+            for comp in comps:
+                if device_id not in component_device_ids(comp):
+                    continue
+                claim = component_device_claim(comp, device_id) or "real"
+                if claim == "real":
+                    return "real"
+                net = claim
+            return net or "real"
+
         try:
-            self.devices = MQTTOrchestrator(runtime=self.rt)
+            self.devices = MQTTOrchestrator(
+                runtime=self.rt,
+                claim_resolver=_claim_resolver,
+            )
         except Exception as ex:
             import logging
             logging.getLogger(__name__).warning(

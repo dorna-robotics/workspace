@@ -51,6 +51,32 @@ bus, the orchestrator handles it automatically. The data path varies
 per device kind: cameras use a vision client, pipettes use whatever
 their library exposes, etc.
 
+### The four bulletproof rules
+
+The bus's invariants — break any one and the panel can lie to the
+operator. Every code path in `workspace.devices` exists to enforce one
+of these:
+
+1. **One publisher per device id, by hardware-handle ownership.** The
+   process that holds the USB / serial / TCP socket is the sole writer
+   for that id's retained MQTT topics. Any second publisher is
+   refused at startup with `DevicePublisherConflict` (see §8).
+2. **Bus state is hardware truth.** No process overwrites another's
+   bus entry. The panel's dot color always reflects what the publisher
+   reports.
+3. **Sim is a project-level annotation, not a bus-level state.** Each
+   workspace declares per-device claim modes (`real` / `sim`) via
+   `DeviceComponent.device_claim`. The annotation rides alongside the
+   bus snapshot in workspace state — it does not displace the
+   publisher's truth on MQTT (see §10).
+4. **Auto-pause respects both signals.** If `info.sim` is true on the
+   bus OR the project claims `sim` for a device, a critical-down on
+   that device does not pause the runtime. Either signal alone is
+   sufficient to opt out.
+
+If you're adding a new device, the rest of this guide is mechanical —
+follow the patterns and these invariants hold by construction.
+
 ---
 
 ## 2. The Device contract — six members on your hardware class
@@ -160,34 +186,38 @@ orchestrator) hear about transitions through.
 Each device service runs a small adapter that wraps the device class,
 publishes its health to the bus, and accepts recover/release commands.
 
-The canonical implementation lives in `workspace.devices.adapter` and is
-re-exported from `workspace.devices`. Import it directly — no copy-paste
-needed:
+**Use `attach_device` — the canonical wiring helper.** It owns the
+adapter, the AutoRecover loop, and the publisher-conflict check in one
+call. Hand-rolling `MQTTDeviceAdapter` is allowed but skips the
+conflict check; only do that for tests or one-shot probes.
 
 ```python
-from workspace.devices import MQTTDeviceAdapter, AutoRecover
+from workspace.devices import attach_device, AutoRecover
 from mydevice import MyDevice
 
 device = MyDevice(natural_id="pumpA")
 device.connect()  # or whatever brings it up — calls _set_state("ok") on success
 
-# Optional but recommended: wrap recover() in an AutoRecover loop so
-# the device self-heals after transient failures (USB hiccup, power
-# blip, network drop). Hotplug events or operator clicks both call
-# recover.trigger(), which retries with exponential backoff capped at
-# max_delay seconds. Plug the trigger into whatever "hardware available"
-# signal your device exposes (e.g. cam.on_hardware_available(recover.trigger)).
-recover = AutoRecover(
-    recover_fn=device.recover,
-    set_status=device._set_state,
-    log_label=f"mydevice:{device.id}",
-)
+# AutoRecover is wired by attach_device when sim=False. Authoring it as
+# a factory (zero-arg callable) lets the helper re-arm recovery if the
+# operator toggles sim → real at runtime.
+def make_recover():
+    rec = AutoRecover(
+        recover_fn=device.recover,
+        set_status=device._set_state,
+        log_label=f"mydevice:{device.id}",
+    )
+    # Plug the trigger into whatever "hardware available" signal your
+    # device exposes (e.g. cam.on_hardware_available(recover.trigger)).
+    return rec
 
-adapter = MQTTDeviceAdapter(
+attachment = attach_device(
     device,
     kind="mydevice",            # short family name, lowercase (see §9)
+    sim=False,                  # authored intent; failures must NOT flip this
     critical=True,              # see §7
     meta={"location": "bench-A", "model": "X-200"},
+    recover_factory=make_recover,
     broker_host="orchestrator-pi.local",   # the bus's host
 )
 
@@ -195,16 +225,29 @@ adapter = MQTTDeviceAdapter(
 import time
 while True:
     time.sleep(60)
+
+# On shutdown:
+attachment.close()
 ```
 
-That's it. The adapter:
+That's it. `attach_device`:
 
-- Publishes the device's `info` (id, kind, critical, meta) on connect.
+- **Refuses to attach if another publisher already owns this device id**
+  on the bus — raises `DevicePublisherConflict` with the conflicting
+  `publisher_id` so the operator sees who's claiming the topic. This is
+  the load-bearing guard against rule-1 violations (§1).
+- Publishes the device's `info` (id, kind, critical, sim, publisher_id,
+  meta) on connect.
 - Publishes health on every state transition.
 - Sets a "last will" so the bus marks the device down if your service
   crashes.
 - Listens for recover/release commands and routes them to your device's
   methods, replying with the result.
+- Wires AutoRecover when `sim=False`; suspends it on `sim=True`.
+
+`attachment.set_sim(True/False)` flips sim mode at runtime, republishes
+info, and arms/disarms recovery. Use this when the operator toggles a
+component into simulation mid-run.
 
 ---
 
@@ -402,9 +445,29 @@ Concretely:
 - Pipette plugged directly into the orchestrator Pi → adapter can run
   inside `workspace` itself (because the hardware is on that Pi).
 
-Don't put the adapter "wherever is convenient" — false-positive `down`
-events from network blips and missed real failures from USB drops are
-the consequence.
+This rule is **enforced**, not suggested. `attach_device` runs a brief
+publisher-conflict check on every attach: it subscribes to the device's
+retained `info` and `state` topics, and if another publisher (different
+`publisher_id` on `info`, with `online: true` on `state`) already owns
+the id, it raises `DevicePublisherConflict` and refuses to attach. So
+"adapter in the wrong process" turns into a loud failure at startup
+instead of silently corrupting the bus.
+
+Edge cases the check handles correctly:
+
+- **Predecessor was clean-shutdown or LWT-fired** (`online: false` in
+  retained state) → allowed. Restart works.
+- **Same `publisher_id`** (us reclaiming our own slot before LWT
+  fires) → allowed.
+- **Broker unreachable** → can't tell, proceed. We don't block startup
+  on a broker hiccup.
+- **Legacy publisher with no `publisher_id` field** → blocked
+  conservatively with `<unknown-legacy-publisher>` so a partial
+  rolling upgrade doesn't accidentally let two writers coexist.
+
+If you genuinely need to disable the check (testing only): set the env
+var `DEVICE_BUS_DETECT_CONFLICT=0` or pass `detect_conflict=False` to
+`attach_device`.
 
 ---
 
@@ -468,13 +531,12 @@ camera_main:abc         ← underscore in kind
 
 ## 10. Workspace-side: declaring the device
 
-Sections 1-7 cover the device service (the process that owns the
+Sections 1-9 cover the device service (the process that owns the
 hardware). Now the orchestrator side: how a workspace component tells
-the orchestrator UI "this project depends on these devices".
+the orchestrator UI "this project depends on these devices" and "this
+is how I'm using each of them."
 
-One short contract: any workspace component that uses a remote device
-exposes a **`device_ids`** property — a list of `<kind>:<natural-id>`
-strings.
+The contract has two members. Only the first is required.
 
 ```python
 class MyComponent:
@@ -482,26 +544,62 @@ class MyComponent:
     def device_ids(self) -> list[str]:
         sn = self.vision.serial_number
         return [f"camera:{sn}"] if sn else []
+
+    def device_claim(self, device_id: str) -> str:
+        """Optional. Return 'real' or 'sim'."""
+        sn = self.vision.serial_number
+        if sn and device_id == f"camera:{sn}":
+            return "sim" if self.vision.simulation else "real"
+        return "real"
 ```
 
-That's the entire surface. Three rules:
+**`device_ids`** — required. List of `<kind>:<natural-id>` strings the
+component depends on. The scanner that builds the project's device
+panel reads this property; components that don't define it are silently
+ignored.
+
+**`device_claim(device_id)`** — optional. Returns `"real"` or `"sim"`,
+the project-level claim mode for that device id. This is the
+workspace-side surface for rule 3 (§1). Default when the method is
+absent: `"real"`.
+
+When to implement `device_claim`:
+
+- The component owns a helper (like `VisionStation`) that has its own
+  simulation mode, AND that helper does NOT publish to the bus (because
+  the daemon does — see §15). Without `device_claim`, the panel has no
+  way to tell that the operator authored sim for this device, and
+  auto-pause would block the runtime on the daemon's down events.
+- The component owns the bus publisher itself (like `Core` for the
+  robot). The bus already carries `info.sim`, but implementing
+  `device_claim` keeps the workspace-side surface symmetric and lets
+  the panel render the SIM pill from one consistent source.
+
+Aggregation across components (handled by
+`workspace.runtime_server._project_device_claims`): **strict-claim
+wins.** If any component declares `"real"` for a device id, the
+project's net claim is `"real"`. `"sim"` only takes effect when every
+declaring component agrees. Auto-pause must respect the strictest
+intent — never get fooled into skipping a critical-down by a single
+sim claim from an unrelated component.
+
+Three rules:
 
 1. **Declare `device_ids`** on any component that depends on remote
-   devices. Empty list when there's none. The scanner that builds the
-   project's device panel reads this property; components that don't
-   define it are silently ignored (returns `[]` via the defensive helper
-   `workspace.devices.component_device_ids`).
+   devices. Empty list when there's none.
 
 2. **Compose a per-kind data-path helper** (e.g.
    [`VisionStation`](../workspace/workspace/components/inspection/vision_station.py)
-   for cameras). The helper handles connect-or-simulate, the
-   device-specific commands, and `close()`. New kinds get their own
-   helper modeled on VisionStation. They don't share a base class; they
-   share a *pattern* (constructor takes host/port/serial/simulation,
-   exposes operations, plus `close()`).
+   for cameras). New kinds get their own helper modeled on
+   VisionStation. They don't share a base class; they share a *pattern*
+   (constructor takes host/port/serial/simulation, exposes operations,
+   plus `close()`). The helper does NOT publish to the bus when there's
+   a separate daemon for the same device id — let the daemon own the
+   topic (rule 1).
 
-3. **Optional convenience wrappers** on the component that delegate to
-   the helper — keeps the call surface clean for recipes.
+3. **Implement `device_claim`** when the helper has a sim mode the
+   bus can't see. Default (`"real"`) is safe; only override when there
+   really is a sim path the bus is unaware of.
 
 The Protocol that defines the contract is at
 [`workspace.devices.DeviceComponent`](../workspace/workspace/devices/component_contract.py)
@@ -511,7 +609,7 @@ when you need it. No inheritance required.
 **Why a Protocol and not a base class:** components in
 `workspace/components/` are heterogeneous (devices, racks, fixtures,
 adapters). Forcing a base on the device subset would be artificial. The
-Protocol covers exactly the one method that matters and stays out of
+Protocol covers exactly the two members that matter and stays out of
 the way for everything else.
 
 ---
@@ -618,31 +716,39 @@ class Pipette:
 # pipette_service/main.py
 import time
 from pipette_sdk import Pipette
-from workspace.devices import MQTTDeviceAdapter, AutoRecover
+from workspace.devices import attach_device, AutoRecover
 
 pump = Pipette()
 pump.connect(port="/dev/ttyUSB0")
 
-# Optional self-healing — retry on serial-port failures with backoff.
-recover = AutoRecover(
-    recover_fn=pump.recover,
-    set_status=pump._set_state,
-    log_label=f"pipette:{pump.id}",
-)
+def make_recover():
+    return AutoRecover(
+        recover_fn=pump.recover,
+        set_status=pump._set_state,
+        log_label=f"pipette:{pump.id}",
+    )
 
-adapter = MQTTDeviceAdapter(
+attachment = attach_device(
     pump,
     kind="pipette",
+    sim=False,                  # this service drives real hardware
     critical=True,
     meta={"location": "bench-A", "model": "X-200"},
+    recover_factory=make_recover,
     broker_host="orchestrator-pi.local",
 )
 
-while True:
-    time.sleep(60)
+try:
+    while True:
+        time.sleep(60)
+finally:
+    attachment.close()
 ```
 
-That's the whole device side. Health publishes automatically.
+That's the whole device side. Health publishes automatically. If a
+second pipette service ever tries to claim the same id (config error,
+mistaken host), `attach_device` raises `DevicePublisherConflict` at
+startup with the conflicting `publisher_id`.
 
 ### C. Workspace component (orchestrator side)
 
@@ -685,6 +791,13 @@ class Pipette:
     def device_ids(self):
         sn = self.pump.serial_number
         return [f"pipette:{sn}"] if sn else []
+
+    def device_claim(self, device_id: str) -> str:
+        """Project-level sim/real claim for ``device_id``."""
+        sn = self.pump.serial_number
+        if sn and device_id == f"pipette:{sn}":
+            return "sim" if self.pump.simulation else "real"
+        return "real"
 
     # --- Convenience wrappers ---
     def aspirate(self, volume_ul):
@@ -771,7 +884,31 @@ When implementing your service:
   and you can't run it standalone for testing.
 - **Putting the adapter on the orchestrator Pi instead of the device's Pi.**
   Read §8 again. False-positive downs and missed real failures are the
-  cost.
+  cost. With conflict detection on, you'll get a loud
+  `DevicePublisherConflict` at startup — fix the topology, don't
+  silence the check.
+- **Publishing a "sim stub" from the workspace for a device that has a
+  daemon publisher.** Two writers on the same retained topic — last
+  writer wins. The workspace's sim publish stomps the daemon's truth
+  and the panel goes green when the device is physically down. Use
+  `device_claim` instead (§10): annotate sim at the project level,
+  let the daemon own the bus entry. The conflict-detection guard in
+  `attach_device` will refuse this anyway, but it's faster to get
+  right the first time.
+- **Falling back to sim on connect failure.** Authored `simulation`
+  is the operator's intent and must be honoured exactly. A failed
+  initial connect is a **fault** to surface (red dot + auto-pause),
+  not a reason to silently switch APIs. Silent demote masks
+  deployment problems and guarantees QC will trip over it eventually.
+  Let the connect fail loud and let AutoRecover retry in the
+  background.
+- **Putting `sim` only on the bus and not in `device_claim`.** The
+  bus's `info.sim` is the publisher's claim about itself. For devices
+  the workspace does NOT publish (cameras, etc.), `info.sim` is
+  always whatever the daemon decides, which has no reason to know
+  about the workspace's sim mode. Use `device_claim` for project-side
+  intent; rely on `info.sim` only when the workspace IS the publisher
+  (the robot, in-process devices).
 
 ---
 
@@ -878,7 +1015,60 @@ layers but need a different freshness/verify pattern; see §6.
 
 ---
 
-## 16. Open follow-ups (not blocking new device authors)
+## 16. Simulation model
+
+The "is this device fake?" question has two independent sources of
+truth, and the contract keeps them straight so neither hides reality.
+
+### Two signals, deliberately separate
+
+| Signal | Set by | What it means |
+|---|---|---|
+| `info.sim` (bus) | The publisher of the device | "I, the publisher, am running in sim mode for this device." Workspace sets it for the robot (workspace IS the publisher); a future sim-aware vision server might set it for a fake camera; etc. |
+| `device_claim(id) == "sim"` (workspace) | A workspace component | "*This project* uses this device in sim mode locally — I take canned values regardless of what the bus says." For cameras, the daemon owns the bus entry, so this is the only place workspace sim intent for the camera lives. |
+
+Both are visible to the panel and the orchestrator. Either one alone
+is sufficient to:
+
+- show a SIM pill on the device row in the Devices panel (cyan,
+  "SIM"); and
+- skip auto-pause on a critical-down for that device.
+
+The dot color always reflects the **publisher's** truth (rule 2). A
+sim-claimed camera that's physically down shows red dot + cyan SIM
+pill — operator sees both layers, neither hides the other.
+
+### What changes per scenario
+
+| Authored | Bus | Project claim | Panel | Auto-pause on down |
+|---|---|---|---|---|
+| `simulation: True` on a workspace-published device (e.g. robot) | green, `info.sim=true` | `sim` | green dot + SIM pill | skipped |
+| `simulation: False` on a workspace-published device, real and reachable | green | `real` | green dot, no pill | n/a (state is ok) |
+| `simulation: False` on a workspace-published device, real and unreachable | red | `real` | red dot, no pill | **paused** |
+| `simulation: True` on a daemon-published device (e.g. camera) | whatever the daemon says | `sim` | dot reflects daemon + SIM pill | skipped |
+| `simulation: False` on a daemon-published device, daemon down | red | `real` | red dot, no pill | **paused** |
+| Operator toggles `core.simulation(True)` mid-run | adapter republishes `info.sim=true` | claim flips to sim on next bus event | SIM pill appears live | newly skipped |
+
+### Manual sim toggle at runtime
+
+`core.simulation(True/False)` (and any analogous component-level
+toggle) flips both signals in lockstep:
+
+- **Bus signal** — the component calls `attachment.set_sim(True/False)`,
+  which republishes the retained `info` payload with `sim=true/false`.
+  AutoRecover suspends in sim, re-arms on flip back to real.
+- **Workspace signal** — the component's `device_claim(id)` reads
+  whatever's authoritative (e.g. `self._simulation_mode`) live, so a
+  `claim_resolver` walking the components picks up the new mode on
+  the next call. No explicit invalidation needed.
+
+The panel updates within the WS-push latency. Operator sees the SIM
+pill flip on the row and in the modal at the same time as auto-pause
+becomes inactive for that device.
+
+---
+
+## 17. Open follow-ups (not blocking new device authors)
 
 - **Local UI on each device server.** Each device service should also
   show its own health locally (the vision server's web GUI does this;
@@ -929,12 +1119,28 @@ Published by the device service. Payload:
   "id": "camera:130322274110",
   "kind": "camera",
   "critical": true,
+  "sim": false,
+  "publisher_id": "host-a:12345:camera:130322274110",
   "meta": { "model": "D405", "usb_port": "..." }
 }
 ```
 
 - `retain=true, QoS=1`.
-- Published once on service startup; re-published if metadata changes.
+- Published once on service startup; re-published whenever metadata
+  changes (notably on `set_sim()` toggle so the panel sees the new
+  badge live).
+- `sim`: publisher self-flag. `true` means the publisher is itself
+  running in sim mode for this device. Optional for back-compat —
+  missing is treated as `false`. **Independent** of the project-level
+  claim (§10) — both can be set, and either one alone is sufficient
+  to skip auto-pause and show a SIM pill in the panel.
+- `publisher_id`: stable `<hostname>:<pid>:<device_id>` triple
+  identifying the adapter instance. Used by `attach_device` for
+  conflict detection (§8) — a different `publisher_id` on this topic,
+  with `online: true` on `state`, indicates a competing publisher and
+  blocks the second attach. Optional for back-compat; absent is
+  treated as a legacy publisher and conservatively blocks new
+  attachments to the same id (forces a clean rolling-upgrade).
 
 #### `device/<id>/state` — health (retained)
 

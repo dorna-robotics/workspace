@@ -42,6 +42,11 @@ class DeviceEntry:
     msg: str = "no state yet"
     kind: str = "device"
     critical: bool = True
+    # Whether this device is in simulation mode. Sourced from the
+    # ``info`` payload's ``sim`` field. Sim devices are excluded from
+    # the critical-down auto-pause path (sim has no failure mode) and
+    # rendered in the panel with a "SIM" badge.
+    sim: bool = False
     meta: dict[str, Any] = field(default_factory=dict)
     ts: float = 0.0
     # Whether the device service process is alive on the bus. Set True by
@@ -57,6 +62,7 @@ class DeviceEntry:
             "msg": self.msg,
             "kind": self.kind,
             "critical": self.critical,
+            "sim": self.sim,
             "meta": dict(self.meta),
             "ts": self.ts,
             "online": self.online,
@@ -96,14 +102,27 @@ class MQTTOrchestrator:
         broker_port: Optional[int] = None,
         client_id: Optional[str] = None,
         client_factory: Optional[Callable[[str], Any]] = None,
+        claim_resolver: Optional[Callable[[str], str]] = None,
     ):
         self.runtime = runtime
+        # Optional callable returning ``"sim"`` or ``"real"`` for a
+        # given device id — the project-level claim mode. When the
+        # claim is ``"sim"``, auto-pause is skipped for that device
+        # even if the bus reports it down. Set by the workspace at
+        # startup; absent in standalone tests.
+        self.claim_resolver = claim_resolver
         self.broker_host = broker_host if broker_host is not None else DEFAULT_BROKER_HOST
         self.broker_port = broker_port if broker_port is not None else DEFAULT_BROKER_PORT
         self._client_id = client_id or f"orchestrator-{uuid.uuid4().hex[:8]}"
 
         self._lock = threading.RLock()
         self._devices: dict[str, DeviceEntry] = {}
+        # Tracks every device id we have ever received a `state` message
+        # for. Distinct from `_devices` (which is also populated by
+        # `info` messages), so that the FIRST state we ever see for a
+        # device — even if info arrived first — can be detected as an
+        # "initial state" event rather than a transition.
+        self._seen_state_ids: set[str] = set()
         self._pending: dict[str, _PendingRequest] = {}
         self._subscribers: list[Callable[[DeviceEntry], None]] = []
         self._closed = False
@@ -207,6 +226,7 @@ class MQTTOrchestrator:
         """
         with self._lock:
             existed = self._devices.pop(device_id, None) is not None
+            self._seen_state_ids.discard(device_id)
         if not existed:
             return
         # Synthetic snapshot tells subscribers (panel WS, runtime pause
@@ -218,6 +238,7 @@ class MQTTOrchestrator:
             "msg": "retained cleared",
             "kind": "device",
             "critical": False,
+            "sim": False,
             "meta": {},
             "ts": time.time(),
             "online": False,
@@ -232,6 +253,7 @@ class MQTTOrchestrator:
                 self._devices[device_id] = entry
             entry.kind = str(payload.get("kind", entry.kind))
             entry.critical = bool(payload.get("critical", entry.critical))
+            entry.sim = bool(payload.get("sim", entry.sim))
             entry.meta = dict(payload.get("meta", entry.meta))
             # info only arrives from a live publisher.
             entry.online = True
@@ -241,29 +263,89 @@ class MQTTOrchestrator:
 
     def _handle_state(self, device_id: str, payload: dict[str, Any]) -> None:
         with self._lock:
+            new_online = bool(payload.get("online", True))
+            new_state_str = str(payload.get("state", "down"))
+            new_msg = str(payload.get("msg", ""))
+            ts = float(payload.get("ts", time.time()))
+
             entry = self._devices.get(device_id)
             if entry is None:
                 entry = DeviceEntry(id=device_id)
                 self._devices[device_id] = entry
-            old_state = entry.state
-            old_online = entry.online
-            entry.state = str(payload.get("state", "down"))
-            entry.msg = str(payload.get("msg", ""))
-            entry.ts = float(payload.get("ts", time.time()))
-            # Default online=True for back-compat with services that don't
-            # set the field. LWT payloads must include ``online: false``.
-            entry.online = bool(payload.get("online", True))
-            critical = entry.critical
-            new_state = entry.state
-            new_online = entry.online
-            snapshot = entry.to_dict()
 
-        # Pause runtime on a critical-down transition (only on the edge).
+            # ``online: false`` is the broker's "previous publisher is
+            # gone" signal — emitted by an adapter's clean-shutdown
+            # path or LWT, then retained on the topic. On a fresh
+            # workspace launch we'll see it FIRST (before any live
+            # publisher has spoken), and treating it as the device's
+            # first state observation would auto-pause every restart
+            # against stale data: the operator clicks Start, sees
+            # Resume, and never knows why. Bail with presence/ts
+            # update only — the next live message owns first-state
+            # logic. A genuine LWT mid-run still surfaces in the
+            # panel as the "offline" pill (driven by entry.online),
+            # so the operator sees the fault without needing the
+            # runtime paused on top of it.
+            if not new_online:
+                entry.online = False
+                entry.ts = ts
+                snapshot = entry.to_dict()
+            else:
+                # Live publisher event. First-state detection must be
+                # independent of ``_devices`` membership because
+                # ``_handle_info`` may have created the entry before
+                # the first state arrived.
+                is_first_state = device_id not in self._seen_state_ids
+                self._seen_state_ids.add(device_id)
+                old_state = entry.state
+                entry.state = new_state_str
+                entry.msg = new_msg
+                entry.ts = ts
+                entry.online = True
+                critical = entry.critical
+                sim = entry.sim
+                new_state = entry.state
+                snapshot = entry.to_dict()
+
+        # online: false branch is presence-only — notify and return,
+        # never pause. The live publisher's next message drives any
+        # auto-pause decisions.
+        if not new_online:
+            self._notify(snapshot)
+            return
+
+        # Pause runtime on a critical-down event. Two cases count:
+        #   (a) a real transition (old != down → new = down), e.g. a
+        #       cable was unplugged mid-run, OR
+        #   (b) the FIRST state we ever see is "down" (no prior state
+        #       to transition from) — happens at workspace launch when
+        #       the robot is already unreachable. Without (b) the
+        #       operator could click Start while a critical device is
+        #       down and the workflow would crash on its first call.
+        # Two pause-skip gates, both honoured:
+        #   * ``bus.sim`` — the publisher self-flags as sim. No real
+        #     failure mode possible. (Used by the robot when Core is
+        #     in sim mode — Core IS the publisher.)
+        #   * ``claim == "sim"`` — the project declares it's using this
+        #     device in sim mode regardless of what the bus says. (Used
+        #     for cameras: the daemon publishes truth on the bus, but
+        #     this project doesn't care because it uses canned values.)
+        is_initial_down = is_first_state and new_state == "down"
+        is_transition_to_down = (not is_first_state) and new_state == "down" and old_state != "down"
+        project_claims_sim = False
+        if self.claim_resolver is not None:
+            try:
+                project_claims_sim = self.claim_resolver(device_id) == "sim"
+            except Exception:
+                log.exception("MQTTOrchestrator: claim_resolver raised for %s",
+                              device_id)
+                project_claims_sim = False
         if (
             self.runtime is not None
             and critical
-            and new_state == "down"
-            and old_state != "down"
+            and not sim
+            and not project_claims_sim
+            and (is_initial_down or is_transition_to_down)
         ):
             try:
                 self.runtime.pause()

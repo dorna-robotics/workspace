@@ -21,6 +21,7 @@
         '<div class="confirm-icon"></div>' +
         '<div class="confirm-title"></div>' +
         '<div class="confirm-message"></div>' +
+        '<ul class="confirm-list" style="display:none"></ul>' +
         '<label class="confirm-remember"><input type="checkbox" class="confirm-remember-cb"><span>Don\'t ask me again</span></label>' +
         '<div class="confirm-actions"><button class="btn confirm-cancel">Cancel</button><button class="btn confirm-ok">Confirm</button></div>' +
       '</div>';
@@ -32,17 +33,30 @@
     return el;
   }
 
+  function _escText(s) {
+    var d = document.createElement("div");
+    d.textContent = String(s == null ? "" : s);
+    return d.innerHTML;
+  }
+
   window.confirmDialog = function(opts) {
     opts = opts || {};
     var title = opts.title || "Are you sure?";
     var message = opts.message || "";
+    var lines = Array.isArray(opts.lines) ? opts.lines : null;  // optional bullet list under the message
     var confirmLabel = opts.confirm || "Confirm";
     var cancelLabel = opts.cancel || "Cancel";
     var variant = opts.variant || "danger";
     var icon = opts.icon || "warning";
     var remember = opts.remember || null;
+    // ``dangerous`` flips defaults to safer behavior: Cancel auto-focused
+    // (not OK), Enter does NOT auto-confirm (must be a deliberate click),
+    // and the "don't ask again" checkbox is suppressed even if a remember
+    // key is passed. Use for actions where a reflexive Enter would cause
+    // real harm — e.g. starting a workflow with a critical device down.
+    var dangerous = !!opts.dangerous;
 
-    if (remember && localStorage.getItem("confirm_skip_" + remember) === "1") {
+    if (!dangerous && remember && localStorage.getItem("confirm_skip_" + remember) === "1") {
       return Promise.resolve(true);
     }
 
@@ -52,6 +66,7 @@
       var iconEl = el.querySelector(".confirm-icon");
       var titleEl = el.querySelector(".confirm-title");
       var msgEl = el.querySelector(".confirm-message");
+      var listEl = el.querySelector(".confirm-list");
       var rememberLabel = el.querySelector(".confirm-remember");
       var rememberCb = el.querySelector(".confirm-remember-cb");
       var cancelBtn = el.querySelector(".confirm-cancel");
@@ -61,10 +76,22 @@
       iconEl.dataset.variant = variant;
       titleEl.textContent = title;
       msgEl.textContent = message;
+      // Optional bulleted list — built with escaped text per item.
+      if (lines && lines.length) {
+        listEl.innerHTML = lines.map(function(line) {
+          return "<li>" + _escText(line) + "</li>";
+        }).join("");
+        listEl.style.display = "";
+      } else {
+        listEl.innerHTML = "";
+        listEl.style.display = "none";
+      }
       cancelBtn.textContent = cancelLabel;
       okBtn.textContent = confirmLabel;
 
-      rememberLabel.style.display = remember ? "" : "none";
+      // Remember-checkbox suppressed for dangerous prompts — these
+      // should always require a deliberate click.
+      rememberLabel.style.display = (!dangerous && remember) ? "" : "none";
       rememberCb.checked = false;
 
       okBtn.className = "btn confirm-ok " + (variant === "danger" ? "confirm-ok-danger" : "btn-primary");
@@ -72,10 +99,16 @@
       dialog.classList.remove("confirm-out");
       el.classList.add("show");
       void dialog.offsetWidth;
-      okBtn.focus();
+      // Dangerous prompts: focus Cancel so a reflexive Enter cancels
+      // (not confirms). Standard prompts: focus OK as before.
+      if (dangerous) {
+        cancelBtn.focus();
+      } else {
+        okBtn.focus();
+      }
 
       function cleanup(result) {
-        if (result && remember && rememberCb.checked) {
+        if (!dangerous && result && remember && rememberCb.checked) {
           localStorage.setItem("confirm_skip_" + remember, "1");
         }
         dialog.classList.add("confirm-out");
@@ -90,8 +123,11 @@
       function onCancel() { cleanup(false); }
       function onOk() { cleanup(true); }
       function onKey(e) {
-        if (e.key === "Escape") cleanup(false);
-        if (e.key === "Enter") cleanup(true);
+        if (e.key === "Escape") { cleanup(false); return; }
+        // Dangerous prompts: Enter does NOT auto-confirm. Operator
+        // must click Confirm explicitly. (Enter on the focused Cancel
+        // button still cancels via the button's default activation.)
+        if (e.key === "Enter" && !dangerous) cleanup(true);
       }
 
       cancelBtn.addEventListener("click", onCancel);

@@ -158,6 +158,57 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .pill.bad  { background: rgba(215,0,21,0.12);  color: var(--red); }
 [data-theme="light"] .pill.off  { background: rgba(142,142,147,0.1); color: var(--muted); }
 
+/* SIM variant — cyan, distinct from the state colors so it never
+   blends with ok/warn/bad. Used by the project-card devices pill
+   when sim is the only flavor of "not pure ok". */
+.pill.sim { background: rgba(94,200,255,0.15); color: #5ec8ff; }
+[data-theme="light"] .pill.sim { background: rgba(12,108,179,0.10); color: #0c6cb3; }
+.dot.sim { background: #5ec8ff; }
+[data-theme="light"] .dot.sim { background: #0c6cb3; }
+/* Devices indicator — rendered as a wc-meta-item so it lines up with
+   URL / Up. Value is a small rounded pill containing just the total
+   device count. Color rules:
+     gray (default) = nothing needs attention (all ok, all sim, or any
+                      mix that doesn't require operator action)
+     orange         = degraded — at least one device down/offline/recovering
+                      that does NOT block Start (e.g. non-critical or sim)
+     red            = blocking — at least one critical down/offline that
+                      will gate Start/Resume
+   The pill stays at total count regardless, so the visual ID of the
+   project is stable; only color changes. Hover tooltip is the full
+   breakdown ("3 devices: 1 ok, 1 in simulation, 1 down"). */
+.devices-count {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+[data-theme="light"] .devices-count {
+  background: rgba(0,0,0,0.05);
+  color: var(--muted);
+}
+.devices-meta--warn .devices-count {
+  background: rgba(255,159,10,0.18);
+  color: var(--amber);
+}
+.devices-meta--bad .devices-count {
+  background: rgba(255,69,58,0.18);
+  color: var(--red);
+}
+[data-theme="light"] .devices-meta--warn .devices-count {
+  background: rgba(199,124,10,0.12);
+  color: var(--amber);
+}
+[data-theme="light"] .devices-meta--bad .devices-count {
+  background: rgba(215,0,21,0.12);
+  color: var(--red);
+}
+
 /* ── Status Dots ──────────────────────────────────────────────────────── */
 .dot {
   width: 7px; height: 7px;
@@ -366,6 +417,14 @@ a:hover { color: var(--accent-h); }
 
 .confirm-title { font-size: 17px; font-weight: 650; letter-spacing: -0.3px; color: var(--text); text-align: center; }
 .confirm-message { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5; max-width: 280px; }
+
+/* Optional bullet list for structured warnings (e.g. listing devices
+   that would block a Start). Mono font so device ids align. */
+.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text); text-align: left; }
+.confirm-list li { padding: 3px 6px; line-height: 1.4; word-break: break-all; }
+.confirm-list li + li { border-top: 1px solid rgba(255,255,255,0.04); }
+[data-theme="light"] .confirm-list { background: rgba(0,0,0,0.04); }
+[data-theme="light"] .confirm-list li + li { border-top: 1px solid rgba(0,0,0,0.05); }
 
 .confirm-remember { display: none; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
 .confirm-remember:has(input) { display: flex; }

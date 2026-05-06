@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -150,6 +150,72 @@ async function openParamsModal(name, frozen) {
   paramsModal.classList.add("show");
 }
 
+// ── Device-health indicator on project cards ─────────────────────────
+// Renders inline with the URL · Up meta row, label-value style ("Devices
+// ●2 ok") so the eye reads it the same way it reads URL / Up. The dot
+// color and the short value label both signal the same worst-case
+// status — redundant on purpose, since color alone is invisible to
+// color-blind operators. Worst-case ordering (used for both color and
+// text):
+//   blocking      → red, "N blocking"
+//   recovering    → orange (pulsing), "N recovering"
+//   down          → orange, "N down"
+//   offline       → orange, "N offline"
+//   sim only      → cyan, "N sim" (or "K ok · N sim" if mixed)
+//   all ok        → green, "N ok"
+//   no devices    → not rendered at all
+//
+// Tooltip carries the full breakdown + blocking ids verbatim so the
+// operator can identify the device without leaving the dashboard.
+function devicesPillHtml(summary) {
+  if (!summary || !summary.total) return "";
+  const blocking = summary.blocking || 0;
+  const recovering = summary.recovering || 0;
+  const down = summary.down || 0;
+  const offline = summary.offline || 0;
+  const sim = summary.sim || 0;
+  const ok = summary.ok || 0;
+  const total = summary.total || 0;
+
+  // Pill content is just the total device count. Color is the only
+  // status signal: gray = nothing requires attention (everything ok,
+  // including authored sim — operator chose that, no need to nag),
+  // orange = degraded (down / offline / recovering), red = blocking.
+  // Tooltip carries the full breakdown for the operator who wants
+  // to dig in. Total count stays stable so the pill identifies the
+  // project the same way every time.
+  let variant;
+  if (blocking > 0)            variant = "bad";
+  else if (recovering > 0)     variant = "warn";
+  else if (down > 0 || offline > 0) variant = "warn";
+  else                          variant = "off";  // ok / sim / mixed = neutral
+
+  // Plain-prose tooltip — one line per non-zero bucket, full words.
+  // This is what shows on hover; designed to read top-to-bottom.
+  const lines = [];
+  lines.push(`${total} device${total === 1 ? "" : "s"}`);
+  lines.push("");
+  if (ok)         lines.push(`${ok} ok`);
+  if (sim)        lines.push(`${sim} in simulation`);
+  if (recovering) lines.push(`${recovering} recovering`);
+  if (down)       lines.push(`${down} down`);
+  if (offline)    lines.push(`${offline} service offline`);
+  if (blocking) {
+    lines.push("");
+    lines.push(`${blocking} blocking Start/Resume:`);
+    (summary.blocking_ids || []).forEach(id => lines.push("  " + id));
+  }
+  const title = lines.join("\n");
+
+  return (
+    `<span class="wc-meta-item devices-meta devices-meta--${variant}" title="${esc(title)}">` +
+      `<span>Devices</span>` +
+      `<strong class="devices-count">${total}</strong>` +
+    `</span>`
+  );
+}
+
+
 // ---- Stats bar ----
 function updateStats() {
   const total   = workspaces.length;
@@ -189,6 +255,7 @@ function render() {
     const running = isRunning(state);
     const launched = isLaunched(state);
     const uptime  = fmtUptime(st.uptime_s);
+    const devicesPill = devicesPillHtml(st.devices_summary);
 
     let el = wsGrid.querySelector(`.ws-card[data-name="${CSS.escape(ws.name)}"]`);
     const isNew = !el;
@@ -223,6 +290,7 @@ function render() {
           <strong>${esc(wsViewerUrl(ws).replace(/^https?:\/\//, ""))}</strong>
         </span>
         ${uptime ? `<span class="wc-meta-item"><span>Up</span> <strong>${esc(uptime)}</strong></span>` : ""}
+        ${devicesPill}
         ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ ${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
       </div>
       ${(() => {
@@ -285,6 +353,16 @@ function render() {
           confirm: "Kill Process",
           icon: "kill",
         })) return;
+        // Device-fault gate for Start / Resume. Fetches fresh status
+        // from the workspace and prompts if any critical device is
+        // still down. See deviceFaultGate in api.js for the full
+        // contract. Cancel here aborts before sending the command.
+        if (cmd === "start") {
+          const stateUpper = (ws.lastStatus?.state || "").toUpperCase();
+          const action = stateUpper === "PAUSED" ? "Resume" : "Start";
+          const ok = await deviceFaultGate(ws.name, action);
+          if (!ok) return;
+        }
         btn.disabled = true;
         try {
           let kwargs = undefined;

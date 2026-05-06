@@ -110,7 +110,7 @@ class RobotStation:
         # workspace startup. AutoRecover (wired by Core) will retry.
         if self.ip:
             try:
-                if self._client.connect(self.ip):
+                if self._client.connect(self.ip, timeout=self.connect_timeout):
                     self._set_state("ok", "")
                     print(f"✅ {self.label} connected @ {self.ip}")
                 else:
@@ -160,7 +160,7 @@ class RobotStation:
                 self._client.close()
             except Exception:
                 pass
-            ok = self._client.connect(self.ip)
+            ok = self._client.connect(self.ip, timeout=self.connect_timeout)
             if not ok:
                 self._set_state("down", "reconnect returned False")
                 return False

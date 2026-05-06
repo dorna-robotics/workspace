@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 const params  = new URLSearchParams(window.location.search);
@@ -591,10 +591,32 @@ function renderDevicesPanel() {
       : (visualState === "recovering" ? "is-recovering" : "is-down");
 
     const msg = (pending?.note || d.msg || "").trim();
+    // Two independent sim signals; pill appears if either is true:
+    //   * d.sim — publisher self-flagged (e.g. workspace robot in sim)
+    //   * d.claim === "sim" — this project uses the device in sim mode,
+    //     even if a separate daemon publishes truth on the bus.
+    // The pill conveys "this project is faking this device." The dot
+    // colour still reflects the publisher's truth, so a sim-claimed
+    // camera that's physically down shows red dot + SIM pill — operator
+    // sees both layers, neither hides the other.
+    const isPublisherSim = d.sim === true;
+    const isProjectSim = d.claim === "sim";
+    const isSim = isPublisherSim || isProjectSim;
+    const simTitle = isPublisherSim
+      ? "Device publisher is in simulation mode"
+      : "This project uses this device in simulation mode";
+    const simPill = isSim
+      ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>`
+      : "";
     let control = "";
     if (visualState === "recovering") {
       control = `<button class="btn btn-sm btn-primary" disabled>Recovering…</button>`;
-    } else if (state !== "ok") {
+    } else if (state !== "ok" && !isPublisherSim) {
+      // Recover applies to any real bus entry that's down — including
+      // ones this project happens to claim sim. The operator may still
+      // want to fix the underlying device for OTHER projects, and
+      // hiding the button would lock them out of that. Only suppress
+      // when the publisher itself flags sim (no real device exists).
       if (online) {
         control = `<button class="btn btn-sm btn-primary" data-device-act="recover">Recover</button>`;
       } else {
@@ -606,6 +628,7 @@ function renderDevicesPanel() {
       <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
         <span class="dot ${dotClass}"></span>
         <span class="device-id">${escHtml(d.id)}</span>
+        ${simPill}
         ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
         ${control}
       </div>`;
@@ -659,6 +682,9 @@ function _renderDeviceModalBody(d) {
 
   const state = d.state || "down";
   const online = d.online !== false;
+  const isPublisherSim = d.sim === true;
+  const isProjectSim = d.claim === "sim";
+  const isSim = isPublisherSim || isProjectSim;
   const dotClass = state === "ok"
     ? "ok pulse"
     : state === "recovering" ? "warn pulse" : "bad";
@@ -666,18 +692,28 @@ function _renderDeviceModalBody(d) {
   const meta = (d.meta && Object.keys(d.meta).length)
     ? JSON.stringify(d.meta, null, 2)
     : "(none)";
+  // Two sim sources reported separately so the operator can debug:
+  // is this sim because the publisher said so, or because the project
+  // claims it? Both surfaces are useful in different scenarios.
+  const claimVal = d.claim || "real";
+  const simTitle = isPublisherSim
+    ? "Publisher self-flagged sim"
+    : (isProjectSim ? "Project claims this device in sim mode" : "");
 
   body.innerHTML = `
     <div class="dd-id">${escHtml(d.id)}</div>
     <div class="dd-state-row">
       <span class="dot ${dotClass}"></span>
       <span class="dd-state">${escHtml(state)}</span>
+      ${isSim ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>` : ""}
       ${online ? "" : `<span class="device-pill">offline</span>`}
     </div>
     ${(d.msg || "").trim() ? `<div class="dd-msg">${escHtml(d.msg)}</div>` : ""}
     <div class="dd-table">
       <div class="dd-key">kind</div>      <div class="dd-val">${escHtml(d.kind || "—")}</div>
       <div class="dd-key">critical</div>  <div class="dd-val">${d.critical === false ? "false" : "true"}</div>
+      <div class="dd-key">publisher sim</div><div class="dd-val">${isPublisherSim ? "true" : "false"}</div>
+      <div class="dd-key">project claim</div><div class="dd-val">${escHtml(claimVal)}</div>
       <div class="dd-key">online</div>    <div class="dd-val">${online ? "true" : "false"}</div>
       <div class="dd-key">last update</div><div class="dd-val">${escHtml(ageStr)}</div>
     </div>
@@ -686,9 +722,12 @@ function _renderDeviceModalBody(d) {
   `;
 
   // Action buttons in footer: same Recover / offline-pill semantics
-  // as the inline row but full-size for click-friendliness.
+  // as the inline row but full-size for click-friendliness. Suppress
+  // only when the publisher self-flagged sim (no real device exists);
+  // a project-claimed-sim device with a real downed publisher should
+  // still offer Recover so the operator can fix it for other projects.
   foot.innerHTML = "";
-  if (state !== "ok") {
+  if (state !== "ok" && !isPublisherSim) {
     if (online) {
       const btn = document.createElement("button");
       btn.className = "btn btn-primary";
@@ -960,6 +999,15 @@ function renderControls(state, launched, running) {
         confirm: "Kill Process",
         icon: "kill",
       })) return;
+      // Device-fault gate for Start / Resume. Identical contract to
+      // the dashboard card: fetch fresh status, prompt with the list
+      // of blocking device ids if any, abort if operator cancels. See
+      // deviceFaultGate in api.js.
+      if (cmd === "start") {
+        const action = (s === "PAUSED") ? "Resume" : "Start";
+        const ok = await deviceFaultGate(wsName, action);
+        if (!ok) return;
+      }
       b.disabled = true;
       try {
         const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
@@ -1407,6 +1455,14 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
       confirm: "Kill Process",
       icon: "kill",
     })) return;
+    // Device-fault gate also covers the pendant Start/Resume — same
+    // contract as the sidebar button. Pendant pressed sound/haptics
+    // come AFTER the gate so a canceled prompt doesn't beep falsely.
+    if (cmd === "start") {
+      const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
+      const ok = await deviceFaultGate(wsName, action);
+      if (!ok) return;
+    }
     btn.disabled = true;
     btn.classList.add("pendant-pressed");
     pendantClickSound();
