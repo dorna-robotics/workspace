@@ -50,6 +50,44 @@ def _truncate_log_if_needed(path: str, max_bytes: int):
         pass
 
 
+def _free_port(port: int) -> None:
+    """Best-effort: kill any process currently bound to ``port`` so the
+    next workspace launch on this port doesn't hit ``[Errno 98] Address
+    already in use``.
+
+    Uses ``lsof`` + SIGTERM (then SIGKILL after a brief wait). Failures
+    are swallowed — if there's nothing to kill, or if we don't have
+    permission, the next ``listen()`` call surfaces the real error.
+    """
+    import signal
+    try:
+        out = subprocess.check_output(
+            ["sudo", "lsof", "-tiTCP:%d" % int(port), "-sTCP:LISTEN"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except subprocess.CalledProcessError:
+        return  # nobody listening
+    except Exception:
+        return  # lsof missing or not allowed
+    pids = [int(p) for p in out.split() if p.isdigit()]
+    if not pids:
+        return
+    for pid in pids:
+        try:
+            subprocess.run(["sudo", "kill", "-TERM", str(pid)], check=False)
+        except Exception:
+            pass
+    # Brief wait, then force-kill any stragglers.
+    time.sleep(0.5)
+    for pid in pids:
+        try:
+            subprocess.run(["sudo", "kill", "-KILL", str(pid)],
+                           check=False, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
 class WorkspaceInfo:
     """Holds workspace process info and metadata."""
     def __init__(self, name: str, path_to_file: str, port: int, node_url: Optional[str] = None, label: str = ""):
@@ -275,16 +313,31 @@ class Orchestrator:
         if self.is_launched(name):
             return
 
+        # Reap zombies: a previous workspace process can leave its port
+        # held even after our ``ws.process`` handle died (segfault, hard
+        # kill, parent exit before child cleanup, etc.). Without this
+        # check the next launch hits ``OSError [Errno 98] Address
+        # already in use`` and the user has to ``lsof | kill`` by hand.
+        # We kill anything currently bound to ws.port before spawning.
+        _free_port(ws.port)
+
         # Fresh start — clear any stale uploads from a previous run
         ws.clear_uploads()
 
         import sys, platform
+        # ``-u`` forces unbuffered stdout/stderr in the spawned Python.
+        # Without it, prints from the workspace process are block-buffered
+        # (4-8KB) when redirected to a file, so low-traffic logs never
+        # reach disk until the process exits — making the LOGS panel
+        # appear empty even when the process is happily running and
+        # printing. ``-u`` flushes per write, matching tty behavior.
         if platform.system() == "Windows":
-            cmd = [sys.executable, ws.path_to_file, "--port", str(ws.port)]
+            cmd = [sys.executable, "-u", ws.path_to_file, "--port", str(ws.port)]
         else:
-            cmd = ["sudo", "python3", ws.path_to_file, "--port", str(ws.port)]
+            cmd = ["sudo", "python3", "-u", ws.path_to_file, "--port", str(ws.port)]
 
         env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"  # belt-and-suspenders for transitive children
         
         # log cap + append marker
         _truncate_log_if_needed(ws.log_path, MAX_LOG_BYTES)
@@ -305,6 +358,12 @@ class Orchestrator:
         ws.started_at = time.time()
         ws.finished_at = None
         ws.last_error = None
+
+        # Open a WS subscriber to the workspace's /ws/status — gives us
+        # push-based state updates instead of polling at 2 sec cadence.
+        # Every push triggers broadcast_status so the dashboard cards
+        # and per-project pages reflect state changes within ms.
+        _start_status_subscriber(self, name)
 
     def wait_until_ready(self, name: str, timeout: float = 8.0) -> bool:
         """
@@ -400,6 +459,10 @@ class Orchestrator:
 
     def stop_workspace(self, name: str):
         ws = self.workspaces[name]
+
+        # Cancel the WS status subscriber FIRST so it doesn't keep
+        # retrying against a process we're about to kill.
+        _stop_status_subscriber(name)
 
         if ws.is_remote():
             return self._proxy_cmd_to_node(ws, "kill")
@@ -912,12 +975,195 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
+class WorkspaceLogsWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /orchestrator/ws/logs/<name> — live tail of a workspace's log.
+
+    Pushes an initial snapshot of the last ~16 KB on connect, then
+    streams every appended chunk as the workspace process writes to
+    stdout. Replaces the HTTP /logs?tail polling so the LOGS panel
+    updates instantly rather than every 1.5 s.
+
+    Messages:
+      ``{"type":"snapshot","text":"<initial tail>"}``  on open
+      ``{"type":"append","text":"<new chunk>"}``       per write
+    """
+
+    # Polling cadence for file size changes. The orchestrator can't
+    # rely on inotify in every deployment, and this is cheap (one
+    # os.stat + small read per tick). 250 ms is the sweet spot
+    # between perceived latency and CPU.
+    POLL_INTERVAL = 0.25
+
+    # How much of the existing log to send on connect. Larger lets
+    # operators see context immediately; smaller keeps initial render
+    # snappy. 16 KB ≈ 200 lines of typical log output.
+    INITIAL_TAIL_BYTES = 16 * 1024
+
+    def check_origin(self, origin):
+        return True
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+        self._tail_task = None
+        self._name = None
+
+    def open(self, name):
+        if name not in self.orch.workspaces:
+            self.close()
+            return
+        self._name = name
+        self._tail_task = asyncio.ensure_future(self._tail_loop())
+
+    def on_close(self):
+        if self._tail_task is not None and not self._tail_task.done():
+            self._tail_task.cancel()
+        self._tail_task = None
+
+    async def _tail_loop(self):
+        """Send initial snapshot, then poll the log file for appended
+        bytes and push each chunk as a JSON message."""
+        ws_info = self.orch.workspaces.get(self._name)
+        if ws_info is None:
+            return
+        path = ws_info.log_path
+
+        pos = 0
+        # Initial snapshot: last INITIAL_TAIL_BYTES so the operator
+        # immediately sees recent context, not an empty panel.
+        if os.path.isfile(path):
+            try:
+                size = os.path.getsize(path)
+                start = max(0, size - self.INITIAL_TAIL_BYTES)
+                with open(path, "r", errors="replace") as f:
+                    f.seek(start)
+                    initial = f.read()
+                pos = size
+                try:
+                    self.write_message(json.dumps({
+                        "type": "snapshot", "text": initial,
+                    }))
+                except Exception:
+                    return
+            except Exception:
+                pos = 0
+
+        # Live tail: poll for new bytes.
+        while True:
+            try:
+                if not self.ws_connection:
+                    return
+                if os.path.isfile(path):
+                    size = os.path.getsize(path)
+                    if size < pos:
+                        # File rotated / truncated — restart from start.
+                        pos = 0
+                    if size > pos:
+                        with open(path, "r", errors="replace") as f:
+                            f.seek(pos)
+                            chunk = f.read()
+                            pos = f.tell()
+                        if chunk:
+                            try:
+                                self.write_message(json.dumps({
+                                    "type": "append", "text": chunk,
+                                }))
+                            except Exception:
+                                return
+                await asyncio.sleep(self.POLL_INTERVAL)
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                # Best-effort: a transient read error shouldn't kill
+                # the tail. Fall through to the sleep + retry path.
+                await asyncio.sleep(self.POLL_INTERVAL)
+
+
 # -------------------- WebSocket live-push --------------------
 
 _ws_clients: set = set()
 _ws_last_snapshot: str = ""   # JSON of last broadcast (skip if unchanged)
 _ws_prev_states: dict = {}    # name → last known runtime state (for auto-kill on completion)
 _ws_step_cache: dict = {}     # name → last known step data (survives process kill)
+
+# Per-workspace WS subscriber tasks. Each subscriber holds an open
+# WebSocket to the workspace's own /ws/status and triggers
+# broadcast_status() on every push, so dashboard cards + project pages
+# react to state transitions in milliseconds (no 2-sec poll lag).
+_workspace_status_subscribers: dict = {}
+
+
+async def _subscribe_workspace_status(orch, name: str):
+    """Long-lived task: subscribe to ws://localhost:<port>/ws/status of
+    the named workspace and call broadcast_status() on every message.
+
+    Reconnects with exponential backoff if the connection drops (e.g.
+    workspace is restarting). Exits if the workspace is removed or the
+    process is gone permanently.
+    """
+    backoff = 0.5
+    while True:
+        ws_info = orch.workspaces.get(name)
+        if ws_info is None:
+            return  # workspace was removed
+        if ws_info.is_remote():
+            return  # remote workspaces broadcast via their own orchestrator
+        if not orch.is_launched(name):
+            # process not running yet — wait and retry. Killed-on-purpose
+            # is handled by _stop_status_subscriber cancelling this task.
+            await asyncio.sleep(0.5)
+            continue
+        url = f"ws://127.0.0.1:{ws_info.port}/ws/status"
+        try:
+            client = await tornado.websocket.websocket_connect(
+                url, connect_timeout=3,
+            )
+        except Exception:
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 1.5, 5.0)
+            continue
+        backoff = 0.5
+        try:
+            while True:
+                msg = await client.read_message()
+                if msg is None:
+                    break  # connection closed cleanly
+                # Workspace pushed a fresh status — broadcast to all
+                # orchestrator-level WS clients (dashboard + per-project).
+                try:
+                    await broadcast_status(orch)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+        # Connection dropped — workspace might be restarting. Wait briefly
+        # and retry from the top of the loop.
+        await asyncio.sleep(0.5)
+
+
+def _start_status_subscriber(orch, name: str) -> None:
+    """Schedule a per-workspace status subscriber on the IO loop. Idempotent
+    — replaces any existing task for the name."""
+    existing = _workspace_status_subscribers.pop(name, None)
+    if existing is not None and not existing.done():
+        existing.cancel()
+    try:
+        loop = asyncio.get_event_loop()
+    except Exception:
+        return
+    task = loop.create_task(_subscribe_workspace_status(orch, name))
+    _workspace_status_subscribers[name] = task
+
+
+def _stop_status_subscriber(name: str) -> None:
+    """Cancel and remove a workspace's status subscriber task."""
+    task = _workspace_status_subscribers.pop(name, None)
+    if task is not None and not task.done():
+        task.cancel()
 
 class StatusWebSocket(tornado.websocket.WebSocketHandler):
     """Clients connect here for instant status pushes instead of polling."""

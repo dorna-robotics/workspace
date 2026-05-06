@@ -50,13 +50,11 @@ class Checks:
         # TODO: camera.detect("tube", RACK_2ML_END[item_i])
         return True, "tube in 2ml rack"
 
-    def make(self):
-        return {
-            "source_tube_present":  self.source_tube_present,
-            "tube_in_working_rack": self.tube_in_working_rack,
-            "shaker_slot_empty":    self.shaker_slot_empty,
-            "tube_on_shaker":       self.tube_on_shaker,
-            "cap_holder_empty":     self.cap_holder_empty,
-            "cap_in_holder":        self.cap_in_holder,
-            "tube_in_2ml_rack":     self.tube_in_2ml_rack,
-        }
+    def register(self, runner):
+        runner.register_check("source_tube_present",  self.source_tube_present)
+        runner.register_check("tube_in_working_rack", self.tube_in_working_rack)
+        runner.register_check("shaker_slot_empty",    self.shaker_slot_empty)
+        runner.register_check("tube_on_shaker",       self.tube_on_shaker)
+        runner.register_check("cap_holder_empty",     self.cap_holder_empty)
+        runner.register_check("cap_in_holder",        self.cap_in_holder)
+        runner.register_check("tube_in_2ml_rack",     self.tube_in_2ml_rack)

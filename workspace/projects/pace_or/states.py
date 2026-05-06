@@ -194,16 +194,14 @@ class States:
         self._inspect_tube()
         self.rcp[RACK_2ML_END[i][0]].place(RACK_2ML_END[i][1])
 
-    def make(self):
-        return {
-            "inspected":      self.inspected,
-            "dosed_40ml":     self.dosed_40ml,
-            "loaded_shaker":  self.loaded_shaker,
-            "shaken":         self.shaken,
-            "stop_shaken":    self.stop_shaken,
-            "cap_fed":        self.cap_fed,
-            "retrieved":      self.retrieved,
-            "dosed_2ml":      self.dosed_2ml,
-            "recapped_final": self.recapped_final,
-            "capped_2ml":     self.capped_2ml,
-        }
+    def register(self, runner):
+        runner.register_state("inspected",      self.inspected)
+        runner.register_state("dosed_40ml",     self.dosed_40ml)
+        runner.register_state("loaded_shaker",  self.loaded_shaker)
+        runner.register_state("shaken",         self.shaken)
+        runner.register_state("stop_shaken",    self.stop_shaken)
+        runner.register_state("cap_fed",        self.cap_fed)
+        runner.register_state("retrieved",      self.retrieved)
+        runner.register_state("dosed_2ml",      self.dosed_2ml)
+        runner.register_state("recapped_final", self.recapped_final)
+        runner.register_state("capped_2ml",     self.capped_2ml)

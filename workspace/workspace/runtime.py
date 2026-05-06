@@ -75,7 +75,20 @@ class Runtime:
         self._workflow_thread: Optional[threading.Thread] = None
 
         self.on_state_change: Optional[Callable[[RTState, RTState], None]] = None
-        self.on_step: Optional[Callable[[list], None]] = None
+        # Fired on every state transition with the complete RTStatus
+        # snapshot (state, last_error, job_runs, …). Wired by
+        # ``RuntimeServer`` to broadcast on ``/ws/status`` so the UI
+        # reacts to state changes within milliseconds rather than
+        # waiting on the slower HTTP /status polling. Safe to call
+        # under the runtime lock — the wired listener schedules the
+        # broadcast on the IO loop and returns immediately.
+        self.on_status: Optional[Callable[[dict], None]] = None
+        # Callback signature: (steps_snapshot: list, progress: int) → None.
+        # ``progress`` is 0-100 or -1 when not set. Fired on every
+        # workflow step (including progress-only updates) so the UI's
+        # WS push never lags the polled HTTP /status — important for
+        # the final 100% emission landing reliably in the operator UI.
+        self.on_step: Optional[Callable[[list, int], None]] = None
 
         # workflow step tracking
         self._steps: list = []  # list of step labels (timeline)
@@ -103,6 +116,23 @@ class Runtime:
         if err is not None:
             self._status.last_error = err
         self._cv.notify_all()
+        # Push the new status snapshot to any wired listener (e.g. the
+        # runtime_server's /ws/status broadcaster). The listener is
+        # expected to schedule its work asynchronously, so calling it
+        # under the runtime lock is safe.
+        cb = self.on_status
+        if cb is not None:
+            try:
+                cb({
+                    "state": str(new_state),
+                    "last_error": self._status.last_error,
+                    "job_runs": self._status.job_runs,
+                    "job_pauses": self._status.job_pauses,
+                    "job_resumes": self._status.job_resumes,
+                    "kills": self._status.kills,
+                })
+            except Exception:
+                pass
 
     def _set_state_with_callback(self, new_state: RTState, *, err: Optional[str] = None) -> None:
         cb = None
@@ -139,10 +169,11 @@ class Runtime:
             with self._lock:
                 self._progress = val
                 steps_snapshot = list(self._steps)
+                progress_snapshot = self._progress
             cb = self.on_step
             if cb is not None:
                 try:
-                    cb(steps_snapshot)
+                    cb(steps_snapshot, progress_snapshot)
                 except Exception:
                     pass
             return  # no checkpoint for progress updates
@@ -152,10 +183,11 @@ class Runtime:
         with self._lock:
             self._steps.append(entry)
             steps_snapshot = list(self._steps)
+            progress_snapshot = self._progress
         cb = self.on_step
         if cb is not None:
             try:
-                cb(steps_snapshot)
+                cb(steps_snapshot, progress_snapshot)
             except Exception:
                 pass
         self.checkpoint()
@@ -188,6 +220,14 @@ class Runtime:
             if st == RTState.PAUSED:
                 self._status.job_resumes += 1
                 self._set_state(RTState.RUNNING)
+                # No token bump here — the state transition itself wakes
+                # everyone via cv.notify_all. ``wait_for_start`` accepts
+                # state==RUNNING as an exit condition (so a thread that
+                # hasn't yet consumed a start token still wakes), and
+                # ``checkpoint`` exits on state!=PAUSED. Bumping the
+                # token would queue a phantom restart that fires after
+                # the current workflow completes — replaying the full
+                # protocol unintendedly.
                 self._cv.notify_all()
                 return
 
@@ -278,7 +318,15 @@ class Runtime:
         self._set_state_with_callback(RTState.ERROR, err=f"{type(ex).__name__}: {ex}")
 
     def wait_for_start(self) -> None:
-        """Block until start token; exits if killed or ended."""
+        """Block until start token; exits if killed or ended.
+
+        Also exits when state transitions to RUNNING — covers the case
+        where the operator paused before any workflow thread existed
+        (e.g. a critical-device auto-pause between Launch and Start);
+        the user clicks Start to resume, state goes RUNNING without
+        bumping the token (because bumping would phantom-restart a
+        live workflow), and a freshly-spawned gate-loop still wakes.
+        """
         with self._lock:
             while True:
                 if self._killed:
@@ -286,6 +334,9 @@ class Runtime:
                 if self._ending:
                     raise EndRequested()
                 if self._seen_start_token != self._start_token:
+                    self._seen_start_token = self._start_token
+                    return
+                if self._status.state == RTState.RUNNING:
                     self._seen_start_token = self._start_token
                     return
                 self._cv.wait()
@@ -378,8 +429,19 @@ class Runtime:
             # Motion commands return int status: >=1 ok, <0 alarm/error
             if not isinstance(result, (int, float)) or result >= 0:
                 return result
-            # Alarm — pause and wait for user to clear and resume
-            self.step(f"Robot alarm (code {int(result)}) — clear alarm and resume when ready", level="error")
+            # Alarm — pause and wait for user to clear and resume.
+            # Logged at ``info`` (timeline only, no banner / no audio /
+            # no desktop notification). The Devices panel owns the
+            # urgent UX: ``RobotStation._wrap_call`` flips the device
+            # state to "down", the MQTT publish reaches the
+            # orchestrator, the panel renders a persistent red dot
+            # with the alarm code, and one beep + one notification
+            # fire on the rising edge of critical-down. Anything
+            # stronger here would double-fire for the same event.
+            self.step(
+                f"Robot alarm (code {int(result)}). Clear the alarm on the robot, then click Resume.",
+                level="info",
+            )
             self.pause()
             self.checkpoint()  # blocks until user resumes
 

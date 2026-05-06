@@ -124,11 +124,9 @@ class States:
             soft_approach=True,
         )
 
-    def make(self):
-        return {
-            "pipetted": self.pipetted,
-            "capped": self.capped,
-            "printed": self.printed,
-            "inspected": self.inspected,
-            "decapped": self.decapped,
-        }
+    def register(self, runner):
+        runner.register_state("pipetted", self.pipetted)
+        runner.register_state("capped", self.capped)
+        runner.register_state("printed", self.printed)
+        runner.register_state("inspected", self.inspected)
+        runner.register_state("decapped", self.decapped)

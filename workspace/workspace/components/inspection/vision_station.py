@@ -72,8 +72,25 @@ class VisionStation:
         self._client = None
 
         if not self.simulation:
+            # Try to import the client first — it's a separate Python
+            # package (``dorna_vision_client``) that must be installed
+            # next to ``workspace``. Surface this as a config error
+            # rather than a "server unreachable", since restarting the
+            # vision server won't fix a missing import.
             try:
                 from dorna_vision_client import VisionClient
+            except ImportError as ex:
+                print(
+                    f"❌ {self.label} dorna_vision_client not installed "
+                    f"({ex}) — install it with:\n"
+                    f"    sudo pip3 install -e /path/to/vision/dorna_vision-client\n"
+                    f"  Falling back to simulation mode for now."
+                )
+                self._client = None
+                self.simulation = True
+                return
+
+            try:
                 self._client = VisionClient()
                 self._client.connect(host=self.host, port=self.port)
                 self._client.camera_add(
@@ -86,7 +103,8 @@ class VisionStation:
                 )
             except Exception as ex:
                 print(
-                    f"❌ {self.label} vision server unreachable: {ex} — "
+                    f"❌ {self.label} vision server unreachable @ "
+                    f"{self.host}:{self.port}: {type(ex).__name__}: {ex} — "
                     "falling back to simulation mode"
                 )
                 self._safe_close()

@@ -376,9 +376,7 @@ class States:
     def picked(self, i):
         self.rcp["gripper"].pick(i)
 
-    def make(self):
-        return {
-            "dispensed": self.dispensed,
-            "picked": self.picked,
-        }
+    def register(self, runner):
+        runner.register_state("dispensed", self.dispensed)
+        runner.register_state("picked",    self.picked)
 ```

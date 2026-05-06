@@ -202,6 +202,43 @@
     }
     [data-theme="light"] .device-row .device-pill { background: rgba(0,0,0,0.06); }
 
+    /* row is clickable — opens the device detail modal */
+    .device-row { cursor: pointer; transition: background-color 100ms; }
+    .device-row:hover { background: rgba(255,255,255,0.04); }
+    [data-theme="light"] .device-row:hover { background: rgba(0,0,0,0.05); }
+
+    /* ---- Device detail modal ---- */
+    .device-modal { max-width: 480px; }
+    .device-detail { display: flex; flex-direction: column; gap: 10px; }
+    .device-detail .dd-id {
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 12px;
+      padding: 6px 10px; background: var(--bg); border-radius: 8px;
+      word-break: break-all;
+    }
+    .device-detail .dd-state-row {
+      display: flex; align-items: center; gap: 8px; font-size: 12px;
+    }
+    .device-detail .dd-state-row .dd-state {
+      font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .device-detail .dd-msg {
+      font-size: 12px; color: var(--muted);
+      padding: 6px 10px; background: var(--bg); border-radius: 8px;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .device-detail .dd-table {
+      display: grid; grid-template-columns: max-content 1fr;
+      gap: 4px 12px; font-size: 11px;
+    }
+    .device-detail .dd-key { color: var(--muted); }
+    .device-detail .dd-val { font-family: var(--mono); word-break: break-all; }
+    .device-detail .dd-meta {
+      font-family: var(--mono); font-size: 11px; line-height: 1.5;
+      padding: 6px 10px; background: var(--bg); border-radius: 8px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
     /* ---- Logs ---- */
     .log-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer; user-select: none; }
     .log-header .section-label { margin: 0; }
@@ -523,6 +560,27 @@
       <div class="kwargs-form" id="paramsForm"></div>
     </div>
     <div class="modal-foot" id="paramsModalFoot"></div>
+  </div>
+</div>
+
+<!-- Device detail modal: clicking a row in the Devices panel opens this
+     with the full id, kind, state, msg, meta, and a Recover action.
+     Lets the panel rows stay compact while still surfacing all info. -->
+<div class="modal-overlay" id="deviceModalOverlay">
+  <div class="modal device-modal">
+    <div class="modal-head">
+      <h3 id="deviceModalTitle">Device</h3>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnDeviceModalClose" title="Close">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="device-detail" id="deviceModalBody"></div>
+    </div>
+    <div class="modal-foot" id="deviceModalFoot"></div>
   </div>
 </div>
 

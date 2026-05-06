@@ -238,7 +238,12 @@ class BaseWorkflow:
                 self.runner._handlers[state_name] = self._with("tool", tool_name, handler)
 
     def _register_all(self, states_cls, checks_cls):
-        for name, fn in states_cls(self.rcp, self.rt, **self.kwargs).make().items():
-            self.runner.register_state(name, fn)
-        for name, fn in checks_cls(self.rcp, self.rt, **self.kwargs).make().items():
-            self.runner.register_check(name, fn)
+        # Hand the runner directly to the user's States/Checks classes —
+        # they own the registration logic. This replaces the older
+        # "return a dict, framework iterates" pattern (``make()``) with
+        # an explicit ``register(runner)`` hook so the verb matches the
+        # action: no intermediate dict, conditional registration is
+        # straightforward, and computed state names work out of the box.
+        # See docs/project-guide.md §6 / §7 for the user-side contract.
+        states_cls(self.rcp, self.rt, **self.kwargs).register(self.runner)
+        checks_cls(self.rcp, self.rt, **self.kwargs).register(self.runner)

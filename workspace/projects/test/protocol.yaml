@@ -1,0 +1,13 @@
+# test/protocol.yaml — single-state protocol.
+# Trivial DAG: one state ``rotated`` with no prerequisites; the goal is
+# to reach it. The OR-tools planner schedules one execution per
+# batch_size iteration (configurable via launch.yaml).
+# See docs/project-guide.md §5 for the full state-field schema.
+
+states:
+  rotated:
+    description: rotate j5 by `rotation_deg` once per batch index
+    duration: 5
+    requires: []
+
+goal: [rotated]

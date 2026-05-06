@@ -78,6 +78,14 @@ $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove
 $("btnParamsLoad").addEventListener("click", () => loadKwargsFromFile(paramsForm, toast));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
+// Device detail modal — close on X button or backdrop click. ESC also.
+const _deviceModal = $("deviceModalOverlay");
+$("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
+_deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && _deviceModal.classList.contains("show")) closeDeviceModal();
+});
+
 async function openParamsModal(frozen) {
   let schema = {}, values = {}, fetchError = false;
   try {
@@ -145,9 +153,16 @@ async function sendCmd(cmd, kwargs) {
   });
 }
 
+// Cached last HTTP /status response. Used to fill in fields (uptime,
+// port, log path, etc.) when only WS-pushed updates arrive — the WS
+// snapshot only carries state + last_error + counters, so we layer it
+// on top of the most recent HTTP poll for a complete UI render.
+let _lastHttpStatus = {};
+
 async function refreshStatus() {
   try {
     const st = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/status`);
+    _lastHttpStatus = st || {};
     updateStatusUI(st);
     return st;
   } catch (e) {
@@ -161,6 +176,10 @@ function _updateFollowBtn() {
 }
 
 async function refreshLogs() {
+  // HTTP fallback path — used only if the WS isn't connected (reconnect
+  // window or unsupported environment). When the WS is live, log lines
+  // arrive via append events and this function is a no-op.
+  if (_logsWs && _logsWs.readyState === WebSocket.OPEN) return;
   try {
     const j    = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs?tail=400`);
     const text = typeof j === "string" ? j : (j?.text || "");
@@ -172,6 +191,106 @@ async function refreshLogs() {
     logPre.innerHTML = colorizeLogs(text);
     if (_logFollowing) logPre.scrollTop = logPre.scrollHeight;
   } catch { /* ignore */ }
+}
+
+// ---- Logs WebSocket — live-tail replacing the HTTP polling above ----
+//
+// Three guards keep this safe under heavy log volume on a customer
+// machine (Pi-class browser, weak laptop, etc.):
+//
+// 1. ``lastLogs`` is capped at LOGS_BUFFER_BYTES — older bytes are
+//    dropped on append. Otherwise an 8-hour run with verbose logging
+//    would grow it into the megabytes and tank rendering.
+//
+// 2. DOM updates are coalesced via requestAnimationFrame. A burst of
+//    appends within one frame reflows the log panel ONCE, not per
+//    message. Without this the 250 ms file-poll cadence × MB of
+//    innerHTML can freeze the tab.
+//
+// 3. innerHTML rewrites only run on actual content change AND skip
+//    when the operator has text selected — clobbering a selection
+//    mid-copy is annoying and breaks Ctrl-C.
+let _logsWs = null;
+let _logsWsClosed = false;
+let _logsWsRetryMs = 1000;
+let _logsRenderQueued = false;
+
+const LOGS_BUFFER_BYTES = 256 * 1024;   // ~256 KB rolling buffer
+
+function connectLogsWS() {
+  // Path is on the orchestrator (the workspace itself doesn't own the
+  // log file — orchestrator captures the subprocess's stdout into one).
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const url = `${proto}//${window.location.host}/orchestrator/ws/logs/${encodeURIComponent(wsName)}`;
+  if (_logsWs) {
+    try { _logsWs.close(); } catch {}
+  }
+  _logsWsClosed = false;
+  _tryLogsWS(url);
+}
+
+function _appendLogs(chunk) {
+  if (!chunk) return;
+  lastLogs += chunk;
+  if (lastLogs.length > LOGS_BUFFER_BYTES) {
+    // Drop oldest content, keeping the freshest LOGS_BUFFER_BYTES. Trim
+    // to the next newline so we don't render a half line at the top.
+    const cut = lastLogs.length - LOGS_BUFFER_BYTES;
+    const nl = lastLogs.indexOf("\n", cut);
+    lastLogs = lastLogs.slice(nl >= 0 ? nl + 1 : cut);
+  }
+}
+
+function _renderLogsCoalesced() {
+  if (_logsRenderQueued) return;
+  _logsRenderQueued = true;
+  requestAnimationFrame(() => {
+    _logsRenderQueued = false;
+    // Skip if the operator is mid-selection inside the log panel —
+    // overwriting innerHTML would drop their selection mid-copy.
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && logPre.contains(sel.anchorNode) && !sel.isCollapsed) return;
+    logPre.innerHTML = colorizeLogs(lastLogs);
+    if (_logFollowing) logPre.scrollTop = logPre.scrollHeight;
+  });
+}
+
+function _tryLogsWS(url) {
+  if (_logsWsClosed) return;
+  const ws = new WebSocket(url);
+  _logsWs = ws;
+  ws.onopen = () => { _logsWsRetryMs = 1000; };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "snapshot") {
+        lastLogs = msg.text || "";
+        // Apply same buffer cap to a snapshot (in case a long-running
+        // workspace produced more than 256 KB before we connected).
+        if (lastLogs.length > LOGS_BUFFER_BYTES) {
+          const cut = lastLogs.length - LOGS_BUFFER_BYTES;
+          const nl = lastLogs.indexOf("\n", cut);
+          lastLogs = lastLogs.slice(nl >= 0 ? nl + 1 : cut);
+        }
+      } else if (msg.type === "append") {
+        _appendLogs(msg.text);
+      } else {
+        return;
+      }
+      _renderLogsCoalesced();
+    } catch {}
+  };
+  ws.onclose = () => {
+    if (_logsWsClosed) return;
+    setTimeout(() => _tryLogsWS(url), _logsWsRetryMs);
+    _logsWsRetryMs = Math.min(_logsWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectLogsWS() {
+  _logsWsClosed = true;
+  if (_logsWs) { try { _logsWs.close(); } catch {} _logsWs = null; }
 }
 
 logPre.addEventListener("scroll", () => {
@@ -220,11 +339,12 @@ function updateStatusUI(st) {
   // Accent the header border with state colour
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
-  // Clear everything when not launched (auto-kill resets to clean state)
-  if (curUpper === "NOT_LAUNCHED") {
-    renderStep(null, false);
-    updateProgress(null, false);
-  } else {
+  // Keep the last rendered steps + progress visible when the workspace
+  // process exits (state goes to NOT_LAUNCHED). Operators want to read
+  // the timeline of what happened — clearing it on every kill destroyed
+  // useful diagnostic context. A fresh Launch will overwrite via the
+  // step-WS push as the new process boots.
+  if (curUpper !== "NOT_LAUNCHED") {
     renderStep(st?.step, running);
     updateProgress(st?.step?.progress, launched);
   }
@@ -264,9 +384,17 @@ function _tryStepWS() {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
+      const running = isRunning(_lastState);
       if (Array.isArray(msg.steps) && msg.steps.length) {
-        const running = isRunning(_lastState);
         renderStep({ steps: msg.steps }, running);
+      }
+      // Apply the progress snapshot whenever the runtime emits one.
+      // Without this the bar only updated via the slower HTTP poll —
+      // the workflow's final 100% can fire and be replaced by
+      // mark_idle in less than one polling interval, leaving the bar
+      // stuck at the previous value (e.g. 80%).
+      if (typeof msg.progress === "number" && msg.progress >= 0) {
+        updateProgress(msg.progress, isLaunched(_lastState));
       }
     } catch {}
   };
@@ -282,6 +410,66 @@ function disconnectStepWS() {
   _stepWsClosed = true;
   if (_stepWs) { try { _stepWs.close(); } catch {} _stepWs = null; }
   _stepWsUrl = "";
+}
+
+// ── Status WebSocket — push runtime state changes in real time ──────
+let _statusWs = null;
+let _statusWsClosed = false;
+let _statusWsRetryMs = 1000;
+let _statusWsUrl = "";
+
+// Per-workspace runtime status WS — direct connection to the workspace
+// process's /ws/status endpoint. Distinct from api.js's
+// ``connectStatusWS`` which subscribes to the orchestrator-level
+// /orchestrator/ws/status broadcasting all workspaces' statuses on a
+// 2-second poll cycle. This direct connection gets sub-100ms updates.
+function connectRuntimeStatusWS(runtimeUrl) {
+  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/status";
+  if (_statusWs && _statusWsUrl === wsUrl) return;
+  disconnectRuntimeStatusWS();
+  _statusWsUrl = wsUrl;
+  _statusWsClosed = false;
+  _statusWsRetryMs = 1000;
+  _tryStatusWS();
+}
+
+function _tryStatusWS() {
+  if (_statusWsClosed || !_statusWsUrl) return;
+  const ws = new WebSocket(_statusWsUrl);
+  _statusWs = ws;
+  ws.onopen = () => { _statusWsRetryMs = 1000; };
+  ws.onmessage = (e) => {
+    try {
+      const snap = JSON.parse(e.data);
+      // Push directly into the same UI updater the HTTP poll uses,
+      // adapting the shape — RTStatus snapshot vs the full /status
+      // response. ``state``, ``last_error`` are what the UI actually
+      // varies on; uptime/port/log come from the periodic HTTP poll.
+      updateStatusUI({
+        state: snap.state,
+        last_error: snap.last_error,
+        // Carry forward the existing fields from the last HTTP poll
+        // so the UI doesn't lose uptime / port / step-count when only
+        // state changes (the poll runs at ~1 Hz and will refresh them).
+        ..._lastHttpStatus,
+        // Override with the fresh state/error from the WS push.
+        state: snap.state,
+        last_error: snap.last_error,
+      });
+    } catch {}
+  };
+  ws.onclose = () => {
+    if (_statusWsClosed) return;
+    setTimeout(_tryStatusWS, _statusWsRetryMs);
+    _statusWsRetryMs = Math.min(_statusWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectRuntimeStatusWS() {
+  _statusWsClosed = true;
+  if (_statusWs) { try { _statusWs.close(); } catch {} _statusWs = null; }
+  _statusWsUrl = "";
 }
 
 // ── Devices panel (project-scoped) ───────────────────────────────────
@@ -415,21 +603,118 @@ function renderDevicesPanel() {
     }
 
     return `
-      <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="${escAttr(d.id)}">
+      <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
         <span class="dot ${dotClass}"></span>
         <span class="device-id">${escHtml(d.id)}</span>
         ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
         ${control}
       </div>`;
   }).join("");
-  // bind recover buttons
+  // Inline action buttons: handle click + STOP propagation so clicking
+  // the button doesn't also open the device-detail modal.
   el.querySelectorAll('[data-device-act="recover"]').forEach(btn => {
     btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       const row = ev.currentTarget.closest(".device-row");
       const id = row?.getAttribute("data-device-id");
       if (id) recoverDevice(id);
     });
   });
+  // Row click anywhere else opens the detail modal.
+  el.querySelectorAll('.device-row').forEach(row => {
+    row.addEventListener("click", () => {
+      const id = row.getAttribute("data-device-id");
+      if (id) openDeviceModal(id);
+    });
+  });
+
+  // Keep an open modal in sync as state events stream in.
+  if (_openDeviceId && _devices.has(_openDeviceId)) {
+    _renderDeviceModalBody(_devices.get(_openDeviceId));
+  }
+}
+
+// ── Device detail modal ─────────────────────────────────────────────
+let _openDeviceId = null;
+
+function openDeviceModal(id) {
+  const d = _devices.get(id);
+  if (!d) return;
+  _openDeviceId = id;
+  const overlay = $("deviceModalOverlay");
+  $("deviceModalTitle").textContent = d.id;
+  _renderDeviceModalBody(d);
+  overlay.classList.add("show");
+}
+
+function closeDeviceModal() {
+  _openDeviceId = null;
+  $("deviceModalOverlay").classList.remove("show");
+}
+
+function _renderDeviceModalBody(d) {
+  const body = $("deviceModalBody");
+  const foot = $("deviceModalFoot");
+  if (!body || !foot) return;
+
+  const state = d.state || "down";
+  const online = d.online !== false;
+  const dotClass = state === "ok"
+    ? "ok pulse"
+    : state === "recovering" ? "warn pulse" : "bad";
+  const ageStr = d.ts ? _agoStr(d.ts * 1000) : "—";
+  const meta = (d.meta && Object.keys(d.meta).length)
+    ? JSON.stringify(d.meta, null, 2)
+    : "(none)";
+
+  body.innerHTML = `
+    <div class="dd-id">${escHtml(d.id)}</div>
+    <div class="dd-state-row">
+      <span class="dot ${dotClass}"></span>
+      <span class="dd-state">${escHtml(state)}</span>
+      ${online ? "" : `<span class="device-pill">offline</span>`}
+    </div>
+    ${(d.msg || "").trim() ? `<div class="dd-msg">${escHtml(d.msg)}</div>` : ""}
+    <div class="dd-table">
+      <div class="dd-key">kind</div>      <div class="dd-val">${escHtml(d.kind || "—")}</div>
+      <div class="dd-key">critical</div>  <div class="dd-val">${d.critical === false ? "false" : "true"}</div>
+      <div class="dd-key">online</div>    <div class="dd-val">${online ? "true" : "false"}</div>
+      <div class="dd-key">last update</div><div class="dd-val">${escHtml(ageStr)}</div>
+    </div>
+    <div class="dd-key" style="font-size:11px;">meta</div>
+    <pre class="dd-meta">${escHtml(meta)}</pre>
+  `;
+
+  // Action buttons in footer: same Recover / offline-pill semantics
+  // as the inline row but full-size for click-friendliness.
+  foot.innerHTML = "";
+  if (state !== "ok") {
+    if (online) {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-primary";
+      btn.textContent = "Recover";
+      btn.addEventListener("click", () => {
+        recoverDevice(d.id);
+        // Close after kicking; the panel + modal will refresh
+        // independently via WS when the device responds.
+        closeDeviceModal();
+      });
+      foot.appendChild(btn);
+    } else {
+      const pill = document.createElement("span");
+      pill.className = "device-pill";
+      pill.textContent = "service offline — start the service";
+      foot.appendChild(pill);
+    }
+  }
+}
+
+function _agoStr(tsMs) {
+  const dt = Math.max(0, Date.now() - tsMs);
+  if (dt < 1000) return "just now";
+  if (dt < 60000) return `${Math.floor(dt / 1000)}s ago`;
+  if (dt < 3600000) return `${Math.floor(dt / 60000)}m ago`;
+  return `${Math.floor(dt / 3600000)}h ago`;
 }
 
 async function recoverDevice(deviceId) {
@@ -708,7 +993,11 @@ function renderControls(state, launched, running) {
     lbl.textContent = "Ending…";
     controls.appendChild(lbl);
   } else {
-    addBtn("Start",    "start",    { primary: true, disabled: running });
+    // The "start" command resumes from PAUSED as well as starting from
+    // IDLE — relabel the button so the operator knows which it is. Cmd
+    // stays "start" in both cases (runtime.start() handles both paths).
+    const startLabel = (s === "PAUSED") ? "Resume" : "Start";
+    addBtn(startLabel, "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
     addBtn("End",      "end",      { danger: true });
   }
@@ -738,10 +1027,18 @@ function updateIframe(state, launched) {
     if (iframeReady) {
       iframeReady = false;
       iframeUrl   = "";
-      frame.src   = "about:blank";
-      placeholder.style.display = "";
+      // Don't blank the iframe — leave the last rendered 3D scene
+      // visible after the process exits so operators can keep
+      // looking at where the run ended. The iframe's already-loaded
+      // content stays cached in the browser; a fresh Launch will
+      // overwrite ``frame.src`` below when the new process is ready.
+      // Step / device / status WSes disconnect — their endpoints are
+      // gone with the process; they'll reconnect on next Launch.
+      // Logs WS stays connected — its endpoint is on the orchestrator,
+      // not the workspace process, and the file persists after kill.
       disconnectStepWS();
       disconnectDevicesWS();
+      disconnectRuntimeStatusWS();
     }
     return;
   }
@@ -757,6 +1054,7 @@ function updateIframe(state, launched) {
     placeholder.style.display = "none";
     connectStepWS(targetUrl);
     connectDevicesWS(targetUrl);
+    connectRuntimeStatusWS(targetUrl);
   }
 }
 
@@ -827,6 +1125,11 @@ async function init() {
     pathVal.title       = wsInfo.path_to_file;
 
     await Promise.all([refreshStatus(), refreshLogs(), loadRunParams()]);
+    // Open the live-log WS once the page knows the workspace exists.
+    // The endpoint is on the orchestrator (file owner), so it stays
+    // valid across workspace process Kill+Launch cycles — no need to
+    // tear it down in updateIframe.
+    connectLogsWS();
     scheduleWsPoll();
   } catch (err) {
     toast(String(err), "bad");
@@ -1078,6 +1381,13 @@ function updatePendantUI() {
   $("pendantPause").disabled   = !running || ending;
   $("pendantEnd").disabled     = !launched || ending;
   $("pendantKill").disabled    = !launched;
+
+  // Relabel the Start button to "Resume" when the runtime is paused —
+  // same cmd, but the operator should know which it is.
+  const startLabelEl = $("pendantStart")?.querySelector("span");
+  if (startLabelEl) {
+    startLabelEl.textContent = (state === "PAUSED") ? "Resume" : "Start";
+  }
 }
 
 // Wire pendant buttons

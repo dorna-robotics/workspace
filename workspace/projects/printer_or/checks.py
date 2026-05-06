@@ -3,5 +3,5 @@ class Checks:
         self.rcp = rcp
         self.rt  = rt
 
-    def make(self):
-        return {}
+    def register(self, runner):
+        return

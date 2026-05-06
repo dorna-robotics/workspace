@@ -1,0 +1,82 @@
+# test/config/base.j2 — Core 500 + 4 fixture plates + static vision station.
+# Minimal scene to exercise the device bus end-to-end (robot + camera).
+#
+# Before launching against real hardware, fill in:
+#   * core.ip               — robot's network IP (TCP)
+#   * vision_station.camera_serial_number — RealSense USB serial
+#   * vision_station.vision_server_host / vision_server_port — where the
+#     dorna_vision server is listening (default 127.0.0.1:80)
+#
+# Leave them as-is to run pure simulation: the robot connect will fail
+# back to sim mode, the vision_station will fall back to sim — and the
+# Devices panel will be empty (no devices claimed). That's the right
+# behavior for a dry-run; flip the values once you're on hardware.
+
+core:
+  type: core
+  simulation: False                # set True for offline dry-run
+  has_camera: False
+  has_rail: True
+  rail_offset: -51.16
+  has_tool_changer: True
+  has_motion_plan: True
+  ip: "192.168.254.115"            # robot
+  tool_changer:
+    present: True
+    attach: []
+    detach: []
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: D10
+    child_solid: rail_base
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+  robot_attach:
+    rail_carriage_anchor: hole_1
+    robot_A0_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_0:
+  type: fixture_plate
+
+fixture_plate_1:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_3
+    child_solid: body
+    child_anchor: corner_0
+
+fixture_plate_2:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_1
+    child_solid: body
+    child_anchor: corner_0
+
+fixture_plate_3:
+  type: fixture_plate
+  attach:
+    parent_name: fixture_plate_0
+    parent_solid: body
+    parent_anchor: corner_2
+    child_solid: body
+    child_anchor: corner_0
+
+vision_station:
+  type: inspection_horizontal_144mm
+  camera_serial_number: "130322274110"
+  vision_server_host: "127.0.0.1"     # both on same Pi
+  vision_server_port: 8000
+  simulation: False
+  attach:
+    parent_name: fixture_plate_3
+    parent_solid: body
+    parent_anchor: H2
+    child_solid: body
+    child_anchor: hole_0
+    offset: [0, 0, 0, 0, 0, 90]

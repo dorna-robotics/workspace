@@ -267,11 +267,15 @@ class Core:
                     set_status=self.dorna._set_state,
                     log_label=f"dorna:{self.robot_ip}",
                 )
-                # Connection drop sets state→down; that edge nudges the
-                # AutoRecover loop, so reconnects start immediately
-                # without polling. IP devices have no hotplug, so this
-                # state-edge hook is the equivalent.
-                self.dorna.on_state_down(recover.trigger)
+                # Trigger AutoRecover ONLY on connection-lost events
+                # (TCP drop / host unreachable). Alarms ALSO fire
+                # state→down, but AutoRecover can't fix alarms — they
+                # need physical operator clearance. Wiring the generic
+                # state-down edge here would auto-"recover" alarms by
+                # reconnecting (which works, since TCP is fine), then
+                # incorrectly flip the dot back to green ms after it
+                # turned red. Use the connection-specific event instead.
+                self.dorna.on_connection_lost(recover.trigger)
                 self._robot_recover = recover
 
                 self._robot_adapter = MQTTDeviceAdapter(

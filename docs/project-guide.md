@@ -254,7 +254,7 @@ Implements what the robot actually does for each state defined in `protocol.yaml
   - The runner calls your handler once per item — you don't loop yourself
   - You must accept `i` even if you don't use it
   - Background states always receive `i=0` and run once for all items
-- **`make()`** — returns a dict mapping state names to handler methods. Keys must match the state names in `protocol.yaml`
+- **`register(self, runner)`** — framework-reserved hook. Called once by `BaseWorkflow` at workflow startup. Bind each handler to its protocol-state name with `runner.register_state(name, fn)`. Names must match the keys in `protocol.yaml`.
 
 ### Example
 
@@ -283,13 +283,11 @@ class States:
         """Home the robot — same action regardless of i."""
         self.rcp["robot"].home()
 
-    def make(self):
-        return {
-            "picked": self.picked,
-            "dosed": self.dosed,
-            "placed": self.placed,
-            "homed": self.homed,
-        }
+    def register(self, runner):
+        runner.register_state("picked", self.picked)
+        runner.register_state("dosed",  self.dosed)
+        runner.register_state("placed", self.placed)
+        runner.register_state("homed",  self.homed)
 ```
 
 ---
@@ -302,7 +300,7 @@ Verification functions that run before/after states. Same signature as States �
 
 - **`__init__(self, rcp, rt, **kwargs)`** — same as States, has access to recipes, runtime, and all kwargs
 - **Check methods** — each accepts `i` (item index) and returns `True` (passed) or `False` (failed)
-- **`make()`** — returns a dict mapping check names to methods. Keys are referenced in `pre_check` / `post_check` in `protocol.yaml`
+- **`register(self, runner)`** — framework-reserved hook. Bind each check to its name with `runner.register_check(name, fn)`. Names are referenced in `pre_check` / `post_check` in `protocol.yaml`.
 
 ### Example
 
@@ -322,15 +320,13 @@ class Checks:
             self.rt.pause()   # wait for operator, then skip
         return ok
 
-    def make(self):
-        return {
-            "tube_in_rack": self.tube_in_rack,
-            "tube_picked": self.tube_picked,
-        }
+    def register(self, runner):
+        runner.register_check("tube_in_rack", self.tube_in_rack)
+        runner.register_check("tube_picked",  self.tube_picked)
 ```
 
 ```yaml
-# protocol.yaml — references the check names from make()
+# protocol.yaml — references the check names registered above
 states:
   picked:
     pre_check: tube_in_rack

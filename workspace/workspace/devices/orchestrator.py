@@ -167,6 +167,16 @@ class MQTTOrchestrator:
         if len(parts) < 3 or parts[0] != "device":
             return
         device_id = parts[1]
+
+        # Empty payload on a retained-topic is MQTT's "clear retained"
+        # signal — the broker delivers a zero-length publish to current
+        # subscribers and removes the retained message for future ones.
+        # Treat it as a device-removed event so panels don't keep
+        # showing a stale entry that no publisher owns anymore.
+        if not raw_payload and parts[2] in ("info", "state"):
+            self._handle_clear(device_id)
+            return
+
         try:
             payload = json.loads(raw_payload.decode())
         except Exception:
@@ -184,6 +194,35 @@ class MQTTOrchestrator:
         ):
             self._handle_reply(payload)
         # Anything else: silently ignore — not for us.
+
+    def _handle_clear(self, device_id: str) -> None:
+        """Drop ``device_id`` from the cache and notify subscribers.
+
+        Called when the broker delivers a zero-length retained publish
+        on either ``info`` or ``state`` — i.e. someone (or the broker
+        itself, after a clear-retained pub) has signalled that this
+        device's persistent metadata is gone. The orchestrator should
+        forget the device so the per-project panel can re-render
+        without the stale entry.
+        """
+        with self._lock:
+            existed = self._devices.pop(device_id, None) is not None
+        if not existed:
+            return
+        # Synthetic snapshot tells subscribers (panel WS, runtime pause
+        # logic) to drop this id — explicit "cleared" marker so handlers
+        # can distinguish from a transient down state.
+        self._notify({
+            "id": device_id,
+            "state": "down",
+            "msg": "retained cleared",
+            "kind": "device",
+            "critical": False,
+            "meta": {},
+            "ts": time.time(),
+            "online": False,
+            "cleared": True,
+        })
 
     def _handle_info(self, device_id: str, payload: dict[str, Any]) -> None:
         with self._lock:

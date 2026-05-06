@@ -203,6 +203,7 @@ class StatusHandler(tornado.web.RequestHandler):
 # Step WebSocket — push step updates to dashboard
 # --------------------------------------------------
 _step_ws_clients: set = set()
+_status_ws_clients: set = set()
 
 # Captured at server startup so broadcast helpers called from non-IOLoop
 # threads (paho's network thread, the workflow thread) can hop back onto
@@ -216,11 +217,15 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
 
     def open(self):
         _step_ws_clients.add(self)
-        # Send current steps immediately on connect
+        # Send current steps + progress immediately on connect, so a
+        # freshly-loaded UI doesn't have to wait for the next emission.
         rt = self._rt
         si = rt.step_info
         try:
-            self.write_message(json.dumps({"steps": si["steps"] if si else []}))
+            payload = {"steps": (si["steps"] if si else [])}
+            if si and si.get("progress", -1) >= 0:
+                payload["progress"] = si["progress"]
+            self.write_message(json.dumps(payload))
         except Exception:
             pass
 
@@ -231,11 +236,20 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
         self._rt = rt
 
 
-def _broadcast_steps(steps: list):
-    """Called from rt.on_step (workflow thread) — schedule send on IO loop."""
+def _broadcast_steps(steps: list, progress: int = -1):
+    """Called from rt.on_step (workflow thread) — schedule send on IO loop.
+
+    Includes the current progress (0-100, or -1 for unset) alongside the
+    steps list so the UI's progress bar updates in real time. Without
+    this, progress only reached the UI via the slower HTTP polling and
+    a fast final 100% emission could be missed entirely.
+    """
     if _main_ioloop is None:
         return
-    msg = json.dumps({"steps": steps})
+    payload = {"steps": steps}
+    if progress is not None and progress >= 0:
+        payload["progress"] = progress
+    msg = json.dumps(payload)
 
     def _send():
         for c in list(_step_ws_clients):
@@ -243,6 +257,61 @@ def _broadcast_steps(steps: list):
                 c.write_message(msg)
             except Exception:
                 _step_ws_clients.discard(c)
+
+    _main_ioloop.add_callback(_send)
+
+
+# --------------------------------------------------
+# Status WebSocket — push runtime state changes in real time
+# --------------------------------------------------
+class StatusWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws/status — push RTStatus snapshots on every state transition.
+
+    Lets the UI react to state changes (IDLE / RUNNING / PAUSED / etc.)
+    and last_error updates within milliseconds, instead of waiting on
+    the slower HTTP /status polling. The HTTP endpoint is kept around
+    as a fallback for initial fetch and reconnect.
+    """
+
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        _status_ws_clients.add(self)
+        # Initial snapshot so a freshly-loaded UI doesn't have to wait
+        # for the next state transition to populate.
+        rt = self._rt
+        try:
+            self.write_message(json.dumps({
+                "state": str(rt._status.state),
+                "last_error": rt._status.last_error,
+                "job_runs": rt._status.job_runs,
+                "job_pauses": rt._status.job_pauses,
+                "job_resumes": rt._status.job_resumes,
+                "kills": rt._status.kills,
+            }))
+        except Exception:
+            pass
+
+    def on_close(self):
+        _status_ws_clients.discard(self)
+
+    def initialize(self, rt: Runtime):
+        self._rt = rt
+
+
+def _broadcast_status(status: dict):
+    """Called from rt.on_status (any thread) — schedule send on IO loop."""
+    if _main_ioloop is None:
+        return
+    msg = json.dumps(status)
+
+    def _send():
+        for c in list(_status_ws_clients):
+            try:
+                c.write_message(msg)
+            except Exception:
+                _status_ws_clients.discard(c)
 
     _main_ioloop.add_callback(_send)
 
@@ -478,6 +547,7 @@ class RuntimeServer:
             )),
             (r"/status", StatusHandler, dict(rt=self.rt)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
+            (r"/ws/status", StatusWebSocket, dict(rt=self.rt)),
 
             # device panel — see DevicesHandler / DeviceCmdHandler / DeviceWebSocket
             (r"/devices", DevicesHandler, dict(workspace=self.workspace)),
@@ -499,6 +569,12 @@ class RuntimeServer:
 
         # Wire step push: rt.on_step → broadcast to all step WS clients
         self.rt.on_step = _broadcast_steps
+        # Wire status push: rt.on_status → broadcast RTStatus snapshots
+        # to /ws/status clients. Fires on every state transition + every
+        # last_error update, so the UI button labels / state pill /
+        # error display refresh in real time instead of waiting on the
+        # ~1 Hz HTTP /status polling.
+        self.rt.on_status = _broadcast_status
 
         # Wire device push: workspace.devices (MQTTOrchestrator) → broadcast
         # to all device WS clients. The orchestrator's subscribe runs the
