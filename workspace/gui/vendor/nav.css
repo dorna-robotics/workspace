@@ -66,7 +66,10 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  overflow: hidden;
+  /* No overflow:hidden here — it clips absolutely-positioned children
+     like the count badge. Clipping is moved to the inner <span>
+     (label text) below, which is the only thing that needs to vanish
+     when the nav collapses. */
   transition: color 0.12s, background 0.12s;
 }
 .app-nav-link:hover {
@@ -83,10 +86,49 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
 }
 .app-nav-link svg { flex-shrink: 0; width: 18px; height: 18px; }
 .app-nav-link span {
+  transition: opacity 0.15s, width 0.15s;
+  overflow: hidden;
+}
+/* Hide the label (.app-nav-link > span:not(.app-nav-badge)) when
+   collapsed. The badge is also a <span>, but it's positioned absolute
+   so this rule doesn't shrink it. ``:not()`` keeps the selector
+   simple and intent-explicit. */
+.app-nav-link span:not(.app-nav-badge) { opacity: 0; width: 0; }
+.app-nav.expanded .app-nav-link span:not(.app-nav-badge) { opacity: 1; width: auto; }
+
+/* Count badge inside Orchestrator nav link — shows total registered
+   workspaces. Visible in BOTH collapsed and expanded nav: when
+   collapsed, sits at the top-right corner of the link as a tiny
+   notification-style pill over the icon; when expanded, the same
+   badge floats at the top-right corner of the row (still visible
+   alongside the "Orchestrator" label). Single position spec, no
+   layout reflow on collapse/expand. */
+.app-nav-link { position: relative; }
+.app-nav-link .app-nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--surface);
   transition: opacity 0.15s;
 }
-.app-nav-link span { opacity: 0; width: 0; }
-.app-nav.expanded .app-nav-link span { opacity: 1; width: auto; }
+.app-nav-link .app-nav-badge[hidden] { display: none !important; }
+[data-theme="light"] .app-nav-link .app-nav-badge {
+  box-shadow: 0 0 0 2px #fff;
+}
 
 /* ── Layout offset ────────────────────────────────────────────────────── */
 .app-nav ~ * { margin-left: 48px; transition: margin-left 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }

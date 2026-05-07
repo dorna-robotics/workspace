@@ -22,6 +22,25 @@ let _uptimeAt   = null;   // performance.now() when received
 // Log follow mode
 let _logFollowing = true;
 
+// Tab title status dot — a colored emoji prepended to ``document.title``
+// so an operator with multiple workspaces open can spot which one needs
+// attention from the tab strip alone. The favicon stays as the plain
+// Dorna logo (set in HTML); only the title's leading glyph changes.
+const _TITLE_DOTS = {
+  ok:   "\u{1F7E2}",  // 🟢 RUNNING / ACTIVE
+  warn: "\u{1F7E1}",  // 🟡 PAUSED / ENDING / IDLE
+  bad:  "\u{1F534}",  //  RED ERROR / OFFLINE
+  off:  "⚫",     // ⚫ NOT_LAUNCHED / unknown
+};
+let _titleLastVariant = null;
+
+function _setFaviconForState(state, variant, isInRun) {
+  if (variant === _titleLastVariant) return;
+  _titleLastVariant = variant;
+  const dot = _TITLE_DOTS[variant] || _TITLE_DOTS.off;
+  document.title = `${dot} ${wsName} — Dorna Workspace`;
+}
+
 // ---- DOM refs ----
 const $  = id => document.getElementById(id);
 const wsNameEl    = $("wsName");
@@ -39,7 +58,9 @@ const frame       = $("ws3dFrame");
 const placeholder = $("viewerPlaceholder");
 const toastArea   = $("toastArea");
 
-document.title = `${wsName} — Dorna Workspace`;
+// Initial title carries the gray "off" dot so there's no flash before
+// the first status arrives. _setFaviconForState swaps it as state changes.
+document.title = `${_TITLE_DOTS.off} ${wsName} — Dorna Workspace`;
 wsNameEl.textContent = wsName;
 
 // ---- Toast ----
@@ -315,6 +336,12 @@ function updateStatusUI(st) {
   // the ticker simply leaves the display alone.
   const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "ENDING"]
     .includes((state || "").toUpperCase());
+
+  // Tab favicon mirrors the state pill so an operator with multiple
+  // workspaces open in tabs can spot which one needs attention from
+  // the tab strip alone (green = running, amber = paused/ending,
+  // red = error/offline, gray = not launched).
+  _setFaviconForState(state, variant, isInRun);
   if (st?.uptime_s != null) {
     _uptimeBase = Number(st.uptime_s);
     _uptimeAt   = isInRun ? performance.now() : null;
