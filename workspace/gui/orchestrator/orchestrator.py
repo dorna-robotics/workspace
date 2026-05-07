@@ -420,21 +420,29 @@ class Orchestrator:
         if not self.wait_until_ready(name, timeout=2.0):
             raise RuntimeError(f"Workspace {name} is launched but not responding. Check logs: {ws.log_path}")
 
-        # Fold launch.yaml's schema defaults into the kwargs the
-        # workflow actually receives. Operators expect ``default: 4``
-        # in launch.yaml to mean 4 — not "1 from BaseWorkflow's
-        # constructor fallback because the operator never opened
-        # the Parameters dialog." Explicit operator values still win
-        # over the schema defaults.
+        # Build effective kwargs in priority order so an operator
+        # who set batch_size=10 once doesn't lose it on the second
+        # Start click (page might send nothing because the in-memory
+        # _wsKwargsValues was reset by a refresh). Layers, low to high:
+        #   1. launch.yaml schema defaults — fallback when nothing
+        #      else has a value.
+        #   2. ws.kwargs_values — last operator-set values, persists
+        #      across Start clicks within the same workspace process.
+        #   3. ``kwargs`` from this call — only present when the page
+        #      explicitly sent kwargs (operator hit Set + Start with
+        #      the dialog populated).
+        # Saved values are ONLY overwritten when (3) is present —
+        # otherwise the layer-2 carry-over keeps the previous setting.
         schema = ws.launch_config() or {}
         merged: Dict = {}
         for key, spec in schema.items():
             if isinstance(spec, dict) and "default" in spec:
                 merged[key] = spec["default"]
+        if ws.kwargs_values:
+            merged.update(ws.kwargs_values)
         if kwargs:
             merged.update(kwargs)
-        if merged:
-            ws.kwargs_values = merged
+            ws.kwargs_values = dict(merged)
 
         return self._send_runtime_cmd_local(ws, "start", kwargs=merged or None)
 

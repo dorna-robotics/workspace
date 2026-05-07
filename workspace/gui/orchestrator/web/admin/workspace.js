@@ -1234,6 +1234,14 @@ async function loadRunParams() {
     const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
     const schema = j.kwargs_schema || {};
     const values = j.kwargs_values || {};
+    // Restore the page-side cache from the server's saved values so a
+    // refresh doesn't lose what the operator set. Without this the
+    // Start click after a refresh would send no kwargs and rely on
+    // server-side fallback — works, but the in-page state should
+    // also reflect reality.
+    if (Object.keys(values).length) {
+      _wsKwargsValues = { ...values };
+    }
     const filtered = {};
     for (const k of Object.keys(schema)) {
       filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
