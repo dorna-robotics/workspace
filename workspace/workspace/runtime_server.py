@@ -160,10 +160,16 @@ class CmdHandler(tornado.web.RequestHandler):
             return
 
         if cmd == "start":
+            extra_kwargs = data.get("kwargs") or {}
+            # Always refresh pending kwargs BEFORE bumping the start
+            # token, so the gate-loop reads the new values when it
+            # wakes. Without this, the second + later Start clicks
+            # within one workspace process would reuse the kwargs
+            # frozen at first-Start time.
+            self.rt.set_workflow_kwargs(extra_kwargs)
             self.rt.start()
             th = self._workflow_thread_holder.get("thread")
             if th is None or not th.is_alive():
-                extra_kwargs = data.get("kwargs") or {}
                 self._workflow_thread_holder["thread"] = self.rt.run_workflow_thread(
                     self.workflow_fn, workspace=self.workspace, **extra_kwargs
                 )
@@ -469,7 +475,29 @@ def _status_payload(rt, workspace) -> dict:
     every status broadcast. Carries runtime state + the device-summary
     so the orchestrator dashboard's pill and the Start/Resume gate
     both have everything they need from one payload.
+
+    ``run_started_at`` / ``run_finished_at`` are sourced from the
+    runtime itself (set on RTState transitions) — not the orchestrator's
+    polling loop — so the dashboard's "Up" timer reflects the actual
+    moment the workflow started running, with no race against
+    ``broadcast_status``.
     """
+    run_started = getattr(rt, "run_started_at", None)
+    run_finished = getattr(rt, "run_finished_at", None)
+    # Compute uptime_s here so every push (HTTP /status, /ws/status,
+    # broadcast_status fan-out) carries a fresh value. Without it, the
+    # client falls back to the previous HTTP poll's uptime_s during the
+    # WS-push window between state transitions and the next poll —
+    # producing a flicker (Up shows 14, drops to 13 on RUNNING→IDLE
+    # WS push, snaps back to 14 on next HTTP poll). One source of
+    # truth, computed alongside the timestamps that power it.
+    if run_started:
+        if run_finished and run_finished >= run_started:
+            uptime_s = run_finished - run_started
+        else:
+            uptime_s = time.time() - run_started
+    else:
+        uptime_s = None
     out: dict = {
         "state": _state_value(rt),
         "last_error": rt._status.last_error,
@@ -477,6 +505,9 @@ def _status_payload(rt, workspace) -> dict:
         "job_pauses": rt._status.job_pauses,
         "job_resumes": rt._status.job_resumes,
         "kills": rt._status.kills,
+        "run_started_at": run_started,
+        "run_finished_at": run_finished,
+        "uptime_s": uptime_s,
     }
     si = getattr(rt, "step_info", None)
     if si:

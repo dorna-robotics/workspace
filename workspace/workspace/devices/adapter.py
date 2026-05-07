@@ -177,6 +177,19 @@ def detect_publisher_conflict(
         # Our own ghost. LWT not yet fired? Allow — we're claiming it
         # back legitimately.
         return None
+    # Same-host restart: ``publisher_id`` is ``<hostname>:<pid>:<id>``.
+    # If the existing owner shares our hostname, this is the same
+    # machine restarting its own workspace process — the previous PID
+    # is dead, the broker just hasn't fired LWT yet (keepalive window
+    # is 30 s; operators routinely restart faster than that). Allowing
+    # this avoids a false-conflict that's the most common annoyance in
+    # practice. The check still blocks a genuine cross-host collision
+    # (two different Pis configured for the same robot ip), which is
+    # the actual bug the contract is defending against.
+    our_host = our_publisher_id.split(":", 1)[0] if ":" in our_publisher_id else ""
+    owner_host = owner.split(":", 1)[0] if ":" in owner else ""
+    if our_host and owner_host and our_host == owner_host:
+        return None
     return owner
 
 

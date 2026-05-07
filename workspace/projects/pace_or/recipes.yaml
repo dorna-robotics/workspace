@@ -75,7 +75,7 @@ shaker_2:
 
 doser_2ml_end:
   class: workspace.recipes.doser.DosingSite
-  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 100, rail_span: 5, rail_step: 5}
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 225, rail_span: 5, rail_step: 5}
 
 doser_2ml_middle:
   class: workspace.recipes.doser.DosingSite
@@ -83,7 +83,7 @@ doser_2ml_middle:
 
 rack_2ml_end:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 100, rail_span: 5, rail_step: 5}
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 225, rail_span: 5, rail_step: 5}
 
 rack_2ml_middle:
   class: workspace.recipes.rack.Rack

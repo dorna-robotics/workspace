@@ -14,7 +14,6 @@ let iframeUrl   = "";
 // Adaptive poll: fast when active, slow when idle
 let _pollTimer  = null;
 let _lastState  = "";
-let _wasRunning = false;  // track if we were just running (for auto-kill transition)
 
 // Live uptime: interpolate locally between polls
 let _uptimeBase = null;   // uptime_s from last server response
@@ -308,23 +307,27 @@ function updateStatusUI(st) {
   statePill.className = `pill ${variant}`;
   statePill.innerHTML = `<span class="dot ${variant}${running ? " pulse" : ""}"></span>${esc(stateLabel(state))}`;
 
-  // Live uptime: store base so the 1s ticker can interpolate
+  // Live uptime: store base so the 1s ticker can interpolate. Tick
+  // only when the run is in flight — RUNNING (active motion), PAUSED
+  // (operator paused mid-run, wall clock still counts), or ENDING
+  // (graceful wrap-up). On IDLE the run has finished and the server's
+  // uptime_s is the frozen final value, so leave _uptimeAt null and
+  // the ticker simply leaves the display alone.
+  const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "ENDING"]
+    .includes((state || "").toUpperCase());
   if (st?.uptime_s != null) {
     _uptimeBase = Number(st.uptime_s);
-    // Only tick live when launched; freeze the display when not launched
-    _uptimeAt = launched ? performance.now() : null;
+    _uptimeAt   = isInRun ? performance.now() : null;
     uptimeVal.textContent = fmtUptime(_uptimeBase) || "—";
   } else {
     _uptimeBase = null;
     _uptimeAt = null;
     uptimeVal.textContent = "—";
   }
-  // Track running→idle for auto-kill transition UI
-  const prevUpper = _lastState.toUpperCase();
+  // Track previous state so we can detect transitions (e.g. reload
+  // run params when going NOT_LAUNCHED → IDLE after a fresh Launch).
+  const prevUpper = (_lastState || "").toUpperCase();
   const curUpper  = state.toUpperCase();
-  if (prevUpper === "RUNNING" && curUpper === "IDLE") _wasRunning = true;
-  if (curUpper !== "IDLE") _wasRunning = false;
-
   _lastState = state;
   startedVal.textContent = fmtTimestamp(st?.started_at) || "—";
 
@@ -339,15 +342,14 @@ function updateStatusUI(st) {
   // Accent the header border with state colour
   document.querySelector(".ws-header")?.setAttribute("data-state", variant);
 
-  // Keep the last rendered steps + progress visible when the workspace
-  // process exits (state goes to NOT_LAUNCHED). Operators want to read
-  // the timeline of what happened — clearing it on every kill destroyed
-  // useful diagnostic context. A fresh Launch will overwrite via the
-  // step-WS push as the new process boots.
-  if (curUpper !== "NOT_LAUNCHED") {
-    renderStep(st?.step, running);
-    updateProgress(st?.step?.progress, launched);
-  }
+  // Steps panel is purely a live view — when the workspace dies, the
+  // panel resets cleanly to "No steps yet". History lives in the
+  // timestamped log file under <project_dir>/status/<name>.log; the
+  // dashboard card's "Last run" indicator and the LOGS panel here are
+  // the durable surfaces. This avoids a stale half-rendered timeline
+  // after a kill that no longer reflects what's running.
+  renderStep(st?.step, running);
+  updateProgress(st?.step?.progress, launched);
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
@@ -441,20 +443,16 @@ function _tryStatusWS() {
   ws.onmessage = (e) => {
     try {
       const snap = JSON.parse(e.data);
-      // Push directly into the same UI updater the HTTP poll uses,
-      // adapting the shape — RTStatus snapshot vs the full /status
-      // response. ``state``, ``last_error`` are what the UI actually
-      // varies on; uptime/port/log come from the periodic HTTP poll.
+      // Merge: cached HTTP fields first (port, log, _orch, etc.),
+      // then snap's fresh values on top. The runtime now ships
+      // ``uptime_s`` / ``run_started_at`` / ``run_finished_at`` /
+      // ``step`` / ``devices_summary`` in every WS push, so the
+      // moment state changes those land instantly — no flicker from
+      // a stale HTTP poll's uptime resurrecting itself between the
+      // WS push and the next 1.5 s poll.
       updateStatusUI({
-        state: snap.state,
-        last_error: snap.last_error,
-        // Carry forward the existing fields from the last HTTP poll
-        // so the UI doesn't lose uptime / port / step-count when only
-        // state changes (the poll runs at ~1 Hz and will refresh them).
         ..._lastHttpStatus,
-        // Override with the fresh state/error from the WS push.
-        state: snap.state,
-        last_error: snap.last_error,
+        ...snap,
       });
     } catch {}
   };
@@ -1029,11 +1027,6 @@ function renderControls(state, launched, running) {
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
-    controls.appendChild(lbl);
-  } else if (s === "IDLE" && _wasRunning) {
-    const lbl = document.createElement("span");
-    lbl.className = "ctrl-starting";
-    lbl.textContent = "Finishing…";
     controls.appendChild(lbl);
   } else if (s === "ENDING") {
     const lbl = document.createElement("span");

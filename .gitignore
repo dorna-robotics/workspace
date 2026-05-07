@@ -197,6 +197,12 @@ cython_debug/
 # Workspace uploads (cleared on each run)
 _uploads/
 
+# Per-project run artifacts: timestamped log + last_run.json
+# Lives at <project_dir>/status/. Captures runtime stdout (with
+# wall-clock timestamps) and the most recent outcome (completed /
+# ended) so the dashboard card can show "Last run ✓ 14:10".
+status/
+
 # Claude Code
 .claude/
 

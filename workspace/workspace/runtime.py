@@ -94,6 +94,16 @@ class Runtime:
         self._steps: list = []  # list of step labels (timeline)
         self._progress: int = -1  # -1 = no progress, 0-100 = percentage
 
+        # Per-RUN timing (Unix seconds). ``run_started_at`` is set the
+        # moment the runtime first enters RUNNING for a given run, kept
+        # across pause/resume, reset on the next cold start. ``run_
+        # finished_at`` is set when the run terminates (RUNNING/PAUSED/
+        # ENDING → IDLE/ERROR/KILLED). Lets ``/status`` report a stable
+        # "Up" value the orchestrator can pass through unchanged — no
+        # race with the orchestrator's polling loop.
+        self.run_started_at: Optional[float] = None
+        self.run_finished_at: Optional[float] = None
+
     # ---------------------------------------------------------------------
     # Status helpers
     # ---------------------------------------------------------------------
@@ -115,6 +125,25 @@ class Runtime:
         self._status.state = new_state
         if err is not None:
             self._status.last_error = err
+
+        # Per-run timing — single source of truth. Set when the run
+        # actually begins, frozen when it ends. Pause/resume preserve
+        # ``run_started_at`` so the operator's wall-clock view of a
+        # paused-then-resumed run matches their expectation. ``time``
+        # imported at the top of the module.
+        if new_state == RTState.RUNNING and old != RTState.RUNNING:
+            if old == RTState.PAUSED:
+                self.run_finished_at = None  # resume — keep started
+            else:
+                self.run_started_at = time.time()
+                self.run_finished_at = None
+        elif (
+            new_state in (RTState.IDLE, RTState.ERROR, RTState.KILLED)
+            and old in (RTState.RUNNING, RTState.PAUSED, RTState.ENDING)
+        ):
+            if self.run_started_at and not self.run_finished_at:
+                self.run_finished_at = time.time()
+
         self._cv.notify_all()
         # Push the new status snapshot to any wired listener (e.g. the
         # runtime_server's /ws/status broadcaster). The listener is
@@ -374,17 +403,42 @@ class Runtime:
     # Workflow thread
     # ---------------------------------------------------------------------
 
+    def set_workflow_kwargs(self, kwargs: dict) -> None:
+        """Update the kwargs passed to the workflow function on its
+        next invocation. The gate-loop reads ``self._pending_kwargs``
+        fresh each iteration, so a Start click that changed Parameters
+        between runs (same workspace process, multiple back-to-back
+        runs) actually picks up the new values — instead of using the
+        kwargs frozen at first-Start time.
+
+        Caller (the cmd handler) sets this before ``self.start()`` so
+        the gate-loop sees the new values when it wakes up on the
+        token bump.
+        """
+        self._pending_kwargs = dict(kwargs or {})
+
     def run_workflow_thread(self, workflow_fn: Callable[..., Any], *, workspace: Any, **extra_kwargs):
         """Run a workflow in its own internal thread, managed by this runtime."""
         if self._workflow_thread and self._workflow_thread.is_alive():
             raise RuntimeError("Workflow thread already running!")
+
+        # Seed pending_kwargs with the kwargs from this initial call so
+        # the very first run has them. Subsequent Starts can update via
+        # ``set_workflow_kwargs``.
+        if not hasattr(self, "_pending_kwargs"):
+            self._pending_kwargs: dict = {}
+        if extra_kwargs:
+            self._pending_kwargs = dict(extra_kwargs)
 
         def _gate_loop():
             while True:
                 try:
                     self.wait_for_start()
                     self.mark_running()
-                    workflow_fn(workspace=workspace, core=workspace.components["core"], **extra_kwargs)
+                    # Read kwargs fresh on every iteration so Parameters
+                    # changes between runs take effect.
+                    current_kwargs = dict(self._pending_kwargs)
+                    workflow_fn(workspace=workspace, core=workspace.components["core"], **current_kwargs)
                     self.mark_idle()
                 except KillRequested:
                     return
