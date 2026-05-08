@@ -1,26 +1,30 @@
-"""Device integration — both producer and consumer infrastructure.
+"""Device integration — workspace-side glue plus producer infrastructure.
 
-See ``docs/device-guide.md`` for the full integration playbook (device
-contract, adapter pattern, ID convention, end-to-end examples).
+The producer-side primitives (``MQTTDeviceAdapter``, ``AutoRecover``,
+``Device`` protocol, etc.) live in the standalone ``dorna_devices``
+package so device services (vision Pi, future printer / syringe Pis)
+can install them without dragging in the full workspace orchestrator.
+This module re-exports those names for back-compat — existing code
+doing ``from workspace.devices import MQTTDeviceAdapter`` keeps
+working.
 
-This package is the canonical home for all device infrastructure:
+# TODO(dorna_devices migration): once every external caller has been
+# moved to ``from dorna_devices import …`` (vision_service, Pi
+# services, recipe code), drop the re-exports and require imports
+# from ``dorna_devices`` directly. Tracked for the next minor release.
 
-  * ``MQTTOrchestrator`` — orchestrator side, subscribes to the bus,
-    tracks state, exposes ``recover``/``release``.
-  * ``MQTTDeviceAdapter`` — producer side, publishes a ``Device``-shaped
-    object's state to the bus and routes commands back. Used by every
-    device service (camera today, printer/etc. tomorrow).
-  * ``AutoRecover`` — generic exponential-backoff helper that turns a
-    device's ``recover()`` into a self-healing loop. Plug into any
-    device service that wants auto-recovery on hotplug or polling.
-  * ``DeviceComponent`` — component-side protocol for declaring which
-    device ids a recipe component depends on.
-  * ``attach_device`` — single canonical wiring helper. Every device
-    component (Core, CameraPool, future Pipettor/Printer/Scale) calls
-    this exactly once per device and gets back a handle that owns the
-    adapter + (optional) AutoRecover. Encodes the
-    "authored simulation flag is honoured, reachability is observable"
-    contract so future devices can't drift from it.
+What stays workspace-internal (still defined here, not in
+``dorna_devices``):
+
+  * ``MQTTOrchestrator`` — subscribes to the bus, tracks state, wires
+    into :class:`workspace.runtime.Runtime` (workspace-specific).
+  * ``DeviceComponent`` / ``component_device_ids`` /
+    ``component_device_claim`` — recipe component contract.
+  * ``attach_device`` / ``attach_sim_stub`` / ``DeviceAttachment`` —
+    workspace-side wiring helpers that combine the adapter, recovery,
+    and conflict detection into a single canonical attach point.
+
+See ``docs/device-guide.md`` for the integration playbook.
 """
 
 from __future__ import annotations
@@ -38,13 +42,15 @@ from workspace.devices.component_contract import (
     component_device_ids,
     component_device_claim,
 )
-from workspace.devices.adapter import (
+# Re-export from dorna_devices so existing call sites keep working.
+# New code should import directly from dorna_devices.
+from dorna_devices import (
     MQTTDeviceAdapter,
     DevicePublisherConflict,
     detect_publisher_conflict,
     make_publisher_id,
+    AutoRecover,
 )
-from workspace.devices.recovery import AutoRecover
 
 __all__ = [
     "MQTTOrchestrator",
