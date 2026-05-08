@@ -3,11 +3,13 @@ core:
   simulation: True
   ip: "192.168.254.88"
   has_rail: True
-  rail_offset: -11.12
+  rail_cfg:
+    offset: -11.12
   has_tool_changer: True
   has_motion_plan: True
   has_camera: False
-  camera_serial_number: 
+  camera_cfg:
+    serial_number:
   attach:
     parent_name: fixture_plate_1
     parent_solid: body
@@ -92,7 +94,8 @@ hotel_0:
 
 feeder:
   type: capfeeder_autosampler_2ml
-  offset: 62.37
+  axis_cfg:
+    offset: 62.37
   attach:
     parent_name: fixture_plate_2
     parent_solid: body

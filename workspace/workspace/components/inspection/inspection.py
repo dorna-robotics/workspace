@@ -29,7 +29,14 @@ class Inspection:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
+        # All camera-related config under one dict (mirrors core.py).
+        # ``serial_number`` / ``host`` / ``port`` identify the vision
+        # server and the camera it should manage; the rest is forwarded
+        # to ``camera_add`` on the server.
         camera_cfg={
+            "serial_number": "",
+            "host": "127.0.0.1",
+            "port": 80,
             "stream": {"width":848, "height":480, "fps":15},
             "K": None,
             "D": None,
@@ -38,10 +45,6 @@ class Inspection:
             "exposure": None,
             "native_res": None,
         },
-        # cfg
-        camera_serial_number="",
-        vision_server_host="127.0.0.1",
-        vision_server_port=80,
         simulation=True,
     )
 
@@ -68,11 +71,12 @@ class Inspection:
         # Vision server connection (shared helper). VisionStation handles
         # the simulation gate, connect-or-fall-back-to-sim, camera_add on
         # connect, and the add_detection / detect / close surface.
+        cam_cfg = prm["camera_cfg"]
         self.vision = VisionStation(
-            host=prm["vision_server_host"],
-            port=prm["vision_server_port"],
-            serial_number=prm["camera_serial_number"],
-            camera_cfg=prm["camera_cfg"],
+            host=cam_cfg.get("host", "127.0.0.1"),
+            port=int(cam_cfg.get("port", 80)),
+            serial_number=cam_cfg.get("serial_number", ""),
+            camera_cfg=cam_cfg,
             simulation=prm["simulation"],
             label=self.name,
         )

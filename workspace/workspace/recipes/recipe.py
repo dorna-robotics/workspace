@@ -1,5 +1,6 @@
 # workspace/recipes/recipe.py
 
+import time
 from copy import deepcopy
 from mergedeep import merge
 from collections import deque
@@ -100,6 +101,55 @@ class Recipe:
     def rt(self):
         # Workspace Runtime (pause/stop/resume aware + robot_api proxy + lock)
         return self.workspace.rt
+
+    # ── Axis-init helpers ───────────────────────────────────────────────────
+    # Bundle the 3-step startup sequence (set_axis + set_pid + a homing
+    # call) into a single recipe method. ``axis_cfg`` is the same dict
+    # held in ``core.rail_cfg`` / ``feeder.axis_cfg`` and must contain:
+    # axis, offset, usem, usee, pprm, tprm, ppre, tpre, p, i, d,
+    # duration, threshold. The 1 s sleeps mirror the project startup
+    # notebooks. SimulationAPI stubs each underlying SDK call to return
+    # 2 immediately, so these helpers work transparently in sim mode
+    # too — no special-casing needed here.
+    def set_axis_with_stop(self, axis_cfg, dir=-1):
+        """Init an axis and home it against a hard stop (rail-style)."""
+        api = self.core.robot_api
+        api.set_axis(
+            index=axis_cfg["axis"],
+            usem=axis_cfg["usem"], usee=axis_cfg["usee"],
+            pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
+            ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
+        )
+        time.sleep(1)
+        api.set_pid(
+            index=axis_cfg["axis"],
+            p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
+            duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
+        )
+        time.sleep(1)
+        return api.home_with_stop(
+            index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
+        )
+
+    def set_axis_with_encoder(self, axis_cfg):
+        """Init an axis and home it against an encoder index (feeder-style)."""
+        api = self.core.robot_api
+        api.set_axis(
+            index=axis_cfg["axis"],
+            usem=axis_cfg["usem"], usee=axis_cfg["usee"],
+            pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
+            ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
+        )
+        time.sleep(1)
+        api.set_pid(
+            index=axis_cfg["axis"],
+            p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
+            duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
+        )
+        time.sleep(1)
+        return api.home_with_encoder_index(
+            index=axis_cfg["axis"], val=axis_cfg["offset"],
+        )
 
     # ── Solid / tool queries ────────────────────────────────────────────────
 

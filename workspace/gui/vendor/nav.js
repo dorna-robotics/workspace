@@ -44,18 +44,27 @@
     if (e.key === "Escape") mobileClose();
   });
 
-  // ── Orchestrator workspace count badge ─────────────────────────────
-  // Shown next to the Orchestrator nav link. Initial value from one
-  // HTTP fetch on load; live updates from /orchestrator/ws/status
-  // (the same WS the dashboard listens to). When that WS is down the
-  // page also falls back to a low-frequency HTTP refresh so the count
-  // stays approximately right.
+  // ── Orchestrator running-workspace count badge ─────────────────────
+  // Shows the number of workspaces in a strictly-running state
+  // (RUNNING / ACTIVE) — matches the dashboard's "running" stat-item
+  // count exactly (see admin/api.js ``isRunning``). PAUSED, ENDING,
+  // IDLE, etc. are NOT counted: the badge is meant as an
+  // "is-anything-actively-moving-right-now" glance, not a workspace
+  // census.
+  //
+  // Live data comes from /orchestrator/ws/status — every push carries
+  // the full ``statuses`` map so we can recompute the running count
+  // from its values without hitting HTTP. If the WS is unreachable
+  // the badge stays hidden (a hidden badge is more honest than a
+  // stale total).
   var badge = document.getElementById("navOrchCount");
   if (!badge) return;
 
   function setCount(n) {
     var v = (typeof n === "number" && n >= 0) ? n : null;
-    if (v === null) {
+    if (v === null || v === 0) {
+      // Hide on zero too — an empty pill is just visual noise when
+      // nothing is running.
       badge.hidden = true;
       badge.textContent = "";
       return;
@@ -64,22 +73,25 @@
     badge.textContent = String(v);
   }
 
-  function fetchCount() {
-    fetch("/orchestrator/api/workspaces", { cache: "no-store" })
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(j) {
-        if (!j || !Array.isArray(j.workspaces)) return;
-        setCount(j.workspaces.length);
-      })
-      .catch(function() {});
+  // Strict-running test — kept inline because this vendor script
+  // can't import admin/api.js. Mirror the canonical definition.
+  function isStrictlyRunning(state) {
+    var s = String(state || "").toUpperCase();
+    return s === "RUNNING" || s === "ACTIVE";
   }
 
-  fetchCount();
+  function countRunning(statuses) {
+    if (!statuses || typeof statuses !== "object") return 0;
+    var n = 0;
+    for (var k in statuses) {
+      if (Object.prototype.hasOwnProperty.call(statuses, k)) {
+        var st = statuses[k];
+        if (st && isStrictlyRunning(st.state)) n += 1;
+      }
+    }
+    return n;
+  }
 
-  // Live updates via the orchestrator-level status WS. Same endpoint
-  // the dashboard subscribes to — every push carries the full
-  // ``statuses`` map so we can read the count from its keys without
-  // hitting HTTP again.
   try {
     var proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     var url = proto + "//" + window.location.host + "/orchestrator/ws/status";
@@ -93,7 +105,7 @@
         try {
           var msg = JSON.parse(e.data);
           if (msg && msg.type === "status" && msg.statuses) {
-            setCount(Object.keys(msg.statuses).length);
+            setCount(countRunning(msg.statuses));
           }
         } catch (_) {}
       };
@@ -105,7 +117,6 @@
     }
     connect();
   } catch (_) {
-    // WS unavailable — fall back to periodic HTTP refresh.
-    setInterval(fetchCount, 10000);
+    // WS unavailable; leave the badge hidden.
   }
 })();

@@ -6190,16 +6190,36 @@ function buildConfigObject() {
       const hasTC   = (out.has_tool_changer !== undefined) ? !!out.has_tool_changer : !!out.has_toolchanger;
 
       // Rebuild `out` with deterministic field order matching expected config format.
-      // Preserve any extra fields from the original config (ip, camera_serial_number, etc.)
+      // Preserve any extra fields from the original config (ip, etc.).
+      // ``rail_offset`` and ``camera_serial_number`` used to live at the top
+      // level; they're now nested under ``rail_cfg.offset`` and
+      // ``camera_cfg.serial_number`` respectively. Migrate-on-write so older
+      // sessions don't keep emitting the legacy keys.
       const ordered = { type: "core" };
       ordered.simulation = true;
       ordered.ip = (out.ip !== undefined && out.ip !== "") ? out.ip : "";
       ordered.has_rail = hasRail;
-      ordered.rail_offset = (out.rail_offset !== undefined) ? out.rail_offset : 0;
+      const _legacyRailOffset = (out.rail_offset !== undefined) ? out.rail_offset : undefined;
+      const _existingRailCfg  = (out.rail_cfg && typeof out.rail_cfg === "object") ? out.rail_cfg : {};
+      const _railOffset = (_existingRailCfg.offset !== undefined) ? _existingRailCfg.offset
+                        : (_legacyRailOffset !== undefined) ? _legacyRailOffset
+                        : 0;
+      ordered.rail_cfg = Object.assign({}, _existingRailCfg, { offset: _railOffset });
       ordered.has_tool_changer = hasTC;
+      // ``tool_changer_cfg`` carries the attach/detach I/O signal sequences.
+      // Older sessions used a stale top-level ``tool_changer:`` block with
+      // present/attach/detach keys that the Python side silently ignored —
+      // drop those entirely; the new shape is ``output_attach`` /
+      // ``output_detach`` and any user override goes inside ``tool_changer_cfg``.
+      const _existingTcCfg = (out.tool_changer_cfg && typeof out.tool_changer_cfg === "object") ? out.tool_changer_cfg : {};
+      ordered.tool_changer_cfg = Object.assign({}, _existingTcCfg);
       ordered.has_motion_plan = true;
       ordered.has_camera = hasCam;
-      ordered.camera_serial_number = out.camera_serial_number || "";
+      const _legacySerial = out.camera_serial_number;
+      const _existingCamCfg = (out.camera_cfg && typeof out.camera_cfg === "object") ? out.camera_cfg : {};
+      const _serialNumber = (_existingCamCfg.serial_number !== undefined) ? _existingCamCfg.serial_number
+                          : (_legacySerial !== undefined ? _legacySerial : "");
+      ordered.camera_cfg = Object.assign({}, _existingCamCfg, { serial_number: _serialNumber });
       // Rail-dependent fields
       if (hasRail) {
         ordered.robot_attach = out.robot_attach || {
@@ -6210,12 +6230,25 @@ function buildConfigObject() {
       }
 
       // Collect any extra keys from the original that aren't in our ordered set
-      // (e.g. tool_changer, rail_cfg, or future fields from imported configs)
+      // (e.g. future fields from imported configs).
       const orderedKeys = new Set(Object.keys(ordered));
       orderedKeys.add("attach"); // handled separately below
+      // Legacy keys folded into rail_cfg / camera_cfg / tool_changer_cfg
+      // above — drop them from the extra-fields pass-through so saved
+      // configs don't carry both forms. ``tool_changer`` was the stale
+      // top-level YAML block with present/attach/detach keys that the
+      // Python side ignored.
+      const _legacyDropped = new Set([
+        "rail_offset",
+        "camera_serial_number",
+        "tool_changer",
+      ]);
       const extraFields = {};
       for (const [k, v] of Object.entries(out)) {
-        if (!orderedKeys.has(k) && k !== "robot_attach") extraFields[k] = v;
+        if (orderedKeys.has(k)) continue;
+        if (k === "robot_attach") continue;
+        if (_legacyDropped.has(k)) continue;
+        extraFields[k] = v;
       }
 
       // Replace out keys with ordered keys (preserve attach for later)

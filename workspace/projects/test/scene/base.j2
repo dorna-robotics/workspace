@@ -2,10 +2,10 @@
 # Minimal scene to exercise the device bus end-to-end (robot + camera).
 #
 # Before launching against real hardware, fill in:
-#   * core.ip               — robot's network IP (TCP)
-#   * vision_station.camera_serial_number — RealSense USB serial
-#   * vision_station.vision_server_host / vision_server_port — where the
-#     dorna_vision server is listening (default 127.0.0.1:80)
+#   * core.ip                          — robot's network IP (TCP)
+#   * vision_station.camera_cfg.serial_number — RealSense USB serial
+#   * vision_station.camera_cfg.host / port   — where the dorna_vision
+#     server is listening (default 127.0.0.1:80)
 #
 # Leave them as-is to run pure simulation: the robot connect will fail
 # back to sim mode, the vision_station will fall back to sim — and the
@@ -17,14 +17,11 @@ core:
   simulation: False                # set True for offline dry-run
   has_camera: False
   has_rail: True
-  rail_offset: -51.16
+  rail_cfg:
+    offset: -51.16
   has_tool_changer: True
   has_motion_plan: True
   ip: "192.168.254.115"            # robot
-  tool_changer:
-    present: True
-    attach: []
-    detach: []
   attach:
     parent_name: fixture_plate_0
     parent_solid: body
@@ -69,9 +66,10 @@ fixture_plate_3:
 
 vision_station:
   type: inspection_horizontal_144mm
-  camera_serial_number: "130322274110"
-  vision_server_host: "127.0.0.1"     # both on same Pi
-  vision_server_port: 8000
+  camera_cfg:
+    serial_number: "130322274110"
+    host: "127.0.0.1"     # both on same Pi
+    port: 8000
   simulation: True   # camera in sim — should show green dot + cyan SIM pill
   attach:
     parent_name: fixture_plate_3

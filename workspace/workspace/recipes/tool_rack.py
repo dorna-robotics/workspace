@@ -57,10 +57,10 @@ class ToolRack(Recipe):
                                                         to_frame=tool.pose("tool_rack_connection"))[2])
         
         # output approach
-        output_approach = [[self.core.tool_changer_output_up[:], None, None]]
+        output_approach = [[self.core.tool_changer_cfg["output_detach"][:], None, None]]
 
         # output touch
-        output_touch = [[self.core.tool_changer_output_down[:], None, None]]
+        output_touch = [[self.core.tool_changer_cfg["output_attach"][:], None, None]]
 
         # motion prm
         motion_prm ={
@@ -128,10 +128,10 @@ class ToolRack(Recipe):
 
 
         # output touch
-        output_touch = [[self.core.tool_changer_output_up[:], None, None]]
+        output_touch = [[self.core.tool_changer_cfg["output_detach"][:], None, None]]
 
         # output exit
-        output_exit = [[self.core.tool_changer_output_down[:], None, None]]
+        output_exit = [[self.core.tool_changer_cfg["output_attach"][:], None, None]]
 
         # motion prm
         motion_prm ={

@@ -12,18 +12,6 @@ class InspectionHorizontal144mm(Inspection):
         collision_box = {"body":[
                 {"pose":[5,0,195/2,0,0,0], "scale":[75,65,195]},#[xyzabc] , [lx,ly,lz]
         ]},
-        camera = {
-            "stream": {"width":848, "height":480, "fps":15},
-            "K": None,
-            "D": None,
-            "mode": "bgrd", 
-            "filter": {}, 
-            "exposure": None,
-            "native_res": None,
-        },
-        # cfg
-        camera_serial_number="",
-        vision_server_host="127.0.0.1",
         simulation=True,
     )
 

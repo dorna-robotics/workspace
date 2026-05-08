@@ -137,18 +137,11 @@ class Core:
         ip = "",
         has_rail = True,
         rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75, "p":0.01, "i":0.0001, "d":0, "duration":100 , "threshold":100},
-        rail_offset = 0,
         has_camera = False,
-        camera_serial_number = "",
-        # Vision server hosting the robot-mounted camera (typically the
-        # camera Pi). Same MQTT/health story as the Inspection component:
-        # the camera lives on the server, this Core just talks to it via
-        # VisionClient. Default localhost — set to the camera Pi's host
-        # for multi-Pi deploys. has_camera=False keeps the camera in
-        # simulation regardless of the host.
-        vision_server_host = "127.0.0.1",
-        vision_server_port = 80,
         camera_cfg = {
+            "serial_number": "",
+            "host": "127.0.0.1",
+            "port": 80,
             "stream": {"width":848, "height":480, "fps":15},
             "K": None,
             "D": None,
@@ -156,15 +149,19 @@ class Core:
             "filter": {},
             "exposure": None,
             "native_res": None,
+            "mount": {
+                "type": "dorna_ta_j4_1",
+                "T": [46.5174596, 32.0776662, -4.24772615, -0.27547989, 0.27691881, 89.6939516],
+                "ej": [0, 0, 0, 0, 0, 0, 0, 0]
+            },
         },
-        camera_mount = {
-            "type": "dorna_ta_j4_1",
-            "T": [46.5174596, 32.0776662, -4.24772615, -0.27547989, 0.27691881, 89.6939516],
-            "ej": [0, 0, 0, 0, 0, 0, 0, 0]
+        has_tool_changer = True,
+        # I/O signals fired on attach/detach. Each list-of-lists is a
+        # sequence of [output_port, value, delay_s] rows played in order.
+        tool_changer_cfg = {
+            "output_attach": [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]],
+            "output_detach": [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]],
         },
-        has_tool_changer = True, 
-        tool_changer_output_down = [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]], # attach signal
-        tool_changer_output_up = [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]], # detach signal
         has_motion_plan = False, # enable or disable path planing
     )
 
@@ -193,7 +190,6 @@ class Core:
         # -------- rail
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
-        self.rail_offset = prm["rail_offset"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
             self.rail_min = -75.0
             self.rail_max = 400.0
@@ -214,12 +210,10 @@ class Core:
 
         # -------- tool_changer
         self.has_tool_changer = prm["has_tool_changer"]
-        self.tool_changer_output_down = prm["tool_changer_output_down"]
-        self.tool_changer_output_up = prm["tool_changer_output_up"]
+        self.tool_changer_cfg = prm["tool_changer_cfg"]
 
         # ------- camera
         self.has_camera = prm["has_camera"]
-        self.camera_serial_number = prm["camera_serial_number"]
         self.camera_cfg = prm["camera_cfg"]
         
         # planner
@@ -303,20 +297,15 @@ class Core:
             print(f"🔵 {self.name} simulation api enabled")
 
 
-        # camera mount
-        self.camera_mount = prm["camera_mount"]
-        self.vision_server_host = prm["vision_server_host"]
-        self.vision_server_port = int(prm["vision_server_port"])
-
         # Robot-mounted camera. Like Inspection, the actual Camera lives on
         # the vision server; we just hold a VisionClient to it via the
         # shared VisionStation helper. has_camera=False keeps it in
         # simulation regardless of host/serial.
         from workspace.components.inspection.vision_station import VisionStation
         self.vision = VisionStation(
-            host=self.vision_server_host,
-            port=self.vision_server_port,
-            serial_number=self.camera_serial_number,
+            host=self.camera_cfg.get("host", "127.0.0.1"),
+            port=int(self.camera_cfg.get("port", 80)),
+            serial_number=self.camera_cfg.get("serial_number", ""),
             camera_cfg=self.camera_cfg,
             simulation=(not self.has_camera) or bool(prm["simulation"]),
             label=f"{self.name} camera",
@@ -345,10 +334,16 @@ class Core:
                     "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
                     "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
                 }
+                # Third box trimmed from 102 mm → 82 mm tall so it sits at
+                # the same height as the other two (all end at z=82 =
+                # carriage height). The original 102 mm extended 20 mm
+                # above the carriage and blocked arm configurations that
+                # reach over the rail — showed up in calibration when the
+                # carriage parked near rail_min and the arm twisted back.
                 rail_collision_boxes = {"rail_base": [
                     {"pose": [170.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 183.5, 82]},
                     {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [170.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 102]}
+                    {"pose": [170.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -364,7 +359,7 @@ class Core:
                 rail_collision_boxes = {"rail_base": [
                     {"pose": [420.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
                     {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [420.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 102]}
+                    {"pose": [420.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_1000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -380,7 +375,7 @@ class Core:
                 rail_collision_boxes = {"rail_base": [
                     {"pose": [920.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 183.5, 82]},
                     {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [920.0, 92.5, 51.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 102]}
+                    {"pose": [920.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_2000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -1759,7 +1754,7 @@ class SimulationAPI:
     def sleep(self, val=0):
         time.sleep(val)
         return 2
-    
+
     # output
     def output(self, index=None, val=None, config=None):
         if config is not None:
@@ -1767,7 +1762,24 @@ class SimulationAPI:
                 if len(c) > 2 and c[2] > 0:
                     self.sleep(c[2])
         return True
-    
+
     # motor
     def motor(self, val=None):
         return True
+
+    # ── Axis / homing stubs ────────────────────────────────────────────
+    # SDK methods that touch the motor controller. No hardware in sim,
+    # so they all return 2 (the SDK's success sentinel) and let
+    # higher-level helpers (Recipe.set_axis_with_stop / _encoder, the
+    # project startup notebooks, etc.) call them unconditionally.
+    def set_axis(self, **kwargs):
+        return 2
+
+    def set_pid(self, **kwargs):
+        return 2
+
+    def home_with_stop(self, **kwargs):
+        return 2
+
+    def home_with_encoder_index(self, **kwargs):
+        return 2

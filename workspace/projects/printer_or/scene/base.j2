@@ -3,14 +3,11 @@ core:
   simulation: True
   has_camera: False
   has_rail: True
-  rail_offset: -51.16
+  rail_cfg:
+    offset: -51.16
   has_tool_changer: True
   has_motion_plan: True
   ip: "192.168.137.100"
-  tool_changer:
-    present: True
-    attach: [] 
-    detach: []
   attach:
     parent_name: fixture_plate_0
     parent_solid: body
