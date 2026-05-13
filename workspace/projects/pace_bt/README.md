@@ -17,7 +17,7 @@ action's preconditions, no `if` anywhere.
 from workspace import Workspace
 from projects.pace_bt import workflow
 
-workspace = Workspace(config_path=["projects/pace_bt/config/base.j2"])
+workspace = Workspace(config_path=["projects/pace_bt/scene/base.j2"])
 core = workspace.components["core"]
 workflow.run(workspace, core, batch_size=4, heavy={1, 3})
 ```
@@ -30,7 +30,7 @@ Validates the plan-schedule-tree-execute loop without hardware.
 
 | File | Purpose |
 |---|---|
-| `config/base.j2` | scene |
+| `scene/base.j2` | scene |
 | `main.py` | orchestrator launcher — boots `Workspace` + `RuntimeServer` |
 | `launch.yaml` | scene paths + GUI kwargs schema (batch size, heavy tubes, tick rate) |
 | `actions.py` | predicates, initial state, goal, one `Action` subclass per atomic step |
@@ -45,7 +45,7 @@ Validates the plan-schedule-tree-execute loop without hardware.
 | Change branch logic | `pre()` method on the relevant action |
 | Change scheduling (duration / resource) | class attrs on the relevant action |
 | Change the goal | `actions.make_goal` |
-| Change the scene | `config/base.j2` |
+| Change the scene | `scene/base.j2` |
 | Custom tree shape (extra retry, parallel) | create an optional `tree.py` |
 
 That's the whole authoring surface. The framework derives the PDDL

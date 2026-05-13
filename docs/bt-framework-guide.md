@@ -35,8 +35,8 @@ Authors never write duplicated declarations. One action = one block.
 
 ```
 projects/<name>/
-├── config/
-│   └── base.j2              # scene
+├── scene/
+│   └── base.j2              # scene (j2 templates)
 ├── main.py                  # orchestrator launcher (Workspace + RuntimeServer)
 ├── launch.yaml              # scene paths + GUI kwargs schema
 ├── actions.py               # predicates + initial_state + make_goal +
