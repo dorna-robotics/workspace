@@ -43,6 +43,17 @@ from workspace.bt.engine import (
     EngineConfig,
     ReplanRequested,
 )
+from workspace.bt.dsl import (
+    Action,
+    ActionRegistry,
+    Expr,
+    Fact,
+    Predicate,
+    bind_conditions,
+    make_predicate_condition,
+    predicate,
+    state_to_frozen,
+)
 
 
 __all__ = [
@@ -66,4 +77,14 @@ __all__ = [
     "parallel_any",
     "parallel_all",
     "from_schedule",
+    # DSL — the declarative authoring layer
+    "Action",
+    "ActionRegistry",
+    "Expr",
+    "Fact",
+    "Predicate",
+    "predicate",
+    "bind_conditions",
+    "make_predicate_condition",
+    "state_to_frozen",
 ]

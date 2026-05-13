@@ -1,20 +1,16 @@
 """Entry point for the pace_bt project.
 
-Hands the operator's batch description to the planner → scheduler →
-tree builder → BT engine. Roughly 40 lines because the framework does
-the heavy lifting.
+The framework does the heavy lifting — workflow.py just wires:
 
-Call signature mirrors other project workflows:
+  1. The operator's kwargs into an initial world state and context.
+  2. The ``ActionRegistry`` (auto-populated from ``actions.py``) into
+     PDDL templates, scheduler meta, and a BT leaf factory.
+  3. Plan → schedule → tree → tick loop, via :class:`Replanner` and
+     :class:`BTEngine`.
 
-    workflow.run(workspace, core, **kwargs)
-
-with kwargs accepting at least:
-    batch_size:  number of tubes (default 4)
-    heavy:       iterable of tube indices that come back "heavy" from
-                 the inspect step. For the first cut these are declared
-                 up-front; later, the real inspect action observes
-                 them and a replan re-derives the right dispense
-                 branch from observed state.
+That's it. No domain.py, no conditions.py, no schedule.py, no tree.py
+to maintain — the registry derives them from the declarative ``Action``
+classes.
 """
 
 from __future__ import annotations
@@ -24,10 +20,21 @@ from typing import Any, Iterable
 
 import py_trees
 
-from workspace.bt import BTEngine, EngineConfig, WorkspaceContext
-from workspace.planner import Replanner, ReplanConfig
+from workspace.bt import (
+    ActionRegistry,
+    BTEngine,
+    EngineConfig,
+    WorkspaceContext,
+    bind_conditions,
+    from_schedule,
+    replan_on_failure,
+    sequence,
+    state_to_frozen,
+    with_retry,
+)
+from workspace.planner import Replanner, ReplanConfig, make_schedule_builder
 
-from projects.pace_bt import domain, schedule, tree
+from projects.pace_bt import actions  # registers Inspect, Decap, … on import
 
 
 log = logging.getLogger(__name__)
@@ -46,39 +53,60 @@ def run(
     tubes = list(range(int(batch_size)))
     heavy_set = set(int(t) for t in heavy)
 
-    # ── Initial observation ─────────────────────────────────────────
-    # In production this is filled by reading vision + device bus. For
-    # the first cut we declare it from the batch description.
-    initial_facts = set(domain.initial_state(tubes, heavy_set))
+    # ── Initial observation (today: declared from kwargs; in production:
+    #    populated from device-bus / vision before run()). ─────────────
+    initial_facts = set(actions.initial_state(tubes, heavy_set))
 
-    # The workspace context carries shared state. Conditions and actions
-    # mutate ``state["facts"]`` as the world evolves.
+    # ── Workspace context. Carries the live mutable facts dict that
+    #    actions and conditions read/write through.  ──────────────────
     ctx = WorkspaceContext(
         workspace=workspace,
         core=core,
         runtime=getattr(workspace, "rt", None) or getattr(workspace, "runtime", None),
         state={"facts": initial_facts},
         recipes=getattr(workspace, "recipes", None),
-        meta={"project": "pace_bt", "batch_size": batch_size, "heavy": heavy_set},
+        meta={
+            "project": "pace_bt",
+            "batch_size": batch_size,
+            "heavy": heavy_set,
+            # Action.param_iter enumerates from this dict by param name.
+            "objects": {"tube": tubes},
+        },
     )
 
-    def observe(_ctx: WorkspaceContext):
-        """Return current world state as a frozenset of fact tuples."""
-        return frozenset(_ctx.state.get("facts", set()))
+    # ── Pull PDDL templates, scheduler meta, and leaf factory from the
+    #    registry the actions.py module populated on import. ──────────
+    registry = ActionRegistry.current()
+    templates      = registry.to_templates(ctx)
+    meta           = registry.to_meta()
+    leaf_factory   = registry.leaf_factory(ctx)
+    build_schedule = make_schedule_builder(meta)
 
+    # ── Tree builder — small enough to inline here. ──────────────────
+    def build_tree(schedule, _ctx):
+        def _wrapped(action_name, item_index):
+            return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
+        body = from_schedule(schedule, _wrapped, name="pace_bt/body")
+        root = replan_on_failure(
+            sequence("pace_bt/root", body),
+            reason="protocol step failed — replanning from observed state",
+        )
+        bind_conditions(root, ctx)
+        return root
+
+    # ── Replanner: observe → plan → schedule → tree, as a callable
+    #    the engine invokes on ReplanRequested. ───────────────────────
     replanner = Replanner(
         ctx=ctx,
-        observe=observe,
-        templates=domain.build_templates(tubes),
-        goal=domain.make_goal(tubes),
-        build_schedule=schedule.build_schedule,
-        build_tree=tree.build_tree,
+        observe=lambda _ctx: state_to_frozen(_ctx.state),
+        templates=templates,
+        goal=actions.make_goal(tubes),
+        build_schedule=build_schedule,
+        build_tree=build_tree,
         config=ReplanConfig(verbose=True),
     )
 
-    # First build is just a replanner call.
     root = replanner.rebuild()
-
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,

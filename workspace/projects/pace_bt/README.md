@@ -1,14 +1,15 @@
 # pace_bt
 
 Behaviour-tree-based implementation of the pace protocol. Demonstrates
-the full framework stack: **PDDL planner → OR-style scheduler → py_trees
-BT** with runtime pause / kill / replan support.
+the framework's authoring style: **one `Action` subclass per atomic
+step**, everything else derived automatically.
 
 ## What it does
 
 Processes a batch of tubes through `inspect → decap → dispense → recap
 → shelve`. The dispense step branches on the tube's weight (heavy or
-light) — the planner picks the right branch per tube.
+light) — the planner picks the right branch per tube from each
+action's preconditions, no `if` anywhere.
 
 ## Run
 
@@ -21,24 +22,36 @@ core = workspace.components["core"]
 workflow.run(workspace, core, batch_size=4, heavy={1, 3})
 ```
 
-In sim mode (which is the default unless you configure a real robot
-IP) every action just sleeps for its declared duration and returns
-success. Useful for validating the framework wiring without hardware.
+In sim mode (default unless you configure a real robot IP) every
+action sleeps for its declared `duration` and returns success.
+Validates the plan-schedule-tree-execute loop without hardware.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `config/base.j2` | scene |
+| `actions.py` | predicates, initial state, goal, one `Action` subclass per atomic step |
+| `workflow.py` | entry point — wires actions registry into the BT engine |
+| `README.md` | this file |
 
 ## Where to edit for…
 
 | You want to… | Edit |
 |---|---|
-| Add / remove an atomic action | `actions.py` (BT leaf) + `domain.py` (PDDL template) + `schedule.py` (duration/resource) |
-| Add a new condition | `conditions.py` |
-| Change the goal | `domain.make_goal` |
-| Change branch logic | `domain.py` preconditions on the relevant actions |
-| Change scheduling rules | `schedule.META` |
-| Change tree shape (retry, recovery, parallelism) | `tree.build_tree` |
+| Add / remove an atomic action | `actions.py` (single `Action` subclass) |
+| Change branch logic | `pre()` method on the relevant action |
+| Change scheduling (duration / resource) | class attrs on the relevant action |
+| Change the goal | `actions.make_goal` |
 | Change the scene | `config/base.j2` |
+| Custom tree shape (extra retry, parallel) | create an optional `tree.py` |
+
+That's the whole authoring surface. The framework derives the PDDL
+domain, scheduler meta, BT leaf factory, and `apply_effects` mirror
+automatically.
 
 ## Framework discipline
 
 This project follows the convention pinned in
-`docs/bt-framework-guide.md`. New BT projects should be a copy of
-this one with the seven files filled in for their protocol.
+[`docs/bt-framework-guide.md`](../../../docs/bt-framework-guide.md).
+New BT projects start as a copy of this one.

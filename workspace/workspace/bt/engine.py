@@ -115,6 +115,36 @@ class BTEngine:
 
     # ── Public API ─────────────────────────────────────────────────────
 
+    def snapshot(self) -> str:
+        """Return a human-readable ASCII snapshot of the current tree
+        status. Cheap — operators can call this at any time (from a
+        debugger, a panel, a Slack bot) to see what the BT is doing.
+
+        Same output as ``workspace.bt.visualizer.ascii_status(root)``,
+        re-exposed on the engine so callers don't need to know about
+        the visualizer module.
+        """
+        from workspace.bt.visualizer import ascii_status
+        return ascii_status(self._root)
+
+    def active_path(self) -> list:
+        """Walk from root to the currently-active leaf, returning a list
+        of node names. Useful for one-line "what's running right now"
+        output — e.g. ``["pace_bt/root", "pace_bt/body", "decap(t3)"]``.
+        """
+        path = []
+
+        def _walk(node):
+            path.append(node.name)
+            for child in getattr(node, "children", []) or []:
+                if child.status == py_trees.common.Status.RUNNING:
+                    _walk(child)
+                    return
+            # Leaf — done.
+
+        _walk(self._root)
+        return path
+
     def run(self) -> py_trees.common.Status:
         """Tick until the tree completes or the runtime requests exit.
 

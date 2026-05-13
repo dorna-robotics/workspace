@@ -1,11 +1,11 @@
 # BT Framework Guide
 
-This document is the **discipline** every BT-based workspace project follows.
-Read it once, then use it as the reference when starting a new project or
-reviewing a PR.
+This is the **discipline** every BT-based workspace project follows.
+Read it once, then keep it as the reference for starting a new project
+or reviewing a PR.
 
-If you're looking at code that doesn't match the conventions here, the code
-is wrong — not the guide.
+If you're looking at code that doesn't match what's here, the code is
+wrong — not the guide.
 
 ---
 
@@ -13,147 +13,289 @@ is wrong — not the guide.
 
 A project is a recipe for solving a lab protocol. It declares:
 
-1. **What** the world looks like (predicates).
-2. **What actions** can be performed on that world (with preconditions and
-   effects).
-3. **What the goal** is.
-4. **How long** each action takes and **what resources** it claims.
-5. **How** each action is implemented as a recipe call (the BT leaves).
-6. **How** to assemble the leaves into a tree (with retries / recovery /
-   replan triggers).
+1. **Predicates** — facts about the world.
+2. **Actions** — what each atomic step does, including its precondition,
+   effects, duration, resource claim, and how it's executed.
+3. **Goal** — what "done" means.
+4. **Initial state** — what's true at t=0.
 
-Steps 1-4 are *declarative*. Steps 5-6 are *executable*. The framework
-generates an action sequence from steps 1-3, schedules it across resources
-using step 4, and executes it through steps 5-6 with runtime pause / kill /
-replan support.
+That's the whole declaration. The framework derives everything else:
+
+* a PDDL action sequence to the goal,
+* an OR-style schedule across parallel resources,
+* a BT for execution with retry / recovery / replan,
+* condition leaves for any predicate (auto-generated when needed),
+* `apply_effects` mirroring the declared `eff()` so state propagates.
+
+Authors never write duplicated declarations. One action = one block.
 
 ---
 
 ## 2. Project skeleton
 
-Every project lives at `projects/<name>/` with **exactly seven files**:
-
 ```
 projects/<name>/
 ├── config/
 │   └── base.j2              # scene
-├── domain.py                # PDDL: predicates, actions, goal
-├── schedule.py              # OR meta: durations + resources
-├── actions.py               # BT leaves: one Behaviour per atomic action
-├── conditions.py            # BT leaves: one Behaviour per condition
-├── tree.py                  # build_tree(schedule, ctx) → root behaviour
+├── actions.py               # predicates + initial_state + make_goal +
+│                            # one Action subclass per atomic step
 ├── workflow.py              # run(workspace, core, **kwargs) entry
-└── README.md                # 30 lines max, what + where-to-edit table
+├── tree.py                  # OPTIONAL — custom tree shape; default works
+└── README.md                # 30 lines max — what + where-to-edit table
 ```
 
-**No file mixes concerns.** Atomic actions live only in `actions.py`.
-Conditions live only in `conditions.py`. The protocol shape lives only in
-`tree.py`.
+That's it. **Two substantive files** (`actions.py` + `workflow.py`)
+plus the scene and a README. No `domain.py`, no `conditions.py`, no
+`schedule.py`, no `_LEAVES` dict — the framework generates them from
+the `Action` subclasses you declare.
 
-A new project is a copy of `pace_bt/` with the seven files filled in.
+A new project is a copy of `pace_bt/` with `actions.py` filled in for
+your protocol.
 
 ---
 
-## 3. Naming conventions
+## 3. The authoring style — one block per action
+
+```python
+from workspace.bt import Action, predicate
+
+# Predicates — declare once at the top.
+in_source     = predicate("in_source")
+in_working    = predicate("in_working")
+has_cap       = predicate("has_cap")
+weighed       = predicate("weighed")
+weight_heavy  = predicate("weight_heavy")
+dosed         = predicate("dosed")
+
+# Initial world.
+def initial_state(tubes, heavy=()):
+    facts = set()
+    for t in tubes:
+        facts.add((in_source.name, t))
+        facts.add((has_cap.name, t))
+        if t in heavy:
+            facts.add((weight_heavy.name, t))
+    return frozenset(facts)
+
+# Goal.
+def make_goal(tubes):
+    return lambda s: all((in_done.name, t) in s for t in tubes)
+
+# One block per action.
+class Decap(Action):
+    """Remove cap, transfer tube to working rack."""
+    params   = ["tube"]
+    duration = 10
+    resource = "robot"
+
+    def pre(self, tube):
+        return in_source(tube) & has_cap(tube) & weighed(tube)
+
+    def eff(self, tube):
+        return -has_cap(tube), -in_source(tube), +in_working(tube)
+
+    def execute(self, tube):
+        # Real-mode only — in sim the framework sleeps for ``duration``.
+        return self.ctx.recipes["decapper"].decap(tube)
+```
+
+What's happening:
+
+* `predicate("x")` declares a relation. Apply it to args (`has_cap(3)`)
+  to get a fact you can use in `pre` / `eff` expressions or check
+  against state.
+* `Action` is a class — subclass and override `pre`, `eff`, `execute`.
+* The decorator-like attributes (`params`, `duration`, `resource`)
+  declare scheduling and parameter info.
+* `eff` returns a tuple of facts. `+fact` means add, `-fact` means
+  remove. No PDDL-side mirror to keep in sync.
+* `execute` is optional in sim-only projects (the framework sleeps for
+  the declared duration and returns success). Override when wiring
+  real recipes.
+
+Subclassing `Action` auto-registers the class — the framework picks
+it up when `workflow.py` imports `actions`.
+
+---
+
+## 4. Fact arithmetic — the precondition / effect mini-language
+
+In `pre()` you write boolean expressions over facts:
+
+| Operator | Meaning | Example |
+|---|---|---|
+| `&` | AND | `in_source(t) & has_cap(t)` |
+| `|` | OR | `weight_heavy(t) | weight_unknown(t)` |
+| `~` | NOT | `~dosed(t)` |
+
+In `eff()` you return a tuple of facts:
+
+| Operator | Meaning | Example |
+|---|---|---|
+| `+fact` | Add to state | `+in_working(t)` |
+| `-fact` | Remove from state | `-has_cap(t)` |
+
+A bare fact (without `+`/`-`) in `eff()` is invalid — be explicit
+about whether you're adding or removing.
+
+---
+
+## 5. Naming conventions
 
 Reviewers must be able to tell a file's role from the identifier alone.
 
 | Thing | Style | Examples |
 |---|---|---|
 | **Predicate** | `snake_case` fact-form | `has_cap`, `weighed`, `in_done` |
-| **Action** | `snake_case` verb-form | `decap`, `dispense_heavy`, `shelve` |
-| **Condition** | `snake_case` is-question | `is_capped`, `is_heavy`, `is_dosed` |
+| **Action class** | `PascalCase` verb-form | `Decap`, `DispenseHeavy`, `Shelve` |
 | **Resource** | `snake_case` singular noun | `robot`, `scale`, `dispenser` |
-| **Object type** | `PascalCase` | `Tube`, `ShakerSlot` |
-| **BT leaf class** | `PascalCase` of the action/condition | `Decap`, `DispenseHeavy`, `IsCapped` |
+| **Parameter name** | `snake_case` | `tube`, `slot`, `tip` |
 
-A predicate is *not* a verb. A condition is *not* a noun. An action is *not*
-a question. Reviewer rejects PRs that mix them.
+A predicate is not a verb. An action class is not a noun. A resource
+is not a verb.
 
 ---
 
-## 4. The framework's contract with project code
+## 6. Adding a new action (the canonical example)
 
-The framework (`workspace/bt/`, `workspace/planner/`) provides:
+You want to add a `weigh` action. **One edit**, in one file.
 
-| Capability | Class / function |
+In `actions.py`:
+
+```python
+class Weigh(Action):
+    """Place tube on scale, read weight."""
+    params   = ["tube"]
+    duration = 8
+    resource = "scale"
+
+    def pre(self, tube):
+        return in_working(tube) & ~weighed(tube)
+
+    def eff(self, tube):
+        return (+weighed(tube),)
+
+    def execute(self, tube):
+        return self.ctx.recipes["scale"].weigh(tube)
+```
+
+That's all. The framework:
+
+* Auto-derives a PDDL `ActionTemplate` from `pre` / `eff`.
+* Auto-registers the duration/resource into the scheduler meta.
+* Auto-builds a BT leaf wrapping `execute` (or sim-sleep in sim mode).
+* Auto-mirrors `eff` into the runtime state-update logic.
+* Auto-generates `weighed.condition(tube)` if you ever need a BT
+  condition leaf for it.
+
+No edits to a separate `domain.py`. No edits to `schedule.py`. No
+edits to a `_LEAVES` dict. The class is the single source of truth.
+
+---
+
+## 7. Conditional branching (PDDL handles it)
+
+PDDL doesn't have `if`. Branching emerges from preconditions.
+
+To express "if tube is heavy, use `DispenseHeavy`; else `DispenseLight`":
+
+```python
+class DispenseLight(Action):
+    def pre(self, tube):
+        return in_working(tube) & ~weight_heavy(tube) & ~dosed(tube)
+
+class DispenseHeavy(Action):
+    def pre(self, tube):
+        return in_working(tube) & weight_heavy(tube) & ~dosed(tube)
+```
+
+The planner picks whichever action's preconditions hold. No `if` in
+the workflow. No `if` in the tree. Branching is in the action
+preconditions, where it belongs.
+
+---
+
+## 8. Recovery and replanning (three levels)
+
+### 8.1 Retry — same action, same parameters
+
+The default `workflow.run()` wraps every leaf in `with_retry(..., max_attempts=2)`
+so one flake retries automatically. Override `tree.py` if you want
+different retry counts per action.
+
+### 8.2 Recovery subtree — try something else, then retry
+
+In a custom `tree.py`:
+
+```python
+from workspace.bt import with_recovery
+
+decap = leaf_factory("decap", tube)
+recover = leaf_factory("vibrate_then_release", tube)
+recoverable_decap = with_recovery("decap_safe", decap, recover)
+```
+
+### 8.3 Full replan — observe + re-plan from current state
+
+In a custom `tree.py`:
+
+```python
+from workspace.bt import replan_on_failure
+top = replan_on_failure(sequence("body", *steps), reason="…")
+```
+
+The default `workflow.run()` already wraps the whole body in this.
+
+**Use full replan sparingly.** It's the right answer for "the world
+drifted" (drip, technician intervention, device recovery). It's the
+wrong answer for "this action flaked once" — that's what retry is for.
+
+---
+
+## 9. Diagnose APIs — uniform across every project
+
+The framework exposes three observation surfaces every project gets
+for free:
+
+| Question | Call |
 |---|---|
-| BT leaf base + recipe-call threading | `workspace.bt.RecipeAction` |
-| BT condition base | `workspace.bt.PredicateCondition`, `DeviceCondition` |
-| Tick loop + pause/resume/kill + replan | `workspace.bt.BTEngine` |
-| Replan signal | `workspace.bt.ReplanRequested` |
-| Tree helpers | `workspace.bt.{sequence, selector, guarded, with_retry, with_recovery, replan_on_failure, parallel_any, parallel_all, from_schedule}` |
-| PDDL forward-search | `workspace.planner.plan`, `ActionTemplate` |
-| Greedy resource scheduler | `workspace.planner.schedule_greedy`, `make_schedule_builder` |
-| Plan → schedule → tree glue | `workspace.planner.Replanner` |
-| Inspection / debugging | `workspace.bt.visualizer.ascii_status` |
+| What's the current world state? | `ctx.dump_state()` → JSON facts |
+| What's running right now? | `engine.active_path()` → list of node names from root to active leaf |
+| Full tree snapshot? | `engine.snapshot()` → ASCII status |
+| Last plan? | `replanner.last_plan` → list of `Action(name, params)` |
+| Last schedule? | `replanner.last_schedule` → list of `(action_name, item, start_t)` |
 
-The project provides:
-
-| Capability | Where |
-|---|---|
-| Predicates, actions, goal | `domain.py` |
-| Per-action durations + resource | `schedule.py` |
-| BT leaf classes (one per action) | `actions.py` |
-| BT condition classes | `conditions.py` |
-| Tree shape | `tree.py` |
-| Entry point | `workflow.py` |
+These work the same way in every BT project. An operator who learns
+them once can debug any protocol.
 
 ---
 
-## 5. Authoring rules
-
-These are the load-bearing rules. Code that breaks any of them is wrong.
-
-1. **One concept per file.** Atomic actions only in `actions.py`. Conditions
-   only in `conditions.py`. Never mix.
-2. **No project imports another project.** Shared concerns go to
-   `workspace/bt/` or `workspace/planner/`. If two projects need the same
-   thing, push it down to the framework.
-3. **No recipe redefinitions.** Recipes live in `workspace/recipes/`.
-   Projects only *call* them via `RecipeAction.execute`.
-4. **No hidden state.** Anything an action depends on goes through
-   `WorkspaceContext` (the `ctx` injected at construction). No module-level
-   mutable state, no globals.
-5. **Effects are explicit.** A `RecipeAction` that changes the world's
-   predicates implements `apply_effects(state)`. The framework calls it
-   after `execute()` returns `True`. Effects must mirror the PDDL
-   template's effects in `domain.py`.
-6. **Behaviours are dumb.** Actions just execute. Conditions just observe.
-   Decisions belong in the tree shape (generated from PDDL + schedule).
-7. **Every leaf must terminate cleanly.** `RecipeAction.terminate` calls
-   `runtime.stop()` on the workspace runtime if aborted. Workspace recipes
-   already poll runtime stop; subclasses don't need to do more.
-8. **Replanning is observed, not forced.** Use `replan_on_failure` only
-   around big subtrees, not individual leaves. Replanning on every leaf
-   failure is chaos.
-
----
-
-## 6. The data flow at runtime
+## 10. The data flow at runtime
 
 ```
 batch description (kwargs from operator)
         │
         ▼
-domain.build_templates(tubes)
-domain.make_goal(tubes)             ← what protocol to plan
+ActionRegistry.current()        ← auto-populated when actions.py is imported
+        │
+        ├─► .to_templates(ctx)  → list of ActionTemplate (PDDL planner inputs)
+        ├─► .to_meta()          → dict of ActionMeta (scheduler durations + resources)
+        └─► .leaf_factory(ctx)  → callable that turns scheduled tasks into BT leaves
         │
         ▼
-workspace.planner.plan(...)         ← PDDL forward search
+plan(initial_state, templates, goal)
         │  ordered Action list
         ▼
-schedule.build_schedule(plan)       ← uses META durations + resources
+build_schedule(plan)                  ← uses META durations + resources
         │  [(action_name, item, start_t), ...]
         ▼
-tree.build_tree(schedule, ctx)      ← composes leaves via from_schedule
+build_tree(schedule, ctx)             ← composes leaves via from_schedule
         │  py_trees root behaviour
         ▼
-workspace.bt.BTEngine.run()         ← tick @ 10 Hz, respect runtime,
-                                       handle ReplanRequested by
-                                       calling replanner.rebuild()
-                                       (which observes + re-plans +
-                                       re-schedules + re-builds tree)
+BTEngine.run()                        ← tick @ 10 Hz, runtime pause/kill,
+                                         handle ReplanRequested via
+                                         replanner.rebuild() (observe →
+                                         plan → schedule → build_tree)
         │
         ▼
 SUCCESS / FAILURE / INVALID (aborted)
@@ -161,156 +303,53 @@ SUCCESS / FAILURE / INVALID (aborted)
 
 ---
 
-## 7. Adding a new action (the canonical example)
+## 11. Authoring rules (the load-bearing ones)
 
-Say you want to add a `weigh` action. Five edits, in order:
-
-### 7.1 Declare the action in `domain.py`
-
-```python
-def weigh_pre(state, p):
-    (t,) = p
-    return ("in_working", t) in state and ("weighed", t) not in state
-
-def weigh_eff(state, p):
-    (t,) = p
-    return state | {("weighed", t)}
-
-weigh = ActionTemplate(name="weigh", param_iter=for_each,
-                       preconditions=weigh_pre, effects=weigh_eff)
-```
-
-Add `weigh` to the list returned by `build_templates`.
-
-### 7.2 Declare its schedule meta in `schedule.py`
-
-```python
-META["weigh"] = ActionMeta(duration=8, resource="scale")
-```
-
-### 7.3 Implement the BT leaf in `actions.py`
-
-```python
-class Weigh(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="weigh")
-    def execute(self) -> bool:
-        return self._sim_or_real(8.0)
-    def apply_effects(self, state):
-        state.setdefault("facts", set()).add(("weighed", self.tube))
-
-_LEAVES["weigh"] = Weigh
-```
-
-### 7.4 (Optional) Add a condition in `conditions.py`
-
-```python
-class IsWeighed(PredicateCondition):
-    def __init__(self, ctx, tube):
-        super().__init__(name=f"is_weighed(t{tube})", ctx=ctx)
-        self.tube = tube
-    def check(self) -> bool:
-        return ("weighed", self.tube) in self.ctx.state.get("facts", set())
-```
-
-### 7.5 (Optional) Reference in `tree.py`
-
-`from_schedule` will pick `weigh` up automatically because step 7.3 added
-it to `_LEAVES`. Only edit `tree.py` if you want non-linear composition
-(retry policies, recovery subtrees, parallel-resource sections).
-
-That's it. Domain, schedule, leaves, conditions, tree — five small edits
-across four files. No engine changes, no framework changes.
+1. **One action class per atomic step.** No grouping of "related"
+   actions into one class with conditional branches inside.
+2. **`pre` and `eff` are pure.** No side effects. They're consulted at
+   plan time, possibly many times for many candidate parameter bindings.
+3. **`execute` is impure but cancellable.** It can take seconds to
+   minutes; the framework runs it on a worker thread and aborts via
+   `runtime.stop()` if the BT cancels. Recipes already poll runtime
+   stop, so for sim/real action authors this is automatic.
+4. **No two-file-mirroring.** If you find yourself writing the same
+   effect logic twice, the framework has a gap — file a PR.
+5. **Custom tree shapes go in an optional `tree.py`.** The default
+   tree (from `from_schedule`) is what 90% of projects use.
+6. **Imports are one-way.** `workflow.py` imports `actions.py`.
+   `actions.py` imports only `workspace.bt`. No cross-project imports.
 
 ---
 
-## 8. Conditional branching (PDDL handles it)
+## 12. Performance characteristics
 
-PDDL doesn't have "if / else" syntax. Branching emerges from preconditions.
-
-To express "if tube is heavy, use dispense_heavy; else dispense_light":
-
-```python
-def dispense_light_pre(state, p):
-    (t,) = p
-    return (("in_working", t) in state
-            and ("weight_heavy", t) not in state)   # ← only when light
-
-def dispense_heavy_pre(state, p):
-    (t,) = p
-    return (("in_working", t) in state
-            and ("weight_heavy", t) in state)       # ← only when heavy
-```
-
-The planner picks whichever action's preconditions hold. No `if` in the
-tree, no `if` in the workflow. Branching is in the domain, where it
-belongs.
-
----
-
-## 9. Recovery and replanning
-
-Three levels, finest-grained first:
-
-### 9.1 Retry — same action, same parameters
-
-Wrap a leaf in `with_retry(leaf, max_attempts=3)`. Two transient failures
-retry; third fails the leaf. The framework's `pace_bt/tree.py` does this
-on every action with `max_attempts=2`.
-
-### 9.2 Recovery subtree — try something else, then retry
-
-Wrap a pair in `with_recovery(name, action, recovery_subtree)`. If
-`action` fails, the recovery subtree runs (e.g., "shake the gripper to
-release a stuck cap") and then `action` is retried once.
-
-### 9.3 Full replan — observe + re-plan from current state
-
-Wrap a big subtree in `replan_on_failure(subtree, reason="...")`. A
-failure inside that subtree raises `ReplanRequested` to the engine. The
-engine calls `replanner.rebuild()`, which re-observes the world, re-runs
-PDDL, re-runs the scheduler, and re-builds the tree. Tick loop continues
-with the fresh tree.
-
-**Use full replan sparingly.** It's the right answer for "the world has
-drifted from what I expected" (drip, technician intervention, device
-recovery). It's the wrong answer for "this single action flaked once" —
-that's what retry is for.
-
----
-
-## 10. Performance characteristics
-
-For lab-sized problems on a Pi 5:
+On a Pi 5, lab-sized problems:
 
 | Layer | Cost | Notes |
 |---|---|---|
-| BT tick (10 Hz) | <1 ms / tick | Pure-Python tree walk. Negligible. |
-| PDDL planning | <100 ms typical | BFS forward search. Larger domains may need stronger heuristics. |
-| Greedy scheduler | <10 ms | Linear over plan length. |
+| BT tick (10 Hz) | <1 ms | Pure-Python tree walk |
+| PDDL plan | <100 ms typical | BFS forward search, batch of 10-100 items |
+| Greedy schedule | <10 ms | Linear over plan length |
 | Replanning total | <200 ms | observe → plan → schedule → rebuild tree |
 
-The robot motions and lab equipment are 100-1000× slower than any of
-these. The framework is never the bottleneck. The Pi can host the BT
-runner, the planner, the scheduler, AND the orchestrator without
-trouble.
+Robot motions (1-10 s per move) and lab equipment (5 s to minutes per
+action) dwarf all of these. The framework is never the bottleneck.
 
 ---
 
-## 11. Debugging
+## 13. Migration checklist (linear → BT-driven)
 
-* Print the tree structure: `workspace.bt.visualizer.ascii_tree(root)`.
-* Snapshot live status during a tick: `ascii_status(root)`.
-* Export Graphviz DOT for a tree picture: `dot(root)`.
-* Set log level to `INFO`: the engine logs every replan and tick-rate
-  miss; the planner logs plan length and state count.
+If you have a pace_or-style linear project and want to convert it:
 
-If a project is misbehaving, the question to ask in order:
+1. Copy `pace_bt/` to `your_project_bt/`.
+2. Replace `pace_bt/actions.py` predicates + actions with yours.
+3. Update `initial_state` + `make_goal` to match your protocol's
+   inputs and outputs.
+4. (Optional) Add a `tree.py` if you want custom retry / recovery
+   shape beyond the default.
+5. Run `workflow.run(...)` in sim. Verify SUCCESS.
+6. Wire `execute` methods to your real recipes for production.
 
-1. Is the **plan** correct? Print it after `replanner.rebuild()`.
-2. Is the **schedule** correct? Print the output of `schedule.build_schedule(plan)`.
-3. Is the **tree** correct? `ascii_tree(root)`.
-4. Is the **tick** correct? Watch `ascii_status(root)` over time.
-
-Each layer is small and reads on its own, so debugging never requires
-unwinding the whole stack at once.
+Nothing else moves. The scene (`base.j2`), recipes, device bus, and
+runtime layer are all unchanged.

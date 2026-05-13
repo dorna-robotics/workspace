@@ -1,168 +1,161 @@
-"""BT leaf actions for pace_bt.
+"""pace_bt — all atomic actions, in one file.
 
-One ``RecipeAction`` subclass per atomic action declared in
-``domain.py``. Each class is small: an ``execute()`` that calls the
-recipe layer to do the physical work, and an ``apply_effects()`` that
-mirrors the PDDL effects so the post-success world state propagates
-to subsequent ticks / replans.
+This is the canonical example of the framework's authoring style:
+**one ``Action`` subclass per atomic step**. Each class declares its
+preconditions, effects, duration, resource, and recipe call in one
+place. No separate ``domain.py``, no ``conditions.py``, no
+``schedule.META`` dict, no ``_LEAVES`` factory mapping — the framework
+discovers all of that from the classes.
 
-The framework supplies the threading, status reporting, and
-cancellation — subclasses focus on lab logic.
+Reading order:
+  1. Predicates declared at the top.
+  2. ``initial_state`` + ``make_goal`` helpers (what t=0 looks like + what
+     "done" means).
+  3. One section per ``Action`` subclass.
 
-In sim mode (``ctx.core.simulation``) every action just sleeps for its
-nominal duration and returns success. That's enough to validate the
-plan-schedule-tree-execute loop end-to-end on a Pi with no real robot.
+If you're adding a new action: copy any existing class, rename it,
+and edit the four authoring slots — ``params``, ``duration``,
+``resource``, plus the ``pre`` / ``eff`` methods. Add an ``execute``
+override only when wiring a real recipe in production; in sim mode
+the framework sleeps for ``duration`` and returns success
+automatically.
 """
 
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, Tuple
-
-import py_trees
-
-from workspace.bt import RecipeAction, WorkspaceContext
+from workspace.bt import Action, predicate
 
 
-# ── Shared utilities ───────────────────────────────────────────────────────
+# ── 1. Predicates ──────────────────────────────────────────────────────────
+#
+# A predicate is just a named relation. Apply it to args to get a fact:
+# ``has_cap(tube)`` returns a fact you can put into pre/eff expressions
+# and which the framework checks against the live world state.
+
+in_source     = predicate("in_source")
+in_working    = predicate("in_working")
+in_done       = predicate("in_done")
+has_cap       = predicate("has_cap")
+weighed       = predicate("weighed")
+weight_heavy  = predicate("weight_heavy")
+dosed         = predicate("dosed")
 
 
-def _sim_sleep(seconds: float) -> None:
-    """Sleep, broken up so a runtime stop can interrupt us quickly."""
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        time.sleep(min(0.05, deadline - time.monotonic()))
+# ── 2. World setup ─────────────────────────────────────────────────────────
 
 
-# Predicate names mirror domain.py — kept in sync by hand. Tiny enough.
-P_IN_SOURCE, P_IN_WORKING, P_IN_DONE = "in_source", "in_working", "in_done"
-P_HAS_CAP, P_WEIGHED, P_WEIGHT_HEAVY, P_DOSED = (
-    "has_cap", "weighed", "weight_heavy", "dosed",
-)
+def initial_state(tubes, heavy=()):
+    """Initial world: every tube in source rack, capped; flag heavy ones.
+
+    Heavy/light is observed by ``Inspect`` in production, but for the
+    first plan we declare it from the operator input. The replanner
+    picks up the real observed weights after inspection.
+    """
+    heavy = set(heavy)
+    facts = set()
+    for t in tubes:
+        facts.add((in_source.name, t))
+        facts.add((has_cap.name, t))
+        if t in heavy:
+            facts.add((weight_heavy.name, t))
+    return frozenset(facts)
 
 
-# ── Action classes ─────────────────────────────────────────────────────────
+def make_goal(tubes):
+    """Goal: every tube ends up in the done rack."""
+    tubes = set(tubes)
+    def _goal(state):
+        return all((in_done.name, t) in state for t in tubes)
+    return _goal
 
 
-class _ItemAction(RecipeAction):
-    """Helper base — every action in pace_bt takes a single ``tube`` index."""
-
-    def __init__(self, ctx: WorkspaceContext, tube: int, *, label: str):
-        super().__init__(name=f"{label}(t{tube})", ctx=ctx)
-        self.tube = tube
-        self._label = label
-
-    # Sim helper used by every leaf.
-    def _sim_or_real(self, duration: float, real_fn=None) -> bool:
-        if getattr(self.ctx.core, "_simulation_mode", True):
-            _sim_sleep(duration)
-            return True
-        if real_fn is None:
-            self.log.warning(
-                "%s: no real-mode implementation — falling back to sim", self._label,
-            )
-            _sim_sleep(duration)
-            return True
-        try:
-            return bool(real_fn())
-        except Exception as ex:
-            self.log.warning("%s real-mode raised: %s", self._label, ex)
-            return False
+# ── 3. Actions ─────────────────────────────────────────────────────────────
 
 
-class Inspect(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="inspect")
+class Inspect(Action):
+    """Pick from source, weigh, return. After this the planner knows the
+    tube's weight bucket (heavy / light)."""
+    params   = ["tube"]
+    duration = 10
+    resource = "robot"
 
-    def execute(self) -> bool:
-        # Real-mode would: pick from source → place on scale → weight → return
-        # Sim mode just sleeps and pretends.
-        return self._sim_or_real(10.0)
+    def pre(self, tube):
+        return in_source(tube) & ~weighed(tube)
 
-    def apply_effects(self, state: Dict[str, Any]) -> None:
-        # Mirror domain.inspect_eff: weight is now known.
-        state.setdefault("facts", set()).add((P_WEIGHED, self.tube))
-
-
-class Decap(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="decap")
-
-    def execute(self) -> bool:
-        return self._sim_or_real(10.0)
-
-    def apply_effects(self, state):
-        f = state.setdefault("facts", set())
-        f.discard((P_HAS_CAP, self.tube))
-        f.discard((P_IN_SOURCE, self.tube))
-        f.add((P_IN_WORKING, self.tube))
+    def eff(self, tube):
+        return (+weighed(tube),)
 
 
-class DispenseLight(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="dispense_light")
+class Decap(Action):
+    """Remove cap, transfer tube into the working rack."""
+    params   = ["tube"]
+    duration = 10
+    resource = "robot"
 
-    def execute(self) -> bool:
-        return self._sim_or_real(10.0)
+    def pre(self, tube):
+        return in_source(tube) & has_cap(tube) & weighed(tube)
 
-    def apply_effects(self, state):
-        state.setdefault("facts", set()).add((P_DOSED, self.tube))
-
-
-class DispenseHeavy(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="dispense_heavy")
-
-    def execute(self) -> bool:
-        return self._sim_or_real(15.0)
-
-    def apply_effects(self, state):
-        state.setdefault("facts", set()).add((P_DOSED, self.tube))
+    def eff(self, tube):
+        return -has_cap(tube), -in_source(tube), +in_working(tube)
 
 
-class Recap(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="recap")
+class DispenseLight(Action):
+    """Dispense the 'light' solvent volume into an uncapped tube."""
+    params   = ["tube"]
+    duration = 10
+    resource = "dispenser"
 
-    def execute(self) -> bool:
-        return self._sim_or_real(10.0)
+    def pre(self, tube):
+        return (
+            in_working(tube)
+            & ~has_cap(tube)
+            & ~weight_heavy(tube)
+            & ~dosed(tube)
+        )
 
-    def apply_effects(self, state):
-        state.setdefault("facts", set()).add((P_HAS_CAP, self.tube))
-
-
-class Shelve(_ItemAction):
-    def __init__(self, ctx, tube):
-        super().__init__(ctx, tube, label="shelve")
-
-    def execute(self) -> bool:
-        return self._sim_or_real(5.0)
-
-    def apply_effects(self, state):
-        f = state.setdefault("facts", set())
-        f.discard((P_IN_WORKING, self.tube))
-        f.add((P_IN_DONE, self.tube))
+    def eff(self, tube):
+        return (+dosed(tube),)
 
 
-# ── Leaf factory (used by tree.py via from_schedule) ───────────────────────
+class DispenseHeavy(Action):
+    """Dispense the 'heavy' (larger) solvent volume."""
+    params   = ["tube"]
+    duration = 15
+    resource = "dispenser"
+
+    def pre(self, tube):
+        return (
+            in_working(tube)
+            & ~has_cap(tube)
+            & weight_heavy(tube)
+            & ~dosed(tube)
+        )
+
+    def eff(self, tube):
+        return (+dosed(tube),)
 
 
-# Keyed by action name (matches domain.py templates).
-_LEAVES = {
-    "inspect":        Inspect,
-    "decap":          Decap,
-    "dispense_light": DispenseLight,
-    "dispense_heavy": DispenseHeavy,
-    "recap":          Recap,
-    "shelve":         Shelve,
-}
+class Recap(Action):
+    """Put the cap back onto a dosed tube."""
+    params   = ["tube"]
+    duration = 10
+    resource = "robot"
+
+    def pre(self, tube):
+        return dosed(tube) & ~has_cap(tube) & in_working(tube)
+
+    def eff(self, tube):
+        return (+has_cap(tube),)
 
 
-def make_leaf(ctx: WorkspaceContext):
-    """Return a leaf-factory closed over ``ctx`` for ``from_schedule``."""
-    def _factory(action_name: str, item_index: int) -> py_trees.behaviour.Behaviour:
-        cls = _LEAVES.get(action_name)
-        if cls is None:
-            raise KeyError(action_name)
-        return cls(ctx, item_index)
-    return _factory
+class Shelve(Action):
+    """Move the finished tube into the done rack."""
+    params   = ["tube"]
+    duration = 5
+    resource = "robot"
+
+    def pre(self, tube):
+        return has_cap(tube) & dosed(tube) & in_working(tube)
+
+    def eff(self, tube):
+        return -in_working(tube), +in_done(tube)

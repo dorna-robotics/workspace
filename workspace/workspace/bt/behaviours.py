@@ -59,6 +59,24 @@ class WorkspaceContext:
     recipes: Any = None
     meta: Dict[str, Any] = field(default_factory=dict)
 
+    def dump_state(self) -> Dict[str, Any]:
+        """Return a JSON-serializable snapshot of the live world state.
+
+        Predicate facts are listed as tuples; project-specific extras
+        in ``state`` flow through unchanged (as long as they're
+        serializable). Use for diagnose tools, panel UIs, audit logs.
+        """
+        facts = self.state.get("facts") or set()
+        # frozenset/set of tuples → list of lists for JSON friendliness.
+        out: Dict[str, Any] = {
+            "facts": sorted(list(f) for f in facts),
+        }
+        for k, v in self.state.items():
+            if k == "facts":
+                continue
+            out[k] = v
+        return out
+
 
 class WorkspaceBehaviour(py_trees.behaviour.Behaviour):
     """Base for every leaf in a workspace BT.
