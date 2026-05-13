@@ -37,6 +37,8 @@ Authors never write duplicated declarations. One action = one block.
 projects/<name>/
 ├── config/
 │   └── base.j2              # scene
+├── main.py                  # orchestrator launcher (Workspace + RuntimeServer)
+├── launch.yaml              # scene paths + GUI kwargs schema
 ├── actions.py               # predicates + initial_state + make_goal +
 │                            # one Action subclass per atomic step
 ├── workflow.py              # run(workspace, core, **kwargs) entry
@@ -44,13 +46,35 @@ projects/<name>/
 └── README.md                # 30 lines max — what + where-to-edit table
 ```
 
-That's it. **Two substantive files** (`actions.py` + `workflow.py`)
-plus the scene and a README. No `domain.py`, no `conditions.py`, no
-`schedule.py`, no `_LEAVES` dict — the framework generates them from
-the `Action` subclasses you declare.
+**Two substantive files for the protocol** (`actions.py` +
+`workflow.py`) plus `main.py` + `launch.yaml` (orchestrator
+boilerplate, ~30 lines each — copy from `pace_bt/`), the scene, and
+a README. No `domain.py`, no `conditions.py`, no `schedule.py`, no
+`_LEAVES` dict — the framework generates them from the `Action`
+subclasses you declare.
 
 A new project is a copy of `pace_bt/` with `actions.py` filled in for
-your protocol.
+your protocol, and tiny tweaks to `launch.yaml` for kwargs.
+
+### What each file does
+
+* **`main.py`** — the orchestrator spawns this with `python3 main.py
+  --port N`. It reads `launch.yaml`, instantiates `Workspace`, defines
+  a `workflow_fn(*, workspace, core, **kwargs)` that calls
+  `workflow.run()`, and starts the `RuntimeServer`. Identical across
+  projects except for which `workflow.run` they call.
+* **`launch.yaml`** — declares the scene paths (passed to `Workspace`)
+  and the kwargs schema rendered into the operator's Parameters modal.
+* **`actions.py`** — the **only** file you usually edit when defining
+  a protocol. Predicates, initial state, goal, and one `Action`
+  subclass per atomic step.
+* **`workflow.py`** — short. Wires the auto-populated
+  `ActionRegistry` into the `BTEngine`. Copy from `pace_bt/`, change
+  the import lines if needed.
+* **`tree.py`** — optional. Only when you want a custom tree shape
+  (extra retry layers, parallel composites, custom recovery
+  subtrees). The default tree comes from `workflow.py` calling
+  `from_schedule(...)` directly.
 
 ---
 

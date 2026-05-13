@@ -1,0 +1,35 @@
+# pace_bt/launch.yaml
+# Project configuration and launch parameters.
+# The orchestrator reads this file to set up the workspace and GUI.
+
+scene: [config/base.j2]
+
+# kwargs — passed to workflow_fn at runtime.
+# Supported types: int, float, str, bool, choice, textarea, file
+# Fields: type, default, label, hint, placeholder, optional, accept, options, min, max, rows
+kwargs:
+  batch_size:
+    type: int
+    default: 4
+    label: Batch size
+    hint: Number of items (tubes) to process in this run.
+    min: 1
+    max: 20
+  heavy:
+    type: textarea
+    default: ""
+    label: Heavy tubes
+    hint: |
+      Comma-separated tube indices (0-based) that should use the
+      "heavy" dispense branch. Example — "1, 3". Leave blank for
+      all-light. (The planner picks per-tube based on weight; in
+      production this is observed by Inspect, not declared up front.)
+    optional: true
+    rows: 2
+  tick_hz:
+    type: float
+    default: 10.0
+    label: Tick rate (Hz)
+    hint: How often the BT engine ticks the tree. 10 Hz is the default.
+    min: 1.0
+    max: 50.0

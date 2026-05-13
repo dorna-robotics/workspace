@@ -16,7 +16,7 @@ classes.
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable
+from typing import Any
 
 import py_trees
 
@@ -34,10 +34,25 @@ from workspace.bt import (
 )
 from workspace.planner import Replanner, ReplanConfig, make_schedule_builder
 
-from projects.pace_bt import actions  # registers Inspect, Decap, … on import
+import actions  # registers Inspect, Decap, … on import (project-local import)
 
 
 log = logging.getLogger(__name__)
+
+
+def _parse_heavy(value) -> set:
+    """Normalise the ``heavy`` kwarg into a set of int tube indices.
+
+    Accepts either an iterable of ints (programmatic callers) or a
+    comma-separated string (GUI textarea). Empty / blank inputs return
+    an empty set without raising.
+    """
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        parts = [p.strip() for p in value.split(",")]
+        return {int(p) for p in parts if p}
+    return {int(v) for v in value}
 
 
 def run(
@@ -45,13 +60,21 @@ def run(
     core: Any,
     *,
     batch_size: int = 4,
-    heavy: Iterable[int] = (),
+    heavy=(),
     tick_hz: float = 10.0,
     **_unused,
 ) -> py_trees.common.Status:
-    """Plan, schedule, and execute the pace_bt protocol."""
+    """Plan, schedule, and execute the pace_bt protocol.
+
+    Args:
+        batch_size: How many tubes to process.
+        heavy: Indices of tubes that go through the "heavy" dispense
+            branch. Accepts an iterable of ints OR a comma-separated
+            string (the GUI's textarea kwarg arrives as a string).
+        tick_hz: BT engine tick rate.
+    """
     tubes = list(range(int(batch_size)))
-    heavy_set = set(int(t) for t in heavy)
+    heavy_set = _parse_heavy(heavy)
 
     # ── Initial observation (today: declared from kwargs; in production:
     #    populated from device-bus / vision before run()). ─────────────

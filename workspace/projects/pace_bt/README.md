@@ -31,8 +31,10 @@ Validates the plan-schedule-tree-execute loop without hardware.
 | File | Purpose |
 |---|---|
 | `config/base.j2` | scene |
+| `main.py` | orchestrator launcher — boots `Workspace` + `RuntimeServer` |
+| `launch.yaml` | scene paths + GUI kwargs schema (batch size, heavy tubes, tick rate) |
 | `actions.py` | predicates, initial state, goal, one `Action` subclass per atomic step |
-| `workflow.py` | entry point — wires actions registry into the BT engine |
+| `workflow.py` | called on every Start — wires actions registry into the BT engine |
 | `README.md` | this file |
 
 ## Where to edit for…
