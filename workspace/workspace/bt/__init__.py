@@ -1,0 +1,69 @@
+"""Workspace BT framework — Behaviour Tree execution layer.
+
+Drop-in, opinionated wrapper around ``py_trees`` for lab-automation
+projects. Provides:
+
+* :class:`WorkspaceBehaviour`, :class:`RecipeAction`,
+  :class:`PredicateCondition`, :class:`DeviceCondition` — base classes
+  every project leaf subclasses.
+* :class:`BTEngine` — the rate-controlled tick loop with runtime
+  pause/resume/kill awareness and a replan-on-signal hook.
+* :class:`ReplanRequested` — the signal a leaf raises to ask the engine
+  for a tree rebuild.
+* Helpers (:func:`guarded`, :func:`with_retry`, :func:`with_recovery`,
+  :func:`replan_on_failure`, :func:`from_schedule`, …) — the tree
+  patterns every project assembles.
+
+See ``docs/bt-framework-guide.md`` for the discipline document
+(authoring rules, naming conventions, project skeleton).
+"""
+
+from __future__ import annotations
+
+from workspace.bt.behaviours import (
+    DeviceCondition,
+    PredicateCondition,
+    RecipeAction,
+    WorkspaceBehaviour,
+    WorkspaceContext,
+)
+from workspace.bt.builder import (
+    from_schedule,
+    guarded,
+    parallel_all,
+    parallel_any,
+    replan_on_failure,
+    selector,
+    sequence,
+    with_recovery,
+    with_retry,
+)
+from workspace.bt.engine import (
+    BTEngine,
+    EngineConfig,
+    ReplanRequested,
+)
+
+
+__all__ = [
+    # behaviours
+    "WorkspaceContext",
+    "WorkspaceBehaviour",
+    "RecipeAction",
+    "PredicateCondition",
+    "DeviceCondition",
+    # engine
+    "BTEngine",
+    "EngineConfig",
+    "ReplanRequested",
+    # builder helpers
+    "guarded",
+    "with_retry",
+    "with_recovery",
+    "replan_on_failure",
+    "sequence",
+    "selector",
+    "parallel_any",
+    "parallel_all",
+    "from_schedule",
+]
