@@ -19,13 +19,18 @@ Reading order:
        - ``execute`` — REAL-MODE robot-motion logic. Calls recipes
          from ``self.ctx.recipes`` (loaded from ``recipes.yaml``).
 
-Sim vs. real mode (important):
-  * In SIM mode (``core._simulation_mode=True``) the framework
-    **bypasses ``execute()``** entirely — it sleeps for ``duration``
-    seconds and returns success. Useful for testing plan +
-    scheduling + tick semantics without hardware.
-  * In REAL mode the framework calls ``execute(*params)`` on the
-    Action class. That's where recipes get used.
+Sim vs. real mode is a **framework-level** concern, not a per-action
+one. The framework reads ``core._simulation_mode`` once:
+
+  * SIM mode → framework sleeps for ``duration`` per action and
+    returns success. ``execute`` is NOT called. Useful for validating
+    the protocol + plan + schedule end-to-end without hardware.
+  * REAL mode → framework calls ``execute(*params)``. That's where
+    recipes drive the robot.
+
+Action classes don't carry a sim flag. They just define ``execute``
+as the real-hardware logic. The sim path is identical for every
+action and the framework handles it.
 
 If you're adding a new action: copy any existing class, rename it,
 edit ``params`` / ``duration`` / ``resource``, then the ``pre`` /

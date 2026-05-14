@@ -148,9 +148,10 @@ What's happening:
   scheduling and parameter info.
 * `eff` returns a tuple of facts. `+fact` means add, `-fact` means
   remove. No PDDL-side mirror to keep in sync.
-* `execute` is optional in sim-only projects (the framework sleeps
-  for the declared duration and returns success). Override when
-  wiring real recipes.
+* `execute` is the real-hardware logic. **Sim vs. real is a
+  framework-level decision** based on `core._simulation_mode`: sim
+  mode sleeps for `duration` and skips `execute`; real mode calls
+  it. Action classes don't carry a sim flag.
 
 Subclassing `Action` auto-registers the class — the framework picks
 it up the moment `actions.py` is imported.

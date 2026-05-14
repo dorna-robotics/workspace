@@ -376,10 +376,13 @@ class Action:
                   scheduler. Must be a positive integer.
         resource: Resource name the action exclusively claims, or
                   ``None`` for resource-free actions (rare).
-        sim_passthrough: If True (default), in sim mode ``execute()``
-                  is bypassed and the action just sleeps for
-                  ``duration`` seconds and returns success. Set False
-                  to override and write your own sim behaviour.
+
+    Sim vs. real mode is a **framework-level** decision driven by
+    ``core._simulation_mode``. In sim mode the framework sleeps for
+    ``duration`` and returns success without calling ``execute``. In
+    real mode the framework calls ``execute(*params)``. Action
+    subclasses don't have to think about sim — write ``execute`` as
+    the real-hardware logic, the framework handles the rest.
 
     Methods to override:
         pre(self, *params)  -> Expr or Fact or bool
@@ -397,7 +400,6 @@ class Action:
     params: List[str] = []
     duration: int = 1
     resource: Optional[str] = None
-    sim_passthrough: bool = True
 
     # ── Auto-registration machinery ─────────────────────────────────────
     # Subclasses register themselves into the active ActionRegistry on
@@ -659,15 +661,15 @@ class _DSLActionLeaf(RecipeAction):
         return (self._item,)
 
     def execute(self) -> bool:
-        if (
-            self._cls.sim_passthrough
-            and getattr(self.ctx.core, "_simulation_mode", True)
-        ):
-            # Sim mode: sleep the declared duration in small slices so
-            # runtime stop() can interrupt promptly.
+        # The sim/real decision lives ONLY here. Action subclasses
+        # don't carry a sim flag — they just define ``execute`` as the
+        # real-hardware logic. In sim mode we sleep for the declared
+        # duration and skip ``execute`` entirely.
+        if getattr(self.ctx.core, "_simulation_mode", True):
+            # Sleep in small slices so a runtime stop() interrupts
+            # promptly (not after a 10-second sleep block).
             deadline = time.monotonic() + float(self._cls.duration)
             while time.monotonic() < deadline:
-                # Cooperate with runtime cancellation.
                 stop = getattr(self.ctx.runtime, "stopped", None)
                 if stop and (stop() if callable(stop) else stop):
                     return False
