@@ -29,15 +29,16 @@ sudo python3 main.py --port 5010
 | File | Purpose | How often you edit it |
 |---|---|---|
 | `scene/base.j2` | scene | when hardware changes |
-| `main.py` | orchestrator entry — **identical across projects** | never |
+| `main.py` | **explicit** orchestrator entry — opens `launch.yaml`, calls `load_recipes`, calls `run_protocol`. ~50 lines, same shape as pace_or's | rarely |
 | `launch.yaml` | scene paths + GUI kwargs schema | when adding a kwarg |
 | `recipes.yaml` | recipe aliases → class + component bindings | when scene components change |
 | `actions.py` | predicates + `setup()` + one `Action` subclass per atomic step | **every protocol change** |
 | `README.md` | this file | docs |
 
-(`workflow.py` is gone — the framework's `bt.launcher.run_protocol` is
-the default. Drop a `workflow.py` next to `main.py` only if you need
-to override the default protocol runner with custom logic.)
+`main.py` keeps the wiring visible — you can read it and see exactly
+where `launch.yaml`, `recipes.yaml`, and `actions` get hooked together.
+The framework provides reusable helpers (`load_recipes`, `run_protocol`)
+but doesn't hide the assembly.
 
 ## Where to edit for…
 

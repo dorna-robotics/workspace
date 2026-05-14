@@ -1,39 +1,33 @@
-"""Single-call orchestrator entry point for BT projects.
+"""Helpers a BT project's ``main.py`` calls to assemble the protocol.
 
-A project's ``main.py`` is just two lines:
+This module is **explicit infrastructure**, not a magic launcher. A
+project's ``main.py`` opens ``launch.yaml`` itself, calls
+:func:`load_recipes` itself, imports ``actions`` itself, and hands
+those three things to :func:`run_protocol` itself. The reader of
+``main.py`` sees the full wiring without having to chase indirection
+into the framework.
 
-    from workspace.bt.launcher import main
-    main(__file__)
+Public surface:
 
-Everything else lives here:
+  * :func:`load_recipes` — read a ``recipes.yaml`` path and return a
+    ``{alias: recipe_instance}`` dict, same shape as pace_or's
+    ``BaseWorkflow._load_recipes``.
+  * :func:`run_protocol` — given workspace + core + actions module +
+    recipes dict, run plan → schedule → BT to completion.
 
-* parsing ``--port`` (and ``PORT`` env var) so the orchestrator's spawn
-  contract still works,
-* reading ``launch.yaml`` next to the caller's main.py,
-* adding the project directory to ``sys.path`` so ``import actions``
-  works inside the project,
-* loading ``recipes.yaml`` (if present) into a name→recipe-instance
-  dict identical to what pace_or's BaseWorkflow produces, so an
-  ``Action.execute`` body can do ``self.ctx.recipes['gripper'].pick(...)``,
-* instantiating ``Workspace`` + ``RuntimeServer`` and wiring a default
-  ``workflow_fn`` that calls :func:`run_protocol`.
-
-Per-project customisation: drop a ``workflow.py`` next to ``main.py``
-with a ``run(workspace, core, **kwargs)`` function — the launcher
-uses that instead of the default :func:`run_protocol`. Projects with
-nothing custom don't need ``workflow.py`` at all.
+The intentional missing piece: there is no ``main()`` here. Each
+project owns its own ``main.py`` so an operator can read it and see
+"this is where launch.yaml is read, this is where recipes.yaml is
+loaded, this is where Workspace is started." The framework's job is
+to provide reusable pieces, not to hide where they're glued together.
 """
 
 from __future__ import annotations
 
-import argparse
 import importlib
-import importlib.util
 import logging
-import os
-import sys
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import py_trees
 import yaml
@@ -53,32 +47,6 @@ from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
 log = logging.getLogger(__name__)
 
 
-# ── Per-project module loading ────────────────────────────────────────────
-
-
-def _import_from(file_path: Path, module_name: str):
-    """Import ``module_name.py`` from ``file_path``'s directory.
-
-    Used because the project may not be on ``sys.path`` when the
-    launcher is imported. We add the dir explicitly so subsequent
-    ``import <module_name>`` calls inside the project find it.
-    """
-    proj_dir = str(file_path.resolve().parent)
-    if proj_dir not in sys.path:
-        sys.path.insert(0, proj_dir)
-    return importlib.import_module(module_name)
-
-
-def _maybe_import_from(file_path: Path, module_name: str):
-    """Like :func:`_import_from` but returns ``None`` when the module
-    doesn't exist. Used for optional files (e.g. ``workflow.py``)."""
-    proj_dir = file_path.resolve().parent
-    candidate = proj_dir / f"{module_name}.py"
-    if not candidate.is_file():
-        return None
-    return _import_from(file_path, module_name)
-
-
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
 
 
@@ -93,12 +61,12 @@ def _import_class(dotted: str):
     return getattr(mod, attr)
 
 
-def load_recipes(workspace: Any, core: Any, project_dir: Path) -> Dict[str, Any]:
-    """Read ``recipes.yaml`` in ``project_dir`` and instantiate each entry.
+def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any]:
+    """Read a ``recipes.yaml`` file and instantiate each entry.
 
     Returns a ``{alias: recipe_instance}`` dict — same shape pace_or's
-    BaseWorkflow produces and that ``Action.execute`` bodies expect at
-    ``self.ctx.recipes[alias]``.
+    BaseWorkflow produces. ``Action.execute(...)`` bodies access it
+    via ``self.ctx.recipes[alias]``.
 
     File schema (matches pace_or):
 
@@ -106,10 +74,19 @@ def load_recipes(workspace: Any, core: Any, project_dir: Path) -> Dict[str, Any]
           class: workspace.recipes.tool_rack.ToolRack
           kwargs: {component: tool_rack_144mm_1, left_approach: true}
 
-    If ``recipes.yaml`` is absent, returns an empty dict — sim-only
-    projects don't need recipes.
+    Args:
+        workspace: Workspace SDK root (used to resolve component names).
+        core: Core component (passed to each recipe constructor).
+        recipes_path: Path to ``recipes.yaml``. Missing file → empty dict.
+
+    Behaviour on errors:
+        * Missing file → empty dict, no log.
+        * Missing component in scene → one-line warning per recipe,
+          that entry skipped.
+        * Anything else (import error, bad class kwargs) → traceback
+          logged, that entry skipped. Other recipes continue.
     """
-    path = project_dir / "recipes.yaml"
+    path = Path(recipes_path)
     if not path.is_file():
         return {}
     with open(path) as f:
@@ -123,10 +100,6 @@ def load_recipes(workspace: Any, core: Any, project_dir: Path) -> Dict[str, Any]
             try:
                 comp = workspace.components[comp_name]
             except KeyError:
-                # Common case in sim / partial scenes — the recipe refers
-                # to a component that wasn't loaded. One-line warning,
-                # no traceback. If everything fails, the operator will
-                # see them as a list and can fix the scene or recipe.
                 log.warning(
                     "recipes.yaml[%s]: component %r not in scene — skipping",
                     alias, comp_name,
@@ -146,38 +119,43 @@ def run_protocol(
     core: Any,
     actions_module: Any,
     *,
+    recipes: Optional[Dict[str, Any]] = None,
     tick_hz: float = 10.0,
-    project_dir: Path = None,
+    project_name: Optional[str] = None,
     **kwargs,
 ) -> py_trees.common.Status:
     """Default plan → schedule → BT tick lifecycle for any BT project.
 
-    Steps (in order):
+    Steps:
 
-      1. Call ``actions_module.setup(**kwargs)`` to map operator kwargs
-         into ``initial_facts`` / ``goal`` / ``objects``.
-      2. Load ``recipes.yaml`` (if present) into a recipes dict.
-      3. Build a :class:`WorkspaceContext` with everything wired in.
-      4. Pull PDDL templates, scheduler meta, and a leaf factory from
-         the auto-populated :class:`ActionRegistry`.
-      5. Build a :class:`Replanner` and a default tree (per-leaf
-         retry + outer ``replan_on_failure``).
-      6. Run the BT engine.
+      1. Calls ``actions_module.setup(**kwargs)`` to map operator
+         kwargs into ``initial_facts`` / ``goal`` / ``objects``.
+      2. Builds a :class:`WorkspaceContext` carrying the recipes dict
+         the caller supplied.
+      3. Pulls PDDL templates, scheduler meta, and a leaf factory
+         from the auto-populated :class:`ActionRegistry`.
+      4. Wraps every leaf in ``with_retry(max_attempts=2)`` and the
+         body in ``replan_on_failure(...)``. (Override by using your
+         own tree builder; this is just the default.)
+      5. Runs the BT engine.
 
     Args:
         workspace: Workspace SDK root.
         core: Core component.
         actions_module: The project's ``actions`` module. Must expose
-            a ``setup(**kwargs) -> dict`` function returning
+            ``setup(**kwargs) -> dict`` returning
             ``{"initial_facts", "goal", "objects"}``.
+        recipes: ``{alias: recipe_instance}`` dict. Loaded by the
+            caller via :func:`load_recipes` so main.py shows where
+            it comes from. ``None`` → empty dict (sim-only).
         tick_hz: BT engine tick rate (Hz). Comes from launch.yaml kwargs.
-        project_dir: Directory where ``recipes.yaml`` lives.  Defaults
-            to the directory of the imported ``actions_module``.
+        project_name: Display name for log lines / tree node names.
+            Default = ``actions_module.__name__``.
         **kwargs: Operator-supplied parameters from the GUI; forwarded
             to ``actions_module.setup``.
     """
-    if project_dir is None:
-        project_dir = Path(actions_module.__file__).resolve().parent
+    if project_name is None:
+        project_name = actions_module.__name__.split(".")[-1]
 
     # 1. Domain inputs derived from kwargs.
     if not hasattr(actions_module, "setup"):
@@ -190,10 +168,7 @@ def run_protocol(
     goal_fn       = spec["goal"]
     objects       = dict(spec.get("objects") or {})
 
-    # 2. Recipes (real-mode hardware bindings).
-    recipes = load_recipes(workspace, core, project_dir)
-
-    # 3. Context. Carries the live mutable facts dict + recipes +
+    # 2. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
     #    candidate bindings).
     ctx = WorkspaceContext(
@@ -201,30 +176,30 @@ def run_protocol(
         core=core,
         runtime=getattr(workspace, "rt", None) or getattr(workspace, "runtime", None),
         state={"facts": initial_facts},
-        recipes=recipes,
+        recipes=recipes or {},
         meta={
-            "project": project_dir.name,
+            "project": project_name,
             "kwargs":  kwargs,
             "objects": objects,
         },
     )
 
-    # 4. Registry artifacts.
+    # 3. Registry artifacts (auto-populated when ``actions`` was imported).
     registry       = ActionRegistry.current()
     templates      = registry.to_templates(ctx)
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
     build_schedule = make_schedule_builder(meta)
 
-    # 5. Tree builder — default shape: from_schedule + per-leaf retry
-    #    + outer replan_on_failure. Project can override by providing
-    #    its own workflow.py (handled by main()).
+    # 4. Default tree shape: from_schedule + per-leaf retry + outer
+    #    replan_on_failure. Project can supply its own build_tree by
+    #    calling run_protocol_with_tree() instead (advanced use).
     def build_tree(schedule, _ctx):
         def _wrapped(action_name, item_index):
             return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
-        body = from_schedule(schedule, _wrapped, name=f"{project_dir.name}/body")
+        body = from_schedule(schedule, _wrapped, name=f"{project_name}/body")
         return replan_on_failure(
-            sequence(f"{project_dir.name}/root", body),
+            sequence(f"{project_name}/root", body),
             reason="protocol step failed — replanning from observed state",
         )
 
@@ -238,7 +213,6 @@ def run_protocol(
         config=ReplanConfig(verbose=True),
     )
 
-    # 6. Run.
     root = replanner.rebuild()
     engine = BTEngine(
         root=root,
@@ -248,78 +222,8 @@ def run_protocol(
     )
     log.info(
         "%s: starting BT engine — %d action(s) in plan",
-        project_dir.name, len(replanner.last_plan or []),
+        project_name, len(replanner.last_plan or []),
     )
     status = engine.run()
-    log.info("%s: BT engine finished with status=%s", project_dir.name, status.name)
+    log.info("%s: BT engine finished with status=%s", project_name, status.name)
     return status
-
-
-# ── Orchestrator entry — main(__file__) ───────────────────────────────────
-
-
-def main(main_file: str) -> None:
-    """Orchestrator entry point. Call from your project's ``main.py``:
-
-        from workspace.bt.launcher import main
-        main(__file__)
-
-    What this does (mirrors pace_or's main.py):
-
-      1. argparse ``--port`` (defaulting to ``PORT`` env var, then 5010).
-      2. Read ``launch.yaml`` next to the caller's main.py.
-      3. Add the caller's directory to ``sys.path`` so subsequent
-         ``import actions`` (and optional ``import workflow``) inside
-         the project resolve correctly.
-      4. Import the project's ``actions`` module (required).
-      5. Import the project's ``workflow`` module if it exists; use
-         its ``run`` function as the ``workflow_fn``. Otherwise the
-         default :func:`run_protocol` is used.
-      6. Start :class:`Workspace` and :class:`RuntimeServer`.
-    """
-    # Late imports so this module doesn't drag in tornado/etc. until
-    # main() is actually called. Lets sim tests import the launcher
-    # without paying the Workspace dependency cost.
-    from workspace.workspace import Workspace
-    from workspace.runtime_server import RuntimeServer
-
-    main_path = Path(main_file).resolve()
-    project_dir = main_path.parent
-
-    # --- argparse (preserve --port) ---
-    p = argparse.ArgumentParser(prog=f"{project_dir.name}/main.py")
-    p.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("PORT", "5010")),
-        help="HTTP port for the workspace server (default 5010, env PORT).",
-    )
-    args = p.parse_args()
-
-    # --- launch.yaml ---
-    with open(project_dir / "launch.yaml") as f:
-        launch = yaml.safe_load(f) or {}
-    scene_paths = launch.get("scene") or []
-
-    # --- project-local imports (actions required, workflow optional) ---
-    actions_module = _import_from(main_path, "actions")
-    workflow_module = _maybe_import_from(main_path, "workflow")
-
-    # --- wire workflow_fn ---
-    if workflow_module is not None and hasattr(workflow_module, "run"):
-        log.info("%s: using project-local workflow.run override", project_dir.name)
-        _project_run: Callable[..., Any] = workflow_module.run
-
-        def workflow_fn(*, workspace, core, **kwargs):
-            return _project_run(workspace, core, **kwargs)
-    else:
-        def workflow_fn(*, workspace, core, **kwargs):
-            return run_protocol(
-                workspace, core, actions_module,
-                project_dir=project_dir,
-                **kwargs,
-            )
-
-    # --- launch workspace + runtime server ---
-    ws = Workspace(config_path=scene_paths, port=args.port)
-    RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()

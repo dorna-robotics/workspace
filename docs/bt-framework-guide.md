@@ -57,11 +57,14 @@ else is either:
 
 ### What each file does
 
-* **`main.py`** — two lines. ``from workspace.bt.launcher import main;
-  main(__file__)``. The launcher does everything: argparse `--port`,
-  read `launch.yaml`, load `recipes.yaml`, import `actions`, wire
-  `RuntimeServer`. **Identical across every BT project — copy
-  verbatim.**
+* **`main.py`** — explicit orchestrator entry, same shape as pace_or's
+  main.py. Opens `launch.yaml`, calls `load_recipes`, imports
+  `actions`, defines a `workflow_fn` that calls
+  `bt.launcher.run_protocol`, starts `Workspace` + `RuntimeServer`.
+  ~50 lines. **The wiring is visible** — an operator can read it and
+  see exactly where each piece is hooked in. Copy from `pace_bt/`
+  for new projects; the only edit is the import of `actions` (and
+  optionally `project_name`).
 * **`launch.yaml`** — scene paths (`scene: [scene/base.j2, ...]`) and
   the kwargs schema rendered into the operator's Parameters modal.
 * **`recipes.yaml`** — same format as pace_or. Maps recipe aliases
@@ -70,12 +73,10 @@ else is either:
 * **`actions.py`** — THE file. Predicates at top, then a single
   `setup(**kwargs)` function that returns `{initial_facts, goal,
   objects}`, then one `Action` subclass per atomic step.
-* **`workflow.py`** — *optional*. The launcher looks for a
-  `workflow.py` next to `main.py`; if present, its `run(workspace,
-  core, **kwargs)` function replaces the default
-  `bt.launcher.run_protocol`. Use this when you need custom
-  pre-processing of kwargs, a non-default tree shape, multi-stage
-  planning, etc.
+* **`workflow.py`** — *optional*. Use when the default `run_protocol`
+  isn't sufficient (custom tree shapes, multi-stage planning, etc.).
+  If you create one, change `main.py`'s `workflow_fn` to call it
+  instead of `run_protocol`.
 
 ---
 

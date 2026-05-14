@@ -54,10 +54,10 @@ from workspace.bt.dsl import (
     predicate,
     state_to_frozen,
 )
-# Launcher uses Workspace + RuntimeServer at call time, but importing
-# the module symbol up front is fine — its main() / run_protocol() use
-# late imports so the heavy deps aren't pulled in until needed.
-from workspace.bt import launcher as _launcher_module  # noqa: F401
+# Launcher helpers (load_recipes, run_protocol). Imported by each
+# project's main.py — exposed here too for ``from workspace.bt import
+# load_recipes`` convenience.
+from workspace.bt.launcher import load_recipes, run_protocol
 
 
 __all__ = [
@@ -91,4 +91,7 @@ __all__ = [
     "bind_conditions",
     "make_predicate_condition",
     "state_to_frozen",
+    # Launcher helpers (called from each project's main.py)
+    "load_recipes",
+    "run_protocol",
 ]
