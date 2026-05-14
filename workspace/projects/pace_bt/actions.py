@@ -1,24 +1,21 @@
-"""pace_bt — all atomic actions, in one file.
+"""pace_bt — the only file you edit to change the protocol.
 
 This is the canonical example of the framework's authoring style:
-**one ``Action`` subclass per atomic step**. Each class declares its
-preconditions, effects, duration, resource, and recipe call in one
-place. No separate ``domain.py``, no ``conditions.py``, no
-``schedule.META`` dict, no ``_LEAVES`` factory mapping — the framework
-discovers all of that from the classes.
+**one ``Action`` subclass per atomic step**, plus a single
+``setup(**kwargs)`` function that maps operator kwargs into the
+initial world state, the goal, and the object pools.
 
 Reading order:
   1. Predicates declared at the top.
-  2. ``initial_state`` + ``make_goal`` helpers (what t=0 looks like + what
-     "done" means).
+  2. ``setup(**kwargs)`` — converts GUI kwargs into the planning
+     inputs the framework needs.
   3. One section per ``Action`` subclass.
 
 If you're adding a new action: copy any existing class, rename it,
 and edit the four authoring slots — ``params``, ``duration``,
-``resource``, plus the ``pre`` / ``eff`` methods. Add an ``execute``
-override only when wiring a real recipe in production; in sim mode
-the framework sleeps for ``duration`` and returns success
-automatically.
+``resource``, plus the ``pre`` / ``eff`` methods. Override ``execute``
+only when wiring a real recipe in production; in sim mode the
+framework sleeps for ``duration`` and returns success automatically.
 """
 
 from __future__ import annotations
@@ -41,32 +38,61 @@ weight_heavy  = predicate("weight_heavy")
 dosed         = predicate("dosed")
 
 
-# ── 2. World setup ─────────────────────────────────────────────────────────
+# ── 2. setup — map operator kwargs into planning inputs ────────────────────
 
 
-def initial_state(tubes, heavy=()):
-    """Initial world: every tube in source rack, capped; flag heavy ones.
+def _parse_heavy(value):
+    """Normalise the ``heavy`` kwarg into a set of int tube indices.
 
-    Heavy/light is observed by ``Inspect`` in production, but for the
-    first plan we declare it from the operator input. The replanner
-    picks up the real observed weights after inspection.
+    Accepts either an iterable of ints (programmatic callers) or a
+    comma-separated string (GUI textarea). Empty / blank → empty set.
     """
-    heavy = set(heavy)
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        parts = [p.strip() for p in value.split(",")]
+        return {int(p) for p in parts if p}
+    return {int(v) for v in value}
+
+
+def setup(**kwargs):
+    """Translate operator kwargs into the planning inputs the framework needs.
+
+    Returns a dict with three keys:
+
+      * ``initial_facts`` — frozenset of fact tuples describing the
+        world at t=0.
+      * ``goal`` — callable ``state -> bool`` checked at every PDDL
+        expansion. The planner stops when this returns True.
+      * ``objects`` — dict of named pools (``{param_name: [values]}``)
+        the framework's ``Action.param_iter`` uses to enumerate
+        candidate parameter bindings.
+
+    For pace_bt:
+      * ``batch_size`` — how many tubes.
+      * ``heavy`` — which tubes (indices) come back heavy from
+        Inspect. In production this is observed; declaring it up
+        front lets the first plan pick the right dispense branch.
+    """
+    batch_size = int(kwargs.get("batch_size", 1))
+    heavy = _parse_heavy(kwargs.get("heavy", ""))
+    tubes = list(range(batch_size))
+
     facts = set()
     for t in tubes:
         facts.add((in_source.name, t))
         facts.add((has_cap.name, t))
         if t in heavy:
             facts.add((weight_heavy.name, t))
-    return frozenset(facts)
 
-
-def make_goal(tubes):
-    """Goal: every tube ends up in the done rack."""
-    tubes = set(tubes)
-    def _goal(state):
+    def goal(state):
         return all((in_done.name, t) in state for t in tubes)
-    return _goal
+
+    return {
+        "initial_facts": frozenset(facts),
+        "goal":          goal,
+        "objects":       {"tube": tubes},
+    }
 
 
 # ── 3. Actions ─────────────────────────────────────────────────────────────

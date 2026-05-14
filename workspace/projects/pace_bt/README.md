@@ -2,7 +2,8 @@
 
 Behaviour-tree-based implementation of the pace protocol. Demonstrates
 the framework's authoring style: **one `Action` subclass per atomic
-step**, everything else derived automatically.
+step + a `setup(**kwargs)` function**, everything else derived
+automatically.
 
 ## What it does
 
@@ -13,47 +14,46 @@ action's preconditions, no `if` anywhere.
 
 ## Run
 
-```python
-from workspace import Workspace
-from projects.pace_bt import workflow
+The orchestrator spawns it automatically. Or directly:
 
-workspace = Workspace(config_path=["projects/pace_bt/scene/base.j2"])
-core = workspace.components["core"]
-workflow.run(workspace, core, batch_size=4, heavy={1, 3})
+```bash
+cd projects/pace_bt
+sudo python3 main.py --port 5010
 ```
 
-In sim mode (default unless you configure a real robot IP) every
-action sleeps for its declared `duration` and returns success.
-Validates the plan-schedule-tree-execute loop without hardware.
+`main.py` is two lines; the framework reads `launch.yaml`, loads
+`recipes.yaml`, imports `actions`, and starts the BT engine.
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `scene/base.j2` | scene |
-| `main.py` | orchestrator launcher — boots `Workspace` + `RuntimeServer` |
-| `launch.yaml` | scene paths + GUI kwargs schema (batch size, heavy tubes, tick rate) |
-| `actions.py` | predicates, initial state, goal, one `Action` subclass per atomic step |
-| `workflow.py` | called on every Start — wires actions registry into the BT engine |
-| `README.md` | this file |
+| File | Purpose | How often you edit it |
+|---|---|---|
+| `scene/base.j2` | scene | when hardware changes |
+| `main.py` | orchestrator entry — **identical across projects** | never |
+| `launch.yaml` | scene paths + GUI kwargs schema | when adding a kwarg |
+| `recipes.yaml` | recipe aliases → class + component bindings | when scene components change |
+| `actions.py` | predicates + `setup()` + one `Action` subclass per atomic step | **every protocol change** |
+| `README.md` | this file | docs |
+
+(`workflow.py` is gone — the framework's `bt.launcher.run_protocol` is
+the default. Drop a `workflow.py` next to `main.py` only if you need
+to override the default protocol runner with custom logic.)
 
 ## Where to edit for…
 
 | You want to… | Edit |
 |---|---|
-| Add / remove an atomic action | `actions.py` (single `Action` subclass) |
+| Add / remove an atomic action | `actions.py` (one `Action` subclass) |
 | Change branch logic | `pre()` method on the relevant action |
 | Change scheduling (duration / resource) | class attrs on the relevant action |
-| Change the goal | `actions.make_goal` |
+| Change the goal | `actions.setup`'s `goal` callable |
+| Change initial state from kwargs | `actions.setup` |
+| Change the GUI form | `launch.yaml` kwargs |
 | Change the scene | `scene/base.j2` |
-| Custom tree shape (extra retry, parallel) | create an optional `tree.py` |
-
-That's the whole authoring surface. The framework derives the PDDL
-domain, scheduler meta, BT leaf factory, and `apply_effects` mirror
-automatically.
+| Change recipe bindings | `recipes.yaml` |
+| Override the protocol runner | add a `workflow.py` with `run(workspace, core, **kwargs)` |
 
 ## Framework discipline
 
-This project follows the convention pinned in
-[`docs/bt-framework-guide.md`](../../../docs/bt-framework-guide.md).
+See [`docs/bt-framework-guide.md`](../../../docs/bt-framework-guide.md).
 New BT projects start as a copy of this one.

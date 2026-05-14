@@ -54,6 +54,10 @@ from workspace.bt.dsl import (
     predicate,
     state_to_frozen,
 )
+# Launcher uses Workspace + RuntimeServer at call time, but importing
+# the module symbol up front is fine — its main() / run_protocol() use
+# late imports so the heavy deps aren't pulled in until needed.
+from workspace.bt import launcher as _launcher_module  # noqa: F401
 
 
 __all__ = [
