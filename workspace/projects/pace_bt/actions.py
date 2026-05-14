@@ -9,13 +9,28 @@ Reading order:
   1. Predicates declared at the top.
   2. ``setup(**kwargs)`` — converts GUI kwargs into the planning
      inputs the framework needs.
-  3. One section per ``Action`` subclass.
+  3. SOURCE / WORKING / etc. — physical slot tables. Hand-edited per
+     scene. Maps an action's integer ``tube`` index to the rack +
+     slot the recipes layer needs.
+  4. One section per ``Action`` subclass. Each one has:
+       - ``params`` / ``duration`` / ``resource`` — scheduling info
+       - ``pre`` — precondition expression over predicates
+       - ``eff`` — effect: which facts get added (+) / removed (−)
+       - ``execute`` — REAL-MODE robot-motion logic. Calls recipes
+         from ``self.ctx.recipes`` (loaded from ``recipes.yaml``).
+
+Sim vs. real mode (important):
+  * In SIM mode (``core._simulation_mode=True``) the framework
+    **bypasses ``execute()``** entirely — it sleeps for ``duration``
+    seconds and returns success. Useful for testing plan +
+    scheduling + tick semantics without hardware.
+  * In REAL mode the framework calls ``execute(*params)`` on the
+    Action class. That's where recipes get used.
 
 If you're adding a new action: copy any existing class, rename it,
-and edit the four authoring slots — ``params``, ``duration``,
-``resource``, plus the ``pre`` / ``eff`` methods. Override ``execute``
-only when wiring a real recipe in production; in sim mode the
-framework sleeps for ``duration`` and returns success automatically.
+edit ``params`` / ``duration`` / ``resource``, then the ``pre`` /
+``eff`` / ``execute`` methods. Leaving ``execute`` unset is fine
+during early sim development — fill it in before going to hardware.
 """
 
 from __future__ import annotations
@@ -95,7 +110,24 @@ def setup(**kwargs):
     }
 
 
-# ── 3. Actions ─────────────────────────────────────────────────────────────
+# ── 3. Slot tables — map tube index → physical rack + slot ────────────────
+#
+# Recipes operate on (component, slot) pairs (e.g. ``source_rack.pick("A1")``).
+# Actions get an integer ``tube`` index from the planner. These tables
+# translate. Edit when changing rack layout.
+
+SOURCE   = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
+WORKING  = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
+CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
+
+
+# ── 4. Actions ─────────────────────────────────────────────────────────────
+#
+# Each class subclasses ``Action`` and declares the four required attrs
+# (params, duration, resource) plus the three methods (pre, eff,
+# execute). The framework's ``_DSLActionLeaf`` wraps each one as a BT
+# leaf, runs ``execute`` on a worker thread in real mode, and applies
+# the declared effects (eff) to ``ctx.state`` on success.
 
 
 class Inspect(Action):
@@ -111,6 +143,17 @@ class Inspect(Action):
     def eff(self, tube):
         return (+weighed(tube),)
 
+    def execute(self, tube):
+        # Real-mode: pick from source, set on scale, weigh, return.
+        # ``self.ctx.recipes`` is the dict loaded from recipes.yaml.
+        rcp = self.ctx.recipes
+        rcp["source_rack"].pick(SOURCE[tube])
+        rcp["scale"].place("place")
+        rcp["scale"].weight()                  # → reads weight into device bus
+        rcp["scale"].pick("place")
+        rcp["source_rack"].place(SOURCE[tube])
+        return True
+
 
 class Decap(Action):
     """Remove cap, transfer tube into the working rack."""
@@ -123,6 +166,16 @@ class Decap(Action):
 
     def eff(self, tube):
         return -has_cap(tube), -in_source(tube), +in_working(tube)
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp["source_rack"].pick(SOURCE[tube])
+        rcp["decapper_5"].place(exit=False)
+        rcp["decapper_5"].decap(approach=False)
+        rcp["cap_holder"].place(CAPS[tube])     # park the cap
+        rcp["decapper_5"].pick()                # pick tube back up
+        rcp["working_rack"].place(WORKING[tube])
+        return True
 
 
 class DispenseLight(Action):
@@ -142,6 +195,13 @@ class DispenseLight(Action):
     def eff(self, tube):
         return (+dosed(tube),)
 
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
+        rcp["doser_40ml"].dispense(vol=10)
+        rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
+        return True
+
 
 class DispenseHeavy(Action):
     """Dispense the 'heavy' (larger) solvent volume."""
@@ -160,6 +220,13 @@ class DispenseHeavy(Action):
     def eff(self, tube):
         return (+dosed(tube),)
 
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
+        rcp["doser_40ml"].dispense(vol=20)      # heavier → bigger volume
+        rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
+        return True
+
 
 class Recap(Action):
     """Put the cap back onto a dosed tube."""
@@ -173,9 +240,19 @@ class Recap(Action):
     def eff(self, tube):
         return (+has_cap(tube),)
 
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp["working_rack"].pick(WORKING[tube])
+        rcp["decapper_5"].place()
+        rcp["cap_holder"].pick(CAPS[tube])      # retrieve the cap
+        rcp["decapper_5"].cap(exit=False)
+        rcp["decapper_5"].pick(approach=False)
+        rcp["working_rack"].place(WORKING[tube])
+        return True
+
 
 class Shelve(Action):
-    """Move the finished tube into the done rack."""
+    """Move the finished tube into the done rack (back to source slot)."""
     params   = ["tube"]
     duration = 5
     resource = "robot"
@@ -185,3 +262,9 @@ class Shelve(Action):
 
     def eff(self, tube):
         return -in_working(tube), +in_done(tube)
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp["working_rack"].pick(WORKING[tube])
+        rcp["source_rack"].place(SOURCE[tube])
+        return True
