@@ -50,14 +50,15 @@ from workspace.bt.dsl import (
     Fact,
     Predicate,
     bind_conditions,
+    goal_from_action_names,
     make_predicate_condition,
     predicate,
     state_to_frozen,
 )
-# Launcher helpers (load_recipes, run_protocol). Imported by each
-# project's main.py — exposed here too for ``from workspace.bt import
-# load_recipes`` convenience.
-from workspace.bt.launcher import load_recipes, run_protocol
+# Launcher helpers (load_recipes, load_checks, run_protocol). Imported
+# by each project's main.py — exposed here too for ``from workspace.bt
+# import load_recipes`` convenience.
+from workspace.bt.launcher import load_checks, load_recipes, run_protocol
 
 
 __all__ = [
@@ -89,9 +90,11 @@ __all__ = [
     "Predicate",
     "predicate",
     "bind_conditions",
+    "goal_from_action_names",
     "make_predicate_condition",
     "state_to_frozen",
     # Launcher helpers (called from each project's main.py)
+    "load_checks",
     "load_recipes",
     "run_protocol",
 ]

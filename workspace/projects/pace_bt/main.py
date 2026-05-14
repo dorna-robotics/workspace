@@ -6,9 +6,11 @@ Explicit — every wire is visible:
     :class:`Workspace`.
   * ``recipes.yaml`` is loaded into a name → recipe-instance dict via
     :func:`workspace.bt.launcher.load_recipes`.
+  * ``checks`` is imported and turned into ``{name: callable}`` via
+    :func:`workspace.bt.launcher.load_checks`.
   * ``actions`` is imported (registers Action subclasses on import).
   * ``workflow_fn`` calls :func:`workspace.bt.launcher.run_protocol`
-    with all three explicit inputs.
+    with all four explicit inputs.
   * ``--port`` (and ``PORT`` env var) wire through to
     :class:`Workspace` and :class:`RuntimeServer`.
 
@@ -24,9 +26,10 @@ import yaml
 
 from workspace.workspace import Workspace
 from workspace.runtime_server import RuntimeServer
-from workspace.bt.launcher import load_recipes, run_protocol
+from workspace.bt.launcher import load_checks, load_recipes, run_protocol
 
 import actions  # registers Inspect, Decap, … into the ActionRegistry on import
+import checks   # Checks class — gives the framework pre_check / post_check callables
 
 
 _BASE_DIR = Path(__file__).parent
@@ -35,14 +38,17 @@ _BASE_DIR = Path(__file__).parent
 def workflow_fn(*, workspace, core, **kwargs):
     """Called by RuntimeServer on every operator Start click.
 
-    Loads ``recipes.yaml`` (so ``ctx.recipes["gripper"]`` etc. are
-    populated for real-mode runs) and hands the actions module +
-    recipes + kwargs to the BT framework's default protocol runner.
+    Loads ``recipes.yaml`` + ``checks.py`` (so ``ctx.recipes["gripper"]``
+    etc. are populated for real-mode runs and pre_check/post_check
+    names resolve), then hands actions + recipes + checks + kwargs
+    to the BT framework's default protocol runner.
     """
-    recipes = load_recipes(workspace, core, _BASE_DIR / "recipes.yaml")
+    recipes  = load_recipes(workspace, core, _BASE_DIR / "recipes.yaml")
+    check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
     return run_protocol(
         workspace, core, actions,
         recipes=recipes,
+        checks=check_fns,
         project_name="pace_bt",
         **kwargs,
     )

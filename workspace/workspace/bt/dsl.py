@@ -343,6 +343,76 @@ def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     return frozenset(_facts_from_state(state))
 
 
+def goal_from_action_names(
+    names: Sequence[str],
+    objects: Dict[str, Iterable[Any]],
+    registry: Optional["ActionRegistry"] = None,
+) -> Callable[[FrozenSet[Tuple[Any, ...]]], bool]:
+    """Build a goal callable from a list of terminal action class names.
+
+    Convenience for ``setup()``: instead of writing a lambda that
+    enumerates every required fact for every item, the project can
+    declare ``goal=["Shelve"]`` meaning "every parameter binding of
+    Shelve must have its positive effects satisfied in the world
+    state". The framework derives the goal predicate by running each
+    named action's ``eff()`` over the Cartesian product of its
+    declared params (drawn from ``objects``) and requiring every
+    positive fact to be in state. Negative effects are ignored — the
+    goal cares about facts to hold, not facts to absent.
+
+    Args:
+        names: Action class names (PascalCase as declared) — e.g.
+            ``["Shelve"]``. Names are snake-cased to match registry keys.
+        objects: ``{param_name: iterable}`` pool the same as the one
+            in ``setup()``'s return. Each action's params are looked
+            up here.
+        registry: Optional explicit registry. Defaults to the active one.
+
+    Returns:
+        A function ``state -> bool`` suitable for the ``goal`` spec.
+
+    Raises:
+        KeyError: An action name is not in the registry. We raise
+            eagerly here (at setup time) rather than later from a plan
+            request, so typos surface immediately.
+    """
+    reg = registry or ActionRegistry.current()
+    classes: List[Tuple[str, Type["Action"]]] = []
+    for n in names:
+        snake = _to_snake(n)
+        cls = reg.get(snake)
+        if cls is None:
+            raise KeyError(
+                f"goal lists action {n!r} (snake {snake!r}) but it is not "
+                f"registered. Known actions: {sorted(reg.names())}"
+            )
+        classes.append((snake, cls))
+
+    # Pre-enumerate every (class, param-tuple) pair so the goal callable
+    # is a tight loop. Effects can vary with params so we keep them
+    # parameterised; we just lock in the param product up front.
+    bindings: List[Tuple[Type["Action"], Tuple[Any, ...]]] = []
+    from itertools import product as _product
+    for _snake, cls in classes:
+        if not cls.params:
+            bindings.append((cls, ()))
+            continue
+        pools = [list(objects.get(p, [])) for p in cls.params]
+        for combo in _product(*pools):
+            bindings.append((cls, combo))
+
+    def _goal(state: FrozenSet[Tuple[Any, ...]]) -> bool:
+        for cls, params in bindings:
+            instance = cls()
+            for f in instance.eff(*params) or ():
+                if isinstance(f, Fact) and f.polarity:
+                    if f.as_tuple() not in state:
+                        return False
+        return True
+
+    return _goal
+
+
 # ── Action — the unified declaration ───────────────────────────────────────
 
 
@@ -364,42 +434,80 @@ class Action:
         + effects),
       * an :class:`ActionMeta` for the scheduler (duration + resource),
       * a BT leaf factory (``execute`` body wrapped in
-        :class:`RecipeAction` so threading + cancellation come for free).
+        :class:`RecipeAction` so threading + cancellation come for free),
+      * tool-swap, pre/post-check, and trigger semantics matching the
+        project-guide vocabulary.
 
-    Class attributes:
-        params:   List of parameter names. The framework iterates the
-                  Cartesian product (well, per-template ``param_iter``)
-                  across all candidate values to instantiate templates.
-                  For lab work, params are typically a single item
-                  index like ``["tube"]``.
-        duration: Wall-clock duration in seconds. Used by the
-                  scheduler. Must be a positive integer.
-        resource: Resource name the action exclusively claims, or
-                  ``None`` for resource-free actions (rare).
+    Class attributes (the **pace_or-style vocabulary**, see project-guide.md):
 
-    Sim vs. real mode is a **framework-level** decision driven by
-    ``core._simulation_mode``. In sim mode the framework sleeps for
-    ``duration`` and returns success without calling ``execute``. In
-    real mode the framework calls ``execute(*params)``. Action
-    subclasses don't have to think about sim — write ``execute`` as
-    the real-hardware logic, the framework handles the rest.
+        params:             Parameter names — list of strings. Most lab
+                            actions have one param: ``["tube"]``.
+        duration:           Estimated seconds. Used by the scheduler.
+                            Defaults to 1.
+        requires:           List of action class names that must complete
+                            before this one (pace_or-style explicit DAG).
+                            The PDDL ``pre()`` covers the same intent
+                            via state-based preconditions; ``requires``
+                            is kept for readability. Default empty.
+        tool:               Tool the robot holds during this action.
+                            Strings like ``"gripper"`` auto-swap before
+                            the action runs. ``None`` explicitly means
+                            "release current tool"; **unset** (sentinel)
+                            means "keep whatever's currently held".
+                            One tool per action is enforced — keep
+                            actions atomic.
+        tool_swap_duration: Per-action override (seconds) of the global
+                            ``tool_swap_duration`` from launch kwargs.
+                            None → fall back to the global value.
+        resource:           Hardware resource this action claims for
+                            scheduling. ``"robot"`` for foreground
+                            actions, peripheral name (``"shaker_1"``)
+                            for background actions, or ``None``.
+        background:         When True, the action runs in parallel
+                            (robot is free to do other work). The
+                            scheduler models it as a single task per
+                            background — covers all items at once
+                            (item index 0).
+        pre_check:          Name of a check method (in ``Checks`` class)
+                            to run **before** the tool swap. On False
+                            the action is skipped entirely (no tool
+                            swap happens). Can be a list of names.
+        post_check:         Name of a check method to run after the
+                            action completes. Same shape as pre_check.
+        trigger:            ``"end"`` marks this action as the cleanup
+                            invoked when the operator clicks End. Not
+                            scheduled into the normal plan. The action's
+                            ``tool:`` field is the authoritative final
+                            tool state. Scheduling-only attrs
+                            (``requires``, ``duration``, ``background``)
+                            are ignored on triggers.
 
     Methods to override:
-        pre(self, *params)  -> Expr or Fact or bool
-        eff(self, *params)  -> tuple of Facts (use +/- for add/remove)
-        execute(self, *params) -> bool   (run the recipe; True = success)
+        pre(self, *params)     -> Expr or Fact or bool
+        eff(self, *params)     -> tuple of Facts (use +/- for add/remove)
+        execute(self, *params) -> bool | None  (raise to signal failure)
 
-    Methods you usually don't touch:
-        param_iter(self, state) -> iterable of param tuples to try.
-                  Default enumerates each param from ctx.meta["objects"]
-                  (e.g. ``{"tube": range(batch_size)}``). Override for
-                  domain-specific filtering.
+    Sim vs. real mode is a **framework-level** decision driven by
+    ``core._simulation_mode``. Action subclasses don't have to think
+    about it — write ``execute`` as the real-hardware logic; in sim
+    mode the framework's leaf wrapper sleeps for ``duration`` and
+    skips ``execute``.
     """
 
+    # Sentinel that distinguishes "unset" from "set to None" for tool.
+    _TOOL_UNSET = object()
+
     # ── Required class attributes (override in subclass) ────────────────
-    params: List[str] = []
-    duration: int = 1
-    resource: Optional[str] = None
+    params:              List[str] = []
+    duration:            int = 1
+    resource:            Optional[str] = None
+    requires:            List[str] = []
+    tool:                Any = _TOOL_UNSET   # unset | None | "name"
+    tool_swap_duration:  Optional[int] = None
+    background:          bool = False
+    pre_check:           Any = None    # str | list[str] | None
+    post_check:          Any = None
+    trigger:             Optional[str] = None  # "end" or None
 
     # ── Auto-registration machinery ─────────────────────────────────────
     # Subclasses register themselves into the active ActionRegistry on
@@ -527,12 +635,17 @@ class ActionRegistry:
     def to_templates(self, ctx: WorkspaceContext) -> List[ActionTemplate]:
         """Build a list of :class:`ActionTemplate` for the PDDL planner.
 
-        Each registered action class becomes one template. The instance
-        used during planning carries ``ctx`` so its ``param_iter`` /
-        ``pre`` / ``eff`` can consult ``ctx.meta``.
+        Each registered action class becomes one template **unless** it
+        carries ``trigger="end"`` (project-guide §9 — those are scene
+        cleanup, not part of the goal-directed plan; the engine runs
+        them when the operator clicks End). The instance used during
+        planning carries ``ctx`` so its ``param_iter`` / ``pre`` /
+        ``eff`` can consult ``ctx.meta``.
         """
         templates: List[ActionTemplate] = []
         for name, cls in self._actions.items():
+            if getattr(cls, "trigger", None) == "end":
+                continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
             templates.append(self._make_template(name, instance))
@@ -582,10 +695,22 @@ class ActionRegistry:
     def to_meta(self) -> Dict[str, ActionMeta]:
         out: Dict[str, ActionMeta] = {}
         for name, cls in self._actions.items():
+            # trigger="end" actions are cleanup, not scheduled work —
+            # the engine runs them outside the schedule when End is
+            # requested. Keep them out of scheduler meta too.
+            if getattr(cls, "trigger", None) == "end":
+                continue
+            # ``tool`` is a sentinel for "keep current tool" — for the
+            # scheduler that means "no opinion on the held tool" which
+            # we encode as None.
+            tool_attr = getattr(cls, "tool", Action._TOOL_UNSET)
+            tool_val = None if tool_attr is Action._TOOL_UNSET else tool_attr
             out[name] = ActionMeta(
                 duration=int(cls.duration),
                 resource=cls.resource,
                 item_arg_index=0,  # convention: first param is the item
+                tool=tool_val,
+                tool_swap_duration=getattr(cls, "tool_swap_duration", None),
             )
         return out
 
@@ -631,12 +756,20 @@ class _RegistryCtx:
 class _DSLActionLeaf(RecipeAction):
     """RecipeAction created on-the-fly from a registered :class:`Action`.
 
-    Glue between the declarative ``Action`` class and the BT runtime:
+    Honors the full pace_or-style vocabulary (project-guide.md §5):
 
-      * ``execute()`` calls the Action class's ``execute`` (or sleeps
-        in sim mode if ``sim_passthrough`` is True).
-      * ``apply_effects()`` walks the declared ``eff()`` facts and
-        mutates ``ctx.state["facts"]``. No bug-prone hand-mirroring.
+      * ``pre_check`` runs before tool-swap and execute; on False, the
+        whole action is skipped (success status — moving on).
+      * Tool-swap (if ``Action.tool`` differs from currently-held tool)
+        is performed by the framework; recipes ``rcp["<tool>"].pick()`` /
+        ``rcp["<old_tool>"].place()`` from the recipes dict. Skipped
+        when the tool's recipe isn't loaded (sim with empty recipes).
+      * ``execute()`` runs the Action body (or sleeps for ``duration``
+        in sim mode).
+      * ``post_check`` runs after execute; on False the leaf reports
+        FAILURE so the BT can retry/recover.
+      * ``apply_effects()`` mirrors the declared ``eff()`` facts onto
+        ``ctx.state["facts"]``.
     """
 
     def __init__(
@@ -660,29 +793,136 @@ class _DSLActionLeaf(RecipeAction):
         # lab use we've seen).
         return (self._item,)
 
+    # ── pre/post check helpers ─────────────────────────────────────────
+
+    def _run_checks(self, names) -> bool:
+        """Run one or more named checks from the project's Checks
+        instance (``ctx.meta['checks']``).
+
+        A check callable may return either:
+          * ``bool`` — pass/fail directly.
+          * ``(bool, message)`` — pace_or convention. The message is
+            logged on failure and otherwise ignored.
+
+        Returns True iff every named check passes.
+        """
+        if not names:
+            return True
+        if isinstance(names, str):
+            names = [names]
+        checks = (self.ctx.meta or {}).get("checks") or {}
+        for cname in names:
+            fn = checks.get(cname)
+            if fn is None:
+                self.log.warning("check %r is not registered — treating as pass", cname)
+                continue
+            try:
+                rv = fn(self._item)
+            except Exception as ex:
+                self.log.warning("check %r raised: %s — treating as fail", cname, ex)
+                return False
+            # Accept bool or (bool, message) — pace_or returns tuples.
+            if isinstance(rv, tuple) and len(rv) >= 1:
+                ok = bool(rv[0])
+                msg = rv[1] if len(rv) > 1 else ""
+            else:
+                ok = bool(rv)
+                msg = ""
+            if not ok:
+                self.log.info("check %r failed: %s", cname, msg)
+                return False
+        return True
+
+    # ── tool-swap helper ───────────────────────────────────────────────
+
+    def _ensure_tool(self) -> None:
+        """If ``Action.tool`` is set and differs from the currently
+        held tool, swap. ``ctx.meta['current_tool']`` tracks the live
+        tool. Tools come from the recipes dict — ``rcp[name].pick()`` /
+        ``.place()`` are expected to exist.
+
+        In sim mode without recipes loaded, this is a no-op — we just
+        bookkeep the current tool string so post-action scheduling
+        matches what real mode would produce."""
+        wanted = self._cls.tool
+        # Sentinel: "keep whatever's currently held" — do nothing.
+        if wanted is Action._TOOL_UNSET:
+            return
+        meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}
+        current = meta.get("current_tool")
+        if current == wanted:
+            return
+        rcp = self.ctx.recipes or {}
+        # Drop the old tool first (if held).
+        if current is not None:
+            old = rcp.get(current)
+            if old is not None:
+                try:
+                    old.place()
+                except Exception as ex:
+                    self.log.warning("tool place(%r) raised: %s", current, ex)
+        # Pick up the new tool (if any).
+        if wanted is not None:
+            new = rcp.get(wanted)
+            if new is not None:
+                try:
+                    new.pick()
+                except Exception as ex:
+                    self.log.warning("tool pick(%r) raised: %s", wanted, ex)
+        # Track current tool whether or not the recipe existed —
+        # subsequent actions need to know what's nominally held.
+        meta["current_tool"] = wanted
+
+    # ── BT lifecycle ────────────────────────────────────────────────────
+
     def execute(self) -> bool:
-        # The sim/real decision lives ONLY here. Action subclasses
-        # don't carry a sim flag — they just define ``execute`` as the
-        # real-hardware logic. In sim mode we sleep for the declared
-        # duration and skip ``execute`` entirely.
+        # 1. pre_check — runs BEFORE tool swap. False = skip the whole
+        #    action (treated as success so the BT moves on without
+        #    failing the parent sequence; matches pace_or semantics).
+        if not self._run_checks(self._cls.pre_check):
+            self.log.info("%s: pre_check failed — skipping action", self.name)
+            self._skipped = True
+            return True
+
+        # 2. Tool swap (if needed).
+        self._ensure_tool()
+
+        # 3. Sim vs. real for the actual work.
         if getattr(self.ctx.core, "_simulation_mode", True):
-            # Sleep in small slices so a runtime stop() interrupts
-            # promptly (not after a 10-second sleep block).
+            # Sim: sleep for declared duration; respect runtime stop.
             deadline = time.monotonic() + float(self._cls.duration)
             while time.monotonic() < deadline:
                 stop = getattr(self.ctx.runtime, "stopped", None)
                 if stop and (stop() if callable(stop) else stop):
                     return False
                 time.sleep(min(0.05, deadline - time.monotonic()))
-            return True
-        # Real mode: call the action's execute() directly.
-        try:
-            return bool(self._instance.execute(*self._params()))
-        except Exception as ex:
-            self.log.warning("execute raised: %s", ex)
+            ok = True
+        else:
+            try:
+                # execute() can return None ("no exception = success",
+                # matches pace_or state-handler convention) or an
+                # explicit bool. None → True.
+                rv = self._instance.execute(*self._params())
+                ok = True if rv is None else bool(rv)
+            except Exception as ex:
+                self.log.warning("execute raised: %s", ex)
+                return False
+
+        if not ok:
             return False
 
+        # 4. post_check — runs AFTER execute. False = action FAILED.
+        if not self._run_checks(self._cls.post_check):
+            self.log.warning("%s: post_check failed", self.name)
+            return False
+        return True
+
     def apply_effects(self, state: Dict[str, Any]) -> None:
+        # If pre_check skipped us, effects are NOT applied (the world
+        # state remains as the planner left it; replanner can re-derive
+        # the path from there). Matches pace_or's "skip the state" intent.
+        if getattr(self, "_skipped", False):
+            return
         facts = _facts_from_state(state)
         for f in self._instance.eff(*self._params()) or ():
             if not isinstance(f, Fact):
@@ -727,6 +967,7 @@ __all__ = [
     "Fact",
     "Predicate",
     "bind_conditions",
+    "goal_from_action_names",
     "make_predicate_condition",
     "predicate",
     "state_to_frozen",

@@ -4,14 +4,15 @@ Responsibilities:
 
 * Tick the root behaviour at the configured rate (default 10 Hz).
 * Honour ``workspace.Runtime`` lifecycle: pause stops ticking; resume
-  resumes; kill aborts the tree and returns.
+  resumes; kill aborts the tree and returns; **end** lets the current
+  action finish, then swaps in a cleanup tree of all ``trigger="end"``
+  actions, runs that to completion, and exits.
 * Catch a ``ReplanRequested`` signal raised by any leaf (or by an
   observer) and rebuild the tree mid-run before continuing.
-* Surface tree progress as workspace steps (one step per tick where the
-  active leaf changed), so the existing runtime steps UI keeps working.
 
-The engine is reusable across every project — projects only supply the
-root behaviour and a rebuild callback (used by replan).
+The engine is reusable across every project — projects supply the
+root behaviour, a rebuild callback (used by replan), and a
+build-end-tree callback (used when the operator clicks End).
 
 Threading: the engine runs on the *calling thread* (typically the
 runtime's worker thread). It's not its own thread. This keeps lifecycle
@@ -89,13 +90,20 @@ class BTEngine:
             the rebuilt tree reflects whatever observed state changes
             triggered the replan. ``None`` disables replanning — the
             tree halts on ``ReplanRequested``.
+        build_end_tree: A zero-arg callable that returns a fresh root
+            behaviour wrapping every ``trigger="end"`` action in a
+            sequence. Invoked when the runtime transitions to
+            ``ending`` (operator clicked End). ``None`` means "no
+            cleanup tree — just exit cleanly when End is seen". The
+            engine completes the current action before switching.
         runtime: Workspace ``Runtime`` instance. The engine consults its
-            ``paused`` / ``stopped`` flags between ticks and pauses /
-            exits accordingly. Optional — for tests, pass ``None``.
+            ``paused`` / ``stopped`` / ``ending`` flags between ticks
+            and pauses / exits / runs cleanup accordingly. Optional —
+            for tests, pass ``None``.
         config: Tick rate, replan cap, etc.
 
     Lifecycle returned values from ``run()``:
-        Status.SUCCESS — root reached SUCCESS.
+        Status.SUCCESS — root reached SUCCESS (or End cleanup finished).
         Status.FAILURE — root reached FAILURE.
         Status.INVALID — kill / abort during run (or hit replan cap).
     """
@@ -104,14 +112,21 @@ class BTEngine:
         self,
         root: py_trees.behaviour.Behaviour,
         rebuild: Optional[Callable[[], py_trees.behaviour.Behaviour]] = None,
+        build_end_tree: Optional[
+            Callable[[], Optional[py_trees.behaviour.Behaviour]]
+        ] = None,
         runtime: Optional[object] = None,
         config: Optional[EngineConfig] = None,
     ):
         self._root = root
         self._rebuild = rebuild
+        self._build_end_tree = build_end_tree
         self._runtime = runtime
         self._cfg = config or EngineConfig()
         self._replans = 0
+        # Set once we've handed control over to the trigger="end" subtree
+        # so we don't loop back into rebuild/replan logic.
+        self._in_cleanup = False
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -165,6 +180,15 @@ class BTEngine:
                     log.info("BTEngine: runtime stopped — exiting")
                     return self._abort()
 
+                # End: lets the current action finish, then runs the
+                # trigger="end" cleanup subtree. Only swap once
+                # (``_in_cleanup`` guards the transition); the cleanup
+                # tree itself is ticked like any other tree until it
+                # reaches a terminal status.
+                if self._runtime_ending() and not self._in_cleanup:
+                    if not self._enter_cleanup():
+                        return py_trees.common.Status.SUCCESS  # nothing to clean
+
                 if self._runtime_paused():
                     # Don't tick during pause. Sleep a short period and
                     # re-check. The tree's currently-active leaf will be
@@ -179,6 +203,14 @@ class BTEngine:
                 try:
                     self._root.tick_once()
                 except ReplanRequested as ex:
+                    if self._in_cleanup:
+                        # Cleanup subtree should not request a replan;
+                        # log it and treat as a leaf failure so we exit.
+                        log.warning(
+                            "BTEngine: ReplanRequested during cleanup — ignoring (%s)",
+                            ex.reason,
+                        )
+                        return py_trees.common.Status.FAILURE
                     if not self._handle_replan(ex):
                         return self._abort()
                     continue
@@ -220,6 +252,38 @@ class BTEngine:
             return False
         s = getattr(self._runtime, "stopped", None)
         return bool(s() if callable(s) else s)
+
+    def _runtime_ending(self) -> bool:
+        if self._runtime is None:
+            return False
+        e = getattr(self._runtime, "ending", None)
+        return bool(e() if callable(e) else e)
+
+    def _enter_cleanup(self) -> bool:
+        """Swap the live tree for the trigger="end" cleanup subtree.
+
+        Returns True if a cleanup tree is now in place (engine should
+        keep ticking), False if there's no cleanup work to do (engine
+        should exit immediately, SUCCESS).
+        """
+        self._in_cleanup = True
+        log.info("BTEngine: End requested — switching to cleanup subtree")
+        # Terminate the live plan's active branch cleanly so any
+        # currently-running leaf gets a stop() callback.
+        self._safe_terminate(self._root)
+        if self._build_end_tree is None:
+            log.info("BTEngine: no build_end_tree provided — exiting")
+            return False
+        try:
+            cleanup = self._build_end_tree()
+        except Exception:
+            log.exception("BTEngine: build_end_tree raised — exiting")
+            return False
+        if cleanup is None:
+            log.info("BTEngine: no trigger='end' actions in project — exiting")
+            return False
+        self._root = cleanup
+        return True
 
     def _handle_replan(self, ex: ReplanRequested) -> bool:
         """Returns True if the replan succeeded (engine should continue),

@@ -12,8 +12,13 @@ Public surface:
   * :func:`load_recipes` — read a ``recipes.yaml`` path and return a
     ``{alias: recipe_instance}`` dict, same shape as pace_or's
     ``BaseWorkflow._load_recipes``.
+  * :func:`load_checks` — import the project's ``checks.py``,
+    instantiate its ``Checks`` class, run its ``register`` method,
+    and return a ``{name: callable}`` dict the BT framework uses to
+    drive ``pre_check`` / ``post_check`` on every action.
   * :func:`run_protocol` — given workspace + core + actions module +
-    recipes dict, run plan → schedule → BT to completion.
+    recipes dict (+ optional checks dict), run plan → schedule → BT
+    to completion.
 
 The intentional missing piece: there is no ``main()`` here. Each
 project owns its own ``main.py`` so an operator can read it and see
@@ -39,7 +44,11 @@ from workspace.bt.builder import (
     sequence,
     with_retry,
 )
-from workspace.bt.dsl import ActionRegistry, state_to_frozen
+from workspace.bt.dsl import (
+    ActionRegistry,
+    goal_from_action_names,
+    state_to_frozen,
+)
 from workspace.bt.engine import BTEngine, EngineConfig
 from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
 
@@ -61,12 +70,40 @@ def _import_class(dotted: str):
     return getattr(mod, attr)
 
 
+def _read_yaml_or_j2(path: Path) -> Optional[dict]:
+    """Read ``path`` as YAML, rendering it as a Jinja2 template first if
+    a ``.j2`` sibling exists.
+
+    Matches pace_or's ``_load_yaml`` semantics: ``foo.j2`` takes priority
+    over ``foo.yaml`` so projects can drop in a template without
+    deleting their old YAML. Returns the parsed dict, or ``None`` if
+    neither file exists.
+    """
+    base = path.with_suffix("")
+    j2_path   = base.with_suffix(".j2")
+    yaml_path = base.with_suffix(".yaml")
+    if j2_path.is_file():
+        from jinja2 import Environment, FileSystemLoader
+        env = Environment(loader=FileSystemLoader(str(j2_path.parent)))
+        rendered = env.get_template(j2_path.name).render()
+        return yaml.safe_load(rendered) or {}
+    if yaml_path.is_file():
+        with open(yaml_path) as f:
+            return yaml.safe_load(f) or {}
+    return None
+
+
 def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any]:
-    """Read a ``recipes.yaml`` file and instantiate each entry.
+    """Read a recipes definition file and instantiate each entry.
 
     Returns a ``{alias: recipe_instance}`` dict — same shape pace_or's
     BaseWorkflow produces. ``Action.execute(...)`` bodies access it
     via ``self.ctx.recipes[alias]``.
+
+    The framework reads ``recipes.j2`` (rendered as Jinja2) when present,
+    falling back to ``recipes.yaml`` — same precedence as pace_or. Pass
+    either filename in ``recipes_path``; the suffix is replaced when
+    looking for the j2 sibling.
 
     File schema (matches pace_or):
 
@@ -77,7 +114,8 @@ def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any
     Args:
         workspace: Workspace SDK root (used to resolve component names).
         core: Core component (passed to each recipe constructor).
-        recipes_path: Path to ``recipes.yaml``. Missing file → empty dict.
+        recipes_path: Path to ``recipes.yaml`` (or ``.j2``). Missing
+            both → empty dict.
 
     Behaviour on errors:
         * Missing file → empty dict, no log.
@@ -86,11 +124,9 @@ def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any
         * Anything else (import error, bad class kwargs) → traceback
           logged, that entry skipped. Other recipes continue.
     """
-    path = Path(recipes_path)
-    if not path.is_file():
+    defs = _read_yaml_or_j2(Path(recipes_path))
+    if defs is None:
         return {}
-    with open(path) as f:
-        defs = yaml.safe_load(f) or {}
     rcp: Dict[str, Any] = {}
     for alias, defn in defs.items():
         try:
@@ -111,6 +147,89 @@ def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any
     return rcp
 
 
+# ── Checks loading (mirrors pace_or's Checks.register pattern) ────────────
+
+
+class _CheckRegistrar:
+    """Tiny stand-in for pace_or's runner — accumulates name → callable.
+
+    pace_or's ``Checks.register(runner)`` calls
+    ``runner.register_check(name, callable)`` for each method it wants
+    exposed. The BT framework doesn't have a "runner" object — checks
+    are just looked up by name in ``ctx.meta['checks']`` — so we hand
+    the Checks instance an object whose ``register_check`` collects
+    into a dict and return that dict.
+    """
+
+    def __init__(self) -> None:
+        self.checks: Dict[str, Callable[..., Any]] = {}
+
+    def register_check(self, name: str, fn: Callable[..., Any]) -> None:
+        if name in self.checks:
+            log.warning("checks: re-registering %r — overwriting", name)
+        self.checks[name] = fn
+
+
+def load_checks(
+    workspace: Any,
+    core: Any,
+    recipes: Dict[str, Any],
+    checks_module: Optional[Any] = None,
+    **kwargs: Any,
+) -> Dict[str, Callable[..., Any]]:
+    """Build the ``{name: callable}`` dict the BT framework consults for
+    ``pre_check`` / ``post_check`` on every action.
+
+    Same pattern as pace_or:
+      * Import the project's ``checks.py`` (caller does this; we accept
+        the module so main.py shows the import).
+      * Instantiate ``Checks(rcp=recipes, rt=workspace.rt, **kwargs)``.
+      * Call ``checks_instance.register(registrar)`` — registrar
+        collects ``name → bound_method`` into a dict.
+      * Return that dict — ``run_protocol`` stuffs it into
+        ``ctx.meta['checks']``.
+
+    Args:
+        workspace: Workspace SDK root.
+        core: Core component.
+        recipes: ``{alias: recipe_instance}`` dict (from
+            :func:`load_recipes`). Checks usually drive cameras /
+            sensors via recipes.
+        checks_module: The imported ``checks`` module. ``None`` is OK
+            (returns an empty dict — projects without checks just
+            never reference any names in pre_check / post_check).
+        **kwargs: Forwarded to ``Checks.__init__``.
+
+    Returns:
+        ``{name: callable}`` dict ready to live in ``ctx.meta['checks']``.
+        Each callable takes a single ``item_index`` int and may return
+        ``bool`` or ``(bool, message)`` — the framework handles both
+        shapes (matches pace_or's ``(passed, msg)`` convention).
+    """
+    if checks_module is None:
+        return {}
+    if not hasattr(checks_module, "Checks"):
+        log.warning(
+            "%s has no Checks class — pre_check/post_check names will not resolve",
+            checks_module.__name__,
+        )
+        return {}
+    instance = checks_module.Checks(
+        rcp=recipes,
+        rt=getattr(workspace, "rt", None) or getattr(workspace, "runtime", None),
+        **kwargs,
+    )
+    registrar = _CheckRegistrar()
+    if hasattr(instance, "register"):
+        instance.register(registrar)
+    else:
+        log.warning(
+            "%s.Checks has no register() method — no checks will be wired",
+            checks_module.__name__,
+        )
+    return registrar.checks
+
+
 # ── Default protocol runner ───────────────────────────────────────────────
 
 
@@ -120,6 +239,7 @@ def run_protocol(
     actions_module: Any,
     *,
     recipes: Optional[Dict[str, Any]] = None,
+    checks: Optional[Dict[str, Callable[..., Any]]] = None,
     tick_hz: float = 10.0,
     project_name: Optional[str] = None,
     **kwargs,
@@ -148,6 +268,11 @@ def run_protocol(
         recipes: ``{alias: recipe_instance}`` dict. Loaded by the
             caller via :func:`load_recipes` so main.py shows where
             it comes from. ``None`` → empty dict (sim-only).
+        checks: ``{name: callable}`` dict from :func:`load_checks`
+            (or hand-built). Names here are referenced by
+            ``Action.pre_check`` / ``Action.post_check``. ``None`` →
+            empty dict (any check-name reference will log a warning
+            and pass).
         tick_hz: BT engine tick rate (Hz). Comes from launch.yaml kwargs.
         project_name: Display name for log lines / tree node names.
             Default = ``actions_module.__name__``.
@@ -165,8 +290,24 @@ def run_protocol(
         )
     spec = actions_module.setup(**kwargs)
     initial_facts = set(spec["initial_facts"])
-    goal_fn       = spec["goal"]
     objects       = dict(spec.get("objects") or {})
+
+    # Goal may be either:
+    #   * a callable ``state -> bool`` (most flexible — write a lambda
+    #     in setup() and stop), or
+    #   * a list of action class names — terminal actions whose
+    #     positive effects, for every parameter binding drawn from
+    #     ``objects``, must hold in state. Common case ``["Shelve"]``.
+    raw_goal = spec["goal"]
+    if callable(raw_goal):
+        goal_fn = raw_goal
+    elif isinstance(raw_goal, (list, tuple)):
+        goal_fn = goal_from_action_names(raw_goal, objects)
+    else:
+        raise TypeError(
+            f"setup() returned goal of type {type(raw_goal).__name__} — "
+            "expected callable(state)->bool or list[class_name]"
+        )
 
     # 2. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
@@ -178,18 +319,29 @@ def run_protocol(
         state={"facts": initial_facts},
         recipes=recipes or {},
         meta={
-            "project": project_name,
-            "kwargs":  kwargs,
-            "objects": objects,
+            "project":      project_name,
+            "kwargs":       kwargs,
+            "objects":      objects,
+            "checks":       checks or {},
+            # Tracks the tool currently held by the robot. _DSLActionLeaf
+            # consults / updates this when an Action declares ``tool=``.
+            # ``None`` = nothing held; populated by the auto-swap path.
+            "current_tool": None,
         },
     )
 
     # 3. Registry artifacts (auto-populated when ``actions`` was imported).
+    #    Tool-swap duration: setup() may surface a "tool_swap_duration"
+    #    key; otherwise we pull from kwargs (so launch.yaml can expose
+    #    it as a GUI knob). Default 0 — no extra gap.
+    swap_dur = int(
+        spec.get("tool_swap_duration", kwargs.get("tool_swap_duration", 0))
+    )
     registry       = ActionRegistry.current()
     templates      = registry.to_templates(ctx)
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
-    build_schedule = make_schedule_builder(meta)
+    build_schedule = make_schedule_builder(meta, tool_swap_duration=swap_dur)
 
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by
@@ -213,10 +365,31 @@ def run_protocol(
         config=ReplanConfig(verbose=True),
     )
 
+    # End-cleanup tree: collect every Action subclass declaring
+    # ``trigger="end"`` (project-guide §9). When the operator clicks
+    # End, the BT engine completes the current action, then runs this
+    # subtree to perform cleanup (park tools, return home, …) before
+    # exiting. The collection happens at engine-start so the registry
+    # is already populated.
+    end_classes = [
+        (name, cls)
+        for name, cls in sorted(registry._actions.items())
+        if getattr(cls, "trigger", None) == "end"
+    ]
+
+    def build_end_tree() -> Optional[py_trees.behaviour.Behaviour]:
+        if not end_classes:
+            return None
+        # trigger="end" actions are scene-level (no per-item iteration)
+        # so we instantiate exactly one leaf per class, item_index=0.
+        leaves = [leaf_factory(name, 0) for name, _ in end_classes]
+        return sequence(f"{project_name}/end", *leaves)
+
     root = replanner.rebuild()
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,
+        build_end_tree=build_end_tree,
         runtime=ctx.runtime,
         config=EngineConfig(tick_hz=float(tick_hz)),
     )

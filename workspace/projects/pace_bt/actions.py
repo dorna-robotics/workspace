@@ -12,30 +12,38 @@ Reading order:
   3. SOURCE / WORKING / etc. — physical slot tables. Hand-edited per
      scene. Maps an action's integer ``tube`` index to the rack +
      slot the recipes layer needs.
-  4. One section per ``Action`` subclass. Each one has:
-       - ``params`` / ``duration`` / ``resource`` — scheduling info
-       - ``pre`` — precondition expression over predicates
-       - ``eff`` — effect: which facts get added (+) / removed (−)
-       - ``execute`` — REAL-MODE robot-motion logic. Calls recipes
-         from ``self.ctx.recipes`` (loaded from ``recipes.yaml``).
+  4. One section per ``Action`` subclass. Each one declares:
+       - scheduling info       : ``duration``, ``resource``, ``tool``,
+                                 ``tool_swap_duration``, ``background``,
+                                 ``requires``.
+       - operational checks    : ``pre_check`` / ``post_check`` —
+                                 names registered in ``checks.py``.
+       - planning declarations : ``pre()`` returns the precondition
+                                 expression; ``eff()`` returns the
+                                 effect facts (`+` adds, `-` removes).
+       - hardware logic        : ``execute(...)`` — real-mode robot
+                                 motion via ``self.ctx.recipes``.
+       - termination markers   : ``trigger="end"`` for cleanup
+                                 actions invoked when the operator
+                                 clicks End.
 
 Sim vs. real mode is a **framework-level** concern, not a per-action
 one. The framework reads ``core._simulation_mode`` once:
 
   * SIM mode → framework sleeps for ``duration`` per action and
-    returns success. ``execute`` is NOT called. Useful for validating
-    the protocol + plan + schedule end-to-end without hardware.
+    returns success. ``execute`` is NOT called.
   * REAL mode → framework calls ``execute(*params)``. That's where
-    recipes drive the robot.
+    recipes drive the robot. Tool-swaps happen *before* execute via
+    the framework's automatic pick/place of the declared ``tool``.
 
-Action classes don't carry a sim flag. They just define ``execute``
-as the real-hardware logic. The sim path is identical for every
-action and the framework handles it.
+Action classes don't carry a sim flag. Just write ``execute`` as the
+real-hardware logic — the sim path is identical for every action.
 
 If you're adding a new action: copy any existing class, rename it,
-edit ``params`` / ``duration`` / ``resource``, then the ``pre`` /
-``eff`` / ``execute`` methods. Leaving ``execute`` unset is fine
-during early sim development — fill it in before going to hardware.
+edit the class attributes (duration / resource / tool / etc.), then
+the ``pre`` / ``eff`` / ``execute`` methods. Leaving ``execute``
+unset is fine during early sim development — fill it in before
+going to hardware.
 """
 
 from __future__ import annotations
@@ -78,15 +86,22 @@ def _parse_heavy(value):
 def setup(**kwargs):
     """Translate operator kwargs into the planning inputs the framework needs.
 
-    Returns a dict with three keys:
+    Returns a dict with three required keys + one optional:
 
       * ``initial_facts`` — frozenset of fact tuples describing the
         world at t=0.
-      * ``goal`` — callable ``state -> bool`` checked at every PDDL
-        expansion. The planner stops when this returns True.
+      * ``goal`` — either:
+          - a callable ``state -> bool`` (most flexible), or
+          - a list of terminal action class names — the framework
+            requires every parameter binding of each named action to
+            have its positive effects satisfied (this matches pace_or's
+            ``goal: [recapped_final, capped_2ml]`` shape).
       * ``objects`` — dict of named pools (``{param_name: [values]}``)
         the framework's ``Action.param_iter`` uses to enumerate
         candidate parameter bindings.
+      * ``tool_swap_duration`` (optional) — global gap in seconds the
+        scheduler inserts when consecutive same-resource actions
+        differ in declared tool. May also come from kwargs.
 
     For pace_bt:
       * ``batch_size`` — how many tubes.
@@ -105,13 +120,13 @@ def setup(**kwargs):
         if t in heavy:
             facts.add((weight_heavy.name, t))
 
-    def goal(state):
-        return all((in_done.name, t) in state for t in tubes)
-
     return {
-        "initial_facts": frozenset(facts),
-        "goal":          goal,
-        "objects":       {"tube": tubes},
+        "initial_facts":      frozenset(facts),
+        # Terminal actions: every tube must have Shelve applied.
+        # The framework expands this into "in_done(tube) for every t".
+        "goal":               ["Shelve"],
+        "objects":            {"tube": tubes},
+        "tool_swap_duration": int(kwargs.get("tool_swap_duration", 8)),
     }
 
 
@@ -128,19 +143,23 @@ CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
 
 # ── 4. Actions ─────────────────────────────────────────────────────────────
 #
-# Each class subclasses ``Action`` and declares the four required attrs
-# (params, duration, resource) plus the three methods (pre, eff,
-# execute). The framework's ``_DSLActionLeaf`` wraps each one as a BT
-# leaf, runs ``execute`` on a worker thread in real mode, and applies
-# the declared effects (eff) to ``ctx.state`` on success.
+# Each class subclasses ``Action`` and declares its scheduling info
+# (params / duration / resource / tool / ...) plus the four methods
+# (pre / eff / execute). The framework's ``_DSLActionLeaf`` wraps each
+# one as a BT leaf, swaps tools automatically before execute, runs the
+# pre/post checks at the right moments, applies the declared eff()
+# facts on success, and (in sim mode) just sleeps for ``duration``.
 
 
 class Inspect(Action):
     """Pick from source, weigh, return. After this the planner knows the
     tube's weight bucket (heavy / light)."""
-    params   = ["tube"]
-    duration = 10
-    resource = "robot"
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "gripper"
+    requires    = []
+    pre_check   = "source_tube_present"
 
     def pre(self, tube):
         return in_source(tube) & ~weighed(tube)
@@ -157,14 +176,17 @@ class Inspect(Action):
         rcp["scale"].weight()                  # → reads weight into device bus
         rcp["scale"].pick("place")
         rcp["source_rack"].place(SOURCE[tube])
-        return True
 
 
 class Decap(Action):
     """Remove cap, transfer tube into the working rack."""
-    params   = ["tube"]
-    duration = 10
-    resource = "robot"
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "gripper"
+    requires    = ["Inspect"]
+    pre_check   = "source_tube_present"
+    post_check  = "tube_in_working_rack"
 
     def pre(self, tube):
         return in_source(tube) & has_cap(tube) & weighed(tube)
@@ -180,14 +202,16 @@ class Decap(Action):
         rcp["cap_holder"].place(CAPS[tube])     # park the cap
         rcp["decapper_5"].pick()                # pick tube back up
         rcp["working_rack"].place(WORKING[tube])
-        return True
 
 
 class DispenseLight(Action):
     """Dispense the 'light' solvent volume into an uncapped tube."""
-    params   = ["tube"]
-    duration = 10
-    resource = "dispenser"
+    params      = ["tube"]
+    duration    = 10
+    resource    = "dispenser"
+    tool        = "needle"
+    requires    = ["Decap"]
+    pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
         return (
@@ -205,14 +229,16 @@ class DispenseLight(Action):
         rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
         rcp["doser_40ml"].dispense(vol=10)
         rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
-        return True
 
 
 class DispenseHeavy(Action):
     """Dispense the 'heavy' (larger) solvent volume."""
-    params   = ["tube"]
-    duration = 15
-    resource = "dispenser"
+    params      = ["tube"]
+    duration    = 15
+    resource    = "dispenser"
+    tool        = "needle"
+    requires    = ["Decap"]
+    pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
         return (
@@ -230,14 +256,16 @@ class DispenseHeavy(Action):
         rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
         rcp["doser_40ml"].dispense(vol=20)      # heavier → bigger volume
         rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
-        return True
 
 
 class Recap(Action):
     """Put the cap back onto a dosed tube."""
-    params   = ["tube"]
-    duration = 10
-    resource = "robot"
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "gripper"
+    requires    = ["DispenseLight", "DispenseHeavy"]
+    pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
         return dosed(tube) & ~has_cap(tube) & in_working(tube)
@@ -253,14 +281,15 @@ class Recap(Action):
         rcp["decapper_5"].cap(exit=False)
         rcp["decapper_5"].pick(approach=False)
         rcp["working_rack"].place(WORKING[tube])
-        return True
 
 
 class Shelve(Action):
     """Move the finished tube into the done rack (back to source slot)."""
-    params   = ["tube"]
-    duration = 5
-    resource = "robot"
+    params      = ["tube"]
+    duration    = 5
+    resource    = "robot"
+    tool        = "gripper"
+    requires    = ["Recap"]
 
     def pre(self, tube):
         return has_cap(tube) & dosed(tube) & in_working(tube)
@@ -272,4 +301,32 @@ class Shelve(Action):
         rcp = self.ctx.recipes
         rcp["working_rack"].pick(WORKING[tube])
         rcp["source_rack"].place(SOURCE[tube])
-        return True
+
+
+# ── 5. End-trigger actions ─────────────────────────────────────────────────
+#
+# ``trigger="end"`` actions are scene-level cleanup: they run when the
+# operator clicks End, *after* the current scheduled action completes.
+# The PDDL planner does NOT schedule them — they're outside the
+# goal-directed plan. ``params`` must be empty (one leaf per class,
+# no per-item iteration). ``tool=None`` explicitly releases the tool.
+
+
+class ParkTool(Action):
+    """Release whatever tool the robot is currently holding.
+
+    Invoked once when the operator clicks End. The framework's
+    automatic tool-swap logic sees ``tool=None`` and calls
+    ``rcp[<current_tool>].place()`` before this action's ``execute``
+    (which is a no-op).
+    """
+    params      = []
+    duration    = 5
+    resource    = "robot"
+    tool        = None        # "release whatever you're holding"
+    trigger     = "end"
+
+    def execute(self):
+        # The framework already placed the held tool via the auto-swap
+        # path before this method runs. Nothing to do here.
+        pass

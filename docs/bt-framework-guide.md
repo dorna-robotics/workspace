@@ -37,10 +37,11 @@ Authors never write duplicated declarations. One action = one block.
 projects/<name>/
 ├── scene/
 │   └── base.j2              # scene (j2 templates)
-├── main.py                  # orchestrator entry — TWO LINES, identical across all projects
+├── main.py                  # orchestrator entry — explicit wiring, same shape as pace_or
 ├── launch.yaml              # scene paths + GUI kwargs schema
-├── recipes.yaml             # recipe aliases → class + component bindings
+├── recipes.yaml             # recipe aliases → class + component bindings (or recipes.j2)
 ├── actions.py               # predicates + setup(**kwargs) + one Action subclass per step
+├── checks.py                # Checks class — pre/post-check methods referenced by name
 ├── workflow.py              # OPTIONAL — override the default protocol runner
 └── README.md                # 30 lines max — what + where-to-edit table
 ```
@@ -70,9 +71,14 @@ else is either:
 * **`recipes.yaml`** — same format as pace_or. Maps recipe aliases
   (`"gripper"`, `"scale"`) to `{class, kwargs}` so an Action's
   `execute(...)` body can call `self.ctx.recipes["gripper"].pick(...)`.
+  `recipes.j2` is read first if present (Jinja2 template → YAML).
 * **`actions.py`** — THE file. Predicates at top, then a single
   `setup(**kwargs)` function that returns `{initial_facts, goal,
   objects}`, then one `Action` subclass per atomic step.
+* **`checks.py`** — pace_or-style verification class. Methods take
+  `(item_index)`, return `bool` or `(bool, message)`. Wired into
+  the framework via `load_checks(...)` and looked up by name from
+  `Action.pre_check` / `Action.post_check`.
 * **`workflow.py`** — *optional*. Use when the default `run_protocol`
   isn't sufficient (custom tree shapes, multi-stage planning, etc.).
   If you create one, change `main.py`'s `workflow_fn` to call it
@@ -111,17 +117,22 @@ def setup(**kwargs):
         return all((in_done.name, t) in state for t in tubes)
 
     return {
-        "initial_facts": frozenset(facts),
-        "goal":          goal,
-        "objects":       {"tube": tubes},
+        "initial_facts":      frozenset(facts),
+        "goal":               goal,            # or e.g. ["Shelve"] — see §3.2
+        "objects":            {"tube": tubes},
+        "tool_swap_duration": 8,               # OPTIONAL, see §5
     }
 
 # One block per atomic action.
 class Decap(Action):
     """Remove cap, transfer tube to working rack."""
-    params   = ["tube"]
-    duration = 10
-    resource = "robot"
+    params     = ["tube"]
+    duration   = 10
+    resource   = "robot"
+    tool       = "gripper"
+    requires   = ["Inspect"]
+    pre_check  = "source_tube_present"
+    post_check = "tube_in_working_rack"
 
     def pre(self, tube):
         return in_source(tube) & has_cap(tube) & weighed(tube)
@@ -144,8 +155,12 @@ What's happening:
   `goal`, and `objects` (the parameter pools used to enumerate
   candidate action bindings).
 * `Action` is a class — subclass and override `pre`, `eff`, `execute`.
-* The class attributes (`params`, `duration`, `resource`) declare
-  scheduling and parameter info.
+* The class attributes carry **two flavours of metadata**:
+    - Scheduling / runtime: `params`, `duration`, `resource`, `tool`,
+      `tool_swap_duration`, `background`, `requires`, `trigger`.
+    - Operational checks: `pre_check`, `post_check` (names registered
+      in `checks.py`).
+  See §5 for the full vocabulary.
 * `eff` returns a tuple of facts. `+fact` means add, `-fact` means
   remove. No PDDL-side mirror to keep in sync.
 * `execute` is the real-hardware logic. **Sim vs. real is a
@@ -155,6 +170,69 @@ What's happening:
 
 Subclassing `Action` auto-registers the class — the framework picks
 it up the moment `actions.py` is imported.
+
+### 3.1 Action class vocabulary (the pace_or terms, kept verbatim)
+
+Every attribute except `params` is optional. Defaults are noted in
+parentheses.
+
+| Attribute | Type | Purpose |
+|---|---|---|
+| `params` | `list[str]` (`[]`) | Parameter names — usually `["tube"]`. The planner enumerates the Cartesian product across `objects[name]`. |
+| `duration` | `int` (`1`) | Scheduler estimate in seconds. |
+| `resource` | `str \| None` (`None`) | Shared resource the action claims exclusively while running (`"robot"`, `"dispenser"`, …). |
+| `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. **unset** (default) = "keep whatever's currently held"; **None** = "release current tool"; a string = "make sure this tool is held". One tool per action — keep actions atomic. |
+| `tool_swap_duration` | `int \| None` (`None`) | Per-action override of the global swap penalty. `None` = fall back to `tool_swap_duration` from `setup()` / kwargs. |
+| `requires` | `list[str]` (`[]`) | Action class names that must complete before this one. The PDDL `pre()` covers the same intent through facts; `requires` is kept for readability. |
+| `background` | `bool` (`False`) | When True, the action runs in parallel — the robot is free for other work. Scheduled as a single task. |
+| `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
+| `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
+| `trigger` | `str \| None` (`None`) | `"end"` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.3. |
+
+### 3.2 Goals as a list of terminal action class names
+
+`setup()`'s `goal` can be a callable `state -> bool`, or — for the
+common case "every item must finish at action X" — a list of action
+class names:
+
+```python
+return {
+    ...
+    "goal": ["Shelve"],   # equivalent to:
+                          # lambda state: all((in_done.name, t) in state
+                          #                   for t in tubes)
+}
+```
+
+The framework expands the list by running each named action's `eff()`
+across every parameter binding drawn from `objects`, and requires
+every **positive** fact to be in state. Negative effects are ignored
+— the goal cares about facts that must hold, not those that must be
+absent. Use a callable when you need anything fancier.
+
+### 3.3 End-trigger actions (operator clicks End)
+
+The operator can request a graceful stop via the GUI's End button.
+The framework completes the current action, then **runs every action
+declaring `trigger="end"` once in a sequence**, then exits. Typical
+uses: park the held tool, return the robot to home, dispose of waste.
+
+```python
+class ParkTool(Action):
+    """Release whatever tool is held — invoked when operator clicks End."""
+    params  = []        # required: end-trigger actions are scene-level
+    duration = 5
+    resource = "robot"
+    tool     = None     # "release current tool"
+    trigger  = "end"
+
+    def execute(self):
+        # Auto-swap dropped the tool before this runs — nothing to do.
+        pass
+```
+
+End-trigger actions are *excluded* from PDDL templates and from the
+scheduler — they're run by the engine outside the planned schedule.
 
 ---
 
@@ -378,18 +456,72 @@ action) dwarf all of these. The framework is never the bottleneck.
 
 ---
 
-## 13. Migration checklist (linear → BT-driven)
+## 13. Checks (pre_check / post_check) — pace_or-compatible
+
+`checks.py` mirrors pace_or's convention exactly so vision /
+sensor methods written for pace_or transfer verbatim:
+
+```python
+class Checks:
+    def __init__(self, rcp, rt, **kwargs):
+        self.rcp = rcp
+        self.rt  = rt
+
+    def source_tube_present(self, item_i) -> tuple[bool, str]:
+        # TODO: camera.detect("tube", SOURCE[item_i])
+        return True, "source tube present"
+
+    def register(self, runner):
+        runner.register_check("source_tube_present", self.source_tube_present)
+```
+
+Wiring in `main.py`:
+
+```python
+import checks
+...
+recipes  = load_recipes(workspace, core, _BASE_DIR / "recipes.yaml")
+check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
+run_protocol(workspace, core, actions, recipes=recipes, checks=check_fns, **kwargs)
+```
+
+Actions reference checks by name:
+
+```python
+class Decap(Action):
+    pre_check  = "source_tube_present"          # single name…
+    post_check = ["tube_in_working_rack", "cap_in_holder"]   # …or a list
+```
+
+Semantics:
+* **`pre_check` fails** → the action is **skipped** entirely (no tool
+  swap, no `execute`, no effects). Treated as success so the BT moves
+  on. Matches pace_or's "the world already looks done — don't re-do it"
+  intent.
+* **`post_check` fails** → the action **fails**. The BT may retry, the
+  outer `replan_on_failure` may rebuild from observed state.
+* Checks return `bool` or `(bool, message)`. On failure the message
+  is logged at INFO level.
+
+---
+
+## 14. Migration checklist (linear → BT-driven)
 
 If you have a pace_or-style linear project and want to convert it:
 
 1. Copy `pace_bt/` to `your_project_bt/`.
-2. Replace `pace_bt/actions.py` predicates + actions with yours.
-3. Update `initial_state` + `make_goal` to match your protocol's
-   inputs and outputs.
-4. (Optional) Add a `tree.py` if you want custom retry / recovery
+2. Replace `pace_bt/actions.py` predicates + `setup(**kwargs)` +
+   `Action` subclasses with yours. **The vocabulary is the same**
+   as `protocol.yaml`: `tool`, `duration`, `requires`, `pre_check`,
+   `post_check`, `background`, `tool_swap_duration`, `trigger`. The
+   only added piece is `pre()` / `eff()` for the PDDL planner.
+3. Copy `checks.py` over unchanged — its `(item_i) -> (bool, msg)`
+   convention is shared between frameworks.
+4. Copy `recipes.yaml` (or `recipes.j2`) over unchanged.
+5. (Optional) Add a `workflow.py` if you want custom retry / recovery
    shape beyond the default.
-5. Run `workflow.run(...)` in sim. Verify SUCCESS.
-6. Wire `execute` methods to your real recipes for production.
+6. Run `main.py` in sim. Verify SUCCESS.
+7. Wire `execute` methods to your real recipes for production.
 
 Nothing else moves. The scene (`base.j2`), recipes, device bus, and
 runtime layer are all unchanged.
