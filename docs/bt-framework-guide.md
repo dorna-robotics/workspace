@@ -136,7 +136,7 @@ class Decap(Action):
         return in_source(tube) & has_cap(tube) & weighed(tube)
 
     def eff(self, tube):
-        return -has_cap(tube), -in_source(tube), +in_working(tube)
+        return {"decapped": (-has_cap(tube), -in_source(tube), +in_working(tube))}
 
     def execute(self, tube):
         # Real-mode only — in sim the framework sleeps for ``duration``.
@@ -159,8 +159,10 @@ What's happening:
     - Operational checks: `pre_check`, `post_check` (names registered
       in `checks.py`).
   See §5 for the full vocabulary.
-* `eff` returns a tuple of facts. `+fact` means add, `-fact` means
-  remove. No PDDL-side mirror to keep in sync.
+* `eff` returns a dict of named branches; each branch's value is the
+  facts that branch produces. `+fact` adds, `-fact` removes. Single-key
+  dicts are deterministic actions; multi-key dicts are sensing actions
+  whose `execute()` picks the branch at runtime. See §3.4.
 * `execute` is the real-hardware logic. **Sim vs. real is a
   framework-level decision** based on `core._simulation_mode`: sim
   mode sleeps for `duration` and skips `execute`; real mode calls
@@ -230,24 +232,27 @@ class ParkTool(Action):
 End-trigger actions are *excluded* from PDDL templates and from the
 scheduler — they're run by the engine outside the planned schedule.
 
-### 3.4 Non-deterministic / sensing actions — named branches
+### 3.4 `eff()` — always a dict of named branches
 
-Some actions can't tell the planner up front what they'll produce —
-their outcome depends on a sensor reading (weight, presence, barcode).
-For these, `eff()` returns a **dict of named branches**, and
-`execute()` returns the chosen branch name.
+**One shape for every action.** `eff()` returns a `dict` keyed by
+branch name; values are the facts that branch produces.
+
+Deterministic actions have **one** key. Name it after the outcome
+state (past tense reads naturally):
+
+```python
+class Decap(Action):
+    def eff(self, tube):
+        return {"decapped": (-has_cap(tube), -in_source(tube), +in_working(tube))}
+```
+
+Sensing / observation actions (when the outcome depends on a sensor)
+have **multiple** keys. `execute()` returns the chosen key:
 
 ```python
 class Inspect(Action):
-    params  = ["tube"]
-    tool    = "gripper"
-
-    def pre(self, tube):
-        return in_source(tube) & ~weighed(tube)
-
     def eff(self, tube):
-        # All possible outcomes. ORDER MATTERS — the first key is the
-        # planner's default projection.
+        # ORDER MATTERS — first key is the planner's default projection.
         return {
             "light": +weighed(tube),
             "heavy": (+weighed(tube), +weight_heavy(tube)),
@@ -258,32 +263,40 @@ class Inspect(Action):
         return "heavy" if w > HEAVY_THRESHOLD else "light"
 ```
 
-What happens at each layer:
+Branch values may be:
+
+| Shape | Meaning |
+|---|---|
+| `+fact` / `-fact` | single fact |
+| `(+fact_a, -fact_b)` (tuple) | multiple facts applied together |
+| `None` | no facts in this branch |
+
+#### What happens at each layer
 
 | Phase | Behavior |
 |---|---|
-| **PDDL planning** | Uses the *first* dict key as the projected effect (the optimistic / default outcome). Plans the protocol assuming every Inspect returns `"light"`. |
-| **Scheduling** | Same as deterministic — duration, resource, tool all read from the class. |
-| **Runtime** | `execute()` returns one of the branch names. That branch's facts are applied to state. |
-| **Replan** | If the chosen branch differs from the default (first key), the framework raises `ReplanRequested` so downstream actions re-evaluate preconditions against the observed state. |
+| **PDDL planning** | Uses the *first* dict key as the projected effect. Single-key dicts behave deterministically; multi-key dicts plan optimistically for the first branch. |
+| **Scheduling** | Same regardless — duration, resource, tool all read from the class. |
+| **Runtime — execute() returns None** | Default branch (first key) applies. No replan. |
+| **Runtime — execute() returns matching key** | That branch applies. If it's the first key, no replan; otherwise the framework raises `ReplanRequested` so downstream actions re-evaluate. |
+| **Runtime — execute() returns False** | Action failed. |
 
-When you'd use this:
+#### When to use multiple branches
 
 * Weighing, density / volume sensing, vision detection
 * Barcode / RFID scanning where the value drives branching
 * Calibration steps that succeed-with-offset vs need-retry
 * Any "act-then-observe-then-branch" sequence
 
-When NOT to use this:
+For pure failures / retries, use `pre_check` / `post_check` and
+`with_retry` instead — that's a different mechanism.
 
-* Deterministic transformations (Decap always removes the cap) —
-  single-fact `eff()` is simpler and the planner reasons fully ahead.
-* Pure failures / retries — that's what `pre_check` / `post_check` and
-  `with_retry` exist for.
+#### Lineage
 
-**Lineage.** This is PPDDL's `oneof` non-deterministic effect
-(Probabilistic PDDL, ~2002), with named branches instead of anonymous
-ones for readability.
+This is PDDL's `oneof` non-deterministic effect (PPDDL, ~2002), with
+named branches instead of anonymous ones for readability. Single-key
+dicts are the degenerate-deterministic case of the same construct —
+one shape, two uses.
 
 ### 3.5 What `self.ctx` carries — the per-action context
 
@@ -360,15 +373,16 @@ In `pre()` you write boolean expressions over facts:
 | `|` | OR | `weight_heavy(t) | weight_unknown(t)` |
 | `~` | NOT | `~dosed(t)` |
 
-In `eff()` you return a tuple of facts:
+In `eff()` you return a **dict** of named branches (see §3.4). Inside
+each branch value, facts carry a sign:
 
 | Operator | Meaning | Example |
 |---|---|---|
 | `+fact` | Add to state | `+in_working(t)` |
 | `-fact` | Remove from state | `-has_cap(t)` |
 
-A bare fact (without `+`/`-`) in `eff()` is invalid — be explicit
-about whether you're adding or removing.
+A bare fact (without `+`/`-`) is invalid — be explicit about whether
+you're adding or removing.
 
 ---
 
@@ -405,7 +419,7 @@ class Weigh(Action):
         return in_working(tube) & ~weighed(tube)
 
     def eff(self, tube):
-        return (+weighed(tube),)
+        return {"weighed": +weighed(tube)}
 
     def execute(self, tube):
         return self.ctx.recipes["scale"].weigh(tube)

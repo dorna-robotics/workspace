@@ -192,7 +192,7 @@ class Decap(Action):
         return in_source(tube) & has_cap(tube) & weighed(tube)
 
     def eff(self, tube):
-        return -has_cap(tube), -in_source(tube), +in_working(tube)
+        return {"decapped": (-has_cap(tube), -in_source(tube), +in_working(tube))}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -221,7 +221,7 @@ class DispenseLight(Action):
         )
 
     def eff(self, tube):
-        return +dosed(tube)
+        return {"dosed": +dosed(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -247,7 +247,7 @@ class DispenseHeavy(Action):
         )
 
     def eff(self, tube):
-        return +dosed(tube)
+        return {"dosed": +dosed(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -268,7 +268,7 @@ class Recap(Action):
         return dosed(tube) & ~has_cap(tube) & in_working(tube)
 
     def eff(self, tube):
-        return +has_cap(tube)
+        return {"recapped": +has_cap(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -291,7 +291,7 @@ class Shelve(Action):
         return has_cap(tube) & dosed(tube) & in_working(tube)
 
     def eff(self, tube):
-        return -in_working(tube), +in_done(tube)
+        return {"shelved": (-in_working(tube), +in_done(tube))}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
