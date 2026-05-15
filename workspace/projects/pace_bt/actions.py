@@ -68,20 +68,6 @@ dosed         = predicate("dosed")
 # ── 2. setup — map operator kwargs into planning inputs ────────────────────
 
 
-def _parse_heavy(value):
-    """Normalise the ``heavy`` kwarg into a set of int tube indices.
-
-    Accepts either an iterable of ints (programmatic callers) or a
-    comma-separated string (GUI textarea). Empty / blank → empty set.
-    """
-    if value is None:
-        return set()
-    if isinstance(value, str):
-        parts = [p.strip() for p in value.split(",")]
-        return {int(p) for p in parts if p}
-    return {int(v) for v in value}
-
-
 def setup(**kwargs):
     """Translate operator kwargs into the planning inputs the framework needs.
 
@@ -110,8 +96,17 @@ def setup(**kwargs):
         front lets the first plan pick the right dispense branch.
     """
     batch_size = int(kwargs.get("batch_size", 1))
-    heavy = _parse_heavy(kwargs.get("heavy", ""))
     tubes = list(range(batch_size))
+
+    # ``heavy`` comes from the GUI textarea ("1, 3") or programmatic
+    # callers (iterable of ints). Empty/None → no heavy tubes.
+    raw = kwargs.get("heavy")
+    if not raw:
+        heavy = set()
+    elif isinstance(raw, str):
+        heavy = {int(p.strip()) for p in raw.split(",") if p.strip()}
+    else:
+        heavy = {int(v) for v in raw}
 
     facts = set()
     for t in tubes:
