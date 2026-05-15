@@ -75,12 +75,10 @@ def setup(**kwargs):
 
       * ``initial_facts`` — frozenset of fact tuples describing the
         world at t=0.
-      * ``goal`` — either:
-          - a callable ``state -> bool`` (most flexible), or
-          - a list of terminal action class names — the framework
-            requires every parameter binding of each named action to
-            have its positive effects satisfied (this matches pace_or's
-            ``goal: [recapped_final, capped_2ml]`` shape).
+      * ``goal`` — a callable ``state -> bool``. The planner stops the
+        moment it returns True. Write any predicate over the
+        frozenset of fact tuples; the function is called many times
+        during search so keep it cheap and pure (no I/O, no mutation).
       * ``objects`` — dict of named pools (``{param_name: [values]}``)
         the framework's ``Action.param_iter`` uses to enumerate
         candidate parameter bindings.
@@ -106,11 +104,13 @@ def setup(**kwargs):
         facts.add((in_source.name, t))
         facts.add((has_cap.name, t))
 
+    def goal(state):
+        # Done when every tube has reached the done rack.
+        return all((in_done.name, t) in state for t in tubes)
+
     return {
         "initial_facts": frozenset(facts),
-        # Terminal actions: every tube must have Shelve applied.
-        # The framework expands this into "in_done(tube) for every t".
-        "goal":          ["Shelve"],
+        "goal":          goal,
         "objects":       {"tube": tubes},
     }
 

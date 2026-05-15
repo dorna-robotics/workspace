@@ -46,7 +46,6 @@ from workspace.bt.builder import (
 )
 from workspace.bt.dsl import (
     ActionRegistry,
-    goal_from_action_names,
     state_to_frozen,
 )
 from workspace.bt.engine import BTEngine, EngineConfig
@@ -292,21 +291,15 @@ def run_protocol(
     initial_facts = set(spec["initial_facts"])
     objects       = dict(spec.get("objects") or {})
 
-    # Goal may be either:
-    #   * a callable ``state -> bool`` (most flexible — write a lambda
-    #     in setup() and stop), or
-    #   * a list of action class names — terminal actions whose
-    #     positive effects, for every parameter binding drawn from
-    #     ``objects``, must hold in state. Common case ``["Shelve"]``.
-    raw_goal = spec["goal"]
-    if callable(raw_goal):
-        goal_fn = raw_goal
-    elif isinstance(raw_goal, (list, tuple)):
-        goal_fn = goal_from_action_names(raw_goal, objects)
-    else:
+    # Goal MUST be a callable ``state -> bool``. The planner calls it
+    # after every state expansion to check "are we done yet?". One
+    # shape — for nuanced goals (disjunctions, thresholds, multi-branch
+    # terminal actions) just write the predicate directly.
+    goal_fn = spec["goal"]
+    if not callable(goal_fn):
         raise TypeError(
-            f"setup() returned goal of type {type(raw_goal).__name__} — "
-            "expected callable(state)->bool or list[class_name]"
+            f"setup() returned goal of type {type(goal_fn).__name__} — "
+            "expected a callable: ``def goal(state): return ...``"
         )
 
     # 2. Context. Carries the live mutable facts dict + recipes +

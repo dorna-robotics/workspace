@@ -118,7 +118,7 @@ def setup(**kwargs):
 
     return {
         "initial_facts": frozenset(facts),
-        "goal":          goal,            # or e.g. ["Shelve"] — see §3.2
+        "goal":          goal,            # callable state -> bool
         "objects":       {"tube": tubes},
     }
 
@@ -163,7 +163,7 @@ What's happening:
 * `eff` returns a dict of named branches; each branch's value is the
   facts that branch produces. `+fact` adds, `-fact` removes. Single-key
   dicts are deterministic actions; multi-key dicts are sensing actions
-  whose `execute()` picks the branch at runtime. See §3.4.
+  whose `execute()` picks the branch at runtime. See §3.3.
 * `execute` is the real-hardware logic. **Sim vs. real is a
   framework-level decision** based on `core._simulation_mode`: sim
   mode sleeps for `duration` and skips `execute`; real mode calls
@@ -186,30 +186,9 @@ parentheses.
 | `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the previous same-resource action used a different `tool`. Per-action so swap costs can differ between tool changes. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
-| `trigger` | `str \| None` (`None`) | `"end"` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.3. |
+| `trigger` | `str \| None` (`None`) | `"end"` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
 
-### 3.2 Goals as a list of terminal action class names
-
-`setup()`'s `goal` can be a callable `state -> bool`, or — for the
-common case "every item must finish at action X" — a list of action
-class names:
-
-```python
-return {
-    ...
-    "goal": ["Shelve"],   # equivalent to:
-                          # lambda state: all((in_done.name, t) in state
-                          #                   for t in tubes)
-}
-```
-
-The framework expands the list by running each named action's `eff()`
-across every parameter binding drawn from `objects`, and requires
-every **positive** fact to be in state. Negative effects are ignored
-— the goal cares about facts that must hold, not those that must be
-absent. Use a callable when you need anything fancier.
-
-### 3.3 End-trigger actions (operator clicks End)
+### 3.2 End-trigger actions (operator clicks End)
 
 The operator can request a graceful stop via the GUI's End button.
 The framework completes the current action, then **runs every action
@@ -233,7 +212,7 @@ class ParkTool(Action):
 End-trigger actions are *excluded* from PDDL templates and from the
 scheduler — they're run by the engine outside the planned schedule.
 
-### 3.4 `eff()` — always a dict of named branches
+### 3.3 `eff()` — always a dict of named branches
 
 **One shape for every action.** `eff()` returns a `dict` keyed by
 branch name; values are the facts that branch produces.
@@ -311,7 +290,7 @@ named branches instead of anonymous ones for readability. Single-key
 dicts are the degenerate-deterministic case of the same construct —
 one shape, two uses.
 
-### 3.5 What `self.ctx` carries — the per-action context
+### 3.4 What `self.ctx` carries — the per-action context
 
 Every Action subclass has `self.ctx` available inside `pre()`, `eff()`,
 `execute()`, `param_iter()`, and any helper method. It's the **only**
@@ -386,7 +365,7 @@ In `pre()` you write boolean expressions over facts:
 | `|` | OR | `weight_heavy(t) | weight_unknown(t)` |
 | `~` | NOT | `~dosed(t)` |
 
-In `eff()` you return a **dict** of named branches (see §3.4). Inside
+In `eff()` you return a **dict** of named branches (see §3.3). Inside
 each branch value, facts carry a sign:
 
 | Operator | Meaning | Example |
@@ -677,7 +656,7 @@ enumerates over. Anything else `execute()` needs has four sources:
 | Per-action-instance value the planner needs to reason about | **another entry in `params`** |
 
 Don't dump runtime config into `params` — the planner would
-enumerate over it for no reason. (See `self.ctx` table in §3.5.)
+enumerate over it for no reason. (See `self.ctx` table in §3.4.)
 
 ### Q: Where does branching happen? An `if` inside `execute()`?
 
@@ -694,7 +673,7 @@ class DispenseHeavy(Action):
 ```
 
 For branching on a **sensed value** (the outcome isn't known at plan
-time), use the dict-eff pattern from §3.4 — `eff()` declares the
+time), use the dict-eff pattern from §3.3 — `eff()` declares the
 possible outcomes, `execute()` returns the observed one, the framework
 replans.
 
@@ -747,14 +726,55 @@ to translate operator kwargs into the three things the planner needs:
 ```python
 return {
     "initial_facts": frozenset(...),   # what's true at t=0
-    "goal":          ...,              # callable, or list of terminal action names
+    "goal":          goal_fn,          # callable state -> bool
     "objects":       {"tube": [...]},  # candidate values for params
 }
 ```
 
 Predicates and Action classes are declared at module level (vocabulary,
 static). `setup()` decides which **facts** (instances) are true at t=0,
-not which predicates exist.
+not which predicates exist. The goal is always a callable — write
+whichever predicate you need over the state set; see the next Q.
+
+### Q: What does the `goal` callable look like, and what can it express?
+
+A pure function `state -> bool`. The planner calls it after every
+state expansion to check "are we done yet?". Common patterns:
+
+```python
+# Every item must reach a specific predicate
+def goal(state):
+    return all((in_done.name, t) in state for t in tubes)
+
+# Disjoint terminal outcomes — done if shelved OR archived
+def goal(state):
+    return all(
+        ("in_done", t) in state or ("in_archived", t) in state
+        for t in tubes
+    )
+
+# Threshold — at least N items finished
+def goal(state):
+    return sum(1 for f in state if f[0] == "in_done") >= 3
+
+# Conditional invariant — heavy tubes must also be recorded
+def goal(state):
+    heavy = {f[1] for f in state if f[0] == "weight_heavy"}
+    recorded = {f[1] for f in state if f[0] == "recorded"}
+    return heavy <= recorded
+```
+
+Two rules:
+
+1. **Pure.** Same `state` in → same `bool` out. No I/O, no mutation.
+2. **Cheap.** Called many times during search — use set membership
+   (`(fact, t) in state` is O(1)) rather than scans.
+
+The callable is **fully expressive** for boolean predicates over the
+declared world state — same power as formal PDDL goal expressions.
+Out of scope (by design): wall-clock conditions, plan-cost objectives,
+external sensors. For sensor-driven goals, use a sensing action to
+lift the value into state first (§3.3).
 
 ### Q: What is `frozenset` (in `setup()`'s `initial_facts`)?
 
@@ -777,7 +797,7 @@ self.ctx.meta["current_tool"]          # what tool is currently held
 ```
 
 Same role as pace_or's `self.rcp` / `self.rt`, just bundled under
-`ctx`. Full table in §3.5.
+`ctx`. Full table in §3.4.
 
 ### Q: What's the difference between deterministic and sensing actions?
 
@@ -802,7 +822,7 @@ def execute(self, tube):
 ```
 
 The planner uses the first key for projection. Non-first choices at
-runtime trigger a replan. (§3.4 for the full contract.)
+runtime trigger a replan. (§3.3 for the full contract.)
 
 ### Q: Why does `execute()` have to return a string? Can't I just omit the return?
 

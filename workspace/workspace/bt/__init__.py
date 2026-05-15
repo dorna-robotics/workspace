@@ -50,7 +50,6 @@ from workspace.bt.dsl import (
     Fact,
     Predicate,
     bind_conditions,
-    goal_from_action_names,
     make_predicate_condition,
     predicate,
     state_to_frozen,
@@ -90,7 +89,6 @@ __all__ = [
     "Predicate",
     "predicate",
     "bind_conditions",
-    "goal_from_action_names",
     "make_predicate_condition",
     "state_to_frozen",
     # Launcher helpers (called from each project's main.py)

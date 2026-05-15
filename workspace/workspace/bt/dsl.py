@@ -393,79 +393,6 @@ def _default_branch(effs: Dict[str, Any]) -> str:
     return next(iter(effs))
 
 
-def goal_from_action_names(
-    names: Sequence[str],
-    objects: Dict[str, Iterable[Any]],
-    registry: Optional["ActionRegistry"] = None,
-) -> Callable[[FrozenSet[Tuple[Any, ...]]], bool]:
-    """Build a goal callable from a list of terminal action class names.
-
-    Convenience for ``setup()``: instead of writing a lambda that
-    enumerates every required fact for every item, the project can
-    declare ``goal=["Shelve"]`` meaning "every parameter binding of
-    Shelve must have its positive effects satisfied in the world
-    state". The framework derives the goal predicate by running each
-    named action's ``eff()`` over the Cartesian product of its
-    declared params (drawn from ``objects``) and requiring every
-    positive fact to be in state. Negative effects are ignored — the
-    goal cares about facts to hold, not facts to absent.
-
-    Args:
-        names: Action class names (PascalCase as declared) — e.g.
-            ``["Shelve"]``. Names are snake-cased to match registry keys.
-        objects: ``{param_name: iterable}`` pool the same as the one
-            in ``setup()``'s return. Each action's params are looked
-            up here.
-        registry: Optional explicit registry. Defaults to the active one.
-
-    Returns:
-        A function ``state -> bool`` suitable for the ``goal`` spec.
-
-    Raises:
-        KeyError: An action name is not in the registry. We raise
-            eagerly here (at setup time) rather than later from a plan
-            request, so typos surface immediately.
-    """
-    reg = registry or ActionRegistry.current()
-    classes: List[Tuple[str, Type["Action"]]] = []
-    for n in names:
-        snake = _to_snake(n)
-        cls = reg.get(snake)
-        if cls is None:
-            raise KeyError(
-                f"goal lists action {n!r} (snake {snake!r}) but it is not "
-                f"registered. Known actions: {sorted(reg.names())}"
-            )
-        classes.append((snake, cls))
-
-    # Pre-enumerate every (class, param-tuple) pair so the goal callable
-    # is a tight loop. Effects can vary with params so we keep them
-    # parameterised; we just lock in the param product up front.
-    bindings: List[Tuple[Type["Action"], Tuple[Any, ...]]] = []
-    from itertools import product as _product
-    for _snake, cls in classes:
-        if not cls.params:
-            bindings.append((cls, ()))
-            continue
-        pools = [list(objects.get(p, [])) for p in cls.params]
-        for combo in _product(*pools):
-            bindings.append((cls, combo))
-
-    def _goal(state: FrozenSet[Tuple[Any, ...]]) -> bool:
-        for cls, params in bindings:
-            instance = cls()
-            effs = _normalise_eff(instance.eff(*params), cls.__name__)
-            # Goal expansion uses the default branch (first dict key)
-            # — same convention as the planner.
-            for f in effs[_default_branch(effs)]:
-                if isinstance(f, Fact) and f.polarity:
-                    if f.as_tuple() not in state:
-                        return False
-        return True
-
-    return _goal
-
-
 # ── Action — the unified declaration ───────────────────────────────────────
 
 
@@ -1122,7 +1049,6 @@ __all__ = [
     "Fact",
     "Predicate",
     "bind_conditions",
-    "goal_from_action_names",
     "make_predicate_condition",
     "predicate",
     "state_to_frozen",
