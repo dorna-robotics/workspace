@@ -470,9 +470,11 @@ class Action:
                             means "keep whatever's currently held".
                             One tool per action is enforced — keep
                             actions atomic.
-        tool_swap_duration: Per-action override (seconds) of the global
-                            ``tool_swap_duration`` from launch kwargs.
-                            None → fall back to the global value.
+        tool_swap_duration: Seconds inserted before this action when the
+                            previous same-resource action held a
+                            different ``tool``. Per-action so swap
+                            times can differ (gripper vs. needle racks
+                            are at different distances). Default 10.
         resource:           Hardware lock(s) this action claims for
                             scheduling. Three shapes:
                               * ``None``               — claims nothing,
@@ -518,7 +520,7 @@ class Action:
     duration:            int = 1
     resource:            Any = None    # None | "name" | ["a", "b"]
     tool:                Any = _TOOL_UNSET   # unset | None | "name"
-    tool_swap_duration:  Optional[int] = None
+    tool_swap_duration:  int = 10      # gap before this action when tool changes
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
     trigger:             Optional[str] = None  # "end" or None
@@ -732,7 +734,7 @@ class ActionRegistry:
                 resource=cls.resource,
                 item_arg_index=0,  # convention: first param is the item
                 tool=tool_val,
-                tool_swap_duration=getattr(cls, "tool_swap_duration", None),
+                tool_swap_duration=int(cls.tool_swap_duration),
             )
         return out
 

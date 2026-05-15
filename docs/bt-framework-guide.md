@@ -117,10 +117,9 @@ def setup(**kwargs):
         return all((in_done.name, t) in state for t in tubes)
 
     return {
-        "initial_facts":      frozenset(facts),
-        "goal":               goal,            # or e.g. ["Shelve"] — see §3.2
-        "objects":            {"tube": tubes},
-        "tool_swap_duration": 8,               # OPTIONAL, see §5
+        "initial_facts": frozenset(facts),
+        "goal":          goal,            # or e.g. ["Shelve"] — see §3.2
+        "objects":       {"tube": tubes},
     }
 
 # One block per atomic action.
@@ -181,7 +180,7 @@ parentheses.
 | `duration` | `int` (`1`) | Scheduler estimate in seconds. |
 | `resource` | `str \| list[str] \| None` (`None`) | Lock(s) this action claims exclusively. `"robot"` = one lock; `["robot","scale"]` = both held at once (arm holds tube on scale); `None` = unlimited parallel. Autonomous peripheral (shaker running alone) → its own lock name, robot stays free. |
 | `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. **unset** (default) = "keep whatever's currently held"; **None** = "release current tool"; a string = "make sure this tool is held". One tool per action — keep actions atomic. |
-| `tool_swap_duration` | `int \| None` (`None`) | Per-action override of the global swap penalty. `None` = fall back to `tool_swap_duration` from `setup()` / kwargs. |
+| `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the previous same-resource action used a different `tool`. Per-action so swap costs can differ between tool changes. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
 | `trigger` | `str \| None` (`None`) | `"end"` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.3. |

@@ -331,17 +331,14 @@ def run_protocol(
     )
 
     # 3. Registry artifacts (auto-populated when ``actions`` was imported).
-    #    Tool-swap duration: setup() may surface a "tool_swap_duration"
-    #    key; otherwise we pull from kwargs (so launch.yaml can expose
-    #    it as a GUI knob). Default 0 — no extra gap.
-    swap_dur = int(
-        spec.get("tool_swap_duration", kwargs.get("tool_swap_duration", 0))
-    )
+    #    Tool-swap durations live per-action on the Action class
+    #    (cls.tool_swap_duration); the scheduler reads them via
+    #    ActionMeta. No global knob here.
     registry       = ActionRegistry.current()
     templates      = registry.to_templates(ctx)
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
-    build_schedule = make_schedule_builder(meta, tool_swap_duration=swap_dur)
+    build_schedule = make_schedule_builder(meta)
 
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by

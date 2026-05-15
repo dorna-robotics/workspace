@@ -60,17 +60,17 @@ class ActionMeta:
             between consecutive same-resource actions whose tool
             differs (pace_or-style). ``None`` = no tool (or "don't
             care"). Defaults to ``None``.
-        tool_swap_duration: Per-action override of the global
-            ``tool_swap_duration``. Used when the previous action's
-            tool differs from this one's. ``None`` = fall back to the
-            scheduler's global value.
+        tool_swap_duration: Seconds inserted before this action when
+            the previous same-resource action held a different
+            ``tool``. Per-action — different tools can have different
+            swap costs. Defaults to 10.
     """
 
     duration: int
     resource: Any = None       # None | str | list[str]
     item_arg_index: int = 0
     tool: Optional[str] = None
-    tool_swap_duration: Optional[int] = None
+    tool_swap_duration: int = 10
 
 
 def _resources(r: Any) -> Tuple[str, ...]:
@@ -92,8 +92,6 @@ ActionMetaMap = Dict[str, ActionMeta]
 def schedule_greedy(
     actions: Sequence[Action],
     meta: ActionMetaMap,
-    *,
-    tool_swap_duration: int = 0,
 ) -> List[Tuple[str, int, float]]:
     """First-fit earliest-start scheduling.
 
@@ -103,8 +101,8 @@ def schedule_greedy(
          (end of previous action on the same item, end of latest
          existing action on this action's resource).
       2. If this action's tool differs from the last action on the
-         same resource, add ``tool_swap_duration`` (or the action's
-         per-class override) as a gap before the start.
+         same resource, add its ``tool_swap_duration`` as a gap
+         before the start.
       3. Schedule it there.
 
     Because we walk in plan order, item-local precedence is automatic.
@@ -116,9 +114,6 @@ def schedule_greedy(
         meta: Lookup of action_name → :class:`ActionMeta`. Any action
             whose name is missing gets a default of 1-second duration
             on no resource — usually a bug; logged as a warning.
-        tool_swap_duration: Global default seconds added when the
-            tool changes between consecutive same-resource actions.
-            Per-action ``ActionMeta.tool_swap_duration`` overrides this.
 
     Returns:
         List of ``(action_name, item_index, start_t)`` tuples,
@@ -156,22 +151,16 @@ def schedule_greedy(
             (resource_end.get(r, 0.0) for r in resources), default=0.0
         )
         # Tool-swap gap: only relevant when a lock previously held a
-        # different tool. The penalty is taken once per action (max
-        # across all locks that need a swap, not summed) — physically
-        # the robot only swaps tools once before the action starts.
+        # different tool. The penalty is taken once per action —
+        # physically the robot only swaps tools once before the
+        # action starts.
         swap = 0
         if resources and m.tool is not None:
             for r in resources:
                 prev_tool = resource_last_tool.get(r)
                 if prev_tool is not None and prev_tool != m.tool:
-                    # Per-action override wins; else use global default.
-                    s = (
-                        m.tool_swap_duration
-                        if m.tool_swap_duration is not None
-                        else tool_swap_duration
-                    )
-                    if s > swap:
-                        swap = s
+                    swap = int(m.tool_swap_duration)
+                    break
 
         start = max(earliest_item, earliest_resource + swap)
         end = start + float(m.duration)
@@ -197,7 +186,6 @@ def make_schedule_builder(
     meta: ActionMetaMap,
     *,
     use_cpsat: bool = False,
-    tool_swap_duration: int = 0,
 ) -> Callable[[Sequence[Action]], List[Tuple[str, int, float]]]:
     """Return a closure that schedules any plan with the given meta.
 
@@ -209,19 +197,18 @@ def make_schedule_builder(
         )
 
         META = {
-            "decap":   ActionMeta(duration=10, resource="robot"),
-            "dispense": ActionMeta(duration=10, resource="dispenser"),
-            "shake":   ActionMeta(duration=120, resource="shaker"),
+            "decap":   ActionMeta(duration=10, resource="robot", tool="gripper"),
+            "dispense": ActionMeta(duration=10, resource="dispenser", tool="needle"),
         }
-        build_schedule = make_schedule_builder(META, tool_swap_duration=8)
+        build_schedule = make_schedule_builder(META)
+
+    Tool-swap gaps are derived per-action from
+    ``ActionMeta.tool_swap_duration`` — no global knob.
 
     Args:
         meta: Action metadata.
         use_cpsat: If True, use the CP-SAT solver (only worth it for
             large batches). Default False uses :func:`schedule_greedy`.
-        tool_swap_duration: Default seconds added between consecutive
-            actions on the same resource whose ``tool`` differs.
-            ActionMeta's per-action override (if set) takes precedence.
 
     Returns:
         A callable ``(plan) -> schedule`` with the right signature for
@@ -238,8 +225,6 @@ def make_schedule_builder(
         )
 
     def _build(actions: Sequence[Action]) -> List[Tuple[str, int, float]]:
-        return schedule_greedy(
-            actions, meta, tool_swap_duration=tool_swap_duration,
-        )
+        return schedule_greedy(actions, meta)
 
     return _build

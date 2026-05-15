@@ -85,7 +85,7 @@ def _parse_heavy(value):
 def setup(**kwargs):
     """Translate operator kwargs into the planning inputs the framework needs.
 
-    Returns a dict with three required keys + one optional:
+    Returns a dict with three keys:
 
       * ``initial_facts`` — frozenset of fact tuples describing the
         world at t=0.
@@ -98,9 +98,10 @@ def setup(**kwargs):
       * ``objects`` — dict of named pools (``{param_name: [values]}``)
         the framework's ``Action.param_iter`` uses to enumerate
         candidate parameter bindings.
-      * ``tool_swap_duration`` (optional) — global gap in seconds the
-        scheduler inserts when consecutive same-resource actions
-        differ in declared tool. May also come from kwargs.
+
+    Scheduling knobs (``duration``, ``resource``, ``tool``,
+    ``tool_swap_duration``) live on the Action classes themselves —
+    not here.
 
     For pace_bt:
       * ``batch_size`` — how many tubes.
@@ -120,12 +121,11 @@ def setup(**kwargs):
             facts.add((weight_heavy.name, t))
 
     return {
-        "initial_facts":      frozenset(facts),
+        "initial_facts": frozenset(facts),
         # Terminal actions: every tube must have Shelve applied.
         # The framework expands this into "in_done(tube) for every t".
-        "goal":               ["Shelve"],
-        "objects":            {"tube": tubes},
-        "tool_swap_duration": int(kwargs.get("tool_swap_duration", 8)),
+        "goal":          ["Shelve"],
+        "objects":       {"tube": tubes},
     }
 
 
