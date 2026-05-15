@@ -647,7 +647,177 @@ Semantics:
 
 ---
 
-## 14. Migration checklist (linear → BT-driven)
+## 14. Common questions (FAQ)
+
+Confusion points that come up the first time someone authors a
+protocol. Each answer points to the deeper section for full detail.
+
+### Q: What's the relationship between `params`, `objects`, and the function arguments?
+
+They're three views of the **same name**. For `params = ["tube"]`:
+
+* The planner looks up values in `setup()`'s `objects["tube"]`.
+* It calls `pre(self, tube=...)`, `eff(self, tube=...)`,
+  `execute(self, tube=...)` with each candidate value.
+
+The string in `params`, the key in `objects`, and the function argument
+name should all match. One source of truth — change one, change all.
+(§3.1 for the full vocabulary.)
+
+### Q: My `execute()` needs more data than what's in `params`. Where does that go?
+
+`params` is reserved for **planning identity** — values the planner
+enumerates over. Anything else `execute()` needs has four sources:
+
+| Need | Lives in |
+|---|---|
+| Per-run operator knob (speed, threshold) | `self.ctx.meta["kwargs"]` — declared in `launch.yaml` |
+| Per-protocol constant (slot maps, thresholds) | module-level constant in `actions.py` |
+| Per-action constant (default volume, retry count) | class attribute on the Action subclass |
+| Per-action-instance value the planner needs to reason about | **another entry in `params`** |
+
+Don't dump runtime config into `params` — the planner would
+enumerate over it for no reason. (See `self.ctx` table in §3.5.)
+
+### Q: Where does branching happen? An `if` inside `execute()`?
+
+**No `if` inside `execute()`.** Each branch is its own Action class.
+Branching condition lives in `pre()` — the planner picks whichever
+action's preconditions hold against the current state:
+
+```python
+class DispenseLight(Action):
+    def pre(self, tube):  return in_working(tube) & ~weight_heavy(tube) & ~dosed(tube)
+
+class DispenseHeavy(Action):
+    def pre(self, tube):  return in_working(tube) &  weight_heavy(tube) & ~dosed(tube)
+```
+
+For branching on a **sensed value** (the outcome isn't known at plan
+time), use the dict-eff pattern from §3.4 — `eff()` declares the
+possible outcomes, `execute()` returns the observed one, the framework
+replans.
+
+### Q: Why are some `pre()` expressions wrapped in `(...)` and others aren't?
+
+Pure Python line-wrapping. Multi-line expressions need to be inside
+parens (or backslash-continued):
+
+```python
+return in_source(tube) & has_cap(tube)                   # short — no parens
+
+return (                                                  # long — wrap to span lines
+    in_working(tube)
+    & ~has_cap(tube)
+    & weight_heavy(tube)
+    & ~dosed(tube)
+)
+```
+
+Both return a single boolean expression — parens here are **not** a
+tuple (a tuple needs a comma: `(x,)`). Doesn't affect semantics.
+
+### Q: Why `&`, `|`, `~` and not `and`, `or`, `not`?
+
+Python doesn't let you overload `and` / `or` / `not` — those keywords
+always coerce to plain `True` / `False`. The framework needs to
+capture the expression as an *object* (so the planner can later
+evaluate it against a state set), so it overloads the bitwise
+operators `&` / `|` / `~`. Same trick numpy and pandas use. (§4.)
+
+### Q: What does the string in `predicate("in_source")` refer to?
+
+It's the **internal name** stored in fact tuples. The Python variable
+on the left (`in_source`) is just your handle for typing.
+
+```python
+in_source = predicate("in_source")
+in_source(3)                          # → Fact("in_source", (3,))
+ctx.state["facts"]                    # contains tuples like ("in_source", 3)
+```
+
+Convention: make the variable name and the string identical. Nothing
+forces it, but mismatching them lies to anyone reading state dumps.
+
+### Q: What is `setup()` exactly?
+
+The one function the framework calls **per Start click**. Its job is
+to translate operator kwargs into the three things the planner needs:
+
+```python
+return {
+    "initial_facts": frozenset(...),   # what's true at t=0
+    "goal":          ...,              # callable, or list of terminal action names
+    "objects":       {"tube": [...]},  # candidate values for params
+}
+```
+
+Predicates and Action classes are declared at module level (vocabulary,
+static). `setup()` decides which **facts** (instances) are true at t=0,
+not which predicates exist.
+
+### Q: What is `frozenset` (in `setup()`'s `initial_facts`)?
+
+Pure Python — an immutable, hashable version of `set`. The PDDL
+planner needs states to be hashable (so it can de-duplicate visited
+states during search), and a plain `set` isn't. You build the set
+normally (`facts = set()`, `facts.add(...)`), then freeze it on the
+way out.
+
+### Q: Where do I access `recipes` / `runtime` / `workspace` inside an action?
+
+All on `self.ctx`:
+
+```python
+self.ctx.recipes["scale"]              # recipe instance from recipes.yaml
+self.ctx.runtime.step("...")           # rt — for progress messages
+self.ctx.workspace.components["..."]   # raw scene components
+self.ctx.meta["kwargs"]                # operator inputs
+self.ctx.meta["current_tool"]          # what tool is currently held
+```
+
+Same role as pace_or's `self.rcp` / `self.rt`, just bundled under
+`ctx`. Full table in §3.5.
+
+### Q: What's the difference between deterministic and sensing actions?
+
+Both return a dict from `eff()` — the difference is **how many keys**:
+
+```python
+# Deterministic — one outcome, always
+def eff(self, tube):
+    return {"decapped": (-has_cap(tube), +in_working(tube))}
+
+def execute(self, tube):
+    ... do the work ...
+    return "decapped"                # return the only key
+
+# Sensing — multiple outcomes, runtime picks
+def eff(self, tube):
+    return {"light": ..., "heavy": ...}
+
+def execute(self, tube):
+    w = self.ctx.recipes["scale"].weight()
+    return "heavy" if w > THRESHOLD else "light"
+```
+
+The planner uses the first key for projection. Non-first choices at
+runtime trigger a replan. (§3.4 for the full contract.)
+
+### Q: Why does `execute()` have to return a string? Can't I just omit the return?
+
+For consistency with `eff()`. Every action declares its outcomes as
+dict keys; every `execute()` picks one by name. Returning `None`
+would mean "guess the default" — a shortcut we removed for the same
+reason we removed the single-fact `eff()` shortcut. One way to do
+each thing.
+
+Returning `False` from `execute()` still signals failure. Anything
+else is rejected as a programmer error.
+
+---
+
+## 15. Migration checklist (linear → BT-driven)
 
 If you have a pace_or-style linear project and want to convert it:
 
