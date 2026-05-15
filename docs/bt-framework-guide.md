@@ -140,7 +140,8 @@ class Decap(Action):
 
     def execute(self, tube):
         # Real-mode only — in sim the framework sleeps for ``duration``.
-        return self.ctx.recipes["decapper"].decap(tube)
+        self.ctx.recipes["decapper"].decap(tube)
+        return "decapped"     # ← name of the chosen eff branch
 ```
 
 What's happening:
@@ -271,15 +272,27 @@ Branch values may be:
 | `(+fact_a, -fact_b)` (tuple) | multiple facts applied together |
 | `None` | no facts in this branch |
 
-#### What happens at each layer
+#### The execute / eff contract
+
+`execute()` **must return a string** — the name of the chosen branch.
+For deterministic actions that means returning the single key
+(`return "decapped"`); for sensing actions, return whichever key
+matches what you observed (`return "heavy"` or `"light"`).
+
+There is **no shortcut**. Returning `None`, `True`, or anything else
+is rejected with a warning and treated as failure — same one-way-to-do-it
+rule as `eff()` being a dict.
 
 | Phase | Behavior |
 |---|---|
 | **PDDL planning** | Uses the *first* dict key as the projected effect. Single-key dicts behave deterministically; multi-key dicts plan optimistically for the first branch. |
 | **Scheduling** | Same regardless — duration, resource, tool all read from the class. |
-| **Runtime — execute() returns None** | Default branch (first key) applies. No replan. |
-| **Runtime — execute() returns matching key** | That branch applies. If it's the first key, no replan; otherwise the framework raises `ReplanRequested` so downstream actions re-evaluate. |
-| **Runtime — execute() returns False** | Action failed. |
+| **Runtime — execute() returns first key** | That branch applies. No replan. |
+| **Runtime — execute() returns non-first key** | That branch applies. The framework raises `ReplanRequested` so downstream actions re-evaluate. |
+| **Runtime — execute() returns unknown key** | Warning + fall back to the default (first) key. |
+| **Runtime — execute() returns False** | Action failed; no effects applied. |
+| **Runtime — execute() returns anything else (None / int / etc.)** | Programmer error — warning + treated as failure. |
+| **Sim mode** | `execute()` is never called; default branch applies. |
 
 #### When to use multiple branches
 
@@ -422,7 +435,8 @@ class Weigh(Action):
         return {"weighed": +weighed(tube)}
 
     def execute(self, tube):
-        return self.ctx.recipes["scale"].weigh(tube)
+        self.ctx.recipes["scale"].weigh(tube)
+        return "weighed"     # ← name of the chosen eff branch
 ```
 
 That's all. The framework:

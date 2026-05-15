@@ -202,6 +202,7 @@ class Decap(Action):
         rcp["cap_holder"].place(CAPS[tube])     # park the cap
         rcp["decapper_5"].pick()                # pick tube back up
         rcp["working_rack"].place(WORKING[tube])
+        return "decapped"
 
 
 class DispenseLight(Action):
@@ -228,6 +229,7 @@ class DispenseLight(Action):
         rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
         rcp["doser_40ml"].dispense(vol=10)
         rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
+        return "dosed"
 
 
 class DispenseHeavy(Action):
@@ -254,6 +256,7 @@ class DispenseHeavy(Action):
         rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
         rcp["doser_40ml"].dispense(vol=20)      # heavier → bigger volume
         rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
+        return "dosed"
 
 
 class Recap(Action):
@@ -278,6 +281,7 @@ class Recap(Action):
         rcp["decapper_5"].cap(exit=False)
         rcp["decapper_5"].pick(approach=False)
         rcp["working_rack"].place(WORKING[tube])
+        return "recapped"
 
 
 class Shelve(Action):
@@ -297,6 +301,7 @@ class Shelve(Action):
         rcp = self.ctx.recipes
         rcp["working_rack"].pick(WORKING[tube])
         rcp["source_rack"].place(SOURCE[tube])
+        return "shelved"
 
 
 # ── 5. End-trigger actions ─────────────────────────────────────────────────
@@ -324,5 +329,5 @@ class ParkTool(Action):
 
     def execute(self):
         # The framework already placed the held tool via the auto-swap
-        # path before this method runs. Nothing to do here.
-        pass
+        # path before this method runs. Nothing more to do here.
+        return "none"   # matches the inherited base eff key

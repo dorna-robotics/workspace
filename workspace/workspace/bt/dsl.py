@@ -622,13 +622,38 @@ class Action:
         """
         return {"none": None}
 
-    def execute(self, *args: Any) -> bool:  # pragma: no cover - abstract
-        """Run the recipe. Return ``True`` on success.
+    def execute(self, *args: Any) -> str:  # pragma: no cover - abstract
+        """Run the recipe. **Must return the branch name** — a string
+        that matches one of the keys in ``eff()``.
 
-        Don't sleep here unless sim_passthrough is False — in sim mode
-        the framework's default leaf sleeps for ``duration`` seconds.
+        For a deterministic action with a single-branch eff, just
+        return that single key:
+
+            def eff(self, tube):
+                return {"decapped": (-has_cap(tube), +in_working(tube))}
+            def execute(self, tube):
+                ... do the work ...
+                return "decapped"
+
+        For a sensing action, return whichever key reflects what the
+        hardware observed:
+
+            def execute(self, tube):
+                w = self.ctx.recipes["scale"].weight()
+                return "heavy" if w > HEAVY_THRESHOLD else "light"
+
+        Return ``False`` to signal failure (no effects applied; the BT
+        may retry / replan). Any other return type is rejected with a
+        warning and treated as failure — there's exactly one way to
+        pick a branch, matching ``eff()``'s "always a dict" rule.
+
+        Sim mode skips ``execute`` entirely — the framework just
+        sleeps for ``duration`` and applies the default (first) eff
+        branch. You don't need to worry about that here.
         """
-        return True
+        # Default — the base class's default eff() returns
+        # {"none": None}; matching that for the no-op case.
+        return "none"
 
     def param_iter(self, state: State) -> Iterable[Tuple[Any, ...]]:
         """Yield candidate parameter tuples for PDDL instantiation.
@@ -1001,21 +1026,27 @@ class _DSLActionLeaf(RecipeAction):
                 self.log.warning("execute raised: %s", ex)
                 return False
 
-            # execute() may return:
-            #   * None          — apply the default (first) branch
-            #   * str           — apply the named branch
-            #   * False         — action failed
+            # execute() must return:
+            #   * str          — name of the chosen eff branch (the
+            #                    common case, including deterministic
+            #                    actions which return their only key)
+            #   * False        — action failed (no effects applied)
+            #
+            # Anything else (None, True, ints, ...) is rejected as a
+            # programmer error — keeps the contract consistent with
+            # eff()'s "always a dict" rule: one way to pick a branch.
             if rv is False:
                 return False
-            if isinstance(rv, str):
-                self._branch_choice = rv
-            elif rv is not None and rv is not True:
+            if not isinstance(rv, str):
+                effs = self._instance.eff(*self._params())
+                keys = list(effs.keys()) if isinstance(effs, dict) else []
                 self.log.warning(
-                    "%s.execute returned %r — expected None, True, False, "
-                    "or a branch name (str). Treating as failure.",
-                    self._cls.__name__, rv,
+                    "%s.execute returned %r — expected one of %r (or "
+                    "False for failure). Treating as failure.",
+                    self._cls.__name__, rv, keys,
                 )
                 return False
+            self._branch_choice = rv
 
         # 4. post_check — runs AFTER execute. False = action FAILED.
         if not self._run_checks(self._cls.post_check):
