@@ -14,8 +14,7 @@ Reading order:
      slot the recipes layer needs.
   4. One section per ``Action`` subclass. Each one declares:
        - scheduling info       : ``duration``, ``resource``, ``tool``,
-                                 ``tool_swap_duration``, ``background``,
-                                 ``requires``.
+                                 ``tool_swap_duration``, ``background``.
        - operational checks    : ``pre_check`` / ``post_check`` —
                                  names registered in ``checks.py``.
        - planning declarations : ``pre()`` returns the precondition
@@ -158,14 +157,13 @@ class Inspect(Action):
     duration    = 10
     resource    = "robot"
     tool        = "gripper"
-    requires    = []
     pre_check   = "source_tube_present"
 
     def pre(self, tube):
         return in_source(tube) & ~weighed(tube)
 
     def eff(self, tube):
-        return (+weighed(tube),)
+        return +weighed(tube)
 
     def execute(self, tube):
         # Real-mode: pick from source, set on scale, weigh, return.
@@ -184,7 +182,6 @@ class Decap(Action):
     duration    = 10
     resource    = "robot"
     tool        = "gripper"
-    requires    = ["Inspect"]
     pre_check   = "source_tube_present"
     post_check  = "tube_in_working_rack"
 
@@ -210,7 +207,6 @@ class DispenseLight(Action):
     duration    = 10
     resource    = "dispenser"
     tool        = "needle"
-    requires    = ["Decap"]
     pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
@@ -222,7 +218,7 @@ class DispenseLight(Action):
         )
 
     def eff(self, tube):
-        return (+dosed(tube),)
+        return +dosed(tube)
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -237,7 +233,6 @@ class DispenseHeavy(Action):
     duration    = 15
     resource    = "dispenser"
     tool        = "needle"
-    requires    = ["Decap"]
     pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
@@ -249,7 +244,7 @@ class DispenseHeavy(Action):
         )
 
     def eff(self, tube):
-        return (+dosed(tube),)
+        return +dosed(tube)
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -264,14 +259,13 @@ class Recap(Action):
     duration    = 10
     resource    = "robot"
     tool        = "gripper"
-    requires    = ["DispenseLight", "DispenseHeavy"]
     pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
         return dosed(tube) & ~has_cap(tube) & in_working(tube)
 
     def eff(self, tube):
-        return (+has_cap(tube),)
+        return +has_cap(tube)
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -289,7 +283,6 @@ class Shelve(Action):
     duration    = 5
     resource    = "robot"
     tool        = "gripper"
-    requires    = ["Recap"]
 
     def pre(self, tube):
         return has_cap(tube) & dosed(tube) & in_working(tube)

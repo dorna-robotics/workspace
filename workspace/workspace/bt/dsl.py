@@ -343,6 +343,25 @@ def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     return frozenset(_facts_from_state(state))
 
 
+def _iter_effs(effs: Any) -> Iterable[Fact]:
+    """Normalise whatever ``eff()`` returned into an iterable of Facts.
+
+    Accepts:
+      * ``None`` (or any falsy)   → no effects
+      * a single ``Fact``         → ``(fact,)``
+      * a tuple / list of Facts   → returned as-is
+
+    Lets authors skip the trailing-comma tuple syntax when there's only
+    one effect: ``return +dosed(tube)`` instead of
+    ``return (+dosed(tube),)``.
+    """
+    if not effs:
+        return ()
+    if isinstance(effs, Fact):
+        return (effs,)
+    return effs
+
+
 def goal_from_action_names(
     names: Sequence[str],
     objects: Dict[str, Iterable[Any]],
@@ -404,7 +423,7 @@ def goal_from_action_names(
     def _goal(state: FrozenSet[Tuple[Any, ...]]) -> bool:
         for cls, params in bindings:
             instance = cls()
-            for f in instance.eff(*params) or ():
+            for f in _iter_effs(instance.eff(*params)):
                 if isinstance(f, Fact) and f.polarity:
                     if f.as_tuple() not in state:
                         return False
@@ -444,11 +463,6 @@ class Action:
                             actions have one param: ``["tube"]``.
         duration:           Estimated seconds. Used by the scheduler.
                             Defaults to 1.
-        requires:           List of action class names that must complete
-                            before this one (pace_or-style explicit DAG).
-                            The PDDL ``pre()`` covers the same intent
-                            via state-based preconditions; ``requires``
-                            is kept for readability. Default empty.
         tool:               Tool the robot holds during this action.
                             Strings like ``"gripper"`` auto-swap before
                             the action runs. ``None`` explicitly means
@@ -479,8 +493,8 @@ class Action:
                             scheduled into the normal plan. The action's
                             ``tool:`` field is the authoritative final
                             tool state. Scheduling-only attrs
-                            (``requires``, ``duration``, ``background``)
-                            are ignored on triggers.
+                            (``duration``, ``background``) are ignored
+                            on triggers.
 
     Methods to override:
         pre(self, *params)     -> Expr or Fact or bool
@@ -501,7 +515,6 @@ class Action:
     params:              List[str] = []
     duration:            int = 1
     resource:            Optional[str] = None
-    requires:            List[str] = []
     tool:                Any = _TOOL_UNSET   # unset | None | "name"
     tool_swap_duration:  Optional[int] = None
     background:          bool = False
@@ -530,11 +543,19 @@ class Action:
         """
         return True
 
-    def eff(self, *args: Any) -> Sequence[Fact]:
+    def eff(self, *args: Any) -> Any:
         """Effects of the action.
 
-        Return a tuple of facts. Use ``+predicate(args)`` to add and
-        ``-predicate(args)`` to remove. Default = no effects.
+        Return whichever shape is most natural:
+
+          * a single fact:                ``return +dosed(tube)``
+          * multiple facts (comma list):  ``return -has_cap(t), +in_working(t)``
+          * nothing:                      ``return None`` (or just omit)
+
+        Use ``+predicate(args)`` to ADD a fact and ``-predicate(args)``
+        to REMOVE one. The framework normalises the return into an
+        iterable internally — you never need the
+        single-element-tuple ``(+x,)`` syntax.
         """
         return ()
 
@@ -670,7 +691,7 @@ class ActionRegistry:
             )
 
         def eff_fn(state: State, params: Tuple[Any, ...]) -> State:
-            effs = instance.eff(*params) or ()
+            effs = _iter_effs(instance.eff(*params))
             s = set(state)
             for f in effs:
                 if not isinstance(f, Fact):
@@ -924,7 +945,7 @@ class _DSLActionLeaf(RecipeAction):
         if getattr(self, "_skipped", False):
             return
         facts = _facts_from_state(state)
-        for f in self._instance.eff(*self._params()) or ():
+        for f in _iter_effs(self._instance.eff(*self._params())):
             if not isinstance(f, Fact):
                 self.log.warning(
                     "%s.eff returned non-Fact: %r — skipping",

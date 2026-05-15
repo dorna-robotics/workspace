@@ -130,7 +130,6 @@ class Decap(Action):
     duration   = 10
     resource   = "robot"
     tool       = "gripper"
-    requires   = ["Inspect"]
     pre_check  = "source_tube_present"
     post_check = "tube_in_working_rack"
 
@@ -157,7 +156,7 @@ What's happening:
 * `Action` is a class — subclass and override `pre`, `eff`, `execute`.
 * The class attributes carry **two flavours of metadata**:
     - Scheduling / runtime: `params`, `duration`, `resource`, `tool`,
-      `tool_swap_duration`, `background`, `requires`, `trigger`.
+      `tool_swap_duration`, `background`, `trigger`.
     - Operational checks: `pre_check`, `post_check` (names registered
       in `checks.py`).
   See §5 for the full vocabulary.
@@ -183,7 +182,6 @@ parentheses.
 | `resource` | `str \| None` (`None`) | Shared resource the action claims exclusively while running (`"robot"`, `"dispenser"`, …). |
 | `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. **unset** (default) = "keep whatever's currently held"; **None** = "release current tool"; a string = "make sure this tool is held". One tool per action — keep actions atomic. |
 | `tool_swap_duration` | `int \| None` (`None`) | Per-action override of the global swap penalty. `None` = fall back to `tool_swap_duration` from `setup()` / kwargs. |
-| `requires` | `list[str]` (`[]`) | Action class names that must complete before this one. The PDDL `pre()` covers the same intent through facts; `requires` is kept for readability. |
 | `background` | `bool` (`False`) | When True, the action runs in parallel — the robot is free for other work. Scheduled as a single task. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
@@ -511,10 +509,13 @@ If you have a pace_or-style linear project and want to convert it:
 
 1. Copy `pace_bt/` to `your_project_bt/`.
 2. Replace `pace_bt/actions.py` predicates + `setup(**kwargs)` +
-   `Action` subclasses with yours. **The vocabulary is the same**
-   as `protocol.yaml`: `tool`, `duration`, `requires`, `pre_check`,
-   `post_check`, `background`, `tool_swap_duration`, `trigger`. The
-   only added piece is `pre()` / `eff()` for the PDDL planner.
+   `Action` subclasses with yours. **The vocabulary mostly matches**
+   `protocol.yaml`: `tool`, `duration`, `pre_check`, `post_check`,
+   `background`, `tool_swap_duration`, `trigger`. The
+   added piece is `pre()` / `eff()` — these *replace* pace_or's
+   `requires:` list, expressing ordering as facts rather than a flat
+   dependency. The planner reads `pre()`/`eff()` and derives the
+   action order itself.
 3. Copy `checks.py` over unchanged — its `(item_i) -> (bool, msg)`
    convention is shared between frameworks.
 4. Copy `recipes.yaml` (or `recipes.j2`) over unchanged.
