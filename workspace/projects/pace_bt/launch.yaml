@@ -15,17 +15,6 @@ kwargs:
     hint: Number of items (tubes) to process in this run.
     min: 1
     max: 20
-  heavy:
-    type: textarea
-    default: ""
-    label: Heavy tubes
-    hint: |
-      Comma-separated tube indices (0-based) that should use the
-      "heavy" dispense branch. Example — "1, 3". Leave blank for
-      all-light. (The planner picks per-tube based on weight; in
-      production this is observed by Inspect, not declared up front.)
-    optional: true
-    rows: 2
   tick_hz:
     type: float
     default: 10.0

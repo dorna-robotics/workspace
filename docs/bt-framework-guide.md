@@ -230,7 +230,62 @@ class ParkTool(Action):
 End-trigger actions are *excluded* from PDDL templates and from the
 scheduler — they're run by the engine outside the planned schedule.
 
-### 3.4 What `self.ctx` carries — the per-action context
+### 3.4 Non-deterministic / sensing actions — named branches
+
+Some actions can't tell the planner up front what they'll produce —
+their outcome depends on a sensor reading (weight, presence, barcode).
+For these, `eff()` returns a **dict of named branches**, and
+`execute()` returns the chosen branch name.
+
+```python
+class Inspect(Action):
+    params  = ["tube"]
+    tool    = "gripper"
+
+    def pre(self, tube):
+        return in_source(tube) & ~weighed(tube)
+
+    def eff(self, tube):
+        # All possible outcomes. ORDER MATTERS — the first key is the
+        # planner's default projection.
+        return {
+            "light": +weighed(tube),
+            "heavy": (+weighed(tube), +weight_heavy(tube)),
+        }
+
+    def execute(self, tube):
+        w = self.ctx.recipes["scale"].weight()
+        return "heavy" if w > HEAVY_THRESHOLD else "light"
+```
+
+What happens at each layer:
+
+| Phase | Behavior |
+|---|---|
+| **PDDL planning** | Uses the *first* dict key as the projected effect (the optimistic / default outcome). Plans the protocol assuming every Inspect returns `"light"`. |
+| **Scheduling** | Same as deterministic — duration, resource, tool all read from the class. |
+| **Runtime** | `execute()` returns one of the branch names. That branch's facts are applied to state. |
+| **Replan** | If the chosen branch differs from the default (first key), the framework raises `ReplanRequested` so downstream actions re-evaluate preconditions against the observed state. |
+
+When you'd use this:
+
+* Weighing, density / volume sensing, vision detection
+* Barcode / RFID scanning where the value drives branching
+* Calibration steps that succeed-with-offset vs need-retry
+* Any "act-then-observe-then-branch" sequence
+
+When NOT to use this:
+
+* Deterministic transformations (Decap always removes the cap) —
+  single-fact `eff()` is simpler and the planner reasons fully ahead.
+* Pure failures / retries — that's what `pre_check` / `post_check` and
+  `with_retry` exist for.
+
+**Lineage.** This is PPDDL's `oneof` non-deterministic effect
+(Probabilistic PDDL, ~2002), with named branches instead of anonymous
+ones for readability.
+
+### 3.5 What `self.ctx` carries — the per-action context
 
 Every Action subclass has `self.ctx` available inside `pre()`, `eff()`,
 `execute()`, `param_iter()`, and any helper method. It's the **only**

@@ -354,12 +354,29 @@ def _iter_effs(effs: Any) -> Iterable[Fact]:
     Lets authors skip the trailing-comma tuple syntax when there's only
     one effect: ``return +dosed(tube)`` instead of
     ``return (+dosed(tube),)``.
+
+    Dicts (non-deterministic eff) are NOT handled here — callers must
+    pick a branch first via :func:`_pick_branch` / dict indexing.
     """
     if not effs:
         return ()
     if isinstance(effs, Fact):
         return (effs,)
     return effs
+
+
+def _is_branched_eff(effs: Any) -> bool:
+    """True if ``effs`` is the non-deterministic dict shape (named branches)."""
+    return isinstance(effs, dict)
+
+
+def _default_branch(effs: Dict[str, Any]) -> str:
+    """The first key of the eff dict — the planner's default projection.
+
+    Python 3.7+ guarantees dict insertion order, so "first" is whatever
+    the author wrote first.
+    """
+    return next(iter(effs))
 
 
 def goal_from_action_names(
@@ -423,7 +440,12 @@ def goal_from_action_names(
     def _goal(state: FrozenSet[Tuple[Any, ...]]) -> bool:
         for cls, params in bindings:
             instance = cls()
-            for f in _iter_effs(instance.eff(*params)):
+            raw = instance.eff(*params)
+            # Goal expansion uses the default branch (first dict key)
+            # for non-deterministic eff — same convention as the planner.
+            if _is_branched_eff(raw):
+                raw = raw[_default_branch(raw)]
+            for f in _iter_effs(raw):
                 if isinstance(f, Fact) and f.polarity:
                     if f.as_tuple() not in state:
                         return False
@@ -549,16 +571,42 @@ class Action:
     def eff(self, *args: Any) -> Any:
         """Effects of the action.
 
-        Return whichever shape is most natural:
+        Two shapes — pick one:
 
-          * a single fact:                ``return +dosed(tube)``
+        **Deterministic** (most actions):
+
+          * single fact:                ``return +dosed(tube)``
           * multiple facts (comma list):  ``return -has_cap(t), +in_working(t)``
           * nothing:                      ``return None`` (or just omit)
 
+        **Non-deterministic** (sensing / observation actions):
+
+          Return a ``dict`` whose keys are branch names and whose
+          values are the facts that branch produces. ``execute()`` then
+          returns the chosen branch name. Example::
+
+              def eff(self, tube):
+                  return {
+                      "light": +weighed(tube),
+                      "heavy": (+weighed(tube), +weight_heavy(tube)),
+                  }
+
+              def execute(self, tube):
+                  w = self.ctx.recipes["scale"].weight()
+                  return "heavy" if w > HEAVY_THRESHOLD else "light"
+
+          The **first key** is the planner's default projection (used
+          during PDDL planning). When ``execute()`` picks a non-default
+          branch at runtime, the framework raises ``ReplanRequested``
+          so downstream actions can re-evaluate their preconditions
+          against the observed state.
+
         Use ``+predicate(args)`` to ADD a fact and ``-predicate(args)``
-        to REMOVE one. The framework normalises the return into an
-        iterable internally — you never need the
-        single-element-tuple ``(+x,)`` syntax.
+        to REMOVE one.
+
+        This mirrors PDDL's ``oneof`` non-deterministic effects
+        (PPDDL, ~2002), with named branches instead of anonymous ones
+        for readability.
         """
         return ()
 
@@ -694,7 +742,13 @@ class ActionRegistry:
             )
 
         def eff_fn(state: State, params: Tuple[Any, ...]) -> State:
-            effs = _iter_effs(instance.eff(*params))
+            raw = instance.eff(*params)
+            # Non-deterministic eff: planner projects with the FIRST
+            # branch (author convention: list the optimistic/default
+            # outcome first). Runtime divergence triggers a replan.
+            if _is_branched_eff(raw):
+                raw = raw[_default_branch(raw)]
+            effs = _iter_effs(raw)
             s = set(state)
             for f in effs:
                 if not isinstance(f, Fact):
@@ -809,6 +863,9 @@ class _DSLActionLeaf(RecipeAction):
         # Instantiate once; reused across run() and apply_effects().
         self._instance = action_cls()
         self._instance.ctx = ctx  # type: ignore[attr-defined]
+        # For non-deterministic eff (dict): execute() returns a branch
+        # name; apply_effects looks it up here. ``None`` = use default.
+        self._branch_choice: Optional[str] = None
 
     def _params(self) -> Tuple[Any, ...]:
         # Convention: single-param actions use the item index directly.
@@ -900,6 +957,11 @@ class _DSLActionLeaf(RecipeAction):
     # ── BT lifecycle ────────────────────────────────────────────────────
 
     def execute(self) -> bool:
+        # Reset branch selection — leaves can be re-ticked across
+        # replans, so per-tick state needs fresh init.
+        self._branch_choice = None
+        self._skipped = False
+
         # 1. pre_check — runs BEFORE tool swap. False = skip the whole
         #    action (treated as success so the BT moves on without
         #    failing the parent sequence; matches pace_or semantics).
@@ -912,6 +974,7 @@ class _DSLActionLeaf(RecipeAction):
         self._ensure_tool()
 
         # 3. Sim vs. real for the actual work.
+        branched = _is_branched_eff(self._instance.eff(*self._params()))
         if getattr(self.ctx.core, "_simulation_mode", True):
             # Sim: sleep for declared duration; respect runtime stop.
             deadline = time.monotonic() + float(self._cls.duration)
@@ -921,16 +984,34 @@ class _DSLActionLeaf(RecipeAction):
                     return False
                 time.sleep(min(0.05, deadline - time.monotonic()))
             ok = True
+            # In sim, the framework can't observe the world — branched
+            # actions stick with the default branch (their declared
+            # planner-side projection).
         else:
             try:
-                # execute() can return None ("no exception = success",
-                # matches pace_or state-handler convention) or an
-                # explicit bool. None → True.
                 rv = self._instance.execute(*self._params())
-                ok = True if rv is None else bool(rv)
             except Exception as ex:
                 self.log.warning("execute raised: %s", ex)
                 return False
+
+            if branched:
+                # Non-deterministic eff: execute must return either
+                # None (= default branch) or a valid branch name.
+                if rv is None:
+                    ok = True
+                elif isinstance(rv, str):
+                    self._branch_choice = rv
+                    ok = True
+                else:
+                    self.log.warning(
+                        "%s.execute returned %r but eff() is a branched dict; "
+                        "expected a branch name (str) or None — treating as failure",
+                        self._cls.__name__, rv,
+                    )
+                    return False
+            else:
+                # Deterministic eff: execute returns None / bool.
+                ok = True if rv is None else bool(rv)
 
         if not ok:
             return False
@@ -947,8 +1028,30 @@ class _DSLActionLeaf(RecipeAction):
         # the path from there). Matches pace_or's "skip the state" intent.
         if getattr(self, "_skipped", False):
             return
+
+        raw = self._instance.eff(*self._params())
+        replan_reason: Optional[str] = None
+
+        # Non-deterministic eff: select the branch execute() picked
+        # (or the default if execute returned None / wasn't called).
+        if _is_branched_eff(raw):
+            default = _default_branch(raw)
+            chosen = self._branch_choice or default
+            if chosen not in raw:
+                self.log.warning(
+                    "%s.execute returned unknown branch %r — using default %r",
+                    self._cls.__name__, chosen, default,
+                )
+                chosen = default
+            if chosen != default:
+                replan_reason = (
+                    f"{self._cls.__name__}({self._item}): observed branch "
+                    f"{chosen!r} differs from planner's default {default!r}"
+                )
+            raw = raw[chosen]
+
         facts = _facts_from_state(state)
-        for f in _iter_effs(self._instance.eff(*self._params())):
+        for f in _iter_effs(raw):
             if not isinstance(f, Fact):
                 self.log.warning(
                     "%s.eff returned non-Fact: %r — skipping",
@@ -959,6 +1062,13 @@ class _DSLActionLeaf(RecipeAction):
                 facts.add(f.as_tuple())
             else:
                 facts.discard(f.as_tuple())
+
+        # Effects are now in state — tell the engine to rebuild the
+        # tree so downstream actions re-evaluate against observed state.
+        if replan_reason is not None:
+            # Local import to avoid circular dependency at module load.
+            from workspace.bt.engine import ReplanRequested
+            raise ReplanRequested(replan_reason)
 
 
 # ── Convenience: bind ctx to auto-conditions when used in a tree ───────────

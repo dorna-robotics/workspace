@@ -91,29 +91,20 @@ def setup(**kwargs):
 
     For pace_bt:
       * ``batch_size`` — how many tubes.
-      * ``heavy`` — which tubes (indices) come back heavy from
-        Inspect. In production this is observed; declaring it up
-        front lets the first plan pick the right dispense branch.
+
+    Note: tubes' heaviness is OBSERVED by ``Inspect`` at runtime —
+    not declared here. ``Inspect.eff`` is a branched dict; its
+    ``execute()`` returns ``"light"`` or ``"heavy"`` after reading
+    the scale, and the framework replans so the right
+    ``DispenseLight`` / ``DispenseHeavy`` branch fires per tube.
     """
     batch_size = int(kwargs.get("batch_size", 1))
     tubes = list(range(batch_size))
-
-    # ``heavy`` comes from the GUI textarea ("1, 3") or programmatic
-    # callers (iterable of ints). Empty/None → no heavy tubes.
-    raw = kwargs.get("heavy")
-    if not raw:
-        heavy = set()
-    elif isinstance(raw, str):
-        heavy = {int(p.strip()) for p in raw.split(",") if p.strip()}
-    else:
-        heavy = {int(v) for v in raw}
 
     facts = set()
     for t in tubes:
         facts.add((in_source.name, t))
         facts.add((has_cap.name, t))
-        if t in heavy:
-            facts.add((weight_heavy.name, t))
 
     return {
         "initial_facts": frozenset(facts),
@@ -134,6 +125,10 @@ SOURCE   = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
 WORKING  = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
 CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
 
+# Scale threshold (grams) — above this a tube is "heavy" and routes to
+# the heavy dispense branch. Tune for your sample chemistry.
+HEAVY_THRESHOLD = 50.0
+
 
 # ── 4. Actions ─────────────────────────────────────────────────────────────
 #
@@ -146,8 +141,17 @@ CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
 
 
 class Inspect(Action):
-    """Pick from source, weigh, return. After this the planner knows the
-    tube's weight bucket (heavy / light)."""
+    """Pick from source, weigh, return — and report whether the tube
+    is light or heavy.
+
+    Canonical example of a **non-deterministic / sensing action**:
+    ``eff`` is a dict of named branches. The planner uses the first
+    branch (``"light"``) as its default projection; ``execute()``
+    reads the scale and returns the observed branch name. If the
+    chosen branch differs from the planner's default, the framework
+    replans so downstream dispense actions re-evaluate their
+    preconditions against the observation.
+    """
     params      = ["tube"]
     duration    = 10
     resource    = "robot"
@@ -158,17 +162,21 @@ class Inspect(Action):
         return in_source(tube) & ~weighed(tube)
 
     def eff(self, tube):
-        return +weighed(tube)
+        # Two possible outcomes. Order matters: the FIRST key is the
+        # planner's default projection.
+        return {
+            "light": +weighed(tube),
+            "heavy": (+weighed(tube), +weight_heavy(tube)),
+        }
 
     def execute(self, tube):
-        # Real-mode: pick from source, set on scale, weigh, return.
-        # ``self.ctx.recipes`` is the dict loaded from recipes.yaml.
         rcp = self.ctx.recipes
         rcp["source_rack"].pick(SOURCE[tube])
         rcp["scale"].place("place")
-        rcp["scale"].weight()                  # → reads weight into device bus
+        weight = rcp["scale"].weight()         # → reads grams from device bus
         rcp["scale"].pick("place")
         rcp["source_rack"].place(SOURCE[tube])
+        return "heavy" if (weight or 0) > HEAVY_THRESHOLD else "light"
 
 
 class Decap(Action):

@@ -28,6 +28,10 @@ from typing import Any, Callable, Dict, Optional
 
 import py_trees
 
+# ReplanRequested propagates from apply_effects when an Action with
+# non-deterministic eff picks a non-default branch — see dsl._DSLActionLeaf.
+from workspace.bt.engine import ReplanRequested
+
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +196,11 @@ class RecipeAction(WorkspaceBehaviour):
         if self._result:
             try:
                 self.apply_effects(self.ctx.state)
+            except ReplanRequested:
+                # Non-deterministic action picked a non-default branch
+                # — let the engine catch this and rebuild the tree
+                # from the observed state.
+                raise
             except Exception:
                 self.log.exception("apply_effects raised — state may be stale")
             return py_trees.common.Status.SUCCESS
