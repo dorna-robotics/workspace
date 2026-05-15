@@ -43,9 +43,14 @@ class ActionMeta:
 
     Attributes:
         duration: Seconds the action takes (integer, >= 1).
-        resource: Resource name this action exclusively uses while
-            running. Use ``None`` for actions that don't claim a
-            resource (background timers, etc.).
+        resource: Resource lock(s) this action holds exclusively while
+            running. Three shapes accepted:
+              * ``None``                — claims nothing (unlimited parallel).
+              * ``"robot"`` (str)        — claims one lock.
+              * ``["robot", "scale"]``  — claims multiple locks at once
+                (the action can't start until every named lock is free,
+                and holds all of them for its duration).
+            Two actions sharing ANY lock cannot overlap.
         item_arg_index: Which positional parameter identifies the
             item this action operates on. Default 0 — the first
             positional param is the item. Used to compute item-local
@@ -62,10 +67,19 @@ class ActionMeta:
     """
 
     duration: int
-    resource: Optional[str] = None
+    resource: Any = None       # None | str | list[str]
     item_arg_index: int = 0
     tool: Optional[str] = None
     tool_swap_duration: Optional[int] = None
+
+
+def _resources(r: Any) -> Tuple[str, ...]:
+    """Normalise an ActionMeta.resource into a tuple of lock names."""
+    if r is None:
+        return ()
+    if isinstance(r, str):
+        return (r,)
+    return tuple(r)
 
 
 # meta: action_name -> ActionMeta
@@ -135,33 +149,41 @@ def schedule_greedy(
             item = 0
 
         earliest_item = item_end.get(item, 0.0)
-        earliest_resource = (
-            resource_end.get(m.resource, 0.0) if m.resource else 0.0
+        # Multi-resource: action can't start until ALL its locks are
+        # free. earliest_resource = max across every claimed lock.
+        resources = _resources(m.resource)
+        earliest_resource = max(
+            (resource_end.get(r, 0.0) for r in resources), default=0.0
         )
-        # Tool-swap gap: only relevant when the resource is fixed
-        # (otherwise there's no shared physical robot tracking tools).
+        # Tool-swap gap: only relevant when a lock previously held a
+        # different tool. The penalty is taken once per action (max
+        # across all locks that need a swap, not summed) — physically
+        # the robot only swaps tools once before the action starts.
         swap = 0
-        if m.resource and m.tool is not None:
-            prev_tool = resource_last_tool.get(m.resource)
-            if prev_tool is not None and prev_tool != m.tool:
-                # Per-action override wins; else use global default.
-                swap = (
-                    m.tool_swap_duration
-                    if m.tool_swap_duration is not None
-                    else tool_swap_duration
-                )
+        if resources and m.tool is not None:
+            for r in resources:
+                prev_tool = resource_last_tool.get(r)
+                if prev_tool is not None and prev_tool != m.tool:
+                    # Per-action override wins; else use global default.
+                    s = (
+                        m.tool_swap_duration
+                        if m.tool_swap_duration is not None
+                        else tool_swap_duration
+                    )
+                    if s > swap:
+                        swap = s
 
         start = max(earliest_item, earliest_resource + swap)
         end = start + float(m.duration)
 
         item_end[item] = end
-        if m.resource:
-            resource_end[m.resource] = end
+        for r in resources:
+            resource_end[r] = end
             # Only update last_tool when the action actually declares
             # one — actions with tool=None inherit the previous tool,
             # matching pace_or's "doesn't care" semantics.
             if m.tool is not None:
-                resource_last_tool[m.resource] = m.tool
+                resource_last_tool[r] = m.tool
 
         result.append((action.name, item, start))
 

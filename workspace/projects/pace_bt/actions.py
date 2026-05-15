@@ -14,7 +14,7 @@ Reading order:
      slot the recipes layer needs.
   4. One section per ``Action`` subclass. Each one declares:
        - scheduling info       : ``duration``, ``resource``, ``tool``,
-                                 ``tool_swap_duration``, ``background``.
+                                 ``tool_swap_duration``.
        - operational checks    : ``pre_check`` / ``post_check`` —
                                  names registered in ``checks.py``.
        - planning declarations : ``pre()`` returns the precondition

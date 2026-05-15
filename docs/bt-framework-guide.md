@@ -156,7 +156,7 @@ What's happening:
 * `Action` is a class — subclass and override `pre`, `eff`, `execute`.
 * The class attributes carry **two flavours of metadata**:
     - Scheduling / runtime: `params`, `duration`, `resource`, `tool`,
-      `tool_swap_duration`, `background`, `trigger`.
+      `tool_swap_duration`, `trigger`.
     - Operational checks: `pre_check`, `post_check` (names registered
       in `checks.py`).
   See §5 for the full vocabulary.
@@ -179,10 +179,9 @@ parentheses.
 |---|---|---|
 | `params` | `list[str]` (`[]`) | Parameter names — usually `["tube"]`. The planner enumerates the Cartesian product across `objects[name]`. |
 | `duration` | `int` (`1`) | Scheduler estimate in seconds. |
-| `resource` | `str \| None` (`None`) | Shared resource the action claims exclusively while running (`"robot"`, `"dispenser"`, …). |
+| `resource` | `str \| list[str] \| None` (`None`) | Lock(s) this action claims exclusively. `"robot"` = one lock; `["robot","scale"]` = both held at once (arm holds tube on scale); `None` = unlimited parallel. Autonomous peripheral (shaker running alone) → its own lock name, robot stays free. |
 | `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. **unset** (default) = "keep whatever's currently held"; **None** = "release current tool"; a string = "make sure this tool is held". One tool per action — keep actions atomic. |
 | `tool_swap_duration` | `int \| None` (`None`) | Per-action override of the global swap penalty. `None` = fall back to `tool_swap_duration` from `setup()` / kwargs. |
-| `background` | `bool` (`False`) | When True, the action runs in parallel — the robot is free for other work. Scheduled as a single task. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
 | `trigger` | `str \| None` (`None`) | `"end"` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.3. |
@@ -511,11 +510,13 @@ If you have a pace_or-style linear project and want to convert it:
 2. Replace `pace_bt/actions.py` predicates + `setup(**kwargs)` +
    `Action` subclasses with yours. **The vocabulary mostly matches**
    `protocol.yaml`: `tool`, `duration`, `pre_check`, `post_check`,
-   `background`, `tool_swap_duration`, `trigger`. The
-   added piece is `pre()` / `eff()` — these *replace* pace_or's
-   `requires:` list, expressing ordering as facts rather than a flat
-   dependency. The planner reads `pre()`/`eff()` and derives the
-   action order itself.
+   `tool_swap_duration`, `trigger`. Differences from pace_or:
+   * `pre()` / `eff()` **replace** the `requires:` list — ordering
+     comes from facts now, derived by the planner.
+   * `resource` **replaces** the implicit-robot + `background:` flag
+     — a string like `"shaker_1"` already means "the shaker is busy,
+     robot is free". An action can claim multiple locks at once
+     (`resource = ["robot", "scale"]`).
 3. Copy `checks.py` over unchanged — its `(item_i) -> (bool, msg)`
    convention is shared between frameworks.
 4. Copy `recipes.yaml` (or `recipes.j2`) over unchanged.

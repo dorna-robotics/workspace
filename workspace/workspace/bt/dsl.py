@@ -473,15 +473,18 @@ class Action:
         tool_swap_duration: Per-action override (seconds) of the global
                             ``tool_swap_duration`` from launch kwargs.
                             None → fall back to the global value.
-        resource:           Hardware resource this action claims for
-                            scheduling. ``"robot"`` for foreground
-                            actions, peripheral name (``"shaker_1"``)
-                            for background actions, or ``None``.
-        background:         When True, the action runs in parallel
-                            (robot is free to do other work). The
-                            scheduler models it as a single task per
-                            background — covers all items at once
-                            (item index 0).
+        resource:           Hardware lock(s) this action claims for
+                            scheduling. Three shapes:
+                              * ``None``               — claims nothing,
+                                                         unlimited parallel.
+                              * ``"robot"`` (string)   — single lock.
+                              * ``["robot","scale"]``  — multiple locks
+                                claimed simultaneously (e.g. arm holds
+                                a tube on the scale while it reads).
+                            Two actions sharing ANY lock cannot overlap.
+                            An autonomous peripheral (shaker running on
+                            its own) gets its own lock (``"shaker_1"``)
+                            and the robot is free.
         pre_check:          Name of a check method (in ``Checks`` class)
                             to run **before** the tool swap. On False
                             the action is skipped entirely (no tool
@@ -492,9 +495,8 @@ class Action:
                             invoked when the operator clicks End. Not
                             scheduled into the normal plan. The action's
                             ``tool:`` field is the authoritative final
-                            tool state. Scheduling-only attrs
-                            (``duration``, ``background``) are ignored
-                            on triggers.
+                            tool state. ``duration`` is ignored on
+                            triggers.
 
     Methods to override:
         pre(self, *params)     -> Expr or Fact or bool
@@ -514,10 +516,9 @@ class Action:
     # ── Required class attributes (override in subclass) ────────────────
     params:              List[str] = []
     duration:            int = 1
-    resource:            Optional[str] = None
+    resource:            Any = None    # None | "name" | ["a", "b"]
     tool:                Any = _TOOL_UNSET   # unset | None | "name"
     tool_swap_duration:  Optional[int] = None
-    background:          bool = False
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
     trigger:             Optional[str] = None  # "end" or None
