@@ -230,6 +230,69 @@ class ParkTool(Action):
 End-trigger actions are *excluded* from PDDL templates and from the
 scheduler — they're run by the engine outside the planned schedule.
 
+### 3.4 What `self.ctx` carries — the per-action context
+
+Every Action subclass has `self.ctx` available inside `pre()`, `eff()`,
+`execute()`, `param_iter()`, and any helper method. It's the **only**
+handle each action needs to reach hardware, runtime, and shared state.
+
+Same role as pace_or's `self.rcp` + `self.rt` on the States class —
+just bundled under one attribute so the framework can hand the whole
+package to every leaf with one variable.
+
+| Attribute | Type | What it is | pace_or equivalent |
+|---|---|---|---|
+| `self.ctx.workspace` | `Workspace` | SDK root — scene + components | `self.workspace` |
+| `self.ctx.core` | `Core` | robot API, `_simulation_mode` flag | `self.core` |
+| `self.ctx.runtime` | `Runtime` | `rt.step(...)`, `rt.checkpoint()`, pause/end signals | `self.rt` |
+| `self.ctx.recipes` | `dict[str, Recipe]` | name → recipe instance loaded from `recipes.yaml`. **Preferred way to drive hardware.** | `self.rcp` |
+| `self.ctx.state` | `dict` | live world state. `ctx.state["facts"]` is the fact set. **Managed by the framework — don't write to it directly**, return effects from `eff()` instead. | — |
+| `self.ctx.meta` | `dict` | per-run scratch space. Keys: `kwargs`, `objects`, `checks`, `current_tool`, `project`. | — |
+
+#### Common patterns
+
+Drive hardware via a recipe (most common):
+
+```python
+def execute(self, tube):
+    rcp = self.ctx.recipes
+    rcp["source_rack"].pick(SOURCE[tube])
+    rcp["scale"].weight()
+```
+
+Emit a progress message (only when you want one — framework never
+emits these for you):
+
+```python
+def execute(self, tube):
+    self.ctx.runtime.step(f"Inspecting tube {tube}")
+    ...
+```
+
+Read a live device value directly (no recipe wrapper):
+
+```python
+def execute(self, tube):
+    w = self.ctx.workspace.components["scale_1"].weight
+    ...
+```
+
+Reach an operator kwarg from execute-time:
+
+```python
+def execute(self, tube):
+    speed = self.ctx.meta["kwargs"].get("speed_factor", 1.0)
+    ...
+```
+
+#### What `setup()` does *not* get
+
+`setup(**kwargs)` is called **before** the context exists — it
+receives kwargs only. Its job is to compute the planning inputs
+(`initial_facts`, `goal`, `objects`) from kwargs alone. If your
+setup() would need recipes or runtime to compute the initial state,
+that work belongs in an early action's `execute()` instead.
+
 ---
 
 ## 4. Fact arithmetic — the precondition / effect mini-language
