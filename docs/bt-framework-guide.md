@@ -11,23 +11,56 @@ wrong — not the guide.
 
 ## 1. What is a BT project?
 
-A project is a recipe for solving a lab protocol. It declares:
+### The mental model (30 seconds)
 
-1. **Predicates** — facts about the world.
-2. **Actions** — what each atomic step does, including its precondition,
-   effects, duration, resource claim, and how it's executed.
-3. **Goal** — what "done" means.
-4. **Initial state** — what's true at t=0.
+A BT project is a **lab protocol described declaratively**. You don't
+tell the robot *how* to do the protocol — you describe *what* counts
+as each step (precondition, effect, real-world execute), and the
+framework figures out the order, parallelism, retry, and recovery.
 
-That's the whole declaration. The framework derives everything else:
+Three layers of vocabulary, top to bottom:
 
-* a PDDL action sequence to the goal,
-* an OR-style schedule across parallel resources,
-* a BT for execution with retry / recovery / replan,
-* condition leaves for any predicate (auto-generated when needed),
-* `apply_effects` mirroring the declared `eff()` so state propagates.
+```
+Predicates        ←  "things that can be true"   (has_cap, in_source, dosed, ...)
+   │
+   ▼
+Actions           ←  "atomic steps"               (Decap, Inspect, Dispense, ...)
+   │              each declares pre() / eff() / execute() in those predicates
+   ▼
+setup(**kwargs)   ←  "this particular run"       (4 tubes, these are heavy, …)
+                   builds initial state + goal from operator inputs
+```
+
+The framework reads all three, builds a plan, schedules it across
+hardware, and ticks a behavior tree at 10 Hz until the goal is met.
+
+### What you declare vs what the framework derives
+
+You declare:
+
+1. **Predicates** — the vocabulary of facts your world can hold.
+2. **Actions** — one Python class per atomic step. Each says: what
+   must be true to run me (`pre`), what changes after (`eff`), what
+   the robot actually does (`execute`).
+3. **Goal** — a callable that returns True when the protocol is done.
+4. **Initial state** — which facts are true at t=0.
+
+The framework derives:
+
+* a **PDDL plan** (ordered action sequence to the goal),
+* a **schedule** (parallelism across resources, tool-swap gaps),
+* a **behavior tree** for execution (with retry, recovery, replan),
+* **condition leaves** for any predicate (auto-generated when needed),
+* **effect propagation** mirroring your declared `eff()` into runtime state.
 
 Authors never write duplicated declarations. One action = one block.
+
+### Pace_bt — the worked example
+
+The `pace_bt/` project is the framework's canonical example. Every
+concept in this guide is illustrated by code there; if a section
+feels abstract, open [pace_bt/actions.py](../workspace/projects/pace_bt/actions.py)
+and read the parallel implementation.
 
 ---
 
@@ -88,10 +121,25 @@ else is either:
 
 ## 3. The authoring style — one block per action
 
+Every `actions.py` file has the same three parts, in this order:
+
+1. **Predicates** at the top — the vocabulary your protocol speaks.
+2. **One `setup(**kwargs)` function** — converts operator inputs into
+   the planner's starting state and goal.
+3. **One `Action` subclass per atomic step** — declares its
+   preconditions, effects, scheduling info, and hardware logic.
+
+That's it. No domain.py, no schedule.py, no separate conditions —
+the framework derives everything from these three things.
+
+Here's the full skeleton:
+
 ```python
 from workspace.bt import Action, predicate
 
-# Predicates — declare once at the top.
+# ─── 1. Predicates — declare once at the top. ──────────────────────────
+#     These are the building blocks. Every fact in your world has to
+#     reference one of these names.
 in_source     = predicate("in_source")
 in_working    = predicate("in_working")
 in_done       = predicate("in_done")
@@ -100,7 +148,10 @@ weighed       = predicate("weighed")
 weight_heavy  = predicate("weight_heavy")
 dosed         = predicate("dosed")
 
-# Map operator kwargs → planning inputs. ONE function.
+# ─── 2. setup() — the per-run translator. ──────────────────────────────
+#     Called once per Start click. Turns operator kwargs into the
+#     three things the planner needs: initial facts, the goal, and
+#     the parameter pools.
 def setup(**kwargs):
     batch_size = int(kwargs.get("batch_size", 1))
     heavy = _parse_heavy(kwargs.get("heavy", ""))  # project-local parser
@@ -122,7 +173,10 @@ def setup(**kwargs):
         "objects":       {"tube": tubes},
     }
 
-# One block per atomic action.
+# ─── 3. Actions — one class per atomic step. ───────────────────────────
+#     Each class declares scheduling info (class attrs), preconditions
+#     (pre), effects (eff), and hardware logic (execute). The framework
+#     auto-registers it.
 class Decap(Action):
     """Remove cap, transfer tube to working rack."""
     params     = ["tube"]
@@ -473,6 +527,116 @@ beyond "tuples must be hashable" (so don't put lists or dicts in `args`).
 > A **fact** is one row instance, signed with `+`/`-` while in an `eff()`.
 > The **state** is the live table of currently-true rows — a `set` while
 > the protocol runs, a `frozenset` when frozen for planner consumption.
+
+### 3.6 `params` and `objects` — the planner's wiring
+
+The `params` attribute on an Action class and the `objects` dict
+returned by `setup()` are linked by **name** — they're how the
+planner knows what values to enumerate when looking for plans.
+
+#### The three places one name appears
+
+```python
+class Inspect(Action):
+    params = ["tube"]            # ← (1) declare the parameter NAME
+
+    def pre(self, tube):         # ← (3) function argument
+        return in_source(tube)
+
+    def eff(self, tube):
+        return {"weighed": +weighed(tube)}
+
+    def execute(self, tube):
+        ...
+        return "weighed"
+
+
+# in setup():
+return {
+    "objects": {"tube": [0, 1, 2, 3]},   # ← (2) values for the NAME
+    ...
+}
+```
+
+Same word `tube` in three places. Each plays a different role:
+
+| Where | Role | Required? |
+|---|---|---|
+| `params = ["tube"]` | "this action takes one parameter, and its name is `tube`" | Mandatory — it's how the planner knows what pools to look up. |
+| `objects["tube"]` | "for the name `tube`, here are the values to try" | Mandatory — without this, the planner gets an empty pool and skips the action. |
+| `def pre(self, tube)` | Python argument name | **Convention only** — the framework passes positionally, but matching the name keeps the code readable. |
+
+#### How the planner uses them at plan time
+
+```
+For each Action class:
+  1. Read its params              → ["tube"]
+  2. Look each name up in objects → [[0, 1, 2, 3]]
+  3. Cartesian product            → [(0,), (1,), (2,), (3,)]
+  4. For each tuple of values:
+       call pre(self, *values) — does it hold in current state?
+       if yes → this binding becomes a plan candidate.
+```
+
+For pace_bt batch_size=2 with 5 atomic actions and one tube param,
+the planner has **5 × 2 = 10** candidate Action instances per state.
+Most get filtered by `pre()`; the survivors enter the plan.
+
+#### Two-param example
+
+If an action needs two inputs, list both:
+
+```python
+class TransferBetweenRacks(Action):
+    params = ["tube", "slot"]           # ← order matters
+
+    def pre(self, tube, slot):           # ← same order
+        return in_source(tube) & ~occupied(slot)
+
+    def execute(self, tube, slot):
+        self.ctx.recipes["arm"].move(SOURCE[tube], DEST[slot])
+        return "transferred"
+
+
+# in setup():
+"objects": {
+    "tube": [0, 1, 2, 3],
+    "slot": ["A1", "A2", "B1", "B2"],
+}
+```
+
+The planner enumerates the **Cartesian product** — 4 × 4 = 16
+candidates — then filters via `pre()`.
+
+#### Zero-param actions
+
+For scene-level actions (e.g. End-trigger cleanup), `params = []`.
+The planner doesn't enumerate; one candidate exists.
+
+```python
+class ParkTool(Action):
+    params  = []
+    trigger = "end"
+
+    def execute(self):
+        return "none"
+```
+
+#### Common mistakes
+
+| Symptom | Cause |
+|---|---|
+| Action never appears in any plan | A name in `params` isn't in `objects` — the pool is empty. |
+| Wrong values passed to `execute` | Order of `params` doesn't match order of function arguments. |
+| Combinatorial explosion in plan time | You added a parameter the planner doesn't really need to enumerate. Move it to `ctx.meta["kwargs"]` instead. |
+
+#### TL;DR
+
+> `params` lists the **names** of an action's parameters. `objects`
+> provides the **values** for each name. The planner takes the
+> Cartesian product of pools, filters by `pre()`, and the survivors
+> form the plan. Function argument names are convention — match them
+> to the `params` strings for sanity.
 
 ---
 
