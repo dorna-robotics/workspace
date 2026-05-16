@@ -353,6 +353,127 @@ receives kwargs only. Its job is to compute the planning inputs
 setup() would need recipes or runtime to compute the initial state,
 that work belongs in an early action's `execute()` instead.
 
+### 3.5 Under the hood — Predicate, Fact, State
+
+The three types that carry the protocol's world model. Knowing how
+they fit together makes everything else easier to reason about.
+
+#### The data model — three layers
+
+| Layer | Python type | Where it comes from | Example |
+|---|---|---|---|
+| **Predicate** | framework class (`Predicate`) | declared once at module top: `in_source = predicate("in_source")` | object with `.name = "in_source"`, callable |
+| **Fact** | framework class (`Fact`) | created on-the-fly inside `pre()` / `eff()`: `in_source(3)` | object with `(pred, args, polarity)` |
+| **Tuple (in state)** | plain Python tuple | `Fact.as_tuple()` — what the framework stores in state | `("in_source", 3)` |
+
+Same logical concept ("tube 3 is in source"), three representations,
+each used in a different layer:
+
+```python
+in_source                # the Predicate — what you reference in declarations
+in_source.name           # → "in_source"  — the string, used in setup()/goal()
+in_source(3)             # → a Fact — used in pre() / eff() with & | ~ + -
+in_source(3).as_tuple()  # → ("in_source", 3) — what lives in state
+```
+
+#### The `Predicate` class — tiny
+
+```python
+class Predicate:
+    __slots__ = ("name",)
+    def __init__(self, name):  self.name = name
+    def __call__(self, *args): return Fact(self.name, args)
+```
+
+One field (`name`), one method (call → make a Fact). Nothing else.
+
+#### The `Fact` class — also tiny
+
+```python
+class Fact:
+    __slots__ = ("pred", "args", "polarity")
+    def __init__(self, pred, args, polarity=True): ...
+    def __pos__(self): return Fact(self.pred, self.args, polarity=True)   # +fact
+    def __neg__(self): return Fact(self.pred, self.args, polarity=False)  # -fact
+    def __and__(self, other): ...   # &
+    def __or__(self, other):  ...   # |
+    def __invert__(self):     ...   # ~
+```
+
+Three fields:
+
+| Field | Meaning |
+|---|---|
+| `pred` | the predicate name (a string, e.g. `"in_source"`) |
+| `args` | the arguments tuple (e.g. `(3,)`) |
+| `polarity` | `True` = "add this fact", `False` = "remove this fact" (only relevant inside `eff()`) |
+
+#### `state` — what `goal(state)` actually receives
+
+A **`frozenset` of plain tuples**, each tuple `(predicate_name, *args)`.
+That's it. No Fact objects, no Predicate references — just the bare
+tuples that `Fact.as_tuple()` produces.
+
+```python
+state = frozenset({
+    ("in_source", 0), ("has_cap", 0),
+    ("in_source", 1), ("has_cap", 1),
+})
+```
+
+Membership check is O(1) (set hashing):
+
+```python
+def goal(state):
+    return all((in_done.name, t) in state for t in tubes)
+    #          └────── tuple ──────┘    O(1) hash lookup
+```
+
+#### How state evolves through pace_bt (batch_size=2, both heavy)
+
+| Phase | state |
+|---|---|
+| **t=0** (after `setup()`) | `{("in_source", 0), ("has_cap", 0), ("in_source", 1), ("has_cap", 1)}` |
+| **after `Inspect(0)`, `Inspect(1)`** | adds `("weighed", 0)`, `("weighed", 1)`, `("weight_heavy", 0)`, `("weight_heavy", 1)` (sensing branch fired) |
+| **after `Decap(0)`, `Decap(1)`** | removes `has_cap`/`in_source` for both, adds `("in_working", 0)`, `("in_working", 1)` |
+| **after `DispenseHeavy(0/1)`** | adds `("dosed", 0)`, `("dosed", 1)` |
+| **after `Recap(0/1)`** | adds `("has_cap", 0)`, `("has_cap", 1)` back |
+| **after `Shelve(0/1)`** | removes `in_working`, adds `("in_done", 0)`, `("in_done", 1)` → goal satisfied |
+
+State grows and shrinks freely. No pre-sizing, no schema enforcement
+beyond "tuples must be hashable" (so don't put lists or dicts in `args`).
+
+#### Where each layer lives
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Module top (declared once, never changes)              │
+│    in_source = predicate("in_source")   ← Predicate     │
+└─────────────────────────────────────────────────────────┘
+                       │ uses
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  Inside pre() / eff()                                   │
+│    return in_source(tube) & ~weighed(tube)              │
+│           └──────────────── Fact arithmetic ──────────┘ │
+└─────────────────────────────────────────────────────────┘
+                       │ framework converts via .as_tuple()
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  ctx.state["facts"]      (set, mutable)                 │
+│    {("in_source", 3), ("has_cap", 3), ...}              │
+│  Snapshotted to frozenset when handed to the planner    │
+│  or to goal(state).                                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Mental model
+
+> A **predicate** is a database column definition (the schema).
+> A **fact** is one row instance, signed with `+`/`-` while in an `eff()`.
+> The **state** is the live table of currently-true rows — a `set` while
+> the protocol runs, a `frozenset` when frozen for planner consumption.
+
 ---
 
 ## 4. Fact arithmetic — the precondition / effect mini-language
@@ -717,6 +838,7 @@ ctx.state["facts"]                    # contains tuples like ("in_source", 3)
 
 Convention: make the variable name and the string identical. Nothing
 forces it, but mismatching them lies to anyone reading state dumps.
+(See §3.5 for the full Predicate / Fact / state data model.)
 
 ### Q: What is `setup()` exactly?
 
@@ -782,7 +904,7 @@ Pure Python — an immutable, hashable version of `set`. The PDDL
 planner needs states to be hashable (so it can de-duplicate visited
 states during search), and a plain `set` isn't. You build the set
 normally (`facts = set()`, `facts.add(...)`), then freeze it on the
-way out.
+way out. (§3.5 shows what the state actually looks like in memory.)
 
 ### Q: Where do I access `recipes` / `runtime` / `workspace` inside an action?
 
