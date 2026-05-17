@@ -14,6 +14,10 @@ Explicit — every wire is visible:
   * ``--port`` (and ``PORT`` env var) wire through to
     :class:`Workspace` and :class:`RuntimeServer`.
 
+All project-level knobs (project name, default port, file names)
+live in the ``# ─ Project configuration ─`` block at the top — one
+place to look when copying this file to a new project.
+
 Same shape as pace_or's main.py — just calls into the BT framework's
 ``run_protocol`` instead of pace_or's ``BaseWorkflow``.
 """
@@ -32,34 +36,48 @@ import actions  # registers Inspect, Decap, … into the ActionRegistry on impor
 import checks   # Checks class — gives the framework pre_check / post_check callables
 
 
+# ─── Project configuration ──────────────────────────────────────────────
+# Edit these when copying main.py to a new project. Everything else
+# below is generic wiring — should not need changes per project.
+PROJECT_NAME  = "pace_bt"        # appears in logs, tree node names, GUI
+LAUNCH_FILE   = "launch.yaml"    # scene + kwargs schema (read by main)
+RECIPES_FILE  = "recipes.yaml"   # recipes — recipes.j2 takes priority if both exist
+DEFAULT_PORT  = 5010             # operator UI / RuntimeServer port
+PORT_ENV_VAR  = "PORT"           # env var override for --port
+# ────────────────────────────────────────────────────────────────────────
+
+
 _BASE_DIR = Path(__file__).parent
 
 
 def workflow_fn(*, workspace, core, **kwargs):
     """Called by RuntimeServer on every operator Start click.
 
-    Loads ``recipes.yaml`` + ``checks.py`` (so ``ctx.recipes["gripper"]``
-    etc. are populated for real-mode runs and pre_check/post_check
-    names resolve), then hands actions + recipes + checks + kwargs
-    to the BT framework's default protocol runner.
+    Loads recipes + checks (so ``ctx.recipes["gripper"]`` etc. are
+    populated for real-mode runs and pre_check/post_check names
+    resolve), then hands actions + recipes + checks + kwargs to the
+    BT framework's default protocol runner.
     """
-    recipes  = load_recipes(workspace, core, _BASE_DIR / "recipes.yaml")
+    recipes   = load_recipes(workspace, core, _BASE_DIR / RECIPES_FILE)
     check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
     return run_protocol(
         workspace, core, actions,
         recipes=recipes,
         checks=check_fns,
-        project_name="pace_bt",
+        project_name=PROJECT_NAME,
         **kwargs,
     )
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "5010")))
+    p.add_argument(
+        "--port", type=int,
+        default=int(os.getenv(PORT_ENV_VAR, str(DEFAULT_PORT))),
+    )
     args = p.parse_args()
 
-    with open(_BASE_DIR / "launch.yaml") as f:
+    with open(_BASE_DIR / LAUNCH_FILE) as f:
         launch = yaml.safe_load(f)
 
     ws = Workspace(config_path=launch["scene"], port=args.port)
