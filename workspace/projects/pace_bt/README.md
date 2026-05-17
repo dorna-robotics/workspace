@@ -21,9 +21,10 @@ this automatically when a user starts pace_bt from the project list.
 
 ## Configuration
 
-Project-level knobs (name, port, file names) live at the top of
-[`main.py`](main.py). Operator-facing inputs (batch size, tick rate)
-are declared in [`launch.yaml`](launch.yaml).
+Everything project-specific lives in [`launch.yaml`](launch.yaml) —
+project name, port, scene, recipes file, the protocol module
+(`actions.py`), the checks module (`checks.py`), and the GUI form
+schema (`batch_size`). `main.py` is pure wiring.
 
 ## See also
 

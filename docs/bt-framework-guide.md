@@ -71,7 +71,7 @@ projects/<name>/
 ├── scene/
 │   └── base.j2              # scene (j2 templates)
 ├── main.py                  # orchestrator entry — explicit wiring, same shape as pace_or
-├── launch.yaml              # SINGLE config file — project_name / port / scene / recipes / GUI kwargs
+├── launch.yaml              # SINGLE config file — project_name / port / scene / recipes / actions / checks / GUI kwargs
 ├── recipes.yaml             # recipe aliases → class + component bindings (or recipes.j2)
 ├── actions.py               # predicates + setup(**kwargs) + one Action subclass per step
 ├── checks.py                # Checks class — pre/post-check methods referenced by name
@@ -93,12 +93,12 @@ else is either:
 
 * **`main.py`** — explicit orchestrator entry, same shape as pace_or's
   main.py. Parses `launch.yaml` once into a module-level `LAUNCH`
-  dict, imports `actions` and `checks`, defines a `workflow_fn`
-  that calls `bt.launcher.run_protocol`, starts `Workspace` +
-  `RuntimeServer`. ~50 lines. **The wiring is visible** — an
-  operator can read it and see exactly where each piece is hooked
-  in. Copy from `pace_bt/` for new projects; the only edits are
-  the `import actions` / `import checks` lines.
+  dict, dynamically imports the `actions` and `checks` modules
+  named in launch.yaml (defaulting to `actions.py` / `checks.py`),
+  defines a `workflow_fn` that calls `bt.launcher.run_protocol`,
+  starts `Workspace` + `RuntimeServer`. ~50 lines. **Copy from
+  `pace_bt/` for new projects verbatim** — every per-project
+  detail lives in launch.yaml.
 * **`launch.yaml`** — the single config file for the project. Top-level
   keys: `project_name`, `port` (default for direct invocation),
   `scene` (list of scene files), `recipes` (recipes file path),
@@ -1043,12 +1043,12 @@ class Checks:
         runner.register_check("source_tube_present", self.source_tube_present)
 ```
 
-Wiring in `main.py`:
+Wiring in `main.py` (the `checks` module is loaded dynamically from
+`launch.yaml`'s `checks:` key, defaulting to `checks.py`):
 
 ```python
-import checks
-...
-recipes  = load_recipes(workspace, core, _BASE_DIR / "recipes.yaml")
+checks    = _import_module(LAUNCH.get("checks", "checks.py"))
+recipes   = load_recipes(workspace, core, _BASE_DIR / LAUNCH["recipes"])
 check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
 run_protocol(workspace, core, actions, recipes=recipes, checks=check_fns, **kwargs)
 ```
