@@ -48,9 +48,11 @@ def setup(**kwargs):
 
 # ── 3. Slot tables — tube index → physical rack + slot ────────────────────
 
-SOURCE   = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
-WORKING  = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
-CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
+SOURCE     = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
+WORKING    = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
+# Cap parking: each tube's cap is parked at a separate decapper
+# component (decapper_5 is the one actively decapping).
+CAP_HOLDER = ["decapper_1", "decapper_2", "decapper_3", "decapper_4"]
 
 HEAVY_THRESHOLD  = 50.0   # grams — above this routes to DispenseHeavy
 INSPECTION_FRQ   = 4      # camera rotations per visual inspection
@@ -116,7 +118,7 @@ class Decap(Action):
         rcp["source_rack"].pick(SOURCE[tube])
         rcp["decapper_5"].place(exit=False)
         rcp["decapper_5"].decap(approach=False)
-        rcp["cap_holder"].place(CAPS[tube])
+        rcp[CAP_HOLDER[tube]].place()           # park cap at decapper_{tube+1}
         rcp["decapper_5"].pick()
         rcp["working_rack"].place(WORKING[tube])
         return "decapped"
@@ -194,7 +196,7 @@ class Recap(Action):
         rcp = self.ctx.recipes
         rcp["working_rack"].pick(WORKING[tube])
         rcp["decapper_5"].place()
-        rcp["cap_holder"].pick(CAPS[tube])
+        rcp[CAP_HOLDER[tube]].pick()            # retrieve cap from decapper_{tube+1}
         rcp["decapper_5"].cap(exit=False)
         rcp["decapper_5"].pick(approach=False)
         rcp["working_rack"].place(WORKING[tube])
