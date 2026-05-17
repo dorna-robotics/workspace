@@ -53,8 +53,6 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
-import time
 from typing import (
     Any,
     Callable,
@@ -574,9 +572,11 @@ class Action:
         warning and treated as failure — there's exactly one way to
         pick a branch, matching ``eff()``'s "always a dict" rule.
 
-        Sim mode skips ``execute`` entirely — the framework just
-        sleeps for ``duration`` and applies the default (first) eff
-        branch. You don't need to worry about that here.
+        Simulation vs real hardware is the **workspace SDK's** job —
+        ``core.robot_api`` is ``SimulationAPI`` in sim mode and
+        ``Dorna()`` in real mode. Recipes called from ``execute`` go
+        through that abstraction transparently; the framework doesn't
+        intervene.
         """
         # Default — the base class's default eff() returns
         # {"none": None}; matching that for the no-op case.
@@ -935,45 +935,36 @@ class _DSLActionLeaf(RecipeAction):
         # 2. Tool swap (if needed).
         self._ensure_tool()
 
-        # 3. Sim vs. real for the actual work.
-        if getattr(self.ctx.core, "_simulation_mode", True):
-            # Sim: sleep for declared duration; respect runtime stop.
-            # The framework can't observe the world in sim mode, so
-            # multi-branch actions stick with their default branch.
-            deadline = time.monotonic() + float(self._cls.duration)
-            while time.monotonic() < deadline:
-                stop = getattr(self.ctx.runtime, "stopped", None)
-                if stop and (stop() if callable(stop) else stop):
-                    return False
-                time.sleep(min(0.05, deadline - time.monotonic()))
-        else:
-            try:
-                rv = self._instance.execute(*self._params())
-            except Exception as ex:
-                self.log.warning("execute raised: %s", ex)
-                return False
+        # 3. Run the action's execute(). The workspace SDK's core
+        #    handles sim vs. real internally (SimulationAPI vs Dorna)
+        #    — the framework doesn't need to second-guess.
+        try:
+            rv = self._instance.execute(*self._params())
+        except Exception as ex:
+            self.log.warning("execute raised: %s", ex)
+            return False
 
-            # execute() must return:
-            #   * str          — name of the chosen eff branch (the
-            #                    common case, including deterministic
-            #                    actions which return their only key)
-            #   * False        — action failed (no effects applied)
-            #
-            # Anything else (None, True, ints, ...) is rejected as a
-            # programmer error — keeps the contract consistent with
-            # eff()'s "always a dict" rule: one way to pick a branch.
-            if rv is False:
-                return False
-            if not isinstance(rv, str):
-                effs = self._instance.eff(*self._params())
-                keys = list(effs.keys()) if isinstance(effs, dict) else []
-                self.log.warning(
-                    "%s.execute returned %r — expected one of %r (or "
-                    "False for failure). Treating as failure.",
-                    self._cls.__name__, rv, keys,
-                )
-                return False
-            self._branch_choice = rv
+        # execute() must return:
+        #   * str          — name of the chosen eff branch (the
+        #                    common case, including deterministic
+        #                    actions which return their only key)
+        #   * False        — action failed (no effects applied)
+        #
+        # Anything else (None, True, ints, ...) is rejected as a
+        # programmer error — keeps the contract consistent with
+        # eff()'s "always a dict" rule: one way to pick a branch.
+        if rv is False:
+            return False
+        if not isinstance(rv, str):
+            effs = self._instance.eff(*self._params())
+            keys = list(effs.keys()) if isinstance(effs, dict) else []
+            self.log.warning(
+                "%s.execute returned %r — expected one of %r (or "
+                "False for failure). Treating as failure.",
+                self._cls.__name__, rv, keys,
+            )
+            return False
+        self._branch_choice = rv
 
         # 4. post_check — runs AFTER execute. False = action FAILED.
         if not self._run_checks(self._cls.post_check):

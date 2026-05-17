@@ -247,7 +247,6 @@ class Decap(Action):
         return {"decapped": (-has_cap(tube), -in_source(tube), +in_working(tube))}
 
     def execute(self, tube):
-        # Real-mode only — in sim the framework sleeps for ``duration``.
         self.ctx.recipes["decapper"].decap(tube)
         return "decapped"     # ← name of the chosen eff branch
 ```
@@ -272,10 +271,10 @@ What's happening:
   facts that branch produces. `+fact` adds, `-fact` removes. Single-key
   dicts are deterministic actions; multi-key dicts are sensing actions
   whose `execute()` picks the branch at runtime. See §3.3.
-* `execute` is the real-hardware logic. **Sim vs. real is a
-  framework-level decision** based on `core._simulation_mode`: sim
-  mode sleeps for `duration` and skips `execute`; real mode calls
-  it. Action classes don't carry a sim flag.
+* `execute` is the hardware logic. **Simulation is the workspace
+  SDK's concern**, not the framework's — `core.robot_api` is
+  `SimulationAPI` in sim and `Dorna()` in real, and recipes go
+  through that. The framework just calls `execute()` either way.
 
 Subclassing `Action` auto-registers the class — the framework picks
 it up the moment `actions.py` is imported.
@@ -379,7 +378,6 @@ rule as `eff()` being a dict.
 | **Runtime — execute() returns unknown key** | Warning + fall back to the default (first) key. |
 | **Runtime — execute() returns False** | Action failed; no effects applied. |
 | **Runtime — execute() returns anything else (None / int / etc.)** | Programmer error — warning + treated as failure. |
-| **Sim mode** | `execute()` is never called; default branch applies. |
 
 #### When to use multiple branches
 
@@ -411,7 +409,7 @@ package to every leaf with one variable.
 | Attribute | Type | What it is | pace_or equivalent |
 |---|---|---|---|
 | `self.ctx.workspace` | `Workspace` | SDK root — scene + components | `self.workspace` |
-| `self.ctx.core` | `Core` | robot API, `_simulation_mode` flag | `self.core` |
+| `self.ctx.core` | `Core` | robot API (sim or real — chosen by core) | `self.core` |
 | `self.ctx.runtime` | `Runtime` | `rt.step(...)`, `rt.checkpoint()`, pause/end signals | `self.rt` |
 | `self.ctx.recipes` | `dict[str, Recipe]` | name → recipe instance loaded from `recipes.yaml`. **Preferred way to drive hardware.** | `self.rcp` |
 | `self.ctx.state` | `dict` | live world state. `ctx.state["facts"]` is the fact set. **Managed by the framework — don't write to it directly**, return effects from `eff()` instead. | — |
@@ -761,7 +759,7 @@ That's all. The framework:
 
 * Auto-derives a PDDL `ActionTemplate` from `pre` / `eff`.
 * Auto-registers the duration/resource into the scheduler meta.
-* Auto-builds a BT leaf wrapping `execute` (or sim-sleep in sim mode).
+* Auto-builds a BT leaf wrapping `execute`.
 * Auto-mirrors `eff` into the runtime state-update logic.
 * Auto-generates `weighed.condition(tube)` if you ever need a BT
   condition leaf for it.
