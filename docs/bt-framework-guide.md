@@ -117,6 +117,53 @@ else is either:
   If you create one, change `main.py`'s `workflow_fn` to call it
   instead of `run_protocol`.
 
+### 2.1 Where to edit for…
+
+Task-oriented routing — go straight to the file for what you want to change.
+
+| You want to… | Edit |
+|---|---|
+| Add / remove an atomic action | `actions.py` (one `Action` subclass) |
+| Change branch logic | `pre()` method on the relevant action |
+| Change scheduling (duration / resource / tool / tool_swap_duration) | class attrs on the relevant action |
+| Add a multi-branch outcome (sensing) | `eff()` dict + `execute()` returns the branch — see §3.3 |
+| Change the goal | `setup()`'s `goal` callable |
+| Change initial state from kwargs | `setup()` |
+| Change the GUI form | `launch.yaml` kwargs |
+| Add a new vision / sensor check | `checks.py` (method + `register_check` line) |
+| Wire a check into an action | `pre_check` / `post_check` class attr on the action |
+| Add an End-cleanup action | new `Action` subclass with `trigger="end"` (see §3.2) |
+| Change the scene | `scene/base.j2` |
+| Change recipe bindings (which class implements which alias) | `recipes.yaml` |
+| Override the protocol runner | add a `workflow.py` and change `main.py`'s `workflow_fn` |
+| React to camera-driven world changes (tubes appearing / leaving) | add a sensing action that mutates ctx + replans (see §8.4) |
+
+### 2.2 Running a BT project
+
+Two ways:
+
+**Via the orchestrator (normal operation).** The orchestrator
+auto-discovers all projects under `projects/` and starts them on
+operator click. Browse to:
+
+```
+http://<ip>:5000/orchestrator/
+```
+
+Each project gets its own port (`pace_bt` defaults to 5010).
+
+**Directly (development / debugging).**
+
+```bash
+cd projects/<your_project>
+sudo python3 main.py --port 5010
+```
+
+The framework reads `launch.yaml`, loads `recipes.yaml`, imports
+`actions` (which auto-registers Action classes via `__init_subclass__`),
+and starts the BT engine. The operator UI is then at
+`http://<ip>:5010/`.
+
 ---
 
 ## 3. The authoring style — one block per action
