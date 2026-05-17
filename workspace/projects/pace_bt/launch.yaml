@@ -15,7 +15,7 @@ checks:       checks.py            # vision/sensor Checks class (referenced by n
 kwargs:
   batch_size:
     type: int
-    default: 4
+    default: 1
     label: Batch size
     hint: Number of items (tubes) to process in this run.
     min: 1

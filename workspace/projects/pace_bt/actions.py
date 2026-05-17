@@ -52,7 +52,9 @@ SOURCE   = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
 WORKING  = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
 CAPS     = [f"slot_{i}" for i in range(7)]                # cap_holder slots
 
-HEAVY_THRESHOLD = 50.0   # grams — above this routes to DispenseHeavy
+HEAVY_THRESHOLD  = 50.0   # grams — above this routes to DispenseHeavy
+INSPECTION_FRQ   = 4      # camera rotations per visual inspection
+INSPECTION_ROT   = 90     # degrees per rotation
 
 
 # ── 4. Actions ─────────────────────────────────────────────────────────────
@@ -78,9 +80,18 @@ class Inspect(Action):
     def execute(self, tube):
         rcp = self.ctx.recipes
         rcp["source_rack"].pick(SOURCE[tube])
+
+        # Visual inspection — present to camera and rotate
+        rcp["inspector"].present(approach=True)
+        for _ in range(INSPECTION_FRQ):
+            rcp["inspector"].rotate(rotation=INSPECTION_ROT)
+
+        # Weigh on scale
         rcp["scale"].place("place")
         weight = rcp["scale"].weight()
         rcp["scale"].pick("place")
+
+        # Return to source — Decap will pick it up again
         rcp["source_rack"].place(SOURCE[tube])
         return "heavy" if (weight or 0) > HEAVY_THRESHOLD else "light"
 

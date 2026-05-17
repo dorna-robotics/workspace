@@ -924,11 +924,13 @@ class _DSLActionLeaf(RecipeAction):
         self._branch_choice = None
         self._skipped = False
 
+        log.info("BT leaf START: %s", self.name)
+
         # 1. pre_check — runs BEFORE tool swap. False = skip the whole
         #    action (treated as success so the BT moves on without
         #    failing the parent sequence; matches pace_or semantics).
         if not self._run_checks(self._cls.pre_check):
-            self.log.info("%s: pre_check failed — skipping action", self.name)
+            log.info("BT leaf SKIP : %s (pre_check failed)", self.name)
             self._skipped = True
             return True
 
@@ -941,7 +943,8 @@ class _DSLActionLeaf(RecipeAction):
         try:
             rv = self._instance.execute(*self._params())
         except Exception as ex:
-            self.log.warning("execute raised: %s", ex)
+            log.warning("BT leaf RAISE: %s — %s: %s",
+                        self.name, type(ex).__name__, ex)
             return False
 
         # execute() must return:
@@ -954,13 +957,13 @@ class _DSLActionLeaf(RecipeAction):
         # programmer error — keeps the contract consistent with
         # eff()'s "always a dict" rule: one way to pick a branch.
         if rv is False:
+            log.warning("BT leaf FAIL : %s (execute returned False)", self.name)
             return False
         if not isinstance(rv, str):
             effs = self._instance.eff(*self._params())
             keys = list(effs.keys()) if isinstance(effs, dict) else []
-            self.log.warning(
-                "%s.execute returned %r — expected one of %r (or "
-                "False for failure). Treating as failure.",
+            log.warning(
+                "BT leaf FAIL : %s.execute returned %r — expected one of %r",
                 self._cls.__name__, rv, keys,
             )
             return False
@@ -968,8 +971,10 @@ class _DSLActionLeaf(RecipeAction):
 
         # 4. post_check — runs AFTER execute. False = action FAILED.
         if not self._run_checks(self._cls.post_check):
-            self.log.warning("%s: post_check failed", self.name)
+            log.warning("BT leaf FAIL : %s (post_check failed)", self.name)
             return False
+
+        log.info("BT leaf DONE : %s (branch=%s)", self.name, rv)
         return True
 
     def apply_effects(self, state: Dict[str, Any]) -> None:
