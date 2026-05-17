@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import (
     Any,
     Callable,
@@ -435,17 +434,6 @@ class Action:
                             different ``tool``. Per-action so swap
                             times can differ (gripper vs. needle racks
                             are at different distances). Default 10.
-        background:         When True, the action's hardware is **async**
-                            — ``execute()`` triggers it and returns
-                            immediately. The framework then holds the
-                            leaf in RUNNING for the remainder of
-                            ``duration`` before reporting SUCCESS, so
-                            downstream actions don't start before the
-                            hardware finishes (e.g. shake for 120 s).
-                            Pair with a separate ``resource`` (the
-                            peripheral's name, e.g. ``"shaker_1"``) so
-                            the robot is free to do other scheduled
-                            work in parallel.
         resource:           Hardware lock(s) this action claims for
                             scheduling. Three shapes:
                               * ``None``               — claims nothing,
@@ -492,7 +480,6 @@ class Action:
     resource:            Any = None    # None | "name" | ["a", "b"]
     tool:                Any = _TOOL_UNSET   # unset | None | "name"
     tool_swap_duration:  int = 10      # gap before this action when tool changes
-    background:          bool = False  # hardware runs async — see Action docstring
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
     trigger:             Optional[str] = None  # "end" or None
@@ -953,7 +940,11 @@ class _DSLActionLeaf(RecipeAction):
         # 3. Run the action's execute(). The workspace SDK's core
         #    handles sim vs. real internally (SimulationAPI vs Dorna)
         #    — the framework doesn't need to second-guess.
-        started_at = time.monotonic()
+        #    Recipes are expected to BLOCK until the hardware finishes;
+        #    long async ops (shake, incubate, …) implement that wait
+        #    themselves. The framework runs execute() in a worker
+        #    thread (see RecipeAction.initialise) so a blocking
+        #    execute() doesn't freeze the engine tick loop.
         try:
             rv = self._instance.execute(*self._params())
         except Exception as ex:
@@ -983,31 +974,7 @@ class _DSLActionLeaf(RecipeAction):
             return False
         self._branch_choice = rv
 
-        # 4. Background hold: if the hardware runs async (shake, incubate,
-        #    etc.), execute() returns immediately. Wait the remainder of
-        #    `duration` so downstream actions don't start before the
-        #    hardware finishes. Mirrors pace_or runner's _wait_bg.
-        if getattr(self._cls, "background", False):
-            elapsed   = time.monotonic() - started_at
-            remaining = float(self._cls.duration) - elapsed
-            if remaining > 0:
-                log.info(
-                    "BT leaf HOLD : %s waiting %.0fs for background hardware",
-                    self.name, remaining,
-                )
-                delay = getattr(self.ctx.runtime, "delay", None)
-                if callable(delay):
-                    delay(remaining)
-                else:
-                    # Fallback — interruptible polling sleep.
-                    deadline = time.monotonic() + remaining
-                    while time.monotonic() < deadline:
-                        stop = getattr(self.ctx.runtime, "stopped", None)
-                        if stop and (stop() if callable(stop) else stop):
-                            return False
-                        time.sleep(min(0.1, deadline - time.monotonic()))
-
-        # 5. post_check — runs AFTER execute (and after background hold).
+        # 4. post_check — runs AFTER execute. False = action FAILED.
         if not self._run_checks(self._cls.post_check):
             log.warning("BT leaf FAIL : %s (post_check failed)", self.name)
             return False

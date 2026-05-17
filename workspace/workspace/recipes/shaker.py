@@ -27,52 +27,41 @@ class Shaker(Recipe):
             **prm
         )
 
-        self._shake_thread = None
+        # Stop signal — can be set from another thread (e.g. via
+        # stop_shaking()) to interrupt an in-flight shake() early.
         self._stop_event = threading.Event()
 
-    @property
-    def is_shaking(self):
-        """True while the background shake thread is active."""
-        return self._shake_thread is not None and self._shake_thread.is_alive()
-
     def shake(self, duration=5):
-        """Non-blocking shake — runs in a background thread for ``duration`` seconds.
+        """Block while toggling the shaker for ``duration`` seconds.
 
-        Toggles the shaker back and forth until at least ``duration`` seconds
-        have elapsed AND the shaker is back at its start position. Always
-        returns to the start position on exit. Re-calling while a shake is
-        in progress is a no-op.
+        Toggles the shaker back and forth until at least ``duration``
+        seconds have elapsed AND the shaker is back at its start
+        position. Always returns to the start position on exit.
+
+        Synchronous by design — call from a worker thread if you need
+        the caller free for other work (the BT framework already does
+        this for action ``execute()`` bodies).
+
+        Use :meth:`stop_shaking` from another thread to interrupt
+        early (e.g. operator kill).
         """
-        if self.is_shaking:
-            return  # already running
-
         self._stop_event.clear()
+        start = time.time()
+        while not self._stop_event.is_set():
+            # exit when duration elapsed and back at start position
+            if time.time() - start >= duration and self.component.toggle_state() == "start":
+                break
+            self.component.toggle(stop_event=self._stop_event)
+        self._go_to_start()
 
-        def _run():
-            start = time.time()
-            while not self._stop_event.is_set():
-                # exit when duration elapsed and back at start position
-                if time.time() - start >= duration and self.component.toggle_state() == "start":
-                    break
-                self.component.toggle(stop_event=self._stop_event)
+    def stop_shaking(self):
+        """Signal an in-flight :meth:`shake` to exit early.
 
-            # always return to start position on exit
-            self._go_to_start()
-
-        self._shake_thread = threading.Thread(target=_run, daemon=True)
-        self._shake_thread.start()
-
-    def stop_shaking(self, wait=True):
-        """Stop the background shake thread. Returns to start position.
-
-        Args:
-            wait: If True, block until the thread actually stops.
+        Safe to call from another thread (e.g. the BT engine's
+        terminate path, an operator Kill). If no shake is running,
+        this is a no-op.
         """
-        if not self.is_shaking:
-            return
         self._stop_event.set()
-        if wait:
-            self._shake_thread.join()
 
     def _go_to_start(self):
         """Move shaker to start position."""
