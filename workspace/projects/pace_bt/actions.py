@@ -1,4 +1,4 @@
-"""pace_bt protocol — predicates, setup, and one Action per atomic step.
+"""pace_bt protocol — faithful BT port of pace_or's PACE protocol.
 
 Framework reference: ../../../docs/bt-framework-guide.md
 """
@@ -10,24 +10,24 @@ from workspace.bt import Action, predicate
 
 # ── 1. Predicates ──────────────────────────────────────────────────────────
 
-in_source     = predicate("in_source")
-in_working    = predicate("in_working")
-in_done       = predicate("in_done")
-has_cap       = predicate("has_cap")
-weighed       = predicate("weighed")
-weight_heavy  = predicate("weight_heavy")
-dosed         = predicate("dosed")
+in_source        = predicate("in_source")        # 40ml tube in source rack
+in_working       = predicate("in_working")       # 40ml tube in working rack
+in_shaker        = predicate("in_shaker")        # 40ml tube on shaker
+in_done          = predicate("in_done")          # 40ml tube back in source rack (done)
+has_cap          = predicate("has_cap")          # 40ml has cap on
+weighed          = predicate("weighed")          # 40ml weighed at inspected
+dosed_40ml_p     = predicate("dosed_40ml")       # solvent into 40ml
+shaken           = predicate("shaken")           # shaker completed for this tube
+dosed_2ml_p      = predicate("dosed_2ml")        # transferred to 2ml vials
+cap_in_holder    = predicate("cap_in_holder")    # autosampler-fed cap waiting
+vial_2ml_capped  = predicate("vial_2ml_capped")  # 2ml vial capped and placed
 
 
 # ── 2. setup — operator kwargs → planning inputs ───────────────────────────
 
 
 def setup(**kwargs):
-    """Project setup. kwargs: ``batch_size`` (number of tubes).
-
-    Tube heaviness is observed at runtime by Inspect's sensing eff,
-    not declared here.
-    """
+    """kwargs: batch_size (1..4)."""
     batch_size = int(kwargs.get("batch_size", 1))
     tubes = list(range(batch_size))
 
@@ -37,7 +37,11 @@ def setup(**kwargs):
         facts.add((has_cap.name, t))
 
     def goal(state):
-        return all((in_done.name, t) in state for t in tubes)
+        # Done when every tube has been shelved AND its 2ml vial capped.
+        return (
+            all((in_done.name, t) in state for t in tubes) and
+            all((vial_2ml_capped.name, t) in state for t in tubes)
+        )
 
     return {
         "initial_facts": frozenset(facts),
@@ -46,60 +50,118 @@ def setup(**kwargs):
     }
 
 
-# ── 3. Slot tables — tube index → physical rack + slot ────────────────────
+# ── 3. Slot tables — copied verbatim from pace_or/states.py ────────────────
 
-SOURCE     = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]    # source_rack slots
-WORKING    = ["B1", "B2", "B3", "B4", "B5", "B6", "B7"]    # working_rack slots
-# Cap parking: each tube's cap is parked at a separate decapper
-# component (decapper_5 is the one actively decapping).
-CAP_HOLDER = ["decapper_1", "decapper_2", "decapper_3", "decapper_4"]
+SOURCE = [
+    ("source_rack", "A1"),
+    ("source_rack", "A2"),
+    ("source_rack", "A3"),
+    ("source_rack", "A4"),
+]
 
-HEAVY_THRESHOLD  = 50.0   # grams — above this routes to DispenseHeavy
-INSPECTION_FRQ   = 4      # camera rotations per visual inspection
-INSPECTION_ROT   = 90     # degrees per rotation
+WORKING = [
+    ("working_rack", "B1"),
+    ("working_rack", "B2"),
+    ("working_rack", "B3"),
+    ("working_rack", "B4"),
+]
+
+CAP_HOLDER = [
+    "decapper_1",
+    "decapper_2",
+    "decapper_3",
+    "decapper_4",
+]
+
+SHAKER_SLOTS = [
+    ("shaker_1", "A1"),
+    ("shaker_1", "A2"),
+    ("shaker_2", "A1"),
+    ("shaker_2", "A2"),
+]
+
+CAP_FEEDER = [
+    ("cap_holder", "A1"),
+    ("cap_holder", "A2"),
+    ("cap_holder", "A3"),
+    ("cap_holder", "A4"),
+]
+
+DOSING_40ML = [
+    ("doser_40ml", "B1"),
+    ("doser_40ml", "B2"),
+    ("doser_40ml", "B3"),
+    ("doser_40ml", "B4"),
+]
+
+DOSING_CLEAN = [
+    ("doser_40ml", "A1"),
+    ("doser_40ml", "A2"),
+    ("doser_40ml", "A3"),
+]
+
+DOSING_WASTE = [
+    ("doser_40ml", "A4"),
+]
+
+DOSING_2ML_END = [
+    ("doser_2ml_end", "A1"),
+    ("doser_2ml_end", "A2"),
+    ("doser_2ml_end", "A3"),
+    ("doser_2ml_end", "A4"),
+]
+
+DOSING_2ML_MIDDLE = [
+    ("doser_2ml_middle", "A1"),
+    ("doser_2ml_middle", "A2"),
+    ("doser_2ml_middle", "A3"),
+    ("doser_2ml_middle", "A4"),
+]
+
+RACK_2ML_END = [
+    ("rack_2ml_end", "A1"),
+    ("rack_2ml_end", "A2"),
+    ("rack_2ml_end", "A3"),
+    ("rack_2ml_end", "A4"),
+]
+
+# Run parameters
+INSPECTION_FRQ      = 4
+INSPECTION_ROT      = 90
+IMMERSE_40ML_DIST   = 90
+RETRACT_40ML_DIST   = 10
+IMMERSE_2ML_DIST    = 25
+RETRACT_2ML_DIST    = 10
+SHAKE_DURATION      = 120
 
 
-# ── 4. Actions ─────────────────────────────────────────────────────────────
+# ── 4. Action helpers — used by multiple Action.execute() bodies ───────────
 
 
-class Inspect(Action):
-    """Pick from source, weigh, return. Reports light or heavy."""
-    params      = ["tube"]
-    duration    = 10
-    resource    = "robot"
-    tool        = "gripper"
-    pre_check   = "source_tube_present"
-
-    def pre(self, tube):
-        return in_source(tube) & ~weighed(tube)
-
-    def eff(self, tube):
-        return {
-            "light": +weighed(tube),
-            "heavy": (+weighed(tube), +weight_heavy(tube)),
-        }
-
-    def execute(self, tube):
-        rcp = self.ctx.recipes
-        rcp["source_rack"].pick(SOURCE[tube])
-
-        # Visual inspection — present to camera and rotate
-        rcp["inspector"].present(approach=True)
-        for _ in range(INSPECTION_FRQ):
-            rcp["inspector"].rotate(rotation=INSPECTION_ROT)
-
-        # Weigh on scale
-        rcp["scale"].place("place")
-        weight = rcp["scale"].weight()
-        rcp["scale"].pick("place")
-
-        # Return to source — Decap will pick it up again
-        rcp["source_rack"].place(SOURCE[tube])
-        return "heavy" if (weight or 0) > HEAVY_THRESHOLD else "light"
+def _inspect_tube(rcp):
+    """Visual inspection — present to camera and rotate."""
+    rcp["inspector"].present(approach=True)
+    for _ in range(INSPECTION_FRQ):
+        rcp["inspector"].rotate(rotation=INSPECTION_ROT)
 
 
-class Decap(Action):
-    """Remove cap, transfer tube into the working rack."""
+def _rinse_needle(rcp):
+    """Clean the needle by dispensing into clean → waste positions."""
+    for clean in DOSING_CLEAN:
+        rcp[clean[0]].immerse(dist=IMMERSE_40ML_DIST, anchor=clean[1])
+        rcp[clean[0]].dispense(vol=10)
+        rcp[clean[0]].retract(dist=RETRACT_40ML_DIST, anchor=clean[1])
+        waste = DOSING_WASTE[0]
+        rcp[waste[0]].immerse(dist=IMMERSE_40ML_DIST, anchor=waste[1], padding=10)
+        rcp[waste[0]].dispense(vol=10)
+        rcp[waste[0]].retract(dist=RETRACT_40ML_DIST, anchor=waste[1])
+
+
+# ── 5. Actions — one per pace_or state ─────────────────────────────────────
+
+
+class Inspected(Action):
+    """Pick from source, visual inspect, weigh, decap, place in working rack."""
     params      = ["tube"]
     duration    = 10
     resource    = "robot"
@@ -108,122 +170,266 @@ class Decap(Action):
     post_check  = "tube_in_working_rack"
 
     def pre(self, tube):
-        return in_source(tube) & has_cap(tube) & weighed(tube)
+        return in_source(tube) & has_cap(tube) & ~weighed(tube)
 
     def eff(self, tube):
-        return {"decapped": (-has_cap(tube), -in_source(tube), +in_working(tube))}
+        return {"inspected": (
+            -in_source(tube), +in_working(tube),
+            -has_cap(tube), +weighed(tube),
+        )}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
-        rcp["source_rack"].pick(SOURCE[tube])
+        rcp[SOURCE[tube][0]].pick(SOURCE[tube][1])
+        _inspect_tube(rcp)
+        rcp["scale"].place("place")
+        rcp["scale"].weight()
+        rcp["scale"].pick("place")
         rcp["decapper_5"].place(exit=False)
         rcp["decapper_5"].decap(approach=False)
-        rcp[CAP_HOLDER[tube]].place()           # park cap at decapper_{tube+1}
+        rcp[CAP_HOLDER[tube]].place()
         rcp["decapper_5"].pick()
-        rcp["working_rack"].place(WORKING[tube])
-        return "decapped"
+        rcp[WORKING[tube][0]].place(WORKING[tube][1])
+        return "inspected"
 
 
-class DispenseLight(Action):
-    """Dispense 10 mL into an uncapped light tube."""
+class Dosed40ml(Action):
+    """Dose solvent into the working 40ml tube. Rinses needle after."""
     params      = ["tube"]
     duration    = 10
-    resource    = "dispenser"
+    resource    = "robot"
     tool        = "needle"
     pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
-        return (
-            in_working(tube)
-            & ~has_cap(tube)
-            & ~weight_heavy(tube)
-            & ~dosed(tube)
-        )
+        return in_working(tube) & ~has_cap(tube) & ~dosed_40ml_p(tube)
 
     def eff(self, tube):
-        return {"dosed": +dosed(tube)}
+        return {"dosed_40ml": +dosed_40ml_p(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
-        rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
-        rcp["doser_40ml"].dispense(vol=10)
-        rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
-        return "dosed"
+        site = DOSING_40ML[tube]
+        rcp[site[0]].immerse(dist=IMMERSE_40ML_DIST, anchor=site[1])
+        rcp[site[0]].dispense(vol=10)
+        rcp[site[0]].retract(dist=RETRACT_40ML_DIST, anchor=site[1])
+        _rinse_needle(rcp)
+        return "dosed_40ml"
 
 
-class DispenseHeavy(Action):
-    """Dispense 20 mL into an uncapped heavy tube."""
-    params      = ["tube"]
-    duration    = 15
-    resource    = "dispenser"
-    tool        = "needle"
-    pre_check   = "tube_in_working_rack"
-
-    def pre(self, tube):
-        return (
-            in_working(tube)
-            & ~has_cap(tube)
-            & weight_heavy(tube)
-            & ~dosed(tube)
-        )
-
-    def eff(self, tube):
-        return {"dosed": +dosed(tube)}
-
-    def execute(self, tube):
-        rcp = self.ctx.recipes
-        rcp["doser_40ml"].immerse(dist=90, anchor=WORKING[tube])
-        rcp["doser_40ml"].dispense(vol=20)
-        rcp["doser_40ml"].retract(dist=10, anchor=WORKING[tube])
-        return "dosed"
-
-
-class Recap(Action):
-    """Put the cap back onto a dosed tube."""
+class LoadedShaker(Action):
+    """Recap tube and place on shaker."""
     params      = ["tube"]
     duration    = 10
     resource    = "robot"
     tool        = "gripper"
-    pre_check   = "tube_in_working_rack"
+    pre_check   = ["shaker_slot_empty", "tube_in_working_rack"]
+    post_check  = "tube_on_shaker"
 
     def pre(self, tube):
-        return dosed(tube) & ~has_cap(tube) & in_working(tube)
+        return (
+            in_working(tube)
+            & ~has_cap(tube)
+            & dosed_40ml_p(tube)
+            & ~in_shaker(tube)
+        )
 
     def eff(self, tube):
-        return {"recapped": +has_cap(tube)}
+        return {"loaded": (
+            -in_working(tube), +in_shaker(tube), +has_cap(tube),
+        )}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
-        rcp["working_rack"].pick(WORKING[tube])
+        rcp[WORKING[tube][0]].pick(WORKING[tube][1])
         rcp["decapper_5"].place()
-        rcp[CAP_HOLDER[tube]].pick()            # retrieve cap from decapper_{tube+1}
+        rcp[CAP_HOLDER[tube]].pick()
         rcp["decapper_5"].cap(exit=False)
         rcp["decapper_5"].pick(approach=False)
-        rcp["working_rack"].place(WORKING[tube])
+        rcp[SHAKER_SLOTS[tube][0]].place(SHAKER_SLOTS[tube][1])
+        return "loaded"
+
+
+class Shaken(Action):
+    """Shake the loaded tube on its shaker. Runs in parallel with robot work."""
+    params      = ["tube"]
+    duration    = SHAKE_DURATION
+    # Per-tube shake on its own shaker slot. The shaker resource serialises
+    # tubes that share a shaker, while leaving the robot free.
+    resource    = "shaker_1"   # NOTE: simplified — all tubes lock shaker_1
+    tool        = "feeder_tool"
+    post_check  = "stop_shaken"
+
+    def pre(self, tube):
+        return in_shaker(tube) & has_cap(tube) & ~shaken(tube)
+
+    def eff(self, tube):
+        return {"shaken": +shaken(tube)}
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp[SHAKER_SLOTS[tube][0]].shake(duration=SHAKE_DURATION)
+        return "shaken"
+
+
+class CapFed(Action):
+    """Feed one cap from autosampler to the cap-holder slot."""
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "feeder_tool"
+    pre_check   = "cap_holder_empty"
+
+    def pre(self, tube):
+        return ~cap_in_holder(tube)
+
+    def eff(self, tube):
+        return {"fed": +cap_in_holder(tube)}
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        self.ctx.runtime.step(
+            f"Feeding cap {tube + 1} from autosampler"
+        )
+        rcp["autosampler"].above(anchor="plate_center")
+        rcp["autosampler"].present_cap(rcp["inspector"])
+        rcp["autosampler"].pick(approach=False)
+        rcp[CAP_FEEDER[tube][0]].place(CAP_FEEDER[tube][1])
+        return "fed"
+
+
+class Retrieved(Action):
+    """Pick from shaker, visual inspect, decap, place in working rack."""
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "gripper"
+    pre_check   = "tube_on_shaker"
+    post_check  = "tube_in_working_rack"
+
+    def pre(self, tube):
+        return in_shaker(tube) & shaken(tube) & has_cap(tube)
+
+    def eff(self, tube):
+        return {"retrieved": (
+            -in_shaker(tube), +in_working(tube), -has_cap(tube),
+        )}
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp[SHAKER_SLOTS[tube][0]].pick(SHAKER_SLOTS[tube][1])
+        _inspect_tube(rcp)
+        rcp["decapper_5"].place(exit=False)
+        rcp["decapper_5"].decap(approach=False)
+        rcp[CAP_HOLDER[tube]].place()
+        rcp["decapper_5"].pick()
+        rcp[WORKING[tube][0]].place(WORKING[tube][1])
+        return "retrieved"
+
+
+class Dosed2ml(Action):
+    """Dose from the 40ml tube into 2ml vials (middle + end). Rinses needle."""
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "needle"
+    pre_check   = "tube_in_working_rack"
+
+    def pre(self, tube):
+        return (
+            in_working(tube)
+            & ~has_cap(tube)
+            & shaken(tube)
+            & ~dosed_2ml_p(tube)
+        )
+
+    def eff(self, tube):
+        return {"dosed_2ml": +dosed_2ml_p(tube)}
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        # Extra dispense into the 40ml position first
+        site_40 = DOSING_40ML[tube]
+        rcp[site_40[0]].immerse(
+            dist=IMMERSE_40ML_DIST, anchor=site_40[1], padding=150,
+        )
+        rcp[site_40[0]].dispense(vol=10)
+        rcp[site_40[0]].retract(dist=RETRACT_40ML_DIST, anchor=site_40[1])
+        # Into 2ml middle
+        mid = DOSING_2ML_MIDDLE[tube]
+        rcp[mid[0]].immerse(dist=IMMERSE_2ML_DIST, anchor=mid[1])
+        rcp[mid[0]].dispense(vol=10)
+        rcp[mid[0]].retract(dist=RETRACT_2ML_DIST, anchor=mid[1])
+        # Into 2ml end
+        end = DOSING_2ML_END[tube]
+        rcp[end[0]].immerse(dist=IMMERSE_2ML_DIST, anchor=end[1])
+        rcp[end[0]].dispense(vol=10)
+        rcp[end[0]].retract(dist=RETRACT_2ML_DIST, anchor=end[1])
+        _rinse_needle(rcp)
+        return "dosed_2ml"
+
+
+class RecappedFinal(Action):
+    """Recap 40ml tube and return to source rack — protocol end for the 40ml."""
+    params      = ["tube"]
+    duration    = 10
+    resource    = "robot"
+    tool        = "gripper"
+
+    def pre(self, tube):
+        return in_working(tube) & ~has_cap(tube) & dosed_2ml_p(tube)
+
+    def eff(self, tube):
+        return {"recapped": (
+            -in_working(tube), +in_done(tube), +has_cap(tube),
+        )}
+
+    def execute(self, tube):
+        rcp = self.ctx.recipes
+        rcp[WORKING[tube][0]].pick(WORKING[tube][1])
+        rcp["decapper_5"].place()
+        rcp[CAP_HOLDER[tube]].pick()
+        rcp["decapper_5"].cap(exit=False)
+        rcp["decapper_5"].pick(approach=False)
+        rcp[SOURCE[tube][0]].place(SOURCE[tube][1])
         return "recapped"
 
 
-class Shelve(Action):
-    """Move the finished tube into the done rack (back to source slot)."""
+class Capped2ml(Action):
+    """Cap the 2ml vial, visual inspect, place in rack."""
     params      = ["tube"]
-    duration    = 5
+    duration    = 10
     resource    = "robot"
-    tool        = "gripper"
+    tool        = "gripper_2ml"
+    pre_check   = "cap_in_holder"
+    post_check  = "tube_in_2ml_rack"
 
     def pre(self, tube):
-        return has_cap(tube) & dosed(tube) & in_working(tube)
+        return (
+            cap_in_holder(tube)
+            & dosed_2ml_p(tube)
+            & ~vial_2ml_capped(tube)
+        )
 
     def eff(self, tube):
-        return {"shelved": (-in_working(tube), +in_done(tube))}
+        return {"capped": (
+            -cap_in_holder(tube), +vial_2ml_capped(tube),
+        )}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
-        rcp["working_rack"].pick(WORKING[tube])
-        rcp["source_rack"].place(SOURCE[tube])
-        return "shelved"
+        rcp[RACK_2ML_END[tube][0]].pick(RACK_2ML_END[tube][1])
+        rcp["decapper_5"].place()
+        rcp[CAP_FEEDER[tube][0]].pick(CAP_FEEDER[tube][1])
+        rcp["decapper_5"].cap(exit=False)
+        rcp["decapper_5"].pick(approach=False)
+        rcp["decapper_5"].vibrate()
+        _inspect_tube(rcp)
+        rcp[RACK_2ML_END[tube][0]].place(RACK_2ML_END[tube][1])
+        return "capped"
 
 
-# ── 5. End-trigger actions ─────────────────────────────────────────────────
+# ── 6. End-trigger actions ─────────────────────────────────────────────────
 
 
 class ParkTool(Action):

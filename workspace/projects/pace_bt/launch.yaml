@@ -19,4 +19,4 @@ kwargs:
     label: Batch size
     hint: Number of items (tubes) to process in this run.
     min: 1
-    max: 20
+    max: 4
