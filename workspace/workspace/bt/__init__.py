@@ -54,10 +54,15 @@ from workspace.bt.dsl import (
     predicate,
     state_to_frozen,
 )
-# Launcher helpers (load_recipes, load_checks, run_protocol). Imported
-# by each project's main.py — exposed here too for ``from workspace.bt
-# import load_recipes`` convenience.
-from workspace.bt.launcher import load_checks, load_recipes, run_protocol
+# Launcher helpers (load_recipes, load_checks, run_protocol,
+# read_yaml_or_j2). Imported by each project's main.py — exposed here
+# too for ``from workspace.bt import load_recipes`` convenience.
+from workspace.bt.launcher import (
+    load_checks,
+    load_recipes,
+    read_yaml_or_j2,
+    run_protocol,
+)
 
 
 __all__ = [
@@ -94,5 +99,6 @@ __all__ = [
     # Launcher helpers (called from each project's main.py)
     "load_checks",
     "load_recipes",
+    "read_yaml_or_j2",
     "run_protocol",
 ]

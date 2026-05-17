@@ -69,14 +69,17 @@ def _import_class(dotted: str):
     return getattr(mod, attr)
 
 
-def _read_yaml_or_j2(path: Path) -> Optional[dict]:
+def read_yaml_or_j2(path: Path, **render_vars: Any) -> Optional[dict]:
     """Read ``path`` as YAML, rendering it as a Jinja2 template first if
-    a ``.j2`` sibling exists.
+    a ``.j2`` sibling exists. ``render_vars`` are passed to the template
+    (so e.g. ``recipes.j2`` can use ``{{ speed_factor }}``).
 
-    Matches pace_or's ``_load_yaml`` semantics: ``foo.j2`` takes priority
-    over ``foo.yaml`` so projects can drop in a template without
-    deleting their old YAML. Returns the parsed dict, or ``None`` if
-    neither file exists.
+    Same precedence pace_or's ``_load_yaml`` uses: ``foo.j2`` wins over
+    ``foo.yaml`` so projects can drop in a template without removing
+    their old YAML. Returns the parsed dict, or ``None`` if neither
+    file exists.
+
+    Public helper — project ``main.py`` uses it to read launch.j2 too.
     """
     base = path.with_suffix("")
     j2_path   = base.with_suffix(".j2")
@@ -84,7 +87,7 @@ def _read_yaml_or_j2(path: Path) -> Optional[dict]:
     if j2_path.is_file():
         from jinja2 import Environment, FileSystemLoader
         env = Environment(loader=FileSystemLoader(str(j2_path.parent)))
-        rendered = env.get_template(j2_path.name).render()
+        rendered = env.get_template(j2_path.name).render(**render_vars)
         return yaml.safe_load(rendered) or {}
     if yaml_path.is_file():
         with open(yaml_path) as f:
@@ -92,7 +95,16 @@ def _read_yaml_or_j2(path: Path) -> Optional[dict]:
     return None
 
 
-def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any]:
+# Back-compat alias — internal callers used the underscore version.
+_read_yaml_or_j2 = read_yaml_or_j2
+
+
+def load_recipes(
+    workspace: Any,
+    core: Any,
+    recipes_path: Path,
+    **render_vars: Any,
+) -> Dict[str, Any]:
     """Read a recipes definition file and instantiate each entry.
 
     Returns a ``{alias: recipe_instance}`` dict — same shape pace_or's
@@ -115,6 +127,9 @@ def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any
         core: Core component (passed to each recipe constructor).
         recipes_path: Path to ``recipes.yaml`` (or ``.j2``). Missing
             both → empty dict.
+        **render_vars: Forwarded to the Jinja2 template (only matters
+            for ``.j2`` files). Use to inject project-wide knobs like
+            ``speed_factor=50`` so every recipe sees the same value.
 
     Behaviour on errors:
         * Missing file → empty dict, no log.
@@ -123,7 +138,7 @@ def load_recipes(workspace: Any, core: Any, recipes_path: Path) -> Dict[str, Any
         * Anything else (import error, bad class kwargs) → traceback
           logged, that entry skipped. Other recipes continue.
     """
-    defs = _read_yaml_or_j2(Path(recipes_path))
+    defs = _read_yaml_or_j2(Path(recipes_path), **render_vars)
     if defs is None:
         return {}
     rcp: Dict[str, Any] = {}
