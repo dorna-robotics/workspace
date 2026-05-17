@@ -2,21 +2,17 @@
 
 Explicit — every wire is visible:
 
-  * ``launch.yaml`` is opened and its ``scene`` field is passed to
-    :class:`Workspace`.
-  * ``recipes.yaml`` is loaded into a name → recipe-instance dict via
-    :func:`workspace.bt.launcher.load_recipes`.
+  * ``launch.yaml`` is the single source of truth for project config
+    (name, port, scene, recipes file, GUI form). Parsed once at
+    import time into ``LAUNCH``.
+  * ``actions`` is imported (registers Action subclasses on import).
   * ``checks`` is imported and turned into ``{name: callable}`` via
     :func:`workspace.bt.launcher.load_checks`.
-  * ``actions`` is imported (registers Action subclasses on import).
   * ``workflow_fn`` calls :func:`workspace.bt.launcher.run_protocol`
     with all four explicit inputs.
   * ``--port`` (and ``PORT`` env var) wire through to
-    :class:`Workspace` and :class:`RuntimeServer`.
-
-All project-level knobs (project name, default port, file names)
-live in the ``# ─ Project configuration ─`` block at the top — one
-place to look when copying this file to a new project.
+    :class:`Workspace` and :class:`RuntimeServer`, defaulting to the
+    port declared in ``launch.yaml``.
 
 Same shape as pace_or's main.py — just calls into the BT framework's
 ``run_protocol`` instead of pace_or's ``BaseWorkflow``.
@@ -36,18 +32,20 @@ import actions  # registers Inspect, Decap, … into the ActionRegistry on impor
 import checks   # Checks class — gives the framework pre_check / post_check callables
 
 
-# ─── Project configuration ──────────────────────────────────────────────
-# Edit these when copying main.py to a new project. Everything else
-# below is generic wiring — should not need changes per project.
-PROJECT_NAME  = "pace_bt"        # appears in logs, tree node names, GUI
-LAUNCH_FILE   = "launch.yaml"    # scene + kwargs schema (read by main)
-RECIPES_FILE  = "recipes.yaml"   # recipes — recipes.j2 takes priority if both exist
-DEFAULT_PORT  = 5010             # operator UI / RuntimeServer port
-PORT_ENV_VAR  = "PORT"           # env var override for --port
+# ─── Framework conventions (rarely changed) ────────────────────────────
+# The launch file's own name is a bootstrap constant — main.py must
+# know it to read everything else. The env var name follows the
+# orchestrator's universal convention.
+LAUNCH_FILE   = "launch.yaml"
+PORT_ENV_VAR  = "PORT"
 # ────────────────────────────────────────────────────────────────────────
 
 
 _BASE_DIR = Path(__file__).parent
+
+# Parse launch.yaml once — both workflow_fn and main() consume it.
+with open(_BASE_DIR / LAUNCH_FILE) as f:
+    LAUNCH = yaml.safe_load(f)
 
 
 def workflow_fn(*, workspace, core, **kwargs):
@@ -58,13 +56,13 @@ def workflow_fn(*, workspace, core, **kwargs):
     resolve), then hands actions + recipes + checks + kwargs to the
     BT framework's default protocol runner.
     """
-    recipes   = load_recipes(workspace, core, _BASE_DIR / RECIPES_FILE)
+    recipes   = load_recipes(workspace, core, _BASE_DIR / LAUNCH["recipes"])
     check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
     return run_protocol(
         workspace, core, actions,
         recipes=recipes,
         checks=check_fns,
-        project_name=PROJECT_NAME,
+        project_name=LAUNCH["project_name"],
         **kwargs,
     )
 
@@ -73,14 +71,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--port", type=int,
-        default=int(os.getenv(PORT_ENV_VAR, str(DEFAULT_PORT))),
+        default=int(os.getenv(PORT_ENV_VAR, str(LAUNCH["port"]))),
     )
     args = p.parse_args()
 
-    with open(_BASE_DIR / LAUNCH_FILE) as f:
-        launch = yaml.safe_load(f)
-
-    ws = Workspace(config_path=launch["scene"], port=args.port)
+    ws = Workspace(config_path=LAUNCH["scene"], port=args.port)
     RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()
 
 

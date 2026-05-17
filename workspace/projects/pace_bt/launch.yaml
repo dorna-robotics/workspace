@@ -1,8 +1,11 @@
 # pace_bt/launch.yaml
-# Project configuration and launch parameters.
-# The orchestrator reads this file to set up the workspace and GUI.
+# Project configuration. One file holds every per-project knob:
+# identity, port, file paths, and the GUI form schema.
 
-scene: [scene/base.j2]
+project_name: pace_bt              # appears in logs, tree node names, GUI
+port:         5010                 # default operator-UI port (env var PORT overrides)
+scene:        [scene/base.j2]      # scene file(s) — read by Workspace
+recipes:      recipes.yaml         # recipes — recipes.j2 takes priority if both exist
 
 # kwargs — passed to workflow_fn at runtime.
 # Supported types: int, float, str, bool, choice, textarea, file
