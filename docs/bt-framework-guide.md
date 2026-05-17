@@ -774,6 +774,114 @@ The default `workflow.run()` already wraps the whole body in this.
 drifted" (drip, technician intervention, device recovery). It's the
 wrong answer for "this action flaked once" — that's what retry is for.
 
+### 8.4 Dynamic world — external observers updating objects/state
+
+If something outside the protocol changes the world during a run —
+operator drops a new tube into the source rack, a vision system spots
+a previously-hidden item, a sample disappears — the framework can
+adapt **without restarting**. The mechanism re-uses what's already
+here: mutate `ctx`, then signal `ReplanRequested`.
+
+#### What you can mutate at runtime
+
+| Mutation | Effect |
+|---|---|
+| `ctx.state["facts"].add((...))` / `.discard((...))` | Add or remove a fact. Replan if downstream actions depend on it. |
+| `ctx.meta["objects"]["tube"] = new_list` | Update the parameter pool. Next plan re-enumerates over the new pool — new items get scheduled, missing items get dropped. |
+| `ctx.meta["objects"]["new_param"] = [...]` | Introduce a new parameter pool. Any action that lists `"new_param"` in `params` becomes plannable. |
+| `ctx.meta["checks"][name] = new_callable` | Swap a check at runtime (rarely needed). |
+
+These are live data structures — change them and the next planning
+pass picks the changes up.
+
+#### Recommended pattern — sensing action (continuous observation)
+
+The canonical way: declare an action whose job is to observe and
+update the world. The planner schedules it periodically (gated by a
+predicate). Its `execute()` reads the sensor, mutates `ctx`, and
+returns `"changed"` to trigger a replan when needed.
+
+```python
+class RescanRack(Action):
+    """Vision-driven rescan of the source rack. Updates the tube
+    pool when the operator adds, removes, or swaps tubes."""
+    params  = []
+    duration = 2
+    resource = "camera"
+    tool     = "camera"
+
+    def pre(self):
+        return needs_rescan()                 # gate on a periodic predicate
+
+    def eff(self):
+        return {
+            "no_change": +rescanned(),                       # default — no replan
+            "changed":   (+rescanned(), +rack_dirty()),      # replan triggered
+        }
+
+    def execute(self):
+        seen    = set(self.ctx.recipes["camera"].detect_tubes("source_rack"))
+        current = set(self.ctx.meta["objects"]["tube"])
+
+        if seen == current:
+            return "no_change"
+
+        # Update the pool so the planner sees the new world.
+        self.ctx.meta["objects"]["tube"] = sorted(seen)
+
+        # Sync facts: add ones for newly-arrived tubes, remove for departed.
+        facts = self.ctx.state["facts"]
+        for t in seen - current:            # newly appeared
+            facts.add(("in_source", t))
+            facts.add(("has_cap", t))
+        for t in current - seen:            # gone
+            facts.discard(("in_source", t))
+            facts.discard(("has_cap", t))
+            facts.discard(("weighed", t))   # …and any other tube-keyed facts
+
+        return "changed"      # → framework raises ReplanRequested
+```
+
+Why this is the cleanest pattern:
+
+* **All framework hooks are already there** — sensing eff (§3.3),
+  branch-return contract (§3.3), replan signal (§8.3).
+* **The planner schedules it** — `RescanRack` is just another action;
+  it lands in the schedule alongside Inspect, Decap, etc. Predicates
+  like `needs_rescan()` let you control how often (every N items,
+  every M seconds with a clock predicate, etc.).
+* **Observable from the outside** — `RescanRack` appears in plans,
+  schedules, and tree visualisations. No hidden background magic.
+
+#### Alternatives (when sensing-action isn't enough)
+
+* **`pre_check` re-validation** — every action's `pre_check` does a
+  cheap vision check before tool swap. Quick, local; doesn't proactively
+  re-scan when nothing is about to run.
+* **Background observer thread** — a separate thread polls the camera
+  continuously and signals replan when state changes. More reactive
+  than a scheduled rescan but adds threading complexity; not built into
+  the framework today.
+
+#### Safety notes
+
+| Scenario | Behavior |
+|---|---|
+| Tube appears between actions | Picked up on next replan, scheduled cleanly. |
+| Tube disappears between actions | Removed from pool + facts; planner re-routes. |
+| Tube currently being processed disappears | The mid-action mutation is racy. Let `post_check` fail → BT retries → eventually replan surfaces the change. |
+| Camera noise / false positives | Framework trusts the observation. Add confidence smoothing in the sensing action's `execute()` itself. |
+| Vision crashes | Recovery action that re-establishes ground truth (e.g. operator confirms via GUI). |
+
+#### TL;DR
+
+> Mutate `ctx.state["facts"]` and/or `ctx.meta["objects"]` from inside
+> a sensing action's `execute()`, return a non-default branch name to
+> trigger replan, and the planner re-derives the schedule from the
+> updated world. No `setup()` re-call, no engine restart. The sensing
+> action is the visible, schedulable, debuggable home for "the world
+> keeps changing under us" logic.
+
 ---
 
 ## 9. Diagnose APIs — uniform across every project
@@ -1120,6 +1228,16 @@ each thing.
 
 Returning `False` from `execute()` still signals failure. Anything
 else is rejected as a programmer error.
+
+### Q: Can the world change under the protocol mid-run (e.g. a camera adding/removing tubes)?
+
+Yes. Mutate `ctx.state["facts"]` and `ctx.meta["objects"]` directly
+from inside a sensing action, then return a non-default branch name
+to trigger a replan. The planner re-derives the schedule from the
+updated world — no `setup()` re-call, no engine restart.
+
+See §8.4 for the canonical pattern (a `RescanRack` sensing action
+the planner schedules periodically).
 
 ---
 
