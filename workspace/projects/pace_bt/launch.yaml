@@ -15,10 +15,3 @@ kwargs:
     hint: Number of items (tubes) to process in this run.
     min: 1
     max: 20
-  tick_hz:
-    type: float
-    default: 10.0
-    label: Tick rate (Hz)
-    hint: How often the BT engine ticks the tree. 10 Hz is the default.
-    min: 1.0
-    max: 50.0
