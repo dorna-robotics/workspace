@@ -71,7 +71,7 @@ projects/<name>/
 ├── scene/
 │   └── base.j2              # scene (j2 templates)
 ├── main.py                  # orchestrator entry — explicit wiring, same shape as pace_or
-├── launch.yaml              # scene paths + GUI kwargs schema
+├── launch.yaml              # SINGLE config file — project_name / port / scene / recipes / GUI kwargs
 ├── recipes.yaml             # recipe aliases → class + component bindings (or recipes.j2)
 ├── actions.py               # predicates + setup(**kwargs) + one Action subclass per step
 ├── checks.py                # Checks class — pre/post-check methods referenced by name
@@ -92,15 +92,19 @@ else is either:
 ### What each file does
 
 * **`main.py`** — explicit orchestrator entry, same shape as pace_or's
-  main.py. Opens `launch.yaml`, calls `load_recipes`, imports
-  `actions`, defines a `workflow_fn` that calls
-  `bt.launcher.run_protocol`, starts `Workspace` + `RuntimeServer`.
-  ~50 lines. **The wiring is visible** — an operator can read it and
-  see exactly where each piece is hooked in. Copy from `pace_bt/`
-  for new projects; the only edit is the import of `actions` (and
-  optionally `project_name`).
-* **`launch.yaml`** — scene paths (`scene: [scene/base.j2, ...]`) and
-  the kwargs schema rendered into the operator's Parameters modal.
+  main.py. Parses `launch.yaml` once into a module-level `LAUNCH`
+  dict, imports `actions` and `checks`, defines a `workflow_fn`
+  that calls `bt.launcher.run_protocol`, starts `Workspace` +
+  `RuntimeServer`. ~50 lines. **The wiring is visible** — an
+  operator can read it and see exactly where each piece is hooked
+  in. Copy from `pace_bt/` for new projects; the only edits are
+  the `import actions` / `import checks` lines.
+* **`launch.yaml`** — the single config file for the project. Top-level
+  keys: `project_name`, `port` (default for direct invocation),
+  `scene` (list of scene files), `recipes` (recipes file path), and
+  `kwargs` (the GUI form schema rendered into the operator's
+  Parameters modal). main.py reads everything else it needs from
+  here via `LAUNCH["..."]` lookups.
 * **`recipes.yaml`** — same format as pace_or. Maps recipe aliases
   (`"gripper"`, `"scale"`) to `{class, kwargs}` so an Action's
   `execute(...)` body can call `self.ctx.recipes["gripper"].pick(...)`.
@@ -201,15 +205,12 @@ dosed         = predicate("dosed")
 #     the parameter pools.
 def setup(**kwargs):
     batch_size = int(kwargs.get("batch_size", 1))
-    heavy = _parse_heavy(kwargs.get("heavy", ""))  # project-local parser
     tubes = list(range(batch_size))
 
     facts = set()
     for t in tubes:
         facts.add((in_source.name, t))
         facts.add((has_cap.name, t))
-        if t in heavy:
-            facts.add((weight_heavy.name, t))
 
     def goal(state):
         return all((in_done.name, t) in state for t in tubes)
@@ -219,6 +220,9 @@ def setup(**kwargs):
         "goal":          goal,            # callable state -> bool
         "objects":       {"tube": tubes},
     }
+
+# Note: weight_heavy isn't seeded in initial facts — Inspect's sensing
+# eff adds it at runtime when the scale reads above HEAVY_THRESHOLD.
 
 # ─── 3. Actions — one class per atomic step. ───────────────────────────
 #     Each class declares scheduling info (class attrs), preconditions
