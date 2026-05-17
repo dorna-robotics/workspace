@@ -1,20 +1,13 @@
-{# pace_bt/launch.j2 — single project-config file (Jinja2 + YAML).
-   Top-level keys here are read by main.py and (for `speed_factor`)
-   threaded into recipes.j2 rendering.
-#}
+# pace_bt/launch.yaml — single project-config file.
 
 project_name: pace_bt              # appears in logs, tree node names, GUI
 port:         5010                 # default operator-UI port (env var PORT overrides)
 scene:        [scene/base.j2, scene/layout.j2]   # racks + tools/tubes/caps placed in them
-recipes:      recipes.j2           # recipes — Jinja2 template, receives speed_factor
+recipes:      recipes.j2           # recipes — Jinja2 template (speed_factor defined inside)
 actions:      actions.py           # protocol: predicates + setup + Action classes
 checks:       checks.py            # vision/sensor Checks class (referenced by name from actions)
 
-# Project-wide tunables — main.py passes these to recipes.j2 at render
-# time. Add more here as needed; just remember to forward them in main.py.
-speed_factor: 50                   # robot motion speed (%). Lower = slower / safer.
-
-# kwargs — passed to workflow_fn at runtime (operator GUI form).
+# kwargs — operator GUI form, passed to workflow_fn at runtime.
 # Supported types: int, float, str, bool, choice, textarea, file
 # Fields: type, default, label, hint, placeholder, optional, accept, options, min, max, rows
 kwargs:

@@ -1,4 +1,4 @@
-"""pace_bt entry point. All config lives in launch.j2.
+"""pace_bt entry point. All config lives in launch.yaml.
 
 Framework reference: ../../../docs/bt-framework-guide.md §2
 """
@@ -8,18 +8,19 @@ import importlib
 import os
 from pathlib import Path
 
+import yaml
+
 from workspace.workspace import Workspace
 from workspace.runtime_server import RuntimeServer
-from workspace.bt.launcher import (
-    load_checks, load_recipes, read_yaml_or_j2, run_protocol,
-)
+from workspace.bt.launcher import load_checks, load_recipes, run_protocol
 
 
-LAUNCH_FILE   = "launch.j2"        # j2 takes priority — falls back to launch.yaml
+LAUNCH_FILE   = "launch.yaml"
 PORT_ENV_VAR  = "PORT"
 
 _BASE_DIR = Path(__file__).parent
-LAUNCH = read_yaml_or_j2(_BASE_DIR / LAUNCH_FILE)
+with open(_BASE_DIR / LAUNCH_FILE) as f:
+    LAUNCH = yaml.safe_load(f)
 
 
 def _import_module(rel_path: str):
@@ -33,12 +34,7 @@ checks  = _import_module(LAUNCH.get("checks",  "checks.py"))
 
 
 def workflow_fn(*, workspace, core, **kwargs):
-    # Inject project-wide tunables from launch.j2 (e.g. speed_factor)
-    # into recipes.j2 rendering. recipes.j2 references {{ speed_factor }}.
-    render_vars = {"speed_factor": LAUNCH.get("speed_factor", 50)}
-    recipes = load_recipes(
-        workspace, core, _BASE_DIR / LAUNCH["recipes"], **render_vars,
-    )
+    recipes   = load_recipes(workspace, core, _BASE_DIR / LAUNCH["recipes"])
     check_fns = load_checks(workspace, core, recipes, checks_module=checks, **kwargs)
     return run_protocol(
         workspace, core, actions,

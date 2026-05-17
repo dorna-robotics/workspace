@@ -1,8 +1,10 @@
 {# pace_bt/recipes.j2 — recipe aliases → class + kwargs.
-   Rendered by load_recipes(workspace, core, path, speed_factor=...).
    Component names (tool_rack_144mm_1, etc.) come from scene/base.j2.
+
+   Edit speed_factor here — applied to every recipe below. Lower
+   number = slower / safer for testing.
 #}
-{%- set sf = speed_factor | default(50) -%}
+{%- set sf = 50 -%}
 
 gripper:
   class: workspace.recipes.tool_rack.ToolRack
