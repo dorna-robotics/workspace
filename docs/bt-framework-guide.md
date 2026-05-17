@@ -101,10 +101,13 @@ else is either:
   the `import actions` / `import checks` lines.
 * **`launch.yaml`** — the single config file for the project. Top-level
   keys: `project_name`, `port` (default for direct invocation),
-  `scene` (list of scene files), `recipes` (recipes file path), and
+  `scene` (list of scene files), `recipes` (recipes file path),
+  `actions` (protocol module path — default `actions.py`),
+  `checks` (Checks module path — default `checks.py`), and
   `kwargs` (the GUI form schema rendered into the operator's
-  Parameters modal). main.py reads everything else it needs from
-  here via `LAUNCH["..."]` lookups.
+  Parameters modal). main.py reads everything from here via
+  `LAUNCH["..."]` lookups and uses `importlib` to load the
+  `actions` and `checks` modules dynamically.
 * **`recipes.yaml`** — same format as pace_or. Maps recipe aliases
   (`"gripper"`, `"scale"`) to `{class, kwargs}` so an Action's
   `execute(...)` body can call `self.ctx.recipes["gripper"].pick(...)`.
