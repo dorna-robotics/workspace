@@ -22,7 +22,7 @@ All helpers return py_trees Behaviours and can be composed freely.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import py_trees
 
@@ -250,38 +250,76 @@ def from_schedule(
     leaf_factory: Callable[[str, int], py_trees.behaviour.Behaviour],
     *,
     name: str = "from_schedule",
+    durations: Optional[Dict[str, float]] = None,
 ) -> py_trees.behaviour.Behaviour:
-    """Build a Sequence tree from an OR-tools schedule.
+    """Build a Sequence-of-Parallel tree from a schedule.
 
-    A schedule is an ordered list of ``(action_name, item_index, start_t)``
-    tuples. For now we emit a flat Sequence in start-time order; future
-    versions can detect overlapping windows and emit Parallel composites
-    automatically. The current behaviour is conservative — guarantees
-    the protocol is correct even if not maximally parallel.
+    Groups actions whose time windows overlap into ``Parallel``
+    composites (children run concurrently in their own worker
+    threads); sequences groups whose windows are disjoint. The result
+    is a tree that runs as concurrently as the schedule allows —
+    correctness guaranteed by the scheduler having already enforced
+    causal dependencies via :func:`build_precedence`.
 
     Args:
-        schedule: Tuples from ``ORScheduler.schedule(...)``.
+        schedule: Tuples from the scheduler.
         leaf_factory: Called as ``leaf_factory(action_name, item_index)``
-            returning a Behaviour for that scheduled task. Project's
-            ``actions.py`` typically supplies this — a dict-of-classes
-            keyed by action name, instantiated with ``(ctx, item_index)``.
-        name: Sequence name in the tree.
+            returning a Behaviour for that scheduled task.
+        name: Top-level sequence name.
+        durations: ``{action_name: duration_seconds}`` — used to
+            compute each action's end-time for overlap grouping. If
+            omitted, every action is treated as instantaneous and the
+            output collapses to a flat Sequence (safe fallback).
 
     Returns:
-        A Sequence behaviour with one child per scheduled task.
+        ``Sequence(memory=True)`` of phases. Each phase is either a
+        single leaf or a ``Parallel(SuccessOnAll)`` of leaves that
+        the scheduler said overlap.
     """
+    durations = durations or {}
     ordered = sorted(schedule, key=lambda t: (t[2], t[0], t[1]))
-    children: List[py_trees.behaviour.Behaviour] = []
-    for action_name, item_index, _start in ordered:
-        try:
-            leaf = leaf_factory(action_name, item_index)
-        except KeyError:
-            log.warning(
-                "from_schedule: no leaf factory for %r (item %d) — skipping",
-                action_name, item_index,
-            )
+
+    # Group into "overlap phases" — actions whose windows overlap go
+    # into one phase that becomes a Parallel composite.
+    phases: List[List[Tuple[str, int, float, float]]] = []
+    current: List[Tuple[str, int, float, float]] = []
+    current_end = -1.0
+    for action_name, item_index, start in ordered:
+        end = start + float(durations.get(action_name, 0))
+        if current and start < current_end:
+            current.append((action_name, item_index, start, end))
+            current_end = max(current_end, end)
+        else:
+            if current:
+                phases.append(current)
+            current = [(action_name, item_index, start, end)]
+            current_end = end
+    if current:
+        phases.append(current)
+
+    # Build a tree node per phase: single leaf vs Parallel.
+    phase_nodes: List[py_trees.behaviour.Behaviour] = []
+    for idx, phase in enumerate(phases):
+        leaves: List[py_trees.behaviour.Behaviour] = []
+        for action_name, item_index, _s, _e in phase:
+            try:
+                leaves.append(leaf_factory(action_name, item_index))
+            except KeyError:
+                log.warning(
+                    "from_schedule: no leaf factory for %r (item %d) — skipping",
+                    action_name, item_index,
+                )
+        if not leaves:
             continue
-        children.append(leaf)
+        if len(leaves) == 1:
+            phase_nodes.append(leaves[0])
+        else:
+            phase_nodes.append(py_trees.composites.Parallel(
+                name=f"{name}/phase{idx}",
+                policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
+                children=leaves,
+            ))
+
     return py_trees.composites.Sequence(
-        name=name, memory=True, children=children
+        name=name, memory=True, children=phase_nodes
     )

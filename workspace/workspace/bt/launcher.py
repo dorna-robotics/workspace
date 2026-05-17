@@ -46,6 +46,7 @@ from workspace.bt.builder import (
 )
 from workspace.bt.dsl import (
     ActionRegistry,
+    build_precedence,
     state_to_frozen,
 )
 from workspace.bt.engine import BTEngine, EngineConfig
@@ -346,15 +347,27 @@ def run_protocol(
     templates      = registry.to_templates(ctx)
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
-    build_schedule = make_schedule_builder(meta)
+    # Precedence-aware scheduling — actions whose pre()/eff() are
+    # causally independent overlap on different resources.
+    build_schedule = make_schedule_builder(
+        meta, precedence_fn=lambda plan: build_precedence(plan, registry),
+    )
 
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by
     #    calling run_protocol_with_tree() instead (advanced use).
+    # Durations table for from_schedule's overlap detection — Parallel
+    # composites are emitted where the scheduler computed overlapping
+    # windows on different resources.
+    durations = {name: float(m.duration) for name, m in meta.items()}
+
     def build_tree(schedule, _ctx):
         def _wrapped(action_name, item_index):
             return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
-        body = from_schedule(schedule, _wrapped, name=f"{project_name}/body")
+        body = from_schedule(
+            schedule, _wrapped, name=f"{project_name}/body",
+            durations=durations,
+        )
         return replan_on_failure(
             sequence(f"{project_name}/root", body),
             reason="protocol step failed — replanning from observed state",

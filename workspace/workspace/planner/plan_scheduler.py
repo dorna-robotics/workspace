@@ -92,41 +92,43 @@ ActionMetaMap = Dict[str, ActionMeta]
 def schedule_greedy(
     actions: Sequence[Action],
     meta: ActionMetaMap,
+    *,
+    predecessors: Optional[List[set]] = None,
 ) -> List[Tuple[str, int, float]]:
-    """First-fit earliest-start scheduling.
+    """First-fit earliest-start scheduling, precedence-aware.
 
     Walks the action list in plan order. For each action:
 
       1. Compute the earliest time it CAN start: the max of
-         (end of previous action on the same item, end of latest
-         existing action on this action's resource).
+         (end of every causal predecessor, end of latest existing
+         action on this action's resource).
       2. If this action's tool differs from the last action on the
-         same resource, add its ``tool_swap_duration`` as a gap
-         before the start.
+         same resource, add its ``tool_swap_duration`` as a gap.
       3. Schedule it there.
-
-    Because we walk in plan order, item-local precedence is automatic.
-    Cross-item parallelism happens when items use independent resources.
-    Resource conflicts force serialisation.
 
     Args:
         actions: The planner's output list.
-        meta: Lookup of action_name → :class:`ActionMeta`. Any action
-            whose name is missing gets a default of 1-second duration
-            on no resource — usually a bug; logged as a warning.
+        meta: Lookup of action_name → :class:`ActionMeta`.
+        predecessors: Optional list — ``predecessors[i]`` is the set of
+            indices ``j < i`` that action ``i`` causally depends on.
+            Built from pre/eff analysis via
+            :func:`workspace.bt.dsl.build_precedence`.
+
+            If omitted, falls back to per-item-end serialisation
+            (every action for the same item is treated as serially
+            dependent — conservative, suboptimal).
 
     Returns:
         List of ``(action_name, item_index, start_t)`` tuples,
         sorted by start_t.
     """
-    # End-of-last-action per (item_index, resource) and last-tool seen
-    # on a given resource (for tool-swap-gap accounting).
     item_end: Dict[int, float] = {}
     resource_end: Dict[str, float] = {}
     resource_last_tool: Dict[str, Optional[str]] = {}
+    action_end: List[float] = []   # end time per action index
     result: List[Tuple[str, int, float]] = []
 
-    for action in actions:
+    for i, action in enumerate(actions):
         m = meta.get(action.name)
         if m is None:
             log.warning(
@@ -140,20 +142,26 @@ def schedule_greedy(
             raw = action.params[m.item_arg_index]
             item = int(raw) if not isinstance(raw, int) else raw
         except (IndexError, ValueError, TypeError):
-            # Non-integer items (or zero-param actions) collapse to 0.
             item = 0
 
-        earliest_item = item_end.get(item, 0.0)
-        # Multi-resource: action can't start until ALL its locks are
-        # free. earliest_resource = max across every claimed lock.
+        # Causal earliest: max of all predecessor end times. If
+        # predecessors weren't supplied, fall back to per-item-end
+        # (conservative — serialises all actions for the same item).
+        if predecessors is not None:
+            earliest_causal = max(
+                (action_end[j] for j in predecessors[i]), default=0.0,
+            )
+        else:
+            earliest_causal = item_end.get(item, 0.0)
+
+        # Resource earliest — all locks the action claims must be free.
         resources = _resources(m.resource)
         earliest_resource = max(
             (resource_end.get(r, 0.0) for r in resources), default=0.0
         )
-        # Tool-swap gap: only relevant when a lock previously held a
-        # different tool. The penalty is taken once per action —
-        # physically the robot only swaps tools once before the
-        # action starts.
+
+        # Tool-swap gap — taken once per action, max across locks that
+        # need a swap. Physically the robot only swaps tools once.
         swap = 0
         if resources and m.tool is not None:
             for r in resources:
@@ -162,15 +170,13 @@ def schedule_greedy(
                     swap = int(m.tool_swap_duration)
                     break
 
-        start = max(earliest_item, earliest_resource + swap)
+        start = max(earliest_causal, earliest_resource + swap)
         end = start + float(m.duration)
 
-        item_end[item] = end
+        item_end[item] = max(item_end.get(item, 0.0), end)
+        action_end.append(end)
         for r in resources:
             resource_end[r] = end
-            # Only update last_tool when the action actually declares
-            # one — actions with tool=None inherit the previous tool,
-            # matching pace_or's "doesn't care" semantics.
             if m.tool is not None:
                 resource_last_tool[r] = m.tool
 
@@ -186,6 +192,7 @@ def make_schedule_builder(
     meta: ActionMetaMap,
     *,
     use_cpsat: bool = False,
+    precedence_fn: Optional[Callable[[Sequence[Action]], List[set]]] = None,
 ) -> Callable[[Sequence[Action]], List[Tuple[str, int, float]]]:
     """Return a closure that schedules any plan with the given meta.
 
@@ -209,6 +216,14 @@ def make_schedule_builder(
         meta: Action metadata.
         use_cpsat: If True, use the CP-SAT solver (only worth it for
             large batches). Default False uses :func:`schedule_greedy`.
+        precedence_fn: Optional ``(plan) -> List[Set[int]]`` callback.
+            For each action in the plan, returns the set of earlier
+            indices it causally depends on. Used by the scheduler to
+            allow independent actions to overlap on different
+            resources. Project's main.py normally supplies
+            ``workspace.bt.dsl.build_precedence`` partialled with the
+            ActionRegistry. If omitted, scheduler falls back to
+            per-item serialisation (correct but suboptimal).
 
     Returns:
         A callable ``(plan) -> schedule`` with the right signature for
@@ -225,6 +240,7 @@ def make_schedule_builder(
         )
 
     def _build(actions: Sequence[Action]) -> List[Tuple[str, int, float]]:
-        return schedule_greedy(actions, meta)
+        preds = precedence_fn(actions) if precedence_fn is not None else None
+        return schedule_greedy(actions, meta, predecessors=preds)
 
     return _build

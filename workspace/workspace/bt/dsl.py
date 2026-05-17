@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import (
     Any,
     Callable,
@@ -339,6 +340,144 @@ def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     the live, mutable state into a planner-friendly snapshot.
     """
     return frozenset(_facts_from_state(state))
+
+
+# ── Shared lock on ctx.meta — for thread safety in Parallel composites ────
+
+
+def _ctx_lock(meta: Dict[str, Any]) -> threading.RLock:
+    """Return (lazily creating) the ctx-wide lock stored in meta.
+
+    Used by ``_DSLActionLeaf._ensure_tool`` so concurrent leaves under
+    a Parallel composite don't race on the ``current_tool`` field.
+    Reentrant so nested helpers can also take it safely.
+    """
+    lock = meta.get("_lock")
+    if lock is None:
+        lock = threading.RLock()
+        meta["_lock"] = lock
+    return lock
+
+
+# ── Precedence — for parallel scheduling ───────────────────────────────────
+
+
+def _extract_pre_facts(
+    expr: Any,
+) -> Tuple[set, set]:
+    """Walk a pre() Expr and split into (positives, negatives).
+
+    Supports conjunction (& / and) and negation (~ / not) — the shape
+    every Action in the codebase uses. OR / true / false are ignored
+    (treated as no dependency) — preserves correctness conservatively.
+    """
+    pos: set = set()
+    neg: set = set()
+
+    def walk(e: Any) -> None:
+        if isinstance(e, Fact):
+            pos.add(e.as_tuple())
+            return
+        if isinstance(e, bool):
+            return
+        # _FactExpr stores a Fact
+        if isinstance(e, _FactExpr):
+            pos.add(e.fact.as_tuple())
+            return
+        if not isinstance(e, Expr):
+            return
+        if e.op == "and":
+            for a in e.args:
+                walk(a)
+        elif e.op == "not":
+            child = e.args[0]
+            if isinstance(child, _FactExpr):
+                neg.add(child.fact.as_tuple())
+            elif isinstance(child, Fact):
+                neg.add(child.as_tuple())
+            # nested NOT-AND etc. are uncommon in lab protocols; ignore.
+
+    walk(expr)
+    return pos, neg
+
+
+def _extract_eff_facts(branch: Any) -> Tuple[set, set]:
+    """From an eff() branch's facts, split into (added, removed)."""
+    added: set = set()
+    removed: set = set()
+    if branch is None:
+        return added, removed
+    if isinstance(branch, Fact):
+        branch = (branch,)
+    for f in branch:
+        if not isinstance(f, Fact):
+            continue
+        if f.polarity:
+            added.add(f.as_tuple())
+        else:
+            removed.add(f.as_tuple())
+    return added, removed
+
+
+def build_precedence(
+    plan: Sequence[Any],          # list of workspace.planner.pddl.Action
+    registry: "ActionRegistry",
+) -> List[set]:
+    """Compute per-action causal predecessor sets from the plan.
+
+    For each action at index ``i``, returns a set of earlier indices
+    ``{j: j < i and action[i].pre intersects action[j].eff (default
+    branch)}``. The scheduler uses this to allow actions with no
+    causal dependency to overlap on different resources.
+
+    Positive pre-facts (the action needs X to be true): predecessor =
+    the most recent earlier action that ADDED X (or none, if X was
+    true at t=0).
+
+    Negative pre-facts (the action needs X to be false): predecessor =
+    the most recent earlier action that REMOVED X.
+    """
+    # Pre-compute each action's positive/negative pre facts and added/
+    # removed eff facts (using the default eff branch — first dict key).
+    metas: List[Dict[str, set]] = []
+    for action in plan:
+        cls = registry.get(action.name)
+        if cls is None:
+            metas.append({"pre_pos": set(), "pre_neg": set(),
+                          "added": set(), "removed": set()})
+            continue
+        instance = cls()
+        params = tuple(action.params)
+        # pre
+        pre_expr = instance.pre(*params)
+        pre_pos, pre_neg = _extract_pre_facts(pre_expr)
+        # eff — default branch (first dict key)
+        eff = _normalise_eff(instance.eff(*params), cls.__name__)
+        first_branch = eff[next(iter(eff))]
+        added, removed = _extract_eff_facts(first_branch)
+        metas.append({"pre_pos": pre_pos, "pre_neg": pre_neg,
+                      "added": added, "removed": removed})
+
+    predecessors: List[set] = []
+    for i, m in enumerate(metas):
+        preds: set = set()
+        # Positive pre — last earlier action that added the fact.
+        # Stop at first remover (the fact was just removed; we're a bug).
+        for f in m["pre_pos"]:
+            for j in range(i - 1, -1, -1):
+                if f in metas[j]["added"]:
+                    preds.add(j); break
+                if f in metas[j]["removed"]:
+                    break
+        # Negative pre — last earlier action that removed the fact.
+        for f in m["pre_neg"]:
+            for j in range(i - 1, -1, -1):
+                if f in metas[j]["removed"]:
+                    preds.add(j); break
+                if f in metas[j]["added"]:
+                    break
+        predecessors.append(preds)
+    return predecessors
 
 
 def _normalise_eff(effs: Any, action_name: str) -> Dict[str, Tuple[Fact, ...]]:
@@ -884,37 +1023,42 @@ class _DSLActionLeaf(RecipeAction):
         tool. Tools come from the recipes dict — ``rcp[name].pick()`` /
         ``.place()`` are expected to exist.
 
-        In sim mode without recipes loaded, this is a no-op — we just
-        bookkeep the current tool string so post-action scheduling
-        matches what real mode would produce."""
+        Thread-safe — the read-swap-write is serialised under a lock
+        on ``ctx.meta``. With Parallel composites, multiple workers
+        may call this concurrently; the lock guarantees one tool
+        change at a time (the physical robot can only hold one tool
+        anyway).
+        """
         wanted = self._cls.tool
         # Sentinel: "keep whatever's currently held" — do nothing.
         if wanted is Action._TOOL_UNSET:
             return
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}
-        current = meta.get("current_tool")
-        if current == wanted:
-            return
-        rcp = self.ctx.recipes or {}
-        # Drop the old tool first (if held).
-        if current is not None:
-            old = rcp.get(current)
-            if old is not None:
-                try:
-                    old.place()
-                except Exception as ex:
-                    self.log.warning("tool place(%r) raised: %s", current, ex)
-        # Pick up the new tool (if any).
-        if wanted is not None:
-            new = rcp.get(wanted)
-            if new is not None:
-                try:
-                    new.pick()
-                except Exception as ex:
-                    self.log.warning("tool pick(%r) raised: %s", wanted, ex)
-        # Track current tool whether or not the recipe existed —
-        # subsequent actions need to know what's nominally held.
-        meta["current_tool"] = wanted
+        lock = _ctx_lock(meta)
+        with lock:
+            current = meta.get("current_tool")
+            if current == wanted:
+                return
+            rcp = self.ctx.recipes or {}
+            # Drop the old tool first (if held).
+            if current is not None:
+                old = rcp.get(current)
+                if old is not None:
+                    try:
+                        old.place()
+                    except Exception as ex:
+                        self.log.warning("tool place(%r) raised: %s", current, ex)
+            # Pick up the new tool (if any).
+            if wanted is not None:
+                new = rcp.get(wanted)
+                if new is not None:
+                    try:
+                        new.pick()
+                    except Exception as ex:
+                        self.log.warning("tool pick(%r) raised: %s", wanted, ex)
+            # Track current tool whether or not the recipe existed —
+            # subsequent actions need to know what's nominally held.
+            meta["current_tool"] = wanted
 
     # ── BT lifecycle ────────────────────────────────────────────────────
 
@@ -1050,6 +1194,7 @@ __all__ = [
     "Fact",
     "Predicate",
     "bind_conditions",
+    "build_precedence",
     "make_predicate_condition",
     "predicate",
     "state_to_frozen",
