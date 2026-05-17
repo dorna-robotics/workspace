@@ -251,13 +251,20 @@ class LoadedShaker(Action):
 
 
 class Shaken(Action):
-    """Shake the loaded tube on its shaker. Runs in parallel with robot work."""
+    """Shake the loaded tube on its shaker. Runs in parallel with robot work.
+
+    The shake() recipe call is async — it kicks the shaker off and
+    returns. background=True tells the framework to hold the leaf for
+    the remaining `duration` so dependent actions (Retrieved) don't
+    start before the shaker actually finishes.
+    """
     params      = ["tube"]
     duration    = SHAKE_DURATION
     # Per-tube shake on its own shaker slot. The shaker resource serialises
     # tubes that share a shaker, while leaving the robot free.
     resource    = "shaker_1"   # NOTE: simplified — all tubes lock shaker_1
     tool        = "feeder_tool"
+    background  = True         # ← framework waits SHAKE_DURATION post-execute
     post_check  = "stop_shaken"
 
     def pre(self, tube):
