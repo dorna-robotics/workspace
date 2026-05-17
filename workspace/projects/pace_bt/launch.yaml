@@ -4,7 +4,7 @@
 
 project_name: pace_bt              # appears in logs, tree node names, GUI
 port:         5010                 # default operator-UI port (env var PORT overrides)
-scene:        [scene/base.j2]      # scene file(s) — read by Workspace
+scene:        [scene/base.j2, scene/layout.j2]   # racks + tools/tubes/caps placed in them
 recipes:      recipes.yaml         # recipes — recipes.j2 takes priority if both exist
 actions:      actions.py           # protocol: predicates + setup + Action classes
 checks:       checks.py            # vision/sensor Checks class (referenced by name from actions)
