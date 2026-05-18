@@ -318,6 +318,11 @@ def run_protocol(
             f"setup() returned goal of type {type(goal_fn).__name__} — "
             "expected a callable: ``def goal(state): return ...``"
         )
+    # Optional `goal_facts` — set of positive fact tuples the goal
+    # needs. Used as the PDDL planner's GBFS heuristic. Without it
+    # the planner falls back to BFS which doesn't scale beyond
+    # ~batch_size=3. Highly recommended for any multi-item protocol.
+    goal_facts = spec.get("goal_facts")
 
     # 2. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
@@ -392,6 +397,7 @@ def run_protocol(
         observe=lambda c: state_to_frozen(c.state),
         templates=templates,
         goal=goal_fn,
+        goal_facts=goal_facts,
         build_schedule=build_schedule,
         build_tree=build_tree,
         config=ReplanConfig(verbose=True),

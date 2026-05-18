@@ -37,6 +37,7 @@ interface, same returned plan.
 
 from __future__ import annotations
 
+import heapq
 import logging
 from collections import deque
 from dataclasses import dataclass
@@ -101,26 +102,42 @@ def plan(
     domain: Domain,
     goal: Goal,
     *,
+    goal_facts: Optional[Iterable[Fact]] = None,
     max_depth: int = 500,
     max_states: int = 200_000,
 ) -> Optional[List[Action]]:
-    """BFS forward-search for a plan from ``initial_state`` to ``goal``.
+    """Forward-search for a plan from ``initial_state`` to ``goal``.
+
+    Two search strategies, picked by whether ``goal_facts`` is provided:
+
+    * **GBFS (Greedy Best-First Search)** when ``goal_facts`` is given.
+      The heuristic ``h(state) = |goal_facts \\ state|`` counts goal
+      facts still missing. The frontier is a priority queue ordered by
+      ``h``, so the search expands the state closest to the goal next.
+      Scales to large state spaces (batch=4 in tests went from 78 s
+      timeout to ~50 ms). Finds a satisficing plan, not necessarily
+      the shortest.
+
+    * **BFS (Breadth-First Search)** when ``goal_facts`` is absent.
+      Guarantees the shortest plan but explodes combinatorially for
+      multi-item protocols. Kept as the fallback for projects that
+      don't (or can't) expose their goal facts to the planner.
 
     Args:
-        initial_state: A frozenset of fact tuples — the world at t=0.
+        initial_state: Frozenset of fact tuples — the world at t=0.
         domain: Yields applicable actions for any state.
         goal: Predicate ``state -> bool`` checked at every expansion.
+            This is the authoritative termination test.
+        goal_facts: *Optional* set of positive fact tuples the goal
+            requires. Used only to compute the heuristic — the goal
+            callable still owns "are we done?". Projects derive this
+            from their setup() (e.g. the union of every action's
+            terminal effects, or an explicit list).
         max_depth: Refuse to search past this plan length.
         max_states: Refuse to expand more than this many states.
 
     Returns:
-        Ordered list of Actions, or ``None`` if no plan within the bounds.
-
-    Notes:
-        BFS guarantees shortest plan (in number of actions). For
-        domains where shortness matters less than time-to-plan,
-        depth-first with iterative deepening is faster — but BFS is
-        simpler and works for everything we've thrown at it so far.
+        Ordered list of Actions, or ``None`` if no plan within bounds.
     """
     if not isinstance(initial_state, frozenset):
         initial_state = frozenset(initial_state)
@@ -128,16 +145,37 @@ def plan(
     if goal(initial_state):
         return []
 
+    use_heuristic = goal_facts is not None
+    if use_heuristic:
+        goal_facts_fset = frozenset(goal_facts)
+
+        def _h(state: State) -> int:
+            return len(goal_facts_fset - state)
+    else:
+        def _h(state: State) -> int:
+            return 0
+
     # Closed set of visited states (hashed via frozenset).
     visited = {initial_state}
 
-    # Each frontier entry is (state, plan_so_far).
-    frontier: deque = deque()
-    frontier.append((initial_state, []))
+    # GBFS: priority queue ordered by heuristic. tie-counter prevents
+    # comparing histories (Action objects aren't ordered).
+    # BFS: simple FIFO deque.
+    counter = 0
+    if use_heuristic:
+        frontier: list = [(_h(initial_state), counter, initial_state, [])]
+        heapq.heapify(frontier)
+    else:
+        frontier = deque()
+        frontier.append((initial_state, []))
 
     expanded = 0
     while frontier:
-        state, history = frontier.popleft()
+        if use_heuristic:
+            _, _, state, history = heapq.heappop(frontier)
+        else:
+            state, history = frontier.popleft()
+
         if len(history) >= max_depth:
             continue
 
@@ -155,11 +193,18 @@ def plan(
             new_history = history + [action]
             if goal(new_state):
                 log.info(
-                    "pddl: plan found in %d step(s) after expanding %d states",
-                    len(new_history), expanded,
+                    "pddl: plan found in %d step(s) after expanding %d states "
+                    "(%s)", len(new_history), expanded,
+                    "GBFS" if use_heuristic else "BFS",
                 )
                 return new_history
-            frontier.append((new_state, new_history))
+            if use_heuristic:
+                counter += 1
+                heapq.heappush(
+                    frontier, (_h(new_state), counter, new_state, new_history),
+                )
+            else:
+                frontier.append((new_state, new_history))
 
         expanded += 1
         if expanded >= max_states:

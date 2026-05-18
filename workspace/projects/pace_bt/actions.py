@@ -43,9 +43,18 @@ def setup(**kwargs):
             all((vial_2ml_capped.name, t) in state for t in tubes)
         )
 
+    # Optional planner hint — set of fact tuples the goal needs.
+    # Lets the PDDL planner use GBFS instead of BFS; mandatory for
+    # batch sizes > 3 (BFS explodes combinatorially).
+    goal_facts = frozenset(
+        [(in_done.name, t) for t in tubes]
+        + [(vial_2ml_capped.name, t) for t in tubes]
+    )
+
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
+        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 
