@@ -132,7 +132,7 @@ IMMERSE_40ML_DIST   = 90
 RETRACT_40ML_DIST   = 10
 IMMERSE_2ML_DIST    = 25
 RETRACT_2ML_DIST    = 10
-SHAKE_DURATION      = 120
+SHAKE_DURATION      = 10
 
 
 # ── 4. Action helpers — used by multiple Action.execute() bodies ───────────
