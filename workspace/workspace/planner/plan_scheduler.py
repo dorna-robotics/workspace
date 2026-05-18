@@ -166,21 +166,19 @@ def schedule_greedy(
         )
 
         # Tool swap — charged against tool_resource (the robot), not
-        # against the action's own resource. The swap must end before
-        # the action starts. The robot is busy during the swap even
-        # if the action runs on a different resource.
+        # against the action's own resource. The swap is a pure robot
+        # motion that doesn't touch protocol state, so we schedule it
+        # as early as the robot is free — independent of when this
+        # action's causal predecessors finish. The action itself
+        # still waits for both swap_end AND its causal preds (via
+        # the start = max(...) below).
         swap_end = 0.0
         if m.tool is not None and m.tool != current_tool:
             swap_duration = int(m.tool_swap_duration)
-            swap_start = max(
-                resource_end.get(tool_resource, 0.0),
-                earliest_causal,
-            )
+            swap_start = resource_end.get(tool_resource, 0.0)
             swap_end = swap_start + swap_duration
             # The robot is occupied until swap_end.
-            resource_end[tool_resource] = max(
-                resource_end.get(tool_resource, 0.0), swap_end,
-            )
+            resource_end[tool_resource] = swap_end
             current_tool = m.tool
 
         start = max(earliest_causal, earliest_resource, swap_end)
