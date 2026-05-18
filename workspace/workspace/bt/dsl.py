@@ -342,6 +342,17 @@ def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     return frozenset(_facts_from_state(state))
 
 
+# ── Framework conventions ──────────────────────────────────────────────────
+
+
+# The resource name that holds tools. Actions whose resource doesn't
+# include this string are considered "doesn't use the robot" — so
+# their _ensure_tool is a no-op and the scheduler doesn't gate their
+# start on a tool-swap completing. Hardcoded for now; could become
+# a launcher knob if projects need to override.
+_TOOL_RESOURCE = "robot"
+
+
 # ── Shared lock on ctx.meta — for thread safety in Parallel composites ────
 
 
@@ -1018,20 +1029,35 @@ class _DSLActionLeaf(RecipeAction):
     # ── tool-swap helper ───────────────────────────────────────────────
 
     def _ensure_tool(self) -> None:
-        """If ``Action.tool`` is set and differs from the currently
-        held tool, swap. ``ctx.meta['current_tool']`` tracks the live
-        tool. Tools come from the recipes dict — ``rcp[name].pick()`` /
-        ``.place()`` are expected to exist.
+        """Inline tool-swap fallback for projects that don't drive
+        swaps via :class:`SwapLeaf`. If the scheduler emits SwapLeaf
+        nodes, ``current_tool`` is already correct by the time the
+        action ticks and this method is a no-op.
 
-        Thread-safe — the read-swap-write is serialised under a lock
-        on ``ctx.meta``. With Parallel composites, multiple workers
-        may call this concurrently; the lock guarantees one tool
-        change at a time (the physical robot can only hold one tool
-        anyway).
+        Skipped entirely for actions that don't use the robot
+        resource — the tool mount is irrelevant to actions running on
+        other resources (e.g. shaker_1), so they shouldn't block on
+        an unrelated tool change.
+
+        Thread-safe via the ctx-wide lock so concurrent leaves don't
+        race on ``ctx.meta["current_tool"]``.
         """
         wanted = self._cls.tool
         # Sentinel: "keep whatever's currently held" — do nothing.
         if wanted is Action._TOOL_UNSET:
+            return
+        # Only intervene if this action actually uses the robot. The
+        # tool resource is the physical thing that HOLDS tools; for
+        # actions on other resources (shaker, scale, …) the current
+        # tool is a future-prep concern, not a precondition.
+        cls_resource = self._cls.resource
+        if cls_resource is None:
+            action_resources: Tuple[str, ...] = ()
+        elif isinstance(cls_resource, str):
+            action_resources = (cls_resource,)
+        else:
+            action_resources = tuple(cls_resource)
+        if _TOOL_RESOURCE not in action_resources:
             return
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}
         lock = _ctx_lock(meta)

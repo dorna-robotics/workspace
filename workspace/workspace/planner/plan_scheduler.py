@@ -163,9 +163,8 @@ def schedule_greedy(
 
         # Tool swap event — emit as a first-class scheduled task.
         # Schedule it at the earliest moment the robot is idle. The
-        # swap and the action that needs the tool may be far apart in
-        # time; the swap occupies the robot, the action waits for
-        # both swap_end and its other constraints.
+        # swap occupies the robot's timeline; the action waits for
+        # it only if the action itself uses the robot.
         swap_end = 0.0
         if m.tool is not None and m.tool != current_tool:
             swap_duration = int(m.tool_swap_duration)
@@ -177,7 +176,13 @@ def schedule_greedy(
             resource_end[tool_resource] = swap_end
             current_tool = m.tool
 
-        start = max(earliest_causal, earliest_resource, swap_end)
+        # Only gate the action's start on swap_end if the action
+        # actually uses the tool-holder resource (the robot). For
+        # actions on other resources (shaker_1, scale, …) the tool
+        # mount is a future-prep concern — the SwapLeaf runs in
+        # parallel; the action proceeds on its own resource.
+        gate_swap = swap_end if tool_resource in resources else 0.0
+        start = max(earliest_causal, earliest_resource, gate_swap)
         end = start + float(m.duration)
 
         item_end[item] = max(item_end.get(item, 0.0), end)
