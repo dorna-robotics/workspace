@@ -26,10 +26,80 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 import py_trees
 
+from workspace.bt.behaviours import RecipeAction, WorkspaceContext
 from workspace.bt.engine import ReplanRequested
 
 
 log = logging.getLogger(__name__)
+
+
+# ── SwapLeaf — explicit tool-swap node in the tree ─────────────────────────
+
+
+class SwapLeaf(RecipeAction):
+    """Behaviour that performs a tool swap (place current, pick next).
+
+    Inserted by :func:`from_schedule` at the scheduled swap time so
+    swaps fill robot idle windows (e.g. during a long shake) rather
+    than firing implicitly inside the next action's ``_ensure_tool``.
+
+    Updates ``ctx.meta["current_tool"]`` under the ctx lock so the
+    next action's ``_ensure_tool`` sees the tool already mounted and
+    becomes a no-op (no double swap).
+    """
+
+    def __init__(
+        self,
+        ctx: WorkspaceContext,
+        from_tool: Optional[str],
+        to_tool: Optional[str],
+    ):
+        name = f"swap({from_tool or '∅'}→{to_tool or '∅'})"
+        super().__init__(name=name, ctx=ctx)
+        self._from_tool = from_tool
+        self._to_tool = to_tool
+
+    def execute(self) -> bool:
+        log.info("BT swap  START: %s", self.name)
+        rcp = self.ctx.recipes or {}
+        meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}
+        # Use the same ctx lock as _DSLActionLeaf._ensure_tool so
+        # nothing races on current_tool.
+        from workspace.bt.dsl import _ctx_lock
+        with _ctx_lock(meta):
+            current = meta.get("current_tool")
+            if current == self._to_tool:
+                # Nothing to do — already correct (e.g. an earlier
+                # leaf swapped via _ensure_tool fallback).
+                log.info("BT swap  SKIP : %s (already correct)", self.name)
+                return True
+            # Drop the current tool.
+            if current is not None:
+                old = rcp.get(current)
+                if old is not None:
+                    try:
+                        old.place()
+                    except Exception as ex:
+                        log.warning("BT swap  RAISE: %s on place(%r) — %s",
+                                    self.name, current, ex)
+                        return False
+            # Pick the new tool.
+            if self._to_tool is not None:
+                new = rcp.get(self._to_tool)
+                if new is not None:
+                    try:
+                        new.pick()
+                    except Exception as ex:
+                        log.warning("BT swap  RAISE: %s on pick(%r) — %s",
+                                    self.name, self._to_tool, ex)
+                        return False
+            meta["current_tool"] = self._to_tool
+        log.info("BT swap  DONE : %s", self.name)
+        return True
+
+    def apply_effects(self, state: Dict[str, Any]) -> None:
+        # Tool swaps don't change protocol state.
+        pass
 
 
 # ── Decorators ─────────────────────────────────────────────────────────────
@@ -246,80 +316,164 @@ def parallel_all(
 
 
 def from_schedule(
-    schedule: Sequence[Tuple[str, int, float]],
+    actions: Sequence[Tuple[str, int, float]],
     leaf_factory: Callable[[str, int], py_trees.behaviour.Behaviour],
     *,
-    name: str = "from_schedule",
+    swaps: Sequence[Tuple[float, Optional[str], Optional[str], int]] = (),
+    swap_factory: Optional[Callable[[Optional[str], Optional[str]], py_trees.behaviour.Behaviour]] = None,
     durations: Optional[Dict[str, float]] = None,
+    resources: Optional[Dict[str, Tuple[str, ...]]] = None,
+    tool_resource: str = "robot",
+    name: str = "from_schedule",
 ) -> py_trees.behaviour.Behaviour:
-    """Build a Sequence-of-Parallel tree from a schedule.
+    """Build a tree from a schedule (actions + swaps), resource-aware.
 
-    Groups actions whose time windows overlap into ``Parallel``
-    composites (children run concurrently in their own worker
-    threads); sequences groups whose windows are disjoint. The result
-    is a tree that runs as concurrently as the schedule allows —
-    correctness guaranteed by the scheduler having already enforced
-    causal dependencies via :func:`build_precedence`.
+    Tree shape:
+      * Top-level ``Sequence`` of **overlap phases** — actions whose
+        time windows don't overlap each other run sequentially.
+      * Each phase is either a single leaf (one entry in the phase)
+        or a ``Parallel(SuccessOnAll)`` of **resource branches**.
+      * Each resource branch is a ``Sequence`` of entries that share
+        that resource (or a single leaf). Within a branch they're
+        sequential; across branches they run concurrently — exactly
+        what the scheduler said is safe.
 
     Args:
-        schedule: Tuples from the scheduler.
-        leaf_factory: Called as ``leaf_factory(action_name, item_index)``
-            returning a Behaviour for that scheduled task.
+        actions: ``(action_name, item_index, start_t)`` tuples.
+        leaf_factory: ``(name, item) → Behaviour`` for action leaves.
+        swaps: Optional ``(swap_start, from_tool, to_tool, duration)``
+            tuples from the scheduler. If empty, swaps stay implicit
+            (handled by each action leaf's ``_ensure_tool``).
+        swap_factory: ``(from_tool, to_tool) → Behaviour`` for swap
+            leaves. Required if ``swaps`` is non-empty.
+        durations: ``{action_name: duration}`` — used to compute end
+            times for overlap grouping.
+        resources: ``{action_name: tuple of resource names}`` — used
+            to group entries within a Parallel phase. Actions sharing
+            a resource sub-sequence inside the Parallel.
+        tool_resource: The resource swaps run on (typically ``"robot"``).
         name: Top-level sequence name.
-        durations: ``{action_name: duration_seconds}`` — used to
-            compute each action's end-time for overlap grouping. If
-            omitted, every action is treated as instantaneous and the
-            output collapses to a flat Sequence (safe fallback).
-
-    Returns:
-        ``Sequence(memory=True)`` of phases. Each phase is either a
-        single leaf or a ``Parallel(SuccessOnAll)`` of leaves that
-        the scheduler said overlap.
     """
     durations = durations or {}
-    ordered = sorted(schedule, key=lambda t: (t[2], t[0], t[1]))
+    resources = resources or {}
 
-    # Group into "overlap phases" — actions whose windows overlap go
-    # into one phase that becomes a Parallel composite.
-    phases: List[List[Tuple[str, int, float, float]]] = []
-    current: List[Tuple[str, int, float, float]] = []
+    # Unify actions and swaps into a single "entry" representation
+    # so the grouping pass can treat them uniformly. Each entry knows
+    # its time window, resources, and how to make its leaf.
+    entries: List[Dict[str, Any]] = []
+    for action_name, item_index, start in actions:
+        dur = float(durations.get(action_name, 0))
+        entries.append({
+            "kind":      "action",
+            "name":      f"{action_name}(t{item_index})",
+            "start":     float(start),
+            "end":       float(start) + dur,
+            "resources": tuple(resources.get(action_name, ())) or ("__none__",),
+            "make_leaf": (lambda an=action_name, ii=item_index:
+                          _safe_leaf(leaf_factory, an, ii)),
+        })
+    for swap_start, from_t, to_t, dur in swaps:
+        if swap_factory is None:
+            log.warning(
+                "from_schedule: got swap event but no swap_factory — skipping",
+            )
+            continue
+        entries.append({
+            "kind":      "swap",
+            "name":      f"swap({from_t or '∅'}→{to_t or '∅'})",
+            "start":     float(swap_start),
+            "end":       float(swap_start) + float(dur),
+            "resources": (tool_resource,),
+            "make_leaf": (lambda ft=from_t, tt=to_t:
+                          swap_factory(ft, tt)),
+        })
+
+    # Stable sort by start time. Ties: swap before action (so the
+    # tool is loaded before the action that needs it ticks).
+    entries.sort(key=lambda e: (e["start"], 0 if e["kind"] == "swap" else 1))
+
+    # Phase 1: group by overlap. Entries whose time windows overlap
+    # any current-phase entry go in the same phase.
+    phases: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
     current_end = -1.0
-    for action_name, item_index, start in ordered:
-        end = start + float(durations.get(action_name, 0))
-        if current and start < current_end:
-            current.append((action_name, item_index, start, end))
-            current_end = max(current_end, end)
+    for e in entries:
+        if current and e["start"] < current_end:
+            current.append(e)
+            current_end = max(current_end, e["end"])
         else:
             if current:
                 phases.append(current)
-            current = [(action_name, item_index, start, end)]
-            current_end = end
+            current = [e]
+            current_end = e["end"]
     if current:
         phases.append(current)
 
-    # Build a tree node per phase: single leaf vs Parallel.
+    # Phase 2: build each phase as resource-grouped Parallel.
     phase_nodes: List[py_trees.behaviour.Behaviour] = []
     for idx, phase in enumerate(phases):
-        leaves: List[py_trees.behaviour.Behaviour] = []
-        for action_name, item_index, _s, _e in phase:
-            try:
-                leaves.append(leaf_factory(action_name, item_index))
-            except KeyError:
-                log.warning(
-                    "from_schedule: no leaf factory for %r (item %d) — skipping",
-                    action_name, item_index,
-                )
+        node = _build_phase_node(phase, name=f"{name}/phase{idx}")
+        if node is not None:
+            phase_nodes.append(node)
+
+    return py_trees.composites.Sequence(
+        name=name, memory=True, children=phase_nodes,
+    )
+
+
+def _safe_leaf(
+    factory: Callable[[str, int], py_trees.behaviour.Behaviour],
+    action_name: str,
+    item_index: int,
+) -> Optional[py_trees.behaviour.Behaviour]:
+    try:
+        return factory(action_name, item_index)
+    except KeyError:
+        log.warning(
+            "from_schedule: no leaf for %r (item %d) — skipping",
+            action_name, item_index,
+        )
+        return None
+
+
+def _build_phase_node(
+    phase: List[Dict[str, Any]],
+    *,
+    name: str,
+) -> Optional[py_trees.behaviour.Behaviour]:
+    """Build one phase: resource-grouped Sequence-of-Sequences inside a Parallel.
+
+    Within a phase, group entries by their **primary resource** (the
+    first one in the entry's resources tuple). Each group becomes a
+    sub-Sequence (or a single leaf if only one entry). The set of
+    sub-trees becomes a Parallel; if there's only one resource group,
+    we skip the Parallel and just emit the Sequence directly.
+    """
+    by_resource: Dict[str, List[Dict[str, Any]]] = {}
+    for e in phase:
+        primary = e["resources"][0] if e["resources"] else "__none__"
+        by_resource.setdefault(primary, []).append(e)
+
+    branches: List[py_trees.behaviour.Behaviour] = []
+    for r, group in by_resource.items():
+        # Sort the group sequentially within the resource.
+        group.sort(key=lambda e: (e["start"], 0 if e["kind"] == "swap" else 1))
+        leaves = [leaf for e in group if (leaf := e["make_leaf"]()) is not None]
         if not leaves:
             continue
         if len(leaves) == 1:
-            phase_nodes.append(leaves[0])
+            branches.append(leaves[0])
         else:
-            phase_nodes.append(py_trees.composites.Parallel(
-                name=f"{name}/phase{idx}",
-                policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
-                children=leaves,
+            branches.append(py_trees.composites.Sequence(
+                name=f"{name}/{r}", memory=True, children=leaves,
             ))
 
-    return py_trees.composites.Sequence(
-        name=name, memory=True, children=phase_nodes
+    if not branches:
+        return None
+    if len(branches) == 1:
+        return branches[0]
+    return py_trees.composites.Parallel(
+        name=name,
+        policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
+        children=branches,
     )

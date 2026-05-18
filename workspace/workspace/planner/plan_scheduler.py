@@ -95,46 +95,44 @@ def schedule_greedy(
     *,
     predecessors: Optional[List[set]] = None,
     tool_resource: str = "robot",
-) -> List[Tuple[str, int, float]]:
+) -> Tuple[List[Tuple[str, int, float]], List[Tuple[float, Optional[str], Optional[str], int]]]:
     """First-fit earliest-start scheduling, precedence-aware.
 
-    Walks the action list in plan order. For each action:
+    For each action in plan order:
 
-      1. Compute the earliest causal start (max of predecessor ends).
-      2. If the action requires a different tool than the one
-         currently mounted, charge a swap event against the
-         ``tool_resource`` (the robot — only one tool can be held at
-         a time). The swap must complete before the action starts,
-         and the swap occupies the robot even if the action itself
-         runs on a different resource (e.g. shaker_1).
-      3. Schedule the action at max(causal, resources, post-swap).
+      1. Causal earliest = max end times of predecessor actions.
+      2. If the action requires a different tool, schedule a
+         tool-swap event against ``tool_resource`` (the robot) as
+         early as the robot is free. The swap is a pure motion that
+         doesn't touch protocol state; it fills idle robot windows.
+      3. Action start = max(causal, all-resources-free, post-swap).
 
     Args:
         actions: The planner's output list.
-        meta: Lookup of action_name → :class:`ActionMeta`.
-        predecessors: Optional list — ``predecessors[i]`` is the set of
-            indices ``j < i`` that action ``i`` causally depends on.
-            Built from pre/eff analysis via
+        meta: action_name → :class:`ActionMeta`.
+        predecessors: Optional — ``predecessors[i]`` = indices that
+            action ``i`` depends on. From
             :func:`workspace.bt.dsl.build_precedence`. If omitted,
             falls back to per-item-end serialisation (conservative).
-        tool_resource: Name of the resource that holds tools (typically
-            the robot arm). The scheduler tracks ONE global
-            ``current_tool`` and charges tool-swap time against this
-            resource regardless of which resource the action itself
-            uses. Default ``"robot"``.
+        tool_resource: Name of the tool-holder resource. There's only
+            one physical tool changer per robot, so this is a single
+            global lock. Default ``"robot"``.
 
     Returns:
-        List of ``(action_name, item_index, start_t)`` tuples,
-        sorted by start_t.
+        Tuple ``(actions, swaps)`` where:
+
+        * ``actions`` = list of ``(action_name, item_index, start_t)``
+        * ``swaps``   = list of ``(start_t, from_tool, to_tool, duration)``
+          — explicit tool-swap events for ``from_schedule`` to insert
+          into the tree as :class:`SwapLeaf` nodes.
     """
     item_end: Dict[int, float] = {}
     resource_end: Dict[str, float] = {}
     action_end: List[float] = []
-    # Global tool state — there's only one physical tool changer, so
-    # the "current tool" is single-valued, not per-resource. Any
-    # action with tool=X causes the global to become X (via swap).
+    # Global tool state — single tool changer.
     current_tool: Optional[str] = None
-    result: List[Tuple[str, int, float]] = []
+    actions_out: List[Tuple[str, int, float]] = []
+    swaps_out: List[Tuple[float, Optional[str], Optional[str], int]] = []
 
     for i, action in enumerate(actions):
         m = meta.get(action.name)
@@ -151,7 +149,6 @@ def schedule_greedy(
         except (IndexError, ValueError, TypeError):
             item = 0
 
-        # Causal earliest: max of all predecessor end times.
         if predecessors is not None:
             earliest_causal = max(
                 (action_end[j] for j in predecessors[i]), default=0.0,
@@ -159,25 +156,24 @@ def schedule_greedy(
         else:
             earliest_causal = item_end.get(item, 0.0)
 
-        # All the locks this action claims must be free.
         resources = _resources(m.resource)
         earliest_resource = max(
             (resource_end.get(r, 0.0) for r in resources), default=0.0
         )
 
-        # Tool swap — charged against tool_resource (the robot), not
-        # against the action's own resource. The swap is a pure robot
-        # motion that doesn't touch protocol state, so we schedule it
-        # as early as the robot is free — independent of when this
-        # action's causal predecessors finish. The action itself
-        # still waits for both swap_end AND its causal preds (via
-        # the start = max(...) below).
+        # Tool swap event — emit as a first-class scheduled task.
+        # Schedule it at the earliest moment the robot is idle. The
+        # swap and the action that needs the tool may be far apart in
+        # time; the swap occupies the robot, the action waits for
+        # both swap_end and its other constraints.
         swap_end = 0.0
         if m.tool is not None and m.tool != current_tool:
             swap_duration = int(m.tool_swap_duration)
             swap_start = resource_end.get(tool_resource, 0.0)
             swap_end = swap_start + swap_duration
-            # The robot is occupied until swap_end.
+            swaps_out.append(
+                (swap_start, current_tool, m.tool, swap_duration)
+            )
             resource_end[tool_resource] = swap_end
             current_tool = m.tool
 
@@ -189,9 +185,9 @@ def schedule_greedy(
         for r in resources:
             resource_end[r] = end
 
-        result.append((action.name, item, start))
+        actions_out.append((action.name, item, start))
 
-    return result
+    return actions_out, swaps_out
 
 
 # ── Convenience builder for projects ───────────────────────────────────────

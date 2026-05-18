@@ -39,6 +39,7 @@ import yaml
 
 from workspace.bt.behaviours import WorkspaceContext
 from workspace.bt.builder import (
+    SwapLeaf,
     from_schedule,
     replan_on_failure,
     sequence,
@@ -356,17 +357,30 @@ def run_protocol(
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by
     #    calling run_protocol_with_tree() instead (advanced use).
-    # Durations table for from_schedule's overlap detection — Parallel
-    # composites are emitted where the scheduler computed overlapping
-    # windows on different resources.
+    # Durations + resources tables for from_schedule's overlap
+    # detection and resource-aware sub-grouping inside each phase.
     durations = {name: float(m.duration) for name, m in meta.items()}
+    from workspace.planner.plan_scheduler import _resources as _resources_of
+    action_resources = {
+        name: _resources_of(m.resource) or ("robot",)
+        for name, m in meta.items()
+    }
+
+    def _make_swap_leaf(from_tool, to_tool):
+        return SwapLeaf(ctx=ctx, from_tool=from_tool, to_tool=to_tool)
 
     def build_tree(schedule, _ctx):
+        # schedule_greedy returns (actions, swaps).
+        actions_list, swaps_list = schedule
         def _wrapped(action_name, item_index):
             return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
         body = from_schedule(
-            schedule, _wrapped, name=f"{project_name}/body",
+            actions_list, _wrapped,
+            swaps=swaps_list,
+            swap_factory=_make_swap_leaf,
             durations=durations,
+            resources=action_resources,
+            name=f"{project_name}/body",
         )
         return replan_on_failure(
             sequence(f"{project_name}/root", body),
