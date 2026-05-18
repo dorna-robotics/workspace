@@ -572,13 +572,21 @@ class Action:
                             actions have one param: ``["tube"]``.
         duration:           Estimated seconds. Used by the scheduler.
                             Defaults to 1.
-        tool:               Tool the robot holds during this action.
-                            Strings like ``"gripper"`` auto-swap before
-                            the action runs. ``None`` explicitly means
-                            "release current tool"; **unset** (sentinel)
-                            means "keep whatever's currently held".
-                            One tool per action is enforced — keep
-                            actions atomic.
+        tool:               Tool the robot must hold during this action.
+                            Three shapes:
+
+                              * **unset** (default sentinel) — **tool-agnostic**:
+                                no constraint, no swap scheduled. Use
+                                this for actions that don't drive the
+                                robot (e.g. a shaker action on a
+                                shaker resource).
+                              * ``"gripper"`` (string) — robot must
+                                hold this tool when the action runs;
+                                framework auto-swaps if needed.
+                              * ``None`` — explicitly release the
+                                currently-held tool.
+
+                            One tool per action — keep actions atomic.
         tool_swap_duration: Seconds inserted before this action when the
                             previous same-resource action held a
                             different ``tool``. Per-action so swap

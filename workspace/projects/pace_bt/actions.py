@@ -253,18 +253,18 @@ class LoadedShaker(Action):
 class Shaken(Action):
     """Shake the loaded tube on its shaker. Runs in parallel with robot work.
 
-    shake() blocks for SHAKE_DURATION (synchronous recipe), so the
-    leaf's worker thread is alive for the full shake. The framework
-    runs every execute() in its own worker thread, so the BT engine
-    keeps ticking and other scheduled work (on different resources)
-    runs in parallel naturally.
+    Tool-agnostic — no `tool` declaration. The shaker runs the shake
+    autonomously; the robot is free to do tool swaps or other work
+    on a different resource concurrently. shake() blocks for
+    SHAKE_DURATION; the framework's per-leaf worker thread keeps the
+    engine ticking so parallel scheduled work proceeds.
     """
     params      = ["tube"]
     duration    = SHAKE_DURATION
-    # Per-tube shake on its own shaker slot. The shaker resource serialises
-    # tubes that share a shaker, while leaving the robot free.
-    resource    = "shaker_1"   # NOTE: simplified — all tubes lock shaker_1
-    tool        = "feeder_tool"
+    resource    = "shaker_1"
+    # No `tool` — agnostic. The scheduler will pre-swap to whatever
+    # the NEXT robot action needs, in the robot's idle window
+    # (typically overlapping this shake).
     post_check  = "stop_shaken"
 
     def pre(self, tube):
