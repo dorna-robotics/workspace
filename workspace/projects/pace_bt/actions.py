@@ -43,30 +43,14 @@ def setup(**kwargs):
             all((vial_2ml_capped.name, t) in state for t in tubes)
         )
 
-    # Planner heuristic hint. The PDDL planner uses
-    # h(state) = |goal_facts \ state| to pick the next state to expand
-    # under GBFS. Listing only the terminal goal facts leaves long
-    # heuristic plateaus (every intermediate step has the same h),
-    # so we include every *monotonic* progress predicate — facts that
-    # are added once per tube and never removed. Each completed step
-    # now drops h by one and the search climbs steadily instead of
-    # wandering.
-    progress_preds = (
-        weighed,         # after Inspected
-        dosed_40ml_p,    # after Dosed40ml
-        shaken,          # after Shaken
-        dosed_2ml_p,     # after Dosed2ml
-        in_done,         # after RecappedFinal (terminal)
-        vial_2ml_capped, # after Capped2ml (terminal)
-    )
-    goal_facts = frozenset(
-        (p.name, t) for p in progress_preds for t in tubes
-    )
-
+    # No `goal_facts` here — the framework auto-derives a planner
+    # heuristic hint from the action set (every monotonic predicate
+    # × every reachable parameter binding). Override by adding
+    # `"goal_facts": ...` to the return dict if the auto-derivation
+    # ever misleads the planner.
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
-        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 

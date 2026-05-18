@@ -889,6 +889,89 @@ class ActionRegistry:
             effects=eff_fn,
         )
 
+    # ── Output: planner heuristic hint (auto-derived) ──────────────────
+    def monotonic_predicates(self) -> set:
+        """Predicate names that no action ever removes (across all branches).
+
+        A predicate is "monotonic" iff every action that touches it does
+        so additively — i.e. ``+pred(...)`` somewhere, ``-pred(...)``
+        nowhere. Monotonic predicates are the ideal progress markers
+        for a planner heuristic: each time one becomes true the search
+        has irreversibly moved closer to the goal.
+
+        Polarity is determined at write-time (``+fact`` vs ``-fact``)
+        and doesn't depend on parameter values, so we call ``eff()``
+        with dummy params just to read the polarities.
+        """
+        added: set = set()
+        removed: set = set()
+        for cls in self._actions.values():
+            if getattr(cls, "trigger", None) == "end":
+                continue
+            instance = cls()
+            dummy = tuple(object() for _ in cls.params)
+            try:
+                effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
+            except Exception:
+                log.debug("monotonic_predicates: skip %s — eff() raised",
+                          cls.__name__, exc_info=True)
+                continue
+            for branch_facts in effs.values():
+                for f in branch_facts:
+                    if not isinstance(f, Fact):
+                        continue
+                    (added if f.polarity else removed).add(f.pred)
+        return added - removed
+
+    def derive_goal_facts(
+        self, ctx: WorkspaceContext,
+    ) -> FrozenSet[Tuple[Any, ...]]:
+        """Auto-derive a planner heuristic hint from the action set.
+
+        Returns the set of fact tuples ``(pred, *args)`` such that:
+
+          * ``pred`` is monotonic (never removed by any action), and
+          * the fact is added by *some* action under *some* parameter
+            binding (so it's actually reachable, not theoretical).
+
+        Used by :func:`run_protocol` when ``setup()`` doesn't supply
+        ``goal_facts`` — every project gets a free heuristic without
+        annotating progress markers by hand. Projects with decorative
+        monotonic predicates can still override by returning
+        ``goal_facts`` from setup() explicitly.
+        """
+        mono = self.monotonic_predicates()
+        if not mono:
+            return frozenset()
+
+        empty: State = frozenset()
+        out: set = set()
+        for cls in self._actions.values():
+            if getattr(cls, "trigger", None) == "end":
+                continue
+            instance = cls()
+            instance.ctx = ctx  # type: ignore[attr-defined]
+            try:
+                param_combos = list(instance.param_iter(empty))
+            except Exception:
+                log.debug("derive_goal_facts: skip %s — param_iter raised",
+                          cls.__name__, exc_info=True)
+                continue
+            for params in param_combos:
+                try:
+                    effs = _normalise_eff(
+                        instance.eff(*params), cls.__name__,
+                    )
+                except Exception:
+                    continue
+                for branch_facts in effs.values():
+                    for f in branch_facts:
+                        if (isinstance(f, Fact)
+                                and f.polarity
+                                and f.pred in mono):
+                            out.add(f.as_tuple())
+        return frozenset(out)
+
     # ── Output: scheduler meta ─────────────────────────────────────────
     def to_meta(self) -> Dict[str, ActionMeta]:
         out: Dict[str, ActionMeta] = {}

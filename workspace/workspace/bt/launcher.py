@@ -318,10 +318,13 @@ def run_protocol(
             f"setup() returned goal of type {type(goal_fn).__name__} — "
             "expected a callable: ``def goal(state): return ...``"
         )
-    # Optional `goal_facts` — set of positive fact tuples the goal
-    # needs. Used as the PDDL planner's GBFS heuristic. Without it
-    # the planner falls back to BFS which doesn't scale beyond
-    # ~batch_size=3. Highly recommended for any multi-item protocol.
+    # `goal_facts` — set of positive fact tuples used as the PDDL
+    # planner's GBFS heuristic (``h = |goal_facts \ state|``). Projects
+    # can supply their own list via setup(); otherwise the framework
+    # auto-derives one from the action effects (every monotonic
+    # predicate × every reachable parameter binding). Auto-derivation
+    # handles ~all lab protocols correctly; override only if some
+    # monotonic predicate is decorative and would mislead the search.
     goal_facts = spec.get("goal_facts")
 
     # 2. Context. Carries the live mutable facts dict + recipes +
@@ -353,6 +356,16 @@ def run_protocol(
     templates      = registry.to_templates(ctx)
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
+
+    # Auto-derive goal_facts if the project didn't supply one. Done
+    # after the registry+ctx are ready so `param_iter` can read
+    # ``ctx.meta["objects"]``.
+    if goal_facts is None:
+        goal_facts = registry.derive_goal_facts(ctx)
+        log.info(
+            "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
+            len(goal_facts), len(registry.monotonic_predicates()),
+        )
     # Precedence-aware scheduling — actions whose pre()/eff() are
     # causally independent overlap on different resources.
     build_schedule = make_schedule_builder(
