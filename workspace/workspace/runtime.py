@@ -131,7 +131,10 @@ class Runtime:
         # ``run_started_at`` so the operator's wall-clock view of a
         # paused-then-resumed run matches their expectation. ``time``
         # imported at the top of the module.
-        if new_state == RTState.RUNNING and old != RTState.RUNNING:
+        if new_state in (RTState.RUNNING, RTState.PARKING) and old not in (
+            RTState.RUNNING,
+            RTState.PARKING,
+        ):
             if old == RTState.PAUSED:
                 self.run_finished_at = None  # resume — keep started
             else:
@@ -248,7 +251,10 @@ class Runtime:
             st = self._status.state
             if st == RTState.PAUSED:
                 self._status.job_resumes += 1
-                self._set_state(RTState.RUNNING)
+                # Park is a sticky flag: if the user parked, then paused
+                # mid-park, then resumed, we go back to PARKING (not
+                # RUNNING) so the park-cleanup pipeline keeps draining.
+                self._set_state(RTState.PARKING if self._parking else RTState.RUNNING)
                 # No token bump here — the state transition itself wakes
                 # everyone via cv.notify_all. ``wait_for_start`` accepts
                 # state==RUNNING as an exit condition (so a thread that
@@ -260,7 +266,7 @@ class Runtime:
                 self._cv.notify_all()
                 return
 
-            if st == RTState.RUNNING:
+            if st in (RTState.RUNNING, RTState.PARKING):
                 return
 
             self._start_token += 1
@@ -273,7 +279,11 @@ class Runtime:
         with self._lock:
             if self._killed:
                 return
-            if self._status.state in (RTState.RUNNING, RTState.IDLE):
+            # PARKING is also pausable — Park is a flag, the workflow is
+            # still executing recipes until the next checkpoint catches
+            # ParkRequested, and the operator must be able to halt it
+            # mid-stride (e.g. to clear a robot alarm before cleanup).
+            if self._status.state in (RTState.RUNNING, RTState.IDLE, RTState.PARKING):
                 self._status.job_pauses += 1
                 self._set_state(RTState.PAUSED)
                 self._cv.notify_all()
@@ -284,7 +294,9 @@ class Runtime:
                 return
             if self._status.state == RTState.PAUSED:
                 self._status.job_resumes += 1
-                self._set_state(RTState.RUNNING)
+                # If the park flag is set, resume to PARKING (not RUNNING)
+                # so the park-cleanup pipeline keeps draining.
+                self._set_state(RTState.PARKING if self._parking else RTState.RUNNING)
                 self._cv.notify_all()
 
     def park(self) -> None:

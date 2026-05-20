@@ -1066,19 +1066,18 @@ function renderControls(state, launched, running) {
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
     controls.appendChild(lbl);
-  } else if (s === "PARKING") {
-    const lbl = document.createElement("span");
-    lbl.className = "ctrl-starting";
-    lbl.textContent = "Parking…";
-    controls.appendChild(lbl);
   } else {
-    // The "start" command resumes from PAUSED as well as starting from
-    // IDLE — relabel the button so the operator knows which it is. Cmd
-    // stays "start" in both cases (runtime.start() handles both paths).
+    // PARKING is a *flag* — the robot keeps working through its
+    // current step and the park-cleanup subtree, so Pause / Resume
+    // must still be reachable. Only the Park button itself is
+    // disabled (already parking) and Start is disabled (no new run
+    // while parking is in flight). Kill remains always-on below.
+    const parking   = s === "PARKING";
+    const active    = running || parking;
     const startLabel = (s === "PAUSED") ? "Resume" : "Start";
-    addBtn(startLabel, "start",    { primary: true, disabled: running });
-    addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("Park",     "park",     { warn: true });
+    addBtn(startLabel, "start", { primary: true, disabled: active });
+    addBtn("Pause",    "pause", { disabled: !active });
+    addBtn("Park",     "park",  { warn: true, disabled: parking });
   }
 
   // Gear button for parameters — only before launch
@@ -1468,12 +1467,15 @@ function updatePendantUI() {
     }
   }
 
-  // Enable/disable buttons based on state
+  // PARKING is a *flag* — the robot keeps working through its current
+  // step and the park-cleanup subtree, so Pause / Resume stay reachable.
+  // Only the Park button itself is disabled (already parking) and Start
+  // is disabled (no new run while parking is in flight).
   const parking = state.toUpperCase() === "PARKING";
-  // Disable buttons based on state
+  const active  = running || parking;
   $("pendantLaunch").disabled  = launched;
-  $("pendantStart").disabled   = !launched || running || parking;
-  $("pendantPause").disabled   = !running || parking;
+  $("pendantStart").disabled   = !launched || active;
+  $("pendantPause").disabled   = !active;
   $("pendantPark").disabled    = !launched || parking;
   $("pendantKill").disabled    = !launched;
 
