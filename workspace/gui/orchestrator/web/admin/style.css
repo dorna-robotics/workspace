@@ -526,6 +526,17 @@
   box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.5), 0 0 30px rgba(10,132,255,0.15);
 }
 
+/* Park — orange (between amber-pause and red-kill on the severity ramp) */
+.pendant-park {
+  color: #fff;
+  background: rgba(255,122,63,0.25);
+  box-shadow: inset 0 0 0 1.5px rgba(255,122,63,0.42);
+}
+.pendant-park:hover:not(:disabled) {
+  background: rgba(255,122,63,0.35);
+  box-shadow: inset 0 0 0 1.5px rgba(255,122,63,0.55), 0 0 30px rgba(255,122,63,0.15);
+}
+
 /* Kill — red */
 .pendant-kill {
   color: #fff;
@@ -687,6 +698,8 @@
 [data-theme="light"] .pendant-pause:hover:not(:disabled) { background: rgba(199,124,10,0.2); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.45); }
 [data-theme="light"] .pendant-launch { background: rgba(0,122,255,0.12); color: var(--accent); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.3); }
 [data-theme="light"] .pendant-launch:hover:not(:disabled) { background: rgba(0,122,255,0.2); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.45); }
+[data-theme="light"] .pendant-park { background: rgba(214,90,38,0.12); color: #c64a1a; box-shadow: inset 0 0 0 1.5px rgba(214,90,38,0.32); }
+[data-theme="light"] .pendant-park:hover:not(:disabled) { background: rgba(214,90,38,0.2); box-shadow: inset 0 0 0 1.5px rgba(214,90,38,0.5); }
 [data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.12); color: var(--red); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.3); }
 [data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.2); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.45); }
 [data-theme="light"] .pendant-secondary { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
