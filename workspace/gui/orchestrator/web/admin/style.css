@@ -704,14 +704,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 220px;
+  max-width: 240px;
 }
 .schedule-summary .sched-replan { color: var(--accent); font-weight: 600; }
-.schedule-summary .sched-active { color: var(--green); }
+.schedule-summary .sched-active { color: var(--green); font-weight: 600; }
 .schedule-summary .sched-done   { color: var(--muted); }
 
 .modal.schedule-modal {
-  width: min(94vw, 1280px);
+  width: min(94vw, 1320px);
   max-height: 88vh;
   display: flex;
   flex-direction: column;
@@ -725,61 +725,72 @@
 .gantt-container {
   flex: 1;
   overflow: auto;
-  padding: 18px 18px 22px;
+  padding: 24px 24px 28px;
   background: var(--bg);
-  min-height: 260px;
+  min-height: 320px;
 }
 .sched-empty {
-  padding: 60px;
+  padding: 80px;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .sched-svg { display: block; min-width: 100%; }
 
-/* Row backgrounds: bare, no alternating fill — keeps the eye on the bars */
-.sched-row     { fill: transparent; }
-.sched-row.alt { fill: rgba(255,255,255,0.015); }
-
-/* Resource label, left gutter */
+/* Row labels — generous, readable, monospace */
 .sched-rowlabel {
-  font: 500 11px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
-  fill: var(--muted);
+  font: 600 14px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  fill: var(--text);
   letter-spacing: 0.02em;
 }
-
-/* Time axis */
-.sched-tick      { stroke: var(--border); stroke-width: 0.5; opacity: 0.35; }
-.sched-ticklabel { font-size: 9px; fill: var(--muted); font-family: ui-monospace, monospace; opacity: 0.75; }
-
-/* Action blocks — state drives appearance */
-.sched-block rect {
-  transition: opacity 0.2s, filter 0.2s;
+.sched-rowline {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.25;
 }
-.sched-block.sched-pending rect { opacity: 0.22; }
-.sched-block.sched-done    rect { opacity: 0.85; }
-.sched-block.sched-skipped rect { opacity: 0.10; }
-.sched-block.sched-running rect {
-  opacity: 1;
-  filter: drop-shadow(0 0 6px currentColor);
-  animation: schedPulse 1.4s ease-in-out infinite;
+
+/* Action blocks */
+.sched-block-fill {
+  transition: opacity 0.2s;
 }
-@keyframes schedPulse {
-  0%, 100% { filter: drop-shadow(0 0 4px rgba(255,255,255,0.45)); }
-  50%      { filter: drop-shadow(0 0 12px rgba(255,255,255,0.85)); }
+.sched-block-border {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 0;
+  pointer-events: none;
+}
+
+/* States */
+.sched-block.sched-pending .sched-block-fill { opacity: 0.30; }
+.sched-block.sched-done    .sched-block-fill { opacity: 0.85; }
+.sched-block.sched-skipped .sched-block-fill { opacity: 0.10; }
+.sched-block.sched-running .sched-block-fill { opacity: 1.0; }
+
+/* Running: thick flashing border ring — unmistakable */
+.sched-block.sched-running .sched-block-border {
+  stroke: #ffffff;
+  stroke-width: 3.5;
+  animation: schedFlash 1s ease-in-out infinite;
+}
+[data-theme="light"] .sched-block.sched-running .sched-block-border {
+  stroke: #111111;
+}
+@keyframes schedFlash {
+  0%, 100% { stroke-opacity: 1.0;  stroke-width: 3.5; }
+  50%      { stroke-opacity: 0.35; stroke-width: 5.5; }
 }
 
 .sched-blocklabel {
-  font: 500 10px/1 ui-monospace, "SF Mono", monospace;
-  fill: #fff;
+  font: 600 13px/1 ui-monospace, "SF Mono", monospace;
+  fill: #ffffff;
   pointer-events: none;
-  opacity: 0.9;
 }
-[data-theme="light"] .sched-blocklabel { fill: #111; }
-.sched-block.sched-pending .sched-blocklabel { opacity: 0.5; }
+[data-theme="light"] .sched-blocklabel { fill: #0a0f1a; }
+.sched-block.sched-pending .sched-blocklabel { opacity: 0.55; }
+.sched-block.sched-skipped .sched-blocklabel { opacity: 0.25; }
 
-/* Tool swaps — thin neutral ticks on the robot row */
-.sched-swap         { fill: var(--muted); opacity: 0.25; }
-.sched-swap.sched-running { opacity: 0.8; fill: var(--accent); }
-.sched-swap.sched-done    { opacity: 0.45; }
+/* Tool swaps */
+.sched-swap         { fill: var(--muted); opacity: 0.30; }
+.sched-swap.sched-running { opacity: 0.95; fill: var(--accent); }
+.sched-swap.sched-done    { opacity: 0.55; }

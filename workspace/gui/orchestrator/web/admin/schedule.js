@@ -1,17 +1,7 @@
 // Schedule view — clean Gantt driven by explicit action_start / action_end
-// events. Predicted durations are layout-only; "where are we right now" is
-// answered exclusively by the framework's start/end signals, never by
-// wall-clock arithmetic against a predicted duration.
-//
-// What's on screen, by design:
-//   * one rectangle per scheduled action, positioned by predicted start_t
-//   * each rectangle's STATE comes from events:
-//       pending — not yet started
-//       running — action_start fired, action_end has not
-//       done    — action_end fired (success or skipped)
-//   * the glowing running block IS the "now" indicator; no separate cursor.
-//   * tool swaps shown as thin dividers on the robot row, not blocks.
-//   * resource rows on the left, subtle time ticks at the top.
+// events. No time axis, no wall-clock math; the layout is read-only and
+// "where are we right now" is answered by the currently-running block's
+// flashing border.
 
 let _ws = null;
 let _wsUrl = "";
@@ -61,9 +51,7 @@ function _tryWS() {
   const ws = new WebSocket(_wsUrl);
   _ws = ws;
   ws.onopen = () => { _wsRetryMs = 1000; };
-  ws.onmessage = (e) => {
-    try { _ingest(JSON.parse(e.data)); } catch {}
-  };
+  ws.onmessage = (e) => { try { _ingest(JSON.parse(e.data)); } catch {} };
   ws.onclose = () => {
     if (_wsClosed) return;
     setTimeout(_tryWS, _wsRetryMs);
@@ -96,18 +84,10 @@ function _initDOM() {
 
   const openBtn  = document.getElementById("btnOpenSchedule");
   const closeBtn = document.getElementById("btnScheduleClose");
-  if (openBtn && !openBtn._wired) {
-    openBtn.addEventListener("click", openScheduleModal);
-    openBtn._wired = true;
-  }
-  if (closeBtn && !closeBtn._wired) {
-    closeBtn.addEventListener("click", closeScheduleModal);
-    closeBtn._wired = true;
-  }
+  if (openBtn && !openBtn._wired)  { openBtn.addEventListener("click", openScheduleModal); openBtn._wired = true; }
+  if (closeBtn && !closeBtn._wired) { closeBtn.addEventListener("click", closeScheduleModal); closeBtn._wired = true; }
   if (_modalEl && !_modalEl._wired) {
-    _modalEl.addEventListener("click", (e) => {
-      if (e.target === _modalEl) closeScheduleModal();
-    });
+    _modalEl.addEventListener("click", (e) => { if (e.target === _modalEl) closeScheduleModal(); });
     _modalEl._wired = true;
   }
 }
@@ -148,7 +128,6 @@ function _renderSummary() {
 }
 
 function _short(leafName) {
-  // "inspected(t0)" → "inspected(0)"
   return _esc(leafName.replace("(t", "(").replace(")", ")"));
 }
 
@@ -169,23 +148,23 @@ function _renderGantt() {
   const swaps   = _plan.swaps   || [];
   const tres    = _plan.tool_resource || "robot";
 
-  // Resource rows: tool resource on top, then every other declared
-  // resource alphabetically.
+  // Resource rows: tool resource on top, the rest alphabetical.
   const resSet = new Set([tres]);
   for (const a of actions) for (const r of (a.resources || [])) resSet.add(r);
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // Layout.
-  const ROW_H   = 28;
-  const HEAD_H  = 22;
-  const LEFT_W  = 92;
-  const PAD     = 14;
+  // Layout — generous spacing, no time axis.
+  const ROW_H  = 56;
+  const ROW_PAD = 10;
+  const LEFT_W = 140;
+  const TOP_PAD = 16;
+  const BOT_PAD = 16;
   const horizon = Math.max(_plan.makespan || 0, 30);
-  const avail   = Math.max(420, _ganttEl.clientWidth - PAD * 2 - LEFT_W);
+  const avail = Math.max(420, _ganttEl.clientWidth - 40 - LEFT_W);
   const pxPerSec = avail / horizon;
   const W = LEFT_W + horizon * pxPerSec + 24;
-  const H = HEAD_H + rows.length * ROW_H + 12;
+  const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
@@ -193,98 +172,47 @@ function _renderGantt() {
   svg.setAttribute("height", String(H));
   svg.setAttribute("class",  "sched-svg");
 
-  // Subtle row stripes.
-  rows.forEach((r, i) => {
-    const rect = document.createElementNS(svgNS, "rect");
-    rect.setAttribute("x", "0");
-    rect.setAttribute("y", String(HEAD_H + i * ROW_H));
-    rect.setAttribute("width",  String(W));
-    rect.setAttribute("height", String(ROW_H));
-    rect.setAttribute("class",  `sched-row ${i % 2 ? "alt" : ""}`);
-    svg.appendChild(rect);
-  });
-
-  // Resource labels.
+  // Row labels (left gutter)
   rows.forEach((r, i) => {
     const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("x", String(LEFT_W - 10));
-    t.setAttribute("y", String(HEAD_H + i * ROW_H + ROW_H / 2 + 4));
+    t.setAttribute("x", String(LEFT_W - 14));
+    t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 5));
     t.setAttribute("text-anchor", "end");
     t.setAttribute("class", "sched-rowlabel");
     t.textContent = r;
     svg.appendChild(t);
+
+    // Row divider line (thin, subtle)
+    if (i > 0) {
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(LEFT_W - 4));
+      line.setAttribute("x2", String(W - 8));
+      line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
+      line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
+      line.setAttribute("class", "sched-rowline");
+      svg.appendChild(line);
+    }
   });
 
-  // Time axis ticks.
-  const step = _chooseTickStep(horizon, pxPerSec);
-  for (let s = 0; s <= horizon; s += step) {
-    const x = LEFT_W + s * pxPerSec;
-    const l = document.createElementNS(svgNS, "line");
-    l.setAttribute("x1", String(x)); l.setAttribute("x2", String(x));
-    l.setAttribute("y1", String(HEAD_H - 4));
-    l.setAttribute("y2", String(H - 4));
-    l.setAttribute("class", "sched-tick");
-    svg.appendChild(l);
-    if (s % (step * 2) === 0) {
-      const t = document.createElementNS(svgNS, "text");
-      t.setAttribute("x", String(x));
-      t.setAttribute("y", String(HEAD_H - 8));
-      t.setAttribute("class", "sched-ticklabel");
-      t.setAttribute("text-anchor", "middle");
-      t.textContent = _fmtDur(s);
-      svg.appendChild(t);
-    }
-  }
-
-  // Action blocks.
+  // Action blocks
   for (const a of actions) {
     const rowIdx = _primaryRow(rows, a.resources, tres);
     if (rowIdx < 0) continue;
     const x = LEFT_W + a.start_t * pxPerSec;
-    const w = Math.max(3, a.duration * pxPerSec);
-    const y = HEAD_H + rowIdx * ROW_H + 5;
-    const h = ROW_H - 10;
-    const state = _leafState.get(a.leaf_name) || "pending";
-
-    const g = document.createElementNS(svgNS, "g");
-    g.setAttribute("class", `sched-block sched-${state}`);
-
-    const rect = document.createElementNS(svgNS, "rect");
-    rect.setAttribute("x", String(x));
-    rect.setAttribute("y", String(y));
-    rect.setAttribute("width",  String(w));
-    rect.setAttribute("height", String(h));
-    rect.setAttribute("rx", "4");
-    rect.setAttribute("fill", toolColor(a.tool));
-    g.appendChild(rect);
-
-    if (w > 36) {
-      const lab = document.createElementNS(svgNS, "text");
-      lab.setAttribute("x", String(x + w / 2));
-      lab.setAttribute("y", String(y + h / 2 + 3));
-      lab.setAttribute("text-anchor", "middle");
-      lab.setAttribute("class", "sched-blocklabel");
-      lab.textContent = `${a.name}(${a.item})`;
-      g.appendChild(lab);
-    }
-
-    const title = document.createElementNS(svgNS, "title");
-    title.textContent =
-      `${a.name}(${a.item}) — ${state}\n` +
-      `tool: ${a.tool ?? "—"}\n` +
-      `planned: t=${_fmtDur(a.start_t)} for ${_fmtDur(a.duration)}`;
-    g.appendChild(title);
-    svg.appendChild(g);
+    const w = Math.max(6, a.duration * pxPerSec);
+    const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+    const h = ROW_H - ROW_PAD * 2;
+    _appendBlock(svg, x, y, w, h, a, _leafState.get(a.leaf_name) || "pending");
   }
 
-  // Tool swaps — narrow ticks on the tool_resource row, not full blocks.
+  // Tool swaps — narrow neutral ticks on the robot row
   const swapRow = rows.indexOf(tres);
   if (swapRow >= 0) {
     for (const s of swaps) {
       const x = LEFT_W + s.start_t * pxPerSec;
-      const w = Math.max(2, s.duration * pxPerSec);
-      const y = HEAD_H + swapRow * ROW_H + 5;
-      const h = ROW_H - 10;
+      const w = Math.max(3, s.duration * pxPerSec);
+      const y = TOP_PAD + swapRow * ROW_H + ROW_PAD + 6;
+      const h = ROW_H - ROW_PAD * 2 - 12;
       const state = _leafState.get(s.leaf_name) || "pending";
       const r = document.createElementNS(svgNS, "rect");
       r.setAttribute("x", String(x));
@@ -304,24 +232,70 @@ function _renderGantt() {
   _ganttEl.appendChild(svg);
 }
 
+function _appendBlock(svg, x, y, w, h, a, state) {
+  const svgNS = "http://www.w3.org/2000/svg";
+
+  // Unique clipPath ID so labels can never escape their block.
+  const clipId = `clip_${a.leaf_name.replace(/[^a-z0-9]/gi, "_")}`;
+
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = document.createElementNS(svgNS, "defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  const clip = document.createElementNS(svgNS, "clipPath");
+  clip.id = clipId;
+  const clipRect = document.createElementNS(svgNS, "rect");
+  clipRect.setAttribute("x", String(x + 8));
+  clipRect.setAttribute("y", String(y));
+  clipRect.setAttribute("width",  String(Math.max(0, w - 16)));
+  clipRect.setAttribute("height", String(h));
+  clip.appendChild(clipRect);
+  defs.appendChild(clip);
+
+  const g = document.createElementNS(svgNS, "g");
+  g.setAttribute("class", `sched-block sched-${state}`);
+
+  const rect = document.createElementNS(svgNS, "rect");
+  rect.setAttribute("x", String(x));
+  rect.setAttribute("y", String(y));
+  rect.setAttribute("width",  String(w));
+  rect.setAttribute("height", String(h));
+  rect.setAttribute("rx", "6");
+  rect.setAttribute("fill", toolColor(a.tool));
+  rect.setAttribute("class", "sched-block-fill");
+  g.appendChild(rect);
+
+  // Border overlay — for running state, this gets the flashing animation.
+  const border = document.createElementNS(svgNS, "rect");
+  border.setAttribute("x", String(x));
+  border.setAttribute("y", String(y));
+  border.setAttribute("width",  String(w));
+  border.setAttribute("height", String(h));
+  border.setAttribute("rx", "6");
+  border.setAttribute("class", "sched-block-border");
+  g.appendChild(border);
+
+  const lab = document.createElementNS(svgNS, "text");
+  lab.setAttribute("x", String(x + w / 2));
+  lab.setAttribute("y", String(y + h / 2 + 5));
+  lab.setAttribute("text-anchor", "middle");
+  lab.setAttribute("class", "sched-blocklabel");
+  lab.setAttribute("clip-path", `url(#${clipId})`);
+  lab.textContent = `${a.name}(${a.item})`;
+  g.appendChild(lab);
+
+  const title = document.createElementNS(svgNS, "title");
+  title.textContent = `${a.name}(${a.item}) — ${state}\ntool: ${a.tool ?? "—"}`;
+  g.appendChild(title);
+
+  svg.appendChild(g);
+}
+
 function _primaryRow(rows, resources, toolRes) {
   if (!resources || !resources.length) return rows.indexOf(toolRes);
   for (const r of resources) {
     if (r !== toolRes && rows.includes(r)) return rows.indexOf(r);
   }
   return rows.indexOf(resources[0]);
-}
-
-function _chooseTickStep(horizon, pxPerSec) {
-  const target = 70 / pxPerSec;
-  for (const cand of [5, 10, 15, 30, 60, 120, 300, 600]) {
-    if (cand >= target) return cand;
-  }
-  return 600;
-}
-
-function _fmtDur(secs) {
-  if (secs < 60) return `${secs.toFixed(0)}s`;
-  if (secs < 3600) return `${(secs / 60).toFixed(1)}m`;
-  return `${(secs / 3600).toFixed(2)}h`;
 }
