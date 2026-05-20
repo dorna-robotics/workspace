@@ -100,16 +100,23 @@ function _render() {
 function _renderSummary() {
   if (!_summaryEl) return;
   if (!_plan) { _summaryEl.textContent = "—"; return; }
-  const total  = (_plan.actions || []).length;
-  const done   = [..._leafState.values()].filter(v => v === "done" || v === "skipped").length;
-  const active = [..._leafState.entries()].find(([, v]) => v === "running")?.[0];
-  let bits = `<span class="sched-replan">#${_replanId}</span>`;
-  if (active) {
-    bits += ` <span class="sched-active">${_short(active)}</span>`;
-  } else if (done >= total && total > 0) {
-    bits += ` <span class="sched-done">complete</span>`;
+  const planLeafNames = new Set((_plan.actions || []).map(a => a.leaf_name));
+  const total = (_plan.actions || []).length;
+  // Only count real action leaves toward done/running — swap leaves
+  // are framework plumbing, not user-meaningful steps.
+  const doneCount = [..._leafState.entries()]
+    .filter(([k, v]) => planLeafNames.has(k) && (v === "done" || v === "skipped"))
+    .length;
+  const activeLeaf = [..._leafState.entries()]
+    .find(([k, v]) => planLeafNames.has(k) && v === "running")?.[0];
+
+  let bits;
+  if (activeLeaf) {
+    bits = `<span class="sched-active">${_short(activeLeaf)}</span>`;
+  } else if (doneCount >= total && total > 0) {
+    bits = `<span class="sched-done">complete</span>`;
   } else {
-    bits += ` ${done}/${total}`;
+    bits = `${doneCount}/${total}`;
   }
   _summaryEl.innerHTML = bits;
 }
@@ -177,10 +184,11 @@ function _renderGantt() {
   }
 
   // ── Phase 2: cross-row alignment ───────────────────────────────────
-  // For each non-tool-resource row, shift its blocks so they sit under
-  // the robot block whose start_t is closest-but-not-after them. That
-  // makes "shaker_one runs while retrieved(0) is happening" visually
-  // obvious without bringing back time-proportional widths.
+  // For each non-robot row, shift its blocks so they sit AFTER the
+  // robot block whose end-of-execution they follow. Aligning to the
+  // anchor's right edge (rather than its left) makes "ShakerOne
+  // starts after LoadedShaker(0) finishes" read correctly — the
+  // shaker block sits visually to the right of its trigger.
   const robotRowIdx = rows.indexOf(tres);
   if (robotRowIdx >= 0) {
     const robotByStart = [...placements.values()]
@@ -188,12 +196,14 @@ function _renderGantt() {
       .sort((a, b) => a.a.start_t - b.a.start_t);
     for (const p of placements.values()) {
       if (p.rowIdx === robotRowIdx) continue;
+      // Anchor = the latest robot block whose end <= this block's start.
       let anchor = null;
       for (const rp of robotByStart) {
-        if (rp.a.start_t > p.a.start_t) break;
+        const rpEnd = rp.a.start_t + rp.a.duration;
+        if (rpEnd > p.a.start_t) break;
         anchor = rp;
       }
-      if (anchor) p.x = anchor.x;
+      if (anchor) p.x = anchor.x + anchor.w + 8;
     }
   }
 
