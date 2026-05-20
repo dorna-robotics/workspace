@@ -181,11 +181,23 @@ class BTEngine:
                     return self._abort()
 
                 # Park: lets the current action finish, then runs the
-                # trigger="park" cleanup subtree. Only swap once
-                # (``_in_cleanup`` guards the transition); the cleanup
-                # tree itself is ticked like any other tree until it
-                # reaches a terminal status.
+                # trigger="park" cleanup subtree.
+                #
+                # Critical: WAIT for the active leaf's worker thread to
+                # exit before swapping trees. Recipes are blocking — they
+                # don't observe the parking flag — so if we tear down the
+                # tree mid-motion, the worker keeps issuing robot commands
+                # while the cleanup tree queues a tool-swap. Two streams
+                # of motion commands → robot alarm. Polling the worker
+                # here is the only safe handoff point.
                 if self._runtime_parking() and not self._in_cleanup:
+                    leaf = self._active_recipe_leaf()
+                    if leaf is not None:
+                        worker = getattr(leaf, "_worker", None)
+                        if worker is not None and worker.is_alive():
+                            time.sleep(min(period, 0.1))
+                            next_tick = time.monotonic()
+                            continue
                     if not self._enter_cleanup():
                         return py_trees.common.Status.SUCCESS  # nothing to clean
 
@@ -258,6 +270,25 @@ class BTEngine:
             return False
         e = getattr(self._runtime, "parking", None)
         return bool(e() if callable(e) else e)
+
+    def _active_recipe_leaf(self):
+        """Find the currently-running RecipeAction leaf, if any.
+
+        Returns the leaf whose ``_worker`` thread is in flight, so the
+        Park path can wait for it to finish before tearing down the
+        tree. ``None`` when no leaf is mid-motion (tree quiescent).
+        """
+        def walk(node):
+            children = getattr(node, "children", []) or []
+            if not children:
+                return node if node.status == py_trees.common.Status.RUNNING else None
+            for c in children:
+                if c.status == py_trees.common.Status.RUNNING:
+                    leaf = walk(c)
+                    if leaf is not None:
+                        return leaf
+            return None
+        return walk(self._root)
 
     def _enter_cleanup(self) -> bool:
         """Swap the live tree for the trigger="park" cleanup subtree.
