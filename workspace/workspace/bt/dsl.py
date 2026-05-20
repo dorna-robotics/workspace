@@ -51,6 +51,7 @@ case; escape hatch for the 10%.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import threading
@@ -79,6 +80,34 @@ from workspace.planner.plan_scheduler import ActionMeta
 
 
 log = logging.getLogger(__name__)
+
+
+# ── State-aware eff() detection ────────────────────────────────────────────
+
+
+def _wants_state(method) -> bool:
+    """True if ``method`` declares its first parameter as ``state``.
+
+    Used to detect state-aware ``pre()`` and ``eff()`` overrides. The
+    framework's defaults take ``*params`` only; opting into state
+    inspection means writing ``pre(self, state, *params)`` /
+    ``eff(self, state, *params)`` and the framework will pass the
+    current planning-time state in as a frozenset of fact tuples.
+
+    Detection is by parameter name, not position — won't collide with
+    normal domain param names (``tube``, ``shaker``, ``well``, …) which
+    never happen to be called ``state``.
+    """
+    try:
+        sig = inspect.signature(method)
+    except (TypeError, ValueError):
+        return False
+    params = list(sig.parameters.values())
+    if not params:
+        return False
+    return params[0].name == "state"
+
+
 
 
 # ── Internal: facts and predicates ─────────────────────────────────────────
@@ -433,6 +462,7 @@ def _extract_eff_facts(branch: Any) -> Tuple[set, set]:
 def build_precedence(
     plan: Sequence[Any],          # list of workspace.planner.pddl.Action
     registry: "ActionRegistry",
+    initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
 ) -> List[set]:
     """Compute per-action causal predecessor sets from the plan.
 
@@ -447,7 +477,16 @@ def build_precedence(
 
     Negative pre-facts (the action needs X to be false): predecessor =
     the most recent earlier action that REMOVED X.
+
+    ``initial_state`` — needed when any action uses state-aware
+    ``eff(self, state, *params)``. The walker simulates state forward
+    along the plan so each state-aware eff sees the world it would
+    actually see at runtime. Defaults to ``frozenset()`` — fine for
+    purely static-eff projects.
     """
+    state: FrozenSet[Tuple[Any, ...]] = (
+        initial_state if initial_state is not None else frozenset()
+    )
     # Pre-compute each action's positive/negative pre facts and added/
     # removed eff facts (using the default eff branch — first dict key).
     metas: List[Dict[str, set]] = []
@@ -462,12 +501,27 @@ def build_precedence(
         # pre
         pre_expr = instance.pre(*params)
         pre_pos, pre_neg = _extract_pre_facts(pre_expr)
-        # eff — default branch (first dict key)
-        eff = _normalise_eff(instance.eff(*params), cls.__name__)
+        # eff — default branch (first dict key). State-aware effs need
+        # the simulated state at this point in the plan.
+        if _wants_state(instance.eff):
+            eff = _normalise_eff(instance.eff(state, *params), cls.__name__)
+        else:
+            eff = _normalise_eff(instance.eff(*params), cls.__name__)
         first_branch = eff[next(iter(eff))]
         added, removed = _extract_eff_facts(first_branch)
         metas.append({"pre_pos": pre_pos, "pre_neg": pre_neg,
                       "added": added, "removed": removed})
+        # Apply this action's effects to keep the simulated state in
+        # sync for the next iteration.
+        s = set(state)
+        for f in first_branch:
+            if not isinstance(f, Fact):
+                continue
+            if f.polarity:
+                s.add(f.as_tuple())
+            else:
+                s.discard(f.as_tuple())
+        state = frozenset(s)
 
     predecessors: List[set] = []
     for i, m in enumerate(metas):
@@ -850,8 +904,13 @@ class ActionRegistry:
         def param_iter_fn(state: State) -> Iterable[Tuple[Any, ...]]:
             yield from instance.param_iter(state)
 
+        pre_state_aware = _wants_state(instance.pre)
+
         def pre_fn(state: State, params: Tuple[Any, ...]) -> bool:
-            expr = instance.pre(*params)
+            if pre_state_aware:
+                expr = instance.pre(state, *params)
+            else:
+                expr = instance.pre(*params)
             if isinstance(expr, bool):
                 return expr
             if isinstance(expr, Fact):
@@ -863,8 +922,13 @@ class ActionRegistry:
                 f"Expr, or bool — got {type(expr).__name__}"
             )
 
+        state_aware = _wants_state(instance.eff)
+
         def eff_fn(state: State, params: Tuple[Any, ...]) -> State:
-            effs = _normalise_eff(instance.eff(*params), name)
+            if state_aware:
+                effs = _normalise_eff(instance.eff(state, *params), name)
+            else:
+                effs = _normalise_eff(instance.eff(*params), name)
             # Planner projects forward with the FIRST branch — author
             # convention is to list the optimistic / default outcome
             # first. Runtime divergence triggers a replan.
@@ -911,7 +975,15 @@ class ActionRegistry:
             instance = cls()
             dummy = tuple(object() for _ in cls.params)
             try:
-                effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
+                if _wants_state(instance.eff):
+                    # State-aware effs can't be polarity-probed without
+                    # state; rely on the project to mention any facts
+                    # they produce in `goal_facts` explicitly.
+                    effs = _normalise_eff(
+                        instance.eff(frozenset(), *dummy), cls.__name__,
+                    )
+                else:
+                    effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
             except Exception:
                 log.debug("monotonic_predicates: skip %s — eff() raised",
                           cls.__name__, exc_info=True)
@@ -957,11 +1029,17 @@ class ActionRegistry:
                 log.debug("derive_goal_facts: skip %s — param_iter raised",
                           cls.__name__, exc_info=True)
                 continue
+            state_aware = _wants_state(instance.eff)
             for params in param_combos:
                 try:
-                    effs = _normalise_eff(
-                        instance.eff(*params), cls.__name__,
-                    )
+                    if state_aware:
+                        effs = _normalise_eff(
+                            instance.eff(empty, *params), cls.__name__,
+                        )
+                    else:
+                        effs = _normalise_eff(
+                            instance.eff(*params), cls.__name__,
+                        )
                 except Exception:
                     continue
                 for branch_facts in effs.values():
@@ -1072,9 +1150,11 @@ class _DSLActionLeaf(RecipeAction):
 
     def _params(self) -> Tuple[Any, ...]:
         # Convention: single-param actions use the item index directly.
-        # Multi-param actions need a project-specific override; not
-        # supported by the auto-factory today (single-item is 100% of
-        # lab use we've seen).
+        # Zero-param actions (e.g. global cleanup, per-resource hardware
+        # cycles) pass nothing. Multi-param actions need a project-
+        # specific override.
+        if not self._cls.params:
+            return ()
         return (self._item,)
 
     # ── pre/post check helpers ─────────────────────────────────────────
@@ -1226,7 +1306,7 @@ class _DSLActionLeaf(RecipeAction):
             log.warning("BT leaf FAIL : %s (execute returned False)", self.name)
             return False
         if not isinstance(rv, str):
-            effs = self._instance.eff(*self._params())
+            effs = self._call_eff()
             keys = list(effs.keys()) if isinstance(effs, dict) else []
             log.warning(
                 "BT leaf FAIL : %s.execute returned %r — expected one of %r",
@@ -1243,6 +1323,21 @@ class _DSLActionLeaf(RecipeAction):
         log.info("BT leaf DONE : %s (branch=%s)", self.name, rv)
         return True
 
+    def _call_eff(self, state_snapshot: Optional[FrozenSet[Tuple[Any, ...]]] = None) -> Dict[str, Any]:
+        """Call the action's eff(); state-aware effs receive a snapshot.
+
+        At runtime we snapshot ``ctx.state["facts"]`` immediately before
+        applying — same convention the planner uses (eff observes the
+        state it's about to mutate, not the post-mutation state).
+        """
+        if _wants_state(self._instance.eff):
+            if state_snapshot is None:
+                state_snapshot = frozenset(_facts_from_state(self.ctx.state))
+            raw = self._instance.eff(state_snapshot, *self._params())
+        else:
+            raw = self._instance.eff(*self._params())
+        return raw  # type: ignore[return-value]
+
     def apply_effects(self, state: Dict[str, Any]) -> None:
         # If pre_check skipped us, effects are NOT applied (the world
         # state remains as the planner left it; replanner can re-derive
@@ -1250,9 +1345,10 @@ class _DSLActionLeaf(RecipeAction):
         if getattr(self, "_skipped", False):
             return
 
-        effs = _normalise_eff(
-            self._instance.eff(*self._params()), self._cls.__name__,
-        )
+        # State-aware effs see a snapshot taken BEFORE mutations are
+        # applied (matches the planner's contract).
+        snapshot = frozenset(_facts_from_state(state))
+        effs = _normalise_eff(self._call_eff(snapshot), self._cls.__name__)
         default = _default_branch(effs)
         chosen = self._branch_choice or default
         if chosen not in effs:

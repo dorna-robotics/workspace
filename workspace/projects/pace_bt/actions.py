@@ -17,7 +17,7 @@ in_done          = predicate("in_done")          # 40ml tube back in source rack
 has_cap          = predicate("has_cap")          # 40ml has cap on
 weighed          = predicate("weighed")          # 40ml weighed at inspected
 dosed_40ml_p     = predicate("dosed_40ml")       # solvent into 40ml
-shaken           = predicate("shaken")           # shaker completed for this tube
+shaken           = predicate("shaken")           # this tube has been shaken
 dosed_2ml_p      = predicate("dosed_2ml")        # transferred to 2ml vials
 cap_in_holder    = predicate("cap_in_holder")    # autosampler-fed cap waiting
 vial_2ml_capped  = predicate("vial_2ml_capped")  # 2ml vial capped and placed
@@ -45,12 +45,20 @@ def setup(**kwargs):
         # Whole-batch goal — derived from item_done.
         return all(item_done(state, t) for t in tubes)
 
-    # No `goal_facts` here — the framework auto-derives a planner
-    # heuristic hint from the action set (every monotonic predicate
-    # × every reachable parameter binding). Override by adding
-    # `"goal_facts": ...` to the return dict if the auto-derivation
-    # ever misleads the planner.
-    #
+    # Explicit goal_facts — `shaken(t)` is added by a state-aware eff
+    # (the per-shaker ShakerOne / ShakerTwo cycle), so the framework's
+    # monotonic-probe can't auto-detect it. We list every per-tube
+    # progress marker by hand here so GBFS has a strong heuristic
+    # signal across the whole protocol, not just the bits before and
+    # after the shake gap.
+    progress_preds = (
+        weighed, dosed_40ml_p, shaken, dosed_2ml_p,
+        in_done, vial_2ml_capped,
+    )
+    goal_facts = frozenset(
+        (p.name, t) for p in progress_preds for t in tubes
+    )
+
     # `item_done` opts in to slicing — the launcher splits work into
     # windows of `plan_window` tubes so the planner stays fast even
     # at batch_size=48.
@@ -58,6 +66,7 @@ def setup(**kwargs):
         "initial_facts": frozenset(facts),
         "goal":          goal,
         "item_done":     item_done,
+        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 
@@ -262,33 +271,74 @@ class LoadedShaker(Action):
         return "loaded"
 
 
-class Shaken(Action):
-    """Shake the loaded tube on its shaker. Runs in parallel with robot work.
+class _ShakerCycle(Action):
+    """Base class for per-shaker shake actions.
 
-    Tool-agnostic — no `tool` declaration. The shaker runs the shake
-    autonomously; the robot is free to do tool swaps or other work
-    on a different resource concurrently. shake() blocks for
-    SHAKE_DURATION; the framework's per-leaf worker thread keeps the
-    engine ticking so parallel scheduled work proceeds.
+    The shaker physically shakes every tube on it in one call. The
+    DSL models that faithfully: ONE planning action per shaker per
+    cycle marks every loaded-and-unshaken tube as ``shaken``.
+
+    State-aware ``pre()`` forces the planner to load every tube
+    destined for this shaker (within the current slicing window)
+    BEFORE the shake fires. The result: each tube is shaken exactly
+    once, and the shaker's full slot capacity gets used.
+
+    Tool-agnostic: the shaker runs autonomously and the robot is free
+    to swap tools or work elsewhere concurrently.
     """
-    params      = ["tube"]
+    # NOTE: leading underscore so __init_subclass__ skips this base.
+    SHAKER:    str = ""   # subclass override — e.g. "shaker_1"
+    params      = []
     duration    = SHAKE_DURATION
-    resource    = "shaker_1"
-    # No `tool` — agnostic. The scheduler will pre-swap to whatever
-    # the NEXT robot action needs, in the robot's idle window
-    # (typically overlapping this shake).
     post_check  = "stop_shaken"
 
-    def pre(self, tube):
-        return in_shaker(tube) & has_cap(tube) & ~shaken(tube)
+    def _destined_tubes(self):
+        """Tubes (within the current slicing window) that physically
+        go onto THIS shaker, per SHAKER_SLOTS."""
+        tubes = self._ctx_objects().get("tube", [])
+        return [t for t in tubes if SHAKER_SLOTS[t][0] == self.SHAKER]
 
-    def eff(self, tube):
-        return {"shaken": +shaken(tube)}
+    def pre(self, state):
+        """Fires only when every destined tube is loaded-and-unshaken.
 
-    def execute(self, tube):
+        Building a conjunction of ``in_shaker(t) & ~shaken(t)`` over
+        the destined set means the planner has to schedule every
+        LoadedShaker for this shaker BEFORE this action.
+        """
+        destined = self._destined_tubes()
+        if not destined:
+            return False  # no tubes assigned to this shaker in this slice
+        # Safety net: if every destined tube is already shaken (from
+        # this slice or a stray re-firing attempt), don't re-shake.
+        if all((shaken.name, t) in state for t in destined):
+            return False
+        expr = in_shaker(destined[0]) & ~shaken(destined[0])
+        for t in destined[1:]:
+            expr = expr & in_shaker(t) & ~shaken(t)
+        return expr
+
+    def eff(self, state):
+        """Mark every destined tube currently on the shaker as shaken."""
+        facts = []
+        for t in self._destined_tubes():
+            if (in_shaker.name, t) in state:
+                facts.append(+shaken(t))
+        return {"shaken": tuple(facts)}
+
+    def execute(self):
         rcp = self.ctx.recipes
-        rcp[SHAKER_SLOTS[tube][0]].shake(duration=SHAKE_DURATION)
+        rcp[self.SHAKER].shake(duration=SHAKE_DURATION)
         return "shaken"
+
+
+class ShakerOne(_ShakerCycle):
+    SHAKER   = "shaker_1"
+    resource = "shaker_1"
+
+
+class ShakerTwo(_ShakerCycle):
+    SHAKER   = "shaker_2"
+    resource = "shaker_2"
 
 
 class CapFed(Action):

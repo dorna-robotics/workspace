@@ -463,10 +463,16 @@ def run_protocol(
                 len(goal_facts), len(registry.monotonic_predicates()),
             )
     # Precedence-aware scheduling — actions whose pre()/eff() are
-    # causally independent overlap on different resources.
-    build_schedule = make_schedule_builder(
-        meta, precedence_fn=lambda plan: build_precedence(plan, registry),
-    )
+    # causally independent overlap on different resources. We thread
+    # the current observed state through so state-aware ``eff()``
+    # bodies see the world they would at runtime when computing the
+    # precedence graph.
+    def _precedence(plan):
+        facts = ctx.state.get("facts", frozenset())
+        initial = facts if isinstance(facts, frozenset) else frozenset(facts)
+        return build_precedence(plan, registry, initial_state=initial)
+
+    build_schedule = make_schedule_builder(meta, precedence_fn=_precedence)
 
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by
