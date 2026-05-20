@@ -1090,9 +1090,8 @@ function renderControls(state, launched, running) {
 
   // Second row — appears only once the workspace is launched. Only
   // entry today is the Schedule button; matches the pendant's
-  // secondary row visually.
-  const extra = document.getElementById("controlsExtra");
-  if (extra) extra.style.display = launched ? "" : "none";
+  // secondary row visually. Visibility is CSS-owned (.show class).
+  document.getElementById("controlsExtra")?.classList.toggle("show", !!launched);
 }
 
 function updateIframe(state, launched) {

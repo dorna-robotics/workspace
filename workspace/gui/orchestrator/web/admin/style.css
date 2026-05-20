@@ -698,17 +698,12 @@
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
 /* Second row under Controls: holds the Schedule button (and any
-   future post-launch-only actions). Matches the pendant's secondary
-   row visually — sits below the primary controls with a small gap. */
-#controlsExtra {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-.ctrl-extra-btn {
-  flex: 1;
-  justify-content: center;
-}
+   future post-launch-only actions). Hidden until JS adds .show
+   once the workspace is launched. Mirrors the pendant's secondary
+   row visually. */
+#controlsExtra            { display: none; }
+#controlsExtra.show       { display: flex; gap: 8px; margin-top: 8px; }
+.ctrl-extra-btn           { flex: 1; justify-content: center; }
 
 /* Modal — inherits everything from the base .modal styles (border-
    radius, background, shadow, head/body padding); we only widen it
