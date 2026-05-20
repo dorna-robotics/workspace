@@ -699,17 +699,6 @@
 
 #scheduleSection .log-header { cursor: pointer; }
 #scheduleSection .log-header:hover .section-label { color: var(--text); }
-.schedule-summary {
-  font: 500 12px/1.4 var(--font);
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 240px;
-}
-.schedule-summary .sched-replan { color: var(--accent); font-weight: 600; font-family: var(--mono); }
-.schedule-summary .sched-active { color: var(--green);  font-weight: 600; }
-.schedule-summary .sched-done   { color: var(--muted); }
 
 /* Modal */
 .modal.schedule-modal {

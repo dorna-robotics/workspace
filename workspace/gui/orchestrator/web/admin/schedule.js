@@ -12,10 +12,8 @@ let _wsClosed = false;
 let _wsRetryMs = 1000;
 
 let _plan = null;
-let _replanId = 0;
 const _leafState = new Map();   // leaf_name -> "pending" | "running" | "done" | "skipped"
 
-let _summaryEl = null;
 let _modalEl = null;
 let _ganttEl = null;
 
@@ -54,7 +52,6 @@ function _tryWS() {
 function _ingest(msg) {
   if (msg.type === "schedule") {
     _plan = msg;
-    _replanId = msg.replan_id || 0;
     _leafState.clear();
     _render();
   } else if (msg.type === "action_start" || msg.type === "swap_start") {
@@ -67,9 +64,8 @@ function _ingest(msg) {
 }
 
 function _initDOM() {
-  _summaryEl = document.getElementById("scheduleSummary");
-  _modalEl   = document.getElementById("scheduleModalOverlay");
-  _ganttEl   = document.getElementById("ganttContainer");
+  _modalEl = document.getElementById("scheduleModalOverlay");
+  _ganttEl = document.getElementById("ganttContainer");
   const openBtn  = document.getElementById("btnOpenSchedule");
   const closeBtn = document.getElementById("btnScheduleClose");
   if (openBtn && !openBtn._wired)  { openBtn.addEventListener("click", openScheduleModal); openBtn._wired = true; }
@@ -93,47 +89,7 @@ export function closeScheduleModal() {
 }
 
 function _render() {
-  _renderSummary();
   if (_modalEl?.classList.contains("show")) _renderGantt();
-}
-
-function _renderSummary() {
-  if (!_summaryEl) return;
-  if (!_plan) { _summaryEl.textContent = "—"; return; }
-  const planLeafNames = new Set((_plan.actions || []).map(a => a.leaf_name));
-  const total = (_plan.actions || []).length;
-  // Only count real action leaves toward done/running — swap leaves
-  // are framework plumbing, not user-meaningful steps.
-  const doneCount = [..._leafState.entries()]
-    .filter(([k, v]) => planLeafNames.has(k) && (v === "done" || v === "skipped"))
-    .length;
-  const activeLeaf = [..._leafState.entries()]
-    .find(([k, v]) => planLeafNames.has(k) && v === "running")?.[0];
-
-  let bits;
-  if (activeLeaf) {
-    bits = `<span class="sched-active">${_short(activeLeaf)}</span>`;
-  } else if (doneCount >= total && total > 0) {
-    bits = `<span class="sched-done">complete</span>`;
-  } else {
-    bits = `${doneCount}/${total}`;
-  }
-  _summaryEl.innerHTML = bits;
-}
-
-function _short(leafName) {
-  // Match the label format used by Gantt blocks — PascalCase class
-  // name + item index, e.g. "Inspected(0)". Falls back to the raw
-  // leaf name for swap leaves (and anything else not in the plan).
-  if (_plan && Array.isArray(_plan.actions)) {
-    const a = _plan.actions.find(x => x.leaf_name === leafName);
-    if (a) return _esc(`${a.class_name || a.name}(${a.item})`);
-  }
-  return _esc(leafName.replace("(t", "(").replace(")", ")"));
-}
-function _esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) =>
-    ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
 }
 
 // ── SVG Gantt ──────────────────────────────────────────────────────────
