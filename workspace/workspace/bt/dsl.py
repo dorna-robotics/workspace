@@ -453,6 +453,7 @@ def build_precedence(
     plan: Sequence[Any],          # list of workspace.planner.pddl.Action
     registry: "ActionRegistry",
     initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
+    ctx: Optional["WorkspaceContext"] = None,
 ) -> List[set]:
     """Compute per-action causal predecessor sets from the plan.
 
@@ -469,10 +470,18 @@ def build_precedence(
     the most recent earlier action that REMOVED X.
 
     ``initial_state`` — needed when any action uses state-aware
-    ``eff(self, state, *params)``. The walker simulates state forward
-    along the plan so each state-aware eff sees the world it would
-    actually see at runtime. Defaults to ``frozenset()`` — fine for
-    purely static-eff projects.
+    ``self.state``. The walker simulates state forward along the plan
+    so each state-aware pre/eff sees the world it would actually see
+    at runtime. Defaults to ``frozenset()`` — fine for purely static
+    projects.
+
+    ``ctx`` — set on each fresh action instance so state-aware bodies
+    can also reach ``self.ctx`` (e.g. ``self.ctx.meta["objects"]`` to
+    enumerate the current slice's items). Without it, helpers like
+    ``self._ctx_objects()`` return ``{}`` and any pre/eff that depends
+    on object enumeration silently returns no facts — which the
+    scheduler then mis-reads as "no dependencies" and runs the action
+    at t=0. Always pass ctx when calling this from a project context.
     """
     state: FrozenSet[Tuple[Any, ...]] = (
         initial_state if initial_state is not None else frozenset()
@@ -487,8 +496,11 @@ def build_precedence(
                           "added": set(), "removed": set()})
             continue
         instance = cls()
-        # Expose the simulated state at this plan step so any
-        # ``self.state``-using pre/eff sees the right world.
+        # Expose ctx + the simulated state at this plan step so any
+        # state-aware pre/eff sees the right world. ctx is critical
+        # for ``self._ctx_objects()`` lookups (param enumeration).
+        if ctx is not None:
+            instance.ctx = ctx  # type: ignore[attr-defined]
         instance.state = state
         params = tuple(action.params)
         # pre

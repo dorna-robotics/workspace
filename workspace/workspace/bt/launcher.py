@@ -470,7 +470,7 @@ def run_protocol(
     def _precedence(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
-        return build_precedence(plan, registry, initial_state=initial)
+        return build_precedence(plan, registry, initial_state=initial, ctx=ctx)
 
     build_schedule = make_schedule_builder(meta, precedence_fn=_precedence)
 
