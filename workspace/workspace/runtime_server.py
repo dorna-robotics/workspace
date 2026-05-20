@@ -3,7 +3,7 @@ import os
 import time
 import json
 from threading import Thread
-from typing import Callable, Any, Optional
+from typing import Callable, Any, List, Optional
 
 import tornado.ioloop
 import tornado.web
@@ -334,11 +334,13 @@ def _broadcast_status(status: dict):
 # to `_broadcast_schedule_event` below; without a runtime server (e.g.
 # headless tests) the publisher is None and these hooks are no-ops.
 _schedule_ws_clients: set = set()
-# Cached last events so a freshly-connected client sees the current
-# schedule + executed-so-far state immediately instead of waiting for
-# the next replan.
-_schedule_last: Optional[dict] = None
-_schedule_runtime_events: list = []   # in-order action/swap events for the current plan
+# Full history of schedule + runtime events for the current run, so a
+# client that connects mid-run (or reloads its page) sees the same
+# Gantt the operator was looking at — including every slice that has
+# already finished. Reset when a fresh workflow starts (signalled by
+# a ``schedule`` event with ``replan_id == 1``).
+_schedule_history: List[dict] = []         # every schedule event so far
+_schedule_runtime_events: List[dict] = []  # every action/swap start/end so far
 
 
 class ScheduleWebSocket(tornado.websocket.WebSocketHandler):
@@ -349,15 +351,16 @@ class ScheduleWebSocket(tornado.websocket.WebSocketHandler):
 
     def open(self):
         _schedule_ws_clients.add(self)
-        # Replay last schedule + the live event log so the new client
-        # draws something useful immediately.
-        if _schedule_last is not None:
-            try:
-                self.write_message(json.dumps(_schedule_last))
-                for ev in _schedule_runtime_events:
-                    self.write_message(json.dumps(ev))
-            except Exception:
-                pass
+        # Replay the full history so the new client sees the same
+        # chart the operator was looking at, including any slices
+        # that already finished.
+        try:
+            for ev in _schedule_history:
+                self.write_message(json.dumps(ev))
+            for ev in _schedule_runtime_events:
+                self.write_message(json.dumps(ev))
+        except Exception:
+            pass
 
     def on_close(self):
         _schedule_ws_clients.discard(self)
@@ -367,15 +370,21 @@ def _broadcast_schedule_event(event: dict) -> None:
     """Publisher passed into ``run_protocol`` via ``event_publisher``.
 
     Called from arbitrary threads (BT worker thread, replanner). Cache
-    schedule events for late-joining clients, then hop onto the IO loop
-    to push to every connected websocket.
+    every event for late-joining clients, then hop onto the IO loop to
+    push to every connected websocket.
+
+    Cache lifecycle: a ``schedule`` event with ``replan_id == 1`` is
+    the launcher's "fresh workflow" signal — clear the history so the
+    operator's view starts from the new run's first slice. Subsequent
+    schedule events append (slice appended to slice).
     """
-    global _schedule_last, _schedule_runtime_events
+    global _schedule_history, _schedule_runtime_events
     etype = event.get("type")
     if etype == "schedule":
-        # A new plan replaces all previous runtime state.
-        _schedule_last = event
-        _schedule_runtime_events = []
+        if event.get("replan_id") == 1:
+            _schedule_history = []
+            _schedule_runtime_events = []
+        _schedule_history.append(event)
     elif etype in ("action_start", "action_end", "swap_start", "swap_end"):
         _schedule_runtime_events.append(event)
 
