@@ -139,18 +139,18 @@ function _renderGantt() {
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
   // Auto-fit pxPerSec — each block must be wide enough for its label.
-  const FONT_PX = 14;
-  const CHAR_W = FONT_PX * 0.62;
-  const PAD_X = 36;
+  const FONT_PX = 13;
+  const CHAR_W = FONT_PX * 0.60;
+  const PAD_X = 32;
   function labelOf(a) { return `${a.class_name || a.name}(${a.item})`; }
   function neededWidth(a) { return labelOf(a).length * CHAR_W + PAD_X; }
 
-  const ROW_H   = 68;
-  const ROW_PAD = 14;
-  const LEFT_W  = 160;
-  const TOP_PAD = 22;
-  const BOT_PAD = 22;
-  const SIDE_PAD = 28;
+  const ROW_H   = 58;
+  const ROW_PAD = 12;
+  const LEFT_W  = 148;
+  const TOP_PAD = 20;
+  const BOT_PAD = 20;
+  const SIDE_PAD = 24;
   const horizon = Math.max(_plan.makespan || 0, 30);
 
   let minPxPerSec = 6;
@@ -175,10 +175,8 @@ function _renderGantt() {
 
   // Layered <g> elements so paint order is deterministic.
   const gRows = document.createElementNS(svgNS, "g");
-  const gConn = document.createElementNS(svgNS, "g");
   const gBlocks = document.createElementNS(svgNS, "g");
   svg.appendChild(gRows);
-  svg.appendChild(gConn);
   svg.appendChild(gBlocks);
 
   // Row labels + dividers — clean Apple-y rhythm.
@@ -213,32 +211,8 @@ function _renderGantt() {
     placements.set(a.leaf_name, { a, x, w, y, h, rowIdx });
   }
 
-  // Connector lines: subtle 1px lines on the tool-resource row that
-  // bridge consecutive blocks across the gap reserved for a tool swap.
-  // Replaces the previous "grey block" rendering for swaps.
-  const robotActions = actions
-    .filter(a => (a.resources || []).includes(tres))
-    .sort((x, y) => x.start_t - y.start_t);
-  for (let i = 0; i + 1 < robotActions.length; i++) {
-    const pa = placements.get(robotActions[i].leaf_name);
-    const pb = placements.get(robotActions[i + 1].leaf_name);
-    if (!pa || !pb) continue;
-    if (pa.x + pa.w >= pb.x - 2) continue;          // no gap → no line
-    const y = pa.y + pa.h / 2;
-    const stateA = _leafState.get(robotActions[i].leaf_name) || "pending";
-    const stateB = _leafState.get(robotActions[i + 1].leaf_name) || "pending";
-    const cls = (stateA === "done" || stateA === "skipped")
-      ? (stateB === "running" || stateB === "done" || stateB === "skipped"
-          ? "sched-connector done" : "sched-connector half")
-      : "sched-connector";
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", String(pa.x + pa.w));
-    line.setAttribute("x2", String(pb.x));
-    line.setAttribute("y1", String(y));
-    line.setAttribute("y2", String(y));
-    line.setAttribute("class", cls);
-    gConn.appendChild(line);
-  }
+  // No connector lines — the spatial gap between blocks already
+  // communicates "robot idle here." Less noise, more HIG.
 
   // Action blocks.
   for (const a of actions) {
