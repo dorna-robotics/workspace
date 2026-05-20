@@ -697,6 +697,24 @@ class Action:
     post_check:          Any = None
     trigger:             Optional[str] = None  # "end" or None
 
+    # Schedule visibility. Three forms accepted:
+    #   * ``True``  (default)         — register normally, show in Gantt.
+    #   * ``False``                   — don't register at all. Use for
+    #                                   intermediate base classes that
+    #                                   only exist to share code, e.g.
+    #                                   ``class ShakerCycleBase(Action):
+    #                                       schedule = False`` — replaces
+    #                                   the older underscore-prefix
+    #                                   convention with something
+    #                                   explicit.
+    #   * ``{"display": False, …}``   — registered normally (the planner
+    #                                   and scheduler still see it), but
+    #                                   suppressed from the live Gantt.
+    #                                   Reserved keys: ``display``. More
+    #                                   keys (cleanup, ordering, …) can
+    #                                   be added without an API break.
+    schedule:            Any = True
+
     # ── Framework-managed per-call attributes ──────────────────────────
     # These are set by the framework before invoking pre()/eff() so
     # action bodies can read them directly:
@@ -719,7 +737,19 @@ class Action:
     # but projects can use isolated registries (see ActionRegistry.use()).
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Don't register intermediate bases (names starting with _).
+        # Honour the explicit ``schedule`` opt-out for intermediate
+        # base classes (``schedule = False``). We deliberately check
+        # ``cls.__dict__`` instead of plain attribute lookup so the
+        # opt-out is local to the base — a concrete subclass that
+        # doesn't redeclare ``schedule`` falls back to the Action-level
+        # default (True) and registers normally. Without this, a
+        # ``ShakerCycleBase(Action): schedule = False`` would silently
+        # disable every concrete shaker subclass too.
+        sched = cls.__dict__.get("schedule", True)
+        if sched is False:
+            return
+        # Legacy: underscore-prefix names also skip registration. New
+        # code should use ``schedule = False`` instead.
         if cls.__name__.startswith("_"):
             return
         name = _to_snake(cls.__name__)

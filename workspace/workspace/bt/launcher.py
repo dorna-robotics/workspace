@@ -57,6 +57,29 @@ from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
 log = logging.getLogger(__name__)
 
 
+def _schedule_displays(cls) -> bool:
+    """Whether an Action class should appear on the live Gantt.
+
+    Honours the project-facing ``schedule`` attribute on Action
+    subclasses:
+      * ``True``  → display
+      * ``False`` → already filtered before this point (the class
+                    doesn't even register), but returning False here
+                    is harmless and keeps the check uniform.
+      * ``{"display": False, ...}`` → registered/planned but hidden
+                    from the Gantt.
+    Unknown shapes default to True.
+    """
+    if cls is None:
+        return True
+    sched = getattr(cls, "schedule", True)
+    if sched is False:
+        return False
+    if isinstance(sched, dict):
+        return bool(sched.get("display", True))
+    return True
+
+
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
 
 
@@ -556,6 +579,7 @@ def run_protocol(
                             "tool": meta[n].tool if n in meta else None,
                         }
                         for n, i, s in actions_list
+                        if _schedule_displays(registry.get(n))
                     ],
                     "swaps": [
                         {
