@@ -737,20 +737,16 @@ class Action:
     # but projects can use isolated registries (see ActionRegistry.use()).
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Honour the explicit ``schedule`` opt-out for intermediate
-        # base classes (``schedule = False``). We deliberately check
-        # ``cls.__dict__`` instead of plain attribute lookup so the
+        # Registration is controlled exclusively by the ``schedule``
+        # class attribute — no implicit rules. ``schedule = False`` on
+        # the class itself opts it out (intermediate base classes that
+        # only share code). Anything else registers.
+        #
+        # ``cls.__dict__`` rather than plain attribute lookup so the
         # opt-out is local to the base — a concrete subclass that
         # doesn't redeclare ``schedule`` falls back to the Action-level
-        # default (True) and registers normally. Without this, a
-        # ``ShakerCycleBase(Action): schedule = False`` would silently
-        # disable every concrete shaker subclass too.
-        sched = cls.__dict__.get("schedule", True)
-        if sched is False:
-            return
-        # Legacy: underscore-prefix names also skip registration. New
-        # code should use ``schedule = False`` instead.
-        if cls.__name__.startswith("_"):
+        # default (True) and registers normally.
+        if cls.__dict__.get("schedule", True) is False:
             return
         name = _to_snake(cls.__name__)
         ActionRegistry.current().register(name, cls)
