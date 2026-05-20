@@ -140,7 +140,7 @@ Task-oriented routing — go straight to the file for what you want to change.
 | Change the GUI form | `launch.yaml` kwargs |
 | Add a new vision / sensor check | `checks.py` (method + `register_check` line) |
 | Wire a check into an action | `pre_check` / `post_check` class attr on the action |
-| Add an End-cleanup action | new `Action` subclass with `schedule = {"cleanup": True}` (see §3.2) |
+| Add an End-cleanup action | new `Action` subclass with `trigger="end"` (see §3.2) |
 | Change the scene | `scene/base.j2` |
 | Change recipe bindings (which class implements which alias) | `recipes.yaml` |
 | Override the protocol runner | add a `workflow.py` and change `main.py`'s `workflow_fn` |
@@ -264,7 +264,7 @@ What's happening:
 * `Action` is a class — subclass and override `pre`, `eff`, `execute`.
 * The class attributes carry **two flavours of metadata**:
     - Scheduling / runtime: `params`, `duration`, `resource`, `tool`,
-      `tool_swap_duration`, `schedule`.
+      `tool_swap_duration`, `trigger`, `schedule`.
     - Operational checks: `pre_check`, `post_check` (names registered
       in `checks.py`).
   See §5 for the full vocabulary.
@@ -294,29 +294,58 @@ parentheses.
 | `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the previous same-resource action used a different `tool`. Per-action so swap costs can differ between tool changes. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
-| `schedule` | `bool \| dict` (`True`) | How the action participates in registration, planning, and the live Gantt. See §3.2 for the full spec. Defaults to **registered + plan + Gantt**. |
+| `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"end"`` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
+| `schedule` | `bool \| dict` (`True`) | Planner / scheduler / Gantt visibility — explicit, no implicit rules. See §3.3 for the full spec. Defaults to **registered + plan + Gantt**. |
 
-### 3.2 `schedule` — the only knob that controls visibility
+### 3.2 `trigger` — lifecycle event hooks
 
-Everything about whether an action appears in the planner, the
-scheduler, the Gantt, and the End-cleanup subtree is controlled by
-**one explicit attribute**. No naming-convention magic, no hidden
-rules.
+`trigger` controls **when** an action runs. Today it has one
+recognised value, but the attribute exists so the framework can
+grow more lifecycle hooks (`"start"`, `"error"`, …) without
+overloading other attributes.
 
+| Value | Effect |
+|---|---|
+| `None` *(default)* | Action fires as part of the goal-directed plan. |
+| `"end"` | Action runs only when the operator clicks End. Excluded from PDDL templates and the scheduler. The launcher collects every `trigger="end"` class into the End-cleanup subtree (registry order, one leaf per class, `item_index=0`). |
+
+Typical use — park the tool when the operator stops the run:
+
+```python
+class ParkTool(Action):
+    """Release whatever tool is held — runs on operator End."""
+    params   = []        # scene-level, no per-item iteration
+    duration = 5
+    resource = "robot"
+    tool     = None      # "release current tool"
+    trigger  = "end"
+
+    def execute(self):
+        return "none"
+```
+
+The auto-swap path drops the held tool before `execute()` runs — so
+the typical body is just `return "none"`.
+
+### 3.3 `schedule` — planner / Gantt visibility
+
+`schedule` controls **how** an action shows up in the planner and on
+the live Gantt. Independent from `trigger` (which controls *when*).
 Three forms accepted:
 
 | Form | Effect |
 |---|---|
 | `schedule = True` *(default)* | Register the class. Include it in the goal-directed plan, the scheduler, and the live Gantt. |
 | `schedule = False` | **Don't register the class at all.** Use for intermediate base classes that exist only to share code (`class ShakerCycleBase(Action): schedule = False`). The check is local to the class itself — concrete subclasses that don't redeclare `schedule` fall back to the default and register normally. |
-| `schedule = {"display": ..., "cleanup": ...}` | Register normally, but tweak two independent flags. Both keys default to their `True`-form values. |
+| `schedule = {"display": ...}` | Register normally, but suppress the Gantt block (`display=False`). Still in the plan, still executes. |
 
-**Dict keys:**
+**Dict keys (reserved):**
 
 | Key | Default | Meaning |
 |---|---|---|
 | `display` | `True` | Show this action on the live Gantt. Set to `False` to hide it (still registered, still planned, just suppressed from the GUI). |
-| `cleanup` | `False` | Treat this as an End-cleanup action: the planner doesn't include it in the goal-directed plan, the scheduler doesn't size it, and instead the engine runs it (and every other cleanup action) once in a sequence when the operator clicks **End**. Cleanup actions are scene-level — `params` should be `[]`. The action's `tool:` is the authoritative final tool state. |
+
+More keys may be added later without breaking the API.
 
 **Examples:**
 
@@ -332,23 +361,7 @@ class ShakerCycleBase(Action):          # abstract base — share code, don't re
 class HiddenDiagnostic(Action):         # plan + execute, but don't clutter the Gantt
     schedule = {"display": False}
     ...
-
-class ParkTool(Action):                 # runs on End, not part of the plan
-    params   = []
-    resource = "robot"
-    tool     = None                     # "release current tool"
-    schedule = {"cleanup": True}
-
-    def execute(self):
-        # Auto-swap dropped the tool before this runs — nothing to do.
-        pass
 ```
-
-**When does an End-cleanup action run?** The operator clicks End in
-the GUI → the BT engine lets the current action finish → it then runs
-every `cleanup` action once in sequence (registry order) → exit.
-Cleanup actions are *excluded* from PDDL templates, the scheduler,
-and the live Gantt automatically.
 
 ### 3.3 `eff()` — always a dict of named branches
 
@@ -771,13 +784,13 @@ candidates — then filters via `pre()`.
 
 #### Zero-param actions
 
-For scene-level actions (e.g. End-cleanup), `params = []`. The
-planner doesn't enumerate; one candidate exists.
+For scene-level actions (e.g. End-trigger cleanup), `params = []`.
+The planner doesn't enumerate; one candidate exists.
 
 ```python
 class ParkTool(Action):
-    params   = []
-    schedule = {"cleanup": True}
+    params  = []
+    trigger = "end"
 
     def execute(self):
         return "none"
@@ -1501,7 +1514,8 @@ If you have a pace_or-style linear project and want to convert it:
 2. Replace `pace_bt/actions.py` predicates + `setup(**kwargs)` +
    `Action` subclasses with yours. **The vocabulary mostly matches**
    `protocol.yaml`: `tool`, `duration`, `pre_check`, `post_check`,
-   `tool_swap_duration`, `schedule`. Differences from pace_or:
+   `tool_swap_duration`, `trigger`, `schedule`. Differences from
+   pace_or:
    * `pre()` / `eff()` **replace** the `requires:` list — ordering
      comes from facts now, derived by the planner.
    * `resource` **replaces** the implicit-robot + `background:` flag

@@ -475,7 +475,7 @@ class ParkTool(Action):
     duration    = 5
     resource    = "robot"
     tool        = None
-    schedule    = {"cleanup": True}
+    trigger     = "end"
 
     def execute(self):
         return "none"

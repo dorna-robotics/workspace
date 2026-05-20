@@ -102,7 +102,7 @@ log = logging.getLogger(__name__)
 
 
 def _schedule_dict(cls):
-    """Resolve ``Action.schedule`` to a dict of {display, cleanup}.
+    """Resolve ``Action.schedule`` to a dict of ``{display: bool}``.
 
     The class attribute may be ``True`` / ``False`` / a partial dict;
     this helper returns the fully-defaulted dict form so callers
@@ -111,20 +111,17 @@ def _schedule_dict(cls):
     Note: ``False`` ("don't register") is checked separately at
     registration time via ``cls.__dict__``. By the time a class
     reaches this helper it's already in the registry, so we just
-    return the display/cleanup behaviour and ignore the False case.
+    return the display behaviour and ignore the False case.
     """
     sched = getattr(cls, "schedule", True)
     if isinstance(sched, dict):
-        return {
-            "display": bool(sched.get("display", True)),
-            "cleanup": bool(sched.get("cleanup", False)),
-        }
-    return {"display": True, "cleanup": False}
+        return {"display": bool(sched.get("display", True))}
+    return {"display": True}
 
 
-def _is_cleanup(cls) -> bool:
-    """Is this action a cleanup leaf (runs on End, not part of plan)?"""
-    return _schedule_dict(cls)["cleanup"]
+def _is_end_trigger(cls) -> bool:
+    """Is this an End-cleanup action (``trigger = "end"``)?"""
+    return getattr(cls, "trigger", None) == "end"
 
 
 # ── Internal: facts and predicates ─────────────────────────────────────────
@@ -727,7 +724,20 @@ class Action:
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
 
-    # Schedule behaviour — explicit, no implicit rules. Three forms:
+    # Lifecycle-event hook. Independent from ``schedule``: ``trigger``
+    # controls *when* the action runs; ``schedule`` controls how it
+    # appears in the planner/Gantt.
+    #
+    #   * ``None`` (default) — fires as part of the goal-directed plan.
+    #   * ``"end"``          — runs when the operator clicks End.
+    #                          Excluded from PDDL templates and the
+    #                          scheduler; the launcher collects every
+    #                          ``trigger="end"`` class into the
+    #                          End-cleanup subtree. Typical: park the
+    #                          held tool, return home, dispose waste.
+    trigger:             Optional[str] = None
+
+    # Planner / Gantt visibility — explicit, no implicit rules:
     #
     #   * ``True``  (default)
     #         Register normally + show on the live Gantt + take part in
@@ -743,16 +753,8 @@ class Action:
     #         register normally.
     #
     #   * dict with optional keys
-    #         ``display`` (default True)  — appear on the live Gantt.
-    #         ``cleanup`` (default False) — runs on End, NOT as part of
-    #                                       the goal-directed plan. The
-    #                                       launcher collects every
-    #                                       cleanup action into the
-    #                                       End-cleanup subtree.
-    #
-    #         Example:
-    #             class ParkTool(Action):
-    #                 schedule = {"cleanup": True}
+    #         ``display`` (default True) — appear on the live Gantt.
+    #         More keys may be added without an API break.
     schedule:            Any = True
 
     # ── Framework-managed per-call attributes ──────────────────────────
@@ -967,15 +969,15 @@ class ActionRegistry:
         """Build a list of :class:`ActionTemplate` for the PDDL planner.
 
         Each registered action class becomes one template **unless**
-        it carries ``schedule = {"cleanup": True}`` — those are scene
-        cleanup, not part of the goal-directed plan; the engine runs
+        it carries ``trigger = "end"`` — those are scene cleanup, not
+        part of the goal-directed plan; the engine runs
         them when the operator clicks End). The instance used during
         planning carries ``ctx`` so its ``param_iter`` / ``pre`` /
         ``eff`` can consult ``ctx.meta``.
         """
         templates: List[ActionTemplate] = []
         for name, cls in self._actions.items():
-            if _is_cleanup(cls):
+            if _is_end_trigger(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1048,7 +1050,7 @@ class ActionRegistry:
         added: set = set()
         removed: set = set()
         for cls in self._actions.values():
-            if _is_cleanup(cls):
+            if _is_end_trigger(cls):
                 continue
             instance = cls()
             # Probe with an empty state. Static effs ignore self.state;
@@ -1094,7 +1096,7 @@ class ActionRegistry:
         empty: State = frozenset()
         out: set = set()
         for cls in self._actions.values():
-            if _is_cleanup(cls):
+            if _is_end_trigger(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1124,11 +1126,11 @@ class ActionRegistry:
     def to_meta(self) -> Dict[str, ActionMeta]:
         out: Dict[str, ActionMeta] = {}
         for name, cls in self._actions.items():
-            # Cleanup actions (``schedule = {"cleanup": True}``) aren't
+            # End-trigger actions (``trigger = "end"``) aren't
             # scheduled work — the engine runs them outside the schedule
             # when End is
             # requested. Keep them out of scheduler meta too.
-            if _is_cleanup(cls):
+            if _is_end_trigger(cls):
                 continue
             # ``tool`` is a sentinel for "keep current tool" — for the
             # scheduler that means "no opinion on the held tool" which
