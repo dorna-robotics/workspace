@@ -239,18 +239,20 @@ def make_schedule_builder(
         A callable ``(plan) -> schedule`` with the right signature for
         :class:`workspace.planner.Replanner`.
     """
-    if use_cpsat:
-        # CP-SAT path lives in workspace.planner.scheduler.ORScheduler.
-        # It's protocol.yaml-driven today; adapting it to accept Actions
-        # directly is future work. For now use_cpsat=True falls back to
-        # greedy with a warning.
-        log.warning(
-            "make_schedule_builder: CP-SAT path on PDDL actions not yet "
-            "implemented — falling back to greedy."
-        )
-
     def _build(actions: Sequence[Action]) -> List[Tuple[str, int, float]]:
         preds = precedence_fn(actions) if precedence_fn is not None else None
+        if use_cpsat:
+            try:
+                # Local import — ortools is an optional dependency. If
+                # the project doesn't have it, the failure surfaces here
+                # and we fall back to greedy without crashing the run.
+                from workspace.planner.cpsat_scheduler import schedule_cpsat
+                return schedule_cpsat(actions, meta, predecessors=preds)
+            except Exception as ex:
+                log.warning(
+                    "CP-SAT scheduler failed (%s: %s) — falling back to greedy",
+                    type(ex).__name__, ex,
+                )
         return schedule_greedy(actions, meta, predecessors=preds)
 
     return _build

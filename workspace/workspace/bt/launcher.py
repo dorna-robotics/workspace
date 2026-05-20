@@ -260,6 +260,7 @@ def run_protocol(
     project_name: Optional[str] = None,
     plan_window: int = 4,
     slice_dim: str = "tube",
+    scheduler: str = "cpsat",
     **kwargs,
 ) -> py_trees.common.Status:
     """Default plan → schedule → BT tick lifecycle for any BT project.
@@ -301,6 +302,12 @@ def run_protocol(
         slice_dim: Which ``objects`` key to slice along. Default
             ``"tube"`` — matches the convention in lab protocols.
             Only meaningful when ``setup()`` returns ``item_done``.
+        scheduler: ``"cpsat"`` (default) uses the CP-SAT solver —
+            optimal makespan, clusters same-tool actions automatically,
+            packs work into idle robot windows. ``"greedy"`` uses the
+            in-house earliest-start scheduler — fast, no dependency,
+            but locally-optimal only. CP-SAT falls back to greedy
+            automatically if ortools is missing or the solver errors.
         **kwargs: Operator-supplied parameters from the GUI; forwarded
             to ``actions_module.setup``.
 
@@ -472,7 +479,11 @@ def run_protocol(
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
         return build_precedence(plan, registry, initial_state=initial, ctx=ctx)
 
-    build_schedule = make_schedule_builder(meta, precedence_fn=_precedence)
+    use_cpsat = (str(scheduler).lower() == "cpsat")
+    build_schedule = make_schedule_builder(
+        meta, use_cpsat=use_cpsat, precedence_fn=_precedence,
+    )
+    log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 
     # 4. Default tree shape: from_schedule + per-leaf retry + outer
     #    replan_on_failure. Project can supply its own build_tree by

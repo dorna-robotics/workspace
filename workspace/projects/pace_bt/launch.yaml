@@ -7,7 +7,8 @@ recipes:      recipes.j2           # recipes — Jinja2 template (speed_factor d
 actions:      actions.py           # protocol: predicates + setup + Action classes
 checks:       checks.py            # vision/sensor Checks class (referenced by name from actions)
 
-plan_window:  4    # planner window size; see framework guide §12
+plan_window:  4       # planner window size; see framework guide §12
+scheduler:    cpsat   # cpsat | greedy — see framework guide §12
 
 # kwargs — operator GUI form, passed to workflow_fn at runtime.
 # Supported types: int, float, str, bool, choice, textarea, file
