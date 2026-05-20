@@ -695,10 +695,20 @@
 [data-theme="light"] .pendant-steps { background: #fff; }
 [data-theme="light"] .pendant-exit { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 
-/* ── Schedule view — sidebar chip + Gantt modal ──────────────────────── */
+/* ── Schedule view — modal + second-row trigger button ───────────────── */
 
-#scheduleSection .log-header { cursor: pointer; }
-#scheduleSection .log-header:hover .section-label { color: var(--text); }
+/* Second row under Controls: holds the Schedule button (and any
+   future post-launch-only actions). Matches the pendant's secondary
+   row visually — sits below the primary controls with a small gap. */
+#controlsExtra {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ctrl-extra-btn {
+  flex: 1;
+  justify-content: center;
+}
 
 /* Modal — inherits everything from the base .modal styles (border-
    radius, background, shadow, head/body padding); we only widen it

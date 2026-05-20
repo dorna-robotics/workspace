@@ -1,6 +1,6 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { connectScheduleWS, disconnectScheduleWS } from "./schedule.js";
+import { connectScheduleWS, disconnectScheduleWS, openScheduleModal } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -1087,6 +1087,12 @@ function renderControls(state, launched, running) {
     controls.appendChild(spacer);
     addBtn("Kill", "kill", {});
   }
+
+  // Second row — appears only once the workspace is launched. Only
+  // entry today is the Schedule button; matches the pendant's
+  // secondary row visually.
+  const extra = document.getElementById("controlsExtra");
+  if (extra) extra.style.display = launched ? "" : "none";
 }
 
 function updateIframe(state, launched) {
@@ -1540,6 +1546,10 @@ $("pendantParams").addEventListener("click", () => {
   const launched = isLaunched(_lastState);
   openParamsModal(launched);
 });
+
+// Schedule buttons (sidebar + pendant) — both open the same modal.
+$("btnSchedule")?.addEventListener("click", () => openScheduleModal());
+$("pendantSchedule")?.addEventListener("click", () => openScheduleModal());
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));

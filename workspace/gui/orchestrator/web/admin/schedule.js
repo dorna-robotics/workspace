@@ -66,10 +66,11 @@ function _ingest(msg) {
 function _initDOM() {
   _modalEl = document.getElementById("scheduleModalOverlay");
   _ganttEl = document.getElementById("ganttContainer");
-  const openBtn  = document.getElementById("btnOpenSchedule");
   const closeBtn = document.getElementById("btnScheduleClose");
-  if (openBtn && !openBtn._wired)  { openBtn.addEventListener("click", openScheduleModal); openBtn._wired = true; }
-  if (closeBtn && !closeBtn._wired) { closeBtn.addEventListener("click", closeScheduleModal); closeBtn._wired = true; }
+  if (closeBtn && !closeBtn._wired) {
+    closeBtn.addEventListener("click", closeScheduleModal);
+    closeBtn._wired = true;
+  }
   if (_modalEl && !_modalEl._wired) {
     _modalEl.addEventListener("click", (e) => { if (e.target === _modalEl) closeScheduleModal(); });
     _modalEl._wired = true;
