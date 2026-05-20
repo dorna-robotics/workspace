@@ -1,5 +1,6 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
+import { connectScheduleWS, disconnectScheduleWS } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -1107,6 +1108,7 @@ function updateIframe(state, launched) {
       disconnectStepWS();
       disconnectDevicesWS();
       disconnectRuntimeStatusWS();
+      disconnectScheduleWS();
     }
     return;
   }
@@ -1123,6 +1125,7 @@ function updateIframe(state, launched) {
     connectStepWS(targetUrl);
     connectDevicesWS(targetUrl);
     connectRuntimeStatusWS(targetUrl);
+    connectScheduleWS(targetUrl);
   }
 }
 

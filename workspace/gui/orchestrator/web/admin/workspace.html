@@ -484,6 +484,15 @@
         <pre id="paramsPre" style="display:none" class="params-pre">(no parameters)</pre>
       </div>
 
+      <div id="scheduleSection">
+        <div class="log-header" id="btnOpenSchedule" title="Open schedule view">
+          <div class="section-label">Schedule</div>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-chevron"><polyline points="9 18 15 12 9 6"/></svg>
+          <div class="spacer"></div>
+          <span class="schedule-summary" id="scheduleSummary">—</span>
+        </div>
+      </div>
+
       <div>
         <div class="log-header" id="btnToggleLogs" title="Expand logs">
           <div class="section-label">Logs</div>
@@ -574,6 +583,34 @@
       <div class="kwargs-form" id="paramsForm"></div>
     </div>
     <div class="modal-foot" id="paramsModalFoot"></div>
+  </div>
+</div>
+
+<!-- Schedule (Gantt) modal — opens from the sidebar Schedule chip. Renders
+     the framework-emitted plan + execution events for the current run. -->
+<div class="modal-overlay" id="scheduleModalOverlay">
+  <div class="modal schedule-modal">
+    <div class="modal-head">
+      <h3>Schedule</h3>
+      <div class="schedule-stats" id="scheduleModalStats"></div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnScheduleClose" title="Close">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body schedule-body">
+      <div id="ganttContainer" class="gantt-container"></div>
+      <div class="schedule-legend">
+        <span class="legend-item"><span class="swatch" style="background:#4f9cf9"></span>gripper</span>
+        <span class="legend-item"><span class="swatch" style="background:#3ec46d"></span>needle</span>
+        <span class="legend-item"><span class="swatch" style="background:#b384ff"></span>gripper_2ml</span>
+        <span class="legend-item"><span class="swatch" style="background:#ffa84a"></span>feeder_tool</span>
+        <span class="legend-item"><span class="swatch" style="background:#27a3a3"></span>tool-agnostic</span>
+        <span class="legend-item"><span class="swatch swatch-stripe"></span>tool swap</span>
+      </div>
+    </div>
   </div>
 </div>
 

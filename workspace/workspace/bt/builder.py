@@ -59,7 +59,32 @@ class SwapLeaf(RecipeAction):
         self._from_tool = from_tool
         self._to_tool = to_tool
 
+    def _publish(self, event: Dict[str, Any]) -> None:
+        meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else None
+        pub = (meta or {}).get("event_publisher")
+        if pub is None:
+            return
+        try:
+            pub(event)
+        except Exception:
+            log.exception("event_publisher raised — ignoring")
+
     def execute(self) -> bool:
+        import time as _time
+        self._publish({
+            "type": "swap_start", "name": self.name,
+            "from": self._from_tool, "to": self._to_tool,
+            "wall_ts": _time.time(),
+        })
+        try:
+            return self._execute_body()
+        finally:
+            self._publish({
+                "type": "swap_end", "name": self.name,
+                "wall_ts": _time.time(),
+            })
+
+    def _execute_body(self) -> bool:
         log.info("BT swap  START: %s", self.name)
         rcp = self.ctx.recipes or {}
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}

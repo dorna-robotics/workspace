@@ -1263,6 +1263,23 @@ class _DSLActionLeaf(RecipeAction):
 
     # ── BT lifecycle ────────────────────────────────────────────────────
 
+    def _publish(self, event: Dict[str, Any]) -> None:
+        """Emit a leaf-lifecycle event to ``ctx.meta["event_publisher"]``.
+
+        Used by the schedule-visualisation websocket to track actual
+        wall-clock starts/ends per action (the predicted durations in
+        ActionMeta are estimates only). No-op when no publisher wired.
+        """
+        meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else None
+        pub = (meta or {}).get("event_publisher")
+        if pub is None:
+            return
+        try:
+            pub(event)
+        except Exception:
+            # A buggy publisher must NEVER break the runtime.
+            log.exception("event_publisher raised — ignoring")
+
     def execute(self) -> bool:
         # Reset branch selection — leaves can be re-ticked across
         # replans, so per-tick state needs fresh init.
@@ -1270,7 +1287,23 @@ class _DSLActionLeaf(RecipeAction):
         self._skipped = False
 
         log.info("BT leaf START: %s", self.name)
+        import time as _time
+        self._publish({
+            "type": "action_start", "name": self.name,
+            "wall_ts": _time.time(),
+        })
 
+        try:
+            return self._execute_body()
+        finally:
+            self._publish({
+                "type": "action_end", "name": self.name,
+                "wall_ts": _time.time(),
+                "branch": self._branch_choice,
+                "skipped": getattr(self, "_skipped", False),
+            })
+
+    def _execute_body(self) -> bool:
         # 1. pre_check — runs BEFORE tool swap. False = skip the whole
         #    action (treated as success so the BT moves on without
         #    failing the parent sequence; matches pace_or semantics).

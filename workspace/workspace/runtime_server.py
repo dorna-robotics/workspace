@@ -322,6 +322,78 @@ def _broadcast_status(status: dict):
 
 
 # --------------------------------------------------
+# Schedule WebSocket — live BT plan + execution timeline
+# --------------------------------------------------
+# Project-scoped channel that streams scheduling events to the GUI's
+# Gantt-chart modal: ``schedule`` on each replan (with the full plan),
+# ``action_start`` / ``action_end`` and ``swap_start`` / ``swap_end``
+# as the BT executes. The Gantt overlays actual wall-time durations on
+# top of the predicted schedule so operators can see drift live.
+#
+# The framework's `bt.launcher.run_protocol` wires `event_publisher`
+# to `_broadcast_schedule_event` below; without a runtime server (e.g.
+# headless tests) the publisher is None and these hooks are no-ops.
+_schedule_ws_clients: set = set()
+# Cached last events so a freshly-connected client sees the current
+# schedule + executed-so-far state immediately instead of waiting for
+# the next replan.
+_schedule_last: Optional[dict] = None
+_schedule_runtime_events: list = []   # in-order action/swap events for the current plan
+
+
+class ScheduleWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws/schedule — push schedule + execution events to the GUI."""
+
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        _schedule_ws_clients.add(self)
+        # Replay last schedule + the live event log so the new client
+        # draws something useful immediately.
+        if _schedule_last is not None:
+            try:
+                self.write_message(json.dumps(_schedule_last))
+                for ev in _schedule_runtime_events:
+                    self.write_message(json.dumps(ev))
+            except Exception:
+                pass
+
+    def on_close(self):
+        _schedule_ws_clients.discard(self)
+
+
+def _broadcast_schedule_event(event: dict) -> None:
+    """Publisher passed into ``run_protocol`` via ``event_publisher``.
+
+    Called from arbitrary threads (BT worker thread, replanner). Cache
+    schedule events for late-joining clients, then hop onto the IO loop
+    to push to every connected websocket.
+    """
+    global _schedule_last, _schedule_runtime_events
+    etype = event.get("type")
+    if etype == "schedule":
+        # A new plan replaces all previous runtime state.
+        _schedule_last = event
+        _schedule_runtime_events = []
+    elif etype in ("action_start", "action_end", "swap_start", "swap_end"):
+        _schedule_runtime_events.append(event)
+
+    if _main_ioloop is None or not _schedule_ws_clients:
+        return
+    msg = json.dumps(event)
+
+    def _send():
+        for c in list(_schedule_ws_clients):
+            try:
+                c.write_message(msg)
+            except Exception:
+                _schedule_ws_clients.discard(c)
+
+    _main_ioloop.add_callback(_send)
+
+
+# --------------------------------------------------
 # Device panel — list / recover / release / live state push
 # --------------------------------------------------
 # Project-scoped device view. Walks workspace.components for their
@@ -739,6 +811,7 @@ class RuntimeServer:
             (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
             (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
+            (r"/ws/schedule", ScheduleWebSocket),
 
             # device panel — see DevicesHandler / DeviceCmdHandler / DeviceWebSocket
             (r"/devices", DevicesHandler, dict(workspace=self.workspace)),

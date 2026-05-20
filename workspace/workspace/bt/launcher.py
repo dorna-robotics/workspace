@@ -367,6 +367,18 @@ def run_protocol(
     # 2. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
     #    candidate bindings).
+    # Default event publisher: hook the runtime server's schedule WS
+    # broadcaster if it's importable. Lets the project's launch include
+    # the framework without explicitly wiring the GUI plumbing; if the
+    # server module is missing (headless tests, alt frontends) we just
+    # leave it None and the publish hooks become no-ops.
+    event_publisher = None
+    try:
+        from workspace.runtime_server import _broadcast_schedule_event
+        event_publisher = _broadcast_schedule_event
+    except Exception:
+        pass
+
     ctx = WorkspaceContext(
         workspace=workspace,
         core=core,
@@ -382,6 +394,9 @@ def run_protocol(
             # consults / updates this when an Action declares ``tool=``.
             # ``None`` = nothing held; populated by the auto-swap path.
             "current_tool": None,
+            # Optional event sink for schedule + execution events. The
+            # GUI's /ws/schedule WebSocket consumes these. None = no-op.
+            "event_publisher": event_publisher,
         },
     )
 
@@ -500,9 +515,62 @@ def run_protocol(
     def _make_swap_leaf(from_tool, to_tool):
         return SwapLeaf(ctx=ctx, from_tool=from_tool, to_tool=to_tool)
 
+    # Counter incremented every time build_tree fires — used as the
+    # schedule's identifier in published events so the GUI can tell one
+    # replan apart from the next.
+    replan_counter = {"n": 0}
+
     def build_tree(schedule, _ctx):
         # schedule_greedy returns (actions, swaps).
         actions_list, swaps_list = schedule
+
+        # Publish the just-built schedule to anyone listening (the WS
+        # broadcaster, in particular). Enrich each entry with the
+        # static meta the frontend needs to render: duration, resource,
+        # tool. Resource list is normalised to a tuple-of-strings.
+        replan_counter["n"] += 1
+        pub = ctx.meta.get("event_publisher")
+        if pub is not None:
+            import time as _time
+            try:
+                from workspace.planner.plan_scheduler import _resources as _r
+                pub({
+                    "type": "schedule",
+                    "replan_id": replan_counter["n"],
+                    "wall_ts": _time.time(),
+                    "tool_resource": "robot",
+                    "actions": [
+                        {
+                            "leaf_name": f"{n}(t{i})",
+                            "name": n,
+                            "item": i,
+                            "start_t": float(s),
+                            "duration": float(meta[n].duration) if n in meta else 1.0,
+                            "resources": list(_r(meta[n].resource)) if n in meta else [],
+                            "tool": meta[n].tool if n in meta else None,
+                        }
+                        for n, i, s in actions_list
+                    ],
+                    "swaps": [
+                        {
+                            "leaf_name": f"swap({ft or '∅'}→{tt or '∅'})",
+                            "from": ft,
+                            "to": tt,
+                            "start_t": float(s),
+                            "duration": float(d),
+                        }
+                        for s, ft, tt, d in swaps_list
+                    ],
+                    "makespan": max(
+                        [s + (meta[n].duration if n in meta else 1)
+                         for n, _, s in actions_list]
+                        + [s + d for s, _, _, d in swaps_list]
+                        + [0.0]
+                    ),
+                })
+            except Exception:
+                log.exception("Failed to publish schedule event — continuing")
+
         def _wrapped(action_name, item_index):
             return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
         body = from_schedule(
