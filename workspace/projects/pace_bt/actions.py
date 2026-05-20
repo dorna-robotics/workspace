@@ -298,7 +298,7 @@ class _ShakerCycle(Action):
         tubes = self._ctx_objects().get("tube", [])
         return [t for t in tubes if SHAKER_SLOTS[t][0] == self.SHAKER]
 
-    def pre(self, state):
+    def pre(self):
         """Fires only when every destined tube is loaded-and-unshaken.
 
         Building a conjunction of ``in_shaker(t) & ~shaken(t)`` over
@@ -310,18 +310,18 @@ class _ShakerCycle(Action):
             return False  # no tubes assigned to this shaker in this slice
         # Safety net: if every destined tube is already shaken (from
         # this slice or a stray re-firing attempt), don't re-shake.
-        if all((shaken.name, t) in state for t in destined):
+        if all((shaken.name, t) in self.state for t in destined):
             return False
         expr = in_shaker(destined[0]) & ~shaken(destined[0])
         for t in destined[1:]:
             expr = expr & in_shaker(t) & ~shaken(t)
         return expr
 
-    def eff(self, state):
+    def eff(self):
         """Mark every destined tube currently on the shaker as shaken."""
         facts = []
         for t in self._destined_tubes():
-            if (in_shaker.name, t) in state:
+            if (in_shaker.name, t) in self.state:
                 facts.append(+shaken(t))
         return {"shaken": tuple(facts)}
 

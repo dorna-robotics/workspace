@@ -51,7 +51,6 @@ case; escape hatch for the 10%.
 
 from __future__ import annotations
 
-import inspect
 import logging
 import re
 import threading
@@ -85,27 +84,18 @@ log = logging.getLogger(__name__)
 # ── State-aware eff() detection ────────────────────────────────────────────
 
 
-def _wants_state(method) -> bool:
-    """True if ``method`` declares its first parameter as ``state``.
-
-    Used to detect state-aware ``pre()`` and ``eff()`` overrides. The
-    framework's defaults take ``*params`` only; opting into state
-    inspection means writing ``pre(self, state, *params)`` /
-    ``eff(self, state, *params)`` and the framework will pass the
-    current planning-time state in as a frozenset of fact tuples.
-
-    Detection is by parameter name, not position — won't collide with
-    normal domain param names (``tube``, ``shaker``, ``well``, …) which
-    never happen to be called ``state``.
-    """
-    try:
-        sig = inspect.signature(method)
-    except (TypeError, ValueError):
-        return False
-    params = list(sig.parameters.values())
-    if not params:
-        return False
-    return params[0].name == "state"
+# State is exposed to pre()/eff() bodies via ``self.state`` on the
+# Action instance, NOT via the parameter list. The framework sets
+# ``instance.state`` to a frozenset snapshot of the planning-time
+# world before calling either method. Static-signature pre/eff that
+# don't touch ``self.state`` keep working unchanged; actions that
+# need to inspect the world (e.g. "mark every tube currently on the
+# shaker") just read ``self.state``.
+#
+# Why on self instead of an argument: signatures stay clean for the
+# 95% case ("def pre(self, tube): return ..."), and the same access
+# pattern opens the door to ``self.ctx``, ``self.recipes``, etc. that
+# project authors may want.
 
 
 
@@ -497,16 +487,15 @@ def build_precedence(
                           "added": set(), "removed": set()})
             continue
         instance = cls()
+        # Expose the simulated state at this plan step so any
+        # ``self.state``-using pre/eff sees the right world.
+        instance.state = state
         params = tuple(action.params)
         # pre
         pre_expr = instance.pre(*params)
         pre_pos, pre_neg = _extract_pre_facts(pre_expr)
-        # eff — default branch (first dict key). State-aware effs need
-        # the simulated state at this point in the plan.
-        if _wants_state(instance.eff):
-            eff = _normalise_eff(instance.eff(state, *params), cls.__name__)
-        else:
-            eff = _normalise_eff(instance.eff(*params), cls.__name__)
+        # eff — default branch (first dict key).
+        eff = _normalise_eff(instance.eff(*params), cls.__name__)
         first_branch = eff[next(iter(eff))]
         added, removed = _extract_eff_facts(first_branch)
         metas.append({"pre_pos": pre_pos, "pre_neg": pre_neg,
@@ -695,6 +684,22 @@ class Action:
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
     trigger:             Optional[str] = None  # "end" or None
+
+    # ── Framework-managed per-call attributes ──────────────────────────
+    # These are set by the framework before invoking pre()/eff() so
+    # action bodies can read them directly:
+    #
+    #   self.state    — frozenset of fact tuples (the world *before*
+    #                   this action's effects apply). Use it for
+    #                   "operates on whatever's currently loaded"
+    #                   logic (e.g. shake() shakes every loaded tube).
+    #   self.ctx      — the WorkspaceContext (recipes, runtime, meta).
+    #                   Always available once registered.
+    #
+    # Static-shape actions ignore these; they're only read by overrides
+    # that opt into state-aware behavior.
+    state: Optional[State] = None
+    ctx:   Any = None
 
     # ── Auto-registration machinery ─────────────────────────────────────
     # Subclasses register themselves into the active ActionRegistry on
@@ -904,13 +909,12 @@ class ActionRegistry:
         def param_iter_fn(state: State) -> Iterable[Tuple[Any, ...]]:
             yield from instance.param_iter(state)
 
-        pre_state_aware = _wants_state(instance.pre)
-
         def pre_fn(state: State, params: Tuple[Any, ...]) -> bool:
-            if pre_state_aware:
-                expr = instance.pre(state, *params)
-            else:
-                expr = instance.pre(*params)
+            # Expose the world so state-aware pre bodies can read
+            # ``self.state``. Set BEFORE the call so the override sees
+            # the right snapshot.
+            instance.state = state
+            expr = instance.pre(*params)
             if isinstance(expr, bool):
                 return expr
             if isinstance(expr, Fact):
@@ -922,13 +926,9 @@ class ActionRegistry:
                 f"Expr, or bool — got {type(expr).__name__}"
             )
 
-        state_aware = _wants_state(instance.eff)
-
         def eff_fn(state: State, params: Tuple[Any, ...]) -> State:
-            if state_aware:
-                effs = _normalise_eff(instance.eff(state, *params), name)
-            else:
-                effs = _normalise_eff(instance.eff(*params), name)
+            instance.state = state
+            effs = _normalise_eff(instance.eff(*params), name)
             # Planner projects forward with the FIRST branch — author
             # convention is to list the optimistic / default outcome
             # first. Runtime divergence triggers a replan.
@@ -973,17 +973,14 @@ class ActionRegistry:
             if getattr(cls, "trigger", None) == "end":
                 continue
             instance = cls()
+            # Probe with an empty state. Static effs ignore self.state;
+            # state-aware effs that produce facts depending on what's
+            # currently loaded simply produce fewer facts here — those
+            # the project should list in ``goal_facts`` explicitly.
+            instance.state = frozenset()
             dummy = tuple(object() for _ in cls.params)
             try:
-                if _wants_state(instance.eff):
-                    # State-aware effs can't be polarity-probed without
-                    # state; rely on the project to mention any facts
-                    # they produce in `goal_facts` explicitly.
-                    effs = _normalise_eff(
-                        instance.eff(frozenset(), *dummy), cls.__name__,
-                    )
-                else:
-                    effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
+                effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
             except Exception:
                 log.debug("monotonic_predicates: skip %s — eff() raised",
                           cls.__name__, exc_info=True)
@@ -1023,23 +1020,18 @@ class ActionRegistry:
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
+            instance.state = empty
             try:
                 param_combos = list(instance.param_iter(empty))
             except Exception:
                 log.debug("derive_goal_facts: skip %s — param_iter raised",
                           cls.__name__, exc_info=True)
                 continue
-            state_aware = _wants_state(instance.eff)
             for params in param_combos:
                 try:
-                    if state_aware:
-                        effs = _normalise_eff(
-                            instance.eff(empty, *params), cls.__name__,
-                        )
-                    else:
-                        effs = _normalise_eff(
-                            instance.eff(*params), cls.__name__,
-                        )
+                    effs = _normalise_eff(
+                        instance.eff(*params), cls.__name__,
+                    )
                 except Exception:
                     continue
                 for branch_facts in effs.values():
@@ -1330,12 +1322,13 @@ class _DSLActionLeaf(RecipeAction):
         applying — same convention the planner uses (eff observes the
         state it's about to mutate, not the post-mutation state).
         """
-        if _wants_state(self._instance.eff):
-            if state_snapshot is None:
-                state_snapshot = frozenset(_facts_from_state(self.ctx.state))
-            raw = self._instance.eff(state_snapshot, *self._params())
-        else:
-            raw = self._instance.eff(*self._params())
+        if state_snapshot is None:
+            state_snapshot = frozenset(_facts_from_state(self.ctx.state))
+        # ``self.state`` is the runtime equivalent of the planner's
+        # state argument — state-aware eff bodies read it; static ones
+        # ignore it.
+        self._instance.state = state_snapshot
+        raw = self._instance.eff(*self._params())
         return raw  # type: ignore[return-value]
 
     def apply_effects(self, state: Dict[str, Any]) -> None:
