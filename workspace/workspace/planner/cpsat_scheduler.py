@@ -26,6 +26,8 @@ milliseconds; the time limit defaults to 5s as a safety net.
 from __future__ import annotations
 
 import logging
+import threading
+import time as _time
 from typing import List, Optional, Sequence, Tuple
 
 from ortools.sat.python import cp_model
@@ -37,13 +39,58 @@ from workspace.planner.plan_scheduler import ActionMeta, ActionMetaMap, _resourc
 log = logging.getLogger(__name__)
 
 
+class _ImprovementTracker(cp_model.CpSolverSolutionCallback):
+    """Tracks the wall-time of the last objective improvement.
+
+    A separate watchdog thread polls this and calls ``solver.StopSearch()``
+    once the gap since the last improvement exceeds a threshold — that
+    way we get an optimal-or-near-optimal answer fast without burning
+    the entire fixed time budget proving optimality.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._best: Optional[float] = None
+        self.last_improve: float = _time.monotonic()
+        self.num_solutions: int = 0
+
+    def on_solution_callback(self) -> None:
+        self.num_solutions += 1
+        obj = self.ObjectiveValue()
+        if self._best is None or obj < self._best:
+            self._best = obj
+            self.last_improve = _time.monotonic()
+
+
+def _start_watchdog(
+    solver: cp_model.CpSolver,
+    tracker: _ImprovementTracker,
+    idle_seconds: float,
+) -> threading.Event:
+    """Spawn a daemon thread that stops the solver after ``idle_seconds``
+    of no objective improvement. Returns the stop event used to cancel
+    the watchdog when the solver returns normally."""
+    stop_event = threading.Event()
+
+    def _watch():
+        while not stop_event.wait(0.25):
+            if _time.monotonic() - tracker.last_improve > idle_seconds:
+                solver.StopSearch()
+                return
+
+    thread = threading.Thread(target=_watch, daemon=True)
+    thread.start()
+    return stop_event
+
+
 def schedule_cpsat(
     actions: Sequence[Action],
     meta: ActionMetaMap,
     *,
     predecessors: Optional[List[set]] = None,
     tool_resource: str = "robot",
-    time_limit_s: float = 3.0,
+    time_limit_s: float = 30.0,
+    no_improvement_s: float = 2.0,
 ) -> Tuple[
     List[Tuple[str, int, float]],
     List[Tuple[float, Optional[str], Optional[str], int]],
@@ -219,16 +266,22 @@ def schedule_cpsat(
     # ── Solve ─────────────────────────────────────────────────────────
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = float(time_limit_s)
-    # Use all available cores. Pi 5 has 4; CP-SAT scales well with
-    # workers on disjunctive-scheduling problems. Default is 1 which
-    # leaves perf on the table.
+    # All cores. Pi 5 has 4. CP-SAT parallelises well on disjunctive
+    # scheduling.
     solver.parameters.num_search_workers = 4
-    # Stop once we're within 1% of proven-optimal makespan. The solver
-    # typically finds the optimum quickly but then spends the remaining
-    # budget proving it; for lab schedules we don't need formal proof,
-    # just a near-optimal answer fast. Keeps wall-time tight.
     solver.parameters.relative_gap_limit = 0.01
-    status = solver.Solve(model)
+
+    # Watchdog: stop the solver after ``no_improvement_s`` of no
+    # objective improvement, even if there's budget left. Saves us from
+    # burning 25+ seconds proving optimality on solutions we already
+    # found. ``time_limit_s`` is the hard cap; the watchdog is the
+    # soft cap that activates earlier when search has plateaued.
+    tracker = _ImprovementTracker()
+    stop_event = _start_watchdog(solver, tracker, no_improvement_s)
+    try:
+        status = solver.Solve(model, tracker)
+    finally:
+        stop_event.set()
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(
