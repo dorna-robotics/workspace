@@ -750,45 +750,48 @@
   opacity: 0.25;
 }
 
-/* Action blocks */
+/* Action blocks — uniform light fill for every action, state drives
+   opacity + border. Color comes from a single CSS variable so theming
+   stays simple. */
 .sched-block-fill {
+  fill: #f0f4fa;
   transition: opacity 0.2s;
 }
+[data-theme="light"] .sched-block-fill { fill: #ffffff; }
+
 .sched-block-border {
   fill: none;
-  stroke: transparent;
-  stroke-width: 0;
+  stroke: var(--border);
+  stroke-width: 1;
   pointer-events: none;
 }
 
-/* States */
-.sched-block.sched-pending .sched-block-fill { opacity: 0.30; }
-.sched-block.sched-done    .sched-block-fill { opacity: 0.85; }
-.sched-block.sched-skipped .sched-block-fill { opacity: 0.10; }
+.sched-block.sched-pending .sched-block-fill { opacity: 0.18; }
+.sched-block.sched-done    .sched-block-fill { opacity: 0.55; }
+.sched-block.sched-skipped .sched-block-fill { opacity: 0.08; }
 .sched-block.sched-running .sched-block-fill { opacity: 1.0; }
 
-/* Running: thick flashing border ring — unmistakable */
+/* Running: thick flashing border ring — unmistakable, scales subtly */
 .sched-block.sched-running .sched-block-border {
-  stroke: #ffffff;
-  stroke-width: 3.5;
+  stroke: var(--accent);
+  stroke-width: 4;
   animation: schedFlash 1s ease-in-out infinite;
 }
-[data-theme="light"] .sched-block.sched-running .sched-block-border {
-  stroke: #111111;
-}
 @keyframes schedFlash {
-  0%, 100% { stroke-opacity: 1.0;  stroke-width: 3.5; }
-  50%      { stroke-opacity: 0.35; stroke-width: 5.5; }
+  0%, 100% { stroke-opacity: 1.0;  stroke-width: 4;   }
+  50%      { stroke-opacity: 0.30; stroke-width: 6.5; }
 }
 
 .sched-blocklabel {
-  font: 600 13px/1 ui-monospace, "SF Mono", monospace;
-  fill: #ffffff;
+  font: 600 14px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  fill: #0a0f1a;
   pointer-events: none;
+  letter-spacing: 0.01em;
 }
 [data-theme="light"] .sched-blocklabel { fill: #0a0f1a; }
-.sched-block.sched-pending .sched-blocklabel { opacity: 0.55; }
+.sched-block.sched-pending .sched-blocklabel { opacity: 0.50; }
 .sched-block.sched-skipped .sched-blocklabel { opacity: 0.25; }
+.sched-block.sched-done    .sched-blocklabel { opacity: 0.85; }
 
 /* Tool swaps */
 .sched-swap         { fill: var(--muted); opacity: 0.30; }

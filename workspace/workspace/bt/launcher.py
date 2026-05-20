@@ -543,6 +543,12 @@ def run_protocol(
                         {
                             "leaf_name": f"{n}(t{i})",
                             "name": n,
+                            # Original Action subclass name (PascalCase) so
+                            # the GUI can label blocks exactly as authored.
+                            "class_name": (
+                                registry.get(n).__name__
+                                if registry.get(n) is not None else n
+                            ),
                             "item": i,
                             "start_t": float(s),
                             "duration": float(meta[n].duration) if n in meta else 1.0,

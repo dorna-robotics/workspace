@@ -1,7 +1,7 @@
-// Schedule view — clean Gantt driven by explicit action_start / action_end
-// events. No time axis, no wall-clock math; the layout is read-only and
-// "where are we right now" is answered by the currently-running block's
-// flashing border.
+// Schedule view — clean Gantt with uniform light blocks and a flashing
+// border for the currently-running action. Block widths auto-fit the
+// action's class name; "where are we right now" is driven by explicit
+// action_start / action_end events from the framework.
 
 let _ws = null;
 let _wsUrl = "";
@@ -15,18 +15,6 @@ const _leafState = new Map();   // leaf_name -> "pending" | "running" | "done" |
 let _summaryEl = null;
 let _modalEl = null;
 let _ganttEl = null;
-
-// ── tool colors (dark-theme accessible) ────────────────────────────────
-const TOOL_COLORS = {
-  gripper:      "#4f9cf9",
-  needle:       "#3ec46d",
-  gripper_2ml:  "#b384ff",
-  feeder_tool:  "#ffa84a",
-  null:         "#27a3a3",
-};
-function toolColor(t) {
-  return TOOL_COLORS[t ?? "null"] || "#7f8694";
-}
 
 // ── public entrypoint ──────────────────────────────────────────────────
 export function connectScheduleWS(runtimeUrl) {
@@ -60,7 +48,6 @@ function _tryWS() {
   ws.onerror = () => ws.close();
 }
 
-// ── event handling ─────────────────────────────────────────────────────
 function _ingest(msg) {
   if (msg.type === "schedule") {
     _plan = msg;
@@ -76,12 +63,10 @@ function _ingest(msg) {
   }
 }
 
-// ── DOM wiring ─────────────────────────────────────────────────────────
 function _initDOM() {
   _summaryEl = document.getElementById("scheduleSummary");
   _modalEl   = document.getElementById("scheduleModalOverlay");
   _ganttEl   = document.getElementById("ganttContainer");
-
   const openBtn  = document.getElementById("btnOpenSchedule");
   const closeBtn = document.getElementById("btnScheduleClose");
   if (openBtn && !openBtn._wired)  { openBtn.addEventListener("click", openScheduleModal); openBtn._wired = true; }
@@ -104,7 +89,6 @@ export function closeScheduleModal() {
   _modalEl.classList.remove("show");
 }
 
-// ── render ─────────────────────────────────────────────────────────────
 function _render() {
   _renderSummary();
   if (_modalEl?.classList.contains("show")) _renderGantt();
@@ -130,7 +114,6 @@ function _renderSummary() {
 function _short(leafName) {
   return _esc(leafName.replace("(t", "(").replace(")", ")"));
 }
-
 function _esc(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
@@ -154,15 +137,37 @@ function _renderGantt() {
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // Layout — generous spacing, no time axis.
-  const ROW_H  = 56;
-  const ROW_PAD = 10;
-  const LEFT_W = 140;
-  const TOP_PAD = 16;
-  const BOT_PAD = 16;
+  // ── Auto-fit pxPerSec so every block is wide enough for its label ──
+  // For each action, compute the min width needed for its label, derive
+  // the pxPerSec that would give that. Take the global max so every
+  // block fits.
+  const FONT_PX = 14;
+  const CHAR_W = FONT_PX * 0.62;   // approx for the monospace label
+  const PAD_X = 28;                // 14 each side inside the block
+  function labelOf(a) { return `${a.class_name || a.name}(${a.item})`; }
+  function neededWidth(a) { return labelOf(a).length * CHAR_W + PAD_X; }
+
+  const ROW_H   = 60;
+  const ROW_PAD = 12;
+  const LEFT_W  = 150;
+  const TOP_PAD = 18;
+  const BOT_PAD = 18;
+  const SIDE_PAD = 24;
   const horizon = Math.max(_plan.makespan || 0, 30);
-  const avail = Math.max(420, _ganttEl.clientWidth - 40 - LEFT_W);
-  const pxPerSec = avail / horizon;
+
+  // Minimum pxPerSec needed so each block fits its label.
+  let minPxPerSec = 6;
+  for (const a of actions) {
+    if (a.duration > 0) {
+      const ratio = neededWidth(a) / a.duration;
+      if (ratio > minPxPerSec) minPxPerSec = ratio;
+    }
+  }
+  // Use the larger of "fill the container" and "fit labels".
+  const containerAvail = Math.max(420, _ganttEl.clientWidth - 2 * SIDE_PAD - LEFT_W);
+  const fillPxPerSec = containerAvail / horizon;
+  const pxPerSec = Math.max(fillPxPerSec, minPxPerSec);
+
   const W = LEFT_W + horizon * pxPerSec + 24;
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
@@ -172,7 +177,7 @@ function _renderGantt() {
   svg.setAttribute("height", String(H));
   svg.setAttribute("class",  "sched-svg");
 
-  // Row labels (left gutter)
+  // Row labels + dividers
   rows.forEach((r, i) => {
     const t = document.createElementNS(svgNS, "text");
     t.setAttribute("x", String(LEFT_W - 14));
@@ -181,8 +186,6 @@ function _renderGantt() {
     t.setAttribute("class", "sched-rowlabel");
     t.textContent = r;
     svg.appendChild(t);
-
-    // Row divider line (thin, subtle)
     if (i > 0) {
       const line = document.createElementNS(svgNS, "line");
       line.setAttribute("x1", String(LEFT_W - 4));
@@ -199,20 +202,20 @@ function _renderGantt() {
     const rowIdx = _primaryRow(rows, a.resources, tres);
     if (rowIdx < 0) continue;
     const x = LEFT_W + a.start_t * pxPerSec;
-    const w = Math.max(6, a.duration * pxPerSec);
+    const w = Math.max(neededWidth(a), a.duration * pxPerSec);
     const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
     const h = ROW_H - ROW_PAD * 2;
     _appendBlock(svg, x, y, w, h, a, _leafState.get(a.leaf_name) || "pending");
   }
 
-  // Tool swaps — narrow neutral ticks on the robot row
+  // Tool swaps — slim ticks on robot row
   const swapRow = rows.indexOf(tres);
   if (swapRow >= 0) {
     for (const s of swaps) {
       const x = LEFT_W + s.start_t * pxPerSec;
-      const w = Math.max(3, s.duration * pxPerSec);
-      const y = TOP_PAD + swapRow * ROW_H + ROW_PAD + 6;
-      const h = ROW_H - ROW_PAD * 2 - 12;
+      const w = Math.max(4, s.duration * pxPerSec);
+      const y = TOP_PAD + swapRow * ROW_H + ROW_PAD + 8;
+      const h = ROW_H - ROW_PAD * 2 - 16;
       const state = _leafState.get(s.leaf_name) || "pending";
       const r = document.createElementNS(svgNS, "rect");
       r.setAttribute("x", String(x));
@@ -234,59 +237,41 @@ function _renderGantt() {
 
 function _appendBlock(svg, x, y, w, h, a, state) {
   const svgNS = "http://www.w3.org/2000/svg";
-
-  // Unique clipPath ID so labels can never escape their block.
-  const clipId = `clip_${a.leaf_name.replace(/[^a-z0-9]/gi, "_")}`;
-
-  let defs = svg.querySelector("defs");
-  if (!defs) {
-    defs = document.createElementNS(svgNS, "defs");
-    svg.insertBefore(defs, svg.firstChild);
-  }
-  const clip = document.createElementNS(svgNS, "clipPath");
-  clip.id = clipId;
-  const clipRect = document.createElementNS(svgNS, "rect");
-  clipRect.setAttribute("x", String(x + 8));
-  clipRect.setAttribute("y", String(y));
-  clipRect.setAttribute("width",  String(Math.max(0, w - 16)));
-  clipRect.setAttribute("height", String(h));
-  clip.appendChild(clipRect);
-  defs.appendChild(clip);
-
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("class", `sched-block sched-${state}`);
 
+  // Fill — same light color for every action, opacity changes per state.
   const rect = document.createElementNS(svgNS, "rect");
   rect.setAttribute("x", String(x));
   rect.setAttribute("y", String(y));
   rect.setAttribute("width",  String(w));
   rect.setAttribute("height", String(h));
-  rect.setAttribute("rx", "6");
-  rect.setAttribute("fill", toolColor(a.tool));
+  rect.setAttribute("rx", "8");
   rect.setAttribute("class", "sched-block-fill");
   g.appendChild(rect);
 
-  // Border overlay — for running state, this gets the flashing animation.
+  // Border ring — flashes when running.
   const border = document.createElementNS(svgNS, "rect");
   border.setAttribute("x", String(x));
   border.setAttribute("y", String(y));
   border.setAttribute("width",  String(w));
   border.setAttribute("height", String(h));
-  border.setAttribute("rx", "6");
+  border.setAttribute("rx", "8");
   border.setAttribute("class", "sched-block-border");
   g.appendChild(border);
 
+  // Label — exactly the class name (PascalCase), with item index in parens.
+  const label = `${a.class_name || a.name}(${a.item})`;
   const lab = document.createElementNS(svgNS, "text");
   lab.setAttribute("x", String(x + w / 2));
   lab.setAttribute("y", String(y + h / 2 + 5));
   lab.setAttribute("text-anchor", "middle");
   lab.setAttribute("class", "sched-blocklabel");
-  lab.setAttribute("clip-path", `url(#${clipId})`);
-  lab.textContent = `${a.name}(${a.item})`;
+  lab.textContent = label;
   g.appendChild(lab);
 
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = `${a.name}(${a.item}) — ${state}\ntool: ${a.tool ?? "—"}`;
+  title.textContent = `${label} — ${state}\ntool: ${a.tool ?? "—"}`;
   g.appendChild(title);
 
   svg.appendChild(g);
