@@ -101,22 +101,39 @@ log = logging.getLogger(__name__)
 # ── Schedule-attribute helpers ─────────────────────────────────────────────
 
 
+# Default ``schedule`` for every Action. Authors override by setting
+# a new dict — partial dicts are valid; missing keys fall back to
+# these defaults.
+_SCHEDULE_DEFAULTS = {
+    "register": True,   # add to ActionRegistry → seen by planner / scheduler
+    "display":  True,   # appear on the live Gantt
+}
+
+
 def _schedule_dict(cls):
-    """Resolve ``Action.schedule`` to a dict of ``{display: bool}``.
+    """Resolve ``cls.schedule`` to a fully-defaulted dict.
 
-    The class attribute may be ``True`` / ``False`` / a partial dict;
-    this helper returns the fully-defaulted dict form so callers
-    don't have to enumerate the cases.
-
-    Note: ``False`` ("don't register") is checked separately at
-    registration time via ``cls.__dict__``. By the time a class
-    reaches this helper it's already in the registry, so we just
-    return the display behaviour and ignore the False case.
+    Reads through the MRO so a subclass inherits ``schedule`` from
+    its base if it doesn't redeclare. Partial dicts on the class are
+    merged on top of the framework defaults.
     """
-    sched = getattr(cls, "schedule", True)
-    if isinstance(sched, dict):
-        return {"display": bool(sched.get("display", True))}
-    return {"display": True}
+    sched = getattr(cls, "schedule", None) or {}
+    if not isinstance(sched, dict):
+        sched = {}
+    return {**_SCHEDULE_DEFAULTS, **sched}
+
+
+def _should_register(cls) -> bool:
+    """Whether ``__init_subclass__`` should add this class to the registry.
+
+    Reads ``cls.__dict__`` (not inherited) so that an abstract base
+    setting ``schedule = {"register": False}`` doesn't silently
+    propagate to concrete subclasses that don't redeclare schedule.
+    """
+    own = cls.__dict__.get("schedule")
+    if not isinstance(own, dict):
+        return True
+    return bool(own.get("register", True))
 
 
 def _is_end_trigger(cls) -> bool:
@@ -737,25 +754,34 @@ class Action:
     #                          held tool, return home, dispose waste.
     trigger:             Optional[str] = None
 
-    # Planner / Gantt visibility — explicit, no implicit rules:
+    # Planner / Gantt visibility. ALWAYS a dict — the default value
+    # below sets every recognised key; authors override by declaring a
+    # fresh dict (you don't have to redeclare every key, only the ones
+    # you want to change).
     #
-    #   * ``True``  (default)
-    #         Register normally + show on the live Gantt + take part in
-    #         the goal-directed plan.
+    #   register  (default True)   Add this class to the ActionRegistry.
+    #                              Set to False for intermediate base
+    #                              classes that exist only to share
+    #                              code; the planner / scheduler / Gantt
+    #                              never see them. The opt-out is local
+    #                              to the class itself — concrete
+    #                              subclasses that don't redeclare
+    #                              ``schedule`` still register.
+    #   display   (default True)   Appear on the live Gantt. Set to
+    #                              False to hide an action that's still
+    #                              registered + planned.
     #
-    #   * ``False``
-    #         Don't register at all. Used for intermediate base classes
-    #         that exist only to share code:
-    #             class ShakerCycleBase(Action):
-    #                 schedule = False
-    #         The check is local to the class itself (``cls.__dict__``),
-    #         so concrete subclasses fall back to the default and
-    #         register normally.
-    #
-    #   * dict with optional keys
-    #         ``display`` (default True) — appear on the live Gantt.
-    #         More keys may be added without an API break.
-    schedule:            Any = True
+    # Examples:
+    #   class Inspected(Action):                  # uses defaults
+    #       params = ["tube"]
+    #       ...
+    #   class ShakerCycleBase(Action):            # abstract base
+    #       schedule = {"register": False}
+    #       ...
+    #   class HiddenDiagnostic(Action):           # plan + run, no Gantt
+    #       schedule = {"display": False}
+    #       ...
+    schedule:            Dict[str, Any] = dict(_SCHEDULE_DEFAULTS)
 
     # ── Framework-managed per-call attributes ──────────────────────────
     # These are set by the framework before invoking pre()/eff() so
@@ -779,16 +805,11 @@ class Action:
     # but projects can use isolated registries (see ActionRegistry.use()).
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Registration is controlled exclusively by the ``schedule``
-        # class attribute — no implicit rules. ``schedule = False`` on
-        # the class itself opts it out (intermediate base classes that
-        # only share code). Anything else registers.
-        #
-        # ``cls.__dict__`` rather than plain attribute lookup so the
-        # opt-out is local to the base — a concrete subclass that
-        # doesn't redeclare ``schedule`` falls back to the Action-level
-        # default (True) and registers normally.
-        if cls.__dict__.get("schedule", True) is False:
+        # Registration is governed solely by the ``schedule`` dict's
+        # ``register`` key, read locally from ``cls.__dict__`` so an
+        # abstract base's opt-out doesn't propagate to its concrete
+        # subclasses. No implicit rules.
+        if not _should_register(cls):
             return
         name = _to_snake(cls.__name__)
         ActionRegistry.current().register(name, cls)

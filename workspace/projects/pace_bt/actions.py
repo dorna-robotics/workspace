@@ -267,10 +267,11 @@ class ShakerCycleBase(Action):
     """Per-shaker shake — one mechanical shake() shakes every tube on
     the device. Subclasses fix SHAKER + resource.
 
-    ``schedule = False`` marks this as an abstract base: the framework
-    skips registration so the planner never instantiates it directly,
-    only its concrete subclasses (``ShakerOne``, ``ShakerTwo``)."""
-    schedule    = False
+    ``schedule = {"register": False}`` marks this as an abstract base:
+    the framework skips registration so the planner never instantiates
+    it directly, only its concrete subclasses (``ShakerOne``,
+    ``ShakerTwo``)."""
+    schedule    = {"register": False}
     SHAKER:    str = ""
     params      = []
     duration    = SHAKE_DURATION

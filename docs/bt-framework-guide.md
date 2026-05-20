@@ -295,7 +295,7 @@ parentheses.
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
 | `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"end"`` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
-| `schedule` | `bool \| dict` (`True`) | Planner / scheduler / Gantt visibility — explicit, no implicit rules. See §3.3 for the full spec. Defaults to **registered + plan + Gantt**. |
+| `schedule` | `dict` (`{"register": True, "display": True}`) | Planner / scheduler / Gantt visibility. See §3.3 for the full spec. **Always a dict** — override with a new dict (partial allowed) to change any key. |
 
 ### 3.2 `trigger` — lifecycle event hooks
 
@@ -329,20 +329,26 @@ the typical body is just `return "none"`.
 
 ### 3.3 `schedule` — planner / Gantt visibility
 
-`schedule` controls **how** an action shows up in the planner and on
-the live Gantt. Independent from `trigger` (which controls *when*).
-Three forms accepted:
+`schedule` controls **how** an action participates in registration
+and visibility. Independent from `trigger` (which controls *when*).
 
-| Form | Effect |
-|---|---|
-| `schedule = True` *(default)* | Register the class. Include it in the goal-directed plan, the scheduler, and the live Gantt. |
-| `schedule = False` | **Don't register the class at all.** Use for intermediate base classes that exist only to share code (`class ShakerCycleBase(Action): schedule = False`). The check is local to the class itself — concrete subclasses that don't redeclare `schedule` fall back to the default and register normally. |
-| `schedule = {"display": ...}` | Register normally, but suppress the Gantt block (`display=False`). Still in the plan, still executes. |
+**Always a dict.** The framework default is
 
-**Dict keys (reserved):**
+```python
+schedule = {
+    "register": True,    # add to the ActionRegistry
+    "display":  True,    # appear on the live Gantt
+}
+```
+
+To change any key, declare a fresh dict on your subclass. Partial
+dicts are valid — missing keys fall back to the defaults above.
+
+**Reserved keys:**
 
 | Key | Default | Meaning |
 |---|---|---|
+| `register` | `True` | Add this class to the `ActionRegistry`. Set to `False` for intermediate base classes that exist only to share code; the planner / scheduler / Gantt never see them. The opt-out is **local to the class itself** — concrete subclasses that don't redeclare `schedule` still register. |
 | `display` | `True` | Show this action on the live Gantt. Set to `False` to hide it (still registered, still planned, just suppressed from the GUI). |
 
 More keys may be added later without breaking the API.
@@ -350,15 +356,15 @@ More keys may be added later without breaking the API.
 **Examples:**
 
 ```python
-class Inspected(Action):                # default — registered, planned, on Gantt
+class Inspected(Action):                # uses defaults
     params = ["tube"]
     ...
 
-class ShakerCycleBase(Action):          # abstract base — share code, don't register
-    schedule = False
+class ShakerCycleBase(Action):          # abstract base — don't register
+    schedule = {"register": False}
     ...
 
-class HiddenDiagnostic(Action):         # plan + execute, but don't clutter the Gantt
+class HiddenDiagnostic(Action):         # plan + execute, hide from Gantt
     schedule = {"display": False}
     ...
 ```

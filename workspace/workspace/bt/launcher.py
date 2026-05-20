@@ -60,24 +60,14 @@ log = logging.getLogger(__name__)
 def _schedule_displays(cls) -> bool:
     """Whether an Action class should appear on the live Gantt.
 
-    Honours the project-facing ``schedule`` attribute on Action
-    subclasses:
-      * ``True``  → display
-      * ``False`` → already filtered before this point (the class
-                    doesn't even register), but returning False here
-                    is harmless and keeps the check uniform.
-      * ``{"display": False, ...}`` → registered/planned but hidden
-                    from the Gantt.
-    Unknown shapes default to True.
+    Reads ``schedule["display"]`` via the framework's dict resolver
+    (``workspace.bt.dsl._schedule_dict``), which merges partial dicts
+    on top of the framework defaults.
     """
     if cls is None:
         return True
-    sched = getattr(cls, "schedule", True)
-    if sched is False:
-        return False
-    if isinstance(sched, dict):
-        return bool(sched.get("display", True))
-    return True
+    from workspace.bt.dsl import _schedule_dict
+    return bool(_schedule_dict(cls)["display"])
 
 
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
