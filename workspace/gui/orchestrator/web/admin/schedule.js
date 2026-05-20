@@ -1,9 +1,10 @@
-// Live BT schedule view — minimal Apple-flavoured Gantt. Resource rows,
-// uniformly-styled action cards (one per planned action), thin connector
-// lines for tool swaps. Currently-running card pulses with an accent
-// glow. Everything is driven by explicit framework events
-// (action_start / action_end) so reality and visuals stay in sync even
-// when predicted durations drift.
+// Live BT schedule view — clean flow Gantt.
+//
+// Each row lays its blocks out side-by-side with a fixed gap, sized to
+// fit the full action name. Cross-row alignment respects start-time
+// order (a shaker block lands underneath the robot action that
+// triggered it). Consecutive blocks on the same row are joined by a
+// thin connector line. State is driven by explicit framework events.
 
 let _ws = null;
 let _wsUrl = "";
@@ -113,9 +114,7 @@ function _renderSummary() {
   _summaryEl.innerHTML = bits;
 }
 
-function _short(leafName) {
-  return _esc(leafName.replace("(t", "(").replace(")", ")"));
-}
+function _short(leafName) { return _esc(leafName.replace("(t", "(").replace(")", ")")); }
 function _esc(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
@@ -138,25 +137,63 @@ function _renderGantt() {
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // Fit the chart inside the modal — no horizontal scroll, no
-  // auto-expanded gaps. Labels get truncated when they don't fit.
-  const FONT_PX = 12;
-  const CHAR_W  = FONT_PX * 0.60;
-  const LABEL_PAD = 14;        // 7 px on each side
-  function labelOf(a) { return `${a.class_name || a.name}(${a.item})`; }
+  // ── Layout knobs ───────────────────────────────────────────────────
+  const FONT_PX   = 12;
+  const CHAR_W    = FONT_PX * 0.62;
+  const LABEL_PAD = 22;       // 11 px each side inside the block
+  const BLOCK_GAP = 18;       // fixed visual gap between consecutive blocks
+  const ROW_H     = 48;
+  const ROW_PAD   = 8;
+  const LEFT_W    = 120;
+  const TOP_PAD   = 18;
+  const BOT_PAD   = 18;
 
-  const ROW_H   = 44;
-  const ROW_PAD = 6;
-  const LEFT_W  = 132;
-  const TOP_PAD = 18;
-  const BOT_PAD = 18;
-  const SIDE_PAD = 24;
-  const horizon = Math.max(_plan.makespan || 0, 30);
+  function labelOf(a)     { return `${a.class_name || a.name}(${a.item})`; }
+  function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
 
-  const containerAvail = Math.max(420, _ganttEl.clientWidth - 2 * SIDE_PAD - LEFT_W);
-  const pxPerSec = containerAvail / horizon;
+  // ── Phase 1: place each row's blocks flow-left-to-right ───────────
+  const placements = new Map(); // leaf_name -> {a, x, w, y, h, rowIdx}
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const arr = actions
+      .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
+      .sort((x, y) => x.start_t - y.start_t);
+    let cursor = LEFT_W + 8;
+    for (const a of arr) {
+      const w = neededWidth(a);
+      const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+      const h = ROW_H - ROW_PAD * 2;
+      placements.set(a.leaf_name, { a, x: cursor, w, y, h, rowIdx });
+      cursor += w + BLOCK_GAP;
+    }
+  }
 
-  const W = LEFT_W + horizon * pxPerSec + 24;
+  // ── Phase 2: cross-row alignment ───────────────────────────────────
+  // For each non-tool-resource row, shift its blocks so they sit under
+  // the robot block whose start_t is closest-but-not-after them. That
+  // makes "shaker_one runs while retrieved(0) is happening" visually
+  // obvious without bringing back time-proportional widths.
+  const robotRowIdx = rows.indexOf(tres);
+  if (robotRowIdx >= 0) {
+    const robotByStart = [...placements.values()]
+      .filter(p => p.rowIdx === robotRowIdx)
+      .sort((a, b) => a.a.start_t - b.a.start_t);
+    for (const p of placements.values()) {
+      if (p.rowIdx === robotRowIdx) continue;
+      let anchor = null;
+      for (const rp of robotByStart) {
+        if (rp.a.start_t > p.a.start_t) break;
+        anchor = rp;
+      }
+      if (anchor) p.x = anchor.x;
+    }
+  }
+
+  // Compute SVG dimensions from the actual placements.
+  let maxRight = LEFT_W + 200;
+  for (const p of placements.values()) {
+    if (p.x + p.w > maxRight) maxRight = p.x + p.w;
+  }
+  const W = maxRight + 16;
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -165,16 +202,17 @@ function _renderGantt() {
   svg.setAttribute("height", String(H));
   svg.setAttribute("class",  "sched-svg");
 
-  // Layered <g> elements so paint order is deterministic.
   const gRows = document.createElementNS(svgNS, "g");
+  const gConn = document.createElementNS(svgNS, "g");
   const gBlocks = document.createElementNS(svgNS, "g");
   svg.appendChild(gRows);
+  svg.appendChild(gConn);
   svg.appendChild(gBlocks);
 
-  // Row labels + dividers — clean Apple-y rhythm.
+  // Row labels + dividers
   rows.forEach((r, i) => {
     const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("x", String(LEFT_W - 18));
+    t.setAttribute("x", String(LEFT_W - 14));
     t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 4));
     t.setAttribute("text-anchor", "end");
     t.setAttribute("class", "sched-rowlabel");
@@ -191,37 +229,46 @@ function _renderGantt() {
     }
   });
 
-  // Layout: respect predicted durations exactly. Min block width is
-  // just a visibility floor; labels truncate to fit if needed.
-  const placements = new Map();   // leaf_name -> {x, w, y, h, rowIdx}
-  for (const a of actions) {
-    const rowIdx = _primaryRow(rows, a.resources, tres);
-    if (rowIdx < 0) continue;
-    const x = LEFT_W + a.start_t * pxPerSec;
-    const w = Math.max(14, a.duration * pxPerSec);
-    const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
-    const h = ROW_H - ROW_PAD * 2;
-    placements.set(a.leaf_name, { a, x, w, y, h, rowIdx });
+  // Connector lines — one short blue dashed line between every pair of
+  // consecutive blocks on the same row.
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const arr = [...placements.values()]
+      .filter(p => p.rowIdx === rowIdx)
+      .sort((a, b) => a.x - b.x);
+    for (let i = 0; i + 1 < arr.length; i++) {
+      const A = arr[i], B = arr[i + 1];
+      const x1 = A.x + A.w;
+      const x2 = B.x;
+      if (x2 - x1 < 4) continue;
+      const yMid = A.y + A.h / 2;
+      const stA = _leafState.get(A.a.leaf_name) || "pending";
+      const stB = _leafState.get(B.a.leaf_name) || "pending";
+      const cls = (stA === "done" || stA === "skipped")
+        ? "sched-connector done"
+        : "sched-connector pending";
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(x1));
+      line.setAttribute("x2", String(x2));
+      line.setAttribute("y1", String(yMid));
+      line.setAttribute("y2", String(yMid));
+      line.setAttribute("class", cls);
+      gConn.appendChild(line);
+    }
   }
 
-  // No connector lines — the spatial gap between blocks already
-  // communicates "robot idle here." Less noise, more HIG.
-
-  // Action blocks.
-  for (const a of actions) {
-    const p = placements.get(a.leaf_name);
-    if (!p) continue;
-    const state = _leafState.get(a.leaf_name) || "pending";
-    _appendBlock(gBlocks, p.x, p.y, p.w, p.h, a, state,
-                 FONT_PX, CHAR_W, LABEL_PAD);
+  // Action blocks
+  for (const p of placements.values()) {
+    const state = _leafState.get(p.a.leaf_name) || "pending";
+    _appendBlock(gBlocks, p, state);
   }
 
   _ganttEl.innerHTML = "";
   _ganttEl.appendChild(svg);
 }
 
-function _appendBlock(parent, x, y, w, h, a, state, FONT_PX, CHAR_W, LABEL_PAD) {
+function _appendBlock(parent, p, state) {
   const svgNS = "http://www.w3.org/2000/svg";
+  const { a, x, y, w, h } = p;
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("class", `sched-block sched-${state}`);
 
@@ -243,24 +290,17 @@ function _appendBlock(parent, x, y, w, h, a, state, FONT_PX, CHAR_W, LABEL_PAD) 
   border.setAttribute("class", "sched-block-border");
   g.appendChild(border);
 
-  const fullLabel = `${a.class_name || a.name}(${a.item})`;
-  // Truncate to whatever fits inside the block's interior.
-  const maxChars = Math.max(1, Math.floor((w - LABEL_PAD) / CHAR_W));
-  const display = fullLabel.length <= maxChars
-    ? fullLabel
-    : (maxChars >= 2 ? fullLabel.slice(0, maxChars - 1) + "…" : "");
-  if (display) {
-    const lab = document.createElementNS(svgNS, "text");
-    lab.setAttribute("x", String(x + w / 2));
-    lab.setAttribute("y", String(y + h / 2 + FONT_PX / 3));
-    lab.setAttribute("text-anchor", "middle");
-    lab.setAttribute("class", "sched-blocklabel");
-    lab.textContent = display;
-    g.appendChild(lab);
-  }
+  const label = `${a.class_name || a.name}(${a.item})`;
+  const lab = document.createElementNS(svgNS, "text");
+  lab.setAttribute("x", String(x + w / 2));
+  lab.setAttribute("y", String(y + h / 2 + 4));
+  lab.setAttribute("text-anchor", "middle");
+  lab.setAttribute("class", "sched-blocklabel");
+  lab.textContent = label;
+  g.appendChild(lab);
 
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = `${fullLabel} — ${state}`;
+  title.textContent = `${label} — ${state}`;
   g.appendChild(title);
 
   parent.appendChild(g);

@@ -742,9 +742,9 @@
 .gantt-container {
   flex: 1;
   overflow: auto;
-  padding: 22px 20px 24px;
+  padding: 22px 22px 24px;
   background: var(--bg);
-  min-height: 280px;
+  min-height: 220px;
 }
 .sched-empty {
   padding: 88px 24px;
@@ -765,18 +765,22 @@
 .sched-rowline {
   stroke: var(--border2);
   stroke-width: 1;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
-/* ── Action blocks ───────────────────────────────────────────────────── */
-/* Three semantic states, three semantic colours.
-     pending — neutral grey   (future, hasn't happened)
-     running — blue accent    (alive, in flight)
-     done    — green tint     (settled behind us)
-   Inspired by Apple Reminders' "todo / overdue / done" colourway. */
-.sched-block-fill {
-  transition: fill 0.3s ease, opacity 0.3s ease;
+/* ── Connector — short blue line between consecutive blocks on a row */
+.sched-connector {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  fill: none;
 }
+.sched-connector.pending { stroke: var(--border);  opacity: 0.65; stroke-dasharray: 3 4; }
+.sched-connector.done    { stroke: var(--accent);  opacity: 0.85; }
+
+/* ── Action blocks ───────────────────────────────────────────────────── */
+/*  Semantic-colour states. Pending and done are SOLID fills (no
+    opacity tricks); running blinks on top of its solid blue card.    */
+.sched-block-fill { transition: fill 0.3s ease; }
 .sched-block-border {
   fill: none;
   stroke-width: 1;
@@ -787,74 +791,36 @@
   font: 600 12px/1 var(--mono);
   pointer-events: none;
   letter-spacing: 0.01em;
-  transition: opacity 0.3s, fill 0.3s;
+  transition: fill 0.3s;
 }
 
-/* PENDING (future) — neutral grey */
-.sched-block.sched-pending .sched-block-fill {
-  fill: var(--surface2);
-  opacity: 0.55;
-}
-.sched-block.sched-pending .sched-block-border {
-  stroke: var(--border);
-  opacity: 0.7;
-}
-.sched-block.sched-pending .sched-blocklabel {
-  fill: var(--muted);
-  opacity: 0.85;
-}
+/* PENDING (future) — solid neutral card */
+.sched-block.sched-pending .sched-block-fill   { fill: var(--surface2); }
+.sched-block.sched-pending .sched-block-border { stroke: var(--border); }
+.sched-block.sched-pending .sched-blocklabel   { fill: var(--muted); }
 
-/* DONE (past) — green tint, like a completed task */
-.sched-block.sched-done .sched-block-fill {
-  fill: var(--green);
-  opacity: 0.18;
-}
-.sched-block.sched-done .sched-block-border {
-  stroke: var(--green);
-  opacity: 0.45;
-}
-.sched-block.sched-done .sched-blocklabel {
-  fill: var(--green);
-  opacity: 0.95;
-}
+/* DONE (past) — solid green-tinted card */
+.sched-block.sched-done .sched-block-fill   { fill: rgba(52,199,89,0.18); }
+.sched-block.sched-done .sched-block-border { stroke: rgba(52,199,89,0.5); }
+.sched-block.sched-done .sched-blocklabel   { fill: var(--green); }
+[data-theme="light"] .sched-block.sched-done .sched-block-fill   { fill: rgba(36,138,61,0.14); }
+[data-theme="light"] .sched-block.sched-done .sched-block-border { stroke: rgba(36,138,61,0.45); }
 
-/* SKIPPED */
-.sched-block.sched-skipped .sched-block-fill {
-  fill: var(--surface2);
-  opacity: 0.10;
-}
-.sched-block.sched-skipped .sched-block-border {
-  stroke: var(--border);
-  opacity: 0.3;
-  stroke-dasharray: 4 3;
-}
-.sched-block.sched-skipped .sched-blocklabel {
-  fill: var(--muted);
-  opacity: 0.3;
-}
+/* SKIPPED — barely there */
+.sched-block.sched-skipped .sched-block-fill   { fill: var(--surface2); opacity: 0.30; }
+.sched-block.sched-skipped .sched-block-border { stroke: var(--border); stroke-dasharray: 4 3; opacity: 0.5; }
+.sched-block.sched-skipped .sched-blocklabel   { fill: var(--muted); opacity: 0.5; }
 
-/* RUNNING (present) — accent blue with breathing glow */
-.sched-block.sched-running .sched-block-fill {
-  fill: var(--accent);
-  opacity: 0.20;
-}
+/* RUNNING (present) — solid blue + blinking accent border */
+.sched-block.sched-running .sched-block-fill   { fill: var(--accent-dim); }
 .sched-block.sched-running .sched-block-border {
   stroke: var(--accent);
   stroke-width: 2;
-  animation: schedRunPulse 1.6s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px var(--accent));
+  animation: schedRunBlink 1.1s steps(2, end) infinite;
+  filter: drop-shadow(0 0 10px var(--accent));
 }
-.sched-block.sched-running .sched-blocklabel {
-  fill: var(--accent-h);
-  opacity: 1;
-}
-@keyframes schedRunPulse {
-  0%, 100% {
-    stroke-opacity: 1;
-    filter: drop-shadow(0 0 6px var(--accent));
-  }
-  50% {
-    stroke-opacity: 0.55;
-    filter: drop-shadow(0 0 16px var(--accent));
-  }
+.sched-block.sched-running .sched-blocklabel   { fill: var(--accent-h); }
+@keyframes schedRunBlink {
+  0%, 49%   { stroke-opacity: 1;    filter: drop-shadow(0 0 12px var(--accent)); }
+  50%, 100% { stroke-opacity: 0.30; filter: drop-shadow(0 0 4px var(--accent)); }
 }
