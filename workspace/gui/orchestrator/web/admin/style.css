@@ -695,26 +695,42 @@
 [data-theme="light"] .pendant-steps { background: #fff; }
 [data-theme="light"] .pendant-exit { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 
-/* ── Schedule (Gantt) — sidebar chip + modal ─────────────────────────── */
+/* ── Schedule view — sidebar chip + Gantt modal ──────────────────────── */
 
 #scheduleSection .log-header { cursor: pointer; }
+#scheduleSection .log-header:hover .section-label { color: var(--text); }
 .schedule-summary {
-  font-size: 12px;
+  font: 500 12px/1.4 var(--font);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 240px;
 }
-.schedule-summary .sched-replan { color: var(--accent); font-weight: 600; }
-.schedule-summary .sched-active { color: var(--green); font-weight: 600; }
+.schedule-summary .sched-replan { color: var(--accent); font-weight: 600; font-family: var(--mono); }
+.schedule-summary .sched-active { color: var(--green);  font-weight: 600; }
 .schedule-summary .sched-done   { color: var(--muted); }
 
+/* Modal */
 .modal.schedule-modal {
-  width: min(94vw, 1320px);
+  width: min(94vw, 1360px);
   max-height: 88vh;
   display: flex;
   flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal.schedule-modal .modal-head {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border2);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+}
+.modal.schedule-modal .modal-head h3 {
+  font: 600 15px/1 var(--font);
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 .modal.schedule-modal .modal-body.schedule-body {
   flex: 1;
@@ -722,78 +738,105 @@
   padding: 0;
   overflow: hidden;
 }
+
 .gantt-container {
   flex: 1;
   overflow: auto;
-  padding: 24px 24px 28px;
+  padding: 28px 24px 32px;
   background: var(--bg);
-  min-height: 320px;
+  min-height: 340px;
 }
 .sched-empty {
-  padding: 80px;
+  padding: 96px 24px;
   text-align: center;
   color: var(--muted);
-  font-size: 14px;
+  font: 400 13px/1.5 var(--font);
 }
 
 .sched-svg { display: block; min-width: 100%; }
 
-/* Row labels — generous, readable, monospace */
+/* ── Resource labels & row dividers ──────────────────────────────────── */
 .sched-rowlabel {
-  font: 600 14px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
-  fill: var(--text);
-  letter-spacing: 0.02em;
+  font: 600 12px/1 var(--mono);
+  fill: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .sched-rowline {
-  stroke: var(--border);
+  stroke: var(--border2);
   stroke-width: 1;
-  opacity: 0.25;
+  opacity: 0.7;
 }
 
-/* Action blocks — uniform light fill for every action, state drives
-   opacity + border. Color comes from a single CSS variable so theming
-   stays simple. */
+/* ── Tool-swap connectors ────────────────────────────────────────────── */
+/* Replaces the previous grey-block rendering: a 1px line that bridges
+   the gap reserved for the tool swap, tinted accent once the leading
+   action has fired. */
+.sched-connector {
+  stroke: var(--border);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.55;
+  stroke-dasharray: 3 4;
+}
+.sched-connector.half { stroke: var(--accent-h); opacity: 0.7; }
+.sched-connector.done { stroke: var(--accent);   opacity: 0.85; stroke-dasharray: none; }
+
+/* ── Action blocks: same fill for everything, state drives the rest ──── */
 .sched-block-fill {
-  fill: #f0f4fa;
-  transition: opacity 0.2s;
+  fill: var(--surface2);
+  transition: opacity 0.25s ease, fill 0.25s ease;
 }
-[data-theme="light"] .sched-block-fill { fill: #ffffff; }
-
 .sched-block-border {
   fill: none;
   stroke: var(--border);
   stroke-width: 1;
   pointer-events: none;
+  transition: stroke 0.25s, stroke-width 0.25s, stroke-opacity 0.25s;
 }
-
-.sched-block.sched-pending .sched-block-fill { opacity: 0.18; }
-.sched-block.sched-done    .sched-block-fill { opacity: 0.55; }
-.sched-block.sched-skipped .sched-block-fill { opacity: 0.08; }
-.sched-block.sched-running .sched-block-fill { opacity: 1.0; }
-
-/* Running: thick flashing border ring — unmistakable, scales subtly */
-.sched-block.sched-running .sched-block-border {
-  stroke: var(--accent);
-  stroke-width: 4;
-  animation: schedFlash 1s ease-in-out infinite;
-}
-@keyframes schedFlash {
-  0%, 100% { stroke-opacity: 1.0;  stroke-width: 4;   }
-  50%      { stroke-opacity: 0.30; stroke-width: 6.5; }
-}
-
 .sched-blocklabel {
-  font: 600 14px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
-  fill: #0a0f1a;
+  font: 600 14px/1 var(--mono);
+  fill: var(--text);
   pointer-events: none;
   letter-spacing: 0.01em;
+  transition: opacity 0.25s, fill 0.25s;
 }
-[data-theme="light"] .sched-blocklabel { fill: #0a0f1a; }
-.sched-block.sched-pending .sched-blocklabel { opacity: 0.50; }
-.sched-block.sched-skipped .sched-blocklabel { opacity: 0.25; }
-.sched-block.sched-done    .sched-blocklabel { opacity: 0.85; }
 
-/* Tool swaps */
-.sched-swap         { fill: var(--muted); opacity: 0.30; }
-.sched-swap.sched-running { opacity: 0.95; fill: var(--accent); }
-.sched-swap.sched-done    { opacity: 0.55; }
+/* States — opacity changes the FILL only; label remains crisp for done */
+.sched-block.sched-pending .sched-block-fill   { opacity: 0.32; }
+.sched-block.sched-pending .sched-block-border { opacity: 0.4; }
+.sched-block.sched-pending .sched-blocklabel   { opacity: 0.55; }
+
+.sched-block.sched-done    .sched-block-fill   { opacity: 1.0; }
+.sched-block.sched-done    .sched-block-border { stroke: var(--border2); }
+.sched-block.sched-done    .sched-blocklabel   { fill: var(--muted); }
+
+.sched-block.sched-skipped .sched-block-fill   { opacity: 0.10; }
+.sched-block.sched-skipped .sched-blocklabel   { opacity: 0.25; }
+
+/* Running: accent-tinted fill, glowing accent border that pulses */
+.sched-block.sched-running .sched-block-fill {
+  opacity: 1.0;
+  fill: var(--accent-dim);
+}
+.sched-block.sched-running .sched-block-border {
+  stroke: var(--accent);
+  stroke-width: 2;
+  animation: schedRunPulse 1.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.sched-block.sched-running .sched-blocklabel {
+  fill: var(--text);
+}
+@keyframes schedRunPulse {
+  0%, 100% {
+    stroke-opacity: 1;
+    stroke-width: 2;
+    filter: drop-shadow(0 0 6px var(--accent));
+  }
+  50% {
+    stroke-opacity: 0.55;
+    stroke-width: 3.5;
+    filter: drop-shadow(0 0 18px var(--accent));
+  }
+}

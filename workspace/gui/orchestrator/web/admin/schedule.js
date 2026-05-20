@@ -1,7 +1,9 @@
-// Schedule view — clean Gantt with uniform light blocks and a flashing
-// border for the currently-running action. Block widths auto-fit the
-// action's class name; "where are we right now" is driven by explicit
-// action_start / action_end events from the framework.
+// Live BT schedule view — minimal Apple-flavoured Gantt. Resource rows,
+// uniformly-styled action cards (one per planned action), thin connector
+// lines for tool swaps. Currently-running card pulses with an accent
+// glow. Everything is driven by explicit framework events
+// (action_start / action_end) so reality and visuals stay in sync even
+// when predicted durations drift.
 
 let _ws = null;
 let _wsUrl = "";
@@ -128,7 +130,6 @@ function _renderGantt() {
   }
 
   const actions = _plan.actions || [];
-  const swaps   = _plan.swaps   || [];
   const tres    = _plan.tool_resource || "robot";
 
   // Resource rows: tool resource on top, the rest alphabetical.
@@ -137,25 +138,21 @@ function _renderGantt() {
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // ── Auto-fit pxPerSec so every block is wide enough for its label ──
-  // For each action, compute the min width needed for its label, derive
-  // the pxPerSec that would give that. Take the global max so every
-  // block fits.
+  // Auto-fit pxPerSec — each block must be wide enough for its label.
   const FONT_PX = 14;
-  const CHAR_W = FONT_PX * 0.62;   // approx for the monospace label
-  const PAD_X = 28;                // 14 each side inside the block
+  const CHAR_W = FONT_PX * 0.62;
+  const PAD_X = 36;
   function labelOf(a) { return `${a.class_name || a.name}(${a.item})`; }
   function neededWidth(a) { return labelOf(a).length * CHAR_W + PAD_X; }
 
-  const ROW_H   = 60;
-  const ROW_PAD = 12;
-  const LEFT_W  = 150;
-  const TOP_PAD = 18;
-  const BOT_PAD = 18;
-  const SIDE_PAD = 24;
+  const ROW_H   = 68;
+  const ROW_PAD = 14;
+  const LEFT_W  = 160;
+  const TOP_PAD = 22;
+  const BOT_PAD = 22;
+  const SIDE_PAD = 28;
   const horizon = Math.max(_plan.makespan || 0, 30);
 
-  // Minimum pxPerSec needed so each block fits its label.
   let minPxPerSec = 6;
   for (const a of actions) {
     if (a.duration > 0) {
@@ -163,12 +160,11 @@ function _renderGantt() {
       if (ratio > minPxPerSec) minPxPerSec = ratio;
     }
   }
-  // Use the larger of "fill the container" and "fit labels".
   const containerAvail = Math.max(420, _ganttEl.clientWidth - 2 * SIDE_PAD - LEFT_W);
   const fillPxPerSec = containerAvail / horizon;
   const pxPerSec = Math.max(fillPxPerSec, minPxPerSec);
 
-  const W = LEFT_W + horizon * pxPerSec + 24;
+  const W = LEFT_W + horizon * pxPerSec + 32;
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -177,27 +173,36 @@ function _renderGantt() {
   svg.setAttribute("height", String(H));
   svg.setAttribute("class",  "sched-svg");
 
-  // Row labels + dividers
+  // Layered <g> elements so paint order is deterministic.
+  const gRows = document.createElementNS(svgNS, "g");
+  const gConn = document.createElementNS(svgNS, "g");
+  const gBlocks = document.createElementNS(svgNS, "g");
+  svg.appendChild(gRows);
+  svg.appendChild(gConn);
+  svg.appendChild(gBlocks);
+
+  // Row labels + dividers — clean Apple-y rhythm.
   rows.forEach((r, i) => {
     const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("x", String(LEFT_W - 14));
-    t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 5));
+    t.setAttribute("x", String(LEFT_W - 18));
+    t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 4));
     t.setAttribute("text-anchor", "end");
     t.setAttribute("class", "sched-rowlabel");
     t.textContent = r;
-    svg.appendChild(t);
+    gRows.appendChild(t);
     if (i > 0) {
       const line = document.createElementNS(svgNS, "line");
-      line.setAttribute("x1", String(LEFT_W - 4));
-      line.setAttribute("x2", String(W - 8));
+      line.setAttribute("x1", String(LEFT_W - 8));
+      line.setAttribute("x2", String(W - 16));
       line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
       line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
       line.setAttribute("class", "sched-rowline");
-      svg.appendChild(line);
+      gRows.appendChild(line);
     }
   });
 
-  // Action blocks
+  // Per-row layout records — used both for blocks and connector lines.
+  const placements = new Map();   // leaf_name -> {x, w, y, h, rowIdx}
   for (const a of actions) {
     const rowIdx = _primaryRow(rows, a.resources, tres);
     if (rowIdx < 0) continue;
@@ -205,62 +210,71 @@ function _renderGantt() {
     const w = Math.max(neededWidth(a), a.duration * pxPerSec);
     const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
     const h = ROW_H - ROW_PAD * 2;
-    _appendBlock(svg, x, y, w, h, a, _leafState.get(a.leaf_name) || "pending");
+    placements.set(a.leaf_name, { a, x, w, y, h, rowIdx });
   }
 
-  // Tool swaps — slim ticks on robot row
-  const swapRow = rows.indexOf(tres);
-  if (swapRow >= 0) {
-    for (const s of swaps) {
-      const x = LEFT_W + s.start_t * pxPerSec;
-      const w = Math.max(4, s.duration * pxPerSec);
-      const y = TOP_PAD + swapRow * ROW_H + ROW_PAD + 8;
-      const h = ROW_H - ROW_PAD * 2 - 16;
-      const state = _leafState.get(s.leaf_name) || "pending";
-      const r = document.createElementNS(svgNS, "rect");
-      r.setAttribute("x", String(x));
-      r.setAttribute("y", String(y));
-      r.setAttribute("width",  String(w));
-      r.setAttribute("height", String(h));
-      r.setAttribute("rx", "2");
-      r.setAttribute("class", `sched-swap sched-${state}`);
-      const title = document.createElementNS(svgNS, "title");
-      title.textContent = `swap ${s.from ?? "∅"} → ${s.to ?? "∅"} — ${state}`;
-      r.appendChild(title);
-      svg.appendChild(r);
-    }
+  // Connector lines: subtle 1px lines on the tool-resource row that
+  // bridge consecutive blocks across the gap reserved for a tool swap.
+  // Replaces the previous "grey block" rendering for swaps.
+  const robotActions = actions
+    .filter(a => (a.resources || []).includes(tres))
+    .sort((x, y) => x.start_t - y.start_t);
+  for (let i = 0; i + 1 < robotActions.length; i++) {
+    const pa = placements.get(robotActions[i].leaf_name);
+    const pb = placements.get(robotActions[i + 1].leaf_name);
+    if (!pa || !pb) continue;
+    if (pa.x + pa.w >= pb.x - 2) continue;          // no gap → no line
+    const y = pa.y + pa.h / 2;
+    const stateA = _leafState.get(robotActions[i].leaf_name) || "pending";
+    const stateB = _leafState.get(robotActions[i + 1].leaf_name) || "pending";
+    const cls = (stateA === "done" || stateA === "skipped")
+      ? (stateB === "running" || stateB === "done" || stateB === "skipped"
+          ? "sched-connector done" : "sched-connector half")
+      : "sched-connector";
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", String(pa.x + pa.w));
+    line.setAttribute("x2", String(pb.x));
+    line.setAttribute("y1", String(y));
+    line.setAttribute("y2", String(y));
+    line.setAttribute("class", cls);
+    gConn.appendChild(line);
+  }
+
+  // Action blocks.
+  for (const a of actions) {
+    const p = placements.get(a.leaf_name);
+    if (!p) continue;
+    const state = _leafState.get(a.leaf_name) || "pending";
+    _appendBlock(gBlocks, p.x, p.y, p.w, p.h, a, state);
   }
 
   _ganttEl.innerHTML = "";
   _ganttEl.appendChild(svg);
 }
 
-function _appendBlock(svg, x, y, w, h, a, state) {
+function _appendBlock(parent, x, y, w, h, a, state) {
   const svgNS = "http://www.w3.org/2000/svg";
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("class", `sched-block sched-${state}`);
 
-  // Fill — same light color for every action, opacity changes per state.
   const rect = document.createElementNS(svgNS, "rect");
   rect.setAttribute("x", String(x));
   rect.setAttribute("y", String(y));
   rect.setAttribute("width",  String(w));
   rect.setAttribute("height", String(h));
-  rect.setAttribute("rx", "8");
+  rect.setAttribute("rx", "12");
   rect.setAttribute("class", "sched-block-fill");
   g.appendChild(rect);
 
-  // Border ring — flashes when running.
   const border = document.createElementNS(svgNS, "rect");
   border.setAttribute("x", String(x));
   border.setAttribute("y", String(y));
   border.setAttribute("width",  String(w));
   border.setAttribute("height", String(h));
-  border.setAttribute("rx", "8");
+  border.setAttribute("rx", "12");
   border.setAttribute("class", "sched-block-border");
   g.appendChild(border);
 
-  // Label — exactly the class name (PascalCase), with item index in parens.
   const label = `${a.class_name || a.name}(${a.item})`;
   const lab = document.createElementNS(svgNS, "text");
   lab.setAttribute("x", String(x + w / 2));
@@ -271,10 +285,10 @@ function _appendBlock(svg, x, y, w, h, a, state) {
   g.appendChild(lab);
 
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = `${label} — ${state}\ntool: ${a.tool ?? "—"}`;
+  title.textContent = `${label} — ${state}`;
   g.appendChild(title);
 
-  svg.appendChild(g);
+  parent.appendChild(g);
 }
 
 function _primaryRow(rows, resources, toolRes) {
