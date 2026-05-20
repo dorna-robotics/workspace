@@ -711,37 +711,26 @@
 .schedule-summary .sched-done   { color: var(--muted); }
 
 .modal.schedule-modal {
-  width: min(96vw, 1400px);
-  max-height: 90vh;
+  width: min(94vw, 1280px);
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
 }
 .modal.schedule-modal .modal-body.schedule-body {
   flex: 1;
   display: flex;
-  flex-direction: column;
   padding: 0;
   overflow: hidden;
 }
-.schedule-stats {
-  display: flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.schedule-stats span { white-space: nowrap; }
-
 .gantt-container {
   flex: 1;
   overflow: auto;
-  padding: 12px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  min-height: 280px;
+  padding: 18px 18px 22px;
+  background: var(--bg);
+  min-height: 260px;
 }
 .sched-empty {
-  padding: 40px;
+  padding: 60px;
   text-align: center;
   color: var(--muted);
   font-size: 13px;
@@ -749,54 +738,48 @@
 
 .sched-svg { display: block; min-width: 100%; }
 
-.sched-row-bg     { fill: var(--surface); }
-.sched-row-bg.alt { fill: var(--surface2); opacity: 0.6; }
+/* Row backgrounds: bare, no alternating fill — keeps the eye on the bars */
+.sched-row     { fill: transparent; }
+.sched-row.alt { fill: rgba(255,255,255,0.015); }
 
-.sched-resource-label {
-  font: 600 11px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
-  fill: var(--text);
+/* Resource label, left gutter */
+.sched-rowlabel {
+  font: 500 11px/1 ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  fill: var(--muted);
   letter-spacing: 0.02em;
 }
 
-.sched-tick       { stroke: var(--border); stroke-width: 1; opacity: 0.5; }
-.sched-tick-label { font-size: 10px; fill: var(--muted); font-family: ui-monospace, monospace; }
+/* Time axis */
+.sched-tick      { stroke: var(--border); stroke-width: 0.5; opacity: 0.35; }
+.sched-ticklabel { font-size: 9px; fill: var(--muted); font-family: ui-monospace, monospace; opacity: 0.75; }
 
-.sched-pred       { opacity: 0.30; }
-.sched-actual     { opacity: 1.0; }
-.sched-actual.sched-running { opacity: 0.85; }
-.sched-actual.sched-done    { opacity: 0.95; }
-.sched-actual.sched-skipped { opacity: 0.20; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 2; }
+/* Action blocks — state drives appearance */
+.sched-block rect {
+  transition: opacity 0.2s, filter 0.2s;
+}
+.sched-block.sched-pending rect { opacity: 0.22; }
+.sched-block.sched-done    rect { opacity: 0.85; }
+.sched-block.sched-skipped rect { opacity: 0.10; }
+.sched-block.sched-running rect {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px currentColor);
+  animation: schedPulse 1.4s ease-in-out infinite;
+}
+@keyframes schedPulse {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(255,255,255,0.45)); }
+  50%      { filter: drop-shadow(0 0 12px rgba(255,255,255,0.85)); }
+}
 
-.sched-block-label {
+.sched-blocklabel {
   font: 500 10px/1 ui-monospace, "SF Mono", monospace;
   fill: #fff;
   pointer-events: none;
+  opacity: 0.9;
 }
-[data-theme="light"] .sched-block-label { fill: #111; }
+[data-theme="light"] .sched-blocklabel { fill: #111; }
+.sched-block.sched-pending .sched-blocklabel { opacity: 0.5; }
 
-.sched-swap-rect      { stroke: var(--muted); stroke-width: 0.5; opacity: 0.5; }
-.sched-swap-rect.done { opacity: 0.9; }
-
-.sched-now {
-  stroke: #ff4d4f;
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  pointer-events: none;
-}
-
-.schedule-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 10px 16px;
-  font-size: 11px;
-  color: var(--muted);
-  background: var(--bg);
-}
-.legend-item { display: flex; align-items: center; gap: 6px; }
-.legend-item .swatch {
-  display: inline-block; width: 12px; height: 12px; border-radius: 3px;
-}
-.legend-item .swatch-stripe {
-  background: repeating-linear-gradient(45deg, #5a5d68 0 3px, transparent 3px 6px);
-}
+/* Tool swaps — thin neutral ticks on the robot row */
+.sched-swap         { fill: var(--muted); opacity: 0.25; }
+.sched-swap.sched-running { opacity: 0.8; fill: var(--accent); }
+.sched-swap.sched-done    { opacity: 0.45; }
