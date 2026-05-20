@@ -700,30 +700,14 @@
 #scheduleSection .log-header { cursor: pointer; }
 #scheduleSection .log-header:hover .section-label { color: var(--text); }
 
-/* Modal */
+/* Modal — inherits everything from the base .modal styles (border-
+   radius, background, shadow, head/body padding); we only widen it
+   and zero the body padding so the Gantt SVG fills the body. */
 .modal.schedule-modal {
   width: min(94vw, 1360px);
   max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-.modal.schedule-modal .modal-head {
-  padding: 18px 22px;
-  border-bottom: 1px solid var(--border2);
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
-}
-.modal.schedule-modal .modal-head h3 {
-  font: 600 15px/1 var(--font);
-  letter-spacing: -0.01em;
-  color: var(--text);
 }
 .modal.schedule-modal .modal-body.schedule-body {
-  flex: 1;
-  display: flex;
   padding: 0;
   overflow: hidden;
 }
