@@ -95,7 +95,7 @@ class ORRunner:
         return any(s.get("trigger") == trigger_name for s in self._trigger_states.values())
 
     def run_trigger(self, trigger_name: str):
-        """Execute a trigger state (e.g. 'end'). Called outside normal scheduling.
+        """Execute a trigger state (e.g. 'park'). Called outside normal scheduling.
         Shares the same lifecycle as scheduled states (pre_check → tool swap →
         handler → post_check) — only the invocation point differs."""
         for sname, s in self._trigger_states.items():
@@ -136,7 +136,7 @@ class ORRunner:
         Rolling horizon replanning happens automatically every `horizon` tasks.
         After a fault, update completed externally and call run() again to resume.
         """
-        from workspace.runtime import EndRequested
+        from workspace.runtime import ParkRequested
 
         completed: dict[str, set[int]] = {n: set() for n in self._snames}
         bg_active: dict[str, tuple[float, float]] = {}
@@ -157,10 +157,10 @@ class ORRunner:
                     break
 
                 for (state_name, item_i) in schedule:
-                    # End is observed between states so the current state's
+                    # Park is observed between states so the current state's
                     # multi-step atomic operations (e.g. tool swap) can complete.
-                    if self.rt.ending and not self.rt._in_cleanup:
-                        raise EndRequested()
+                    if self.rt.parking and not self.rt._in_cleanup:
+                        raise ParkRequested()
 
                     s       = self._smap[state_name]
                     is_bg   = s.get("background", False)
@@ -202,7 +202,7 @@ class ORRunner:
             self.rt.step(100, level="progress")
             self.rt.step("Protocol complete — all goal states reached", level="success")
 
-        except EndRequested:
+        except ParkRequested:
             # Graceful stop — re-raise for workflow to handle
             raise
 

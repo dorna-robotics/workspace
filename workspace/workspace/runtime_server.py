@@ -174,8 +174,8 @@ class CmdHandler(tornado.web.RequestHandler):
                     self.workflow_fn, workspace=self.workspace, **extra_kwargs
                 )
 
-        elif cmd == "end":
-            self.rt.end()
+        elif cmd == "park":
+            self.rt.park()
             # If no workflow thread is running, end has nobody to catch it — kill instead
             th = self._workflow_thread_holder.get("thread")
             if th is None or not th.is_alive():

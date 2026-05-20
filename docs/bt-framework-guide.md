@@ -140,7 +140,7 @@ Task-oriented routing — go straight to the file for what you want to change.
 | Change the GUI form | `launch.yaml` kwargs |
 | Add a new vision / sensor check | `checks.py` (method + `register_check` line) |
 | Wire a check into an action | `pre_check` / `post_check` class attr on the action |
-| Add an End-cleanup action | new `Action` subclass with `trigger="end"` (see §3.2) |
+| Add a Park-cleanup action | new `Action` subclass with `trigger="park"` (see §3.2) |
 | Change the scene | `scene/base.j2` |
 | Change recipe bindings (which class implements which alias) | `recipes.yaml` |
 | Override the protocol runner | add a `workflow.py` and change `main.py`'s `workflow_fn` |
@@ -294,7 +294,7 @@ parentheses.
 | `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the previous same-resource action used a different `tool`. Per-action so swap costs can differ between tool changes. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
-| `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"end"`` marks the action as scene cleanup invoked when the operator clicks End. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
+| `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"park"`` marks the action as scene cleanup invoked when the operator clicks Park. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
 | `schedule` | `dict` (`{"register": True, "display": True}`) | Planner / scheduler / Gantt visibility. See §3.3 for the full spec. **Always a dict** — override with a new dict (partial allowed) to change any key. |
 
 ### 3.2 `trigger` — lifecycle event hooks
@@ -307,18 +307,18 @@ overloading other attributes.
 | Value | Effect |
 |---|---|
 | `None` *(default)* | Action fires as part of the goal-directed plan. |
-| `"end"` | Action runs only when the operator clicks End. Excluded from PDDL templates and the scheduler. The launcher collects every `trigger="end"` class into the End-cleanup subtree (registry order, one leaf per class, `item_index=0`). |
+| `"park"` | Action runs only when the operator clicks Park. Excluded from PDDL templates and the scheduler. The launcher collects every `trigger="park"` class into the Park-cleanup subtree (registry order, one leaf per class, `item_index=0`). |
 
 Typical use — park the tool when the operator stops the run:
 
 ```python
 class ParkTool(Action):
-    """Release whatever tool is held — runs on operator End."""
+    """Release whatever tool is held — runs on operator Park."""
     params   = []        # scene-level, no per-item iteration
     duration = 5
     resource = "robot"
     tool     = None      # "release current tool"
-    trigger  = "end"
+    trigger  = "park"
 
     def execute(self):
         return "none"
@@ -790,13 +790,13 @@ candidates — then filters via `pre()`.
 
 #### Zero-param actions
 
-For scene-level actions (e.g. End-trigger cleanup), `params = []`.
+For scene-level actions (e.g. Park-trigger cleanup), `params = []`.
 The planner doesn't enumerate; one candidate exists.
 
 ```python
 class ParkTool(Action):
     params  = []
-    trigger = "end"
+    trigger = "park"
 
     def execute(self):
         return "none"

@@ -471,12 +471,12 @@ class Capped2ml(Action):
 
 
 class ParkTool(Action):
-    """Release whatever tool is held — runs on operator End."""
+    """Release whatever tool is held — runs on operator Park."""
     params      = []
     duration    = 5
     resource    = "robot"
     tool        = None
-    trigger     = "end"
+    trigger     = "park"
 
     def execute(self):
         return "none"

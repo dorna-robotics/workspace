@@ -166,29 +166,29 @@ class BaseWorkflow:
     # ── Execution ────────────────────────────────────────────────────────────
 
     def run(self):
-        from workspace.runtime import EndRequested, KillRequested
+        from workspace.runtime import ParkRequested, KillRequested
         try:
             self.runner.run(self.batch_size)
-        except EndRequested:
+        except ParkRequested:
             pass
         except KillRequested:
             raise
 
-        # End cleanup: suppress EndRequested so trigger:end and release can do real work.
+        # Park cleanup: suppress ParkRequested so trigger:park and release can do real work.
         # KillRequested still honored (force kill takes priority).
-        if self.rt.ending:
+        if self.rt.parking:
             self.rt._in_cleanup = True
             try:
-                if self.runner.has_trigger("end"):
-                    # trigger:end is the authoritative cleanup. Its `tool:` field
+                if self.runner.has_trigger("park"):
+                    # trigger:park is the authoritative cleanup. Its `tool:` field
                     # controls final tool state:
                     #   not set      → keep current tool, no swap, no release
                     #   tool: NAME   → swap to NAME, leave NAME held after trigger
                     #   tool: null   → release current tool, run trigger bare
-                    self.runner.run_trigger("end")
-                # else: no trigger:end → exit immediately after the current state
+                    self.runner.run_trigger("park")
+                # else: no trigger:park → exit immediately after the current state
                 # finished. Tools stay wherever they are; cleanup is the user's
-                # responsibility (define trigger:end with tool: null to release).
+                # responsibility (define trigger:park with tool: null to release).
             except KillRequested:
                 raise
             except Exception:
@@ -200,7 +200,7 @@ class BaseWorkflow:
             # Normal completion — release tools
             try:
                 self._release_all()
-            except (EndRequested, KillRequested):
+            except (ParkRequested, KillRequested):
                 pass
 
     def _apply_tool_enforcement(self):

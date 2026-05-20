@@ -14,7 +14,7 @@ class RTState(str, Enum):
     IDLE = "IDLE"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
-    ENDING = "ENDING"
+    PARKING = "PARKING"
     ERROR = "ERROR"
     KILLED = "KILLED"
 
@@ -22,8 +22,8 @@ class RTState(str, Enum):
 class KillRequested(SystemExit):
     """Raised to terminate the gate/worker thread immediately (cooperative thread-exit)."""
 
-class EndRequested(Exception):
-    """Raised to gracefully end the workflow — finish current action, run trigger:end handler, then exit."""
+class ParkRequested(Exception):
+    """Raised to gracefully park the workflow — finish current action, run trigger:park handler, then exit."""
 
 
 @dataclass
@@ -63,9 +63,9 @@ class Runtime:
         self._killed = False
 
         # stop flag (graceful stop — finish current action then stop)
-        self._ending = False
+        self._parking = False
 
-        # cleanup flag — suppresses EndRequested in checkpoint() during trigger:end / release
+        # cleanup flag — suppresses ParkRequested in checkpoint() during trigger:park / release
         self._in_cleanup = False
 
         # prevent concurrent worker() runs
@@ -98,7 +98,7 @@ class Runtime:
         # moment the runtime first enters RUNNING for a given run, kept
         # across pause/resume, reset on the next cold start. ``run_
         # finished_at`` is set when the run terminates (RUNNING/PAUSED/
-        # ENDING → IDLE/ERROR/KILLED). Lets ``/status`` report a stable
+        # PARKING → IDLE/ERROR/KILLED). Lets ``/status`` report a stable
         # "Up" value the orchestrator can pass through unchanged — no
         # race with the orchestrator's polling loop.
         self.run_started_at: Optional[float] = None
@@ -139,7 +139,7 @@ class Runtime:
                 self.run_finished_at = None
         elif (
             new_state in (RTState.IDLE, RTState.ERROR, RTState.KILLED)
-            and old in (RTState.RUNNING, RTState.PAUSED, RTState.ENDING)
+            and old in (RTState.RUNNING, RTState.PAUSED, RTState.PARKING)
         ):
             if self.run_started_at and not self.run_finished_at:
                 self.run_finished_at = time.time()
@@ -287,19 +287,21 @@ class Runtime:
                 self._set_state(RTState.RUNNING)
                 self._cv.notify_all()
 
-    def end(self) -> None:
-        """Request graceful stop — current action finishes, then EndRequested is raised at next checkpoint."""
+    def park(self) -> None:
+        """Request graceful park — current action finishes, then
+        ParkRequested is raised at next checkpoint, followed by every
+        ``trigger="park"`` Action class running once in sequence."""
         with self._lock:
-            if self._killed or self._ending:
+            if self._killed or self._parking:
                 return
-            self._ending = True
-            self._set_state(RTState.ENDING)
+            self._parking = True
+            self._set_state(RTState.PARKING)
             # If paused, resume so the checkpoint can see the stop flag
             self._cv.notify_all()
 
     @property
-    def ending(self) -> bool:
-        return self._ending
+    def parking(self) -> bool:
+        return self._parking
 
     def kill(self) -> None:
         """Kill runtime and join workflow thread."""
@@ -321,7 +323,7 @@ class Runtime:
         """Reset runtime after kill() or stop()."""
         with self._lock:
             self._killed = False
-            self._ending = False
+            self._parking = False
             self._in_cleanup = False
             self._status.last_error = None
             self._status.state = RTState.IDLE
@@ -334,8 +336,8 @@ class Runtime:
     def mark_running(self) -> None:
         if self._killed:
             raise KillRequested()
-        if self._ending:
-            raise EndRequested()
+        if self._parking:
+            raise ParkRequested()
         self._set_state_with_callback(RTState.RUNNING)
 
     def mark_idle(self) -> None:
@@ -360,8 +362,8 @@ class Runtime:
             while True:
                 if self._killed:
                     raise KillRequested()
-                if self._ending:
-                    raise EndRequested()
+                if self._parking:
+                    raise ParkRequested()
                 if self._seen_start_token != self._start_token:
                     self._seen_start_token = self._start_token
                     return
@@ -442,7 +444,7 @@ class Runtime:
                     self.mark_idle()
                 except KillRequested:
                     return
-                except EndRequested:
+                except ParkRequested:
                     self.mark_idle()
                     return
                 except Exception as ex:

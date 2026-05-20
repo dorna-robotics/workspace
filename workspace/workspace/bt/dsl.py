@@ -136,9 +136,9 @@ def _should_register(cls) -> bool:
     return bool(own.get("register", True))
 
 
-def _is_end_trigger(cls) -> bool:
-    """Is this an End-cleanup action (``trigger = "end"``)?"""
-    return getattr(cls, "trigger", None) == "end"
+def _is_park_trigger(cls) -> bool:
+    """Is this a Park-cleanup action (``trigger = "park"``)?"""
+    return getattr(cls, "trigger", None) == "park"
 
 
 # ── Internal: facts and predicates ─────────────────────────────────────────
@@ -746,12 +746,12 @@ class Action:
     # appears in the planner/Gantt.
     #
     #   * ``None`` (default) — fires as part of the goal-directed plan.
-    #   * ``"end"``          — runs when the operator clicks End.
+    #   * ``"park"``         — runs when the operator clicks Park.
     #                          Excluded from PDDL templates and the
     #                          scheduler; the launcher collects every
-    #                          ``trigger="end"`` class into the
-    #                          End-cleanup subtree. Typical: park the
-    #                          held tool, return home, dispose waste.
+    #                          ``trigger="park"`` class into the
+    #                          Park-cleanup subtree. Typical: release
+    #                          the held tool, return home, dispose waste.
     trigger:             Optional[str] = None
 
     # Planner / Gantt visibility. ALWAYS a dict — the default value
@@ -990,15 +990,15 @@ class ActionRegistry:
         """Build a list of :class:`ActionTemplate` for the PDDL planner.
 
         Each registered action class becomes one template **unless**
-        it carries ``trigger = "end"`` — those are scene cleanup, not
+        it carries ``trigger = "park"`` — those are scene cleanup, not
         part of the goal-directed plan; the engine runs
-        them when the operator clicks End). The instance used during
+        them when the operator clicks Park. The instance used during
         planning carries ``ctx`` so its ``param_iter`` / ``pre`` /
         ``eff`` can consult ``ctx.meta``.
         """
         templates: List[ActionTemplate] = []
         for name, cls in self._actions.items():
-            if _is_end_trigger(cls):
+            if _is_park_trigger(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1071,7 +1071,7 @@ class ActionRegistry:
         added: set = set()
         removed: set = set()
         for cls in self._actions.values():
-            if _is_end_trigger(cls):
+            if _is_park_trigger(cls):
                 continue
             instance = cls()
             # Probe with an empty state. Static effs ignore self.state;
@@ -1117,7 +1117,7 @@ class ActionRegistry:
         empty: State = frozenset()
         out: set = set()
         for cls in self._actions.values():
-            if _is_end_trigger(cls):
+            if _is_park_trigger(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1147,11 +1147,10 @@ class ActionRegistry:
     def to_meta(self) -> Dict[str, ActionMeta]:
         out: Dict[str, ActionMeta] = {}
         for name, cls in self._actions.items():
-            # End-trigger actions (``trigger = "end"``) aren't
+            # Park-trigger actions (``trigger = "park"``) aren't
             # scheduled work — the engine runs them outside the schedule
-            # when End is
-            # requested. Keep them out of scheduler meta too.
-            if _is_end_trigger(cls):
+            # when Park is requested. Keep them out of scheduler meta too.
+            if _is_park_trigger(cls):
                 continue
             # ``tool`` is a sentinel for "keep current tool" — for the
             # scheduler that means "no opinion on the held tool" which

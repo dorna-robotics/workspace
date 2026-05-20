@@ -29,7 +29,7 @@ let _logFollowing = true;
 // Dorna logo (set in HTML); only the title's leading glyph changes.
 const _TITLE_DOTS = {
   ok:   "\u{1F7E2}",  // 🟢 RUNNING / ACTIVE
-  warn: "\u{1F7E1}",  // 🟡 PAUSED / ENDING / IDLE
+  warn: "\u{1F7E1}",  // 🟡 PAUSED / PARKING / IDLE
   bad:  "\u{1F534}",  //  RED ERROR / OFFLINE
   off:  "⚫",     // ⚫ NOT_LAUNCHED / unknown
 };
@@ -331,16 +331,16 @@ function updateStatusUI(st) {
 
   // Live uptime: store base so the 1s ticker can interpolate. Tick
   // only when the run is in flight — RUNNING (active motion), PAUSED
-  // (operator paused mid-run, wall clock still counts), or ENDING
+  // (operator paused mid-run, wall clock still counts), or PARKING
   // (graceful wrap-up). On IDLE the run has finished and the server's
   // uptime_s is the frozen final value, so leave _uptimeAt null and
   // the ticker simply leaves the display alone.
-  const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "ENDING"]
+  const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "PARKING"]
     .includes((state || "").toUpperCase());
 
   // Tab favicon mirrors the state pill so an operator with multiple
   // workspaces open in tabs can spot which one needs attention from
-  // the tab strip alone (green = running, amber = paused/ending,
+  // the tab strip alone (green = running, amber = paused/parking,
   // red = error/offline, gray = not launched).
   _setFaviconForState(state, variant, isInRun);
   if (st?.uptime_s != null) {
@@ -1012,11 +1012,11 @@ function renderControls(state, launched, running) {
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
-      if (cmd === "end" && !await confirmDialog({
-        title: "End Workflow?",
-        message: "The current action will finish, then the workflow will stop gracefully.",
-        confirm: "End Workflow",
-        icon: "end",
+      if (cmd === "park" && !await confirmDialog({
+        title: "Park Workflow?",
+        message: "The current action will finish, then the robot will park (release tools, return home) before stopping.",
+        confirm: "Park Workflow",
+        icon: "park",
         variant: "danger",
       })) return;
       if (cmd === "kill" && !await confirmDialog({
@@ -1056,10 +1056,10 @@ function renderControls(state, launched, running) {
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
     controls.appendChild(lbl);
-  } else if (s === "ENDING") {
+  } else if (s === "PARKING") {
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
-    lbl.textContent = "Ending…";
+    lbl.textContent = "Parking…";
     controls.appendChild(lbl);
   } else {
     // The "start" command resumes from PAUSED as well as starting from
@@ -1068,7 +1068,7 @@ function renderControls(state, launched, running) {
     const startLabel = (s === "PAUSED") ? "Resume" : "Start";
     addBtn(startLabel, "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("End",      "end",      { danger: true });
+    addBtn("Park",     "park",     { danger: true });
   }
 
   // Gear button for parameters — only before launch
@@ -1458,12 +1458,12 @@ function updatePendantUI() {
   }
 
   // Enable/disable buttons based on state
-  const ending = state.toUpperCase() === "ENDING";
+  const parking = state.toUpperCase() === "PARKING";
   // Disable buttons based on state
   $("pendantLaunch").disabled  = launched;
-  $("pendantStart").disabled   = !launched || running || ending;
-  $("pendantPause").disabled   = !running || ending;
-  $("pendantEnd").disabled     = !launched || ending;
+  $("pendantStart").disabled   = !launched || running || parking;
+  $("pendantPause").disabled   = !running || parking;
+  $("pendantPark").disabled    = !launched || parking;
   $("pendantKill").disabled    = !launched;
 
   // Relabel the Start button to "Resume" when the runtime is paused —
@@ -1478,11 +1478,11 @@ function updatePendantUI() {
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   btn.addEventListener("click", async () => {
     const cmd = btn.dataset.cmd;
-    if (cmd === "end" && !await confirmDialog({
-      title: "End Workflow?",
-      message: "The current action will finish, then the workflow will stop gracefully.",
-      confirm: "End Workflow",
-      icon: "end",
+    if (cmd === "park" && !await confirmDialog({
+      title: "Park Workflow?",
+      message: "The current action will finish, then the robot will park (release tools, return home) before stopping.",
+      confirm: "Park Workflow",
+      icon: "park",
       variant: "danger",
     })) return;
     if (cmd === "kill" && !await confirmDialog({

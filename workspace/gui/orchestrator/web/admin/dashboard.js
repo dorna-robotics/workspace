@@ -318,7 +318,7 @@ function render() {
                <button class="btn btn-sm action-btn" data-cmd="kill">Kill</button>`
             : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${running ? "disabled" : ""}>${state.toUpperCase() === "PAUSED" ? "Resume" : "Start"}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!running ? "disabled" : ""}>Pause</button>
-               <button class="btn btn-sm btn-danger action-btn"  data-cmd="end">End</button>
+               <button class="btn btn-sm btn-danger action-btn"  data-cmd="park">Park</button>
                <div class="spacer"></div>
                <button class="btn btn-sm action-btn"             data-cmd="kill">Kill</button>`
           }
@@ -340,11 +340,11 @@ function render() {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         const cmd = btn.dataset.cmd;
-        if (cmd === "end" && !await confirmDialog({
-          title: `End "${ws.name}"?`,
-          message: "The current action will finish, then the workflow will stop gracefully.",
-          confirm: "End Workflow",
-          icon: "end",
+        if (cmd === "park" && !await confirmDialog({
+          title: `Park "${ws.name}"?`,
+          message: "The current action will finish, then the robot will park (release tools, return home) before stopping.",
+          confirm: "Park Workflow",
+          icon: "park",
           variant: "danger",
         })) return;
         if (cmd === "kill" && !await confirmDialog({

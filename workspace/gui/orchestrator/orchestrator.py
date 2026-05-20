@@ -462,13 +462,13 @@ class Orchestrator:
             raise RuntimeError(f"Workspace {name} is not launched.")
         return self._send_runtime_cmd_local(ws, "resume")
 
-    def end_runtime(self, name: str):
+    def park_runtime(self, name: str):
         ws = self.workspaces[name]
         if ws.is_remote():
-            return self._proxy_cmd_to_node(ws, "end")
+            return self._proxy_cmd_to_node(ws, "park")
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched.")
-        return self._send_runtime_cmd_local(ws, "end")
+        return self._send_runtime_cmd_local(ws, "park")
 
     def get_status(self, name: str) -> Dict:
         ws = self.workspaces[name]

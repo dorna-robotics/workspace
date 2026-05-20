@@ -109,11 +109,11 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
                 raise ValueError(f"Unknown workspace: {name}")
             ws = self.orch.workspaces[name]
             schema = ws.launch_config()
-            has_end = ws.has_trigger("end")
+            has_park = ws.has_trigger("park")
             self.write({
                 "kwargs_schema": schema or {},
                 "kwargs_values": ws.kwargs_values or {},
-                "has_end": has_end,
+                "has_park": has_park,
             })
         except Exception as e:
             self.set_status(400)
@@ -233,8 +233,8 @@ class WorkspaceCmdHandler(AuthedHandler):
             elif cmd == "start":
                 kwargs = data.get("kwargs")
                 out = await loop.run_in_executor(_cmd_pool, self.orch.start_runtime, name, kwargs)
-            elif cmd == "end":
-                out = await loop.run_in_executor(_cmd_pool, self.orch.end_runtime, name)
+            elif cmd == "park":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.park_runtime, name)
             elif cmd == "pause":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
             elif cmd == "resume":

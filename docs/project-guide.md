@@ -200,7 +200,7 @@ states:
     background: true
 
   shutdown:
-    trigger: end
+    trigger: park
 
 goal: [placed]
 
@@ -220,7 +220,7 @@ Each key under `states` is the state name — must match a key in `states.py` `m
 | `background` | No | `true` = runs in parallel, completes all items at once (default: `false`) |
 | `pre_check` | No | Check name or list — runs **before** the tool swap and state handler. If it fails, the state is skipped entirely (no tool swap happens). Must match a key in `checks.py` `make()` |
 | `post_check` | No | Check name or list — runs **after** the state handler completes. Must match a key in `checks.py` `make()` |
-| `trigger` | No | `"end"` — state is not scheduled, only runs on End signal. <br>• A trigger state is **a normal state with a different invocation point** — it goes through the same execution path (`_execute_state` in `runner.py`) as scheduled states, so every state-level field above (`tool`, `pre_check`, `post_check`, etc., plus any future additions) applies naturally <br>• When End is pressed, the current state finishes, then this trigger runs before the process exits <br>• `tool:` on the trigger is the **authoritative final tool state** — no auto-release runs after <br>• If `trigger: end` is **not** defined, End simply exits after the current state finishes — tools are **not** auto-released. To release the held tool on End, define a `trigger: end` state with `tool: null` <br>• Scheduling-only fields (`requires`, `duration`, `tool_swap_duration`, `background`) are ignored on triggers since they're not part of the OR-tools plan <br>• Use it for cleanup (return tools, home robot, safe position) |
+| `trigger` | No | `"park"` — state is not scheduled, only runs on Park signal. <br>• A trigger state is **a normal state with a different invocation point** — it goes through the same execution path (`_execute_state` in `runner.py`) as scheduled states, so every state-level field above (`tool`, `pre_check`, `post_check`, etc., plus any future additions) applies naturally <br>• When Park is pressed, the current state finishes, then this trigger runs before the process exits <br>• `tool:` on the trigger is the **authoritative final tool state** — no auto-release runs after <br>• If `trigger: park` is **not** defined, Park simply exits after the current state finishes — tools are **not** auto-released. To release the held tool on Park, define a `trigger: park` state with `tool: null` <br>• Scheduling-only fields (`requires`, `duration`, `tool_swap_duration`, `background`) are ignored on triggers since they're not part of the OR-tools plan <br>• Use it for cleanup (return tools, home robot, safe position) |
 
 ### Goal
 
@@ -390,7 +390,7 @@ rt.checkpoint()  # Blocks if paused, raises KillRequested if killed
 
 Called automatically after every `rt.step()` and `rt.call()`. Use manually in long loops.
 
-Note: `checkpoint()` does **not** raise `EndRequested` — End is observed between states, not mid-state. See [§9 Pause / End / Kill](#pause--end--kill--runtime-control-semantics).
+Note: `checkpoint()` does **not** raise `ParkRequested` — Park is observed between states, not mid-state. See [§9 Pause / Park / Kill](#pause--park--kill--runtime-control-semantics).
 
 ---
 
@@ -403,7 +403,7 @@ Note: `checkpoint()` does **not** raise `EndRequested` — End is observed betwe
 3. Set name, port, path to `main.py`
 4. Click the **gear icon** → set parameters → **Set**
 5. Click **Launch** → **Start**
-6. To end gracefully: **End** (finishes current action → runs shutdown → exits)
+6. To park gracefully: **Park** (finishes current action → runs shutdown → exits)
 7. To emergency halt: **Kill** (instant stop, may leave robot in dirty state)
 
 ### From the command line
@@ -414,17 +414,17 @@ sudo python3 projects/my_project/main.py --port 5010
 
 Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send start/pause/kill commands.
 
-### Pause / End / Kill — runtime control semantics
+### Pause / Park / Kill — runtime control semantics
 
 The runtime exposes three control signals. Each interacts differently with the currently executing state:
 
 | Signal | When it takes effect | What runs after | Use when |
 |---|---|---|---|
 | **Pause** | At the next `rt.checkpoint()` (mid-state OK) | Blocks until you Resume — state continues from where it stopped | You want to inspect, intervene, or wait |
-| **End** | **Between states** — current state runs to completion first | If `trigger: end` is defined → that trigger runs and is the authoritative final cleanup. Otherwise → exit immediately, tools stay where they are | Graceful shutdown — the safe default |
+| **Park** | **Between states** — current state runs to completion first | If `trigger: park` is defined → that trigger runs and is the authoritative final cleanup. Otherwise → exit immediately, tools stay where they are | Graceful shutdown — the safe default |
 | **Kill** | At the next `rt.checkpoint()` (mid-state OK) | Nothing — process exits immediately, no cleanup | Emergency halt only — may leave robot/tools in a dirty state |
 
-**Why End is "between states", not mid-state:** many states perform multi-step atomic operations (most importantly tool swaps: `place(old)` then `pick(new)`). Interrupting between those steps would leave the robot in an inconsistent state — e.g. tool placed back but the next pick never happened, while the runtime still thinks a tool is held. End therefore lets the current state finish, then exits cleanly between states.
+**Why Park is "between states", not mid-state:** many states perform multi-step atomic operations (most importantly tool swaps: `place(old)` then `pick(new)`). Interrupting between those steps would leave the robot in an inconsistent state — e.g. tool placed back but the next pick never happened, while the runtime still thinks a tool is held. Park therefore lets the current state finish, then exits cleanly between states.
 
 If you need to stop *immediately* and accept the consequences, use Kill.
 

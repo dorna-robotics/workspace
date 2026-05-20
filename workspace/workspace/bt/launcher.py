@@ -629,26 +629,26 @@ def run_protocol(
         config=ReplanConfig(verbose=True),
     )
 
-    # End-cleanup tree: collect every Action subclass declaring
-    # ``trigger = "end"``. When the operator clicks End, the BT engine
-    # completes the current action, then runs this subtree to perform
-    # cleanup (park tools, return home, …) before exiting. The
-    # collection happens at engine-start so the registry is already
-    # populated.
-    from workspace.bt.dsl import _is_end_trigger
-    end_classes = [
+    # Park-cleanup tree: collect every Action subclass declaring
+    # ``trigger = "park"``. When the operator clicks Park, the BT
+    # engine completes the current action, then runs this subtree to
+    # park the robot (release tools, return home, …) before exiting.
+    # The collection happens at engine-start so the registry is
+    # already populated.
+    from workspace.bt.dsl import _is_park_trigger
+    park_classes = [
         (name, cls)
         for name, cls in sorted(registry._actions.items())
-        if _is_end_trigger(cls)
+        if _is_park_trigger(cls)
     ]
 
-    def build_end_tree() -> Optional[py_trees.behaviour.Behaviour]:
-        if not end_classes:
+    def build_park_tree() -> Optional[py_trees.behaviour.Behaviour]:
+        if not park_classes:
             return None
-        # End-trigger actions are scene-level (no per-item iteration)
+        # Park-trigger actions are scene-level (no per-item iteration)
         # so we instantiate exactly one leaf per class, item_index=0.
-        leaves = [leaf_factory(name, 0) for name, _ in end_classes]
-        return sequence(f"{project_name}/end", *leaves)
+        leaves = [leaf_factory(name, 0) for name, _ in park_classes]
+        return sequence(f"{project_name}/park", *leaves)
 
     root = replanner.rebuild()
     # Slicing turns every window-completion into a replan, so the cap
@@ -661,7 +661,7 @@ def run_protocol(
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,
-        build_end_tree=build_end_tree,
+        build_park_tree=build_park_tree,
         runtime=ctx.runtime,
         config=EngineConfig(tick_hz=float(tick_hz), max_replans=replan_cap),
     )
