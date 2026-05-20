@@ -15,10 +15,10 @@ in_working       = predicate("in_working")       # 40ml tube in working rack
 in_shaker        = predicate("in_shaker")        # 40ml tube on shaker
 in_done          = predicate("in_done")          # 40ml tube back in source rack (done)
 has_cap          = predicate("has_cap")          # 40ml has cap on
-weighed          = predicate("weighed")          # 40ml weighed at inspected
-dosed_40ml_p     = predicate("dosed_40ml")       # solvent into 40ml
-shaken           = predicate("shaken")           # this tube has been shaken
-dosed_2ml_p      = predicate("dosed_2ml")        # transferred to 2ml vials
+weighed          = predicate("weighed")          # weighed at inspected
+dosed_40ml       = predicate("dosed_40ml")       # solvent dispensed into 40ml
+shaken           = predicate("shaken")           # tube has been shaken
+dosed_2ml        = predicate("dosed_2ml")        # transferred to 2ml vials
 cap_in_holder    = predicate("cap_in_holder")    # autosampler-fed cap waiting
 vial_2ml_capped  = predicate("vial_2ml_capped")  # 2ml vial capped and placed
 
@@ -47,7 +47,7 @@ def setup(**kwargs):
     # auto-derivation can't see it — list per-tube progress markers
     # explicitly. (Framework's monotonic-probe limitation, see guide.)
     progress_preds = (
-        weighed, dosed_40ml_p, shaken, dosed_2ml_p,
+        weighed, dosed_40ml, shaken, dosed_2ml,
         in_done, vial_2ml_capped,
     )
     goal_facts = frozenset(
@@ -215,10 +215,10 @@ class Dosed40ml(Action):
     pre_check   = "tube_in_working_rack"
 
     def pre(self, tube):
-        return in_working(tube) & ~has_cap(tube) & ~dosed_40ml_p(tube)
+        return in_working(tube) & ~has_cap(tube) & ~dosed_40ml(tube)
 
     def eff(self, tube):
-        return {"dosed_40ml": +dosed_40ml_p(tube)}
+        return {"dosed_40ml": +dosed_40ml(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
@@ -231,8 +231,7 @@ class Dosed40ml(Action):
 
 
 class LoadedShaker(Action):
-    """Recap tube and place on shaker. (Shake ordering is enforced by
-    ShakerOne/ShakerTwo's state-aware pre, not by load-side gating.)"""
+    """Recap tube and place on shaker."""
     params      = ["tube"]
     duration    = 10
     resource    = "robot"
@@ -244,7 +243,7 @@ class LoadedShaker(Action):
         return (
             in_working(tube)
             & ~has_cap(tube)
-            & dosed_40ml_p(tube)
+            & dosed_40ml(tube)
             & ~in_shaker(tube)
         )
 
@@ -376,27 +375,24 @@ class Dosed2ml(Action):
             in_working(tube)
             & ~has_cap(tube)
             & shaken(tube)
-            & ~dosed_2ml_p(tube)
+            & ~dosed_2ml(tube)
         )
 
     def eff(self, tube):
-        return {"dosed_2ml": +dosed_2ml_p(tube)}
+        return {"dosed_2ml": +dosed_2ml(tube)}
 
     def execute(self, tube):
         rcp = self.ctx.recipes
-        # Extra dispense into the 40ml position first
         site_40 = DOSING_40ML[tube]
         rcp[site_40[0]].immerse(
             dist=IMMERSE_40ML_DIST, anchor=site_40[1], padding=150,
         )
         rcp[site_40[0]].dispense(vol=10)
         rcp[site_40[0]].retract(dist=RETRACT_40ML_DIST, anchor=site_40[1])
-        # Into 2ml middle
         mid = DOSING_2ML_MIDDLE[tube]
         rcp[mid[0]].immerse(dist=IMMERSE_2ML_DIST, anchor=mid[1])
         rcp[mid[0]].dispense(vol=10)
         rcp[mid[0]].retract(dist=RETRACT_2ML_DIST, anchor=mid[1])
-        # Into 2ml end
         end = DOSING_2ML_END[tube]
         rcp[end[0]].immerse(dist=IMMERSE_2ML_DIST, anchor=end[1])
         rcp[end[0]].dispense(vol=10)
@@ -413,7 +409,7 @@ class RecappedFinal(Action):
     tool        = "gripper"
 
     def pre(self, tube):
-        return in_working(tube) & ~has_cap(tube) & dosed_2ml_p(tube)
+        return in_working(tube) & ~has_cap(tube) & dosed_2ml(tube)
 
     def eff(self, tube):
         return {"recapped": (
@@ -443,7 +439,7 @@ class Capped2ml(Action):
     def pre(self, tube):
         return (
             cap_in_holder(tube)
-            & dosed_2ml_p(tube)
+            & dosed_2ml(tube)
             & ~vial_2ml_capped(tube)
         )
 
