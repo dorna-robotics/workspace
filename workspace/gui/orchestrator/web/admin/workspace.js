@@ -1014,7 +1014,7 @@ function renderControls(state, launched, running) {
     b.addEventListener("click", async () => {
       if (cmd === "park" && !await confirmDialog({
         title: "Park Workflow?",
-        message: "The current action will finish, then the robot will park (release tools, return home) before stopping.",
+        message: "The current action will finish, then the project's Park steps run before the workflow stops.",
         confirm: "Park Workflow",
         icon: "park",
         variant: "danger",
@@ -1480,7 +1480,7 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     const cmd = btn.dataset.cmd;
     if (cmd === "park" && !await confirmDialog({
       title: "Park Workflow?",
-      message: "The current action will finish, then the robot will park (release tools, return home) before stopping.",
+      message: "The current action will finish, then the project's Park steps run before the workflow stops.",
       confirm: "Park Workflow",
       icon: "park",
       variant: "danger",
