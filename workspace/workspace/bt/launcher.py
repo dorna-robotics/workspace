@@ -337,6 +337,24 @@ def run_protocol(
     if project_name is None:
         project_name = actions_module.__name__.split(".")[-1]
 
+    # 0. Reset the scene to its launch-time layout. The BT framework
+    # always plans from a fresh `setup()`-derived initial state (tubes
+    # in_source, no caps in holder, etc.), but the scene's attach
+    # graph carries over from the previous workflow run — tubes might
+    # still be in the working rack, a tool on the robot, caps on the
+    # autosampler. Resetting puts the physical layout back in sync
+    # with the planner's view, so consecutive Starts work without
+    # needing a Kill+Launch cycle. No-op on the very first run after
+    # Launch (everything is already in its initial position).
+    if hasattr(workspace, "reset_scene"):
+        try:
+            workspace.reset_scene()
+            log.info("Launcher: scene reset to launch-time layout")
+        except Exception:
+            log.exception(
+                "Launcher: scene reset raised — continuing with current layout"
+            )
+
     # 1. Domain inputs derived from kwargs.
     if not hasattr(actions_module, "setup"):
         raise RuntimeError(

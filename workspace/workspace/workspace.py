@@ -76,15 +76,42 @@ class Workspace:
             )
             self.devices = None
 
-        # 2) perform attachments (child-side offset)
-        for child_name, ccfg in comp_cfgs.items():
-            att = ccfg.get("attach")
-            if not att:
+        # 2) perform attachments (child-side offset). Snapshot the
+        # config-declared list so we can re-apply it later via
+        # ``reset_scene()`` — used between workflow runs to put every
+        # tube / cap / tool back in its launch-time position.
+        self._initial_attachments = [
+            (child_name, ccfg["attach"])
+            for child_name, ccfg in comp_cfgs.items()
+            if ccfg.get("attach")
+        ]
+        self._apply_initial_attachments()
+
+        # 3) start Display (it will pull poses from compute_world_poses())
+        self.port = int(port)
+        self.display = Display(self, port=self.port)
+        self.display.start()
+
+
+    def _apply_initial_attachments(self):
+        """Apply every attach: clause from the loaded scene config.
+
+        The attach graph (Solid.parent / Solid.children) IS the world
+        state — recipes read it to decide what's where. So re-running
+        this method fully restores the scene to its launch-time layout.
+        Safe to call repeatedly: ``Solid.attach_to`` detaches from any
+        current parent before wiring the new one.
+        """
+        for child_name, att in self._initial_attachments:
+            parent_comp = self.components.get(att["parent_name"])
+            child_comp = self.components.get(child_name)
+            if parent_comp is None or child_comp is None:
                 continue
-            parent_comp = self.components[att["parent_name"]]
-            child_comp = self.components[child_name]
-            parent_solid = parent_comp.assembly[att["parent_solid"]]
-            child_solid = child_comp.assembly[att["child_solid"]]
+            try:
+                parent_solid = parent_comp.assembly[att["parent_solid"]]
+                child_solid = child_comp.assembly[att["child_solid"]]
+            except KeyError:
+                continue
             child_solid.attach_to(
                 parent=parent_solid,
                 parent_anchor=att["parent_anchor"],
@@ -92,11 +119,16 @@ class Workspace:
                 offset=att.get("offset", [0, 0, 0, 0, 0, 0]),
             )
 
-        # 3) start Display (it will pull poses from compute_world_poses())
-        self.port = int(port)
-        self.display = Display(self, port=self.port)
-        self.display.start()
+    def reset_scene(self):
+        """Reset the scene to its launch-time layout.
 
+        Re-runs every ``attach:`` clause from the loaded config, which
+        snaps every tube, cap, and tool back to where the .j2 scene
+        files put it at startup. Intended for between-run resets so the
+        operator can click Start again on a workspace that has already
+        finished one workflow — without needing to Kill+Launch first.
+        """
+        self._apply_initial_attachments()
 
     def compute_collision_boxes(self, padding=0.0):
 
