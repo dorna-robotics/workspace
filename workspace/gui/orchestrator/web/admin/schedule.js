@@ -55,6 +55,15 @@ function _tryWS() {
 
 function _ingest(msg) {
   if (msg.type === "schedule") {
+    // replan_id == 1 = fresh workflow run (the launcher's per-run
+    // counter starts there). Clear out the previous run's slices +
+    // leaf state so the chart doesn't accumulate forever across
+    // Start → complete → Start cycles. Matches the server-side
+    // history-reset rule.
+    if ((msg.replan_id || 0) === 1) {
+      _slices.length = 0;
+      _leafState.clear();
+    }
     // Append this slice. Leaf state from earlier slices stays intact —
     // they've already been marked done/skipped by their action_end
     // events. New leaf names land in "pending" by default.
