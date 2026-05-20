@@ -41,6 +41,7 @@ def workflow_fn(*, workspace, core, **kwargs):
         recipes=recipes,
         checks=check_fns,
         project_name=LAUNCH["project_name"],
+        plan_window=int(LAUNCH.get("plan_window", 4)),
         **kwargs,
     )
 

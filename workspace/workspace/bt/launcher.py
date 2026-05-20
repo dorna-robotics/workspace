@@ -258,6 +258,8 @@ def run_protocol(
     checks: Optional[Dict[str, Callable[..., Any]]] = None,
     tick_hz: float = 10.0,
     project_name: Optional[str] = None,
+    plan_window: int = 4,
+    slice_dim: str = "tube",
     **kwargs,
 ) -> py_trees.common.Status:
     """Default plan → schedule → BT tick lifecycle for any BT project.
@@ -292,8 +294,25 @@ def run_protocol(
         tick_hz: BT engine tick rate (Hz). Comes from launch.yaml kwargs.
         project_name: Display name for log lines / tree node names.
             Default = ``actions_module.__name__``.
+        plan_window: How many items the planner thinks about at once.
+            Default 4 — the safe limit for the in-house GBFS planner.
+            Projects on a stronger planner (e.g. Fast Downward) can
+            raise this in their ``launch.yaml``.
+        slice_dim: Which ``objects`` key to slice along. Default
+            ``"tube"`` — matches the convention in lab protocols.
+            Only meaningful when ``setup()`` returns ``item_done``.
         **kwargs: Operator-supplied parameters from the GUI; forwarded
             to ``actions_module.setup``.
+
+    Slicing:
+        If ``setup()`` returns ``item_done(state, item) -> bool`` AND
+        the operator-supplied batch on the slice dimension exceeds
+        ``plan_window``, the launcher transparently splits work into
+        windows of ``plan_window`` items. After each window's tree
+        succeeds, a ``slice_check`` leaf re-evaluates the global goal
+        and either exits (all done) or raises ``ReplanRequested`` so
+        the engine rebuilds for the next window. When the batch
+        already fits in one window, slicing is a no-op.
     """
     if project_name is None:
         project_name = actions_module.__name__.split(".")[-1]
@@ -327,6 +346,17 @@ def run_protocol(
     # monotonic predicate is decorative and would mislead the search.
     goal_facts = spec.get("goal_facts")
 
+    # `item_done(state, item) -> bool` — optional per-item completion
+    # predicate. When present, the launcher enables slicing along
+    # ``slice_dim`` so the planner only thinks about ``plan_window``
+    # items at a time. Without it, all items must fit in one plan.
+    item_done = spec.get("item_done")
+    if item_done is not None and not callable(item_done):
+        raise TypeError(
+            f"setup() returned item_done of type {type(item_done).__name__} — "
+            "expected a callable: ``def item_done(state, item): return ...``"
+        )
+
     # 2. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
     #    candidate bindings).
@@ -357,15 +387,81 @@ def run_protocol(
     meta           = registry.to_meta()
     leaf_factory   = registry.leaf_factory(ctx)
 
+    # ── Slicing wiring (no-op when item_done absent or batch fits) ────
+    #
+    # Two views of the slicing dim:
+    #   * ``all_items``  — full operator-supplied set (stays constant)
+    #   * ``ctx.meta["objects"][slice_dim]`` — current window the
+    #     planner thinks about. Re-assigned each rebuild.
+    all_items: list = list(objects.get(slice_dim, []))
+    slicing_active = (
+        item_done is not None
+        and len(all_items) > int(plan_window)
+    )
+
+    def _pick_window(state) -> list:
+        """Next ``plan_window`` items that aren't done yet, in order."""
+        out: list = []
+        for it in all_items:
+            if item_done(state, it):
+                continue
+            out.append(it)
+            if len(out) >= int(plan_window):
+                break
+        return out
+
+    def _planning_goal(state) -> bool:
+        """Goal for the planner — all items in the current window done."""
+        if item_done is None:
+            return goal_fn(state)
+        window = ctx.meta["objects"].get(slice_dim, [])
+        return all(item_done(state, it) for it in window)
+
+    def _global_goal(state) -> bool:
+        """Goal for the slice_check leaf — all items in the full batch done."""
+        if item_done is None:
+            return goal_fn(state)
+        return all(item_done(state, it) for it in all_items)
+
+    def _observe(c) -> Any:
+        """Observe + (when slicing) advance the planning window."""
+        state = state_to_frozen(c.state)
+        if slicing_active:
+            window = _pick_window(state)
+            c.meta["objects"][slice_dim] = window
+            log.info(
+                "Launcher: slice window = %s (%d/%d done)",
+                window,
+                sum(1 for it in all_items if item_done(state, it)),
+                len(all_items),
+            )
+        return state
+
+    if slicing_active:
+        log.info(
+            "Launcher: slicing enabled — %d items, window=%d (%d slices)",
+            len(all_items), int(plan_window),
+            (len(all_items) + int(plan_window) - 1) // int(plan_window),
+        )
+
     # Auto-derive goal_facts if the project didn't supply one. Done
     # after the registry+ctx are ready so `param_iter` can read
-    # ``ctx.meta["objects"]``.
+    # ``ctx.meta["objects"]``. When slicing is active, derive lazily
+    # (per rebuild) so the heuristic reflects the current window.
     if goal_facts is None:
-        goal_facts = registry.derive_goal_facts(ctx)
-        log.info(
-            "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
-            len(goal_facts), len(registry.monotonic_predicates()),
-        )
+        if slicing_active:
+            goal_facts = lambda: registry.derive_goal_facts(ctx)
+            log.info(
+                "Launcher: goal_facts will be re-derived per slice "
+                "(%d monotonic predicates)",
+                len(registry.monotonic_predicates()),
+            )
+        else:
+            goal_facts = registry.derive_goal_facts(ctx)
+            log.info(
+                "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
+                len(goal_facts), len(registry.monotonic_predicates()),
+            )
     # Precedence-aware scheduling — actions whose pre()/eff() are
     # causally independent overlap on different resources.
     build_schedule = make_schedule_builder(
@@ -400,16 +496,28 @@ def run_protocol(
             resources=action_resources,
             name=f"{project_name}/body",
         )
+        # When slicing is on, end-of-slice check decides "exit or
+        # replan for next window". When off, it's a no-op (the body
+        # alone reaches SUCCESS naturally).
+        if slicing_active:
+            from workspace.bt.builder import slice_check
+            root_seq = sequence(
+                f"{project_name}/root",
+                body,
+                slice_check(ctx, _global_goal, name=f"{project_name}/slice_check"),
+            )
+        else:
+            root_seq = sequence(f"{project_name}/root", body)
         return replan_on_failure(
-            sequence(f"{project_name}/root", body),
+            root_seq,
             reason="protocol step failed — replanning from observed state",
         )
 
     replanner = Replanner(
         ctx=ctx,
-        observe=lambda c: state_to_frozen(c.state),
+        observe=_observe,
         templates=templates,
-        goal=goal_fn,
+        goal=_planning_goal,
         goal_facts=goal_facts,
         build_schedule=build_schedule,
         build_tree=build_tree,
@@ -437,12 +545,19 @@ def run_protocol(
         return sequence(f"{project_name}/end", *leaves)
 
     root = replanner.rebuild()
+    # Slicing turns every window-completion into a replan, so the cap
+    # has to clear ceil(N/plan_window) plus headroom for real
+    # world-drift replans. Add 50 to cover the latter.
+    replan_cap = (
+        max(50, (len(all_items) + int(plan_window) - 1) // int(plan_window) + 50)
+        if slicing_active else 50
+    )
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,
         build_end_tree=build_end_tree,
         runtime=ctx.runtime,
-        config=EngineConfig(tick_hz=float(tick_hz)),
+        config=EngineConfig(tick_hz=float(tick_hz), max_replans=replan_cap),
     )
     log.info(
         "%s: starting BT engine — %d action(s) in plan",

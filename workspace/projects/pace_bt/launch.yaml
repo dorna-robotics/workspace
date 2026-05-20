@@ -7,6 +7,12 @@ recipes:      recipes.j2           # recipes — Jinja2 template (speed_factor d
 actions:      actions.py           # protocol: predicates + setup + Action classes
 checks:       checks.py            # vision/sensor Checks class (referenced by name from actions)
 
+# Platform tuning — how many tubes the planner thinks about per slice.
+# Default (4) is the safe limit for the in-house GBFS planner. Bigger
+# batches are handled by transparent slicing in the framework. Bump
+# this only if you switch to a stronger planner (Fast Downward).
+plan_window:  4
+
 # kwargs — operator GUI form, passed to workflow_fn at runtime.
 # Supported types: int, float, str, bool, choice, textarea, file
 # Fields: type, default, label, hint, placeholder, optional, accept, options, min, max, rows
@@ -15,6 +21,7 @@ kwargs:
     type: int
     default: 1
     label: Batch size
-    hint: Number of items (tubes) to process in this run.
+    hint: Number of items (tubes) to process in this run. Larger batches
+          are sliced automatically into plan_window-sized windows.
     min: 1
-    max: 4
+    max: 200

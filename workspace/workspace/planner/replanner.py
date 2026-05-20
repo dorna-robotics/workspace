@@ -112,7 +112,11 @@ class Replanner:
         self._observe = observe
         self._domain = domain_from_templates(templates)
         self._goal = goal
-        self._goal_facts = goal_facts  # planner heuristic hint; None = BFS
+        # goal_facts may be a static frozenset OR a zero-arg callable
+        # returning a frozenset. Callable form lets slicing re-derive
+        # the heuristic hint each rebuild as the active window changes.
+        # ``None`` falls back to BFS.
+        self._goal_facts = goal_facts
         self._build_schedule = build_schedule
         self._build_tree = build_tree
         self._cfg = config or ReplanConfig()
@@ -132,11 +136,14 @@ class Replanner:
 
         # 2. Plan. If goal_facts is provided, GBFS uses it as a
         #    heuristic — scales to large state spaces. Otherwise BFS.
+        gf = self._goal_facts
+        if callable(gf):
+            gf = gf()
         actions = plan(
             state,
             self._domain,
             self._goal,
-            goal_facts=self._goal_facts,
+            goal_facts=gf,
             max_depth=self._cfg.max_plan_depth,
             max_states=self._cfg.max_plan_states,
         )

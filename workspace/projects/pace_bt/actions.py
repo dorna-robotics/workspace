@@ -27,7 +27,7 @@ vial_2ml_capped  = predicate("vial_2ml_capped")  # 2ml vial capped and placed
 
 
 def setup(**kwargs):
-    """kwargs: batch_size (1..4)."""
+    """kwargs: batch_size (no upper bound — framework slices to ``plan_window``)."""
     batch_size = int(kwargs.get("batch_size", 1))
     tubes = list(range(batch_size))
 
@@ -36,21 +36,28 @@ def setup(**kwargs):
         facts.add((in_source.name, t))
         facts.add((has_cap.name, t))
 
+    def item_done(state, tube):
+        # A tube is done when shelved AND its 2ml vial is capped.
+        return ((in_done.name, tube) in state
+                and (vial_2ml_capped.name, tube) in state)
+
     def goal(state):
-        # Done when every tube has been shelved AND its 2ml vial capped.
-        return (
-            all((in_done.name, t) in state for t in tubes) and
-            all((vial_2ml_capped.name, t) in state for t in tubes)
-        )
+        # Whole-batch goal — derived from item_done.
+        return all(item_done(state, t) for t in tubes)
 
     # No `goal_facts` here — the framework auto-derives a planner
     # heuristic hint from the action set (every monotonic predicate
     # × every reachable parameter binding). Override by adding
     # `"goal_facts": ...` to the return dict if the auto-derivation
     # ever misleads the planner.
+    #
+    # `item_done` opts in to slicing — the launcher splits work into
+    # windows of `plan_window` tubes so the planner stays fast even
+    # at batch_size=48.
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
+        "item_done":     item_done,
         "objects":       {"tube": tubes},
     }
 

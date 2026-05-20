@@ -132,6 +132,51 @@ class _ReplanOnFailure(py_trees.decorators.Decorator):
         return self.decorated.status
 
 
+class _SliceCheck(py_trees.behaviour.Behaviour):
+    """End-of-slice gate — succeed if the global goal is met, else replan.
+
+    Slicing splits a long protocol (e.g. 48 tubes) into windows of
+    ``plan_window`` items (default 4). After each slice's body finishes,
+    this leaf checks the *global* goal:
+
+      * Global goal met  → SUCCESS — engine exits.
+      * Global goal unmet → raise ``ReplanRequested`` — engine asks
+        the framework for the next slice's tree.
+
+    Without this gate the engine would exit after the first slice
+    succeeded (root SUCCESS = done). The replan signal lets the
+    framework's rebuild path pick the next window transparently.
+    """
+
+    def __init__(
+        self,
+        ctx: WorkspaceContext,
+        global_goal: Callable[[Any], bool],
+        name: str = "slice_check",
+    ):
+        super().__init__(name=name)
+        self._ctx = ctx
+        self._global_goal = global_goal
+
+    def update(self) -> py_trees.common.Status:
+        # Local import to avoid a circular at module-load time —
+        # state_to_frozen is in dsl which imports from builder transitively.
+        from workspace.bt.dsl import state_to_frozen
+        state = state_to_frozen(self._ctx.state)
+        if self._global_goal(state):
+            return py_trees.common.Status.SUCCESS
+        raise ReplanRequested("slice complete — more items remain")
+
+
+def slice_check(
+    ctx: WorkspaceContext,
+    global_goal: Callable[[Any], bool],
+    name: str = "slice_check",
+) -> py_trees.behaviour.Behaviour:
+    """Public helper — append to the end of a slice body."""
+    return _SliceCheck(ctx=ctx, global_goal=global_goal, name=name)
+
+
 class _Retry(py_trees.decorators.Decorator):
     """Retry the wrapped child up to ``max_attempts`` times.
 
