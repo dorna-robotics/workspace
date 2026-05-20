@@ -114,7 +114,16 @@ function _renderSummary() {
   _summaryEl.innerHTML = bits;
 }
 
-function _short(leafName) { return _esc(leafName.replace("(t", "(").replace(")", ")")); }
+function _short(leafName) {
+  // Match the label format used by Gantt blocks — PascalCase class
+  // name + item index, e.g. "Inspected(0)". Falls back to the raw
+  // leaf name for swap leaves (and anything else not in the plan).
+  if (_plan && Array.isArray(_plan.actions)) {
+    const a = _plan.actions.find(x => x.leaf_name === leafName);
+    if (a) return _esc(`${a.class_name || a.name}(${a.item})`);
+  }
+  return _esc(leafName.replace("(t", "(").replace(")", ")"));
+}
 function _esc(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
