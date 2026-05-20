@@ -103,7 +103,8 @@ else is either:
   keys: `project_name`, `port` (default for direct invocation),
   `scene` (list of scene files), `recipes` (recipes file path),
   `actions` (protocol module path — default `actions.py`),
-  `checks` (Checks module path — default `checks.py`), and
+  `checks` (Checks module path — default `checks.py`),
+  `plan_window` (optional, default 4 — see §12 on slicing), and
   `kwargs` (the GUI form schema rendered into the operator's
   Parameters modal). main.py reads everything from here via
   `LAUNCH["..."]` lookups and uses `importlib` to load the
@@ -414,6 +415,7 @@ package to every leaf with one variable.
 | `self.ctx.recipes` | `dict[str, Recipe]` | name → recipe instance loaded from `recipes.yaml`. **Preferred way to drive hardware.** | `self.rcp` |
 | `self.ctx.state` | `dict` | live world state. `ctx.state["facts"]` is the fact set. **Managed by the framework — don't write to it directly**, return effects from `eff()` instead. | — |
 | `self.ctx.meta` | `dict` | per-run scratch space. Keys: `kwargs`, `objects`, `checks`, `current_tool`, `project`. | — |
+| `self.state` | `frozenset[tuple]` | **Frozen snapshot** of the world the framework hands you right before calling `pre()` or `eff()`. Different from `self.ctx.state`: the former is live + mutable; `self.state` is a stable, immutable view tied to this specific evaluation. Read it for state-aware preconditions/effects — see §3.5.1. | — |
 
 #### Common patterns
 
@@ -579,6 +581,83 @@ beyond "tuples must be hashable" (so don't put lists or dicts in `args`).
 > A **fact** is one row instance, signed with `+`/`-` while in an `eff()`.
 > The **state** is the live table of currently-true rows — a `set` while
 > the protocol runs, a `frozenset` when frozen for planner consumption.
+
+### 3.5.1 State-aware `pre()` and `eff()` — reading `self.state`
+
+Most actions are *static*: their preconditions and effects depend only
+on the action's parameters. The planner's `state` doesn't matter for
+their authoring — they're a fact-level Expr (`pre`) or a fact list
+(`eff`).
+
+A small minority of actions need to look at *what the world actually
+contains right now*. Examples:
+
+* A shaker physically shakes **every tube currently on it** in one
+  mechanical call. The effect set is "mark every loaded tube as
+  shaken" — which depends on which tubes happen to be loaded.
+* A doser dispenses into **whichever wells are currently present**
+  in the holder.
+* A pre-condition like "every tube destined for this shaker has been
+  loaded" can't be enumerated statically — it needs to inspect state.
+
+For these, the framework exposes the planning-time state as a
+**frozenset snapshot** on `self.state`. Read it normally:
+
+```python
+class ShakerOne(Action):
+    params      = []                  # per-shaker, not per-tube
+    resource    = "shaker_1"
+    duration    = 10
+
+    def pre(self):
+        # Only fire when every tube destined for shaker_1 (current
+        # slice window, looked up via SHAKER_SLOTS) is already loaded
+        # AND not yet shaken.
+        destined = [t for t in self.ctx.meta["objects"]["tube"]
+                    if SHAKER_SLOTS[t][0] == "shaker_1"]
+        if not destined or all((shaken.name, t) in self.state for t in destined):
+            return False
+        expr = in_shaker(destined[0]) & ~shaken(destined[0])
+        for t in destined[1:]:
+            expr = expr & in_shaker(t) & ~shaken(t)
+        return expr
+
+    def eff(self):
+        # +shaken(t) for every tube currently loaded on this shaker.
+        return {"shaken": tuple(
+            +shaken(t)
+            for t in self.ctx.meta["objects"]["tube"]
+            if (in_shaker.name, t) in self.state
+            and SHAKER_SLOTS[t][0] == "shaker_1"
+        )}
+```
+
+#### Rules
+
+* `self.state` is a **`frozenset` of tuples** `(predicate_name, *args)`
+  — same shape as `goal(state)` receives (§3.5). Membership lookup is
+  O(1).
+* It's a **snapshot for this one call**. The framework sets it
+  immediately before invoking `pre()` / `eff()` and never mutates it.
+  Don't try to write to it.
+* `self.state` reflects the *planning-time* world during plan search
+  (which may be a hypothetical future state) and the *pre-mutation*
+  runtime world during effect application (so eff() sees the same
+  state the planner saw at that step).
+* If your action is static (the 95% case), don't reference
+  `self.state` — keep `pre()` returning an Expr and `eff()` returning
+  a fixed dict. That's the documented contract for "this action's
+  behavior is purely a function of params."
+
+#### When NOT to use it
+
+* Don't read `self.state` from `execute()`. By the time `execute()`
+  runs, `self.state` may be stale (planner's view, not real world).
+  Use `self.ctx.state["facts"]` if you genuinely need live runtime
+  state (rare — usually a sign the model is wrong).
+* Don't use it for things that should be `param_iter()` filters.
+  If you find yourself iterating in `pre()` to skip-invalid bindings,
+  push that into `param_iter` instead — that's what it's for.
 
 ### 3.6 `params` and `objects` — the planner's wiring
 
@@ -1006,19 +1085,110 @@ SUCCESS / FAILURE / INVALID (aborted)
 
 ---
 
-## 12. Performance characteristics
+## 12. Performance characteristics and slicing
+
+### Per-layer cost
 
 On a Pi 5, lab-sized problems:
 
 | Layer | Cost | Notes |
 |---|---|---|
 | BT tick (10 Hz) | <1 ms | Pure-Python tree walk |
-| PDDL plan | <100 ms typical | BFS forward search, batch of 10-100 items |
+| PDDL plan (window of 4) | <30 ms | GBFS forward search with auto-derived heuristic |
+| PDDL plan (window of 8) | ~130 ms | scales mildly super-linear with window size |
 | Greedy schedule | <10 ms | Linear over plan length |
 | Replanning total | <200 ms | observe → plan → schedule → rebuild tree |
 
 Robot motions (1-10 s per move) and lab equipment (5 s to minutes per
 action) dwarf all of these. The framework is never the bottleneck.
+
+### Slicing — handling large batches
+
+The in-house GBFS planner OOMs around batch ≈ 16+ on a Pi 5 — the
+closed set of visited frozensets grows too fast. To handle larger
+operator-supplied batches (48, 100, 200) without changing planners,
+the launcher slices work into windows of `plan_window` items
+(default 4).
+
+Two concepts, intentionally separate:
+
+| Knob | Who sets it | Where | Meaning |
+|---|---|---|---|
+| `batch_size` (or whatever the project calls it) | operator | `launch.yaml`'s `kwargs` | "I have N samples" — scientific quantity |
+| `plan_window` | platform / project | `launch.yaml` top-level (default 4) | "plan this many at once" — planner-shaped tuning |
+
+If `batch_size ≤ plan_window`, slicing is a no-op — one plan, one
+tree, identical to non-slicing behavior.
+
+#### Enabling slicing in a project
+
+Add `item_done(state, item)` to `setup()`'s return dict. It's the
+per-item completion predicate:
+
+```python
+def setup(**kwargs):
+    batch_size = int(kwargs.get("batch_size", 1))
+    tubes = list(range(batch_size))
+
+    def item_done(state, tube):
+        return (in_done.name, tube) in state \
+           and (vial_2ml_capped.name, tube) in state
+
+    def goal(state):
+        return all(item_done(state, t) for t in tubes)
+
+    return {
+        "initial_facts": frozenset(...),
+        "goal":          goal,
+        "item_done":     item_done,        # ← opts in to slicing
+        "objects":       {"tube": tubes},
+    }
+```
+
+The launcher then:
+
+1. Splits `all_items` into windows of `plan_window` items.
+2. Restricts `ctx.meta["objects"][slice_dim]` (default `"tube"`) to
+   the current window before each rebuild — so `param_iter` only
+   enumerates current-slice items, and the planner only thinks about
+   them.
+3. Appends a `slice_check` leaf to the tree. After the window
+   completes: if the global `goal` is met → engine exits; otherwise
+   raise `ReplanRequested` so the framework picks the next window.
+4. Re-derives `goal_facts` (heuristic hint) lazily per slice so the
+   GBFS heuristic matches the active window.
+5. Bumps the engine's replan cap to `ceil(N / plan_window) + 50` so
+   many-slice runs don't trip the safety limit.
+
+#### Choosing `plan_window`
+
+* **Stay with default 4** unless you have a specific reason. It's the
+  sweet spot for the in-house GBFS planner on a Pi 5: <30 ms per
+  plan, no memory pressure.
+* If you wire in Fast Downward or another industrial-strength planner
+  later, raise `plan_window` to 50–500 — that planner won't choke and
+  the per-slice overhead disappears.
+* If your project has hardware reasons to slice differently (e.g. the
+  source rack has exactly 6 slots), set `plan_window: 6`.
+
+The operator never sees `plan_window`. They see `batch_size`. The
+project advertises a sensible `max` for `batch_size` based on lab
+capacity (rack slots, time available), not planner capacity.
+
+### Where slicing comes apart
+
+* **Per-slice slot tables.** If your project uses fixed slot tables
+  like `SOURCE = [("rack","A1"), ("rack","A2"), ...]` indexed by
+  tube number, those tables must cover the full operator-supplied
+  range — not just one window. Otherwise `SOURCE[tube]` is an
+  `IndexError` when tube ≥ table length. Make the table generator
+  parametric on `batch_size`, or accept a hard cap matching the
+  table.
+* **Cross-slice resource state.** A predicate like `shaker_shaken(s)`
+  that persists across slices needs explicit clearing logic
+  (state-aware `Retrieved.eff()` checking "is this the last tube on
+  the shaker", or a per-slice transient predicate scheme). Without
+  it, the next slice's loads will be blocked.
 
 ---
 
