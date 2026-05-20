@@ -755,6 +755,14 @@
 .sched-connector.pending { stroke: var(--border);  opacity: 0.65; stroke-dasharray: 3 4; }
 .sched-connector.done    { stroke: var(--accent);  opacity: 0.85; }
 
+/* ── Slice divider — vertical separator between replan slices ────── */
+.sched-slice-divider {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+  opacity: 0.5;
+}
+
 /* ── Action blocks ───────────────────────────────────────────────────── */
 /*  Semantic-colour states. Pending and done are SOLID fills (no
     opacity tricks); running blinks on top of its solid blue card.    */

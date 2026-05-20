@@ -11,7 +11,11 @@ let _wsUrl = "";
 let _wsClosed = false;
 let _wsRetryMs = 1000;
 
-let _plan = null;
+// One ``schedule`` event from the framework = one slice. We append
+// rather than replace so the operator sees the full job history grow
+// in place across replans. State is keyed by leaf_name (globally
+// unique — item index = absolute tube number, not slice-local).
+const _slices = [];
 const _leafState = new Map();   // leaf_name -> "pending" | "running" | "done" | "skipped"
 
 let _modalEl = null;
@@ -51,8 +55,10 @@ function _tryWS() {
 
 function _ingest(msg) {
   if (msg.type === "schedule") {
-    _plan = msg;
-    _leafState.clear();
+    // Append this slice. Leaf state from earlier slices stays intact —
+    // they've already been marked done/skipped by their action_end
+    // events. New leaf names land in "pending" by default.
+    _slices.push(msg);
     _render();
   } else if (msg.type === "action_start" || msg.type === "swap_start") {
     _leafState.set(msg.name, "running");
@@ -96,25 +102,31 @@ function _render() {
 // ── SVG Gantt ──────────────────────────────────────────────────────────
 function _renderGantt() {
   if (!_ganttEl) return;
-  if (!_plan) {
+  if (_slices.length === 0) {
     _ganttEl.innerHTML = `<div class="sched-empty">No plan yet.</div>`;
     return;
   }
 
-  const actions = _plan.actions || [];
-  const tres    = _plan.tool_resource || "robot";
-
-  // Resource rows: tool resource on top, the rest alphabetical.
+  // tool_resource comes from the most-recent slice (the project's
+  // identity shouldn't change across replans anyway). Resource rows
+  // are the union across every slice's actions so a slice that only
+  // touches shaker_2 still gets a row drawn for it.
+  const tres = _slices[_slices.length - 1].tool_resource || "robot";
   const resSet = new Set([tres]);
-  for (const a of actions) for (const r of (a.resources || [])) resSet.add(r);
+  for (const slice of _slices) {
+    for (const a of (slice.actions || [])) {
+      for (const r of (a.resources || [])) resSet.add(r);
+    }
+  }
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
   // ── Layout knobs ───────────────────────────────────────────────────
   const FONT_PX   = 12;
   const CHAR_W    = FONT_PX * 0.62;
-  const LABEL_PAD = 22;       // 11 px each side inside the block
-  const BLOCK_GAP = 18;       // fixed visual gap between consecutive blocks
+  const LABEL_PAD = 22;
+  const BLOCK_GAP = 18;       // gap between consecutive blocks on a row
+  const SLICE_GAP = 38;       // gap between slices (vertical divider sits at the midpoint)
   const ROW_H     = 48;
   const ROW_PAD   = 8;
   const LEFT_W    = 120;
@@ -124,52 +136,70 @@ function _renderGantt() {
   function labelOf(a)     { return `${a.class_name || a.name}(${a.item})`; }
   function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
 
-  // ── Phase 1: place each row's blocks flow-left-to-right ───────────
-  const placements = new Map(); // leaf_name -> {a, x, w, y, h, rowIdx}
-  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-    const arr = actions
-      .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
-      .sort((x, y) => x.start_t - y.start_t);
-    let cursor = LEFT_W + 8;
-    for (const a of arr) {
-      const w = neededWidth(a);
-      const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
-      const h = ROW_H - ROW_PAD * 2;
-      placements.set(a.leaf_name, { a, x: cursor, w, y, h, rowIdx });
-      cursor += w + BLOCK_GAP;
-    }
-  }
+  // ── Lay out each slice in its own horizontal column ────────────────
+  // Cursor ``xBase`` tracks where the next slice starts. Each slice
+  // runs per-row flow + cross-row alignment locally; the cursor
+  // advances by the slice's actual width + SLICE_GAP.
+  const placements = new Map();    // leaf_name -> {a, x, w, y, h, rowIdx}
+  const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
+  let xBase = LEFT_W + 8;
 
-  // ── Phase 2: cross-row alignment ───────────────────────────────────
-  // For each non-robot row, shift its blocks so they sit AFTER the
-  // robot block whose end-of-execution they follow. Aligning to the
-  // anchor's right edge (rather than its left) makes "ShakerOne
-  // starts after LoadedShaker(0) finishes" read correctly — the
-  // shaker block sits visually to the right of its trigger.
-  const robotRowIdx = rows.indexOf(tres);
-  if (robotRowIdx >= 0) {
-    const robotByStart = [...placements.values()]
-      .filter(p => p.rowIdx === robotRowIdx)
-      .sort((a, b) => a.a.start_t - b.a.start_t);
-    for (const p of placements.values()) {
-      if (p.rowIdx === robotRowIdx) continue;
-      // Anchor = the latest robot block whose end <= this block's start.
-      let anchor = null;
-      for (const rp of robotByStart) {
-        const rpEnd = rp.a.start_t + rp.a.duration;
-        if (rpEnd > p.a.start_t) break;
-        anchor = rp;
+  for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
+    const slice = _slices[sliceIdx];
+    const sliceActions = slice.actions || [];
+
+    // Per-row left-to-right flow within this slice.
+    const local = new Map();
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const arr = sliceActions
+        .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
+        .sort((x, y) => x.start_t - y.start_t);
+      let cursor = xBase;
+      for (const a of arr) {
+        const w = neededWidth(a);
+        const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+        const h = ROW_H - ROW_PAD * 2;
+        local.set(a.leaf_name, { a, x: cursor, w, y, h, rowIdx });
+        cursor += w + BLOCK_GAP;
       }
-      if (anchor) p.x = anchor.x + anchor.w + 8;
     }
+
+    // Cross-row alignment within the slice. Non-robot blocks shift to
+    // sit AFTER the robot block whose end matches their start_t.
+    const robotRowIdx = rows.indexOf(tres);
+    if (robotRowIdx >= 0) {
+      const robotByStart = [...local.values()]
+        .filter(p => p.rowIdx === robotRowIdx)
+        .sort((a, b) => a.a.start_t - b.a.start_t);
+      for (const p of local.values()) {
+        if (p.rowIdx === robotRowIdx) continue;
+        let anchor = null;
+        for (const rp of robotByStart) {
+          const rpEnd = rp.a.start_t + rp.a.duration;
+          if (rpEnd > p.a.start_t) break;
+          anchor = rp;
+        }
+        if (anchor) p.x = anchor.x + anchor.w + 8;
+      }
+    }
+
+    // Slice width = right edge of the furthest block.
+    let sliceMaxX = xBase;
+    for (const p of local.values()) {
+      if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
+      placements.set(p.a.leaf_name, p);
+    }
+
+    // Next slice starts after a gap; a divider sits at the midpoint.
+    if (sliceIdx + 1 < _slices.length) {
+      sliceDividerXs.push(sliceMaxX + SLICE_GAP / 2);
+    }
+    xBase = sliceMaxX + SLICE_GAP;
   }
 
-  // Compute SVG dimensions from the actual placements.
-  let maxRight = LEFT_W + 200;
-  for (const p of placements.values()) {
-    if (p.x + p.w > maxRight) maxRight = p.x + p.w;
-  }
-  const W = maxRight + 16;
+  // SVG dimensions. xBase ended one SLICE_GAP past the last slice's
+  // right edge — subtract it back out for the final width.
+  const W = Math.max(LEFT_W + 200, xBase - SLICE_GAP + 16);
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -179,13 +209,15 @@ function _renderGantt() {
   svg.setAttribute("class",  "sched-svg");
 
   const gRows = document.createElementNS(svgNS, "g");
+  const gSlices = document.createElementNS(svgNS, "g");
   const gConn = document.createElementNS(svgNS, "g");
   const gBlocks = document.createElementNS(svgNS, "g");
   svg.appendChild(gRows);
+  svg.appendChild(gSlices);
   svg.appendChild(gConn);
   svg.appendChild(gBlocks);
 
-  // Row labels + dividers
+  // Row labels + horizontal dividers.
   rows.forEach((r, i) => {
     const t = document.createElementNS(svgNS, "text");
     t.setAttribute("x", String(LEFT_W - 14));
@@ -205,34 +237,48 @@ function _renderGantt() {
     }
   });
 
-  // Connector lines — one short blue dashed line between every pair of
-  // consecutive blocks on the same row.
-  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-    const arr = [...placements.values()]
-      .filter(p => p.rowIdx === rowIdx)
-      .sort((a, b) => a.x - b.x);
-    for (let i = 0; i + 1 < arr.length; i++) {
-      const A = arr[i], B = arr[i + 1];
-      const x1 = A.x + A.w;
-      const x2 = B.x;
-      if (x2 - x1 < 4) continue;
-      const yMid = A.y + A.h / 2;
-      const stA = _leafState.get(A.a.leaf_name) || "pending";
-      const stB = _leafState.get(B.a.leaf_name) || "pending";
-      const cls = (stA === "done" || stA === "skipped")
-        ? "sched-connector done"
-        : "sched-connector pending";
-      const line = document.createElementNS(svgNS, "line");
-      line.setAttribute("x1", String(x1));
-      line.setAttribute("x2", String(x2));
-      line.setAttribute("y1", String(yMid));
-      line.setAttribute("y2", String(yMid));
-      line.setAttribute("class", cls);
-      gConn.appendChild(line);
+  // Vertical slice dividers — thin, subtle, span the full row band.
+  for (const x of sliceDividerXs) {
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", String(x));
+    line.setAttribute("x2", String(x));
+    line.setAttribute("y1", String(TOP_PAD - 4));
+    line.setAttribute("y2", String(TOP_PAD + rows.length * ROW_H + 4));
+    line.setAttribute("class", "sched-slice-divider");
+    gSlices.appendChild(line);
+  }
+
+  // Connector lines between consecutive blocks on the same row WITHIN
+  // a slice. We pair up by sliceIdx so we don't draw a connector that
+  // spans the slice divider.
+  for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
+    const sliceLeafs = new Set((_slices[sliceIdx].actions || []).map(a => a.leaf_name));
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const arr = [...placements.values()]
+        .filter(p => p.rowIdx === rowIdx && sliceLeafs.has(p.a.leaf_name))
+        .sort((a, b) => a.x - b.x);
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const A = arr[i], B = arr[i + 1];
+        const x1 = A.x + A.w;
+        const x2 = B.x;
+        if (x2 - x1 < 4) continue;
+        const yMid = A.y + A.h / 2;
+        const stA = _leafState.get(A.a.leaf_name) || "pending";
+        const cls = (stA === "done" || stA === "skipped")
+          ? "sched-connector done"
+          : "sched-connector pending";
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(x1));
+        line.setAttribute("x2", String(x2));
+        line.setAttribute("y1", String(yMid));
+        line.setAttribute("y2", String(yMid));
+        line.setAttribute("class", cls);
+        gConn.appendChild(line);
+      }
     }
   }
 
-  // Action blocks
+  // Action blocks.
   for (const p of placements.values()) {
     const state = _leafState.get(p.a.leaf_name) || "pending";
     _appendBlock(gBlocks, p, state);
