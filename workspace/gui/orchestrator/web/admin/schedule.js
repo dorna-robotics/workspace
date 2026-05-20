@@ -138,33 +138,25 @@ function _renderGantt() {
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // Auto-fit pxPerSec — each block must be wide enough for its label.
-  const FONT_PX = 13;
-  const CHAR_W = FONT_PX * 0.60;
-  const PAD_X = 32;
+  // Fit the chart inside the modal — no horizontal scroll, no
+  // auto-expanded gaps. Labels get truncated when they don't fit.
+  const FONT_PX = 12;
+  const CHAR_W  = FONT_PX * 0.60;
+  const LABEL_PAD = 14;        // 7 px on each side
   function labelOf(a) { return `${a.class_name || a.name}(${a.item})`; }
-  function neededWidth(a) { return labelOf(a).length * CHAR_W + PAD_X; }
 
-  const ROW_H   = 58;
-  const ROW_PAD = 12;
-  const LEFT_W  = 148;
-  const TOP_PAD = 20;
-  const BOT_PAD = 20;
+  const ROW_H   = 44;
+  const ROW_PAD = 6;
+  const LEFT_W  = 132;
+  const TOP_PAD = 18;
+  const BOT_PAD = 18;
   const SIDE_PAD = 24;
   const horizon = Math.max(_plan.makespan || 0, 30);
 
-  let minPxPerSec = 6;
-  for (const a of actions) {
-    if (a.duration > 0) {
-      const ratio = neededWidth(a) / a.duration;
-      if (ratio > minPxPerSec) minPxPerSec = ratio;
-    }
-  }
   const containerAvail = Math.max(420, _ganttEl.clientWidth - 2 * SIDE_PAD - LEFT_W);
-  const fillPxPerSec = containerAvail / horizon;
-  const pxPerSec = Math.max(fillPxPerSec, minPxPerSec);
+  const pxPerSec = containerAvail / horizon;
 
-  const W = LEFT_W + horizon * pxPerSec + 32;
+  const W = LEFT_W + horizon * pxPerSec + 24;
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -199,13 +191,14 @@ function _renderGantt() {
     }
   });
 
-  // Per-row layout records — used both for blocks and connector lines.
+  // Layout: respect predicted durations exactly. Min block width is
+  // just a visibility floor; labels truncate to fit if needed.
   const placements = new Map();   // leaf_name -> {x, w, y, h, rowIdx}
   for (const a of actions) {
     const rowIdx = _primaryRow(rows, a.resources, tres);
     if (rowIdx < 0) continue;
     const x = LEFT_W + a.start_t * pxPerSec;
-    const w = Math.max(neededWidth(a), a.duration * pxPerSec);
+    const w = Math.max(14, a.duration * pxPerSec);
     const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
     const h = ROW_H - ROW_PAD * 2;
     placements.set(a.leaf_name, { a, x, w, y, h, rowIdx });
@@ -219,14 +212,15 @@ function _renderGantt() {
     const p = placements.get(a.leaf_name);
     if (!p) continue;
     const state = _leafState.get(a.leaf_name) || "pending";
-    _appendBlock(gBlocks, p.x, p.y, p.w, p.h, a, state);
+    _appendBlock(gBlocks, p.x, p.y, p.w, p.h, a, state,
+                 FONT_PX, CHAR_W, LABEL_PAD);
   }
 
   _ganttEl.innerHTML = "";
   _ganttEl.appendChild(svg);
 }
 
-function _appendBlock(parent, x, y, w, h, a, state) {
+function _appendBlock(parent, x, y, w, h, a, state, FONT_PX, CHAR_W, LABEL_PAD) {
   const svgNS = "http://www.w3.org/2000/svg";
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("class", `sched-block sched-${state}`);
@@ -236,7 +230,7 @@ function _appendBlock(parent, x, y, w, h, a, state) {
   rect.setAttribute("y", String(y));
   rect.setAttribute("width",  String(w));
   rect.setAttribute("height", String(h));
-  rect.setAttribute("rx", "12");
+  rect.setAttribute("rx", "8");
   rect.setAttribute("class", "sched-block-fill");
   g.appendChild(rect);
 
@@ -245,21 +239,28 @@ function _appendBlock(parent, x, y, w, h, a, state) {
   border.setAttribute("y", String(y));
   border.setAttribute("width",  String(w));
   border.setAttribute("height", String(h));
-  border.setAttribute("rx", "12");
+  border.setAttribute("rx", "8");
   border.setAttribute("class", "sched-block-border");
   g.appendChild(border);
 
-  const label = `${a.class_name || a.name}(${a.item})`;
-  const lab = document.createElementNS(svgNS, "text");
-  lab.setAttribute("x", String(x + w / 2));
-  lab.setAttribute("y", String(y + h / 2 + 5));
-  lab.setAttribute("text-anchor", "middle");
-  lab.setAttribute("class", "sched-blocklabel");
-  lab.textContent = label;
-  g.appendChild(lab);
+  const fullLabel = `${a.class_name || a.name}(${a.item})`;
+  // Truncate to whatever fits inside the block's interior.
+  const maxChars = Math.max(1, Math.floor((w - LABEL_PAD) / CHAR_W));
+  const display = fullLabel.length <= maxChars
+    ? fullLabel
+    : (maxChars >= 2 ? fullLabel.slice(0, maxChars - 1) + "…" : "");
+  if (display) {
+    const lab = document.createElementNS(svgNS, "text");
+    lab.setAttribute("x", String(x + w / 2));
+    lab.setAttribute("y", String(y + h / 2 + FONT_PX / 3));
+    lab.setAttribute("text-anchor", "middle");
+    lab.setAttribute("class", "sched-blocklabel");
+    lab.textContent = display;
+    g.appendChild(lab);
+  }
 
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = `${label} — ${state}`;
+  title.textContent = `${fullLabel} — ${state}`;
   g.appendChild(title);
 
   parent.appendChild(g);

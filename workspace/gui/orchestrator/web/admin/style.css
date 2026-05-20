@@ -742,12 +742,12 @@
 .gantt-container {
   flex: 1;
   overflow: auto;
-  padding: 24px 22px 28px;
+  padding: 22px 20px 24px;
   background: var(--bg);
-  min-height: 320px;
+  min-height: 280px;
 }
 .sched-empty {
-  padding: 96px 24px;
+  padding: 88px 24px;
   text-align: center;
   color: var(--muted);
   font: 400 13px/1.5 var(--font);
@@ -757,69 +757,96 @@
 
 /* Resource labels & row dividers */
 .sched-rowlabel {
-  font: 600 11px/1 var(--mono);
+  font: 600 10px/1 var(--mono);
   fill: var(--muted);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
 }
 .sched-rowline {
   stroke: var(--border2);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* ── Action blocks ───────────────────────────────────────────────────── */
-/* Three distinct visual states for past / present / future:
-     pending — outline only, no fill (ghostly)
-     running — solid card + glowing accent border (alive)
-     done    — solid surface + dimmed muted label (settled, behind us)   */
+/* Three semantic states, three semantic colours.
+     pending — neutral grey   (future, hasn't happened)
+     running — blue accent    (alive, in flight)
+     done    — green tint     (settled behind us)
+   Inspired by Apple Reminders' "todo / overdue / done" colourway. */
 .sched-block-fill {
-  fill: var(--surface2);
-  transition: opacity 0.3s ease, fill 0.3s ease;
+  transition: fill 0.3s ease, opacity 0.3s ease;
 }
 .sched-block-border {
   fill: none;
-  stroke: var(--border);
   stroke-width: 1;
   pointer-events: none;
   transition: stroke 0.3s, stroke-width 0.3s, stroke-opacity 0.3s;
 }
 .sched-blocklabel {
-  font: 600 13px/1 var(--mono);
-  fill: var(--text);
+  font: 600 12px/1 var(--mono);
   pointer-events: none;
   letter-spacing: 0.01em;
   transition: opacity 0.3s, fill 0.3s;
 }
 
-/* PENDING (future) — outline only, no fill body */
-.sched-block.sched-pending .sched-block-fill   { opacity: 0; }
-.sched-block.sched-pending .sched-block-border { stroke: var(--border); opacity: 0.55; }
-.sched-block.sched-pending .sched-blocklabel   { fill: var(--muted); opacity: 0.6; }
+/* PENDING (future) — neutral grey */
+.sched-block.sched-pending .sched-block-fill {
+  fill: var(--surface2);
+  opacity: 0.55;
+}
+.sched-block.sched-pending .sched-block-border {
+  stroke: var(--border);
+  opacity: 0.7;
+}
+.sched-block.sched-pending .sched-blocklabel {
+  fill: var(--muted);
+  opacity: 0.85;
+}
 
-/* DONE (past) — solid quiet card with muted label */
-.sched-block.sched-done    .sched-block-fill   { opacity: 1; fill: var(--surface2); }
-.sched-block.sched-done    .sched-block-border { stroke: var(--border2); opacity: 1; }
-.sched-block.sched-done    .sched-blocklabel   { fill: var(--muted); opacity: 0.85; }
+/* DONE (past) — green tint, like a completed task */
+.sched-block.sched-done .sched-block-fill {
+  fill: var(--green);
+  opacity: 0.18;
+}
+.sched-block.sched-done .sched-block-border {
+  stroke: var(--green);
+  opacity: 0.45;
+}
+.sched-block.sched-done .sched-blocklabel {
+  fill: var(--green);
+  opacity: 0.95;
+}
 
-/* SKIPPED — barely there */
-.sched-block.sched-skipped .sched-block-fill   { opacity: 0.05; }
-.sched-block.sched-skipped .sched-block-border { stroke: var(--border); opacity: 0.25; stroke-dasharray: 4 3; }
-.sched-block.sched-skipped .sched-blocklabel   { opacity: 0.25; }
+/* SKIPPED */
+.sched-block.sched-skipped .sched-block-fill {
+  fill: var(--surface2);
+  opacity: 0.10;
+}
+.sched-block.sched-skipped .sched-block-border {
+  stroke: var(--border);
+  opacity: 0.3;
+  stroke-dasharray: 4 3;
+}
+.sched-block.sched-skipped .sched-blocklabel {
+  fill: var(--muted);
+  opacity: 0.3;
+}
 
-/* RUNNING (present) — accent-tinted card + breathing accent border */
+/* RUNNING (present) — accent blue with breathing glow */
 .sched-block.sched-running .sched-block-fill {
-  opacity: 1;
-  fill: var(--accent-dim);
+  fill: var(--accent);
+  opacity: 0.20;
 }
 .sched-block.sched-running .sched-block-border {
   stroke: var(--accent);
   stroke-width: 2;
   animation: schedRunPulse 1.6s ease-in-out infinite;
-  filter: drop-shadow(0 0 10px var(--accent));
+  filter: drop-shadow(0 0 8px var(--accent));
 }
 .sched-block.sched-running .sched-blocklabel {
-  fill: var(--text);
+  fill: var(--accent-h);
+  opacity: 1;
 }
 @keyframes schedRunPulse {
   0%, 100% {
@@ -828,6 +855,6 @@
   }
   50% {
     stroke-opacity: 0.55;
-    filter: drop-shadow(0 0 18px var(--accent));
+    filter: drop-shadow(0 0 16px var(--accent));
   }
 }
