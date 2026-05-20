@@ -697,24 +697,11 @@
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
-/* Second row under Controls: holds post-launch-only text links
+/* Second row under Controls: holds post-launch-only buttons
    (Schedule today). Hidden until JS adds .show once the workspace
-   is launched. */
+   is launched. Same button style as the primary row. */
 #controlsExtra            { display: none; }
-#controlsExtra.show       { display: flex; justify-content: flex-start; gap: 14px; margin-top: 8px; }
-.ctrl-link {
-  background: none;
-  border: none;
-  padding: 0;
-  font: 500 12px/1 var(--font);
-  color: var(--accent);
-  cursor: pointer;
-  text-align: left;
-  letter-spacing: 0.01em;
-  transition: color 0.15s;
-}
-.ctrl-link:hover { color: var(--accent-h); }
-.ctrl-link:active { color: var(--accent-h); }
+#controlsExtra.show       { display: flex; gap: 6px; margin-top: 6px; }
 
 /* Modal — inherits everything from the base .modal styles (border-
    radius, background, shadow, head/body padding); we only widen it
