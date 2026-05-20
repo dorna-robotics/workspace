@@ -112,13 +112,13 @@ a:hover { color: var(--accent-h); }
 .btn-danger { background: rgba(255,69,58,0.12); color: var(--red); }
 .btn-danger:hover:not(:disabled) { background: rgba(255,69,58,0.22); }
 
-/* Park-graceful — same orange tint + white text as .pendant-park
-   (just without the inset border, since other sidebar / card buttons
-   don't carry one). */
-.btn-warn { background: rgba(255,122,63,0.25); color: #fff; }
-.btn-warn:hover:not(:disabled) { background: rgba(255,122,63,0.35); }
-[data-theme="light"] .btn-warn { background: rgba(214,90,38,0.12); color: #c64a1a; }
-[data-theme="light"] .btn-warn:hover:not(:disabled) { background: rgba(214,90,38,0.20); }
+/* Park-graceful — solid orange, mirrors .btn-primary's "solid accent
+   + white text" shape so it reads at the same saturation as the
+   pendant Park button even without an inset border. */
+.btn-warn { background: #ff7a3f; color: #fff; font-weight: 600; }
+.btn-warn:hover:not(:disabled) { background: #ff6a2a; }
+[data-theme="light"] .btn-warn { background: #d8651e; color: #fff; }
+[data-theme="light"] .btn-warn:hover:not(:disabled) { background: #c4541a; }
 
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
