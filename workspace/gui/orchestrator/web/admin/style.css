@@ -799,12 +799,13 @@
 .sched-block.sched-pending .sched-block-border { stroke: var(--border); }
 .sched-block.sched-pending .sched-blocklabel   { fill: var(--muted); }
 
-/* DONE (past) — solid green-tinted card */
-.sched-block.sched-done .sched-block-fill   { fill: rgba(52,199,89,0.18); }
-.sched-block.sched-done .sched-block-border { stroke: rgba(52,199,89,0.5); }
-.sched-block.sched-done .sched-blocklabel   { fill: var(--green); }
-[data-theme="light"] .sched-block.sched-done .sched-block-fill   { fill: rgba(36,138,61,0.14); }
-[data-theme="light"] .sched-block.sched-done .sched-block-border { stroke: rgba(36,138,61,0.45); }
+/* DONE (past) — soft accent wash, same hue as running but quieter */
+.sched-block.sched-done .sched-block-fill   { fill: rgba(10,132,255,0.10); }
+.sched-block.sched-done .sched-block-border { stroke: rgba(10,132,255,0.32); }
+.sched-block.sched-done .sched-blocklabel   { fill: var(--accent-h); opacity: 0.85; }
+[data-theme="light"] .sched-block.sched-done .sched-block-fill   { fill: rgba(0,122,255,0.08); }
+[data-theme="light"] .sched-block.sched-done .sched-block-border { stroke: rgba(0,122,255,0.28); }
+[data-theme="light"] .sched-block.sched-done .sched-blocklabel   { fill: var(--accent); opacity: 0.80; }
 
 /* SKIPPED — barely there */
 .sched-block.sched-skipped .sched-block-fill   { fill: var(--surface2); opacity: 0.30; }
