@@ -640,22 +640,23 @@ def run_protocol(
     )
 
     # End-cleanup tree: collect every Action subclass declaring
-    # ``trigger="end"`` (project-guide §9). When the operator clicks
-    # End, the BT engine completes the current action, then runs this
+    # ``schedule = {"cleanup": True}``. When the operator clicks End,
+    # the BT engine completes the current action, then runs this
     # subtree to perform cleanup (park tools, return home, …) before
     # exiting. The collection happens at engine-start so the registry
     # is already populated.
+    from workspace.bt.dsl import _is_cleanup
     end_classes = [
         (name, cls)
         for name, cls in sorted(registry._actions.items())
-        if getattr(cls, "trigger", None) == "end"
+        if _is_cleanup(cls)
     ]
 
     def build_end_tree() -> Optional[py_trees.behaviour.Behaviour]:
         if not end_classes:
             return None
-        # trigger="end" actions are scene-level (no per-item iteration)
-        # so we instantiate exactly one leaf per class, item_index=0.
+        # Cleanup actions are scene-level (no per-item iteration) so
+        # we instantiate exactly one leaf per class, item_index=0.
         leaves = [leaf_factory(name, 0) for name, _ in end_classes]
         return sequence(f"{project_name}/end", *leaves)
 

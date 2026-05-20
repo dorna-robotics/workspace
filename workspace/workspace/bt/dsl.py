@@ -98,6 +98,33 @@ log = logging.getLogger(__name__)
 # project authors may want.
 
 
+# ── Schedule-attribute helpers ─────────────────────────────────────────────
+
+
+def _schedule_dict(cls):
+    """Resolve ``Action.schedule`` to a dict of {display, cleanup}.
+
+    The class attribute may be ``True`` / ``False`` / a partial dict;
+    this helper returns the fully-defaulted dict form so callers
+    don't have to enumerate the cases.
+
+    Note: ``False`` ("don't register") is checked separately at
+    registration time via ``cls.__dict__``. By the time a class
+    reaches this helper it's already in the registry, so we just
+    return the display/cleanup behaviour and ignore the False case.
+    """
+    sched = getattr(cls, "schedule", True)
+    if isinstance(sched, dict):
+        return {
+            "display": bool(sched.get("display", True)),
+            "cleanup": bool(sched.get("cleanup", False)),
+        }
+    return {"display": True, "cleanup": False}
+
+
+def _is_cleanup(cls) -> bool:
+    """Is this action a cleanup leaf (runs on End, not part of plan)?"""
+    return _schedule_dict(cls)["cleanup"]
 
 
 # ── Internal: facts and predicates ─────────────────────────────────────────
@@ -665,12 +692,16 @@ class Action:
                             swap happens). Can be a list of names.
         post_check:         Name of a check method to run after the
                             action completes. Same shape as pre_check.
-        trigger:            ``"end"`` marks this action as the cleanup
-                            invoked when the operator clicks End. Not
-                            scheduled into the normal plan. The action's
-                            ``tool:`` field is the authoritative final
-                            tool state. ``duration`` is ignored on
-                            triggers.
+        schedule:           ``True`` (default), ``False`` (don't
+                            register — abstract base class), or a dict
+                            with keys ``display`` (default True; show
+                            in the Gantt) and ``cleanup`` (default
+                            False; if True, runs on End instead of as
+                            part of the goal-directed plan, and the
+                            action's ``tool:`` is the authoritative
+                            final tool state). See the class-level
+                            comment near the attribute for the full
+                            spec.
 
     Methods to override:
         pre(self, *params)     -> Expr or Fact or bool
@@ -695,24 +726,33 @@ class Action:
     tool_swap_duration:  int = 10      # gap before this action when tool changes
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
-    trigger:             Optional[str] = None  # "end" or None
 
-    # Schedule visibility. Three forms accepted:
-    #   * ``True``  (default)         — register normally, show in Gantt.
-    #   * ``False``                   — don't register at all. Use for
-    #                                   intermediate base classes that
-    #                                   only exist to share code, e.g.
-    #                                   ``class ShakerCycleBase(Action):
-    #                                       schedule = False`` — replaces
-    #                                   the older underscore-prefix
-    #                                   convention with something
-    #                                   explicit.
-    #   * ``{"display": False, …}``   — registered normally (the planner
-    #                                   and scheduler still see it), but
-    #                                   suppressed from the live Gantt.
-    #                                   Reserved keys: ``display``. More
-    #                                   keys (cleanup, ordering, …) can
-    #                                   be added without an API break.
+    # Schedule behaviour — explicit, no implicit rules. Three forms:
+    #
+    #   * ``True``  (default)
+    #         Register normally + show on the live Gantt + take part in
+    #         the goal-directed plan.
+    #
+    #   * ``False``
+    #         Don't register at all. Used for intermediate base classes
+    #         that exist only to share code:
+    #             class ShakerCycleBase(Action):
+    #                 schedule = False
+    #         The check is local to the class itself (``cls.__dict__``),
+    #         so concrete subclasses fall back to the default and
+    #         register normally.
+    #
+    #   * dict with optional keys
+    #         ``display`` (default True)  — appear on the live Gantt.
+    #         ``cleanup`` (default False) — runs on End, NOT as part of
+    #                                       the goal-directed plan. The
+    #                                       launcher collects every
+    #                                       cleanup action into the
+    #                                       End-cleanup subtree.
+    #
+    #         Example:
+    #             class ParkTool(Action):
+    #                 schedule = {"cleanup": True}
     schedule:            Any = True
 
     # ── Framework-managed per-call attributes ──────────────────────────
@@ -926,8 +966,8 @@ class ActionRegistry:
     def to_templates(self, ctx: WorkspaceContext) -> List[ActionTemplate]:
         """Build a list of :class:`ActionTemplate` for the PDDL planner.
 
-        Each registered action class becomes one template **unless** it
-        carries ``trigger="end"`` (project-guide §9 — those are scene
+        Each registered action class becomes one template **unless**
+        it carries ``schedule = {"cleanup": True}`` — those are scene
         cleanup, not part of the goal-directed plan; the engine runs
         them when the operator clicks End). The instance used during
         planning carries ``ctx`` so its ``param_iter`` / ``pre`` /
@@ -935,7 +975,7 @@ class ActionRegistry:
         """
         templates: List[ActionTemplate] = []
         for name, cls in self._actions.items():
-            if getattr(cls, "trigger", None) == "end":
+            if _is_cleanup(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1008,7 +1048,7 @@ class ActionRegistry:
         added: set = set()
         removed: set = set()
         for cls in self._actions.values():
-            if getattr(cls, "trigger", None) == "end":
+            if _is_cleanup(cls):
                 continue
             instance = cls()
             # Probe with an empty state. Static effs ignore self.state;
@@ -1054,7 +1094,7 @@ class ActionRegistry:
         empty: State = frozenset()
         out: set = set()
         for cls in self._actions.values():
-            if getattr(cls, "trigger", None) == "end":
+            if _is_cleanup(cls):
                 continue
             instance = cls()
             instance.ctx = ctx  # type: ignore[attr-defined]
@@ -1084,10 +1124,11 @@ class ActionRegistry:
     def to_meta(self) -> Dict[str, ActionMeta]:
         out: Dict[str, ActionMeta] = {}
         for name, cls in self._actions.items():
-            # trigger="end" actions are cleanup, not scheduled work —
-            # the engine runs them outside the schedule when End is
+            # Cleanup actions (``schedule = {"cleanup": True}``) aren't
+            # scheduled work — the engine runs them outside the schedule
+            # when End is
             # requested. Keep them out of scheduler meta too.
-            if getattr(cls, "trigger", None) == "end":
+            if _is_cleanup(cls):
                 continue
             # ``tool`` is a sentinel for "keep current tool" — for the
             # scheduler that means "no opinion on the held tool" which
