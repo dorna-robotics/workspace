@@ -318,9 +318,9 @@ function render() {
                <button class="btn btn-sm action-btn" data-cmd="kill">Kill</button>`
             : `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${running ? "disabled" : ""}>${state.toUpperCase() === "PAUSED" ? "Resume" : "Start"}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!running ? "disabled" : ""}>Pause</button>
-               <button class="btn btn-sm btn-danger action-btn"  data-cmd="park">Park</button>
+               <button class="btn btn-sm btn-warn action-btn"    data-cmd="park">Park</button>
                <div class="spacer"></div>
-               <button class="btn btn-sm action-btn"             data-cmd="kill">Kill</button>`
+               <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`
           }
         </div>
       </div>

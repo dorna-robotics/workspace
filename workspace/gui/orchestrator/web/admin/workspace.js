@@ -1018,7 +1018,7 @@ function renderControls(state, launched, running) {
 
   const addBtn = (label, cmd, opts = {}) => {
     const b = document.createElement("button");
-    b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}`;
+    b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}${opts.warn ? " btn-warn" : ""}`;
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
@@ -1078,7 +1078,7 @@ function renderControls(state, launched, running) {
     const startLabel = (s === "PAUSED") ? "Resume" : "Start";
     addBtn(startLabel, "start",    { primary: true, disabled: running });
     addBtn("Pause",    "pause",    { disabled: !running });
-    addBtn("Park",     "park",     { danger: true });
+    addBtn("Park",     "park",     { warn: true });
   }
 
   // Gear button for parameters — only before launch
@@ -1095,7 +1095,7 @@ function renderControls(state, launched, running) {
     const spacer = document.createElement("div");
     spacer.className = "spacer";
     controls.appendChild(spacer);
-    addBtn("Kill", "kill", {});
+    addBtn("Kill", "kill", { danger: true });
   }
 
   // Second row — appears only once the workspace is launched. Only

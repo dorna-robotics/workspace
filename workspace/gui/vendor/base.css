@@ -112,6 +112,12 @@ a:hover { color: var(--accent-h); }
 .btn-danger { background: rgba(255,69,58,0.12); color: var(--red); }
 .btn-danger:hover:not(:disabled) { background: rgba(255,69,58,0.22); }
 
+/* Park-graceful — orange, between amber (pause) and red (kill) */
+.btn-warn { background: rgba(255,122,63,0.12); color: #ff7a3f; }
+.btn-warn:hover:not(:disabled) { background: rgba(255,122,63,0.22); }
+[data-theme="light"] .btn-warn { background: rgba(214,90,38,0.10); color: #c64a1a; }
+[data-theme="light"] .btn-warn:hover:not(:disabled) { background: rgba(214,90,38,0.18); }
+
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
 
