@@ -446,16 +446,6 @@
         </div>
       </div>
 
-      <div id="devicesSection">
-        <div class="log-header" id="btnToggleDevices" title="Toggle devices">
-          <div class="section-label">Devices</div>
-          <svg id="devicesChevron" class="section-chevron open" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          <div class="spacer"></div>
-          <span class="step-count-badge" id="devicesCountBadge"></span>
-        </div>
-        <div id="devicesList" class="devices-list"><div class="step-empty">No devices declared</div></div>
-      </div>
-
       <div id="progressSection" style="display:none">
         <div class="section-label">Progress</div>
         <div class="sidebar-progress">
@@ -466,17 +456,6 @@
         </div>
       </div>
 
-      <div id="stepSection">
-        <div class="log-header" id="btnToggleSteps" title="Toggle progress">
-          <div class="section-label">Steps</div>
-          <svg id="stepChevron" class="section-chevron open" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          <div class="spacer"></div>
-          <span class="step-count-badge" id="stepCountBadge"></span>
-          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-        </div>
-        <div id="stepTimeline" class="step-timeline"><div class="step-empty">No steps yet</div></div>
-      </div>
-
       <div id="paramsSection">
         <div class="log-header" id="btnToggleParams" title="Toggle parameters">
           <div class="section-label">Run Parameters</div>
@@ -485,6 +464,27 @@
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyParams" title="Copy parameters"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         </div>
         <pre id="paramsPre" style="display:none" class="params-pre">(no parameters)</pre>
+      </div>
+
+      <div id="devicesSection">
+        <div class="log-header" id="btnToggleDevices" title="Toggle devices">
+          <div class="section-label">Devices</div>
+          <svg id="devicesChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div class="spacer"></div>
+          <span class="step-count-badge" id="devicesCountBadge"></span>
+        </div>
+        <div id="devicesList" class="devices-list" style="display:none"><div class="step-empty">No devices declared</div></div>
+      </div>
+
+      <div id="stepSection">
+        <div class="log-header" id="btnToggleSteps" title="Toggle progress">
+          <div class="section-label">Steps</div>
+          <svg id="stepChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div class="spacer"></div>
+          <span class="step-count-badge" id="stepCountBadge"></span>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        </div>
+        <div id="stepTimeline" class="step-timeline" style="display:none"><div class="step-empty">No steps yet</div></div>
       </div>
 
 

@@ -388,7 +388,9 @@ function updateStatusUI(st) {
 
 let _prevStepCount = 0;
 let _prevStepRunning = false;
-let _stepsExpanded = true;
+// Steps start collapsed — auto-expands when the first step arrives.
+// Matches the empty-by-default behaviour for Devices below.
+let _stepsExpanded = false;
 
 // ---- Direct step WebSocket to runtime ----
 let _stepWs = null;
@@ -594,6 +596,14 @@ function renderDevicesPanel() {
   if (!list.length) {
     el.innerHTML = `<div class="step-empty">No devices declared</div>`;
     return;
+  }
+  // Auto-expand the first time devices appear — empty-default UX
+  // (collapsed) shouldn't hide real content from the operator.
+  if (!_devicesExpanded) {
+    _devicesExpanded = true;
+    el.style.display = "";
+    const chev = $("devicesChevron");
+    if (chev) chev.classList.add("open");
   }
   const now = Date.now();
   el.innerHTML = list.map(d => {
@@ -1222,7 +1232,8 @@ $("btnToggleSteps")?.addEventListener("click", () => {
 });
 
 // Collapse / expand devices
-let _devicesExpanded = true;
+// Devices start collapsed — auto-expands when the first device arrives.
+let _devicesExpanded = false;
 $("btnToggleDevices")?.addEventListener("click", () => {
   _devicesExpanded = !_devicesExpanded;
   const el = $("devicesList");
