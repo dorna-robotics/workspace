@@ -716,6 +716,15 @@
 #controlsExtra            { display: none; }
 #controlsExtra.show       { display: flex; gap: 6px; margin-top: 6px; }
 
+/* Park "btn-warn" — duplicated here at higher specificity so it
+   wins over base.css regardless of cache state. Solid orange to
+   match .pendant-park's saturation; no inset border, matching the
+   plain pill shape of the rest of the Controls row. */
+.btn.btn-warn { background: #ff7a3f; color: #fff; font-weight: 600; }
+.btn.btn-warn:hover:not(:disabled) { background: #ff6a2a; }
+[data-theme="light"] .btn.btn-warn { background: #d8651e; color: #fff; }
+[data-theme="light"] .btn.btn-warn:hover:not(:disabled) { background: #c4541a; }
+
 /* Modal — inherits everything from the base .modal styles (border-
    radius, background, shadow, head/body padding); we only widen it
    and zero the body padding so the Gantt SVG fills the body. */
