@@ -343,6 +343,14 @@ class Runtime:
     def mark_idle(self) -> None:
         if self._killed:
             raise KillRequested()
+        # Clear any pending park / cleanup flags from the run we're
+        # leaving. Without this, after a Park the runtime transitions
+        # to IDLE but ``_parking`` stays True — the next ``mark_running``
+        # would immediately raise ParkRequested, killing the gate loop
+        # before the new run can start.
+        with self._lock:
+            self._parking = False
+            self._in_cleanup = False
         self._set_state_with_callback(RTState.IDLE)
 
     def mark_error(self, ex: Exception) -> None:
@@ -445,8 +453,12 @@ class Runtime:
                 except KillRequested:
                     return
                 except ParkRequested:
+                    # Park was requested but never picked up by the
+                    # framework's cleanup path. ``mark_idle`` resets
+                    # the parking flag so the next Start works
+                    # cleanly. We DON'T return — keep the gate loop
+                    # alive for the next run.
                     self.mark_idle()
-                    return
                 except Exception as ex:
                     self.mark_error(ex)
                     import traceback
