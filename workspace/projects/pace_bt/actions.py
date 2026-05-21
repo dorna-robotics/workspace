@@ -21,6 +21,8 @@ shaken           = predicate("shaken")           # tube has been shaken
 dosed_2ml        = predicate("dosed_2ml")        # transferred to 2ml vials
 cap_in_holder    = predicate("cap_in_holder")    # autosampler-fed cap waiting
 vial_2ml_capped  = predicate("vial_2ml_capped")  # 2ml vial capped and placed
+started          = predicate("started")          # workspace initialised (global, no args)
+parked           = predicate("parked")           # robot returned to park pose (global, no args)
 
 
 # ── 2. setup — operator kwargs → planning inputs ───────────────────────────
@@ -31,17 +33,23 @@ def setup(**kwargs):
     batch_size = int(kwargs.get("batch_size", 1))
     tubes = list(range(batch_size))
 
-    facts = set()
-    for t in tubes:
-        facts.add((in_source.name, t))
-        facts.add((has_cap.name, t))
+    # Initial state is *empty* — no per-tube facts yet. ``Start.eff``
+    # seeds ``in_source(t)`` + ``has_cap(t)`` for every tube after the
+    # operator's initialisation runs. That gates the entire plan
+    # behind Start without having to add ``& started`` to every other
+    # action's ``pre``.
+    facts: set = set()
 
     def item_done(state, tube):
         return ((in_done.name, tube) in state
                 and (vial_2ml_capped.name, tube) in state)
 
     def goal(state):
-        return all(item_done(state, t) for t in tubes)
+        return (
+            (started.name,) in state
+            and all(item_done(state, t) for t in tubes)
+            and (parked.name,) in state
+        )
 
     # `shaken(t)` is added by a state-aware eff (ShakerOne/Two), so
     # auto-derivation can't see it — list per-tube progress markers
@@ -50,8 +58,12 @@ def setup(**kwargs):
         weighed, dosed_40ml, shaken, dosed_2ml,
         in_done, vial_2ml_capped,
     )
+    # Per-tube progress markers + the two global bookend goals.
+    # ``Start.pre`` requires ``~started`` so it runs first;
+    # ``Park.pre`` requires every tube done so it runs last.
     goal_facts = frozenset(
-        (p.name, t) for p in progress_preds for t in tubes
+        [(p.name, t) for p in progress_preds for t in tubes]
+        + [(started.name,), (parked.name,)]
     )
 
     return {
@@ -63,79 +75,77 @@ def setup(**kwargs):
     }
 
 
-# ── 3. Slot tables — copied verbatim from pace_or/states.py ────────────────
+# ── 3. Slot tables — slicing-safe ──────────────────────────────────────────
+#
+# Two flavours, distinguished by whether a tube has a *permanent* home
+# in the slot (persistent) or just *passes through* (transient).
+#
+#   Persistent (SOURCE, RACK_2ML_END): one slot per tube for the entire
+#       protocol. Tables sized to the physical scene capacity (28 source
+#       slots, 50 2ml-rack slots) so any ``batch_size`` up to that limit
+#       just works.
+#
+#   Transient (WORKING, CAP_HOLDER, SHAKER_SLOTS, DOSING_*): tubes
+#       occupy the slot only while the planner is acting on them in the
+#       current slice. The slot is freed by the time the next slice
+#       starts, so it can be reused. Wrapped in ``_ReusableSlots`` which
+#       wraps ``[]`` indexing through ``% len(slots)`` — tube ``t`` and
+#       tube ``t + N`` (where ``N`` = slot count) share the same physical
+#       position but never overlap in time.
+#
+# The reusable wrapper is the cleanest way to keep the existing
+# ``TABLE[tube]`` call sites intact while making them safe for any
+# ``batch_size``. Iteration over the wrapper exposes only the physical
+# slots, so any code that does ``for site in TABLE`` (e.g. _rinse_needle)
+# keeps working.
 
-SOURCE = [
-    ("source_rack", "A1"),
-    ("source_rack", "A2"),
-    ("source_rack", "A3"),
-    ("source_rack", "A4"),
-]
 
-WORKING = [
-    ("working_rack", "B1"),
-    ("working_rack", "B2"),
-    ("working_rack", "B3"),
-    ("working_rack", "B4"),
-]
+class _ReusableSlots:
+    """List wrapper that maps any positive integer through ``% len`` —
+    for slots that are released between slices and can be reused by a
+    later tube without conflict."""
 
-CAP_HOLDER = [
-    "decapper_1",
-    "decapper_2",
-    "decapper_3",
-    "decapper_4",
-]
+    __slots__ = ("_slots",)
 
-SHAKER_SLOTS = [
+    def __init__(self, slots):
+        self._slots = list(slots)
+
+    def __getitem__(self, t):
+        return self._slots[t % len(self._slots)]
+
+    def __len__(self):
+        return len(self._slots)
+
+    def __iter__(self):
+        return iter(self._slots)
+
+
+# Persistent — one slot per tube, sized for the full physical rack.
+SOURCE = [("source_rack", f"{r}{c}") for r in "ABCD" for c in range(1, 8)]            # 4×7 = 28
+RACK_2ML_END = [("rack_2ml_end", f"{r}{c}") for r in "ABCDE" for c in range(1, 11)]   # 5×10 = 50
+
+# Transient — slot count = physical capacity per slice; wraps via modulo.
+WORKING = _ReusableSlots(("working_rack", f"B{c}") for c in range(1, 5))              # 4 slots
+CAP_HOLDER = _ReusableSlots(f"decapper_{i}" for i in range(1, 5))                     # 4 decappers
+SHAKER_SLOTS = _ReusableSlots([
     ("shaker_1", "A1"),
     ("shaker_1", "A2"),
     ("shaker_2", "A1"),
     ("shaker_2", "A2"),
-]
+])
+CAP_FEEDER = _ReusableSlots(("cap_holder", f"A{c}") for c in range(1, 5))
+DOSING_40ML = _ReusableSlots(("doser_40ml", f"B{c}") for c in range(1, 5))
+DOSING_2ML_END = _ReusableSlots(("doser_2ml_end", f"A{c}") for c in range(1, 5))
+DOSING_2ML_MIDDLE = _ReusableSlots(("doser_2ml_middle", f"A{c}") for c in range(1, 5))
 
-CAP_FEEDER = [
-    ("cap_holder", "A1"),
-    ("cap_holder", "A2"),
-    ("cap_holder", "A3"),
-    ("cap_holder", "A4"),
-]
-
-DOSING_40ML = [
-    ("doser_40ml", "B1"),
-    ("doser_40ml", "B2"),
-    ("doser_40ml", "B3"),
-    ("doser_40ml", "B4"),
-]
-
+# Fixed positions — used by needle-rinse helper, no per-tube indexing.
 DOSING_CLEAN = [
     ("doser_40ml", "A1"),
     ("doser_40ml", "A2"),
     ("doser_40ml", "A3"),
 ]
-
 DOSING_WASTE = [
     ("doser_40ml", "A4"),
-]
-
-DOSING_2ML_END = [
-    ("doser_2ml_end", "A1"),
-    ("doser_2ml_end", "A2"),
-    ("doser_2ml_end", "A3"),
-    ("doser_2ml_end", "A4"),
-]
-
-DOSING_2ML_MIDDLE = [
-    ("doser_2ml_middle", "A1"),
-    ("doser_2ml_middle", "A2"),
-    ("doser_2ml_middle", "A3"),
-    ("doser_2ml_middle", "A4"),
-]
-
-RACK_2ML_END = [
-    ("rack_2ml_end", "A1"),
-    ("rack_2ml_end", "A2"),
-    ("rack_2ml_end", "A3"),
-    ("rack_2ml_end", "A4"),
 ]
 
 # Run parameters
@@ -171,6 +181,46 @@ def _rinse_needle(rcp):
 
 
 # ── 5. Actions — one per pace_or state ─────────────────────────────────────
+
+
+class Start(Action):
+    """First action of every plan — operator's initialisation hook.
+
+    Planned by the PDDL planner like any other action; ``pre`` requires
+    ``~started`` so it runs exactly once, at the very start. ``eff``
+    seeds the per-tube initial facts (``in_source``, ``has_cap``) so no
+    per-tube action's pre is satisfiable until Start has run.
+
+    Put your axis-init / homing / device-warmup calls in ``execute``.
+    """
+    params      = []
+    duration    = 5
+    resource    = "robot"
+
+    def pre(self):
+        # Expr form (not raw bool) so ``build_precedence`` can read the
+        # dependency. Single negative fact — nothing must add ``started``
+        # before this action.
+        return ~started()
+
+    def eff(self):
+        # Seed the *full* tube list, not the current slice — otherwise
+        # later slices wouldn't have ``in_source`` / ``has_cap`` and
+        # would get stuck. ``_ctx_all_objects`` reads the launcher's
+        # un-sliced snapshot for exactly this case.
+        tubes = self._ctx_all_objects().get("tube", [])
+        seeds = [+started()]
+        for t in tubes:
+            seeds.append(+in_source(t))
+            seeds.append(+has_cap(t))
+        return {"started": tuple(seeds)}
+
+    def execute(self):
+        rt = self.ctx.runtime
+        rcp = self.ctx.recipes
+        rt.motor(1)
+        rcp["gripper"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+        return "started"
 
 
 class Inspected(Action):
@@ -267,11 +317,11 @@ class ShakerCycleBase(Action):
     """Per-shaker shake — one mechanical shake() shakes every tube on
     the device. Subclasses fix SHAKER + resource.
 
-    ``schedule = {"register": False}`` marks this as an abstract base:
-    the framework skips registration so the planner never instantiates
-    it directly, only its concrete subclasses (``ShakerOne``,
-    ``ShakerTwo``)."""
-    schedule    = {"register": False}
+    ``register = False`` marks this as an abstract base: the
+    framework skips registration so the planner never instantiates it
+    directly, only its concrete subclasses (``ShakerOne``,
+    ``ShakerTwo``) — which redeclare ``register = True``."""
+    register    = False
     SHAKER:    str = ""
     params      = []
     duration    = SHAKE_DURATION
@@ -306,11 +356,13 @@ class ShakerCycleBase(Action):
 class ShakerOne(ShakerCycleBase):
     SHAKER   = "shaker_1"
     resource = "shaker_1"
+    register = True   # opt back in — parent is abstract
 
 
 class ShakerTwo(ShakerCycleBase):
     SHAKER   = "shaker_2"
     resource = "shaker_2"
+    register = True   # opt back in — parent is abstract
 
 
 class CapFed(Action):
@@ -467,16 +519,60 @@ class Capped2ml(Action):
         return "capped"
 
 
-# ── 6. End-trigger actions ─────────────────────────────────────────────────
+# ── 6. End-of-run park ─────────────────────────────────────────────────────
 
 
-class ParkTool(Action):
-    """Release whatever tool is held — runs on operator Park."""
+class Park(Action):
+    """Final park step — runs after every tube has finished.
+
+    Planned by the PDDL planner like any other action; ``pre`` requires
+    that every tube is done so the planner schedules it last. Subclass
+    and set ``trigger = "park"`` to reuse the same motion as an
+    operator-initiated cleanup (see ``OperatorPark``).
+    """
     params      = []
     duration    = 5
     resource    = "robot"
     tool        = None
-    trigger     = "park"
+    PARK_JOINTS = [0, 185, -94, 0, 0, 0, 100]  # override in subclasses if needed
+
+    def pre(self):
+        # Expr form (not raw bool) so ``build_precedence`` walks the
+        # dependency tree and slots Park after the last per-tube
+        # action. Returning a bare bool would hide the deps from the
+        # scheduler, which would then place Park in any free robot
+        # slot — including mid-pipeline.
+        #
+        # Uses ``_ctx_all_objects`` (un-sliced) so the precondition
+        # references every tube in the batch, not just the current
+        # slice. Otherwise Park could fire after the first slice and
+        # later slices would have nothing to plan.
+        tubes = self._ctx_all_objects().get("tube", [])
+        if not tubes:
+            return ~parked()
+        expr = ~parked()
+        for t in tubes:
+            expr = expr & in_done(t) & vial_2ml_capped(t)
+        return expr
+
+    def eff(self):
+        return {"parked": (+parked(),)}
 
     def execute(self):
-        return "none"
+        rt = self.ctx.runtime
+        rcp = self.ctx.recipes
+        rcp["gripper"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        rt.motor(0)
+        return "parked"
+
+
+class OperatorPark(Park):
+    """Operator-initiated park — runs when the user clicks Park.
+
+    Inherits Park's motion + effects; the only difference is
+    ``trigger = "park"``, which puts this outside the normal plan: the
+    framework runs it as a one-off cleanup subtree when the operator
+    clicks the Park button. It does *not* appear in the schedule and is
+    *not* sequenced by the planner.
+    """
+    trigger = "park"
