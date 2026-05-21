@@ -17,6 +17,12 @@ let _wsRetryMs = 1000;
 // unique — item index = absolute tube number, not slice-local).
 const _slices = [];
 const _leafState = new Map();   // leaf_name -> "pending" | "running" | "done" | "skipped"
+// Chronological list of leaf names as drawn — populated by ``_renderGantt``
+// and read by the "Jump to current" button to centre the running block.
+const _leafOrder = [];
+// leaf_name -> { x, w } in the SVG's coordinate system. Same lifecycle
+// as ``_leafOrder`` — overwritten each render.
+const _leafGeom = new Map();
 
 let _modalEl = null;
 let _ganttEl = null;
@@ -92,11 +98,39 @@ function _initDOM() {
   }
 }
 
+// Centre the scroll viewport on whichever leaf is currently "the live
+// one". Prefers a running block; otherwise scrolls to the next pending
+// block; otherwise the last leaf in the chart. No-op when the chart is
+// empty (nothing to scroll to).
+function _jumpToCurrent() {
+  if (!_ganttEl || _leafOrder.length === 0) return;
+  let target = _leafOrder.find(name => _leafState.get(name) === "running");
+  if (!target) {
+    target = _leafOrder.find(name => {
+      const s = _leafState.get(name);
+      return s !== "done" && s !== "skipped";
+    });
+  }
+  if (!target) target = _leafOrder[_leafOrder.length - 1];
+  const geom = _leafGeom.get(target);
+  if (!geom) return;
+  const blockCentre = geom.x + geom.w / 2;
+  const viewportW = _ganttEl.clientWidth;
+  // Instant scroll — the modal has just opened and a smooth pan would
+  // make the chart visibly slide, which reads as a glitch.
+  _ganttEl.scrollLeft = Math.max(0, blockCentre - viewportW / 2);
+}
+
 export function openScheduleModal() {
   _initDOM();
   if (!_modalEl) return;
   _modalEl.classList.add("show");
   _renderGantt();
+  // Always auto-centre on the "live" block (running, else next pending,
+  // else the last block once everything's done). ``_jumpToCurrent`` is
+  // a no-op when the chart is empty. Deferred a frame so the modal has
+  // laid out — clientWidth is 0 until then.
+  requestAnimationFrame(_jumpToCurrent);
 }
 
 export function closeScheduleModal() {
@@ -142,7 +176,13 @@ function _renderGantt() {
   const TOP_PAD   = 18;
   const BOT_PAD   = 18;
 
-  function labelOf(a)     { return `${a.class_name || a.name}(${a.item})`; }
+  function labelOf(a)     {
+    // Parameterless actions (parametrized: false) — e.g. Start / Park
+    // — appear once per plan regardless of item count, so the "(0)"
+    // suffix is misleading. Show just the class name for those.
+    const base = a.class_name || a.name;
+    return (a.parametrized === false) ? base : `${base}(${a.item})`;
+  }
   function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
 
   // ── Lay out each slice in its own horizontal column ────────────────
@@ -152,6 +192,11 @@ function _renderGantt() {
   const placements = new Map();    // leaf_name -> {a, x, w, y, h, rowIdx}
   const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
   let xBase = LEFT_W + 8;
+  // Reset before populating — the "Jump to current" button reads these
+  // lookups, and stale entries from a previous render would point at
+  // x-coordinates that no longer match the current SVG.
+  _leafOrder.length = 0;
+  _leafGeom.clear();
 
   for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
     const slice = _slices[sliceIdx];
@@ -194,9 +239,17 @@ function _renderGantt() {
 
     // Slice width = right edge of the furthest block.
     let sliceMaxX = xBase;
-    for (const p of local.values()) {
+    // Record chronological order within this slice (by solver start_t)
+    // for the "Jump to current" lookup. Slices append in plan order so
+    // ``_leafOrder`` ends up globally chronological.
+    const sliceByStart = [...local.values()].sort(
+      (a, b) => a.a.start_t - b.a.start_t,
+    );
+    for (const p of sliceByStart) {
       if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
       placements.set(p.a.leaf_name, p);
+      _leafOrder.push(p.a.leaf_name);
+      _leafGeom.set(p.a.leaf_name, { x: p.x, w: p.w });
     }
 
     // Next slice starts after a gap; a divider sits at the midpoint.
@@ -321,7 +374,10 @@ function _appendBlock(parent, p, state) {
   border.setAttribute("class", "sched-block-border");
   g.appendChild(border);
 
-  const label = `${a.class_name || a.name}(${a.item})`;
+  // Same label rule as ``labelOf`` in the layout above — keep them
+  // in sync. Parameterless actions drop the "(item)" suffix.
+  const base = a.class_name || a.name;
+  const label = (a.parametrized === false) ? base : `${base}(${a.item})`;
   const lab = document.createElementNS(svgNS, "text");
   lab.setAttribute("x", String(x + w / 2));
   lab.setAttribute("y", String(y + h / 2 + 4));
