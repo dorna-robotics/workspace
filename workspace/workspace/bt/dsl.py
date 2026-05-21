@@ -98,46 +98,30 @@ log = logging.getLogger(__name__)
 # project authors may want.
 
 
-# ── Schedule-attribute helpers ─────────────────────────────────────────────
-
-
-# Default ``schedule`` for every Action. Authors override by setting
-# a new dict — partial dicts are valid; missing keys fall back to
-# these defaults.
-_SCHEDULE_DEFAULTS = {
-    "register": True,   # add to ActionRegistry → seen by planner / scheduler
-    "display":  True,   # appear on the live Gantt
-}
-
-
-def _schedule_dict(cls):
-    """Resolve ``cls.schedule`` to a fully-defaulted dict.
-
-    Reads through the MRO so a subclass inherits ``schedule`` from
-    its base if it doesn't redeclare. Partial dicts on the class are
-    merged on top of the framework defaults.
-    """
-    sched = getattr(cls, "schedule", None) or {}
-    if not isinstance(sched, dict):
-        sched = {}
-    return {**_SCHEDULE_DEFAULTS, **sched}
+# ── Registration helper ────────────────────────────────────────────────────
 
 
 def _should_register(cls) -> bool:
     """Whether ``__init_subclass__`` should add this class to the registry.
 
-    Reads ``cls.__dict__`` (not inherited) so that an abstract base
-    setting ``schedule = {"register": False}`` doesn't silently
-    propagate to concrete subclasses that don't redeclare schedule.
+    Reads ``register`` via normal attribute lookup — so the flag
+    inherits like every other class attribute. An abstract base that
+    sets ``register = False`` propagates that to every concrete
+    subclass; subclasses that want to be registered must redeclare
+    ``register = True`` explicitly. Verbose by design — we prefer
+    explicit assignment over silent surprises.
     """
-    own = cls.__dict__.get("schedule")
-    if not isinstance(own, dict):
-        return True
-    return bool(own.get("register", True))
+    return bool(getattr(cls, "register", True))
 
 
 def _is_park_trigger(cls) -> bool:
-    """Is this a Park-cleanup action (``trigger = "park"``)?"""
+    """Is this a Park-cleanup action (``trigger = "park"``)?
+
+    Reads ``trigger`` via normal attribute lookup — inherits like
+    every other class attribute. Subclasses of a ``trigger="park"``
+    action are also park-cleanup actions unless they explicitly set
+    ``trigger = None`` (or some other value).
+    """
     return getattr(cls, "trigger", None) == "park"
 
 
@@ -400,17 +384,6 @@ def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     the live, mutable state into a planner-friendly snapshot.
     """
     return frozenset(_facts_from_state(state))
-
-
-# ── Framework conventions ──────────────────────────────────────────────────
-
-
-# The resource name that holds tools. Actions whose resource doesn't
-# include this string are considered "doesn't use the robot" — so
-# their _ensure_tool is a no-op and the scheduler doesn't gate their
-# start on a tool-swap completing. Hardcoded for now; could become
-# a launcher knob if projects need to override.
-_TOOL_RESOURCE = "robot"
 
 
 # ── Shared lock on ctx.meta — for thread safety in Parallel composites ────
@@ -706,16 +679,11 @@ class Action:
                             swap happens). Can be a list of names.
         post_check:         Name of a check method to run after the
                             action completes. Same shape as pre_check.
-        schedule:           ``True`` (default), ``False`` (don't
-                            register — abstract base class), or a dict
-                            with keys ``display`` (default True; show
-                            in the Gantt) and ``cleanup`` (default
-                            False; if True, runs on End instead of as
-                            part of the goal-directed plan, and the
-                            action's ``tool:`` is the authoritative
-                            final tool state). See the class-level
-                            comment near the attribute for the full
-                            spec.
+        register:           ``True`` (default) to add this class to
+                            the ActionRegistry. Set to ``False`` on
+                            abstract bases that exist only to share
+                            code; concrete subclasses redeclare
+                            ``register = True`` explicitly.
 
     Methods to override:
         pre(self, *params)     -> Expr or Fact or bool
@@ -741,9 +709,7 @@ class Action:
     pre_check:           Any = None    # str | list[str] | None
     post_check:          Any = None
 
-    # Lifecycle-event hook. Independent from ``schedule``: ``trigger``
-    # controls *when* the action runs; ``schedule`` controls how it
-    # appears in the planner/Gantt.
+    # Lifecycle-event hook.
     #
     #   * ``None`` (default) — fires as part of the goal-directed plan.
     #   * ``"park"``         — runs when the operator clicks Park.
@@ -754,34 +720,22 @@ class Action:
     #                          the held tool, return home, dispose waste.
     trigger:             Optional[str] = None
 
-    # Planner / Gantt visibility. ALWAYS a dict — the default value
-    # below sets every recognised key; authors override by declaring a
-    # fresh dict (you don't have to redeclare every key, only the ones
-    # you want to change).
-    #
-    #   register  (default True)   Add this class to the ActionRegistry.
-    #                              Set to False for intermediate base
-    #                              classes that exist only to share
-    #                              code; the planner / scheduler / Gantt
-    #                              never see them. The opt-out is local
-    #                              to the class itself — concrete
-    #                              subclasses that don't redeclare
-    #                              ``schedule`` still register.
-    #   display   (default True)   Appear on the live Gantt. Set to
-    #                              False to hide an action that's still
-    #                              registered + planned.
+    # Whether to add this class to the ActionRegistry. Inherits like
+    # every other class attribute — concrete subclasses of a
+    # ``register=False`` abstract base must opt in with
+    # ``register = True`` on their own body.
     #
     # Examples:
-    #   class Inspected(Action):                  # uses defaults
+    #   class Inspected(Action):                  # registered (default True)
     #       params = ["tube"]
     #       ...
     #   class ShakerCycleBase(Action):            # abstract base
-    #       schedule = {"register": False}
+    #       register = False
     #       ...
-    #   class HiddenDiagnostic(Action):           # plan + run, no Gantt
-    #       schedule = {"display": False}
+    #   class ShakerOne(ShakerCycleBase):         # concrete — opt back in
+    #       register = True
     #       ...
-    schedule:            Dict[str, Any] = dict(_SCHEDULE_DEFAULTS)
+    register:            bool = True
 
     # ── Framework-managed per-call attributes ──────────────────────────
     # These are set by the framework before invoking pre()/eff() so
@@ -805,10 +759,9 @@ class Action:
     # but projects can use isolated registries (see ActionRegistry.use()).
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Registration is governed solely by the ``schedule`` dict's
-        # ``register`` key, read locally from ``cls.__dict__`` so an
-        # abstract base's opt-out doesn't propagate to its concrete
-        # subclasses. No implicit rules.
+        # Registration is governed solely by the ``register`` class
+        # attribute (inherits normally; concrete subclasses of an
+        # abstract base opt back in with ``register = True``).
         if not _should_register(cls):
             return
         name = _to_snake(cls.__name__)
@@ -921,12 +874,30 @@ class Action:
 
     # ── Internal — accessed by ActionRegistry / leaf factory ────────────
     def _ctx_objects(self) -> Dict[str, Iterable[Any]]:
-        # In a tree-build-time call, ctx is set on the instance. In a
-        # planner enumeration call, the registry threads ctx through.
+        """Object pools the planner enumerates over **for the current
+        slice**. When slicing is active, the framework narrows
+        ``ctx.meta["objects"][slice_dim]`` to the current window each
+        replan. Most pre/eff bodies want this — they iterate over only
+        the items the planner is currently thinking about.
+        """
         ctx = getattr(self, "ctx", None)
         if ctx is None:
             return {}
         return (ctx.meta or {}).get("objects", {})
+
+    def _ctx_all_objects(self) -> Dict[str, Iterable[Any]]:
+        """Object pools across the **entire batch**, not narrowed by
+        slicing. Read this when an action's effect must touch every
+        item regardless of which slice the planner is currently on —
+        e.g. a ``Start`` action that seeds initial facts for all tubes
+        once, at the head of the protocol. Reading the sliced view via
+        :meth:`_ctx_objects` would leave later slices stranded without
+        their initial facts.
+        """
+        ctx = getattr(self, "ctx", None)
+        if ctx is None:
+            return {}
+        return (ctx.meta or {}).get("all_objects", {})
 
 
 # ── Action registry — the source of truth for one project's actions ────────
@@ -1152,16 +1123,27 @@ class ActionRegistry:
             # when Park is requested. Keep them out of scheduler meta too.
             if _is_park_trigger(cls):
                 continue
-            # ``tool`` is a sentinel for "keep current tool" — for the
-            # scheduler that means "no opinion on the held tool" which
-            # we encode as None.
+            # Two pieces of information get pulled out of the class's
+            # ``tool`` attribute:
+            #
+            #   tool_required = True  iff the author *declared* a tool
+            #                          opinion (any value other than
+            #                          the _TOOL_UNSET sentinel).
+            #   tool          = the named tool ("name"), or None to mean
+            #                          "drop whatever's held" — only
+            #                          meaningful when tool_required.
+            #
+            # Splitting the two avoids the historical conflation where
+            # ``tool=None`` could mean either "drop" or "unset".
             tool_attr = getattr(cls, "tool", Action._TOOL_UNSET)
-            tool_val = None if tool_attr is Action._TOOL_UNSET else tool_attr
+            tool_required = tool_attr is not Action._TOOL_UNSET
+            tool_val = None if not tool_required else tool_attr
             out[name] = ActionMeta(
                 duration=int(cls.duration),
                 resource=cls.resource,
                 item_arg_index=0,  # convention: first param is the item
                 tool=tool_val,
+                tool_required=tool_required,
                 tool_swap_duration=int(cls.tool_swap_duration),
             )
         return out
@@ -1298,10 +1280,11 @@ class _DSLActionLeaf(RecipeAction):
         nodes, ``current_tool`` is already correct by the time the
         action ticks and this method is a no-op.
 
-        Skipped entirely for actions that don't use the robot
-        resource — the tool mount is irrelevant to actions running on
-        other resources (e.g. shaker_1), so they shouldn't block on
-        an unrelated tool change.
+        Any action that declared a ``tool`` opinion (string name or
+        explicit ``None`` for "drop") goes through the swap,
+        regardless of which resource it claims. This makes the
+        attribute mean what it says — declare ``tool=X``, get X on
+        the changer — without a hidden resource filter.
 
         Thread-safe via the ctx-wide lock so concurrent leaves don't
         race on ``ctx.meta["current_tool"]``.
@@ -1309,19 +1292,6 @@ class _DSLActionLeaf(RecipeAction):
         wanted = self._cls.tool
         # Sentinel: "keep whatever's currently held" — do nothing.
         if wanted is Action._TOOL_UNSET:
-            return
-        # Only intervene if this action actually uses the robot. The
-        # tool resource is the physical thing that HOLDS tools; for
-        # actions on other resources (shaker, scale, …) the current
-        # tool is a future-prep concern, not a precondition.
-        cls_resource = self._cls.resource
-        if cls_resource is None:
-            action_resources: Tuple[str, ...] = ()
-        elif isinstance(cls_resource, str):
-            action_resources = (cls_resource,)
-        else:
-            action_resources = tuple(cls_resource)
-        if _TOOL_RESOURCE not in action_resources:
             return
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else {}
         lock = _ctx_lock(meta)
@@ -1415,8 +1385,14 @@ class _DSLActionLeaf(RecipeAction):
         try:
             rv = self._instance.execute(*self._params())
         except Exception as ex:
-            log.warning("BT leaf RAISE: %s — %s: %s",
-                        self.name, type(ex).__name__, ex)
+            # exc_info=True attaches the traceback so we can see WHICH
+            # line raised inside execute() — without it the operator
+            # only sees the message and has to guess.
+            log.warning(
+                "BT leaf RAISE: %s — %s: %s",
+                self.name, type(ex).__name__, ex,
+                exc_info=True,
+            )
             return False
 
         # execute() must return:

@@ -57,19 +57,6 @@ from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
 log = logging.getLogger(__name__)
 
 
-def _schedule_displays(cls) -> bool:
-    """Whether an Action class should appear on the live Gantt.
-
-    Reads ``schedule["display"]`` via the framework's dict resolver
-    (``workspace.bt.dsl._schedule_dict``), which merges partial dicts
-    on top of the framework defaults.
-    """
-    if cls is None:
-        return True
-    from workspace.bt.dsl import _schedule_dict
-    return bool(_schedule_dict(cls)["display"])
-
-
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
 
 
@@ -410,6 +397,17 @@ def run_protocol(
     except Exception:
         pass
 
+    # Snapshot the full ``objects`` dict before slicing can mutate it
+    # in-place. ``ctx.meta["objects"]`` follows the planner's current
+    # window (narrowed per replan when slicing is active);
+    # ``ctx.meta["all_objects"]`` always carries the original
+    # un-sliced view. Actions that need to seed state for the *entire*
+    # batch (e.g. a ``Start`` action that adds ``in_source(t)`` for
+    # every tube) must read from ``all_objects`` — reading from
+    # ``objects`` would only seed the current window and leave later
+    # slices stuck without their initial facts.
+    all_objects = {k: list(v) for k, v in (objects or {}).items()}
+
     ctx = WorkspaceContext(
         workspace=workspace,
         core=core,
@@ -420,6 +418,7 @@ def run_protocol(
             "project":      project_name,
             "kwargs":       kwargs,
             "objects":      objects,
+            "all_objects":  all_objects,
             "checks":       checks or {},
             # Tracks the tool currently held by the robot. _DSLActionLeaf
             # consults / updates this when an Action declares ``tool=``.
@@ -464,11 +463,34 @@ def run_protocol(
         return out
 
     def _planning_goal(state) -> bool:
-        """Goal for the planner — all items in the current window done."""
+        """Goal for the planner.
+
+        Default (no slicing): defer to the user's ``goal_fn`` so any
+        global tail goals (e.g. ``parked``) are honored.
+
+        Slicing active: the planner only sees the current window, so
+        the in-window goal is ``all(item_done over window)``. But on
+        the *final* slice — when no items remain outside the window —
+        the planner should also satisfy the user's full ``goal_fn``,
+        otherwise tail actions like ``Park`` (whose pre needs every
+        item done) get skipped.
+        """
         if item_done is None:
             return goal_fn(state)
         window = ctx.meta["objects"].get(slice_dim, [])
-        return all(item_done(state, it) for it in window)
+        if not all(item_done(state, it) for it in window):
+            return False
+        # Window done. If there are still items outside the window
+        # (more slices to come), we're not at the tail yet — pass.
+        remaining_outside = [
+            it for it in all_items
+            if it not in window and not item_done(state, it)
+        ]
+        if remaining_outside:
+            return True
+        # Final slice — every item is done. Require the user's full
+        # goal_fn so tail actions like Park get planned.
+        return goal_fn(state)
 
     def _global_goal(state) -> bool:
         """Goal for the slice_check leaf — all items in the full batch done."""
@@ -581,13 +603,19 @@ def run_protocol(
                                 if registry.get(n) is not None else n
                             ),
                             "item": i,
+                            # Parameterless actions (Start / Park) have one
+                            # grounding regardless of items — flag so the
+                            # GUI drops the misleading "(0)" label.
+                            "parametrized": bool(
+                                registry.get(n).params
+                                if registry.get(n) is not None else True
+                            ),
                             "start_t": float(s),
                             "duration": float(meta[n].duration) if n in meta else 1.0,
                             "resources": list(_r(meta[n].resource)) if n in meta else [],
                             "tool": meta[n].tool if n in meta else None,
                         }
                         for n, i, s in actions_list
-                        if _schedule_displays(registry.get(n))
                     ],
                     "swaps": [
                         {

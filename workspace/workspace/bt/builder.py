@@ -106,7 +106,7 @@ class SwapLeaf(RecipeAction):
                         old.place()
                     except Exception as ex:
                         log.warning("BT swap  RAISE: %s on place(%r) — %s",
-                                    self.name, current, ex)
+                                    self.name, current, ex, exc_info=True)
                         return False
             # Pick the new tool.
             if self._to_tool is not None:
@@ -116,7 +116,8 @@ class SwapLeaf(RecipeAction):
                         new.pick()
                     except Exception as ex:
                         log.warning("BT swap  RAISE: %s on pick(%r) — %s",
-                                    self.name, self._to_tool, ex)
+                                    self.name, self._to_tool, ex,
+                                    exc_info=True)
                         return False
             meta["current_tool"] = self._to_tool
         log.info("BT swap  DONE : %s", self.name)

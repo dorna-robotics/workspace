@@ -130,6 +130,7 @@ def schedule_cpsat(
     durations: List[int] = []
     resources_list: List[Tuple[str, ...]] = []
     tools: List[Optional[str]] = []
+    tool_required: List[bool] = []
     swap_durations: List[int] = []
     items: List[int] = []
     for a in actions:
@@ -137,6 +138,7 @@ def schedule_cpsat(
         durations.append(int(m.duration))
         resources_list.append(_resources(m.resource))
         tools.append(m.tool)
+        tool_required.append(bool(m.tool_required))
         swap_durations.append(int(m.tool_swap_duration))
         try:
             raw = a.params[m.item_arg_index]
@@ -169,35 +171,42 @@ def schedule_cpsat(
             for j in predecessors[i]:
                 model.Add(starts[i] >= ends[j])
 
-    # ── Per-resource non-overlap (except tool_resource) ────────────────
-    # tool_resource is sequenced via AddCircuit (with setup times) which
-    # implies non-overlap. Other resources use plain AddNoOverlap.
+    # ── Per-resource non-overlap ───────────────────────────────────────
+    # Every resource gets basic mutex via ``AddNoOverlap``. The tool
+    # circuit below adds sequence-dependent setup times on top, but is
+    # an *additional* constraint, not a replacement — actions on the
+    # robot still need to non-overlap with each other on the resource.
     all_resources: set = set()
     for rs in resources_list:
         all_resources.update(rs)
     for r in all_resources:
-        if r == tool_resource:
-            continue
         ivs = [intervals[i] for i in range(n) if r in resources_list[i]]
         if len(ivs) > 1:
             model.AddNoOverlap(ivs)
 
-    # ── Tool resource: AddCircuit with sequence-dependent setup ────────
-    # Standard encoding for job-shop with sequence-dependent setup
-    # times. AddCircuit forces the active arc literals to form a single
-    # Hamiltonian cycle 0 -> first -> ... -> last -> 0; each active
-    # arc (i, j) carries a constraint
+    # ── Tool circuit: AddCircuit with sequence-dependent setup ─────────
+    # Every action that participates in the tool sequence joins the
+    # circuit. Membership is *not* gated on which resource the action
+    # uses — declaring ``tool=X`` on a shaker action also pulls it
+    # into the tool sequence so the swap to X is properly reserved.
+    # Tool-agnostic robot actions (``Start``-like) also join so their
+    # interval anchors the chain at t=0 without forcing a swap.
     #
-    #     start[j] >= end[i] + setup(tool[i] -> tool[j])
+    # Setup cost on arc i→j (see swap-derivation pass for emission):
     #
-    # so the solver naturally clusters same-tool actions to minimise
-    # the number of swaps that contribute to makespan.
+    #     i agnostic, j agnostic : 0   (no tool change matters)
+    #     i agnostic, j opinion  : swap_durations[j]
+    #     i opinion,  j agnostic : 0   (j inherits the tool i set)
+    #     i opinion,  j opinion  : 0 if same tool, else swap_durations[j]
     #
     # Cost: O(k^2) arc variables. For k ~ 30 the model gets slow enough
     # to need the warm-start hint below; we feed it the greedy schedule
     # as a feasible starting point so CP-SAT has something to improve
     # from t=0 rather than searching cold.
-    tool_actions = [i for i in range(n) if tool_resource in resources_list[i]]
+    tool_actions = [
+        i for i in range(n)
+        if tool_resource in resources_list[i] or tool_required[i]
+    ]
     k = len(tool_actions)
     arc_lits: List[cp_model.IntVar] = []          # all arc literals
     arc_pair: List[Tuple[int, int]] = []          # (from_node, to_node)
@@ -209,7 +218,11 @@ def schedule_cpsat(
             arc_in = model.NewBoolVar(f"arc_dummy_{i}")
             arcs.append((0, a_idx + 1, arc_in))
             arc_lits.append(arc_in); arc_pair.append((0, a_idx + 1))
-            if tools[i] is not None:
+            # Reserve swap time only if the first robot action is
+            # itself tool-opinionated. A tool-agnostic first action
+            # (e.g. ``Start``) doesn't need anything mounted, so the
+            # circuit starts at t=0 with no setup penalty.
+            if tool_required[i]:
                 model.Add(starts[i] >= swap_durations[i]).OnlyEnforceIf(arc_in)
             # i -> dummy: i is the last robot action
             arc_out = model.NewBoolVar(f"arc_{i}_dummy")
@@ -222,11 +235,13 @@ def schedule_cpsat(
                 arc = model.NewBoolVar(f"arc_{i}_{j}")
                 arcs.append((a_idx + 1, b_idx + 1, arc))
                 arc_lits.append(arc); arc_pair.append((a_idx + 1, b_idx + 1))
-                setup = 0
-                if (tools[i] is not None
-                        and tools[j] is not None
-                        and tools[i] != tools[j]):
-                    setup = swap_durations[j]
+                # See the table in the section header for the rule.
+                if not tool_required[j]:
+                    setup = 0                            # j doesn't care
+                elif not tool_required[i]:
+                    setup = swap_durations[j]            # agnostic → opinion
+                else:
+                    setup = 0 if tools[i] == tools[j] else swap_durations[j]
                 model.Add(starts[j] >= ends[i] + setup).OnlyEnforceIf(arc)
         model.AddCircuit(arcs)
 
@@ -302,15 +317,18 @@ def schedule_cpsat(
     ]
 
     # ── Derive swap events from the solved tool_resource sequence ─────
-    # Walk the tool_resource actions in chronological order; emit a
-    # swap event whenever the held tool changes. The swap fills the
-    # gap the solver left between consecutive different-tool actions.
+    # Walk every robot action in chronological order. Tool-agnostic
+    # ones don't change ``current_tool``; tool-opinionated ones emit a
+    # swap whenever the held tool actually changes (including X→None
+    # drops, so the GUI shows the drop step).
     swaps_out: List[Tuple[float, Optional[str], Optional[str], int]] = []
     if k > 0:
         ordered = sorted(tool_actions, key=lambda i: solver.Value(starts[i]))
         current_tool: Optional[str] = None
         for i in ordered:
-            if tools[i] is not None and tools[i] != current_tool:
+            if not tool_required[i]:
+                continue
+            if tools[i] != current_tool:
                 dur = swap_durations[i]
                 # Place the swap so it ends exactly when action i starts.
                 # The solver already reserved this gap via the setup

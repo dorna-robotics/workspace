@@ -56,20 +56,30 @@ class ActionMeta:
             positional param is the item. Used to compute item-local
             precedence ordering.
         tool: Tool the action requires the robot to be holding while
-            running. The scheduler uses this to insert tool-swap gaps
-            between consecutive same-resource actions whose tool
-            differs (pace_or-style). ``None`` = no tool (or "don't
-            care"). Defaults to ``None``.
+            running. Only meaningful when ``tool_required`` is True.
+              * ``"name"`` — the named tool must be mounted.
+              * ``None``   — the robot must be holding *nothing* (drop
+                             whatever's currently in the changer).
+            When ``tool_required`` is False, this field is ignored and
+            the action inherits whatever tool the previous action left.
+        tool_required: Does this action care about the held tool?
+            ``True``  — schedule a tool-swap before this action when
+                       the held tool doesn't match ``tool`` (or when
+                       ``tool is None`` and any tool is held).
+            ``False`` — leave the held tool alone; the action is
+                       transparent to tool sequencing.
+            Defaults to ``False`` (matches the Action-base default
+            ``tool = _TOOL_UNSET``).
         tool_swap_duration: Seconds inserted before this action when
-            the previous same-resource action held a different
-            ``tool``. Per-action — different tools can have different
-            swap costs. Defaults to 10.
+            the held tool needs to change. Per-action — different
+            tools can have different swap costs. Defaults to 10.
     """
 
     duration: int
     resource: Any = None       # None | str | list[str]
     item_arg_index: int = 0
     tool: Optional[str] = None
+    tool_required: bool = False
     tool_swap_duration: int = 10
 
 
@@ -162,11 +172,13 @@ def schedule_greedy(
         )
 
         # Tool swap event — emit as a first-class scheduled task.
-        # Schedule it at the earliest moment the robot is idle. The
-        # swap occupies the robot's timeline; the action waits for
-        # it only if the action itself uses the robot.
+        # Only actions that declared a tool opinion
+        # (``tool_required``) drive swaps. Tool-agnostic actions are
+        # transparent — the held tool carries through them.
+        # A change from current → m.tool (including X → None drops)
+        # produces a swap event with full duration reserved.
         swap_end = 0.0
-        if m.tool is not None and m.tool != current_tool:
+        if m.tool_required and m.tool != current_tool:
             swap_duration = int(m.tool_swap_duration)
             swap_start = resource_end.get(tool_resource, 0.0)
             swap_end = swap_start + swap_duration
@@ -176,12 +188,15 @@ def schedule_greedy(
             resource_end[tool_resource] = swap_end
             current_tool = m.tool
 
-        # Only gate the action's start on swap_end if the action
-        # actually uses the tool-holder resource (the robot). For
-        # actions on other resources (shaker_1, scale, …) the tool
-        # mount is a future-prep concern — the SwapLeaf runs in
-        # parallel; the action proceeds on its own resource.
-        gate_swap = swap_end if tool_resource in resources else 0.0
+        # Any action declaring a tool opinion waits for its swap to
+        # complete — regardless of resource. The swap itself locks
+        # the tool_resource (the robot), so a shaker action that
+        # declares ``tool=needle`` is correctly delayed until the
+        # robot has the needle mounted. Without this, the scheduler
+        # could under-promise: it would emit the swap event but
+        # let the action start in parallel, which doesn't match what
+        # the runtime ``_ensure_tool`` actually enforces.
+        gate_swap = swap_end if m.tool_required else 0.0
         start = max(earliest_causal, earliest_resource, gate_swap)
         end = start + float(m.duration)
 
@@ -214,8 +229,10 @@ def make_schedule_builder(
         )
 
         META = {
-            "decap":   ActionMeta(duration=10, resource="robot", tool="gripper"),
-            "dispense": ActionMeta(duration=10, resource="dispenser", tool="needle"),
+            "decap":    ActionMeta(duration=10, resource="robot",
+                                   tool="gripper", tool_required=True),
+            "dispense": ActionMeta(duration=10, resource="dispenser",
+                                   tool="needle",  tool_required=True),
         }
         build_schedule = make_schedule_builder(META)
 
