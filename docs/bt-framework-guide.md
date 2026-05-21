@@ -290,12 +290,12 @@ parentheses.
 | `params` | `list[str]` (`[]`) | Parameter names — usually `["tube"]`. The planner enumerates the Cartesian product across `objects[name]`. |
 | `duration` | `int` (`1`) | Scheduler estimate in seconds. |
 | `resource` | `str \| list[str] \| None` (`None`) | Lock(s) this action claims exclusively. `"robot"` = one lock; `["robot","scale"]` = both held at once (arm holds tube on scale); `None` = unlimited parallel. Autonomous peripheral (shaker running alone) → its own lock name, robot stays free. |
-| `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. **unset** (default) = "keep whatever's currently held"; **None** = "release current tool"; a string = "make sure this tool is held". One tool per action — keep actions atomic. |
-| `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the previous same-resource action used a different `tool`. Per-action so swap costs can differ between tool changes. |
+| `tool` | `str \| None \| (unset)` | Tool the robot must hold. The framework auto-swaps before `execute()`. Three distinct states, **not collapsed**: **unset** (attribute not declared) = "leave the held tool alone — tool-agnostic action"; **`None`** (explicit) = "make sure nothing is held — drop the current tool"; a string = "make sure this tool is held". The swap fires **regardless of the action's resource** — declaring `tool=` on a shaker-only action still triggers a swap on the robot before the action starts, and the scheduler reserves time for it. Internally the framework derives a `tool_required` flag in `ActionMeta` from "did the author declare anything?" so the scheduler can tell drops apart from unset. One tool per action. |
+| `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the held tool needs to change. Per-action so different swaps can have different costs. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
 | `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"park"`` marks the action as scene cleanup invoked when the operator clicks Park. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
-| `schedule` | `dict` (`{"register": True, "display": True}`) | Planner / scheduler / Gantt visibility. See §3.3 for the full spec. **Always a dict** — override with a new dict (partial allowed) to change any key. |
+| `register` | `bool` (`True`) | Whether to add the class to the `ActionRegistry`. `False` on abstract bases; concrete subclasses opt back in with `register = True`. See §3.3. |
 
 ### 3.2 `trigger` — lifecycle event hooks
 
@@ -327,46 +327,61 @@ class ParkTool(Action):
 The auto-swap path drops the held tool before `execute()` runs — so
 the typical body is just `return "none"`.
 
-### 3.3 `schedule` — planner / Gantt visibility
-
-`schedule` controls **how** an action participates in registration
-and visibility. Independent from `trigger` (which controls *when*).
-
-**Always a dict.** The framework default is
+**All attributes inherit like normal Python.** `trigger` is no
+special case — if a parent declares `trigger = "park"`, the child
+inherits it. To opt out, the child must explicitly redeclare
+(e.g. `trigger = None`). Same applies to `schedule`,
+`pre_check`, `tool`, and every other class attribute.
 
 ```python
-schedule = {
-    "register": True,    # add to the ActionRegistry
-    "display":  True,    # appear on the live Gantt
-}
+class Park(Action):
+    # planned action — no trigger declared, so trigger == Action's default (None)
+    ...
+
+class OperatorPark(Park):
+    trigger = "park"     # set on the subclass; further subclasses inherit this
 ```
 
-To change any key, declare a fresh dict on your subclass. Partial
-dicts are valid — missing keys fall back to the defaults above.
+**`trigger` vs `register` — which one hides the action?**
 
-**Reserved keys:**
+`trigger = "park"` is **enough on its own** to keep the action out
+of the plan and the schedule: it's filtered from `to_meta()`
+(scheduler) and `to_templates()` (PDDL planner). You do **not** also
+need to set `register = False`. Conceptually:
 
-| Key | Default | Meaning |
-|---|---|---|
-| `register` | `True` | Add this class to the `ActionRegistry`. Set to `False` for intermediate base classes that exist only to share code; the planner / scheduler / Gantt never see them. The opt-out is **local to the class itself** — concrete subclasses that don't redeclare `schedule` still register. |
-| `display` | `True` | Show this action on the live Gantt. Set to `False` to hide it (still registered, still planned, just suppressed from the GUI). |
+| You want… | Set… |
+|---|---|
+| Action that runs only on operator Park | `trigger = "park"` |
+| Abstract base class subclasses inherit from | `register = False` |
 
-More keys may be added later without breaking the API.
+### 3.3 `register` — registry opt-out
+
+`register` is a single boolean class attribute. Default `True` —
+every `Action` subclass is added to the `ActionRegistry` and seen by
+the planner, scheduler, and live Gantt.
+
+Set `register = False` on **abstract base classes** that exist only
+to share code (typically `pre`, `eff`, `execute` skeletons across
+several concrete actions). The opt-out **inherits normally**, so
+concrete subclasses must redeclare `register = True` to participate.
+Verbose by design: every class makes its intent explicit at the
+point of declaration, no silent MRO surprises.
 
 **Examples:**
 
 ```python
-class Inspected(Action):                # uses defaults
+class Inspected(Action):                # registered (default True)
     params = ["tube"]
     ...
 
-class ShakerCycleBase(Action):          # abstract base — don't register
-    schedule = {"register": False}
+class ShakerCycleBase(Action):          # abstract base
+    register = False
     ...
 
-class HiddenDiagnostic(Action):         # plan + execute, hide from Gantt
-    schedule = {"display": False}
-    ...
+class ShakerOne(ShakerCycleBase):       # concrete — opt back in
+    register = True
+    SHAKER   = "shaker_1"
+    resource = "shaker_1"
 ```
 
 ### 3.3 `eff()` — always a dict of named branches
@@ -708,6 +723,33 @@ class ShakerOne(Action):
   If you find yourself iterating in `pre()` to skip-invalid bindings,
   push that into `param_iter` instead — that's what it's for.
 
+#### `_ctx_objects()` vs `_ctx_all_objects()` — sliced vs full view
+
+When slicing is active (§12), the framework narrows
+`ctx.meta["objects"]` to the **current window** between replans —
+`param_iter` and most `pre()` bodies should read this sliced view via
+`self._ctx_objects()` so they only consider items the planner is
+currently thinking about.
+
+For effects or preconditions that must reference the **entire batch**
+regardless of slice — a `Start` action seeding initial facts for
+every tube, or a final `Park` whose pre checks every tube is done —
+read the un-sliced snapshot:
+
+```python
+def eff(self):
+    tubes = self._ctx_all_objects().get("tube", [])   # full batch
+    seeds = [+started()]
+    for t in tubes:
+        seeds.append(+in_source(t))
+        seeds.append(+has_cap(t))
+    return {"started": tuple(seeds)}
+```
+
+If you use `_ctx_objects()` for cross-batch seeding, later slices
+won't have the facts you seeded in the first slice — a subtle bug
+that surfaces only when `batch_size > plan_window`.
+
 ### 3.6 `params` and `objects` — the planner's wiring
 
 The `params` attribute on an Action class and the `objects` dict
@@ -840,6 +882,37 @@ each branch value, facts carry a sign:
 
 A bare fact (without `+`/`-`) is invalid — be explicit about whether
 you're adding or removing.
+
+**Always return an `Expr` (or `Fact`) from `pre`, never a raw `bool`.**
+
+The framework will *accept* a bool — `pre_fn` treats it as a literal
+pass/fail — but `build_precedence` walks the `Expr` tree to discover
+causal dependencies. A bool hides those deps from the precedence
+builder, and the CP-SAT scheduler will then slot the action anywhere
+on its resource, ignoring the constraint you intended.
+
+If your precondition needs to enumerate items (e.g. "all tubes
+done"), build the expression dynamically:
+
+```python
+# ✗ Bad — bool hides the dependency from the scheduler
+def pre(self):
+    tubes = self._ctx_objects().get("tube", [])
+    return all((in_done.name, t) in self.state for t in tubes)
+
+# ✓ Good — Expr the precedence builder can walk
+def pre(self):
+    tubes = self._ctx_objects().get("tube", [])
+    if not tubes:
+        return True
+    expr = in_done(tubes[0])
+    for t in tubes[1:]:
+        expr = expr & in_done(t)
+    return expr
+```
+
+The bool form *runs* but reorders incorrectly — easy to miss because
+nothing crashes.
 
 ---
 
