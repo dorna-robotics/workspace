@@ -1226,6 +1226,62 @@ class Recipe:
             )
         return True
 
+    def park(self, joint, has_motion_plan=None, motion_plan_kwargs={}, **kwargs):
+        """Move the robot to a known ``joint`` configuration — typically the
+        safe parking pose, invoked from a ``trigger="park"`` Action.
+
+        Uses :py:meth:`_execute_motion_planned` so the move honors
+        :pyattr:`speed_factor`, dispatches to ``core.motion_plan`` +
+        ``rt.smove`` when planning is on (collision-aware), and falls
+        back to a plain ``rt.jmove`` otherwise. A ``rt.checkpoint()`` is
+        issued first so the operator can still Pause / Resume on the
+        way to the park pose. The motion uses ``self.jmove_vaj`` scaled
+        by ``self.speed_factor``.
+
+        Args:
+            joint: Target joint vector (degrees). May be shorter than
+                the robot's full joint vector — the missing trailing
+                entries are filled from ``rt.joint()`` so the auxiliary
+                axes (rail, second rail, …) stay put. Same pattern as
+                :py:meth:`rotate`, which reads the live joints and
+                overrides a single index.
+            has_motion_plan: If ``True``, plan a collision-free path
+                via ``core.motion_plan``; if ``False``, a single
+                ``jmove``. If ``None`` (default), follows
+                ``core.has_motion_plan``.
+            motion_plan_kwargs: Forwarded to ``core.motion_plan``
+                (padding, gravity_vec, etc.) when planning is on.
+
+        Example:
+            >>> rcp["robot"].park(joint=[0, 0, 90, 0, 90, 0])     # 6 joints — aux axes unchanged
+            >>> rcp["robot"].park(joint=PARK_JOINTS, has_motion_plan=True,
+            ...                   motion_plan_kwargs={"padding": 30})
+        """
+        rt = self.rt
+
+        has_motion_plan = self.core.has_motion_plan if has_motion_plan is None else has_motion_plan
+
+        # Overlay the caller's target onto the live joints so a partial
+        # vector (e.g. just the 6 robot joints) leaves the auxiliary
+        # axes — rail position, second rail, etc — where they are. Same
+        # idea as ``rotate`` reading rt.joint() before overriding a
+        # single index.
+        target = list(rt.joint())
+        target[:len(joint)] = list(joint)
+
+        vaj_map = {
+            "jmove": self.jmove_vaj,
+            "lmove": self.lmove_vaj,
+        }
+
+        rt.checkpoint()
+        self._execute_motion_planned(
+            rt, target, vaj_map,
+            use_planning=has_motion_plan,
+            motion_plan_kwargs=motion_plan_kwargs,
+        )
+        return True
+
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
         """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
 
