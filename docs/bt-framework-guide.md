@@ -860,6 +860,89 @@ class ParkTool(Action):
 > form the plan. Function argument names are convention — match them
 > to the `params` strings for sanity.
 
+### 3.7 Convention — actions are atomic (empty gripper in, empty gripper out)
+
+**Rule:** every `Action` class is expected to start with the gripper
+empty and end with the gripper empty.
+
+The framework's auto-swap path manages **which tool is mounted** in
+the tool changer; it doesn't know **what that tool is holding**. If
+action A ends with a tube in the gripper and action B starts running,
+B's `pre`/`eff` have no way to "see" that tube — the planner thinks
+it's still in whatever rack it came from, and the runtime will mis-
+sequence the next move (drop the gripper into the rack while it's
+still holding the tube, etc.).
+
+So write actions whole:
+
+```python
+def execute(self, tube):
+    rcp = self.ctx.recipes
+    rcp[SOURCE[tube][0]].pick(SOURCE[tube][1])    # gripper now holds tube
+    rcp["scale"].place("place")                   # tube on scale, gripper empty
+    rcp["scale"].weight()
+    rcp["scale"].pick("place")                    # gripper now holds tube
+    rcp[WORKING[tube][0]].place(WORKING[tube][1]) # tube placed, gripper empty
+    return "inspected"
+```
+
+The gripper transitions through `held` states inside the body, but at
+the function's boundaries (entry / return) it's empty. That keeps
+each action a self-contained unit the planner can sequence freely.
+
+#### When you genuinely need to hand off through the gripper
+
+Sometimes a logical step really does span what looks like two
+actions — e.g. "fetch a tube, then later place it after some
+condition resolves." The clean way to model this without breaking
+the convention is to **declare what the gripper is holding as a
+predicate** and let the planner reason about it:
+
+```python
+gripper_holds = predicate("gripper_holds")
+
+class FetchTube(Action):
+    params = ["tube"]
+    tool = "gripper"
+
+    def pre(self, tube):
+        return in_source(tube) & ~gripper_holds(tube)
+
+    def eff(self, tube):
+        return {"fetched": (-in_source(tube), +gripper_holds(tube))}
+
+    def execute(self, tube):
+        self.ctx.recipes[SOURCE[tube][0]].pick(SOURCE[tube][1])
+        return "fetched"
+
+
+class PlaceOnScale(Action):
+    params = ["tube"]
+    tool = "gripper"
+
+    def pre(self, tube):
+        return gripper_holds(tube)
+
+    def eff(self, tube):
+        return {"placed": (-gripper_holds(tube), +on_scale(tube))}
+
+    def execute(self, tube):
+        self.ctx.recipes["scale"].place("place")
+        return "placed"
+```
+
+Now the planner *knows* the gripper is holding `tube` between the
+two actions and can't schedule anything in between that would drop
+it. The tool-swap path also stays safe — both actions declare
+`tool="gripper"`, so the framework won't try to switch tools (which
+would mean physically detaching the gripper-with-tube from the
+robot, which the swap can't safely do).
+
+**Don't** mix the two patterns within one tool — either an action is
+atomic (empty in, empty out) or it's part of a predicate-tracked
+hand-off chain. Mixing creates blind spots where the planner thinks
+the gripper is empty but the runtime knows otherwise.
+
 ---
 
 ## 4. Fact arithmetic — the precondition / effect mini-language
