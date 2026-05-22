@@ -21,7 +21,30 @@
   --green:     #34c759;
   --red:       #ff453a;
   --amber:     #ff9f0a;
-  --radius:    14px;
+  --radius:    14px;             /* legacy alias — prefer the named scale below */
+
+  /* ── Radius scale ─────────────────────────────────────────────────── */
+  --radius-xs: 6px;              /* tags, mini chips */
+  --radius-sm: 10px;             /* buttons, inputs, small pills */
+  --radius-md: 12px;             /* meta rows, info pills, list cells */
+  --radius-lg: 16px;             /* cards, modals, large surfaces */
+  --radius-xl: 22px;             /* pendant cinematic tiles */
+
+  /* ── Spacing scale (4 / 6 / 8 / 12 / 16 / 24) ─────────────────────── */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  /* ── Type scale (5 steps) ─────────────────────────────────────────── */
+  --text-xs: 11px;               /* tracked-caps section labels, hints */
+  --text-sm: 12px;               /* meta values, secondary text */
+  --text-md: 13px;               /* body, buttons */
+  --text-lg: 15px;               /* card headings, primary labels */
+  --text-xl: 17px;               /* modal heads, page H1s */
+
   --font:      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
   --mono:      "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.3);
@@ -72,8 +95,14 @@ a:hover { color: var(--accent-h); }
 /* ── Scrollbar ────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: var(--radius-xs); }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* Touch contexts (tablets, the pendant deployment) — bump scrollbar so
+   it's actually grabbable with a finger; on desktop the thin track is
+   the right call. */
+@media (hover: none) and (pointer: coarse) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+}
 
 /* ── Utility ──────────────────────────────────────────────────────────── */
 .mono   { font-family: var(--mono); font-size: 11px; }
@@ -85,17 +114,17 @@ a:hover { color: var(--accent-h); }
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-2);
   padding: 7px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   border: none;
   background: var(--surface2);
   color: var(--text);
   font-family: var(--font);
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s, transform 0.1s;
+  transition: background 0.15s, color 0.15s, opacity 0.15s, transform 0.1s, box-shadow 0.15s;
   white-space: nowrap;
   line-height: 1;
   user-select: none;
@@ -123,8 +152,10 @@ a:hover { color: var(--accent-h); }
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
 
-.btn-sm   { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
-.btn-lg   { padding: 10px 16px; font-size: 14px; border-radius: 12px; }
+/* Size variants — all in the .btn family share ``--radius-sm`` so a
+   smaller button doesn't end up squarer than its larger sibling. */
+.btn-sm   { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); }
+.btn-lg   { padding: 10px 16px; font-size: var(--text-lg); border-radius: var(--radius-md); }
 .btn-icon { padding: 5px 8px; }
 .btn.active { background: var(--accent-dim); color: var(--accent); }
 
@@ -143,10 +174,10 @@ a:hover { color: var(--accent-h); }
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 4px 12px;
-  border-radius: 14px;
-  font-size: 11px;
+  border-radius: 999px;          /* fully pill-rounded — radius-md left a flat-ish bevel */
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.3px;
   border: none;
@@ -239,11 +270,11 @@ a:hover { color: var(--accent-h); }
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border2);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   padding: 9px 14px;
   font-family: var(--font);
-  font-size: 14px;
+  font-size: var(--text-md);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -252,25 +283,16 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .input { background: var(--surface); border-color: var(--border); }
 
 /* ── Section Label ────────────────────────────────────────────────────── */
+/* Section label — tracked caps, no decorative accent bar. Dropped
+   the ``::before`` so this is the single visual identity for any
+   "section title" across the app (sidebar + dashboard). */
 .section-label {
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--muted);
-  margin-bottom: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.section-label::before {
-  content: '';
-  width: 3px;
-  height: 11px;
-  background: var(--accent);
-  border-radius: 2px;
-  opacity: 0.8;
-  flex-shrink: 0;
+  margin-bottom: var(--space-2);
 }
 
 /* ── Meta List ────────────────────────────────────────────────────────── */
@@ -279,26 +301,26 @@ a:hover { color: var(--accent-h); }
   flex-direction: column;
   background: var(--surface2);
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .meta-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  padding: 6px 12px;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border2);
-  gap: 8px;
+  gap: var(--space-3);
 }
 .meta-row:last-child { border-bottom: none; }
-.meta-key { color: var(--muted); font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.meta-key { color: var(--muted); font-size: var(--text-sm); font-weight: 500; flex-shrink: 0; }
 .meta-val {
   color: var(--text); font-weight: 500; text-align: right;
   max-width: 200px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: 12px; font-family: var(--mono);
+  white-space: nowrap; font-size: var(--text-sm); font-family: var(--mono);
 }
-.meta-val.err { color: var(--red); font-size: 11px; }
+.meta-val.err { color: var(--red); font-size: var(--text-xs); }
 
 /* ── Toast ────────────────────────────────────────────────────────────── */
 .toast-area {
@@ -311,9 +333,9 @@ a:hover { color: var(--accent-h); }
 .toast {
   background: var(--surface);
   border: none;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 12px 18px;
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 500;
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.2s cubic-bezier(0.2,0.9,0.3,1);
@@ -397,7 +419,7 @@ a:hover { color: var(--accent-h); }
 
 .confirm-dialog {
   width: min(340px, calc(100% - 40px));
-  background: var(--surface); border-radius: 18px; box-shadow: var(--shadow-lg);
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
   display: flex; flex-direction: column; align-items: center;
   padding: 28px 24px 20px; gap: 6px;
   animation: confirmIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
@@ -423,12 +445,12 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .confirm-icon[data-variant="danger"] { background: rgba(215,0,21,0.08); }
 [data-theme="light"] .confirm-icon[data-variant="default"] { background: rgba(0,122,255,0.08); }
 
-.confirm-title { font-size: 17px; font-weight: 650; letter-spacing: -0.3px; color: var(--text); text-align: center; }
-.confirm-message { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5; max-width: 280px; }
+.confirm-title { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.3px; color: var(--text); text-align: center; }
+.confirm-message { font-size: var(--text-md); color: var(--muted); text-align: center; line-height: 1.5; max-width: 280px; }
 
 /* Optional bullet list for structured warnings (e.g. listing devices
    that would block a Start). Mono font so device ids align. */
-.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text); text-align: left; }
+.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); color: var(--text); text-align: left; }
 .confirm-list li { padding: 3px 6px; line-height: 1.4; word-break: break-all; }
 .confirm-list li + li { border-top: 1px solid rgba(255,255,255,0.04); }
 [data-theme="light"] .confirm-list { background: rgba(0,0,0,0.04); }
@@ -440,7 +462,7 @@ a:hover { color: var(--accent-h); }
 .confirm-remember-cb { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; }
 
 .confirm-actions { display: flex; gap: 10px; margin-top: 16px; width: 100%; }
-.confirm-actions .btn { flex: 1; justify-content: center; padding: 10px 16px; font-size: 14px; font-weight: 600; border-radius: 12px; }
+.confirm-actions .btn { flex: 1; justify-content: center; padding: 10px 16px; font-size: var(--text-md); font-weight: 600; border-radius: var(--radius-md); }
 .confirm-cancel { background: var(--surface2) !important; color: var(--text) !important; }
 .confirm-cancel:hover:not(:disabled) { background: var(--surface3) !important; }
 .confirm-ok-danger { background: rgba(255,69,58,0.15) !important; color: var(--red) !important; }
@@ -451,7 +473,7 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .confirm-ok-danger:hover:not(:disabled) { background: rgba(215,0,21,0.18) !important; }
 
 @media (max-width: 600px) {
-  .confirm-dialog { width: calc(100% - 24px); padding: 24px 20px 16px; border-radius: 16px; }
+  .confirm-dialog { width: calc(100% - 24px); padding: 24px 20px 16px; border-radius: var(--radius-lg); }
   .confirm-title { font-size: 16px; }
   .confirm-actions .btn { padding: 12px 14px; font-size: 15px; }
 }

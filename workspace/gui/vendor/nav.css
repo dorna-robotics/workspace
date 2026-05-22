@@ -39,7 +39,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   width: 28px; height: 28px;
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
@@ -60,22 +60,23 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   align-items: center;
   gap: 10px;
   padding: 8px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 500;
   white-space: nowrap;
   /* No overflow:hidden here — it clips absolutely-positioned children
      like the count badge. Clipping is moved to the inner <span>
      (label text) below, which is the only thing that needs to vanish
      when the nav collapses. */
-  transition: color 0.12s, background 0.12s;
+  transition: color 0.12s, background 0.12s, box-shadow 0.15s;
 }
 .app-nav-link:hover {
   color: var(--text);
   background: var(--surface2);
 }
+.app-nav-link:focus-visible { outline: none; box-shadow: var(--glow); }
 .app-nav-link.active {
   color: var(--accent);
   background: var(--accent-dim);
@@ -111,7 +112,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   min-width: 16px;
   height: 16px;
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: #fff;
   font-size: 10px;
@@ -171,7 +172,7 @@ html.nav-expanded .app-nav ~ .confirm-overlay {
   border: none;
   color: var(--muted);
   padding: 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   flex-shrink: 0;

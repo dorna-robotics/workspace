@@ -99,7 +99,7 @@
   flex-direction: column;
   background: var(--surface);
   border: none;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
   animation: attachModalIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;
@@ -113,7 +113,7 @@
   gap: 10px;
   flex-shrink: 0;
 }
-.modal-head h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+.modal-head h3 { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.2px; }
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
 .modal-foot {
   padding: 14px 20px;
@@ -143,7 +143,7 @@
 .kwargs-form .kw-input-row .input { flex: 1; min-width: 0; }
 .kwargs-form .kw-input-row textarea.input { line-height: 1.5; }
 .kwargs-form .kw-reset {
-  background: var(--surface2); border: none; border-radius: 8px;
+  background: var(--surface2); border: none; border-radius: var(--radius-sm);
   color: var(--muted); cursor: pointer; padding: 7px 8px;
   display: flex; align-items: center; justify-content: center;
   transition: background 0.12s, color 0.12s;
@@ -174,7 +174,7 @@
     width: calc(100% - 16px);
     max-height: calc(100vh - 16px);
     max-height: calc(100dvh - 16px);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
   .modal-head { padding: 12px 16px; }
   .modal-head h3 { font-size: 15px; }
@@ -205,7 +205,7 @@
   display: flex;
   gap: 0;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   margin-bottom: 24px;
   background: var(--surface);
@@ -218,13 +218,14 @@
   border-right: 1px solid var(--border2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   position: relative;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 .stat-item:hover { background: var(--surface2); }
 .stat-item.active { background: var(--surface2); }
+.stat-item:focus-visible { outline: none; box-shadow: inset var(--glow); }
 .stat-item.active::after {
   content: "";
   position: absolute;
@@ -241,7 +242,7 @@
   background: transparent;
 }
 .stat-item:last-child { border-right: none; }
-.stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+.stat-label { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .stat-value { font-size: 26px; font-weight: 700; line-height: 1; font-family: var(--mono); letter-spacing: -1px; }
 .stat-value.ok   { color: var(--green); }
 .stat-item:has(.stat-value.ok)::before   { background: var(--green); }
@@ -259,7 +260,7 @@
 /* ── Workspace avatar ───────────────────────────────────────────────────── */
 .wc-avatar {
   width: 42px; height: 42px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -292,11 +293,11 @@
 .pendant-progress .progress-bar {
   flex: 1;
   height: 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
-.pendant-progress .progress-bar-fill { border-radius: 8px; }
-.pendant-progress > span { font-size: 16px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
+.pendant-progress .progress-bar-fill { border-radius: var(--radius-sm); }
+.pendant-progress > span { font-size: var(--text-xl); font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* ── Log colors ─────────────────────────────────────────────────────────── */
 .log-err  { color: var(--red); }
@@ -318,7 +319,7 @@
   background: rgba(255, 69, 58, 0.15);
   border-bottom: 1px solid rgba(255, 69, 58, 0.3);
   color: var(--red);
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   animation: alarm-pulse 1.5s ease-in-out infinite;
   backdrop-filter: blur(12px);
@@ -331,7 +332,7 @@
   color: var(--red);
   cursor: pointer;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   opacity: 0.6;
 }
 .alarm-dismiss:hover { opacity: 1; background: rgba(255, 69, 58, 0.15); }
@@ -441,35 +442,42 @@
 .pendant-state {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   padding: 10px 22px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface2);
   border: none;
   box-shadow: var(--shadow-sm);
 }
 
-/* Run elapsed time — plain text in the navbar centre.
-   Larger than the surrounding pill text so the operator's eye lands
-   on the elapsed value immediately. Behaves like the sidebar's "Up"
-   value: visible whenever uptime data is available, frozen on the
-   final value when the run ends. */
+/* Run elapsed time — the navbar's hero number. Sits in a translucent
+   surface chip so the navbar reads as three balanced surfaces (state
+   pill, timer chip, exit) and the timer doesn't visually leak out
+   between them. */
 .pendant-timer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
+  gap: var(--space-3);
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.04);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--text);
   user-select: none;
+}
+[data-theme="light"] .pendant-timer {
+  background: rgba(0,0,0,0.04);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
 }
 .pendant-timer-icon {
   width: 18px;
   height: 18px;
-  opacity: 0.55;
+  opacity: 0.4;
   flex-shrink: 0;
 }
 .pendant-timer-value {
@@ -490,18 +498,23 @@
   background: var(--muted2);
   flex-shrink: 0;
 }
-.pendant-state[data-variant="ok"]   .pendant-dot { background: var(--green); box-shadow: 0 0 8px rgba(52,199,89,0.5); }
-.pendant-state[data-variant="bad"]  .pendant-dot { background: var(--red); box-shadow: 0 0 8px rgba(255,69,58,0.5); }
+.pendant-state[data-variant="ok"]   .pendant-dot {
+  background: var(--green);
+  /* Reuse the same heart-beat the dashboard ``.dot.ok.pulse`` uses so
+     "alive" reads as one motion across the app. */
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.pendant-state[data-variant="bad"]  .pendant-dot { background: var(--red);   box-shadow: 0 0 8px rgba(255,69,58,0.5); }
 .pendant-state[data-variant="warn"] .pendant-dot { background: var(--amber); box-shadow: 0 0 8px rgba(255,159,10,0.5); }
 /* Colored text matching .pill states */
 .pendant-state[data-variant="ok"]   .pendant-state-text { color: var(--green); }
 .pendant-state[data-variant="warn"] .pendant-state-text { color: var(--amber); }
 .pendant-state[data-variant="bad"]  .pendant-state-text { color: var(--red); }
 .pendant-state-text {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 
@@ -519,7 +532,7 @@
   justify-content: center;
   gap: 12px;
   padding: 36px 20px;
-  border-radius: 22px;
+  border-radius: var(--radius-xl);
   border: none;
   background: var(--surface);
   color: var(--text);
@@ -535,6 +548,7 @@
   touch-action: manipulation;
   box-shadow: var(--shadow-sm);
 }
+.pendant-btn:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
 .pendant-btn:active:not(:disabled) {
   transform: scale(0.93);
   transition: transform 0.05s;
@@ -546,15 +560,25 @@
   filter: grayscale(0.6);
 }
 
-/* Start — green */
+/* Start — green. While the workspace is launched-and-idle this is the
+   single action the operator's about to take, so we let it breathe
+   with a slow ambient sheen (paused on hover so the hover-state can
+   express itself without competing). */
 .pendant-start {
   color: #fff;
   background: rgba(52,199,89,0.25);
   box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.4);
 }
-.pendant-start:hover:not(:disabled) {
+.pendant-start:not(:disabled) { animation: pendant-start-breathe 3.2s ease-in-out infinite; }
+.pendant-start:hover:not(:disabled),
+.pendant-start:active:not(:disabled) {
   background: rgba(52,199,89,0.35);
   box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.5), 0 0 30px rgba(52,199,89,0.15);
+  animation: none;
+}
+@keyframes pendant-start-breathe {
+  0%, 100% { box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.4),  0 0 0    rgba(52,199,89,0); }
+  50%      { box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.55), 0 0 28px rgba(52,199,89,0.22); }
 }
 
 /* Pause — amber */
@@ -621,7 +645,7 @@
   max-height: 90px;
   overflow-y: auto;
   background: var(--surface);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 10px 0;
   box-shadow: var(--shadow-sm);
   -webkit-overflow-scrolling: touch;
@@ -632,7 +656,7 @@
   align-items: flex-start;
   gap: 10px;
   padding: 4px 16px;
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
   color: var(--muted);
   opacity: 0.4;
@@ -668,9 +692,9 @@
   padding: 14px 28px;
   background: rgba(255, 69, 58, 0.12);
   border: none;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   color: var(--red);
-  font-size: 16px;
+  font-size: var(--text-xl);
   font-weight: 600;
   width: min(90vw, 500px);
   animation: alarm-pulse 1.5s ease-in-out infinite;
@@ -684,15 +708,15 @@
   align-items: center;
   gap: 8px;
   padding: 12px 28px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: none;
   background: var(--surface);
   color: var(--muted);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, box-shadow 0.15s;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   box-shadow: var(--shadow-sm);
@@ -701,6 +725,7 @@
   background: var(--surface2);
   color: var(--text);
 }
+.pendant-secondary:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
 .pendant-secondary:active { transform: scale(0.97); }
 .pendant-kill-btn { color: var(--red); }
 .pendant-kill-btn:hover { color: var(--red); background: rgba(255,69,58,0.12); }
@@ -709,22 +734,27 @@
 
 /* Exit button — sits on the right side of the navbar. */
 .pendant-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: 10px 22px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: none;
   background: var(--surface);
   color: var(--muted);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, box-shadow 0.15s;
   box-shadow: var(--shadow-sm);
 }
 .pendant-exit:hover {
   background: var(--surface2);
   color: var(--text);
 }
+.pendant-exit:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
+.pendant-exit svg { flex-shrink: 0; opacity: 0.6; }
 
 /* Pendant mobile */
 @media (max-width: 600px) {
