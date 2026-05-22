@@ -21,6 +21,11 @@ let _wsRetryMs = 1000;
 // slice the event belongs to.
 const _slices = [];
 const _leafState = new Map();   // "replan_id|leaf_name" -> state
+// Wall-clock timing per leaf — populated from action_start /
+// action_end / swap_start / swap_end events. Shown in the click-info
+// panel so the operator can see actual vs planned timing.
+//   composite key -> { startedAt: epoch_s, endedAt: epoch_s }
+const _leafTiming = new Map();
 // Chronological list of placement keys ("replan_id|leaf_name") as drawn —
 // populated by ``_renderGantt`` and read by the auto-focus logic to
 // centre the running block.
@@ -82,6 +87,7 @@ function _ingest(msg) {
     if ((msg.replan_id || 0) === 1) {
       _slices.length = 0;
       _leafState.clear();
+      _leafTiming.clear();
     }
     // Append this slice. Leaf state from earlier slices stays intact —
     // they've already been marked done/skipped by their action_end
@@ -89,13 +95,18 @@ function _ingest(msg) {
     _slices.push(msg);
     _render();
   } else if (msg.type === "action_start" || msg.type === "swap_start") {
-    _leafState.set(_leafKey(msg.replan_id, msg.name), "running");
+    const k = _leafKey(msg.replan_id, msg.name);
+    _leafState.set(k, "running");
+    const t = _leafTiming.get(k) || {};
+    t.startedAt = msg.wall_ts;
+    _leafTiming.set(k, t);
     _render();
   } else if (msg.type === "action_end" || msg.type === "swap_end") {
-    _leafState.set(
-      _leafKey(msg.replan_id, msg.name),
-      msg.skipped ? "skipped" : "done",
-    );
+    const k = _leafKey(msg.replan_id, msg.name);
+    _leafState.set(k, msg.skipped ? "skipped" : "done");
+    const t = _leafTiming.get(k) || {};
+    t.endedAt = msg.wall_ts;
+    _leafTiming.set(k, t);
     _render();
   }
 }
@@ -109,7 +120,14 @@ function _initDOM() {
     closeBtn._wired = true;
   }
   if (_modalEl && !_modalEl._wired) {
-    _modalEl.addEventListener("click", (e) => { if (e.target === _modalEl) closeScheduleModal(); });
+    _modalEl.addEventListener("click", (e) => {
+      // Clicking the overlay backdrop closes the whole modal.
+      if (e.target === _modalEl) closeScheduleModal();
+      // Otherwise: clicks anywhere inside the modal that *aren't* on
+      // the block-info popover dismiss the popover. Block clicks
+      // stopPropagation so they don't trigger this branch.
+      else if (_infoEl && !_infoEl.contains(e.target)) _hideBlockInfo();
+    });
     _modalEl._wired = true;
   }
 }
@@ -152,6 +170,7 @@ export function openScheduleModal() {
 export function closeScheduleModal() {
   if (!_modalEl) return;
   _modalEl.classList.remove("show");
+  _hideBlockInfo();
 }
 
 function _render() {
@@ -416,10 +435,84 @@ function _appendBlock(parent, p, state) {
   g.appendChild(lab);
 
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = `${label} — ${state}`;
+  title.textContent = `${label} — ${state} (click for details)`;
   g.appendChild(title);
 
+  // Click → open the per-block info popover. ``cursor: pointer`` via
+  // CSS so the affordance is obvious.
+  g.style.cursor = "pointer";
+  g.addEventListener("click", (e) => {
+    e.stopPropagation();
+    _showBlockInfo(p, state, e);
+  });
+
   parent.appendChild(g);
+}
+
+// ── Per-block info popover ─────────────────────────────────────────────
+//
+// Floating panel anchored near the clicked block. Shows the metadata
+// that matters when the operator is asking "when did this start, when
+// did it end, how long did it actually take?". Static info (label,
+// resource, tool, slice) comes from the broadcast; live timing from
+// the ``_leafTiming`` map populated by lifecycle events.
+
+let _infoEl = null;
+
+function _showBlockInfo(p, state, evt) {
+  const { a, replan_id } = p;
+  const key = _leafKey(replan_id, a.leaf_name);
+  const timing = _leafTiming.get(key) || {};
+
+  const label = (a.parametrized === false)
+    ? (a.class_name || a.name)
+    : `${a.class_name || a.name}(${a.item})`;
+  const fmtClock = (ts) =>
+    ts == null ? "—" : new Date(ts * 1000).toLocaleTimeString();
+  const fmtDur = (a, b) =>
+    (a == null || b == null) ? "—" : `${(b - a).toFixed(1)} s`;
+
+  const tool = a.tool == null ? "—" : a.tool;
+  const resources = (a.resources || []).join(", ") || "—";
+
+  if (!_infoEl) {
+    _infoEl = document.createElement("div");
+    _infoEl.className = "sched-info";
+    _ganttEl.parentElement.appendChild(_infoEl);
+  }
+
+  _infoEl.innerHTML = `
+    <div class="sched-info-head">
+      <strong>${label}</strong>
+      <span class="sched-info-state sched-${state}">${state}</span>
+    </div>
+    <dl class="sched-info-grid">
+      <dt>Started</dt><dd>${fmtClock(timing.startedAt)}</dd>
+      <dt>Ended</dt><dd>${fmtClock(timing.endedAt)}</dd>
+      <dt>Actual duration</dt><dd>${fmtDur(timing.startedAt, timing.endedAt)}</dd>
+      <dt>Planned duration</dt><dd>${a.duration != null ? a.duration + " s" : "—"}</dd>
+      <dt>Resource</dt><dd>${resources}</dd>
+      <dt>Tool</dt><dd>${tool}</dd>
+      <dt>Slice</dt><dd>${replan_id || 0}</dd>
+    </dl>
+  `;
+
+  // Position near the click, clamped to the modal viewport.
+  const modalRect = _modalEl.getBoundingClientRect();
+  _infoEl.style.display = "block";
+  // Render first so we can measure.
+  const panelW = _infoEl.offsetWidth;
+  const panelH = _infoEl.offsetHeight;
+  let left = evt.clientX + 12;
+  let top  = evt.clientY + 12;
+  if (left + panelW > modalRect.right - 8) left = evt.clientX - panelW - 12;
+  if (top + panelH > modalRect.bottom - 8) top = evt.clientY - panelH - 12;
+  _infoEl.style.left = `${Math.max(modalRect.left + 8, left)}px`;
+  _infoEl.style.top  = `${Math.max(modalRect.top + 8, top)}px`;
+}
+
+function _hideBlockInfo() {
+  if (_infoEl) _infoEl.style.display = "none";
 }
 
 function _primaryRow(rows, resources, toolRes) {
