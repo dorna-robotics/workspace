@@ -772,8 +772,10 @@
   stroke-linecap: round;
   fill: none;
 }
-.sched-connector.pending { stroke: var(--border);  opacity: 0.65; stroke-dasharray: 3 4; }
-.sched-connector.done    { stroke: var(--accent);  opacity: 0.85; }
+/* Connector strokes match the corresponding block's border so the
+   chart reads as one coherent strip. */
+.sched-connector.pending { stroke: var(--border);              opacity: 0.65; stroke-dasharray: 3 4; }
+.sched-connector.done    { stroke: rgba(10,132,255,0.32); }
 
 /* ── Slice divider — vertical separator between replan slices ────── */
 .sched-slice-divider {
