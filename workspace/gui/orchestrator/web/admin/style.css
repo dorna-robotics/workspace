@@ -428,26 +428,30 @@
 }
 
 /* Run elapsed time — plain text at top centre, no pill chrome.
-   Behaves like the sidebar's "Up" value: visible whenever uptime
-   data is available, frozen on the final value when the run ends. */
+   Larger than the surrounding pill text so the operator's eye lands
+   on the elapsed value immediately. Behaves like the sidebar's "Up"
+   value: visible whenever uptime data is available, frozen on the
+   final value when the run ends. */
 .pendant-timer {
   position: fixed;
-  top: 24px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  letter-spacing: 0.05em;
+  color: var(--text);
   user-select: none;
 }
 .pendant-timer-icon {
-  opacity: 0.6;
+  width: 18px;
+  height: 18px;
+  opacity: 0.55;
   flex-shrink: 0;
 }
 .pendant-timer-value {
@@ -715,7 +719,8 @@
   .pendant-btn svg { width: 26px; height: 26px; }
   .pendant-state { top: 10px; left: 10px; padding: 8px 16px; }
   .pendant-state-text { font-size: 12px; }
-  .pendant-timer { top: 16px; font-size: 12px; }
+  .pendant-timer { top: 14px; font-size: 16px; gap: 8px; }
+  .pendant-timer-icon { width: 14px; height: 14px; }
   .pendant-exit { top: 10px; right: 10px; padding: 8px 16px; font-size: 13px; }
   .pendant-secondary { padding: 10px 22px; font-size: 14px; }
   .pendant-info { width: 95vw; }
