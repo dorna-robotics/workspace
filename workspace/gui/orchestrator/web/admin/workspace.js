@@ -1077,7 +1077,12 @@ function renderControls(state, launched, running) {
     const startLabel = (s === "PAUSED") ? "Resume" : "Start";
     addBtn(startLabel, "start", { primary: true, disabled: active });
     addBtn("Pause",    "pause", { disabled: !active });
-    addBtn("Park",     "park",  { warn: true, disabled: parking });
+    // Park only makes sense when the workflow is actually in flight.
+    // Before Start the runtime is IDLE — clicking Park there would
+    // trigger the cleanup subtree against a non-running workflow and
+    // crash. Require ``active`` (running || parking) and disable when
+    // already parking.
+    addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
   }
 
   // Gear button for parameters — only before launch
@@ -1476,7 +1481,8 @@ function updatePendantUI() {
   $("pendantLaunch").disabled  = launched;
   $("pendantStart").disabled   = !launched || active;
   $("pendantPause").disabled   = !active;
-  $("pendantPark").disabled    = !launched || parking;
+  // Park needs an in-flight workflow — see the sidebar comment above.
+  $("pendantPark").disabled    = !active || parking;
   $("pendantKill").disabled    = !launched;
 
   // Relabel the Start button to "Resume" when the runtime is paused —

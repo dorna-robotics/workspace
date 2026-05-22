@@ -326,7 +326,7 @@ function render() {
                 const active  = running || parking;
                 return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${state.toUpperCase() === "PAUSED" ? "Resume" : "Start"}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
-               <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${parking ? "disabled" : ""}>Park</button>
+               <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
                <div class="spacer"></div>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`;
               })()

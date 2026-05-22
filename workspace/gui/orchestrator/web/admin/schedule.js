@@ -478,7 +478,13 @@ function _showBlockInfo(p, state, evt) {
   if (!_infoEl) {
     _infoEl = document.createElement("div");
     _infoEl.className = "sched-info";
-    _ganttEl.parentElement.appendChild(_infoEl);
+    // Append to <body>, NOT the modal: ``.modal-overlay`` has
+    // ``backdrop-filter`` set, which creates a new containing block
+    // for ``position: fixed`` descendants. A panel attached to the
+    // modal would be positioned relative to the overlay (offset by
+    // the overlay's 20px padding), not the viewport — so the
+    // ``evt.clientX/Y`` math would put it off-screen.
+    document.body.appendChild(_infoEl);
   }
 
   _infoEl.innerHTML = `
