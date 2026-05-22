@@ -230,13 +230,31 @@ function _renderGantt() {
     const sliceActions = slice.actions || [];
     const sliceReplanId = slice.replan_id || 0;
 
+    // Per-action chart time — actual when known, planner prediction
+    // otherwise. The flow layout doesn't position by these times
+    // (x is label-driven, not time-linear) but ordering decisions
+    // below use them so completed blocks reflect *actual* causality
+    // not what the planner assumed.
+    const chartStart = (a) => {
+      const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
+      return (t && t.startedAt != null) ? t.startedAt : (a.start_t || 0);
+    };
+    const chartEnd = (a) => {
+      const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
+      if (t && t.endedAt != null) return t.endedAt;
+      if (t && t.startedAt != null) return t.startedAt + (a.duration || 0);
+      return (a.start_t || 0) + (a.duration || 0);
+    };
+
     // Per-row left-to-right flow within this slice. Per-slice leaf
     // names are unique so the local map stays keyed by leaf_name.
+    // Sort by actual start (falling back to planner) so completed
+    // blocks lay out in the order they really happened.
     const local = new Map();
     for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
       const arr = sliceActions
         .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
-        .sort((x, y) => x.start_t - y.start_t);
+        .sort((x, y) => chartStart(x) - chartStart(y));
       let cursor = xBase;
       for (const a of arr) {
         const w = neededWidth(a);
@@ -251,18 +269,21 @@ function _renderGantt() {
     }
 
     // Cross-row alignment within the slice. Non-robot blocks shift to
-    // sit AFTER the robot block whose end matches their start_t.
+    // sit AFTER the robot block whose end matches their start —
+    // anchored by *actual* timing when available so a slow robot
+    // action that pushed the autonomous shaker later is reflected
+    // visually.
     const robotRowIdx = rows.indexOf(tres);
     if (robotRowIdx >= 0) {
       const robotByStart = [...local.values()]
         .filter(p => p.rowIdx === robotRowIdx)
-        .sort((a, b) => a.a.start_t - b.a.start_t);
+        .sort((a, b) => chartStart(a.a) - chartStart(b.a));
       for (const p of local.values()) {
         if (p.rowIdx === robotRowIdx) continue;
         let anchor = null;
+        const pStart = chartStart(p.a);
         for (const rp of robotByStart) {
-          const rpEnd = rp.a.start_t + rp.a.duration;
-          if (rpEnd > p.a.start_t) break;
+          if (chartEnd(rp.a) > pStart) break;
           anchor = rp;
         }
         if (anchor) p.x = anchor.x + anchor.w + 8;
@@ -271,7 +292,7 @@ function _renderGantt() {
 
     let sliceMaxX = xBase;
     const sliceByStart = [...local.values()].sort(
-      (a, b) => a.a.start_t - b.a.start_t,
+      (a, b) => chartStart(a.a) - chartStart(b.a),
     );
     for (const p of sliceByStart) {
       if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
@@ -411,9 +432,8 @@ function _appendBlock(parent, p, state) {
   lab.textContent = label;
   g.appendChild(lab);
 
-  // Duration text under DONE blocks only — pending/running blocks
-  // have nothing useful to show yet. Sits in the row's bottom gap so
-  // it doesn't crowd the label.
+  // Duration text under DONE blocks only — pending / running blocks
+  // have nothing useful to show yet.
   const timing = _leafTiming.get(_leafKey(p.replan_id, p.a.leaf_name)) || {};
   const elapsed = (timing.startedAt != null && timing.endedAt != null)
     ? (timing.endedAt - timing.startedAt)
@@ -424,20 +444,15 @@ function _appendBlock(parent, p, state) {
     dur.setAttribute("y", String(y + h + 11));
     dur.setAttribute("text-anchor", "middle");
     dur.setAttribute("class", "sched-block-elapsed");
-    dur.textContent = `${elapsed.toFixed(1)} s`;
+    dur.textContent = `${elapsed.toFixed(1)}s`;
     g.appendChild(dur);
   }
 
-  // Hover tooltip — wall-clock seconds (relative to the chart's
-  // first observation) so the operator can correlate to the log.
-  const t0 = _slices[0]?.wall_ts || 0;
-  const fmt = (ts) => ts == null ? "—" : `${(ts - t0).toFixed(1)} s`;
-  const titleParts = [`${label} — ${state}`];
-  if (timing.startedAt != null) titleParts.push(`started ${fmt(timing.startedAt)}`);
-  if (timing.endedAt   != null) titleParts.push(`ended ${fmt(timing.endedAt)}`);
-  if (elapsed != null)          titleParts.push(`Δ${elapsed.toFixed(1)} s`);
+  // Hover tooltip — minimal: label + key time data (or state).
   const title = document.createElementNS(svgNS, "title");
-  title.textContent = titleParts.join(" · ");
+  title.textContent = elapsed != null
+    ? `${label} · ${elapsed.toFixed(1)}s`
+    : `${label} · ${state}`;
   g.appendChild(title);
 
   parent.appendChild(g);
