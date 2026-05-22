@@ -230,19 +230,21 @@ function _renderGantt() {
     const sliceActions = slice.actions || [];
     const sliceReplanId = slice.replan_id || 0;
 
-    // Per-action chart time — actual when known, planner prediction
-    // otherwise. The flow layout doesn't position by these times
-    // (x is label-driven, not time-linear) but ordering decisions
-    // below use them so completed blocks reflect *actual* causality
-    // not what the planner assumed.
+    // Per-action chart time in **slice-local seconds** — actual when
+    // known (epoch minus the slice's wall_ts), planner prediction
+    // otherwise. Both branches return the same unit so ordering
+    // decisions below compare apples-to-apples; mixing epoch values
+    // with planner seconds bunches every done block onto the right.
+    const sliceT0 = slice.wall_ts || 0;
     const chartStart = (a) => {
       const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
-      return (t && t.startedAt != null) ? t.startedAt : (a.start_t || 0);
+      if (t && t.startedAt != null) return t.startedAt - sliceT0;
+      return a.start_t || 0;
     };
     const chartEnd = (a) => {
       const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
-      if (t && t.endedAt != null) return t.endedAt;
-      if (t && t.startedAt != null) return t.startedAt + (a.duration || 0);
+      if (t && t.endedAt != null)   return t.endedAt   - sliceT0;
+      if (t && t.startedAt != null) return (t.startedAt - sliceT0) + (a.duration || 0);
       return (a.start_t || 0) + (a.duration || 0);
     };
 
