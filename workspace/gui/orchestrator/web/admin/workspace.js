@@ -1439,20 +1439,17 @@ function updatePendantUI() {
     if (textEl) textEl.textContent = stateLabel(state);
   }
 
-  // Run-elapsed timer — visible only while there's an actual run in
-  // progress (or paused / parking). Mirrors the state variant so the
-  // pill colour shifts with the workflow. Uses the same uptime base
-  // the sidebar's "Up" field tracks, so it stays in sync without an
-  // extra server round-trip.
+  // Run elapsed time — same visibility rule as the sidebar's "Up"
+  // field. Shows whenever the workspace has uptime data; ticks live
+  // while a run is in flight and freezes on the final value when the
+  // run ends (so the operator can see how long the last run took).
   const timerEl = $("pendantTimer");
   if (timerEl) {
-    const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "PARKING"].includes(state);
-    if (isInRun && _uptimeBase != null) {
+    if (_uptimeBase != null) {
       const live = _uptimeAt != null
         ? _uptimeBase + (performance.now() - _uptimeAt) / 1000
         : _uptimeBase;
       $("pendantTimerValue").textContent = fmtUptime(live) || "0:00";
-      timerEl.setAttribute("data-variant", variant);
       timerEl.style.display = "";
     } else {
       timerEl.style.display = "none";
