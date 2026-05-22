@@ -230,23 +230,13 @@ function _renderGantt() {
     const sliceActions = slice.actions || [];
     const sliceReplanId = slice.replan_id || 0;
 
-    // Per-action chart time in **slice-local seconds** — actual when
-    // known (epoch minus the slice's wall_ts), planner prediction
-    // otherwise. Both branches return the same unit so ordering
-    // decisions below compare apples-to-apples; mixing epoch values
-    // with planner seconds bunches every done block onto the right.
-    const sliceT0 = slice.wall_ts || 0;
-    const chartStart = (a) => {
-      const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
-      if (t && t.startedAt != null) return t.startedAt - sliceT0;
-      return a.start_t || 0;
-    };
-    const chartEnd = (a) => {
-      const t = _leafTiming.get(_leafKey(sliceReplanId, a.leaf_name));
-      if (t && t.endedAt != null)   return t.endedAt   - sliceT0;
-      if (t && t.startedAt != null) return (t.startedAt - sliceT0) + (a.duration || 0);
-      return (a.start_t || 0) + (a.duration || 0);
-    };
+    // Chart time = planner's predicted ``start_t`` / ``duration``.
+    // The planner already enforces causal ordering (and same-resource
+    // mutex), so we use *its* numbers for layout decisions. Actual
+    // wall-clock timing surfaces separately — as the elapsed-time
+    // text under done blocks and in the hover tooltip.
+    const chartStart = (a) => a.start_t || 0;
+    const chartEnd   = (a) => (a.start_t || 0) + (a.duration || 0);
 
     // Build the block records first (x left undefined; we'll fill
     // it in the topological pass below).
@@ -290,8 +280,16 @@ function _renderGantt() {
       let nx = xBase;
       const ps = chartStart(p.a);
       for (const other of placed) {
-        if (chartEnd(other.a) <= ps) {
-          const right = other.x + other.w + 8;
+        const sameRow = other.rowIdx === p.rowIdx;
+        // Two reasons to push past ``other``:
+        //   1. Same-row: physically the same resource, must be
+        //      sequential regardless of how the planner's start_t
+        //      values look — defensive against quirks in the chart
+        //      time fields.
+        //   2. Causal predecessor: ``other`` ends at or before this
+        //      block's chartStart, so it's strictly earlier in time.
+        if (sameRow || chartEnd(other.a) <= ps) {
+          const right = other.x + other.w + (sameRow ? BLOCK_GAP : 8);
           if (right > nx) nx = right;
         }
       }
