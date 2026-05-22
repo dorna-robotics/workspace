@@ -1190,7 +1190,14 @@ try {
 setInterval(() => {
   if (_uptimeBase != null && _uptimeAt != null) {
     const elapsed = (performance.now() - _uptimeAt) / 1000;
-    uptimeVal.textContent = fmtUptime(_uptimeBase + elapsed) || "—";
+    const live = _uptimeBase + elapsed;
+    uptimeVal.textContent = fmtUptime(live) || "—";
+    // Keep the pendant timer in sync. Skipped when not in pendant
+    // mode — the element is hidden, no point updating.
+    const ptv = document.getElementById("pendantTimerValue");
+    if (_pendantMode && ptv && ptv.parentElement.style.display !== "none") {
+      ptv.textContent = fmtUptime(live) || "0:00";
+    }
   }
 }, 1000);
 
@@ -1430,6 +1437,26 @@ function updatePendantUI() {
     stateEl.setAttribute("data-variant", variant);
     const textEl = stateEl.querySelector(".pendant-state-text");
     if (textEl) textEl.textContent = stateLabel(state);
+  }
+
+  // Run-elapsed timer — visible only while there's an actual run in
+  // progress (or paused / parking). Mirrors the state variant so the
+  // pill colour shifts with the workflow. Uses the same uptime base
+  // the sidebar's "Up" field tracks, so it stays in sync without an
+  // extra server round-trip.
+  const timerEl = $("pendantTimer");
+  if (timerEl) {
+    const isInRun = ["RUNNING", "ACTIVE", "PAUSED", "PARKING"].includes(state);
+    if (isInRun && _uptimeBase != null) {
+      const live = _uptimeAt != null
+        ? _uptimeBase + (performance.now() - _uptimeAt) / 1000
+        : _uptimeBase;
+      $("pendantTimerValue").textContent = fmtUptime(live) || "0:00";
+      timerEl.setAttribute("data-variant", variant);
+      timerEl.style.display = "";
+    } else {
+      timerEl.style.display = "none";
+    }
   }
 
   // Step timeline in pendant
