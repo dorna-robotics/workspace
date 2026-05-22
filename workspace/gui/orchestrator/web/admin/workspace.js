@@ -1102,10 +1102,12 @@ function renderControls(state, launched, running) {
     addBtn("Kill", "kill", { danger: true });
   }
 
-  // Second row — appears only once the workspace is launched. Only
-  // entry today is the Schedule button; matches the pendant's
-  // secondary row visually. Visibility is CSS-owned (.show class).
-  document.getElementById("controlsExtra")?.classList.toggle("show", !!launched);
+  // Schedule lives in the top-bar icon row (alongside Fullscreen /
+  // Theme / Pendant — it's a *view*, not a workflow command). Show
+  // it only once the workspace is launched; before then there's no
+  // plan to open.
+  const schedBtn = document.getElementById("btnSchedule");
+  if (schedBtn) schedBtn.style.display = launched ? "" : "none";
 }
 
 function updateIframe(state, launched) {

@@ -763,12 +763,6 @@
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
-/* Second row under Controls: holds post-launch-only buttons
-   (Schedule today). Hidden until JS adds .show once the workspace
-   is launched. Same button style as the primary row. */
-#controlsExtra            { display: none; }
-#controlsExtra.show       { display: flex; gap: 6px; margin-top: 6px; }
-
 /* Park "btn-warn" — duplicated here at higher specificity so it
    wins over base.css regardless of cache state. Solid orange to
    match .pendant-park's saturation; no inset border, matching the
