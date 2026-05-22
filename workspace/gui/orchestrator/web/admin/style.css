@@ -832,21 +832,9 @@
   50%, 100% { stroke-opacity: 0.30; filter: drop-shadow(0 0 4px var(--accent)); }
 }
 
-/* Time axis below the rows — grid lines + tick labels. */
-.sched-axis-grid {
-  stroke: var(--border2);
-  stroke-width: 1;
-  stroke-dasharray: 2 4;
-  opacity: 0.5;
-}
-.sched-axis-label {
+/* Elapsed-time text rendered just below DONE / SKIPPED blocks. */
+.sched-block-elapsed {
   font-size: 10px;
   font-family: var(--mono, monospace);
   fill: var(--muted);
-}
-.sched-axis-now {
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  opacity: 0.7;
 }

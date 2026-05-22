@@ -194,14 +194,16 @@ function _renderGantt() {
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
   // ── Layout knobs ───────────────────────────────────────────────────
-  const PX_PER_SEC = 10;      // chart scale — pick so typical 10 s actions fit a small label
-  const MIN_BLOCK_W = 28;     // floor so very short / pending blocks still hit-test
+  const FONT_PX   = 12;
+  const CHAR_W    = FONT_PX * 0.62;
+  const LABEL_PAD = 22;
+  const BLOCK_GAP = 18;       // gap between consecutive blocks on a row
+  const SLICE_GAP = 38;       // gap between slices (vertical divider sits at the midpoint)
   const ROW_H     = 48;
   const ROW_PAD   = 8;
   const LEFT_W    = 120;
   const TOP_PAD   = 18;
-  const AXIS_H    = 24;       // bottom band for the time-axis ticks
-  const BOT_PAD   = 14;
+  const BOT_PAD   = 18;
 
   function labelOf(a)     {
     // Parameterless actions (parametrized: false) — e.g. Start / Park
@@ -210,82 +212,83 @@ function _renderGantt() {
     const base = a.class_name || a.name;
     return (a.parametrized === false) ? base : `${base}(${a.item})`;
   }
+  function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
 
-  // ── Time-axis layout ───────────────────────────────────────────────
-  // Each block sits at x = (its chart-relative start time) * PX_PER_SEC.
-  // Position and width come from actual wall-clock feedback when the
-  // leaf has run; otherwise we fall back to the planner's prediction
-  // for the slice (broadcast ``wall_ts`` + ``start_t``).
-  //
-  // ``T0`` is the chart's t=0 — anchored at the wall-clock time the
-  // first replan published its schedule. All chart times are relative
-  // to this so consecutive slices flow naturally on one timeline; the
-  // gap between slices reflects real idle time (or replan latency).
-  const T0 = _slices[0].wall_ts;
-  const placements = new Map();    // composite key -> { a, x, w, y, h, rowIdx, replan_id }
+  // ── Flow layout, per-slice column ─────────────────────────────────
+  // X is NOT proportional to wall-clock time. Block widths come from
+  // label length so every action's name is readable. Time data is
+  // shown separately: as a small "Δ s" line under each *done* block
+  // and in the hover tooltip.
+  const placements = new Map();    // composite key -> {a, x, w, y, h, rowIdx, replan_id}
+  const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
+  let xBase = LEFT_W + 8;
   _leafOrder.length = 0;
   _leafGeom.clear();
-
-  // Track the latest "now" across the chart so we can size the SVG
-  // wide enough for a running block that's still growing.
-  const nowSec = Date.now() / 1000 - T0;
-  let chartMaxT = 0;
 
   for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
     const slice = _slices[sliceIdx];
     const sliceActions = slice.actions || [];
     const sliceReplanId = slice.replan_id || 0;
-    const slicePlanAnchor = (slice.wall_ts || T0) - T0;   // chart-relative slice t=0
 
-    for (const a of sliceActions) {
-      const key = _leafKey(sliceReplanId, a.leaf_name);
-      const timing = _leafTiming.get(key) || {};
-      const state = _leafState.get(key) || "pending";
-
-      // Resolve the block's chart-time interval:
-      //   actual start if it ran; planner's predicted start otherwise.
-      //   actual end if it finished; "now" while running; planner's
-      //   predicted end while still pending.
-      const actualStart = timing.startedAt != null ? timing.startedAt - T0 : null;
-      const actualEnd   = timing.endedAt   != null ? timing.endedAt   - T0 : null;
-      const predStart   = slicePlanAnchor + (a.start_t || 0);
-      const predEnd     = predStart + (a.duration || 0);
-      const t1 = actualStart != null ? actualStart : predStart;
-      let   t2;
-      if (actualEnd != null)        t2 = actualEnd;
-      else if (state === "running") t2 = nowSec;
-      else                          t2 = predEnd;
-      if (t2 < t1) t2 = t1;
-      if (t2 > chartMaxT) chartMaxT = t2;
-
-      const rowIdx = _primaryRow(rows, a.resources, tres);
-      placements.set(key, {
-        a,
-        x: LEFT_W + 8 + t1 * PX_PER_SEC,
-        w: Math.max(MIN_BLOCK_W, (t2 - t1) * PX_PER_SEC),
-        y: TOP_PAD + rowIdx * ROW_H + ROW_PAD,
-        h: ROW_H - ROW_PAD * 2,
-        rowIdx,
-        replan_id: sliceReplanId,
-        t1, t2,
-      });
+    // Per-row left-to-right flow within this slice. Per-slice leaf
+    // names are unique so the local map stays keyed by leaf_name.
+    const local = new Map();
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const arr = sliceActions
+        .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
+        .sort((x, y) => x.start_t - y.start_t);
+      let cursor = xBase;
+      for (const a of arr) {
+        const w = neededWidth(a);
+        const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+        const h = ROW_H - ROW_PAD * 2;
+        local.set(a.leaf_name, {
+          a, x: cursor, w, y, h, rowIdx,
+          replan_id: sliceReplanId,
+        });
+        cursor += w + BLOCK_GAP;
+      }
     }
+
+    // Cross-row alignment within the slice. Non-robot blocks shift to
+    // sit AFTER the robot block whose end matches their start_t.
+    const robotRowIdx = rows.indexOf(tres);
+    if (robotRowIdx >= 0) {
+      const robotByStart = [...local.values()]
+        .filter(p => p.rowIdx === robotRowIdx)
+        .sort((a, b) => a.a.start_t - b.a.start_t);
+      for (const p of local.values()) {
+        if (p.rowIdx === robotRowIdx) continue;
+        let anchor = null;
+        for (const rp of robotByStart) {
+          const rpEnd = rp.a.start_t + rp.a.duration;
+          if (rpEnd > p.a.start_t) break;
+          anchor = rp;
+        }
+        if (anchor) p.x = anchor.x + anchor.w + 8;
+      }
+    }
+
+    let sliceMaxX = xBase;
+    const sliceByStart = [...local.values()].sort(
+      (a, b) => a.a.start_t - b.a.start_t,
+    );
+    for (const p of sliceByStart) {
+      if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
+      const key = _leafKey(sliceReplanId, p.a.leaf_name);
+      placements.set(key, p);
+      _leafOrder.push(key);
+      _leafGeom.set(key, { x: p.x, w: p.w });
+    }
+
+    if (sliceIdx + 1 < _slices.length) {
+      sliceDividerXs.push(sliceMaxX + SLICE_GAP / 2);
+    }
+    xBase = sliceMaxX + SLICE_GAP;
   }
 
-  // Populate _leafOrder / _leafGeom in chronological order for the
-  // auto-focus button.
-  const ordered = [...placements.entries()].sort((a, b) => a[1].t1 - b[1].t1);
-  for (const [key, p] of ordered) {
-    _leafOrder.push(key);
-    _leafGeom.set(key, { x: p.x, w: p.w });
-  }
-
-  // SVG dimensions. ``chartMaxT`` plus a small lookahead so running
-  // blocks grow into visible space.
-  const tickEvery = _chooseTickStep(chartMaxT);
-  const chartRightT = Math.max(chartMaxT, nowSec) + tickEvery;  // +1 tick padding
-  const W = Math.max(LEFT_W + 200, LEFT_W + 8 + chartRightT * PX_PER_SEC + 16);
-  const H = TOP_PAD + rows.length * ROW_H + AXIS_H + BOT_PAD;
+  const W = Math.max(LEFT_W + 200, xBase - SLICE_GAP + 16);
+  const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
@@ -294,10 +297,12 @@ function _renderGantt() {
   svg.setAttribute("class",  "sched-svg");
 
   const gRows = document.createElementNS(svgNS, "g");
-  const gAxis = document.createElementNS(svgNS, "g");
+  const gSlices = document.createElementNS(svgNS, "g");
+  const gConn = document.createElementNS(svgNS, "g");
   const gBlocks = document.createElementNS(svgNS, "g");
   svg.appendChild(gRows);
-  svg.appendChild(gAxis);
+  svg.appendChild(gSlices);
+  svg.appendChild(gConn);
   svg.appendChild(gBlocks);
 
   // Row labels + horizontal dividers.
@@ -320,39 +325,44 @@ function _renderGantt() {
     }
   });
 
-  // Time axis below the rows. Ticks every ``tickEvery`` seconds with
-  // an mm:ss label and a faint vertical gridline through the chart.
-  const axisY = TOP_PAD + rows.length * ROW_H + 6;
-  const gridBottomY = TOP_PAD + rows.length * ROW_H;
-  // Top gridline aligned with the first row's top edge.
-  for (let t = 0; t <= chartRightT + 0.01; t += tickEvery) {
-    const xt = LEFT_W + 8 + t * PX_PER_SEC;
-    const grid = document.createElementNS(svgNS, "line");
-    grid.setAttribute("x1", String(xt));
-    grid.setAttribute("x2", String(xt));
-    grid.setAttribute("y1", String(TOP_PAD - 4));
-    grid.setAttribute("y2", String(gridBottomY + 4));
-    grid.setAttribute("class", "sched-axis-grid");
-    gAxis.appendChild(grid);
-
-    const lbl = document.createElementNS(svgNS, "text");
-    lbl.setAttribute("x", String(xt));
-    lbl.setAttribute("y", String(axisY + 14));
-    lbl.setAttribute("text-anchor", "middle");
-    lbl.setAttribute("class", "sched-axis-label");
-    lbl.textContent = _fmtAxisLabel(t);
-    gAxis.appendChild(lbl);
+  // Slice dividers — thin, subtle, span the full row band.
+  for (const x of sliceDividerXs) {
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", String(x));
+    line.setAttribute("x2", String(x));
+    line.setAttribute("y1", String(TOP_PAD - 4));
+    line.setAttribute("y2", String(TOP_PAD + rows.length * ROW_H + 4));
+    line.setAttribute("class", "sched-slice-divider");
+    gSlices.appendChild(line);
   }
-  // Vertical "now" marker — useful while watching a live run.
-  if (nowSec > 0 && nowSec <= chartRightT) {
-    const xNow = LEFT_W + 8 + nowSec * PX_PER_SEC;
-    const now = document.createElementNS(svgNS, "line");
-    now.setAttribute("x1", String(xNow));
-    now.setAttribute("x2", String(xNow));
-    now.setAttribute("y1", String(TOP_PAD - 4));
-    now.setAttribute("y2", String(gridBottomY + 4));
-    now.setAttribute("class", "sched-axis-now");
-    gAxis.appendChild(now);
+
+  // Connector lines between consecutive blocks on the same row within
+  // a slice — visual hint at sequencing.
+  for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
+    const sliceReplanId = _slices[sliceIdx].replan_id || 0;
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const arr = [...placements.values()]
+        .filter(p => p.rowIdx === rowIdx && p.replan_id === sliceReplanId)
+        .sort((a, b) => a.x - b.x);
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const A = arr[i], B = arr[i + 1];
+        const x1 = A.x + A.w;
+        const x2 = B.x;
+        if (x2 - x1 < 4) continue;
+        const yMid = A.y + A.h / 2;
+        const stA = _leafState.get(_leafKey(A.replan_id, A.a.leaf_name)) || "pending";
+        const cls = (stA === "done" || stA === "skipped")
+          ? "sched-connector done"
+          : "sched-connector pending";
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(x1));
+        line.setAttribute("x2", String(x2));
+        line.setAttribute("y1", String(yMid));
+        line.setAttribute("y2", String(yMid));
+        line.setAttribute("class", cls);
+        gConn.appendChild(line);
+      }
+    }
   }
 
   // Action blocks.
@@ -363,46 +373,6 @@ function _renderGantt() {
 
   _ganttEl.innerHTML = "";
   _ganttEl.appendChild(svg);
-
-  // Keep running blocks growing in real-time. The ``setTimeout`` ladder
-  // lazily kicks in only while at least one leaf is running; otherwise
-  // the chart is static and no timer fires.
-  _scheduleLiveTick();
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────
-
-function _chooseTickStep(maxT) {
-  // Pick a tick interval that yields ~6–12 labels across the chart.
-  // Steps are seconds, picked from a "nice" sequence.
-  const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600];
-  const target = Math.max(maxT, 30);
-  for (const c of candidates) {
-    if (target / c <= 12) return c;
-  }
-  return candidates[candidates.length - 1];
-}
-
-function _fmtAxisLabel(t) {
-  // ``t`` is seconds from T0. Show as mm:ss for short runs, hh:mm:ss
-  // once the chart spans an hour or more.
-  t = Math.round(t);
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const s = t % 60;
-  const pad = (n) => String(n).padStart(2, "0");
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
-
-let _liveTickHandle = null;
-function _scheduleLiveTick() {
-  if (_liveTickHandle) return;
-  const anyRunning = [..._leafState.values()].some(s => s === "running");
-  if (!anyRunning) return;
-  _liveTickHandle = setTimeout(() => {
-    _liveTickHandle = null;
-    if (_modalEl?.classList.contains("show")) _renderGantt();
-  }, 500);
 }
 
 function _appendBlock(parent, p, state) {
@@ -441,14 +411,31 @@ function _appendBlock(parent, p, state) {
   lab.textContent = label;
   g.appendChild(lab);
 
-  // Hover tooltip shows the same info the chart already renders
-  // visually (position + width). Useful when blocks are narrow.
+  // Duration text under DONE blocks only — pending/running blocks
+  // have nothing useful to show yet. Sits in the row's bottom gap so
+  // it doesn't crowd the label.
   const timing = _leafTiming.get(_leafKey(p.replan_id, p.a.leaf_name)) || {};
-  const fmtClock = (ts) =>
-    ts == null ? "—" : new Date(ts * 1000).toLocaleTimeString();
+  const elapsed = (timing.startedAt != null && timing.endedAt != null)
+    ? (timing.endedAt - timing.startedAt)
+    : null;
+  if (elapsed != null && (state === "done" || state === "skipped")) {
+    const dur = document.createElementNS(svgNS, "text");
+    dur.setAttribute("x", String(x + w / 2));
+    dur.setAttribute("y", String(y + h + 11));
+    dur.setAttribute("text-anchor", "middle");
+    dur.setAttribute("class", "sched-block-elapsed");
+    dur.textContent = `${elapsed.toFixed(1)} s`;
+    g.appendChild(dur);
+  }
+
+  // Hover tooltip — wall-clock seconds (relative to the chart's
+  // first observation) so the operator can correlate to the log.
+  const t0 = _slices[0]?.wall_ts || 0;
+  const fmt = (ts) => ts == null ? "—" : `${(ts - t0).toFixed(1)} s`;
   const titleParts = [`${label} — ${state}`];
-  if (timing.startedAt != null) titleParts.push(`started ${fmtClock(timing.startedAt)}`);
-  if (timing.endedAt   != null) titleParts.push(`Δ${(timing.endedAt - timing.startedAt).toFixed(1)} s`);
+  if (timing.startedAt != null) titleParts.push(`started ${fmt(timing.startedAt)}`);
+  if (timing.endedAt   != null) titleParts.push(`ended ${fmt(timing.endedAt)}`);
+  if (elapsed != null)          titleParts.push(`Δ${elapsed.toFixed(1)} s`);
   const title = document.createElementNS(svgNS, "title");
   title.textContent = titleParts.join(" · ");
   g.appendChild(title);
