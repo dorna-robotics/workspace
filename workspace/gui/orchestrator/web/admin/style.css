@@ -832,49 +832,9 @@
   50%, 100% { stroke-opacity: 0.30; filter: drop-shadow(0 0 4px var(--accent)); }
 }
 
-/* ── Block info popover — appears on click of a schedule block ──── */
-.sched-info {
-  position: fixed;
-  display: none;
-  z-index: 10000;
-  min-width: 260px;
-  max-width: 360px;
-  padding: 12px 14px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  font-size: 12px;
-  line-height: 1.45;
+/* Click-info text rendered directly under a schedule block. */
+.sched-block-info {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  fill: var(--muted);
 }
-.sched-info-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  font-size: 13px;
-}
-.sched-info-head strong { font-weight: 600; }
-.sched-info-state {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
-  background: var(--surface2);
-  color: var(--muted);
-  border: 1px solid var(--border);
-}
-.sched-info-state.sched-running { background: var(--accent-dim); color: var(--accent-h); border-color: var(--accent); }
-.sched-info-state.sched-done    { background: rgba(10,132,255,0.10); color: rgba(10,132,255,0.92); border-color: rgba(10,132,255,0.32); }
-.sched-info-state.sched-skipped { background: var(--surface2); color: var(--muted); }
-.sched-info-grid {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 14px;
-  margin: 0;
-}
-.sched-info-grid dt { color: var(--muted); }
-.sched-info-grid dd { margin: 0; font-variant-numeric: tabular-nums; }

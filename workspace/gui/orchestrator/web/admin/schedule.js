@@ -122,11 +122,17 @@ function _initDOM() {
   if (_modalEl && !_modalEl._wired) {
     _modalEl.addEventListener("click", (e) => {
       // Clicking the overlay backdrop closes the whole modal.
-      if (e.target === _modalEl) closeScheduleModal();
-      // Otherwise: clicks anywhere inside the modal that *aren't* on
-      // the block-info popover dismiss the popover. Block clicks
-      // stopPropagation so they don't trigger this branch.
-      else if (_infoEl && !_infoEl.contains(e.target)) _hideBlockInfo();
+      if (e.target === _modalEl) {
+        closeScheduleModal();
+        return;
+      }
+      // Click anywhere inside the modal that *isn't* a block clears
+      // the per-block info. Block clicks ``stopPropagation`` so they
+      // don't reach this handler.
+      if (_selectedKey !== null) {
+        _selectedKey = null;
+        _render();
+      }
     });
     _modalEl._wired = true;
   }
@@ -394,6 +400,9 @@ function _renderGantt() {
     _appendBlock(gBlocks, p, state);
   }
 
+  // Click-info text rendered under the currently selected block, if any.
+  _renderSelectedInfo(gBlocks, placements);
+
   _ganttEl.innerHTML = "";
   _ganttEl.appendChild(svg);
 }
@@ -438,87 +447,57 @@ function _appendBlock(parent, p, state) {
   title.textContent = `${label} — ${state} (click for details)`;
   g.appendChild(title);
 
-  // Click → open the per-block info popover. ``cursor: pointer`` via
-  // CSS so the affordance is obvious.
+  // Click → toggle the per-block detail line. ``cursor: pointer`` via
+  // inline style so the affordance shows up on hover.
   g.style.cursor = "pointer";
   g.addEventListener("click", (e) => {
     e.stopPropagation();
-    _showBlockInfo(p, state, e);
+    const key = _leafKey(p.replan_id, p.a.leaf_name);
+    _selectedKey = (_selectedKey === key) ? null : key;
+    _render();
   });
 
   parent.appendChild(g);
 }
 
-// ── Per-block info popover ─────────────────────────────────────────────
+// ── Per-block click-info ───────────────────────────────────────────────
 //
-// Floating panel anchored near the clicked block. Shows the metadata
-// that matters when the operator is asking "when did this start, when
-// did it end, how long did it actually take?". Static info (label,
-// resource, tool, slice) comes from the broadcast; live timing from
-// the ``_leafTiming`` map populated by lifecycle events.
+// Click a block → a small line of text appears underneath showing
+// when it started, when it ended, and how long it actually took.
+// Click the same block again or click elsewhere to dismiss. Rendered
+// directly into the SVG (no popover, no modal-in-modal) so the chart
+// stays self-contained.
 
-let _infoEl = null;
-
-function _showBlockInfo(p, state, evt) {
-  const { a, replan_id } = p;
-  const key = _leafKey(replan_id, a.leaf_name);
-  const timing = _leafTiming.get(key) || {};
-
-  const label = (a.parametrized === false)
-    ? (a.class_name || a.name)
-    : `${a.class_name || a.name}(${a.item})`;
-  const fmtClock = (ts) =>
-    ts == null ? "—" : new Date(ts * 1000).toLocaleTimeString();
-  const fmtDur = (a, b) =>
-    (a == null || b == null) ? "—" : `${(b - a).toFixed(1)} s`;
-
-  const tool = a.tool == null ? "—" : a.tool;
-  const resources = (a.resources || []).join(", ") || "—";
-
-  if (!_infoEl) {
-    _infoEl = document.createElement("div");
-    _infoEl.className = "sched-info";
-    // Append to <body>, NOT the modal: ``.modal-overlay`` has
-    // ``backdrop-filter`` set, which creates a new containing block
-    // for ``position: fixed`` descendants. A panel attached to the
-    // modal would be positioned relative to the overlay (offset by
-    // the overlay's 20px padding), not the viewport — so the
-    // ``evt.clientX/Y`` math would put it off-screen.
-    document.body.appendChild(_infoEl);
-  }
-
-  _infoEl.innerHTML = `
-    <div class="sched-info-head">
-      <strong>${label}</strong>
-      <span class="sched-info-state sched-${state}">${state}</span>
-    </div>
-    <dl class="sched-info-grid">
-      <dt>Started</dt><dd>${fmtClock(timing.startedAt)}</dd>
-      <dt>Ended</dt><dd>${fmtClock(timing.endedAt)}</dd>
-      <dt>Actual duration</dt><dd>${fmtDur(timing.startedAt, timing.endedAt)}</dd>
-      <dt>Planned duration</dt><dd>${a.duration != null ? a.duration + " s" : "—"}</dd>
-      <dt>Resource</dt><dd>${resources}</dd>
-      <dt>Tool</dt><dd>${tool}</dd>
-      <dt>Slice</dt><dd>${replan_id || 0}</dd>
-    </dl>
-  `;
-
-  // Position near the click, clamped to the modal viewport.
-  const modalRect = _modalEl.getBoundingClientRect();
-  _infoEl.style.display = "block";
-  // Render first so we can measure.
-  const panelW = _infoEl.offsetWidth;
-  const panelH = _infoEl.offsetHeight;
-  let left = evt.clientX + 12;
-  let top  = evt.clientY + 12;
-  if (left + panelW > modalRect.right - 8) left = evt.clientX - panelW - 12;
-  if (top + panelH > modalRect.bottom - 8) top = evt.clientY - panelH - 12;
-  _infoEl.style.left = `${Math.max(modalRect.left + 8, left)}px`;
-  _infoEl.style.top  = `${Math.max(modalRect.top + 8, top)}px`;
-}
+let _selectedKey = null;
 
 function _hideBlockInfo() {
-  if (_infoEl) _infoEl.style.display = "none";
+  _selectedKey = null;
+}
+
+function _renderSelectedInfo(svg, placements) {
+  if (!_selectedKey) return;
+  const p = placements.get(_selectedKey);
+  if (!p) return;
+  const timing = _leafTiming.get(_selectedKey) || {};
+  const fmtClock = (ts) =>
+    ts == null ? "—" : new Date(ts * 1000).toLocaleTimeString();
+  const parts = [`started ${fmtClock(timing.startedAt)}`];
+  if (timing.endedAt != null) {
+    parts.push(`ended ${fmtClock(timing.endedAt)}`);
+    if (timing.startedAt != null) {
+      parts.push(`Δ${(timing.endedAt - timing.startedAt).toFixed(1)} s`);
+    }
+  }
+  const text = parts.join(" · ");
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const label = document.createElementNS(svgNS, "text");
+  label.setAttribute("x", String(p.x + p.w / 2));
+  label.setAttribute("y", String(p.y + p.h + 14));
+  label.setAttribute("text-anchor", "middle");
+  label.setAttribute("class", "sched-block-info");
+  label.textContent = text;
+  svg.appendChild(label);
 }
 
 function _primaryRow(rows, resources, toolRes) {
