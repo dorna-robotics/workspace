@@ -351,7 +351,7 @@ function render() {
         const cmd = btn.dataset.cmd;
         if (cmd === "park" && !await confirmDialog({
           title: `Park "${ws.name}"?`,
-          message: "The current action will finish, then the project's Park steps run before the workflow stops.",
+          message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
           confirm: "Park Workflow",
           icon: "park",
           variant: "danger",
