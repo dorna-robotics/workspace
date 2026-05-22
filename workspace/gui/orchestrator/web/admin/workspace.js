@@ -31,7 +31,7 @@ const _TITLE_DOTS = {
   ok:   "\u{1F7E2}",  // 🟢 RUNNING / ACTIVE
   warn: "\u{1F7E1}",  // 🟡 PAUSED / PARKING / IDLE
   bad:  "\u{1F534}",  //  RED ERROR / OFFLINE
-  off:  "⚪",     // ⚪ NOT_LAUNCHED / unknown — renders as a soft grey/white circle, far less aggressive than ⚫
+  off:  "⚫",     // ⚫ NOT_LAUNCHED / unknown
 };
 let _titleLastVariant = null;
 
