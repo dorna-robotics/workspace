@@ -248,48 +248,55 @@ function _renderGantt() {
       return (a.start_t || 0) + (a.duration || 0);
     };
 
-    // Per-row left-to-right flow within this slice. Per-slice leaf
-    // names are unique so the local map stays keyed by leaf_name.
-    // Sort by actual start (falling back to planner) so completed
-    // blocks lay out in the order they really happened.
+    // Build the block records first (x left undefined; we'll fill
+    // it in the topological pass below).
     const local = new Map();
-    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-      const arr = sliceActions
-        .filter(a => _primaryRow(rows, a.resources, tres) === rowIdx)
-        .sort((x, y) => chartStart(x) - chartStart(y));
-      let cursor = xBase;
-      for (const a of arr) {
-        const w = neededWidth(a);
-        const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
-        const h = ROW_H - ROW_PAD * 2;
-        local.set(a.leaf_name, {
-          a, x: cursor, w, y, h, rowIdx,
-          replan_id: sliceReplanId,
-        });
-        cursor += w + BLOCK_GAP;
-      }
+    for (const a of sliceActions) {
+      const rowIdx = _primaryRow(rows, a.resources, tres);
+      const w = neededWidth(a);
+      const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+      const h = ROW_H - ROW_PAD * 2;
+      local.set(a.leaf_name, {
+        a, x: xBase, w, y, h, rowIdx,
+        replan_id: sliceReplanId,
+      });
     }
 
-    // Cross-row alignment within the slice. Non-robot blocks shift to
-    // sit AFTER the robot block whose end matches their start —
-    // anchored by *actual* timing when available so a slow robot
-    // action that pushed the autonomous shaker later is reflected
-    // visually.
-    const robotRowIdx = rows.indexOf(tres);
-    if (robotRowIdx >= 0) {
-      const robotByStart = [...local.values()]
-        .filter(p => p.rowIdx === robotRowIdx)
-        .sort((a, b) => chartStart(a.a) - chartStart(b.a));
-      for (const p of local.values()) {
-        if (p.rowIdx === robotRowIdx) continue;
-        let anchor = null;
-        const pStart = chartStart(p.a);
-        for (const rp of robotByStart) {
-          if (chartEnd(rp.a) > pStart) break;
-          anchor = rp;
+    // Topological flow layout across ALL rows of this slice.
+    //
+    // Walk blocks in chartStart order. Each block's x is pushed past
+    // the right edge of every earlier-placed block whose chartEnd is
+    // ≤ this block's chartStart — i.e. every block that fully
+    // *precedes* this one in chart time, regardless of row. That
+    // means:
+    //   * Sequential blocks (A ends before B starts) end up visually
+    //     sequential, even when they're on different rows. So if the
+    //     autonomous shaker completes before the next robot action
+    //     starts, the robot block sits to the right of the shaker
+    //     block — no x overlap.
+    //   * Parallel blocks (their chart-time intervals overlap) don't
+    //     enforce ordering on each other, so they can land at the
+    //     same x and stack vertically across rows — which is what
+    //     parallelism *should* look like.
+    //
+    // Chart time uses actual ``wall_ts`` when available so completed
+    // runs reflect what really happened, not what the planner
+    // predicted.
+    const allByTime = [...local.values()].sort(
+      (a, b) => chartStart(a.a) - chartStart(b.a),
+    );
+    const placed = [];
+    for (const p of allByTime) {
+      let nx = xBase;
+      const ps = chartStart(p.a);
+      for (const other of placed) {
+        if (chartEnd(other.a) <= ps) {
+          const right = other.x + other.w + 8;
+          if (right > nx) nx = right;
         }
-        if (anchor) p.x = anchor.x + anchor.w + 8;
       }
+      p.x = nx;
+      placed.push(p);
     }
 
     let sliceMaxX = xBase;
