@@ -80,9 +80,9 @@
       outline: none;
       box-shadow: var(--glow);
     }
-    .ws-card.is-running::before { background: var(--green); box-shadow: 0 0 12px rgba(52,199,89,0.55); }
-    .ws-card.is-ready::before   { background: var(--amber); box-shadow: 0 0 10px rgba(255,159,10,0.4); }
-    .ws-card.is-error::before   { background: var(--red);   box-shadow: 0 0 10px rgba(255,69,58,0.4); }
+    .ws-card.is-running::before { background: var(--green); box-shadow: var(--glow-ok); }
+    .ws-card.is-ready::before   { background: var(--amber); box-shadow: var(--glow-warn); }
+    .ws-card.is-error::before   { background: var(--red);   box-shadow: var(--glow-bad); }
     [data-theme="light"] .ws-card { box-shadow: 0 1px 6px rgba(0,0,0,0.06), 0 0 1px rgba(0,0,0,0.08); }
     [data-theme="light"] .ws-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
 
@@ -198,7 +198,10 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ---- Empty state ---- */
+    /* ---- Empty state ----
+       The first thing a brand-new operator sees. Lead with the SVG
+       illustration, a one-sentence orientation, and the same Add
+       Workspace CTA they'd otherwise hunt for in the top-bar. */
     .empty-state {
       grid-column: 1 / -1;
       text-align: center;
@@ -209,10 +212,12 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
+      gap: var(--space-2);
     }
-    .empty-icon { font-size: 40px; margin-bottom: 16px; opacity: 0.2; }
-    .empty-state h3 { color: var(--text); margin-bottom: 6px; font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.2px; }
-    .empty-state p { font-size: var(--text-md); line-height: 1.6; }
+    .empty-icon { color: var(--muted); opacity: 0.35; margin-bottom: var(--space-3); }
+    .empty-state h3 { color: var(--text); font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.2px; }
+    .empty-state p  { font-size: var(--text-md); line-height: 1.6; max-width: 360px; }
+    .empty-state .empty-cta { margin-top: var(--space-4); padding: 10px 18px; }
 
     /* ---- Search ---- */
     .ws-search-wrap {

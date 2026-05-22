@@ -74,23 +74,15 @@
     [data-theme="light"] .step-timeline {
       background: var(--surface2);
     }
-    .step-card {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 3px 12px 3px 12px;
-      font-size: var(--text-sm);
-      line-height: 1.5;
-      color: var(--muted);
-      position: relative;
-      opacity: 0.45;
-      transition: opacity 0.25s;
-    }
-    .step-card.active {
-      color: var(--text);
-      opacity: 1;
-    }
-    /* Vertical connector line */
+    /* Sidebar density — compact. Shared visual identity (color states,
+       dot glow, opacity ladder) lives in base.css's ``:is(.step-card,
+       .pendant-step-card)`` block; only density-specific overrides
+       stay here. */
+    .step-card { padding: 3px 12px; font-size: var(--text-sm); position: relative; }
+    /* Vertical connector line — sidebar-only flourish since the
+       compact density benefits from threading the eye between rows.
+       Pendant's larger spacing makes the connector noisy, so it
+       doesn't render there. */
     .step-card:not(:last-child) .step-dot-wrap::after {
       content: "";
       position: absolute;
@@ -110,31 +102,10 @@
       justify-content: center;
       padding-top: 2px;
     }
-    .step-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--muted);
-      opacity: 0.4;
-      transition: all 0.25s;
-    }
-    /* Active dot — pulsing glow, color matches level */
-    .step-card.active .step-dot {
-      width: 8px; height: 8px; opacity: 1;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent), 0 0 3px var(--accent);
-    }
-    .step-card.active[data-level="success"] .step-dot { background: var(--green); box-shadow: 0 0 8px var(--green), 0 0 3px var(--green); }
-    .step-card.active[data-level="warning"] .step-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber), 0 0 3px var(--amber); }
-    .step-card.active[data-level="error"]   .step-dot { background: var(--red);   box-shadow: 0 0 8px var(--red),   0 0 3px var(--red); }
-
-    /* Done dot — solid, color matches level */
-    .step-card.done .step-dot { background: var(--muted); opacity: 0.6; }
-    .step-card.done[data-level="success"] .step-dot { background: var(--green); opacity: 0.85; }
-    .step-card.done[data-level="warning"] .step-dot { background: var(--amber); opacity: 0.85; }
-    .step-card.done[data-level="error"]   .step-dot { background: var(--red);   opacity: 0.85; }
-
-    /* Text color for warning/error */
+    .step-dot { width: 7px; height: 7px; }
+    .step-card.active .step-dot { width: 8px; height: 8px; }
+    /* Text color level routing — base.css drives the row colour;
+       this just makes sure the .step-text node tracks. */
     .step-card[data-level="warning"] .step-text { color: var(--amber); }
     .step-card[data-level="error"]   .step-text { color: var(--red); }
 

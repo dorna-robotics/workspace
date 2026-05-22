@@ -563,11 +563,17 @@
 /* Start — green. While the workspace is launched-and-idle this is the
    single action the operator's about to take, so we let it breathe
    with a slow ambient sheen (paused on hover so the hover-state can
-   express itself without competing). */
+   express itself without competing).
+
+   The breathe colour comes from CSS vars so the light theme can
+   adjust saturation without forking the keyframes. */
 .pendant-start {
+  --start-inset:    rgba(52,199,89,0.4);
+  --start-inset-on: rgba(52,199,89,0.55);
+  --start-glow-on:  0 0 28px rgba(52,199,89,0.22);
   color: #fff;
   background: rgba(52,199,89,0.25);
-  box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.4);
+  box-shadow: inset 0 0 0 1.5px var(--start-inset);
 }
 .pendant-start:not(:disabled) { animation: pendant-start-breathe 3.2s ease-in-out infinite; }
 .pendant-start:hover:not(:disabled),
@@ -577,8 +583,8 @@
   animation: none;
 }
 @keyframes pendant-start-breathe {
-  0%, 100% { box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.4),  0 0 0    rgba(52,199,89,0); }
-  50%      { box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.55), 0 0 28px rgba(52,199,89,0.22); }
+  0%, 100% { box-shadow: inset 0 0 0 1.5px var(--start-inset),    0 0 0 transparent; }
+  50%      { box-shadow: inset 0 0 0 1.5px var(--start-inset-on), var(--start-glow-on); }
 }
 
 /* Pause — amber */
@@ -651,39 +657,12 @@
   -webkit-overflow-scrolling: touch;
 }
 .pendant-steps:empty { display: none; }
-.pendant-step-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 4px 16px;
-  font-size: var(--text-md);
-  line-height: 1.5;
-  color: var(--muted);
-  opacity: 0.4;
-}
-.pendant-step-card.active { color: var(--text); opacity: 1; font-weight: 600; }
-.pendant-step-card.done { opacity: 0.5; }
-.pendant-step-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
-  opacity: 0.4;
-  flex-shrink: 0;
-  margin-top: 6px;
-}
-.pendant-step-card.active .pendant-step-dot {
-  background: var(--accent); opacity: 1;
-  box-shadow: 0 0 8px var(--accent);
-}
-.pendant-step-card.active[data-level="success"] .pendant-step-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.pendant-step-card.active[data-level="warning"] .pendant-step-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-.pendant-step-card.active[data-level="error"] .pendant-step-dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
-.pendant-step-card.done .pendant-step-dot { opacity: 0.6; }
-.pendant-step-card.done[data-level="success"] .pendant-step-dot { background: var(--green); opacity: 0.7; }
-.pendant-step-card.done[data-level="warning"] .pendant-step-dot { background: var(--amber); opacity: 0.7; }
-.pendant-step-card.done[data-level="error"] .pendant-step-dot { background: var(--red); opacity: 0.7; }
-.pendant-step-card[data-level="warning"] { color: var(--amber); }
-.pendant-step-card[data-level="error"] { color: var(--red); }
+/* Pendant density — large. Shared identity (states, dot glow,
+   transitions) lives in base.css's ``:is(.step-card, .pendant-step-card)``
+   block; the rules below are pendant-only overrides for spacing
+   and size. */
+.pendant-step-card { padding: 4px 16px; font-size: var(--text-md); }
+.pendant-step-dot  { width: 8px; height: 8px; margin-top: 6px; }
 
 .pendant-alarm {
   display: flex;
@@ -775,7 +754,14 @@
 }
 
 /* Light theme pendant overrides */
-[data-theme="light"] .pendant-start { background: rgba(36,138,61,0.12); color: var(--green); box-shadow: inset 0 0 0 1.5px rgba(36,138,61,0.3); }
+[data-theme="light"] .pendant-start {
+  --start-inset:    rgba(36,138,61,0.3);
+  --start-inset-on: rgba(36,138,61,0.45);
+  --start-glow-on:  0 0 22px rgba(36,138,61,0.20);
+  background: rgba(36,138,61,0.12);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1.5px var(--start-inset);
+}
 [data-theme="light"] .pendant-start:hover:not(:disabled) { background: rgba(36,138,61,0.2); box-shadow: inset 0 0 0 1.5px rgba(36,138,61,0.45); }
 [data-theme="light"] .pendant-pause { background: rgba(199,124,10,0.12); color: var(--amber); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.3); }
 [data-theme="light"] .pendant-pause:hover:not(:disabled) { background: rgba(199,124,10,0.2); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.45); }

@@ -238,10 +238,19 @@ function render() {
   if (!workspaces.length) {
     wsGrid.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">◫</div>
+        <svg class="empty-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="3"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <circle cx="7" cy="6.5" r="0.6" fill="currentColor"/>
+          <circle cx="9" cy="6.5" r="0.6" fill="currentColor"/>
+        </svg>
         <h3>No workspaces yet</h3>
-        <p>Click <strong>Add Workspace</strong> to get started.</p>
+        <p>Workspaces let you launch and monitor a Dorna project from one place.</p>
+        <button class="btn btn-primary empty-cta" id="emptyAddBtn">+ Add Workspace</button>
       </div>`;
+    document.getElementById("emptyAddBtn")?.addEventListener("click", () => {
+      document.getElementById("btnAdd")?.click();
+    });
     return;
   }
 

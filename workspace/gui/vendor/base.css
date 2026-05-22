@@ -51,6 +51,19 @@
   --shadow:    0 4px 16px rgba(0,0,0,0.35);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
   --glow:      0 0 0 4px rgba(10,132,255,0.25);
+  /* State-coloured glows — used by .ws-card status rails, .stat-item
+     accents, etc. Tokens so saturation can change in one place. */
+  --glow-ok:   0 0 12px rgba(52,199,89,0.55);
+  --glow-warn: 0 0 10px rgba(255,159,10,0.4);
+  --glow-bad:  0 0 10px rgba(255,69,58,0.4);
+
+  /* Motion tokens — every transition / animation in the app should
+     pull from these so timing feels deliberate. Don't hardcode 0.15s /
+     0.2s / ease values directly anymore. */
+  --motion-fast: 0.12s;
+  --motion-med:  0.2s;
+  --motion-slow: 0.4s;
+  --ease:        cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 /* ── CSS Variables (Light) ────────────────────────────────────────────── */
@@ -74,6 +87,9 @@
   --shadow:    0 2px 12px rgba(0,0,0,0.08);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
   --glow:      0 0 0 4px rgba(0,122,255,0.20);
+  --glow-ok:   0 0 10px rgba(36,138,61,0.40);
+  --glow-warn: 0 0 8px  rgba(199,124,10,0.35);
+  --glow-bad:  0 0 8px  rgba(215,0,21,0.40);
 }
 
 /* ── Reset ────────────────────────────────────────────────────────────── */
@@ -124,7 +140,12 @@ a:hover { color: var(--accent-h); }
   font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+  transition:
+    background  var(--motion-fast) var(--ease),
+    color       var(--motion-fast) var(--ease),
+    opacity     var(--motion-fast) var(--ease),
+    transform   var(--motion-fast) var(--ease),
+    box-shadow  var(--motion-fast) var(--ease);
   white-space: nowrap;
   line-height: 1;
   user-select: none;
@@ -476,4 +497,55 @@ a:hover { color: var(--accent-h); }
   .confirm-dialog { width: calc(100% - 24px); padding: 24px 20px 16px; border-radius: var(--radius-lg); }
   .confirm-title { font-size: 16px; }
   .confirm-actions .btn { padding: 12px 14px; font-size: 15px; }
+}
+
+/* ── Step list ────────────────────────────────────────────────────────
+   Shared primitive used by the sidebar's ``.step-card`` and the
+   pendant's ``.pendant-step-card``. Common visual identity (color
+   states, dot glow, opacity ladder) lives here so the two density
+   variants can drift only on size / spacing — not on look. */
+:is(.step-card, .pendant-step-card) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0.45;
+  transition: opacity var(--motion-med) var(--ease);
+}
+:is(.step-card, .pendant-step-card).active { color: var(--text); opacity: 1; font-weight: 600; }
+:is(.step-card, .pendant-step-card).done   { opacity: 0.55; }
+:is(.step-card, .pendant-step-card)[data-level="warning"] { color: var(--amber); }
+:is(.step-card, .pendant-step-card)[data-level="error"]   { color: var(--red); }
+
+:is(.step-dot, .pendant-step-dot) {
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.4;
+  transition: background var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease);
+}
+:is(.step-card, .pendant-step-card).active :is(.step-dot, .pendant-step-dot) {
+  background: var(--accent); opacity: 1; box-shadow: 0 0 8px var(--accent);
+}
+:is(.step-card, .pendant-step-card).active[data-level="success"] :is(.step-dot, .pendant-step-dot) { background: var(--green); box-shadow: var(--glow-ok); }
+:is(.step-card, .pendant-step-card).active[data-level="warning"] :is(.step-dot, .pendant-step-dot) { background: var(--amber); box-shadow: var(--glow-warn); }
+:is(.step-card, .pendant-step-card).active[data-level="error"]   :is(.step-dot, .pendant-step-dot) { background: var(--red);   box-shadow: var(--glow-bad); }
+:is(.step-card, .pendant-step-card).done :is(.step-dot, .pendant-step-dot) { opacity: 0.6; }
+:is(.step-card, .pendant-step-card).done[data-level="success"] :is(.step-dot, .pendant-step-dot) { background: var(--green); opacity: 0.85; }
+:is(.step-card, .pendant-step-card).done[data-level="warning"] :is(.step-dot, .pendant-step-dot) { background: var(--amber); opacity: 0.85; }
+:is(.step-card, .pendant-step-card).done[data-level="error"]   :is(.step-dot, .pendant-step-dot) { background: var(--red);   opacity: 0.85; }
+
+/* ── Reduced motion ───────────────────────────────────────────────────
+   Respect the OS-level "reduce motion" preference: kill the ambient
+   breathe / pulse / blink loops and shorten every transition to near-
+   zero. Hover / focus state changes still happen (they're functional
+   feedback) — only decorative motion is suppressed. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
