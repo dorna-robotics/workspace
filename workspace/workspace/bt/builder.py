@@ -60,10 +60,17 @@ class SwapLeaf(RecipeAction):
         self._to_tool = to_tool
 
     def _publish(self, event: Dict[str, Any]) -> None:
+        """Same shape as ``_DSLActionLeaf._publish`` — stamps the event
+        with the current ``replan_id`` so the schedule modal can scope
+        per-slice."""
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else None
         pub = (meta or {}).get("event_publisher")
         if pub is None:
             return
+        event = {
+            **event,
+            "replan_id": (meta or {}).get("current_replan_id", 0),
+        }
         try:
             pub(event)
         except Exception:

@@ -1328,11 +1328,22 @@ class _DSLActionLeaf(RecipeAction):
         Used by the schedule-visualisation websocket to track actual
         wall-clock starts/ends per action (the predicted durations in
         ActionMeta are estimates only). No-op when no publisher wired.
+
+        Stamps the event with the current ``replan_id`` (the slice
+        index) so consumers can distinguish between slices that share
+        a leaf name — e.g. a parameterless ``ShakerOne`` action runs
+        once per slice with the same ``self.name``, and the schedule
+        modal needs the ``replan_id`` to place each occurrence in the
+        right slice column.
         """
         meta = self.ctx.meta if isinstance(self.ctx.meta, dict) else None
         pub = (meta or {}).get("event_publisher")
         if pub is None:
             return
+        event = {
+            **event,
+            "replan_id": (meta or {}).get("current_replan_id", 0),
+        }
         try:
             pub(event)
         except Exception:

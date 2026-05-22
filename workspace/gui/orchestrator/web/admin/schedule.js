@@ -13,16 +13,29 @@ let _wsRetryMs = 1000;
 
 // One ``schedule`` event from the framework = one slice. We append
 // rather than replace so the operator sees the full job history grow
-// in place across replans. State is keyed by leaf_name (globally
-// unique — item index = absolute tube number, not slice-local).
+// in place across replans.
+//
+// State is keyed by ``${replan_id}|${leaf_name}`` because parameterless
+// actions (Start / Park / ShakerOne / ShakerTwo) reuse the same
+// leaf_name across slices — the replan_id scopes the lookup to the
+// slice the event belongs to.
 const _slices = [];
-const _leafState = new Map();   // leaf_name -> "pending" | "running" | "done" | "skipped"
-// Chronological list of leaf names as drawn — populated by ``_renderGantt``
-// and read by the "Jump to current" button to centre the running block.
+const _leafState = new Map();   // "replan_id|leaf_name" -> state
+// Chronological list of placement keys ("replan_id|leaf_name") as drawn —
+// populated by ``_renderGantt`` and read by the auto-focus logic to
+// centre the running block.
 const _leafOrder = [];
-// leaf_name -> { x, w } in the SVG's coordinate system. Same lifecycle
+// placement key -> { x, w } in the SVG's coordinate system. Same lifecycle
 // as ``_leafOrder`` — overwritten each render.
 const _leafGeom = new Map();
+
+// Compose the (replan_id, leaf_name) lookup key. Defaults replan_id to
+// 0 for safety against older publishers; new publishers always supply
+// it. Keeps every site that hashes a leaf consistent — change here
+// once, never inline this format string.
+function _leafKey(replan_id, leaf_name) {
+  return `${replan_id || 0}|${leaf_name}`;
+}
 
 let _modalEl = null;
 let _ganttEl = null;
@@ -76,10 +89,13 @@ function _ingest(msg) {
     _slices.push(msg);
     _render();
   } else if (msg.type === "action_start" || msg.type === "swap_start") {
-    _leafState.set(msg.name, "running");
+    _leafState.set(_leafKey(msg.replan_id, msg.name), "running");
     _render();
   } else if (msg.type === "action_end" || msg.type === "swap_end") {
-    _leafState.set(msg.name, msg.skipped ? "skipped" : "done");
+    _leafState.set(
+      _leafKey(msg.replan_id, msg.name),
+      msg.skipped ? "skipped" : "done",
+    );
     _render();
   }
 }
@@ -189,10 +205,15 @@ function _renderGantt() {
   // Cursor ``xBase`` tracks where the next slice starts. Each slice
   // runs per-row flow + cross-row alignment locally; the cursor
   // advances by the slice's actual width + SLICE_GAP.
-  const placements = new Map();    // leaf_name -> {a, x, w, y, h, rowIdx}
+  //
+  // ``placements`` keys by ``${replan_id}|${leaf_name}`` so that
+  // parameterless actions (Start / Park / ShakerOne / ShakerTwo)
+  // can appear in every slice they belong to — keying by leaf_name
+  // alone caused later slices to overwrite earlier ones' positions.
+  const placements = new Map();    // composite key -> {a, x, w, y, h, rowIdx, replan_id}
   const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
   let xBase = LEFT_W + 8;
-  // Reset before populating — the "Jump to current" button reads these
+  // Reset before populating — the auto-focus logic reads these
   // lookups, and stale entries from a previous render would point at
   // x-coordinates that no longer match the current SVG.
   _leafOrder.length = 0;
@@ -201,8 +222,12 @@ function _renderGantt() {
   for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
     const slice = _slices[sliceIdx];
     const sliceActions = slice.actions || [];
+    const sliceReplanId = slice.replan_id || 0;
 
-    // Per-row left-to-right flow within this slice.
+    // Per-row left-to-right flow within this slice. The local map's
+    // keys can stay ``leaf_name`` — within a single slice leaf names
+    // are unique (the planner generates at most one grounding per
+    // action class per parameter tuple).
     const local = new Map();
     for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
       const arr = sliceActions
@@ -213,7 +238,10 @@ function _renderGantt() {
         const w = neededWidth(a);
         const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
         const h = ROW_H - ROW_PAD * 2;
-        local.set(a.leaf_name, { a, x: cursor, w, y, h, rowIdx });
+        local.set(a.leaf_name, {
+          a, x: cursor, w, y, h, rowIdx,
+          replan_id: sliceReplanId,
+        });
         cursor += w + BLOCK_GAP;
       }
     }
@@ -240,16 +268,17 @@ function _renderGantt() {
     // Slice width = right edge of the furthest block.
     let sliceMaxX = xBase;
     // Record chronological order within this slice (by solver start_t)
-    // for the "Jump to current" lookup. Slices append in plan order so
+    // for the auto-focus lookup. Slices append in plan order so
     // ``_leafOrder`` ends up globally chronological.
     const sliceByStart = [...local.values()].sort(
       (a, b) => a.a.start_t - b.a.start_t,
     );
     for (const p of sliceByStart) {
       if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
-      placements.set(p.a.leaf_name, p);
-      _leafOrder.push(p.a.leaf_name);
-      _leafGeom.set(p.a.leaf_name, { x: p.x, w: p.w });
+      const key = _leafKey(sliceReplanId, p.a.leaf_name);
+      placements.set(key, p);
+      _leafOrder.push(key);
+      _leafGeom.set(key, { x: p.x, w: p.w });
     }
 
     // Next slice starts after a gap; a divider sits at the midpoint.
@@ -311,13 +340,13 @@ function _renderGantt() {
   }
 
   // Connector lines between consecutive blocks on the same row WITHIN
-  // a slice. We pair up by sliceIdx so we don't draw a connector that
-  // spans the slice divider.
+  // a slice. Filter placements by replan_id so we don't draw a
+  // connector that spans the slice divider.
   for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
-    const sliceLeafs = new Set((_slices[sliceIdx].actions || []).map(a => a.leaf_name));
+    const sliceReplanId = _slices[sliceIdx].replan_id || 0;
     for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
       const arr = [...placements.values()]
-        .filter(p => p.rowIdx === rowIdx && sliceLeafs.has(p.a.leaf_name))
+        .filter(p => p.rowIdx === rowIdx && p.replan_id === sliceReplanId)
         .sort((a, b) => a.x - b.x);
       for (let i = 0; i + 1 < arr.length; i++) {
         const A = arr[i], B = arr[i + 1];
@@ -325,7 +354,7 @@ function _renderGantt() {
         const x2 = B.x;
         if (x2 - x1 < 4) continue;
         const yMid = A.y + A.h / 2;
-        const stA = _leafState.get(A.a.leaf_name) || "pending";
+        const stA = _leafState.get(_leafKey(A.replan_id, A.a.leaf_name)) || "pending";
         const cls = (stA === "done" || stA === "skipped")
           ? "sched-connector done"
           : "sched-connector pending";
@@ -342,7 +371,7 @@ function _renderGantt() {
 
   // Action blocks.
   for (const p of placements.values()) {
-    const state = _leafState.get(p.a.leaf_name) || "pending";
+    const state = _leafState.get(_leafKey(p.replan_id, p.a.leaf_name)) || "pending";
     _appendBlock(gBlocks, p, state);
   }
 

@@ -582,6 +582,14 @@ def run_protocol(
         # static meta the frontend needs to render: duration, resource,
         # tool. Resource list is normalised to a tuple-of-strings.
         replan_counter["n"] += 1
+        # Expose the current replan_id on ctx.meta so every leaf /
+        # swap-leaf can stamp its lifecycle events with the slice it
+        # belongs to. The schedule modal uses this to give per-slice
+        # parameterless actions (Start / Park / ShakerOne / ShakerTwo
+        # — same self.name across slices) distinct positions on the
+        # Gantt instead of letting later slices overwrite earlier
+        # ones' placements.
+        ctx.meta["current_replan_id"] = replan_counter["n"]
         pub = ctx.meta.get("event_publisher")
         if pub is not None:
             import time as _time
