@@ -146,7 +146,7 @@
   background: var(--surface2); border: none; border-radius: var(--radius-sm);
   color: var(--muted); cursor: pointer; padding: 7px 8px;
   display: flex; align-items: center; justify-content: center;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
   flex-shrink: 0; margin-left: auto;
 }
 .kwargs-form .kw-reset:hover { background: var(--surface3); color: var(--text); }
@@ -190,7 +190,7 @@
 
 /* ── Utility classes (orchestrator-specific) ───────────────────────────── */
 .label-optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
-.section-chevron { transition: transform 0.2s; opacity: 0.45; flex-shrink: 0; }
+.section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
 .section-chevron.open { transform: rotate(90deg); }
 .pendant-secondary-row { display: flex; gap: 12px; align-items: center; }
 
@@ -221,7 +221,7 @@
   gap: var(--space-2);
   position: relative;
   cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease);
 }
 .stat-item:hover { background: var(--surface2); }
 .stat-item.active { background: var(--surface2); }
@@ -382,7 +382,7 @@
   flex-direction: column;
   align-items: stretch;
   padding: 0;
-  transition: background 0.3s;
+  transition: background var(--motion-slow) var(--ease);
 }
 
 /* Top navbar — fixed-height bar containing state pill (left),
@@ -542,7 +542,10 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: transform 0.1s, background 0.15s, box-shadow 0.15s;
+  transition:
+    transform  var(--motion-fast) var(--ease),
+    background var(--motion-med)  var(--ease),
+    box-shadow var(--motion-med)  var(--ease);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -695,7 +698,10 @@
   font-size: var(--text-lg);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, box-shadow 0.15s;
+  transition:
+    background var(--motion-fast) var(--ease),
+    color      var(--motion-fast) var(--ease),
+    box-shadow var(--motion-med)  var(--ease);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   box-shadow: var(--shadow-sm);
@@ -725,7 +731,10 @@
   font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, box-shadow 0.15s;
+  transition:
+    background var(--motion-fast) var(--ease),
+    color      var(--motion-fast) var(--ease),
+    box-shadow var(--motion-med)  var(--ease);
   box-shadow: var(--shadow-sm);
 }
 .pendant-exit:hover {
@@ -851,18 +860,21 @@
 /* ── Action blocks ───────────────────────────────────────────────────── */
 /*  Semantic-colour states. Pending and done are SOLID fills (no
     opacity tricks); running blinks on top of its solid blue card.    */
-.sched-block-fill { transition: fill 0.3s ease; }
+.sched-block-fill { transition: fill var(--motion-slow) var(--ease); }
 .sched-block-border {
   fill: none;
   stroke-width: 1;
   pointer-events: none;
-  transition: stroke 0.3s, stroke-width 0.3s, stroke-opacity 0.3s;
+  transition:
+    stroke         var(--motion-slow) var(--ease),
+    stroke-width   var(--motion-slow) var(--ease),
+    stroke-opacity var(--motion-slow) var(--ease);
 }
 .sched-blocklabel {
   font: 600 12px/1 var(--mono);
   pointer-events: none;
   letter-spacing: 0.01em;
-  transition: fill 0.3s;
+  transition: fill var(--motion-slow) var(--ease);
 }
 
 /* PENDING (future) — solid neutral card */

@@ -43,7 +43,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 .app-nav-collapse:hover { background: var(--surface2); color: var(--text); }
 
@@ -70,7 +70,10 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
      like the count badge. Clipping is moved to the inner <span>
      (label text) below, which is the only thing that needs to vanish
      when the nav collapses. */
-  transition: color 0.12s, background 0.12s, box-shadow 0.15s;
+  transition:
+    color      var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease);
 }
 .app-nav-link:hover {
   color: var(--text);
@@ -87,7 +90,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
 }
 .app-nav-link svg { flex-shrink: 0; width: 18px; height: 18px; }
 .app-nav-link span {
-  transition: opacity 0.15s, width 0.15s;
+  transition: opacity var(--motion-med) var(--ease), width var(--motion-med) var(--ease);
   overflow: hidden;
 }
 /* Hide the label (.app-nav-link > span:not(.app-nav-badge)) when
@@ -124,7 +127,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   line-height: 1;
   pointer-events: none;
   box-shadow: 0 0 0 2px var(--surface);
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-med) var(--ease);
 }
 .app-nav-link .app-nav-badge[hidden] { display: none !important; }
 [data-theme="light"] .app-nav-link .app-nav-badge {
@@ -174,7 +177,7 @@ html.nav-expanded .app-nav ~ .confirm-overlay {
   padding: 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 .burger-btn:hover { background: var(--surface2); color: var(--text); }

@@ -61,7 +61,9 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: box-shadow 0.2s, transform 0.15s;
+      transition:
+        box-shadow var(--motion-med) var(--ease),
+        transform  var(--motion-med) var(--ease);
       box-shadow: var(--shadow-sm);
     }
     .ws-card::before {
@@ -70,7 +72,7 @@
       left: 0; top: 0; bottom: 0;
       width: 3px;
       background: var(--surface3);
-      transition: background 0.2s;
+      transition: background var(--motion-med) var(--ease);
     }
     .ws-card:hover {
       box-shadow: var(--shadow);
@@ -241,7 +243,7 @@
       padding: 7px 12px 7px 30px;
       outline: none;
       width: 200px;
-      transition: box-shadow 0.15s, width 0.2s;
+      transition: box-shadow var(--motion-med) var(--ease), width var(--motion-med) var(--ease);
     }
     .ws-search:focus { box-shadow: var(--glow); width: 260px; }
     .ws-search::placeholder { color: var(--muted); }

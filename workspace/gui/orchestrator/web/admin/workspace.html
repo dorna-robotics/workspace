@@ -14,7 +14,7 @@
     body { display: flex; flex-direction: column; }
 
     /* Header — base styles from /vendor/base.css, overrides here */
-    .ws-header { transition: border-bottom-color 0.3s; }
+    .ws-header { transition: border-bottom-color var(--motion-slow) var(--ease); }
     .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
     .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
     .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
@@ -187,7 +187,7 @@
     }
 
     /* row is clickable — opens the device detail modal */
-    .device-row { cursor: pointer; transition: background-color 100ms; }
+    .device-row { cursor: pointer; transition: background-color var(--motion-fast) var(--ease); }
     .device-row:hover { background: rgba(255,255,255,0.04); }
     [data-theme="light"] .device-row:hover { background: rgba(0,0,0,0.05); }
 
@@ -322,7 +322,7 @@
       .meta-val.path { font-size: 9px; }
       .meta-val.copyable {
         cursor: pointer; user-select: all;
-        transition: color 0.12s;
+        transition: color var(--motion-fast) var(--ease);
       }
       .meta-val.copyable:hover { color: var(--accent); }
       .meta-val.copyable.copied { color: var(--green); }

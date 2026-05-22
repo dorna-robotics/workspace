@@ -297,7 +297,7 @@ a:hover { color: var(--accent-h); }
   font-family: var(--font);
   font-size: var(--text-md);
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease);
 }
 .input:focus { border-color: var(--accent); box-shadow: var(--glow); }
 .input::placeholder { color: var(--muted2); }
@@ -422,7 +422,7 @@ a:hover { color: var(--accent-h); }
   height: 100%;
   background: var(--accent);
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transition: width var(--motion-slow) var(--ease);
 }
 .progress-bar-fill.done { background: var(--green); }
 
@@ -433,7 +433,7 @@ a:hover { color: var(--accent-h); }
   display: none; align-items: center; justify-content: center;
   z-index: 60000;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  transition: opacity 0.18s ease;
+  transition: opacity var(--motion-med) var(--ease);
 }
 .confirm-overlay.show { display: flex; }
 .confirm-overlay.hiding { opacity: 0; }
