@@ -13,11 +13,9 @@
     html, body { height: 100%; overflow: hidden; }
     body { display: flex; flex-direction: column; }
 
-    /* Header — base styles from /vendor/base.css, overrides here */
-    .ws-header { transition: border-bottom-color var(--motion-slow) var(--ease); }
-    .ws-header[data-state="ok"]   { border-bottom-color: var(--green); }
-    .ws-header[data-state="bad"]  { border-bottom-color: var(--red); }
-    .ws-header[data-state="warn"] { border-bottom-color: var(--amber); }
+    /* Header — chrome + status-coloured underline live in
+       /vendor/base.css (shared with the pendant nav). Only page-
+       local layout tweaks stay here. */
     .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
     .ws-title-block { min-width: 0; flex: 1; overflow: hidden; position: relative; z-index: 1; }
     .ws-title    { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -375,10 +373,10 @@
        content view first, then mode switches, then display tweak,
        then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="btnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnTheme" title="Toggle theme"></button>
+    <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
   </div>
 </header>
 
@@ -489,21 +487,34 @@
 
 <!-- Pendant mode overlay -->
 <div class="pendant-overlay" id="pendantOverlay" style="display:none">
-  <!-- Top navbar — sticky at the top of the viewport. Always shows
-       state on the left, run timer in the middle, exit on the right. -->
-  <header class="pendant-nav">
-    <div class="pendant-state" id="pendantState">
-      <span class="pendant-dot"></span>
+  <!-- Top navbar — literally the same chrome as the main ``.ws-header``
+       (it's even included in the shared selector in base.css so
+       background, height, border, etc. are inherited). The only
+       difference: where ws-header puts the title block, pendant puts
+       the run timer chip. Layout, action order, and behaviour are
+       identical. -->
+  <header class="pendant-nav ws-header-like" data-state="off">
+    <span class="pill pill-state off" id="pendantState">
+      <span class="dot"></span>
       <span class="pendant-state-text">—</span>
-    </div>
-    <div class="pendant-timer" id="pendantTimer" style="display:none">
-      <svg class="pendant-timer-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    </span>
+    <div class="pendant-timer" id="pendantTimer">
+      <svg class="pendant-timer-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9"/>
         <polyline points="12 7 12 12 15 14"/>
       </svg>
-      <span class="pendant-timer-value" id="pendantTimerValue">0:00</span>
+      <span class="pendant-timer-value" id="pendantTimerValue">—</span>
     </div>
-    <button class="pendant-exit" id="pendantExit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Exit Pendant</button>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="pendantBtnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
+      <!-- ``active`` marks this as the currently-engaged mode toggle —
+           same icon as the main page's Pendant button, but rendered
+           in its "on" state since we are in pendant mode right now.
+           Operators get a "you are here" cue. -->
+      <button class="btn btn-ghost btn-sm btn-icon active" id="pendantExit" title="Exit pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
+      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
+      <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
+    </div>
   </header>
   <!-- Scrollable body — every other pendant widget. If the steps list
        grows past the viewport, this section scrolls; the navbar above
@@ -544,10 +555,6 @@
     </button>
   </div>
   <div class="pendant-secondary-row">
-    <button class="pendant-secondary" id="pendantSchedule">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg>
-      Schedule
-    </button>
     <button class="pendant-secondary" id="pendantParams">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     Parameters

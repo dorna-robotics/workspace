@@ -1103,11 +1103,14 @@ function renderControls(state, launched, running) {
   }
 
   // Schedule lives in the top-bar icon row (alongside Fullscreen /
-  // Theme / Pendant — it's a *view*, not a workflow command). Show
-  // it only once the workspace is launched; before then there's no
-  // plan to open.
-  const schedBtn = document.getElementById("btnSchedule");
-  if (schedBtn) schedBtn.style.display = launched ? "" : "none";
+  // Theme / Pendant — it's a *view*, not a workflow command). The
+  // pendant overlay nav carries a twin in its action cluster; both
+  // share the ``.js-schedule-open`` class so visibility stays in
+  // sync without a per-button branch here. Show only once the
+  // workspace is launched; before then there's no plan to open.
+  document.querySelectorAll(".js-schedule-open").forEach(b => {
+    b.style.display = launched ? "" : "none";
+  });
 }
 
 function updateIframe(state, launched) {
@@ -1431,30 +1434,50 @@ function updatePendantUI() {
   const running = isRunning(state);
   const launched = isLaunched(state);
 
-  // Tint the overlay background based on state
-  pendantOverlay.setAttribute("data-variant", variant);
+  // Status-coloured underline on the pendant nav, mirroring the
+  // main ``.ws-header[data-state]`` rule (base.css). Same attribute,
+  // same colours, so both navbars carry an identical state cue.
+  const navEl = document.querySelector(".pendant-nav");
+  if (navEl) navEl.setAttribute("data-state", variant);
 
+  // Ambient state wash on the body (gradient lives there now, not on
+  // the navbar — base.css keeps the nav chrome clean).
+  const bodyEl = document.querySelector(".pendant-body");
+  if (bodyEl) bodyEl.setAttribute("data-variant", variant);
+
+  // State pill uses the shared ``.pill`` variant classes (ok / warn
+  // / bad / off) so it looks identical to the main top-bar's pill.
+  // The inner dot mirrors the variant class and gains ``.pulse``
+  // while running — same as the main top-bar's statePill does
+  // (workspace.js line ~330).
   const stateEl = $("pendantState");
   if (stateEl) {
-    stateEl.setAttribute("data-variant", variant);
+    stateEl.classList.remove("ok", "warn", "bad", "off");
+    stateEl.classList.add(variant);
+    const dotEl = stateEl.querySelector(".dot");
+    if (dotEl) {
+      dotEl.classList.remove("ok", "warn", "bad", "off", "pulse");
+      dotEl.classList.add(variant);
+      if (running) dotEl.classList.add("pulse");
+    }
     const textEl = stateEl.querySelector(".pendant-state-text");
     if (textEl) textEl.textContent = stateLabel(state);
   }
 
-  // Run elapsed time — same visibility rule as the sidebar's "Up"
-  // field. Shows whenever the workspace has uptime data; ticks live
-  // while a run is in flight and freezes on the final value when the
-  // run ends (so the operator can see how long the last run took).
+  // Run elapsed time — same behaviour as the sidebar's "Up" field
+  // (workspace.js line ~349): always visible, shows "—" when there's
+  // no uptime data, ticks live while running, freezes on the final
+  // value when the run ends.
   const timerEl = $("pendantTimer");
   if (timerEl) {
+    timerEl.style.display = "";
     if (_uptimeBase != null) {
       const live = _uptimeAt != null
         ? _uptimeBase + (performance.now() - _uptimeAt) / 1000
         : _uptimeBase;
-      $("pendantTimerValue").textContent = fmtUptime(live) || "0:00";
-      timerEl.style.display = "";
+      $("pendantTimerValue").textContent = fmtUptime(live) || "—";
     } else {
-      timerEl.style.display = "none";
+      $("pendantTimerValue").textContent = "—";
     }
   }
 
@@ -1591,9 +1614,11 @@ $("pendantParams").addEventListener("click", () => {
   openParamsModal(launched);
 });
 
-// Schedule buttons (sidebar + pendant) — both open the same modal.
-$("btnSchedule")?.addEventListener("click", () => openScheduleModal());
-$("pendantSchedule")?.addEventListener("click", () => openScheduleModal());
+// Schedule buttons (top-bar + pendant nav) — share the
+// ``.js-schedule-open`` class so a single binding covers both.
+document.querySelectorAll(".js-schedule-open").forEach(b => {
+  b.addEventListener("click", () => openScheduleModal());
+});
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));

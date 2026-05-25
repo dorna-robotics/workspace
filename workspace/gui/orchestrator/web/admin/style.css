@@ -385,18 +385,33 @@
   transition: background var(--motion-slow) var(--ease);
 }
 
-/* Top navbar — fixed-height bar containing state pill (left),
-   elapsed-time text (centre), and exit button (right). Stays put
-   while the body below scrolls. */
+/* Pendant nav chrome (background, border, status-coloured
+   underline) is shared with ``.ws-header`` via the topbar
+   selector list in base.css. Pendant overrides:
+   - Height bumped to 76px so operator-scale state pill + hero
+     timer actually fit (main page is engineer-sized at 54px).
+   - Layout switched from flex to a 3-column grid so the centre
+     column (timer) stays perfectly centred regardless of how
+     wide the left pill or right action cluster grow. Flex with
+     a spacer can't do this — only grid-template-columns
+     ``1fr auto 1fr`` keeps the centre item locked. */
 .pendant-nav {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  height: 76px;
+  min-height: 76px;
+  padding: 0 24px;
   gap: 16px;
-  padding: 16px 24px;
-  background: inherit;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
 }
+/* Explicit grid-column for each child so positions are *pinned*,
+   not derived from sibling order. Otherwise: when the timer is
+   hidden (e.g. pre-launch), the action cluster slides into its
+   middle column and reads as "centred" instead of "right". Pinning
+   by column number keeps every child in its lane regardless of
+   which siblings are present. */
+.pendant-nav .pill-state     { grid-column: 1; justify-self: start; }
+.pendant-nav .pendant-timer  { grid-column: 2; justify-self: center; }
+.pendant-nav .topbar-actions { grid-column: 3; justify-self: end; }
 
 /* Scrollable body — every pendant widget that isn't in the navbar
    lives here. Centred vertically when content fits, scrolls when it
@@ -413,52 +428,61 @@
   justify-content: safe center;
   gap: 40px;
   padding: 24px 32px 32px;
+  transition: background var(--motion-slow) var(--ease);
 }
-.pendant-overlay[data-variant="ok"] {
-  background: linear-gradient(160deg, #000 0%, #042a10 100%);
-  box-shadow: inset 0 0 0 2px rgba(52,199,89,0.2);
-}
-.pendant-overlay[data-variant="warn"] {
-  background: linear-gradient(160deg, #000 0%, #2a1a00 100%);
-  box-shadow: inset 0 0 0 2px rgba(255,159,10,0.15);
-}
-.pendant-overlay[data-variant="bad"] {
-  background: linear-gradient(160deg, #000 0%, #2a0a08 100%);
-  box-shadow: inset 0 0 0 2px rgba(255,69,58,0.2);
-}
-[data-theme="light"] .pendant-overlay[data-variant="ok"] {
-  background: linear-gradient(160deg, #f2f2f7 0%, #e8f5ec 100%);
-  box-shadow: inset 0 0 0 2px rgba(36,138,61,0.15);
-}
-[data-theme="light"] .pendant-overlay[data-variant="warn"] {
-  background: linear-gradient(160deg, #f2f2f7 0%, #f5f0e0 100%);
-  box-shadow: inset 0 0 0 2px rgba(199,124,10,0.12);
-}
-[data-theme="light"] .pendant-overlay[data-variant="bad"] {
-  background: linear-gradient(160deg, #f2f2f7 0%, #f5e8e8 100%);
-  box-shadow: inset 0 0 0 2px rgba(215,0,21,0.15);
-}
+/* State-tinted gradient on the body (not the navbar). The nav
+   stays the same chrome as the main workspace top-bar; the body
+   below it picks up a soft 160° wash so operators get an ambient
+   "what's the workspace doing" cue without staring at the pill.
+   Default off-state is the page background; ok/warn/bad blend in
+   their respective hue at the bottom. */
+.pendant-body                          { background: var(--bg); }
+.pendant-body[data-variant="ok"]       { background: linear-gradient(160deg, var(--bg) 0%, #042a10 100%); }
+.pendant-body[data-variant="warn"]     { background: linear-gradient(160deg, var(--bg) 0%, #2a1a00 100%); }
+.pendant-body[data-variant="bad"]      { background: linear-gradient(160deg, var(--bg) 0%, #2a0a08 100%); }
+[data-theme="light"] .pendant-body[data-variant="ok"]   { background: linear-gradient(160deg, var(--bg) 0%, #e8f5ec 100%); }
+[data-theme="light"] .pendant-body[data-variant="warn"] { background: linear-gradient(160deg, var(--bg) 0%, #f5f0e0 100%); }
+[data-theme="light"] .pendant-body[data-variant="bad"]  { background: linear-gradient(160deg, var(--bg) 0%, #f5e8e8 100%); }
 
-.pendant-state {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 10px 22px;
+/* State pill in the pendant nav uses the shared ``.pill`` from
+   base.css for its variant colour API (``.ok`` / ``.warn`` /
+   ``.bad`` / ``.off`` and the inner ``.dot``), but the pendant
+   pumps up the physical metrics — bigger padding, --text-md, a
+   larger dot — so an operator standing two metres from the tablet
+   can read the state at a glance. This is the deliberate
+   exception design-system.md §4 calls out: operator-scale
+   contents in an otherwise shared nav. */
+/* Pill height matches the hero timer chip so the two sit on a
+   visual baseline. Pulled through a custom property so a future
+   resize touches one line. */
+.pendant-nav                { --chip-h: 44px; }
+.pendant-nav .pill-state,
+.pendant-nav .pendant-timer { height: var(--chip-h); }
+.pendant-nav .pill-state {
+  padding: 0 18px;
   border-radius: var(--radius-md);
-  background: var(--surface2);
-  border: none;
-  box-shadow: var(--shadow-sm);
+  font-size: var(--text-md);
+  letter-spacing: 0.08em;
+  gap: var(--space-3);
 }
+.pendant-nav .pill-state .dot { width: 10px; height: 10px; }
+/* Warn / bad get an extra coloured halo on top of the base dot
+   colour — these are the attention-grabbing states; operators
+   should feel them across the room. */
+.pendant-nav .pill-state .dot.warn { box-shadow: 0 0 8px rgba(255,159,10,0.5); }
+.pendant-nav .pill-state .dot.bad  { box-shadow: 0 0 8px rgba(255,69,58,0.5); }
 
-/* Run elapsed time — the navbar's hero number. Sits in a translucent
-   surface chip so the navbar reads as three balanced surfaces (state
-   pill, timer chip, exit) and the timer doesn't visually leak out
-   between them. */
+/* Run elapsed time — the hero number of the pendant. Mono +
+   tabular-nums, 26px, deliberately too big to miss across the
+   room. This is the *one* place in the entire app that exits the
+   type scale (see design-system.md §2.3). The chip itself is a
+   subtle translucent surface so the number does the visual work,
+   not the container. */
 .pendant-timer {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 8px 18px;
+  padding: 0 16px;
   border-radius: var(--radius-md);
   background: rgba(255,255,255,0.04);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
@@ -469,54 +493,14 @@
   letter-spacing: 0.02em;
   color: var(--text);
   user-select: none;
+  flex-shrink: 0;
 }
 [data-theme="light"] .pendant-timer {
   background: rgba(0,0,0,0.04);
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
 }
-.pendant-timer-icon {
-  width: 18px;
-  height: 18px;
-  opacity: 0.4;
-  flex-shrink: 0;
-}
-.pendant-timer-value {
-  min-width: 5ch;
-  text-align: center;
-}
-/* Colored backgrounds matching .pill states */
-.pendant-state[data-variant="ok"]   { background: rgba(52,199,89,0.18); }
-.pendant-state[data-variant="warn"] { background: rgba(255,159,10,0.18); }
-.pendant-state[data-variant="bad"]  { background: rgba(255,69,58,0.18); }
-[data-theme="light"] .pendant-state[data-variant="ok"]   { background: rgba(36,138,61,0.12); }
-[data-theme="light"] .pendant-state[data-variant="warn"] { background: rgba(199,124,10,0.12); }
-[data-theme="light"] .pendant-state[data-variant="bad"]  { background: rgba(215,0,21,0.12); }
-.pendant-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted2);
-  flex-shrink: 0;
-}
-.pendant-state[data-variant="ok"]   .pendant-dot {
-  background: var(--green);
-  /* Reuse the same heart-beat the dashboard ``.dot.ok.pulse`` uses so
-     "alive" reads as one motion across the app. */
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-.pendant-state[data-variant="bad"]  .pendant-dot { background: var(--red);   box-shadow: 0 0 8px rgba(255,69,58,0.5); }
-.pendant-state[data-variant="warn"] .pendant-dot { background: var(--amber); box-shadow: 0 0 8px rgba(255,159,10,0.5); }
-/* Colored text matching .pill states */
-.pendant-state[data-variant="ok"]   .pendant-state-text { color: var(--green); }
-.pendant-state[data-variant="warn"] .pendant-state-text { color: var(--amber); }
-.pendant-state[data-variant="bad"]  .pendant-state-text { color: var(--red); }
-.pendant-state-text {
-  font-size: var(--text-md);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
+.pendant-timer-icon { width: 18px; height: 18px; opacity: 0.4; flex-shrink: 0; }
+.pendant-timer-value { min-width: 5ch; text-align: center; }
 
 .pendant-buttons {
   display: grid;
@@ -718,44 +702,22 @@
 [data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
 
 /* Exit button — sits on the right side of the navbar. */
-.pendant-exit {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 10px 22px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: var(--surface);
-  color: var(--muted);
-  font-family: var(--font);
-  font-size: var(--text-md);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease),
-    color      var(--motion-fast) var(--ease),
-    box-shadow var(--motion-med)  var(--ease);
-  box-shadow: var(--shadow-sm);
-}
-.pendant-exit:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-.pendant-exit:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
-.pendant-exit svg { flex-shrink: 0; opacity: 0.6; }
+/* ``#pendantExit`` is now a plain ``.btn.btn-ghost.btn-sm.btn-icon``
+   (see workspace.html) so it inherits the same hover, focus ring,
+   and sizing as every other icon in the navbar action cluster. No
+   bespoke styles needed here. */
 
 /* Pendant mobile */
 @media (max-width: 600px) {
-  .pendant-nav  { padding: 12px 14px; gap: 10px; }
+  .pendant-nav  { padding: 0 14px; height: 64px; min-height: 64px; gap: 10px; --chip-h: 36px; }
+  .pendant-nav .pill-state { padding: 0 14px; font-size: var(--text-sm); }
+  .pendant-nav .pill-state .dot { width: 8px; height: 8px; }
+  .pendant-timer { padding: 0 12px; font-size: 18px; gap: 8px; }
+  .pendant-timer-icon { width: 14px; height: 14px; }
   .pendant-body { gap: 24px; padding: 16px 20px 20px; }
   .pendant-buttons { width: 95vw; gap: 12px; }
   .pendant-btn { padding: 28px 16px; font-size: 15px; border-radius: 18px; gap: 8px; }
   .pendant-btn svg { width: 26px; height: 26px; }
-  .pendant-state { padding: 8px 16px; }
-  .pendant-state-text { font-size: 12px; }
-  .pendant-timer { font-size: 16px; gap: 8px; }
-  .pendant-timer-icon { width: 14px; height: 14px; }
-  .pendant-exit { padding: 8px 16px; font-size: 13px; }
   .pendant-secondary { padding: 10px 22px; font-size: 14px; }
   .pendant-info { width: 95vw; }
   .pendant-steps { max-height: 70px; }
@@ -782,9 +744,7 @@
 [data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.2); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.45); }
 [data-theme="light"] .pendant-secondary { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 [data-theme="light"] .pendant-btn { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-[data-theme="light"] .pendant-state { background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
 [data-theme="light"] .pendant-steps { background: #fff; }
-[data-theme="light"] .pendant-exit { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 

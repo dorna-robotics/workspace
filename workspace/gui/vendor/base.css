@@ -380,7 +380,7 @@ a:hover { color: var(--accent-h); }
 }
 
 /* ── Topbar (shared header bar) ───────────────────────────────────────── */
-.topbar, .ws-header, .sb-header {
+.topbar, .ws-header, .sb-header, .pendant-nav {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -397,9 +397,23 @@ a:hover { color: var(--accent-h); }
 }
 [data-theme="light"] .topbar,
 [data-theme="light"] .ws-header,
-[data-theme="light"] .sb-header {
+[data-theme="light"] .sb-header,
+[data-theme="light"] .pendant-nav {
   background: rgba(255,255,255,0.85);
 }
+
+/* Status-coloured underline. Either nav (main workspace or pendant)
+   tints its bottom border to match ``data-state`` (ok / warn / bad).
+   Off / unset keeps the default grey border. Transition is slow on
+   purpose — state changes should feel like the nav is "settling"
+   into a new colour, not snapping. */
+.ws-header, .pendant-nav { transition: border-bottom-color var(--motion-slow) var(--ease); }
+.ws-header[data-state="ok"],
+.pendant-nav[data-state="ok"]   { border-bottom-color: var(--green); }
+.ws-header[data-state="warn"],
+.pendant-nav[data-state="warn"] { border-bottom-color: var(--amber); }
+.ws-header[data-state="bad"],
+.pendant-nav[data-state="bad"]  { border-bottom-color: var(--red); }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 
 @media (max-width: 768px) {

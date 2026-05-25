@@ -1,5 +1,10 @@
 // Theme + Fullscreen — shared across all pages
 // Include via: <script src="/vendor/theme.js"></script>
+//
+// Selectors are class-based (`.js-theme-toggle`, `.js-fullscreen-toggle`)
+// so a page can have multiple synchronised toggles — e.g. the main
+// top-bar plus a duplicate inside the pendant overlay nav. Every match
+// gets its title/icon updated when state changes.
 
 const KEY = "orch_theme";
 
@@ -19,11 +24,11 @@ function setTheme(theme) {
   // Notify other listeners
   window.dispatchEvent(new StorageEvent("storage", { key: KEY, newValue: theme }));
 
-  var btn = document.getElementById("btnTheme");
-  if (btn) {
+  var btns = document.querySelectorAll(".js-theme-toggle");
+  btns.forEach(function(btn) {
     btn.title     = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
     btn.innerHTML = theme === "dark" ? SUN : MOON;
-  }
+  });
 }
 
 // Apply on load
@@ -34,33 +39,32 @@ setTheme(localStorage.getItem(KEY) || "dark");
 var FS_EXPAND = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
 var FS_SHRINK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
 
-function updateFsButton() {
-  var btn = document.getElementById("btnFullscreen");
-  if (!btn) return;
+function updateFsButtons() {
+  var btns = document.querySelectorAll(".js-fullscreen-toggle");
   var isFs = !!document.fullscreenElement;
-  btn.title = isFs ? "Exit fullscreen" : "Fullscreen";
-  btn.innerHTML = isFs ? FS_SHRINK : FS_EXPAND;
+  btns.forEach(function(btn) {
+    btn.title     = isFs ? "Exit fullscreen" : "Fullscreen";
+    btn.innerHTML = isFs ? FS_SHRINK : FS_EXPAND;
+  });
 }
 
-document.addEventListener("fullscreenchange", updateFsButton);
+document.addEventListener("fullscreenchange", updateFsButtons);
 
 // ── Wire up buttons ─────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", function() {
-  var btnTheme = document.getElementById("btnTheme");
-  if (btnTheme) {
-    btnTheme.addEventListener("click", function() {
+  document.querySelectorAll(".js-theme-toggle").forEach(function(btn) {
+    btn.addEventListener("click", function() {
       var current = document.documentElement.getAttribute("data-theme") || "dark";
       setTheme(current === "dark" ? "light" : "dark");
     });
-  }
+  });
 
-  var btnFs = document.getElementById("btnFullscreen");
-  if (btnFs) {
-    btnFs.addEventListener("click", function() {
+  document.querySelectorAll(".js-fullscreen-toggle").forEach(function(btn) {
+    btn.addEventListener("click", function() {
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
     });
-    updateFsButton();
-  }
+  });
+  updateFsButtons();
 });
