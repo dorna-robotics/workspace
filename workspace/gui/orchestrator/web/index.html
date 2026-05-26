@@ -316,9 +316,15 @@
       window.addEventListener("storage", (e) => {
         if (e.key === THEME_KEY) applyTheme(e.newValue || "dark");
       });
-      // Also allow parent to postMessage theme changes
+      // Parent → iframe messages:
+      //   type:"theme"  value:"dark"|"light"           → re-apply theme
+      //   type:"render" value:"pause"|"resume"         → transient
+      //                                                  render pause
+      //                                                  (used by
+      //                                                  pendant mode)
       window.addEventListener("message", (e) => {
-        if (e.data?.type === "theme") applyTheme(e.data.value);
+        if (e.data?.type === "theme")  applyTheme(e.data.value);
+        if (e.data?.type === "render") _pendantPaused = (e.data.value === "pause");
       });
 
       // ── GLTF + object management ──────────────────────────────────────────
@@ -355,6 +361,12 @@
       // Render toggle — pause/resume the render loop to save GPU
       // Persists preference in localStorage per browser
       let _renderEnabled = localStorage.getItem("render3d") !== "off";
+      // Transient render pause driven by the parent page (e.g. while
+      // the pendant overlay is open — the 3D viewer isn't visible so
+      // there's no point spending GPU on it). Separate from
+      // ``_renderEnabled`` so the user's manual eye-toggle preference
+      // isn't overwritten when pendant opens/closes.
+      let _pendantPaused = false;
       const _eyeOnSvg  = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
       const _eyeOffSvg = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
@@ -1035,7 +1047,12 @@
       // ── Animate ───────────────────────────────────────────────────────────
       function animate() {
         flushPendingUpdates();
-        if (_renderEnabled) {
+        // Skip the heavy work when either the user has toggled the
+        // eye off, *or* the parent has paused us (pendant open).
+        // ``flushPendingUpdates`` still runs so any state messages
+        // received while paused are applied — we just don't render
+        // them until the canvas is visible again.
+        if (_renderEnabled && !_pendantPaused) {
           updateSnap();
           controls.update();
           updateAnchorsNow();

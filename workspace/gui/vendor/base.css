@@ -176,6 +176,28 @@ a:hover { color: var(--accent-h); }
 /* Size variants — all in the .btn family share ``--radius-sm`` so a
    smaller button doesn't end up squarer than its larger sibling. */
 .btn-sm   { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); }
+
+/* Navbar tap targets — every icon button that lives inside a
+   topbar / ws-header / sb-header / pendant-nav grows to the
+   Apple-HIG-minimum 44×44 (vs the dense 28×31 elsewhere). The
+   SVG icon inside stays its normal 15×15 — only the clickable
+   chip grows, so the hover/active feedback area also gets bigger.
+   Scoped to navbar context so modal close buttons, card actions,
+   and other dense .btn-icon uses keep their compact sizing. */
+.topbar      .btn-icon,
+.ws-header   .btn-icon,
+.sb-header   .btn-icon,
+.pendant-nav .btn-icon,
+.topbar      .burger-btn,
+.ws-header   .burger-btn,
+.sb-header   .burger-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .btn-lg   { padding: 10px 16px; font-size: var(--text-lg); border-radius: var(--radius-md); }
 .btn-icon { padding: 5px 8px; }
 .btn.active { background: var(--accent-dim); color: var(--accent); }
@@ -280,11 +302,18 @@ a:hover { color: var(--accent-h); }
 .dot.warn { background: var(--amber); }
 .dot.bad  { background: var(--red); }
 
+/* Pulse halo expands and fades. Colour is driven by
+   ``--dot-pulse``, set per variant so amber and red dots glow in
+   their own colour instead of inheriting green. Default is green
+   for any ``.dot.pulse`` without a variant class. */
 @keyframes pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(52,199,89,0.5); }
-  50%       { box-shadow: 0 0 0 5px rgba(52,199,89,0); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--dot-pulse, rgba(52,199,89,0.5)); }
+  50%       { box-shadow: 0 0 0 5px transparent; }
 }
-.dot.ok.pulse { animation: pulse-dot 2s ease-in-out infinite; }
+.dot.pulse      { animation: pulse-dot 2s ease-in-out infinite; }
+.dot.ok.pulse   { --dot-pulse: rgba(52,199,89,0.5); }
+.dot.warn.pulse { --dot-pulse: rgba(255,159,10,0.5); }
+.dot.bad.pulse  { --dot-pulse: rgba(255,69,58,0.5); }
 
 /* ── Input ────────────────────────────────────────────────────────────── */
 .input {

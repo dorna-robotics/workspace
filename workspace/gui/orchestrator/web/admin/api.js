@@ -27,10 +27,14 @@ export async function apiFetch(path, opts = {}) {
 
 export function stateVariant(state) {
   const s = String(state || "").toUpperCase();
-  if (["RUNNING", "ACTIVE"].includes(s))                              return "ok";
+  // IDLE/READY = "system is fine, waiting for you to press Start"
+  // → green, same colour as RUNNING. The blink (driven by
+  // ``isWaiting``) is what differentiates "your move" from "I'm
+  // working" — colour stays green throughout.
+  if (["RUNNING", "ACTIVE", "IDLE", "READY"].includes(s))            return "ok";
   if (["ERROR", "FAILED", "OFFLINE", "REMOTE_OFFLINE"].includes(s))  return "bad";
   if (["NOT_LAUNCHED", "", "UNKNOWN"].includes(s))                    return "off";
-  return "warn"; // IDLE, READY, PAUSED, LAUNCHED_NOT_READY, etc.
+  return "warn"; // PAUSED, LAUNCHED_NOT_READY, PARKING
 }
 
 export function stateLabel(state) {
@@ -51,6 +55,29 @@ export function isRunning(state) {
 export function isLaunched(state) {
   const s = String(state || "").toUpperCase();
   return !["", "NOT_LAUNCHED", "OFFLINE", "REMOTE_OFFLINE", "UNKNOWN"].includes(s);
+}
+
+// True once the workspace has begun a run (RUNNING / PAUSED /
+// PARKING). Drives the "Start" vs "Resume" label flip: pre-run
+// the slot reads "Start" (the first action), post-run it reads
+// "Resume" (enabled only when paused, disabled while running or
+// parking — but the *label* stays "Resume" because conceptually
+// the run has already started).
+export function isStarted(state) {
+  return ["RUNNING", "ACTIVE", "PAUSED", "PARKING"].includes(String(state || "").toUpperCase());
+}
+
+// True when the workspace needs operator attention — anything
+// where the system is *not* progressing on its own:
+//   IDLE / READY  → press Start (or Resume after a completed run)
+//   PAUSED        → press Resume (or Kill)
+//   ERROR / FAILED → acknowledge, fix, or Kill
+// Drives the "blink for attention" visual on the body glow and
+// state pill dot. RUNNING / PARKING are *active* progressing
+// states — their visuals stay steady, the blink is reserved for
+// "your move" moments.
+export function isWaiting(state) {
+  return ["IDLE", "READY", "PAUSED", "ERROR", "FAILED"].includes(String(state || "").toUpperCase());
 }
 
 export function fmtUptime(sec) {

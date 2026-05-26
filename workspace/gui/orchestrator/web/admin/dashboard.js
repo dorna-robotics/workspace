@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -263,6 +263,7 @@ function render() {
     const variant = stateVariant(state);
     const running = isRunning(state);
     const launched = isLaunched(state);
+    const waiting = isWaiting(state);
     const uptime  = fmtUptime(st.uptime_s);
     const devicesPill = devicesPillHtml(st.devices_summary);
 
@@ -288,7 +289,7 @@ function render() {
           </div>
         </a>
         <span class="pill ${variant}">
-          <span class="dot ${variant}${running ? " pulse" : ""}"></span>
+          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
         </span>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -333,7 +334,13 @@ function render() {
                 // flight.
                 const parking = state.toUpperCase() === "PARKING";
                 const active  = running || parking;
-                return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${state.toUpperCase() === "PAUSED" ? "Resume" : "Start"}</button>
+                // Start slot reads "Resume" once a run has begun
+                // (RUNNING / PAUSED / PARKING) — even while disabled.
+                // See workspace.js / api.js for the rationale; this
+                // keeps the vocabulary consistent across sidebar,
+                // pendant, and card.
+                const startLbl = isStarted(state) ? "Resume" : "Start";
+                return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${startLbl}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
                <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
                <div class="spacer"></div>

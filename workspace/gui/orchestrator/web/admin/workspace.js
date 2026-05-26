@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 import { connectScheduleWS, disconnectScheduleWS, openScheduleModal } from "./schedule.js";
 
@@ -326,8 +326,13 @@ function updateStatusUI(st) {
   const running = isRunning(state);
   const launched = isLaunched(state);
 
+  // Pulse signals "operator action required" — fires when we're
+  // launched-and-idle (waiting for Start). While actually RUNNING
+  // the dot is solid: no pulse, no breath, the system is working
+  // and doesn't need your attention. See ``isWaiting`` in api.js.
+  const waiting = isWaiting(state);
   statePill.className = `pill ${variant}`;
-  statePill.innerHTML = `<span class="dot ${variant}${running ? " pulse" : ""}"></span>${esc(stateLabel(state))}`;
+  statePill.innerHTML = `<span class="dot ${variant}${waiting ? " pulse" : ""}"></span>${esc(stateLabel(state))}`;
 
   // Live uptime: store base so the 1s ticker can interpolate. Tick
   // only when the run is in flight — RUNNING (active motion), PAUSED
@@ -1074,7 +1079,11 @@ function renderControls(state, launched, running) {
     // while parking is in flight). Kill remains always-on below.
     const parking   = s === "PARKING";
     const active    = running || parking;
-    const startLabel = (s === "PAUSED") ? "Resume" : "Start";
+    // "Start" while the workspace hasn't begun a run yet; "Resume"
+    // once it has — even when disabled (i.e. RUNNING / PARKING).
+    // The slot's *meaning* is "begin or continue the run", and
+    // post-start that meaning is Resume regardless of enabled state.
+    const startLabel = isStarted(s) ? "Resume" : "Start";
     addBtn(startLabel, "start", { primary: true, disabled: active });
     addBtn("Pause",    "pause", { disabled: !active });
     // Park only makes sense when the workflow is actually in flight.
@@ -1143,6 +1152,15 @@ function updateIframe(state, launched) {
     iframeUrl   = targetUrl;
     frame.addEventListener("load", () => {
       frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
+      // Replay the pendant render state on iframe (re)load. Without
+      // this, if pendant was open *before* this iframe finished
+      // loading — or if the workspace switches and reloads the
+      // iframe while pendant is open — the new iframe instance
+      // would default to ``_pendantPaused = false`` and start
+      // rendering invisibly behind the overlay.
+      if (_pendantMode) {
+        frame.contentWindow?.postMessage({ type: "render", value: "pause" }, "*");
+      }
     }, { once: true });
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
@@ -1420,6 +1438,20 @@ function pendantVibrate(ms = 30) {
 function togglePendant(on) {
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
+
+  // Pause the 3D viewer's render loop while pendant is open — the
+  // canvas isn't visible so spending GPU on it is wasted. The
+  // iframe carries a separate transient flag (``_pendantPaused``)
+  // so the user's manual eye-toggle (localStorage ``render3d``) is
+  // *not* overwritten — closing the pendant returns the viewer to
+  // whatever rendering state it was in before.
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage(
+      { type: "render", value: _pendantMode ? "pause" : "resume" },
+      "*"
+    );
+  }
+
   if (_pendantMode) {
     // Resume audio context (required after user gesture)
     if (_audioCtx.state === "suspended") _audioCtx.resume();
@@ -1441,15 +1473,21 @@ function updatePendantUI() {
   if (navEl) navEl.setAttribute("data-state", variant);
 
   // Ambient state wash on the body (gradient lives there now, not on
-  // the navbar — base.css keeps the nav chrome clean).
+  // the navbar — base.css keeps the nav chrome clean). The
+  // ``is-waiting`` class drives the breathing animation: ON when
+  // we're idle/ready (operator's move), OFF when actually running
+  // (system working — visuals stay steady).
+  const waiting = isWaiting(state);
   const bodyEl = document.querySelector(".pendant-body");
-  if (bodyEl) bodyEl.setAttribute("data-variant", variant);
+  if (bodyEl) {
+    bodyEl.setAttribute("data-variant", variant);
+    bodyEl.classList.toggle("is-waiting", waiting);
+  }
 
   // State pill uses the shared ``.pill`` variant classes (ok / warn
   // / bad / off) so it looks identical to the main top-bar's pill.
-  // The inner dot mirrors the variant class and gains ``.pulse``
-  // while running — same as the main top-bar's statePill does
-  // (workspace.js line ~330).
+  // The inner dot pulses while *waiting* for the operator to press
+  // Start — not while running. Running = steady, waiting = blinking.
   const stateEl = $("pendantState");
   if (stateEl) {
     stateEl.classList.remove("ok", "warn", "bad", "off");
@@ -1458,7 +1496,7 @@ function updatePendantUI() {
     if (dotEl) {
       dotEl.classList.remove("ok", "warn", "bad", "off", "pulse");
       dotEl.classList.add(variant);
-      if (running) dotEl.classList.add("pulse");
+      if (waiting) dotEl.classList.add("pulse");
     }
     const textEl = stateEl.querySelector(".pendant-state-text");
     if (textEl) textEl.textContent = stateLabel(state);
@@ -1534,11 +1572,13 @@ function updatePendantUI() {
   $("pendantPark").disabled    = !active || parking;
   $("pendantKill").disabled    = !launched;
 
-  // Relabel the Start button to "Resume" when the runtime is paused —
-  // same cmd, but the operator should know which it is.
+  // Relabel the Start tile to "Resume" once the workspace has begun
+  // a run — same cmd, but the slot's meaning shifts from "begin" to
+  // "continue". Same rule everywhere (sidebar, dashboard card,
+  // pendant) so an operator sees one consistent vocabulary.
   const startLabelEl = $("pendantStart")?.querySelector("span");
   if (startLabelEl) {
-    startLabelEl.textContent = (state === "PAUSED") ? "Resume" : "Start";
+    startLabelEl.textContent = isStarted(state) ? "Resume" : "Start";
   }
 }
 

@@ -430,19 +430,89 @@
   padding: 24px 32px 32px;
   transition: background var(--motion-slow) var(--ease);
 }
-/* State-tinted gradient on the body (not the navbar). The nav
-   stays the same chrome as the main workspace top-bar; the body
-   below it picks up a soft 160° wash so operators get an ambient
-   "what's the workspace doing" cue without staring at the pill.
-   Default off-state is the page background; ok/warn/bad blend in
-   their respective hue at the bottom. */
-.pendant-body                          { background: var(--bg); }
-.pendant-body[data-variant="ok"]       { background: linear-gradient(160deg, var(--bg) 0%, #042a10 100%); }
-.pendant-body[data-variant="warn"]     { background: linear-gradient(160deg, var(--bg) 0%, #2a1a00 100%); }
-.pendant-body[data-variant="bad"]      { background: linear-gradient(160deg, var(--bg) 0%, #2a0a08 100%); }
-[data-theme="light"] .pendant-body[data-variant="ok"]   { background: linear-gradient(160deg, var(--bg) 0%, #e8f5ec 100%); }
-[data-theme="light"] .pendant-body[data-variant="warn"] { background: linear-gradient(160deg, var(--bg) 0%, #f5f0e0 100%); }
-[data-theme="light"] .pendant-body[data-variant="bad"]  { background: linear-gradient(160deg, var(--bg) 0%, #f5e8e8 100%); }
+/* State-tinted ambient glow on the body. A soft radial wash
+   rising from below the visible area — brightest at the bottom
+   (where the action tiles sit, drawing the eye to the press
+   target), fading to neutral by mid-height so the controls and
+   text never sit on a competing colour.
+
+   This is the deliberate exception to design-system.md §6's "no
+   tinted backgrounds for state" rule: the pendant is operator-
+   facing and cross-room legibility is paramount. The radial
+   falloff + bottom anchor + breathing animation are chosen for
+   visibility *without* the flat-tint anti-pattern (no harsh edges,
+   no full-surface flood, content area stays neutral). Inspired by
+   the bottom-of-screen colour wash Apple uses in Focus Modes and
+   Now Playing. */
+.pendant-body                          { background: var(--bg); position: relative; }
+.pendant-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--state-glow, transparent);
+  pointer-events: none;
+  z-index: 0;
+  transition: background var(--motion-slow) var(--ease);
+}
+/* Breathing animation only fires when the workspace is waiting
+   for the operator to press Start. During an actual run the
+   glow is steady — "I'm working" reads as calm and stable.
+   ``is-waiting`` is toggled by ``updatePendantUI`` based on
+   ``isWaiting(state)`` in api.js. */
+.pendant-body.is-waiting::after {
+  animation: pendant-state-breathe 2s ease-in-out infinite;
+}
+.pendant-body > * { position: relative; z-index: 1; }
+
+/* Aggressive vignette — three layers stacked for maximum edge
+   pop without overwhelming the content area:
+     1. Outer vignette: transparent core 15% → saturated colour
+        90%. The colour ring is wide and fully present.
+     2. Bottom hotspot: extra saturation behind the action tiles.
+     3. Inset glow shadow: a sharp inner frame of colour, like an
+        LED edge around the screen — this is what makes it pop
+        from across the room.
+   Centre 15% stays transparent so buttons + step list remain
+   readable at close range. */
+.pendant-body::after { box-shadow: var(--state-frame, none); }
+
+/* Symmetric vignette: just the ring + frame shadow, no bottom-
+   biased hot-spot — all four edges get equal weight. */
+.pendant-body[data-variant="ok"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(52,199,89,0.92) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(52,199,89,0.55);
+}
+.pendant-body[data-variant="warn"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(255,159,10,0.92) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(255,159,10,0.55);
+}
+.pendant-body[data-variant="bad"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(255,69,58,0.95) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(255,69,58,0.60);
+}
+[data-theme="light"] .pendant-body[data-variant="ok"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(36,138,61,0.78) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(36,138,61,0.42);
+}
+[data-theme="light"] .pendant-body[data-variant="warn"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(199,124,10,0.78) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(199,124,10,0.42);
+}
+[data-theme="light"] .pendant-body[data-variant="bad"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(215,0,21,0.82) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(215,0,21,0.45);
+}
+
+/* Eased breathing — 2s cycle, opacity drifts between 0.4 and 1
+   for a strong "your move" blink visible across a workshop.
+   Only fires when ``.pendant-body.is-waiting`` (operator action
+   needed). Running uses no animation — the glow sits steady at
+   full saturation. Killed by ``@media (prefers-reduced-motion:
+   reduce)`` in base.css. */
+@keyframes pendant-state-breathe {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
 
 /* State pill in the pendant nav uses the shared ``.pill`` from
    base.css for its variant colour API (``.ok`` / ``.warn`` /
@@ -540,12 +610,28 @@
   transform: scale(0.93);
   transition: transform 0.05s;
 }
+/* Disabled tiles: a *completely* different visual treatment from
+   enabled. The chip stays fully opaque (covers the glow), but
+   uses a neutral muted surface instead of the per-button colour
+   tint — and the icon + label are heavily dimmed. The operator
+   reads "this position is here but inert" from across the room,
+   not "is this maybe pressable?".
+   Specificity bumped on the light-theme override so it beats the
+   per-button colour rules ([data-theme="light"] .pendant-start
+   etc., which would otherwise win at equal specificity). */
 .pendant-btn:disabled {
-  opacity: 0.2;
   cursor: not-allowed;
   transform: none;
-  filter: grayscale(0.6);
+  background: var(--surface2);
+  box-shadow: none;
+  filter: grayscale(0.9);
 }
+[data-theme="light"] .pendant-btn:disabled {
+  background: rgba(0,0,0,0.05);
+  box-shadow: none;
+}
+.pendant-btn:disabled svg,
+.pendant-btn:disabled span { opacity: 0.35; }
 
 /* Start — green. While the workspace is launched-and-idle this is the
    single action the operator's about to take, so we let it breathe
