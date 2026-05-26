@@ -486,6 +486,15 @@
   --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(52,199,89,0.92) 88%);
   --state-frame: inset 0 0 90px 10px rgba(52,199,89,0.55);
 }
+/* Waiting + ok = IDLE/READY (system fine, operator hasn't pressed
+   Start yet). We swap to blue so cross-room recognition is
+   unambiguous: green = "running, watch", blue = "primed, your
+   move". Steady running stays green; this override only fires
+   when the body is *also* in the breathing class. */
+.pendant-body.is-waiting[data-variant="ok"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(10,132,255,0.92) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(10,132,255,0.55);
+}
 .pendant-body[data-variant="warn"] {
   --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(255,159,10,0.92) 88%);
   --state-frame: inset 0 0 90px 10px rgba(255,159,10,0.55);
@@ -497,6 +506,10 @@
 [data-theme="light"] .pendant-body[data-variant="ok"] {
   --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(36,138,61,0.78) 88%);
   --state-frame: inset 0 0 90px 10px rgba(36,138,61,0.42);
+}
+[data-theme="light"] .pendant-body.is-waiting[data-variant="ok"] {
+  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(0,122,255,0.78) 88%);
+  --state-frame: inset 0 0 90px 10px rgba(0,122,255,0.42);
 }
 [data-theme="light"] .pendant-body[data-variant="warn"] {
   --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(199,124,10,0.78) 88%);

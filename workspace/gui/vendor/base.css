@@ -311,9 +311,23 @@ a:hover { color: var(--accent-h); }
   50%       { box-shadow: 0 0 0 5px transparent; }
 }
 .dot.pulse      { animation: pulse-dot 2s ease-in-out infinite; }
-.dot.ok.pulse   { --dot-pulse: rgba(52,199,89,0.5); }
+.dot.ok.pulse   { --dot-pulse: rgba(10,132,255,0.5); background: var(--accent); }
 .dot.warn.pulse { --dot-pulse: rgba(255,159,10,0.5); }
 .dot.bad.pulse  { --dot-pulse: rgba(255,69,58,0.5); }
+
+/* A pulsing OK dot means IDLE/READY (waiting for the operator's
+   first Start). Recolour the surrounding pill blue too so the
+   colour-coded state cue stays consistent: green = running, blue
+   = primed, amber = paused, red = error. ``:has()`` is supported
+   across all modern browsers we target. */
+.pill.ok:has(.dot.pulse) {
+  background: rgba(10,132,255,0.18);
+  color: var(--accent);
+}
+[data-theme="light"] .pill.ok:has(.dot.pulse) {
+  background: rgba(0,122,255,0.10);
+  color: var(--accent);
+}
 
 /* ── Input ────────────────────────────────────────────────────────────── */
 .input {
@@ -435,7 +449,9 @@ a:hover { color: var(--accent-h); }
    tints its bottom border to match ``data-state`` (ok / warn / bad).
    Off / unset keeps the default grey border. Transition is slow on
    purpose — state changes should feel like the nav is "settling"
-   into a new colour, not snapping. */
+   into a new colour, not snapping.
+   Plus: when the navbar's state pill is pulsing (IDLE/READY → "your
+   move"), the border turns blue to match the body wash + pill. */
 .ws-header, .pendant-nav { transition: border-bottom-color var(--motion-slow) var(--ease); }
 .ws-header[data-state="ok"],
 .pendant-nav[data-state="ok"]   { border-bottom-color: var(--green); }
@@ -443,6 +459,10 @@ a:hover { color: var(--accent-h); }
 .pendant-nav[data-state="warn"] { border-bottom-color: var(--amber); }
 .ws-header[data-state="bad"],
 .pendant-nav[data-state="bad"]  { border-bottom-color: var(--red); }
+.ws-header[data-state="ok"]:has(.pill.ok .dot.pulse),
+.pendant-nav[data-state="ok"]:has(.pill.ok .dot.pulse) {
+  border-bottom-color: var(--accent);
+}
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 
 @media (max-width: 768px) {
