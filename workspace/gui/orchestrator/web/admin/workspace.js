@@ -1017,9 +1017,21 @@ function updateProgress(progress, launched) {
   _lastProgress = p;
 }
 
+let _lastControlsState = null;
 function renderControls(state, launched, running) {
-  controls.innerHTML = "";
+  // Sidebar controls only depend on ``state`` (launched / running /
+  // parking / start-label all derive from it). When state hasn't
+  // changed, neither has the button set — short-circuit before
+  // tearing down the DOM and reattaching listeners.
   const s = (state || "").toUpperCase();
+  if (s === _lastControlsState) {
+    // schedule visibility is class-driven (.js-schedule-open) and
+    // depends only on ``launched``, which is derived from s → also
+    // stable across this short-circuit.
+    return;
+  }
+  _lastControlsState = s;
+  controls.innerHTML = "";
 
   const addBtn = (label, cmd, opts = {}) => {
     const b = document.createElement("button");
@@ -1209,16 +1221,26 @@ try {
 } catch (_) { /* WS unavailable — polling handles it */ }
 
 // ---- Live uptime ticker (1 s interval, no server call) ----
+// Guard against unchanged values — the formatted uptime only flips
+// once per second of wall clock, so most ticks would write the
+// same string back to the DOM and trigger needless reflow. Cache
+// last value and bail if it matches.
+let _lastUptimeStr = null;
 setInterval(() => {
   if (_uptimeBase != null && _uptimeAt != null) {
     const elapsed = (performance.now() - _uptimeAt) / 1000;
     const live = _uptimeBase + elapsed;
-    uptimeVal.textContent = fmtUptime(live) || "—";
-    // Keep the pendant timer in sync. Skipped when not in pendant
-    // mode — the element is hidden, no point updating.
-    const ptv = document.getElementById("pendantTimerValue");
-    if (_pendantMode && ptv && ptv.parentElement.style.display !== "none") {
-      ptv.textContent = fmtUptime(live) || "0:00";
+    const str = fmtUptime(live) || "—";
+    if (str === _lastUptimeStr) return;
+    _lastUptimeStr = str;
+    uptimeVal.textContent = str;
+    // Keep the pendant timer in sync. Only writes if pendant is the
+    // active view — the element is hidden otherwise.
+    if (_pendantMode) {
+      const ptv = document.getElementById("pendantTimerValue");
+      if (ptv && ptv.parentElement.style.display !== "none") {
+        ptv.textContent = str === "—" ? "0:00" : str;
+      }
     }
   }
 }, 1000);
@@ -1550,27 +1572,53 @@ function updatePendantUI() {
     }
   }
 
-  // Step timeline in pendant
+  // Step timeline in pendant — mirror the sidebar's step list, but
+  // surgically. Old version rebuilt the whole innerHTML on every
+  // status tick (forced full reflow). New version diffs in place:
+  // reuse existing card nodes, only update text / class / level when
+  // they actually changed. Only resets innerHTML when the *count*
+  // changes (rare — only on new steps appearing or list being
+  // cleared).
   const pendantStepsEl = $("pendantSteps");
   if (pendantStepsEl) {
     const timeline = $("stepTimeline");
     if (timeline && launched) {
-      // Mirror the sidebar step cards into pendant
       const cards = timeline.querySelectorAll(".step-card");
-      if (cards.length) {
+      const existing = pendantStepsEl.children;
+      if (cards.length !== existing.length) {
+        // Count changed — rebuild from scratch (cheap because
+        // ``cards`` is a finite list, not a per-tick recomputation).
         let html = "";
         cards.forEach(card => {
-          const text = card.querySelector(".step-text")?.textContent || "";
+          const text  = card.querySelector(".step-text")?.textContent || "";
           const level = card.dataset.level || "info";
-          const cls = card.classList.contains("active") ? "active" : "done";
+          const cls   = card.classList.contains("active") ? "active" : "done";
           html += `<div class="pendant-step-card ${cls}" data-level="${level}"><span class="pendant-step-dot"></span><span>${text}</span></div>`;
         });
         pendantStepsEl.innerHTML = html;
         pendantStepsEl.scrollTop = pendantStepsEl.scrollHeight;
-      } else {
-        pendantStepsEl.innerHTML = "";
+      } else if (cards.length) {
+        // Same count — patch in place: text, active/done class,
+        // data-level. Skip writes when the value matches.
+        let needsScroll = false;
+        cards.forEach((card, i) => {
+          const dst   = existing[i];
+          const text  = card.querySelector(".step-text")?.textContent || "";
+          const level = card.dataset.level || "info";
+          const cls   = card.classList.contains("active") ? "active" : "done";
+          const span  = dst.lastElementChild;
+          if (span && span.textContent !== text) span.textContent = text;
+          if (dst.dataset.level !== level) dst.dataset.level = level;
+          const isActive = cls === "active";
+          if (dst.classList.contains("active") !== isActive) {
+            dst.classList.toggle("active", isActive);
+            dst.classList.toggle("done",  !isActive);
+            needsScroll = isActive;  // newly-active card → bring into view
+          }
+        });
+        if (needsScroll) pendantStepsEl.scrollTop = pendantStepsEl.scrollHeight;
       }
-    } else {
+    } else if (pendantStepsEl.children.length) {
       pendantStepsEl.innerHTML = "";
     }
   }

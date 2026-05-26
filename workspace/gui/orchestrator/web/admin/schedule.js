@@ -100,14 +100,53 @@ function _ingest(msg) {
     const t = _leafTiming.get(k) || {};
     t.startedAt = msg.wall_ts;
     _leafTiming.set(k, t);
-    _render();
+    _patchBlockState(k);
   } else if (msg.type === "action_end" || msg.type === "swap_end") {
     const k = _leafKey(msg.replan_id, msg.name);
     _leafState.set(k, msg.skipped ? "skipped" : "done");
     const t = _leafTiming.get(k) || {};
     t.endedAt = msg.wall_ts;
     _leafTiming.set(k, t);
-    _render();
+    _patchBlockState(k);
+  }
+}
+
+// Patch one block in place — only the block whose state changed gets
+// its class flipped and (if just-completed) its duration text added.
+// Avoids the full SVG rebuild on every action_start / action_end /
+// swap_start / swap_end, which was the schedule modal's hottest
+// path during a run. Falls back to a full re-render only when the
+// block can't be located (e.g. modal just opened, SVG not yet built
+// — _render() builds it).
+function _patchBlockState(leafKey) {
+  if (!_modalEl?.classList.contains("show")) return;
+  if (!_ganttEl) return;
+  const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
+  if (!g) { _render(); return; }
+  const state = _leafState.get(leafKey) || "pending";
+  g.setAttribute("class", `sched-block sched-${state}`);
+  // If this transition just produced a finished block, add its
+  // elapsed-time label under the rect. (Done before only via a full
+  // re-render — we replicate just the duration text here.)
+  if ((state === "done" || state === "skipped") && !g.querySelector(".sched-block-elapsed")) {
+    const timing = _leafTiming.get(leafKey) || {};
+    if (timing.startedAt != null && timing.endedAt != null) {
+      const elapsed = timing.endedAt - timing.startedAt;
+      const rect = g.querySelector("rect.sched-block-fill");
+      if (rect) {
+        const x = parseFloat(rect.getAttribute("x"));
+        const y = parseFloat(rect.getAttribute("y"));
+        const w = parseFloat(rect.getAttribute("width"));
+        const h = parseFloat(rect.getAttribute("height"));
+        const dur = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        dur.setAttribute("x", String(x + w / 2));
+        dur.setAttribute("y", String(y + h + 11));
+        dur.setAttribute("text-anchor", "middle");
+        dur.setAttribute("class", "sched-block-elapsed");
+        dur.textContent = `${elapsed.toFixed(1)}s`;
+        g.appendChild(dur);
+      }
+    }
   }
 }
 
@@ -408,6 +447,10 @@ function _appendBlock(parent, p, state) {
   const { a, x, y, w, h } = p;
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("class", `sched-block sched-${state}`);
+  // Stable key so surgical state transitions (action_start /
+  // action_end / swap_start / swap_end) can locate and patch this
+  // block in place instead of forcing a full SVG rebuild.
+  g.setAttribute("data-leaf-key", _leafKey(p.replan_id, p.a.leaf_name));
 
   const rect = document.createElementNS(svgNS, "rect");
   rect.setAttribute("x", String(x));

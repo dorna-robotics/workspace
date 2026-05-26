@@ -87,8 +87,10 @@
   justify-content: center;
   padding: 20px;
   z-index: 50000;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* backdrop-filter intentionally NOT on the overlay — compositing
+     a blur across the full viewport tanks frame rate on iPad / mid-
+     range Android. The blur lives on the .modal itself below; the
+     overlay just dims with a flat semi-transparent fill. */
 }
 .modal-overlay.show { display: flex; }
 .modal {
@@ -98,6 +100,8 @@
   display: flex;
   flex-direction: column;
   background: var(--surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: none;
   border-radius: var(--radius-lg);
   overflow: hidden;

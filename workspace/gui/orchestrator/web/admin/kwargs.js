@@ -6,6 +6,14 @@ const _infoSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" s
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
 export function renderKwargsForm(container, schema, values, frozen = false, wsName = "") {
+  // Render-signature cache. Reopening the modal with identical
+  // params (most common case) is a no-op now instead of tearing
+  // down and rebuilding the whole form + re-attaching listeners.
+  // If any input changes (new value from server, frozen flip, etc.)
+  // the signature differs and we fall through to the full rebuild.
+  const sig = JSON.stringify({ schema, values, frozen, wsName });
+  if (container._kwargsSig === sig) return;
+  container._kwargsSig = sig;
   container.innerHTML = "";
   const keys = Object.keys(schema || {});
   if (!keys.length) {

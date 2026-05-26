@@ -20,6 +20,16 @@ const wsCount   = document.getElementById("wsCount");
 const toastArea = document.getElementById("toastArea");
 const wsSearch  = document.getElementById("wsSearch");
 
+// ---- Render cache ----
+// Per-card cached innerHTML + className. ``render()`` is hit on
+// every WebSocket status tick (so several times per second during
+// active runs); without this guard, every workspace card would be
+// rebuilt + re-listened-up every tick, regardless of whether
+// anything actually changed. Cache lets us short-circuit at the
+// "no diff" case, which is the overwhelmingly common one.
+const _lastCardHtml = new Map();
+const _lastCardCls  = new Map();
+
 // ---- Toast ----
 function toast(msg, type = "ok") {
   const el = document.createElement("div");
@@ -274,9 +284,13 @@ function render() {
       el.setAttribute("data-name", ws.name);
     }
 
-    el.className = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
+    const newCls = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
+    if (_lastCardCls.get(ws.name) !== newCls) {
+      el.className = newCls;
+      _lastCardCls.set(ws.name, newCls);
+    }
 
-    el.innerHTML = `
+    const newHtml = `
       <div class="wc-head">
         <a class="wc-head-link" href="workspace.html?name=${encodeURIComponent(ws.name)}" title="Open ${esc(ws.name)}">
           <div class="wc-avatar" style="background:${wsColor(ws.name)}">${esc((ws.name[0]||'?').toUpperCase())}</div>
@@ -350,6 +364,16 @@ function render() {
         </div>
       </div>
     `;
+
+    // Short-circuit: if neither the className nor the innerHTML
+    // differs from the previous render, nothing about this card has
+    // changed → skip the write and the listener re-wiring. This is
+    // the common case during steady-state runs.
+    if (!isNew && _lastCardHtml.get(ws.name) === newHtml) {
+      return; // continue forEach
+    }
+    el.innerHTML = newHtml;
+    _lastCardHtml.set(ws.name, newHtml);
 
     // Kwargs (parameters) modal button
     const kwargsToggle = el.querySelector(".kwargs-toggle-btn");
@@ -431,9 +455,14 @@ function render() {
     if (isNew) wsGrid.appendChild(el);
   });
 
-  // Remove stale cards
+  // Remove stale cards and their cache entries
   wsGrid.querySelectorAll(".ws-card[data-name]").forEach(card => {
-    if (!workspaces.find(w => w.name === card.getAttribute("data-name"))) card.remove();
+    const name = card.getAttribute("data-name");
+    if (!workspaces.find(w => w.name === name)) {
+      card.remove();
+      _lastCardHtml.delete(name);
+      _lastCardCls.delete(name);
+    }
   });
 }
 
