@@ -83,31 +83,17 @@ the tethering session. Counter-measures:
 1. **Settings → Display → Adaptive brightness → OFF**, then drag
    the brightness slider to a comfortable level. (Without this,
    the screen dims down to nearly invisible after a few seconds of
-   no touch, even when "Stay Awake" is on.)
-2. **Settings → Display → Screen timeout → 10 minutes** (max).
-3. **Install Caffeine** (Play Store, by Sebastian Krzyszkowiak,
-   free). Pull down the notification shade, tap the Caffeine
-   notification → screen stays on indefinitely. This bypasses every
-   Samsung "smart" dimming feature and is the most reliable single
-   fix. Use this instead of (or alongside) Developer Options' "Stay
-   Awake while charging."
-4. Plug the tablet into a **wall charger** (15W USB-C brick).
+   no touch.)
+2. **Install the "Screen On" app** from the Play Store. Open the
+   app and **enable the "While charging" / "Power charging"**
+   option inside the app. The screen will stay on indefinitely
+   whenever the tablet is plugged in.
+3. Plug the tablet into a **wall charger** (15W USB-C brick).
    Laptop USB-A ports often don't deliver enough current and the
-   tablet won't actually charge, which disables Stay Awake.
-   Confirm by checking the ⚡ bolt next to the battery icon.
+   tablet won't register as charging. Confirm by checking the ⚡
+   bolt next to the battery icon.
 
-### 3.2 Optional: Stay Awake (Developer Options)
-
-If you want this in addition to Caffeine:
-
-1. Settings → About tablet → Software information → tap **Build
-   number** 7 times to enable Developer Options.
-2. Settings → **Developer options** → toggle **Stay awake** on.
-
-On newer Samsung firmware this toggle may be missing or buried;
-Caffeine supersedes it either way.
-
-### 3.3 Join Wi-Fi
+### 3.2 Join Wi-Fi
 
 Settings → Connections → Wi-Fi → join the customer/site network,
 enter password, confirm a browser loads google.com. This is the
@@ -216,12 +202,12 @@ Use the device's own web UI or config tool to set:
 
 When a tech arrives at the cabinet:
 
-1. Plug tablet into charger.
-2. Tap the Caffeine notification (screen stays on).
-3. Confirm tablet is on wifi (top-right wifi icon visible).
-4. Settings → Mobile Hotspot and Tethering → toggle **Ethernet
+1. Plug tablet into charger (screen stays on automatically via
+   the Screen On app's "While charging" setting).
+2. Confirm tablet is on wifi (top-right wifi icon visible).
+3. Settings → Mobile Hotspot and Tethering → toggle **Ethernet
    tethering** on.
-5. SSH from the tablet (or from a laptop also on the cabinet's
+4. SSH from the tablet (or from a laptop also on the cabinet's
    LAN via USB-ethernet) to whichever Pi needs work:
    ```bash
    ssh pi@192.168.42.101    # orchestrator
@@ -229,9 +215,9 @@ When a tech arrives at the cabinet:
    ```
    Or open device web UIs in the tablet's browser:
    `http://192.168.42.104` (camera), etc.
-6. Do the work — `sudo apt update && sudo apt upgrade`, edit code,
+5. Do the work — `sudo apt update && sudo apt upgrade`, edit code,
    pull/push git, etc.
-7. When done, toggle Ethernet tethering off. Unplug tablet if
+6. When done, toggle Ethernet tethering off. Unplug tablet if
    leaving site.
 
 The LAN keeps working without the tablet — the cabinet's devices
