@@ -1156,11 +1156,10 @@ function updateIframe(state, launched) {
       // this, if pendant was open *before* this iframe finished
       // loading — or if the workspace switches and reloads the
       // iframe while pendant is open — the new iframe instance
-      // would default to ``_pendantPaused = false`` and start
-      // rendering invisibly behind the overlay.
-      if (_pendantMode) {
-        frame.contentWindow?.postMessage({ type: "render", value: "pause" }, "*");
-      }
+      // would default to ``_pendantPaused = false``. ``apply…``
+      // routes the message correctly based on current pendant +
+      // preview state.
+      if (_pendantMode) applyPendantRenderState();
     }, { once: true });
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
@@ -1435,22 +1434,54 @@ function pendantVibrate(ms = 30) {
   try { navigator.vibrate?.(ms); } catch(_) {}
 }
 
+// Whether the pendant shows a live floating 3D preview (top-right
+// PiP) or hides the viewer entirely. Persisted so the operator's
+// preference survives reloads. Default ON — the situational
+// awareness is the main reason to keep this feature at all; if you
+// don't want the resource cost, flip it off and we revert to the
+// full pause.
+let _pendantPreview = localStorage.getItem("pendant_preview_3d") !== "off";
+
+function applyPendantRenderState() {
+  // Three combined flags decide whether the iframe is rendering:
+  //   - _pendantMode: is the operator in pendant view at all?
+  //   - _pendantPreview: do they want the PiP preview right now?
+  //   - the iframe's own _renderEnabled (eye toggle, untouched here)
+  // We pause when pendant is open AND preview is off. Pendant
+  // closed = always resume. Pendant open + preview on = resume
+  // (so the PiP shows live frames).
+  document.documentElement.classList.toggle("pendant-open", _pendantMode);
+  document.documentElement.classList.toggle("pendant-preview-on", _pendantMode && _pendantPreview);
+  const shouldPause = _pendantMode && !_pendantPreview;
+  // While in pendant PiP mode also strip the iframe's internal UI
+  // (toolbar, ViewCube) — they'd dominate the 280×210 floating
+  // preview. Full UI returns the moment pendant closes.
+  const uiMode = (_pendantMode && _pendantPreview) ? "minimal" : "full";
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
+    frame.contentWindow.postMessage({ type: "ui",     value: uiMode }, "*");
+  }
+}
+
+function togglePendantPreview() {
+  _pendantPreview = !_pendantPreview;
+  localStorage.setItem("pendant_preview_3d", _pendantPreview ? "on" : "off");
+  applyPendantRenderState();
+  updatePendantPreviewBtn();
+}
+
+function updatePendantPreviewBtn() {
+  const btn = $("pendantBtnPreview");
+  if (!btn) return;
+  btn.title = _pendantPreview ? "Hide 3D preview" : "Show 3D preview";
+  btn.classList.toggle("active", _pendantPreview);
+}
+
 function togglePendant(on) {
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
-
-  // Pause the 3D viewer's render loop while pendant is open — the
-  // canvas isn't visible so spending GPU on it is wasted. The
-  // iframe carries a separate transient flag (``_pendantPaused``)
-  // so the user's manual eye-toggle (localStorage ``render3d``) is
-  // *not* overwritten — closing the pendant returns the viewer to
-  // whatever rendering state it was in before.
-  if (frame && frame.contentWindow) {
-    frame.contentWindow.postMessage(
-      { type: "render", value: _pendantMode ? "pause" : "resume" },
-      "*"
-    );
-  }
+  applyPendantRenderState();
+  updatePendantPreviewBtn();
 
   if (_pendantMode) {
     // Resume audio context (required after user gesture)
@@ -1662,6 +1693,7 @@ document.querySelectorAll(".js-schedule-open").forEach(b => {
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
+$("pendantBtnPreview")?.addEventListener("click", togglePendantPreview);
 
 
 

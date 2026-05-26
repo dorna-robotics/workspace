@@ -279,6 +279,36 @@
       border: none;
       display: block;
     }
+
+    /* Pendant 3D preview — when pendant is open AND the preview
+       toggle is on, the existing iframe gets repositioned/resized
+       as a floating PiP in the top-right corner of the viewport.
+       z-index sits above .pendant-overlay (10000) so the preview
+       floats on top of the pendant body. ``pointer-events:none``
+       keeps the iframe's internal controls (zoom, home, eye)
+       non-interactive in PiP mode — it's a view-only window;
+       full controls return when the user exits pendant. */
+    html.pendant-open.pendant-preview-on #ws3dFrame {
+      position: fixed;
+      top: 92px;   /* below pendant nav (76px) + a 16px gap */
+      right: 24px;
+      width: 280px;
+      height: 210px;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      z-index: 10001;
+      pointer-events: none;
+      transition: width var(--motion-med) var(--ease),
+                  height var(--motion-med) var(--ease),
+                  top var(--motion-med) var(--ease),
+                  right var(--motion-med) var(--ease);
+    }
+    /* Pendant open but preview toggled off → hide the iframe
+       entirely. Combined with the render pause this gives the
+       cleanest "no 3D at all" state. */
+    html.pendant-open:not(.pendant-preview-on) #ws3dFrame {
+      display: none;
+    }
     .viewer-placeholder {
       position: absolute;
       inset: 0;
@@ -506,6 +536,10 @@
       <span class="pendant-timer-value" id="pendantTimerValue">—</span>
     </div>
     <div class="topbar-actions">
+      <!-- 3D preview toggle: shows/hides a floating top-right PiP of
+           the live 3D viewer while pendant is open. ``active`` class
+           is applied by JS to indicate the preview is currently on. -->
+      <button class="btn btn-ghost btn-sm btn-icon" id="pendantBtnPreview" title="Toggle 3D preview"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><rect x="13" y="11" width="7" height="5" rx="1" fill="currentColor" fill-opacity="0.35"/></svg></button>
       <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="pendantBtnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
       <!-- ``active`` marks this as the currently-engaged mode toggle —
            same icon as the main page's Pendant button, but rendered

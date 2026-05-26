@@ -84,6 +84,14 @@
       color: #005cc5;
     }
 
+    /* Minimal UI — toggled by parent via postMessage({type:"ui",
+       value:"minimal"}). Hides the toolbar + ViewCube so the scene
+       canvas is the only thing visible. Used by the pendant PiP
+       (small floating preview) where the controls would dominate. */
+    body.ui-minimal #ctrlPanel,
+    body.ui-minimal #viewCubeWrap,
+    body.ui-minimal #renderDisabled { display: none !important; }
+
     /* ---- ViewCube (bottom-right) ---- */
     #viewCubeWrap {
       position: fixed;
@@ -317,14 +325,21 @@
         if (e.key === THEME_KEY) applyTheme(e.newValue || "dark");
       });
       // Parent → iframe messages:
-      //   type:"theme"  value:"dark"|"light"           → re-apply theme
-      //   type:"render" value:"pause"|"resume"         → transient
-      //                                                  render pause
-      //                                                  (used by
-      //                                                  pendant mode)
+      //   type:"theme"  value:"dark"|"light"   → re-apply theme
+      //   type:"render" value:"pause"|"resume" → transient render
+      //                                          pause (pendant)
+      //   type:"ui"     value:"minimal"|"full" → hide/show the
+      //                                          viewer's own
+      //                                          controls (used in
+      //                                          pendant PiP mode
+      //                                          where the toolbar +
+      //                                          ViewCube would
+      //                                          dominate the tiny
+      //                                          preview)
       window.addEventListener("message", (e) => {
         if (e.data?.type === "theme")  applyTheme(e.data.value);
         if (e.data?.type === "render") _pendantPaused = (e.data.value === "pause");
+        if (e.data?.type === "ui")     document.body.classList.toggle("ui-minimal", e.data.value === "minimal");
       });
 
       // ── GLTF + object management ──────────────────────────────────────────
