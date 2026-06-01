@@ -31,8 +31,12 @@ function setTheme(theme) {
   });
 }
 
-// Apply on load
-setTheme(localStorage.getItem(KEY) || "dark");
+// Apply on load. Default is light — Android Chrome occasionally
+// clears site data under memory pressure, and we'd rather fall
+// back to the friendlier (and more conservative) light theme than
+// surprise the operator with a dark page after their localStorage
+// got dropped.
+setTheme(localStorage.getItem(KEY) || "light");
 
 // ── Fullscreen ──────────────────────────────────────────────────────────
 
@@ -55,7 +59,7 @@ document.addEventListener("fullscreenchange", updateFsButtons);
 document.addEventListener("DOMContentLoaded", function() {
   document.querySelectorAll(".js-theme-toggle").forEach(function(btn) {
     btn.addEventListener("click", function() {
-      var current = document.documentElement.getAttribute("data-theme") || "dark";
+      var current = document.documentElement.getAttribute("data-theme") || "light";
       setTheme(current === "dark" ? "light" : "dark");
     });
   });
