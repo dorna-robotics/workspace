@@ -18,6 +18,17 @@ A recipe connects three things:
 
 You define recipes in `recipes.yaml` (or `recipes.j2`), mapping aliases to recipe classes. States use the alias to access the recipe: `self.rcp["gripper"].pick(i)`.
 
+> **Recipes are sim-agnostic.** A recipe never branches on
+> `simulation:` and never calls something like
+> `if core._simulation_mode: ...`. The component constructor picks
+> the right underlying API once (real driver vs. sim stub) and
+> exposes a unified interface — recipe methods like `pick`,
+> `place`, `dose` call `core.jmove(...)`, `core.vision.snapshot()`,
+> `printer.print(...)` etc., and the same recipe code runs against
+> real hardware or a sim with no edits. See
+> [device-guide.md §10.5](device-guide.md#105-where-the-sim-ifelse-lives--component-not-recipe)
+> for the full rule and the pattern new devices must follow.
+
 ---
 
 ## 2. `recipes.yaml` format

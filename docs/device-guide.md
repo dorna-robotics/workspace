@@ -558,6 +558,19 @@ component depends on. The scanner that builds the project's device
 panel reads this property; components that don't define it are silently
 ignored.
 
+> **Visibility rule.** A device shows up in the Devices panel **only if
+> some component returns its id from `device_ids`**. If a component
+> gates the id on a config field (e.g. `if self.robot_ip:`), then
+> leaving that field empty in the scene yaml hides the row entirely.
+> Example: `Core` returns `f"dorna:{self.robot_ip}"` only when
+> `robot_ip` is non-empty — `ip: ""` in `scene/base.j2` → no robot
+> row. Same for the camera with `camera_cfg.serial_number`. This is by
+> design: empty means "the project does not care about this device,"
+> useful for projects that genuinely don't use a piece of hardware or
+> want to suppress its row. The `simulation:` flag is **separate** —
+> it controls how a *declared* device is treated, not whether it's
+> declared.
+
 **`device_claim(device_id)`** — optional. Returns `"real"` or `"sim"`,
 the project-level claim mode for that device id. This is the
 workspace-side surface for rule 3 (§1). Default when the method is
@@ -611,6 +624,93 @@ when you need it. No inheritance required.
 adapters). Forcing a base on the device subset would be artificial. The
 Protocol covers exactly the two members that matter and stays out of
 the way for everything else.
+
+---
+
+## 10.5 Where the sim if/else lives — component, not recipe
+
+There is **one place** to branch on sim mode per device: the
+component's constructor, when it picks which underlying API to use.
+Everywhere else — methods on the component, recipes, actions,
+checks — stays sim-agnostic.
+
+### Where to add what — at a glance
+
+When you're adding a new device (printer, scale, pipette, …), this
+is the map. The same pattern applies to every device.
+
+| You're adding… | Goes in… | What it does |
+|---|---|---|
+| The **`simulation:` flag** in YAML | `scene/*.j2` (or `scene/*.yaml`) under the component block | Authored operator intent. The single source of truth. |
+| The **sim/real branch** (`if simulation: ... else: ...`) | The component's `__init__`, picking the api/helper to hold on `self` | Exactly once per device. Constructor decision, runtime-immutable. |
+| The **sim API stub** (no-op `print()`, `dose()`, …) | A small `XxxSimAPI` class in the same module as the real driver | Same shape as the real driver. Methods return success without touching hardware. |
+| The **`device_ids` declaration** | A `@property` on the component — `[f"<kind>:<id>"] if self.<id_field> else []` | Empty list when the field is empty → row hidden from the Devices panel (see §10 visibility rule). |
+| The **`device_claim` method** | A method on the component — returns `"sim"` if `self.<simulation_flag>` else `"real"` | Surfaces sim intent to the panel + auto-pause gate (rule 3 in §1). |
+| **Method calls on the device** (in recipes, actions, checks) | Anywhere — `printer.print(payload)`, `core.vision.snapshot()`, etc. | Sim-agnostic. Never `if printer.simulation: …` in these call sites. |
+
+If you ever feel the urge to write `if some_component.simulation:` in
+a recipe or action, stop — the component is missing a method, or its
+sim stub is missing a behaviour. Fix it there, not at the call site.
+
+The pattern, taken verbatim from `Core` ([core.py:292-312]):
+
+```python
+# Inside the component constructor:
+self._simulation_mode = prm["simulation"]    # from scene yaml
+
+# One branch, once, picks the api:
+if not self._simulation_mode:
+    self.robot_api = self.dorna           # real driver
+else:
+    self.robot_api = SimulationAPI()      # no-op stub
+
+# And the camera helper is constructed with the flag baked in:
+self.vision = VisionStation(
+    ...,
+    simulation=(not self.has_camera) or bool(prm["simulation"]),
+)
+```
+
+After construction, `self.robot_api.jmove(...)` and
+`self.vision.snapshot()` always do the right thing — the recipe
+calls `core.jmove(...)` / `core.vision.snapshot()` and never has
+to know whether it ran against real hardware or a stub.
+
+**Why this is the rule:**
+
+| If the sim branch lives in… | What happens |
+|---|---|
+| **The component** (current rule) | One well-tested branch per device. Sim swap is a single yaml flag. Recipes and actions are reusable across real + sim runs unchanged. |
+| **The recipe** | Every recipe has to know about every device's sim state. Branching explodes across the codebase. One missing `if sim:` is a hardware-damaging bug. |
+| **Both** | Inconsistent. Worst of both. |
+
+**Rule for new devices** (printer, scale, pipette, …):
+
+```python
+class Printer:
+    def __init__(self, ..., simulation=False):
+        self._api = (
+            PrinterSimAPI()                       # no-op stub
+            if simulation
+            else RealPrinterDriver(host=...)
+        )
+
+    def print(self, payload):
+        return self._api.print(payload)           # no sim check here, ever
+
+    @property
+    def device_ids(self) -> list[str]:
+        return [f"printer:{self.serial}"] if self.serial else []
+
+    def device_claim(self, device_id):
+        return "sim" if self._simulation else "real"
+```
+
+The recipe / action calls `printer.print(payload)` — never
+`if printer.simulation: ...`. The single branch at constructor
+time is the contract.
+
+[core.py:292-312]: ../workspace/workspace/components/core/core.py#L292-L312
 
 ---
 
