@@ -139,6 +139,38 @@
       max-height: 280px; overflow-y: auto;
       padding: 2px 0;
     }
+
+    /* ---- Operator Actions panel ----
+       Vertical stack of per-component rows. Each row labels the
+       component then lays out its buttons in a horizontal wrap.
+       Disabled state (whole row, while RUNNING) is per-button via
+       :disabled — no need for a wrapper-level class. */
+    .op-actions-list {
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 2px 0;
+      max-height: 320px; overflow-y: auto;
+    }
+    .op-action-group {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 6px 10px;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+    }
+    [data-theme="light"] .op-action-group { background: rgba(0,0,0,0.03); }
+    .op-action-component {
+      font-family: var(--mono);
+      font-size: var(--text-xs);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .op-action-buttons {
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }
+    .op-action-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
     .device-row {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 10px;
@@ -446,6 +478,33 @@
         </div>
       </div>
 
+      <!-- Section order is frequency-of-use-first: Controls and Status
+           up top (workflow primary), then the two glance-during-run
+           surfaces (Steps + Devices) so the operator's eyes land on
+           "what's happening" / "is everything OK?" without scrolling.
+           Lower-frequency surfaces (Progress, Run Parameters, Operator
+           Controls, Logs) trail below. -->
+      <div id="stepSection">
+        <div class="log-header" id="btnToggleSteps" title="Toggle progress">
+          <div class="section-label">Steps</div>
+          <svg id="stepChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div class="spacer"></div>
+          <span class="step-count-badge" id="stepCountBadge"></span>
+          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        </div>
+        <div id="stepTimeline" class="step-timeline" style="display:none"><div class="step-empty">No steps yet</div></div>
+      </div>
+
+      <div id="devicesSection">
+        <div class="log-header" id="btnToggleDevices" title="Toggle devices">
+          <div class="section-label">Devices</div>
+          <svg id="devicesChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div class="spacer"></div>
+          <span class="step-count-badge" id="devicesCountBadge"></span>
+        </div>
+        <div id="devicesList" class="devices-list" style="display:none"><div class="step-empty">No devices declared</div></div>
+      </div>
+
       <div id="progressSection" style="display:none">
         <div class="section-label">Progress</div>
         <div class="sidebar-progress">
@@ -466,25 +525,16 @@
         <pre id="paramsPre" style="display:none" class="params-pre">(no parameters)</pre>
       </div>
 
-      <div id="devicesSection">
-        <div class="log-header" id="btnToggleDevices" title="Toggle devices">
-          <div class="section-label">Devices</div>
-          <svg id="devicesChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          <div class="spacer"></div>
-          <span class="step-count-badge" id="devicesCountBadge"></span>
+      <!-- Operator Controls — buttons exposed by each component via the
+           ``operator_actions`` contract. Always visible (mirrors the
+           Devices pattern) so the operator knows the surface exists
+           even when no component currently declares any actions. -->
+      <div id="opActionsSection">
+        <div class="log-header" id="btnToggleOpActions" title="Toggle operator controls">
+          <div class="section-label">Operator Controls</div>
+          <svg id="opActionsChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
-        <div id="devicesList" class="devices-list" style="display:none"><div class="step-empty">No devices declared</div></div>
-      </div>
-
-      <div id="stepSection">
-        <div class="log-header" id="btnToggleSteps" title="Toggle progress">
-          <div class="section-label">Steps</div>
-          <svg id="stepChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          <div class="spacer"></div>
-          <span class="step-count-badge" id="stepCountBadge"></span>
-          <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-        </div>
-        <div id="stepTimeline" class="step-timeline" style="display:none"><div class="step-empty">No steps yet</div></div>
+        <div id="opActionsList" class="op-actions-list" style="display:none"><div class="step-empty">No operator actions declared</div></div>
       </div>
 
 
@@ -593,6 +643,12 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     Parameters
   </button>
+  <!-- Operator Actions — opens a modal with component-grouped buttons.
+       Hidden when no component declares any operator actions. -->
+  <button class="pendant-secondary" id="pendantOpActions" style="display:none">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Controls
+  </button>
   <button class="pendant-secondary pendant-kill-btn" id="pendantKill" data-cmd="kill">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     Kill
@@ -653,6 +709,28 @@
       <div class="device-detail" id="deviceModalBody"></div>
     </div>
     <div class="modal-foot" id="deviceModalFoot"></div>
+  </div>
+</div>
+
+<!-- Operator Actions Modal — opened from the pendant Controls button.
+     Mirrors the sidebar Operator Actions section: same component-
+     grouped layout, same workflow-state gating. ``opActionsModalBody``
+     is filled from JS so additions / removals in the underlying
+     contract show up automatically. -->
+<div class="modal-overlay" id="opActionsModalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Operator Controls</h3>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnOpActionsModalClose" title="Close">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="opActionsModalBody" class="op-actions-list"></div>
+    </div>
   </div>
 </div>
 

@@ -706,6 +706,115 @@ class DeviceCmdHandler(tornado.web.RequestHandler):
         self.write(json.dumps(reply or {"ok": False, "msg": "no reply"}))
 
 
+def _operator_actions_snapshot(workspace) -> list[dict]:
+    """List every operator action exposed by every component, in
+    stable component-name order. Each entry: ``{component, label,
+    method}``. Components that don't declare ``operator_actions``
+    contribute nothing.
+    """
+    from workspace.components.operator_actions import component_operator_actions
+    out: list[dict] = []
+    components = getattr(workspace, "components", {}) or {}
+    for name in sorted(components):
+        comp = components[name]
+        for action in component_operator_actions(comp):
+            out.append({
+                "component": name,
+                "label":     action["label"],
+                "method":    action["method"],
+            })
+    return out
+
+
+class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws/operator_actions — list + invoke over a single pre-opened
+    socket. Sub-millisecond per click since there's no HTTP handshake
+    on the hot path.
+
+    Client → server messages:
+      ``{"type": "invoke", "component": "...", "method": "..."}``
+          Two safety gates:
+              1. method must appear in the component's declared
+                 ``operator_actions`` list (stops attribute-guess attacks).
+              2. runtime must not be RUNNING (out-of-band ops mid-run
+                 would race the workflow).
+          Reply: ``{"type": "invoke_result", "component", "method",
+                    "ok": bool, "msg"?, "result"?}``
+
+    Server → client messages (also sent on connect):
+      ``{"type": "actions", "actions": [...]}``  — current snapshot
+          of operator actions from all components.
+    """
+
+    def initialize(self, workspace):
+        self.workspace = workspace
+
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        # Push the snapshot immediately so the panel can render
+        # without an extra fetch round-trip.
+        self.write_message(json.dumps({
+            "type":    "actions",
+            "actions": _operator_actions_snapshot(self.workspace),
+        }))
+
+    def on_message(self, raw):
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            return
+        if msg.get("type") != "invoke":
+            return
+        component_name = str(msg.get("component", "") or "")
+        method_name    = str(msg.get("method", "") or "")
+        self._invoke(component_name, method_name)
+
+    def _invoke(self, component_name: str, method_name: str):
+        from workspace.components.operator_actions import component_operator_actions
+
+        def reply(ok: bool, msg: str = "", result=None):
+            payload = {
+                "type":      "invoke_result",
+                "component": component_name,
+                "method":    method_name,
+                "ok":        ok,
+            }
+            if msg:    payload["msg"] = msg
+            if ok and isinstance(result, (str, int, float, bool, list, dict, type(None))):
+                payload["result"] = result
+            try:
+                self.write_message(json.dumps(payload))
+            except Exception:
+                pass
+
+        components = getattr(self.workspace, "components", {}) or {}
+        comp = components.get(component_name)
+        if comp is None:
+            reply(False, f"unknown component: {component_name}")
+            return
+
+        declared = {a["method"] for a in component_operator_actions(comp)}
+        if method_name not in declared:
+            reply(False, f"{component_name}.{method_name} is not an operator action")
+            return
+
+        rt = getattr(self.workspace, "rt", None)
+        state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
+        if state in ("RUNNING", "ACTIVE"):
+            reply(False, "cannot run operator actions while workflow is running")
+            return
+
+        try:
+            result = getattr(comp, method_name)()
+        except Exception as ex:
+            reply(False, f"{type(ex).__name__}: {ex}")
+            return
+
+        reply(True, result=result)
+
+
 class DeviceWebSocket(tornado.websocket.WebSocketHandler):
     """WS /ws/devices — push device_state events to the project page.
 
@@ -826,6 +935,9 @@ class RuntimeServer:
             (r"/devices", DevicesHandler, dict(workspace=self.workspace)),
             (r"/devices/([^/]+)/(recover|release)", DeviceCmdHandler, dict(workspace=self.workspace)),
             (r"/ws/devices", DeviceWebSocket, dict(workspace=self.workspace)),
+
+            # operator actions — WS-only (list + invoke on one socket)
+            (r"/ws/operator_actions", OperatorActionsWebSocket, dict(workspace=self.workspace)),
 
             # health
             (r"/healthz", HealthHandler),

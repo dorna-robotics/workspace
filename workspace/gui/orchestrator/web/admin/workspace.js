@@ -386,6 +386,7 @@ function updateStatusUI(st) {
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
+  if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
   if (prevUpper !== curUpper) loadRunParams();
@@ -852,6 +853,181 @@ function escHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+// ───────────────────────────── Operator Actions ─────────────────────────
+// Single WebSocket to /ws/operator_actions on the workspace runtime
+// handles both directions:
+//   server → client: ``{type:"actions", actions:[...]}`` on connect
+//                    (and any future refresh)
+//   client → server: ``{type:"invoke", component, method}`` per click,
+//                    reply: ``{type:"invoke_result", ok, msg?, result?}``
+// Connection lives for the workspace session — every button click is
+// a single ws.send() with no HTTP handshake, so the round-trip is
+// sub-millisecond on the LAN.
+let _opActions = [];              // [{component, label, method}, ...]
+let _opActionsExpanded = false;   // sidebar section collapsed by default
+let _opActionsWs = null;
+let _opActionsWsClosed = false;
+let _opActionsWsUrl = "";
+let _opActionsWsRetryMs = 1000;
+
+function connectOpActionsWS(runtimeUrl) {
+  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/operator_actions";
+  if (_opActionsWs && _opActionsWsUrl === wsUrl) return;
+  disconnectOpActionsWS();
+  _opActionsWsUrl = wsUrl;
+  _opActionsWsClosed = false;
+  _opActionsWsRetryMs = 1000;
+  _tryOpActionsWS();
+}
+
+function _tryOpActionsWS() {
+  if (_opActionsWsClosed || !_opActionsWsUrl) return;
+  const ws = new WebSocket(_opActionsWsUrl);
+  _opActionsWs = ws;
+  ws.onopen = () => { _opActionsWsRetryMs = 1000; };
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === "actions") {
+      _opActions = Array.isArray(msg.actions) ? msg.actions : [];
+      renderOperatorActionsPanel();
+      updateOperatorActionsGate(_lastState);
+    } else if (msg.type === "invoke_result") {
+      const tag = `${msg.component}.${msg.method}`;
+      if (msg.ok) toast(`${tag} ✓`, "ok");
+      else        toast(`${tag}: ${msg.msg || "failed"}`, "bad");
+    }
+  };
+  ws.onclose = () => {
+    if (_opActionsWsClosed) return;
+    setTimeout(_tryOpActionsWS, _opActionsWsRetryMs);
+    _opActionsWsRetryMs = Math.min(_opActionsWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectOpActionsWS() {
+  _opActionsWsClosed = true;
+  if (_opActionsWs) { try { _opActionsWs.close(); } catch {} _opActionsWs = null; }
+  _opActionsWsUrl = "";
+}
+
+function _opActionsHtml(disabled) {
+  // Group entries by component so the buttons render as a series of
+  // small per-component rows — matches the operator's mental model
+  // ("I want to do something with the gripper").
+  const groups = new Map();
+  for (const a of _opActions) {
+    if (!groups.has(a.component)) groups.set(a.component, []);
+    groups.get(a.component).push(a);
+  }
+  if (!groups.size) return `<div class="step-empty">No operator actions declared</div>`;
+  const rows = [];
+  for (const [component, actions] of groups) {
+    const buttons = actions.map(a => `
+      <button class="btn btn-sm op-action-btn"
+              data-component="${escHtml(component)}"
+              data-method="${escHtml(a.method)}"
+              ${disabled ? "disabled" : ""}>${escHtml(a.label)}</button>
+    `).join("");
+    rows.push(`
+      <div class="op-action-group">
+        <div class="op-action-component">${escHtml(component)}</div>
+        <div class="op-action-buttons">${buttons}</div>
+      </div>
+    `);
+  }
+  return rows.join("");
+}
+
+function renderOperatorActionsPanel() {
+  // Sidebar section is always visible — mirrors Devices, so the
+  // operator can see the surface exists even when no actions are
+  // declared yet. Empty state is rendered inline.
+  const list = $("opActionsList");
+  const disabled = isRunning(_lastState);
+  const html = _opActionsHtml(disabled);
+  if (list) list.innerHTML = html;
+
+  // Pendant: only show the secondary-row button when there's
+  // actually something to do. The pendant row is too constrained
+  // to spend a tile on an empty surface.
+  const pendantBtn = $("pendantOpActions");
+  if (pendantBtn) pendantBtn.style.display = _opActions.length ? "" : "none";
+  const modalBody = $("opActionsModalBody");
+  if (modalBody) modalBody.innerHTML = html;
+}
+
+function updateOperatorActionsGate(state) {
+  // Re-render so disabled state flips with workflow state. Cheap —
+  // the list itself is short.
+  if (_opActions.length) renderOperatorActionsPanel();
+}
+
+function runOperatorAction(component, method) {
+  // Fire-and-forget over the open WS. Reply comes back as an
+  // ``invoke_result`` message handled in ``ws.onmessage`` and shown
+  // via toast — no per-click promise / await needed.
+  if (!_opActionsWs || _opActionsWs.readyState !== 1) {
+    toast(`${component}.${method}: not connected`, "bad");
+    return;
+  }
+  try {
+    _opActionsWs.send(JSON.stringify({ type: "invoke", component, method }));
+  } catch (e) {
+    toast(`${component}.${method}: ${e}`, "bad");
+  }
+}
+
+// Sidebar section toggle (chevron expand/collapse — matches the
+// devices / steps sections).
+function _wireOpActionsSection() {
+  const header = $("btnToggleOpActions");
+  const list = $("opActionsList");
+  const chev = $("opActionsChevron");
+  if (!header || !list) return;
+  header.addEventListener("click", () => {
+    _opActionsExpanded = !_opActionsExpanded;
+    list.style.display = _opActionsExpanded ? "" : "none";
+    if (chev) chev.classList.toggle("open", _opActionsExpanded);
+  });
+}
+
+// Click delegation — fires both for the sidebar list and the pendant
+// modal body. Single handler keeps everything in lockstep with the
+// re-render.
+function _wireOpActionsClicks() {
+  const handler = (e) => {
+    const btn = e.target.closest(".op-action-btn");
+    if (!btn || btn.disabled) return;
+    const c = btn.dataset.component;
+    const m = btn.dataset.method;
+    if (c && m) runOperatorAction(c, m);
+  };
+  $("opActionsList")?.addEventListener("click", handler);
+  $("opActionsModalBody")?.addEventListener("click", handler);
+}
+
+// Pendant Controls button — opens the modal. Modal closes via the X
+// or by clicking the backdrop.
+function _wirePendantOpActionsModal() {
+  $("pendantOpActions")?.addEventListener("click", () => {
+    $("opActionsModalOverlay")?.classList.add("show");
+  });
+  $("btnOpActionsModalClose")?.addEventListener("click", () => {
+    $("opActionsModalOverlay")?.classList.remove("show");
+  });
+  $("opActionsModalOverlay")?.addEventListener("click", (e) => {
+    if (e.target.id === "opActionsModalOverlay") {
+      e.currentTarget.classList.remove("show");
+    }
+  });
+}
+
+_wireOpActionsSection();
+_wireOpActionsClicks();
+_wirePendantOpActionsModal();
 function escAttr(s) { return escHtml(s); }
 
 function renderStep(step, running) {
@@ -1179,6 +1355,7 @@ function updateIframe(state, launched) {
     connectDevicesWS(targetUrl);
     connectRuntimeStatusWS(targetUrl);
     connectScheduleWS(targetUrl);
+    connectOpActionsWS(targetUrl);
   }
 }
 

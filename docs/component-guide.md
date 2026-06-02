@@ -266,7 +266,98 @@ plate_{{ level }}:
 
 ---
 
-## 7. Full example
+## 7. Operator actions — exposing component methods as UI buttons
+
+A component can declare methods that the **operator** should be able to
+trigger from the UI — gripper enable/disable, decapper open, printer
+cancel-job, fixture release-clamp, etc. The orchestrator scans every
+component for an optional `operator_actions()` method and renders the
+union as buttons in two surfaces, both labelled **"Operator Controls"**:
+
+- **Sidebar "Operator Controls" section** — always visible; shows an
+  empty-state message ("No operator actions declared") when no
+  component contributes anything. Collapsible, grouped by component.
+- **Pendant "Controls" button** in the secondary row → modal with the
+  same component-grouped layout. Hidden when no component declares
+  any actions (pendant row is too constrained to spend a tile on an
+  empty surface).
+
+Both surfaces gate the buttons by workflow state: **disabled while
+RUNNING** (out-of-band ops mid-run would race the workflow), enabled
+in IDLE / PAUSED / ERROR / NOT_LAUNCHED. The component never has to
+enforce that — the orchestrator does.
+
+This is a **component-level** concern, intentionally separate from the
+device contract in [`device-guide.md`](device-guide.md). A fixture
+with no device-bus dependency can still expose operator actions; a
+device-backed component need not expose any.
+
+### The contract
+
+```python
+class Gripper:
+    def enable(self):
+        self.workspace.rt.output(config=self.output_enable)
+
+    def disable(self):
+        self.workspace.rt.output(config=self.output_disable)
+
+    def operator_actions(self) -> list[dict]:
+        return [
+            {"label": "Enable",  "method": "enable"},
+            {"label": "Disable", "method": "disable"},
+        ]
+```
+
+Each entry is a dict with two string fields:
+
+- **`label`** — display name on the button
+- **`method`** — name of a no-arg callable on the component
+  (`getattr(component, method)()` must work)
+
+The orchestrator silently drops entries whose `label` / `method` is
+missing or whose `method` doesn't resolve to a callable — a malformed
+entry can't crash the panel.
+
+### Same code path as recipes use
+
+The lifted `enable` / `disable` methods are also what recipes should
+call internally for the same hardware operation — e.g. the decapper
+recipe should call `self.component.open()` instead of inlining
+`rt.output(config=tool.output_disable)`. **One named entry point, two
+consumers**: recipe during the automated flow + operator button during
+recovery / testing / setup.
+
+### Two layers — component vs project
+
+Some operator actions need workspace knowledge a single component
+doesn't have ("move robot to *this project's* service position",
+"park above the tool rack on *this* layout"). Those belong at the
+project layer, not the component:
+
+| Layer | Belongs here | Owner |
+|---|---|---|
+| Component | Device-local actions, no environment context (open, disable, eject, clear_jam) | The component class |
+| Project | Actions that need workspace topology, collision boxes, currently-loaded tools | The project's `actions.py` or a sibling module |
+
+(The project-level surface is reserved for future work — for now,
+keep new actions on the component side and we'll wire the
+project-level extension when a concrete use case lands.)
+
+### Wire (for reference)
+
+The runtime exposes the actions over a single WebSocket
+(`/ws/operator_actions`) — both the list (server → client on
+connect) and the invocation messages (client → server, with the
+result pushed back). One pre-opened socket per workspace session, so
+every button click is a single `ws.send()` with no HTTP handshake on
+the hot path. See
+[`workspace.components.operator_actions`](../workspace/workspace/components/operator_actions.py)
+for the helper that reads the contract defensively.
+
+---
+
+## 8. Full example
 
 ```
 my_project/

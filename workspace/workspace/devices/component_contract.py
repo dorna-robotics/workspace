@@ -15,6 +15,11 @@ device bus. The contract has two parts:
   the bus snapshot to render a SIM pill, and the orchestrator reads
   it to skip auto-pause for sim claims.
 
+(Operator actions — `operator_actions()` — are a *component-level*
+concern, not a device-level one. Components without any device-bus
+dependency can still expose operator buttons. See
+``workspace.components.operator_actions`` and ``docs/component-guide.md``.)
+
 Why Protocol instead of base class:
 
 * Components in ``workspace/components/`` are heterogeneous (devices,
@@ -104,3 +109,5 @@ def component_device_claim(component, device_id: str) -> Optional[str]:
         return None
     result = str(result).strip().lower()
     return result if result in _CLAIM_MODES else None
+
+
