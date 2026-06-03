@@ -156,21 +156,12 @@ class Recipe:
     def tool_attached_to_the_robot(self):
         """Return the tool component currently held by the robot, or None.
 
-        Looks up the tool changer (if present) or the robot flange for the
-        attached tool solid, then resolves it to a workspace component.
+        Thin delegate to ``self.core.current_tool()`` — the kinematic
+        walk now lives on Core (atomic device-state query belongs on
+        the component, see component-guide §7). Kept here for
+        back-compat with existing recipes.
         """
-        tool = None
-        if self.core.has_tool_changer:
-            for child in self.core.tool_changer_robot_side.children["tool_changer_connection"]:
-                solid = child["child_solid"]
-                tool = self.workspace.components[solid.component]
-                continue
-        else:
-            for child in self.core.robot_flange.children["output"]:
-                solid = child["child_solid"]
-                tool = self.workspace.components[solid.component]
-                continue
-        return tool
+        return self.core.current_tool()
 
     def solid_attached_to_tool(self, tool):
         """Return the solid currently gripped by ``tool`` (at its ``tcp`` anchor), or None."""

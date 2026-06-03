@@ -414,6 +414,7 @@ def _broadcast_schedule_event(event: dict) -> None:
 #   POST /devices/<id>/release  → trigger remote release
 #   WS   /ws/devices            → push device_state events as they happen
 _device_ws_clients: set = set()
+_op_actions_ws_clients: set = set()
 
 
 def _project_device_ids(workspace) -> set[str]:
@@ -753,12 +754,16 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
         return True
 
     def open(self):
+        _op_actions_ws_clients.add(self)
         # Push the snapshot immediately so the panel can render
         # without an extra fetch round-trip.
         self.write_message(json.dumps({
             "type":    "actions",
             "actions": _operator_actions_snapshot(self.workspace),
         }))
+
+    def on_close(self):
+        _op_actions_ws_clients.discard(self)
 
     def on_message(self, raw):
         try:
@@ -840,6 +845,50 @@ class DeviceWebSocket(tornado.websocket.WebSocketHandler):
 
     def on_close(self):
         _device_ws_clients.discard(self)
+
+
+def _broadcast_scene_changed(workspace):
+    """Push fresh snapshots to all clients of the panels whose content
+    derives from ``workspace.components`` — namely:
+
+      * /ws/devices         (re-snapshot of the device list)
+      * /ws/operator_actions (re-snapshot of the operator-actions list)
+
+    Called by ``Workspace._notify_scene_changed`` after a successful
+    ``add_component`` / ``remove_component``. Best-effort: a missing
+    IOLoop or a dead client never blocks the caller.
+    """
+    if _main_ioloop is None:
+        return
+
+    # Devices panel — same payload shape DeviceWebSocket sends on open.
+    device_payload = json.dumps({
+        "type":     "snapshot",
+        "devices":  _project_devices_snapshot(workspace),
+    }) if _device_ws_clients else None
+
+    # Operator-actions panel — same shape OperatorActionsWebSocket
+    # sends on open.
+    op_payload = json.dumps({
+        "type":    "actions",
+        "actions": _operator_actions_snapshot(workspace),
+    }) if _op_actions_ws_clients else None
+
+    def _send():
+        if device_payload is not None:
+            for c in list(_device_ws_clients):
+                try:
+                    c.write_message(device_payload)
+                except Exception:
+                    _device_ws_clients.discard(c)
+        if op_payload is not None:
+            for c in list(_op_actions_ws_clients):
+                try:
+                    c.write_message(op_payload)
+                except Exception:
+                    _op_actions_ws_clients.discard(c)
+
+    _main_ioloop.add_callback(_send)
 
 
 def _broadcast_device_event(workspace, event: dict):

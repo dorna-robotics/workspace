@@ -13,6 +13,7 @@ class Feeder:
         # startup. See projects/syringe/startup.ipynb for usage.
         axis_cfg = {"axis": 7, "offset": 0, "usem":1, "pprm":4000, "tprm":360, "usee":1, "ppre":4000, "tpre":360, "p":0.01, "i":0.0001, "d":0, "duration":100 , "threshold":100},
         num_slots = 16,
+        pick_offset = 0,
         vaj=[300, 4000, 10000],
     )
     def __init__(self, name: str, workspace, type=None, **kwargs):
@@ -41,5 +42,36 @@ class Feeder:
         # number of positions
         self.num_slots = prm["num_slots"]
 
+        # angular offset of slot 0 in the robot's joint frame
+        # (calibration — where the pick anchor lands in the axis cycle)
+        self.pick_offset = prm["pick_offset"]
+
         # vaj
         self.vaj = prm["vaj"]
+
+    def rotate(self, step: int = 1, vaj=None):
+        """Rotate the feeder by ``step`` slots, snapped to the slot grid.
+
+        Target is anchored at ``pick_offset`` so successive calls don't
+        drift off the slot positions even if the axis is currently nudged
+        between slots. ``vaj`` overrides the default speed — used by
+        recipe workflows (e.g. mix) that want a slower agitation pace.
+        """
+        rt = self.workspace.rt
+        axis = self.axis_cfg["axis"]
+        current = rt.joint()
+        new = current[:]
+        current_steps = round((new[axis] - self.pick_offset) * (self.num_slots / 360))
+        new[axis] = (step + current_steps) * (360 / self.num_slots) + self.pick_offset
+        rt.checkpoint()
+        vaj = vaj or self.vaj
+        return rt.jmove(joint=new, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+
+    def advance(self): return self.rotate(+1)
+    def reverse(self): return self.rotate(-1)
+
+    def operator_actions(self) -> list[dict]:
+        return [
+            {"label": "Advance", "method": "advance"},
+            {"label": "Reverse", "method": "reverse"},
+        ]

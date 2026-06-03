@@ -183,7 +183,13 @@ a:hover { color: var(--accent-h); }
    SVG icon inside stays its normal 15×15 — only the clickable
    chip grows, so the hover/active feedback area also gets bigger.
    Scoped to navbar context so modal close buttons, card actions,
-   and other dense .btn-icon uses keep their compact sizing. */
+   and other dense .btn-icon uses keep their compact sizing.
+
+   Sizing only — no ``display`` declaration here, since burger-btn
+   is mobile-only (``display: none`` by default in nav.css, flipped
+   to flex by its media query). Forcing inline-flex here would
+   leak the burger onto desktop. The button's own selector handles
+   alignment via its base styles. */
 .topbar      .btn-icon,
 .ws-header   .btn-icon,
 .sb-header   .btn-icon,
@@ -194,6 +200,11 @@ a:hover { color: var(--accent-h); }
   min-width: 44px;
   min-height: 44px;
   padding: 0;
+}
+.topbar      .btn-icon,
+.ws-header   .btn-icon,
+.sb-header   .btn-icon,
+.pendant-nav .btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;

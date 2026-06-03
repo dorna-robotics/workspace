@@ -266,7 +266,94 @@ plate_{{ level }}:
 
 ---
 
-## 7. Operator actions — exposing component methods as UI buttons
+## 7. Methods — what belongs on the component vs the recipe
+
+A common trap is to put atomic device operations in the recipe ("`rotate_in_step` lives on the Feeder recipe, so does the math…"). That leads to:
+
+- **Duplication** the moment you want the same operation called from a different recipe or directly from the UI
+- **Operator buttons you can't expose** — `operator_actions` can only call methods on the **component**; anything in the recipe is locked out
+- **Confusion when refactoring** ("should I call `self.method` or `self.component.method`?")
+
+There's one rule that prevents all three:
+
+> **Component owns the atomic device operation. Recipe owns the workflow that coordinates it.**
+
+### The test question
+
+When you write a new method, ask:
+
+> *"Could the operator press one button to do this single thing in isolation?"*
+
+| Answer | Where it goes |
+|---|---|
+| **Yes** | Method on the component class. Candidate for `operator_actions` (next section). |
+| **No — it's a sequence / approach path / IK / sensor loop / multi-step choreography** | Method on the recipe. |
+
+### Worked example — Feeder
+
+Before refactoring, the Feeder recipe inlined the rotation math:
+
+```python
+# OLD — recipe/feeder.py (wrong place for the math)
+class Feeder(Recipe):
+    def rotate_in_step(self, step=1, **kwargs):
+        current = self.rt.joint()
+        axis = self.component.axis_cfg["axis"]
+        current_steps = round((current[axis] - self.pick_offset) * (self.component.num_slots / 360))
+        target = (step + current_steps) * (360 / self.component.num_slots) + self.pick_offset
+        return self.rt.jmove(joint=..., vel=self.vaj_mix[0], ...)
+```
+
+This is one jmove — the operator could press an "Advance" button to do it in isolation → atomic → belongs on the component. After refactor:
+
+```python
+# NEW — components/feeder/feeder.py (atomic op lives here)
+class Feeder:
+    def rotate(self, step=1, vaj=None):
+        rt = self.workspace.rt
+        axis = self.axis_cfg["axis"]
+        current = rt.joint()
+        current_steps = round((current[axis] - self.pick_offset) * (self.num_slots / 360))
+        new = current[:]
+        new[axis] = (step + current_steps) * (360 / self.num_slots) + self.pick_offset
+        rt.checkpoint()
+        vaj = vaj or self.vaj
+        return rt.jmove(joint=new, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+
+    def advance(self): return self.rotate(+1)
+    def reverse(self): return self.rotate(-1)
+```
+
+```python
+# NEW — recipes/feeder.py (workflow keeps coordinating; delegates the motion)
+class Feeder(Recipe):
+    def rotate_in_step(self, step=1, **kwargs):
+        # Override speed for slower mixing; grid snap lives on the component
+        return self.component.rotate(step, vaj=self.vaj_mix)
+
+    def mix(self):  ...   # tracks direction, calls rotate_in_step over multiple cycles
+    def present_cap(self, inspector): ...   # sensor loop + recursion
+```
+
+`mix()` and `present_cap()` stay in the recipe — they're real coordination.
+
+### What also moves with the operation
+
+When you lift an atomic operation to the component, **any calibration data it needs goes with it**. In the Feeder case, `pick_offset` (where slot 0 sits in the robot's joint frame) moved from recipe config to component config — calibration belongs with the device, not with the workflow that uses it.
+
+Recipe-level params stay in the recipe: `vaj_mix` (a slower workflow speed for agitation), `thr_dir` (mix-direction threshold), `shift_steps` (how many slots `mix()` advances per cycle).
+
+### The signs you got it wrong
+
+- The recipe has math that touches the device but doesn't reference any other recipe state
+- You wanted to expose something as an operator button but couldn't because the implementation was in the recipe
+- Two recipes use the same device differently and have nearly-identical helper methods
+
+Any of those → lift the atomic op into the component.
+
+---
+
+## 8. Operator actions — exposing component methods as UI buttons
 
 A component can declare methods that the **operator** should be able to
 trigger from the UI — gripper enable/disable, decapper open, printer
@@ -357,7 +444,102 @@ for the helper that reads the contract defensively.
 
 ---
 
-## 8. Full example
+## 9. Runtime scene mutation — adding and removing components live
+
+The scene is normally loaded once at workspace launch from the
+`scene/*.j2` yaml files. But sometimes you need to add or remove
+components **at runtime** — for example, when a recovery routine
+declares "the operator placed a new cap at slot A1", or when a
+recipe creates a tube on the fly. The Workspace exposes two
+explicit APIs for this:
+
+```python
+workspace.add_component(name, cfg)         # cfg = same dict shape as the yaml entry
+workspace.remove_component(name)
+```
+
+### `add_component(name, cfg)`
+
+`cfg` is the **same dict** a `scene/*.j2` yaml entry parses to —
+must include `type`, may include `attach`, plus whatever per-type
+config the component class accepts. Returns the new instance.
+
+```python
+workspace.add_component("cap_99", {
+    "type": "cap_2ml",
+    "attach": {
+        "parent_name":   "rack_2ml_source",
+        "parent_solid":  "body",
+        "parent_anchor": "A1",
+        "child_solid":   "body",
+        "child_anchor":  "center",
+        "offset":        [0, 0, 0, 0, 0, 0],
+    },
+})
+```
+
+After return: the kinematic chain is wired, the 3D viewer reflects
+the new solid, and the Devices / Operator Controls panels re-fetch
+their snapshots (so a new device-backed component shows up in the
+panel without a page reload).
+
+### `remove_component(name)`
+
+Detaches every solid in the component's assembly from its parent,
+drops the component from `workspace.components`, and broadcasts the
+same "scene changed" event the add path does.
+
+```python
+workspace.remove_component("cap_99")
+```
+
+### Refusal cases (both APIs)
+
+The framework rejects mutations that would put the system in an
+inconsistent state:
+
+| Refused | Reason |
+|---|---|
+| Adding a name already in `workspace.components` | Would silently overwrite the existing component |
+| Removing `core` | Runtime-critical; the Runtime holds a reference |
+| Removing a tool currently mounted on the robot flange | Would yank the kinematic chain out from under live motion. Detach via Core's tool-changer first. |
+| Adding **or** removing a device-backed component **during a run** | MQTT publisher lifecycle isn't safe to start/stop mid-run. Launch with it from the start, or pause the run first. |
+
+Passive components (caps, racks, tubes, fixtures — anything whose
+`device_ids` returns `[]`) can be added or removed during a run
+freely. The framework holds a re-entrant scene lock during the
+mutation so concurrent BT walks see a consistent state.
+
+### The explicit-mutation rule
+
+Scene topology and planner state (PDDL facts) are **separate
+concerns**. The framework **never** infers one from the other. A
+caller that mutates the scene is responsible for mutating any
+corresponding facts, and vice versa.
+
+```python
+# Scene + state, two explicit calls. No magic.
+workspace.add_component("cap_99", {"type": "cap_2ml", "attach": {...}})
+workspace.add_fact("at", "cap_99", "rack_A1_slot_2")
+```
+
+See [bt-framework-guide.md](bt-framework-guide.md) for the
+state-side surface (`add_fact` / `remove_fact` / `facts`).
+
+### What the caller is on the hook for
+
+- **Updating PDDL facts** to reflect any predicate the change
+  implies. The framework can't infer because predicates are
+  project-specific.
+- **Not removing something the current action is mid-touch on** —
+  e.g. don't remove a tube the gripper is currently picking. The
+  scene lock prevents data races, not logical conflicts.
+- **Not adding a brand-new device-backed component during a run**
+  — wait until the next launch.
+
+---
+
+## 10. Full example
 
 ```
 my_project/

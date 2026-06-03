@@ -430,6 +430,13 @@ def run_protocol(
         },
     )
 
+    # Register the ctx on the workspace so runtime fact-mutation APIs
+    # (workspace.add_fact / remove_fact / facts) can reach the active
+    # state. Cleared automatically when the protocol returns / raises
+    # so a subsequent run starts from a clean slate.
+    if hasattr(workspace, "set_active_ctx"):
+        workspace.set_active_ctx(ctx)
+
     # 3. Registry artifacts (auto-populated when ``actions`` was imported).
     #    Tool-swap durations live per-action on the Action class
     #    (cls.tool_swap_duration); the scheduler reads them via
@@ -723,6 +730,13 @@ def run_protocol(
         "%s: starting BT engine — %d action(s) in plan",
         project_name, len(replanner.last_plan or []),
     )
-    status = engine.run()
+    try:
+        status = engine.run()
+    finally:
+        # Always clear the workspace's active-ctx pointer on exit so a
+        # subsequent run (or stray fact mutation between runs) doesn't
+        # leak into an old state dict.
+        if hasattr(workspace, "clear_active_ctx"):
+            workspace.clear_active_ctx()
     log.info("%s: BT engine finished with status=%s", project_name, status.name)
     return status

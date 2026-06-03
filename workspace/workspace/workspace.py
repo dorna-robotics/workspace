@@ -1,4 +1,5 @@
 # workspace/workspace.py
+import threading
 from jinja2 import Template
 from pathlib import Path
 import yaml
@@ -34,6 +35,17 @@ class Workspace:
 
             cfg = yaml.safe_load(text) or {}
             comp_cfgs.update(cfg)  # later files override earlier ones
+
+        # Scene-mutation lock — protects ``self.components`` and any
+        # kinematic-tree edits from runtime add/remove calls. Re-entrant
+        # so the BT thread can hold it briefly across nested ops.
+        self._scene_lock = threading.RLock()
+
+        # Active BT context — registered by ``workspace.bt.launcher`` at
+        # run start, cleared on tear-down. ``add_fact`` / ``remove_fact``
+        # operate on its ``state["facts"]`` set so observations propagate
+        # to the planner and BT in one place.
+        self._active_ctx = None
 
         # 1) build components
         self.components = {}
@@ -103,21 +115,245 @@ class Workspace:
         current parent before wiring the new one.
         """
         for child_name, att in self._initial_attachments:
-            parent_comp = self.components.get(att["parent_name"])
-            child_comp = self.components.get(child_name)
-            if parent_comp is None or child_comp is None:
-                continue
-            try:
-                parent_solid = parent_comp.assembly[att["parent_solid"]]
-                child_solid = child_comp.assembly[att["child_solid"]]
-            except KeyError:
-                continue
-            child_solid.attach_to(
-                parent=parent_solid,
-                parent_anchor=att["parent_anchor"],
-                child_anchor=att["child_anchor"],
-                offset=att.get("offset", [0, 0, 0, 0, 0, 0]),
-            )
+            self._apply_one_attachment(child_name, att)
+
+    def _apply_one_attachment(self, child_name: str, att: dict) -> bool:
+        """Apply a single ``attach:`` clause. Returns True on success,
+        False if either side of the attachment isn't resolvable yet
+        (silent skip mirrors the original loop's behaviour). Factored
+        out of ``_apply_initial_attachments`` so ``add_component`` can
+        reuse it without duplicating the resolution logic.
+        """
+        parent_comp = self.components.get(att["parent_name"])
+        child_comp = self.components.get(child_name)
+        if parent_comp is None or child_comp is None:
+            return False
+        try:
+            parent_solid = parent_comp.assembly[att["parent_solid"]]
+            child_solid = child_comp.assembly[att["child_solid"]]
+        except KeyError:
+            return False
+        child_solid.attach_to(
+            parent=parent_solid,
+            parent_anchor=att["parent_anchor"],
+            child_anchor=att["child_anchor"],
+            offset=att.get("offset", [0, 0, 0, 0, 0, 0]),
+        )
+        return True
+
+    @staticmethod
+    def _detach_solid(solid) -> None:
+        """Remove ``solid`` from its current parent's children list and
+        reset its parent record. ``dorna2.Solid`` doesn't ship a
+        ``detach()`` method, so we walk the structure directly.
+        Idempotent: safe to call on an already-orphaned solid.
+        """
+        parent_solid = solid.parent.get("parent_solid")
+        parent_anchor = solid.parent.get("parent_anchor")
+        if parent_solid is not None and parent_anchor is not None:
+            children_at_anchor = parent_solid.children.get(parent_anchor, [])
+            parent_solid.children[parent_anchor] = [
+                c for c in children_at_anchor if c.get("child_solid") is not solid
+            ]
+        solid.parent = {
+            "parent_solid": None,
+            "parent_anchor": None,
+            "child_anchor": None,
+            "offset": None,
+        }
+
+    # ── Runtime scene mutation ───────────────────────────────────────────
+    # Scene topology and PDDL state are explicitly separate — see
+    # ``docs/component-guide.md`` (scene-side) and
+    # ``docs/bt-framework-guide.md`` (state-side). A caller that
+    # mutates one is responsible for mutating the other. The framework
+    # never infers.
+
+    def add_component(self, name: str, cfg: dict):
+        """Add a component to the workspace at runtime.
+
+        ``cfg`` is the same dict shape as a scene yaml entry — must
+        include ``type`` (the registered component type) and any
+        component-specific config. If ``cfg["attach"]`` is present, the
+        kinematic attachment is applied immediately.
+
+        Refuses during a run for:
+          * device-backed components (MQTT lifecycle isn't safe mid-run)
+        Always refuses:
+          * a name already in ``self.components``
+
+        Returns the new component instance. The caller is responsible
+        for adding any PDDL facts the change implies (see ``add_fact``).
+        """
+        if not isinstance(cfg, dict):
+            raise TypeError("cfg must be a dict (same shape as a scene yaml entry)")
+        if "type" not in cfg:
+            raise ValueError(f"component '{name}' cfg missing 'type'")
+        with self._scene_lock:
+            if name in self.components:
+                raise ValueError(f"component '{name}' already exists")
+            comp = comp_factory.create_component(name, cfg, self)
+            # Device-backed components carry MQTT subscriptions whose
+            # lifecycle isn't safe to start mid-run. Reject here rather
+            # than half-attach.
+            if component_device_ids(comp) and self._is_running():
+                raise RuntimeError(
+                    f"cannot add device-backed component '{name}' during a run; "
+                    "launch the workspace with it from the start"
+                )
+            self.components[name] = comp
+            if cfg.get("attach"):
+                self._initial_attachments.append((name, cfg["attach"]))
+                self._apply_one_attachment(name, cfg["attach"])
+        self._notify_scene_changed()
+        return comp
+
+    def remove_component(self, name: str):
+        """Remove a component from the workspace at runtime.
+
+        Detaches every solid in the component's assembly from its
+        current parent and drops the component from ``self.components``.
+
+        Refuses for:
+          * ``core`` (runtime-critical)
+          * a tool currently mounted on the robot flange (would yank
+            the kinematic chain out from under live motion)
+          * device-backed components during a run (MQTT lifecycle)
+          * a missing name
+
+        Returns nothing. Caller updates PDDL facts to match (see
+        ``remove_fact``).
+        """
+        with self._scene_lock:
+            if name not in self.components:
+                raise KeyError(f"component '{name}' does not exist")
+            if name == "core":
+                raise ValueError("'core' cannot be removed at runtime")
+            comp = self.components[name]
+            if self._is_running() and component_device_ids(comp):
+                raise RuntimeError(
+                    f"cannot remove device-backed component '{name}' during a run"
+                )
+            if self._is_mounted_on_robot(comp):
+                raise ValueError(
+                    f"'{name}' is currently mounted on the robot — detach first"
+                )
+            # Detach every solid from its parent. Drops it cleanly out of
+            # the kinematic tree so subsequent pose computations skip it.
+            assembly = getattr(comp, "assembly", {}) or {}
+            for solid in assembly.values():
+                self._detach_solid(solid)
+            # Drop attachment record so ``reset_scene`` doesn't try to
+            # re-attach a now-missing component.
+            self._initial_attachments = [
+                (n, a) for n, a in self._initial_attachments if n != name
+            ]
+            del self.components[name]
+        self._notify_scene_changed()
+
+    def _is_running(self) -> bool:
+        """True if the runtime is actively executing a workflow.
+        PAUSED / IDLE / ERROR are all 'not running'.
+        """
+        rt = getattr(self, "rt", None)
+        state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
+        return state in ("RUNNING", "ACTIVE")
+
+    def _is_mounted_on_robot(self, comp) -> bool:
+        """Whether ``comp`` is the tool currently mounted on Core's
+        flange. Uses ``core.current_tool()`` — the single source of
+        truth for what's on the robot right now.
+        """
+        core = self.components.get("core")
+        if core is None:
+            return False
+        getter = getattr(core, "current_tool", None)
+        if not callable(getter):
+            return False
+        try:
+            current = getter()
+        except Exception:
+            return False
+        return current is comp
+
+    def _notify_scene_changed(self) -> None:
+        """Fan out a 'scene changed' signal:
+          * 3D viewer snapshot (Display)
+          * /ws/devices broadcast of fresh snapshot
+          * /ws/operator_actions broadcast of fresh snapshot
+        Best-effort: a missing display / WS broker doesn't block the
+        mutation itself.
+        """
+        # Display — Display.send_snapshot is thread-safe.
+        try:
+            disp = getattr(self, "display", None)
+            if disp is not None and hasattr(disp, "send_snapshot"):
+                disp.send_snapshot()
+        except Exception:
+            pass
+        # WS fan-out — imported lazily to avoid a workspace ↔
+        # runtime_server circular import at module load.
+        try:
+            from workspace.runtime_server import _broadcast_scene_changed
+            _broadcast_scene_changed(self)
+        except Exception:
+            pass
+
+    # ── Runtime PDDL state mutation ──────────────────────────────────────
+    # See ``docs/bt-framework-guide.md`` for the rule that scene and
+    # state are separate concerns; mutating one never auto-mutates the
+    # other.
+
+    def set_active_ctx(self, ctx) -> None:
+        """Register the BT ``WorkspaceContext`` so ``add_fact`` /
+        ``remove_fact`` can reach its ``state["facts"]`` set. Called by
+        ``workspace.bt.launcher`` at run start; ``clear_active_ctx`` at
+        teardown.
+        """
+        self._active_ctx = ctx
+
+    def clear_active_ctx(self) -> None:
+        self._active_ctx = None
+
+    def add_fact(self, *args) -> None:
+        """Add a PDDL fact to the active run's state.
+
+        Args form the predicate tuple, e.g.
+        ``workspace.add_fact("capped", "tube_5")``.
+
+        Idempotent — adding a fact already present is a no-op. Raises
+        if there is no active run (facts only exist inside a run).
+        """
+        if self._active_ctx is None:
+            raise RuntimeError("no active run; facts can only be set during a run")
+        if not args:
+            raise ValueError("add_fact requires a non-empty predicate tuple")
+        facts = self._active_ctx.state.setdefault("facts", set())
+        facts.add(tuple(args))
+
+    def remove_fact(self, *args) -> None:
+        """Remove a PDDL fact from the active run's state.
+
+        Silent no-op if the fact isn't present. Raises if there is no
+        active run.
+        """
+        if self._active_ctx is None:
+            raise RuntimeError("no active run; facts can only be cleared during a run")
+        if not args:
+            raise ValueError("remove_fact requires a non-empty predicate tuple")
+        facts = self._active_ctx.state.get("facts")
+        if facts is None:
+            return
+        facts.discard(tuple(args))
+
+    def facts(self) -> set:
+        """Snapshot of current PDDL facts (a plain set of tuples). Empty
+        set when there is no active run, so the caller can use it in
+        ``len(workspace.facts()) > 0``-style checks without guarding.
+        """
+        if self._active_ctx is None:
+            return set()
+        return set(self._active_ctx.state.get("facts") or set())
 
     def reset_scene(self):
         """Reset the scene to its launch-time layout.

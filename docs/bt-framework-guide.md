@@ -1220,7 +1220,73 @@ Why this is the cleanest pattern:
 
 ---
 
-## 9. Diagnose APIs — uniform across every project
+## 9. Runtime fact mutation — `add_fact` / `remove_fact` / `facts`
+
+Inside an active run, PDDL facts live in `ctx.state["facts"]` — a
+mutable set of tuples like `("capped", "tube_5")`. The framework
+re-evaluates preconditions on every BT tick, so any fact you add
+or remove takes effect immediately on the next tick. The replanner
+reads the same set, so observations also propagate into the
+planner's world view.
+
+The launcher registers the active run's `ctx` on the workspace at
+start, so callers don't have to chase it. Use the three APIs on
+`Workspace`:
+
+```python
+workspace.add_fact("capped", "tube_5")       # idempotent
+workspace.remove_fact("at", "tube_5", "src") # silent no-op if absent
+workspace.facts()                            # snapshot — set of tuples
+```
+
+`add_fact` / `remove_fact` raise `RuntimeError` outside an active
+run (facts only exist inside a run). `facts()` returns an empty
+set in that case so it can be used in `if workspace.facts(): …`
+checks without guarding.
+
+### The explicit-mutation rule (cross-link)
+
+Scene topology and PDDL state are **separate concerns**. The
+framework never infers one from the other. A caller that mutates
+the scene is responsible for mutating any corresponding facts, and
+vice versa. See [component-guide.md §9](component-guide.md) for
+the scene-side surface (`add_component` / `remove_component`).
+
+Two calls, two intents:
+
+```python
+workspace.add_component("cap_99", {"type": "cap_2ml", "attach": {...}})
+workspace.add_fact("at", "cap_99", "rack_A1_slot_2")
+```
+
+If you forget the second call, the planner has no idea the new cap
+exists. If you forget the first, you have a predicate referring to
+a phantom object. The framework can't tell which is wrong, so it
+trusts the caller in both directions.
+
+### Where this gets used
+
+- **Operator recovery actions** — when the operator manually caps a
+  tube during a paused run, the recovery action calls
+  `workspace.add_fact("capped", t)` so the BT skips the failed
+  `CapTube` action and moves on.
+- **Vision-driven state correction** — a check that reads the camera
+  and updates predicates without an action wrapping it (rare; most
+  vision is done inside an action's `execute`).
+- **Manual diagnose tools** — power-user inspection and debugging.
+
+### What this does **not** do
+
+- Does **not** invalidate plans on its own. The replanner kicks in
+  on its own schedule (slice boundaries, replan triggers). If you
+  need an immediate replan after a fact change, call the project's
+  replanner trigger explicitly.
+- Does **not** sync to the scene. See the explicit-mutation rule
+  above.
+
+---
+
+## 10. Diagnose APIs — uniform across every project
 
 The framework exposes three observation surfaces every project gets
 for free:
@@ -1238,7 +1304,7 @@ them once can debug any protocol.
 
 ---
 
-## 10. The data flow at runtime
+## 11. The data flow at runtime
 
 ```
 batch description (kwargs from operator)
@@ -1271,7 +1337,7 @@ SUCCESS / FAILURE / INVALID (aborted)
 
 ---
 
-## 11. Authoring rules (the load-bearing ones)
+## 12. Authoring rules (the load-bearing ones)
 
 1. **One action class per atomic step.** No grouping of "related"
    actions into one class with conditional branches inside.
@@ -1290,7 +1356,7 @@ SUCCESS / FAILURE / INVALID (aborted)
 
 ---
 
-## 12. Performance characteristics and slicing
+## 13. Performance characteristics and slicing
 
 ### Per-layer cost
 
@@ -1397,7 +1463,7 @@ capacity (rack slots, time available), not planner capacity.
 
 ---
 
-## 13. Checks (pre_check / post_check) — pace_or-compatible
+## 14. Checks (pre_check / post_check) — pace_or-compatible
 
 `checks.py` mirrors pace_or's convention exactly so vision /
 sensor methods written for pace_or transfer verbatim:
@@ -1446,7 +1512,7 @@ Semantics:
 
 ---
 
-## 14. Common questions (FAQ)
+## 15. Common questions (FAQ)
 
 Confusion points that come up the first time someone authors a
 protocol. Each answer points to the deeper section for full detail.
@@ -1668,7 +1734,7 @@ the planner schedules periodically).
 
 ---
 
-## 15. Migration checklist (linear → BT-driven)
+## 16. Migration checklist (linear → BT-driven)
 
 If you have a pace_or-style linear project and want to convert it:
 

@@ -565,6 +565,97 @@ class Core:
     
 
 
+    # ── Operator-callable primitives ──────────────────────────────────
+    # Atomic ops on the robot itself. Designed for both recipe use and
+    # operator-button use via ``operator_actions``. All go through
+    # ``workspace.rt`` so sim mode is respected.
+
+    def current_tool(self):
+        """Return the tool component currently mounted on the robot, or
+        None if nothing is attached.
+
+        Walks the dorna2 Solid kinematic chain — either the tool
+        changer's ``tool_changer_connection`` anchor (when present) or
+        the flange's ``output`` anchor — and resolves to the workspace
+        component. Single source of truth for "what tool is on the
+        robot right now"; recipes delegate to this instead of
+        duplicating the walk.
+        """
+        try:
+            if self.has_tool_changer:
+                for child in self.tool_changer_robot_side.children["tool_changer_connection"]:
+                    return self.workspace.components[child["child_solid"].component]
+            else:
+                for child in self.robot_flange.children["output"]:
+                    return self.workspace.components[child["child_solid"].component]
+        except (KeyError, AttributeError):
+            return None
+        return None
+
+    def motor_enable(self):
+        self.workspace.rt.motor(1)
+
+    def motor_disable(self):
+        self.workspace.rt.motor(0)
+
+    def tool_attach(self):
+        """Fire the tool-changer engage IO. Operator caution: safe only
+        when the robot is at a tool-rack position; firing elsewhere can
+        mis-grip or do nothing useful."""
+        if not self.has_tool_changer:
+            raise RuntimeError("This robot has no tool changer")
+        self.workspace.rt.output(config=self.tool_changer_cfg["output_attach"])
+
+    def tool_detach(self):
+        """Fire the tool-changer release IO. Operator caution: with a
+        tool held away from a rack position, this drops it on the
+        floor."""
+        if not self.has_tool_changer:
+            raise RuntimeError("This robot has no tool changer")
+        self.workspace.rt.output(config=self.tool_changer_cfg["output_detach"])
+
+    def tool_enable(self):
+        """Enable whatever tool is currently on the flange.
+
+        Looks up the mounted tool via ``current_tool`` and calls its
+        ``enable`` method. Raises with a clear, operator-friendly
+        message if no tool is mounted or the mounted tool doesn't
+        implement enable — the orchestrator surfaces the message as a
+        toast on the failed button click.
+        """
+        tool = self.current_tool()
+        if tool is None:
+            raise RuntimeError("No tool currently attached to the robot")
+        fn = getattr(tool, "enable", None)
+        if not callable(fn):
+            raise RuntimeError(f"Tool '{getattr(tool, 'name', tool)}' has no enable() method")
+        return fn()
+
+    def tool_disable(self):
+        """Disable whatever tool is currently on the flange. See
+        ``tool_enable`` for the failure-mode contract."""
+        tool = self.current_tool()
+        if tool is None:
+            raise RuntimeError("No tool currently attached to the robot")
+        fn = getattr(tool, "disable", None)
+        if not callable(fn):
+            raise RuntimeError(f"Tool '{getattr(tool, 'name', tool)}' has no disable() method")
+        return fn()
+
+    def operator_actions(self) -> list[dict]:
+        actions = [
+            {"label": "Enable Motors",  "method": "motor_enable"},
+            {"label": "Disable Motors", "method": "motor_disable"},
+            {"label": "Enable Tool",    "method": "tool_enable"},
+            {"label": "Disable Tool",   "method": "tool_disable"},
+        ]
+        if self.has_tool_changer:
+            actions += [
+                {"label": "Attach Tool", "method": "tool_attach"},
+                {"label": "Detach Tool", "method": "tool_detach"},
+            ]
+        return actions
+
     def simulation(self, on: bool = True):
         """
         Switch between simulation and real robot API.
@@ -1765,7 +1856,7 @@ class SimulationAPI:
 
     # motor
     def motor(self, val=None):
-        return True
+        return val
 
     # ── Axis / homing stubs ────────────────────────────────────────────
     # SDK methods that touch the motor controller. No hardware in sim,

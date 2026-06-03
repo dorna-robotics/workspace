@@ -67,9 +67,3 @@ class Gripper:
     def disable(self):
         self.workspace.rt.output(config=self.output_disable)
         self.output_state(0)
-
-    def operator_actions(self) -> list[dict]:
-        return [
-            {"label": "Enable",  "method": "enable"},
-            {"label": "Disable", "method": "disable"},
-        ]

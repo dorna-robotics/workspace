@@ -27,18 +27,29 @@ let _logFollowing = true;
 // so an operator with multiple workspaces open can spot which one needs
 // attention from the tab strip alone. The favicon stays as the plain
 // Dorna logo (set in HTML); only the title's leading glyph changes.
+//
+// Colour mapping mirrors the state pill + body wash:
+//   green  = RUNNING / ACTIVE      (working, watch)
+//   blue   = IDLE / READY          (primed, your move)
+//   amber  = PAUSED / PARKING      (held)
+//   red    = ERROR / OFFLINE       (problem)
+//   gray   = NOT_LAUNCHED / unknown
 const _TITLE_DOTS = {
-  ok:   "\u{1F7E2}",  // 🟢 RUNNING / ACTIVE
-  warn: "\u{1F7E1}",  // 🟡 PAUSED / PARKING / IDLE
-  bad:  "\u{1F534}",  //  RED ERROR / OFFLINE
-  off:  "⚫",     // ⚫ NOT_LAUNCHED / unknown
+  ok:      "\u{1F7E2}",  // 🟢 RUNNING / ACTIVE
+  waiting: "\u{1F535}",  // 🔵 IDLE / READY (operator's move)
+  warn:    "\u{1F7E1}",  // 🟡 PAUSED / PARKING / LAUNCHED_NOT_READY
+  bad:     "\u{1F534}",  // 🔴 ERROR / OFFLINE
+  off:     "⚫",          // ⚫ NOT_LAUNCHED / unknown
 };
-let _titleLastVariant = null;
+let _titleLastKey = null;
 
 function _setFaviconForState(state, variant, isInRun) {
-  if (variant === _titleLastVariant) return;
-  _titleLastVariant = variant;
-  const dot = _TITLE_DOTS[variant] || _TITLE_DOTS.off;
+  // "ok + waiting" splits off as its own blue key so the tab strip
+  // matches the in-app body wash + state pill colour.
+  const key = (variant === "ok" && isWaiting(state)) ? "waiting" : variant;
+  if (key === _titleLastKey) return;
+  _titleLastKey = key;
+  const dot = _TITLE_DOTS[key] || _TITLE_DOTS.off;
   document.title = `${dot} ${wsName} — Dorna Workspace`;
 }
 
@@ -553,6 +564,18 @@ function _tryDevicesWS() {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
+      // Full snapshot from the server — fired on connect AND any time
+      // ``workspace.add_component`` / ``remove_component`` runs (the
+      // device list could have changed). Replace the in-memory map
+      // wholesale and re-render.
+      if (msg && msg.type === "snapshot" && Array.isArray(msg.devices)) {
+        _devices.clear();
+        for (const d of msg.devices) {
+          if (d && d.id) _devices.set(d.id, d);
+        }
+        renderDevicesPanel();
+        return;
+      }
       if (msg && msg.type === "device_state" && msg.id) {
         const prev = _devices.get(msg.id);
         _devices.set(msg.id, msg);

@@ -14,7 +14,6 @@ class Feeder(Recipe):
         # mix
         vaj_mix=[200, 600, 3000],
         thr_dir=10000,
-        pick_offset=0,
         shift_steps=21,
     )
 
@@ -39,7 +38,6 @@ class Feeder(Recipe):
         # mix
         self.vaj_mix = prm["vaj_mix"]
         self.thr_dir = prm["thr_dir"]
-        self.pick_offset = prm["pick_offset"]
         self.shift_steps = prm["shift_steps"]
 
     def mix(self, **kwargs):
@@ -61,33 +59,14 @@ class Feeder(Recipe):
         return self.rotate_in_step(step=self.mix_dir * self.shift_steps, **kwargs)
 
     def rotate_in_step(self, step=1, **kwargs):
-        """Rotate the feeder's axis by ``step`` slots (positive or negative).
+        """Rotate the feeder by ``step`` slots at workflow (mix) speed.
 
-        Converts step count to joint degrees via ``num_slots`` (360°/num_slots
-        per step) and issues a single jmove at ``vaj_mix`` speed.
+        Thin delegate to ``self.component.rotate`` — the grid-snap math
+        lives on the component now. This wrapper just overrides the
+        speed to ``vaj_mix`` so workflow agitation stays slower than
+        the operator-facing default.
         """
-        rt = self.rt
-
-        # current joint
-        current_joint = rt.joint()
-
-        # new_joint
-        new_joint = current_joint[:]  # init
-        axis = self.component.axis_cfg["axis"]
-
-        current_steps = round(
-            (new_joint[axis] - self.pick_offset) * (self.component.num_slots / 360)
-        )
-        new_joint[axis] = (step + current_steps) * (360 / self.component.num_slots) + self.pick_offset
-
-        # motion
-        rt.checkpoint()
-        return rt.jmove(
-            joint=new_joint,
-            vel=self.vaj_mix[0],
-            accel=self.vaj_mix[1],
-            jerk=self.vaj_mix[2],
-        )
+        return self.component.rotate(step=step, vaj=self.vaj_mix)
 
     def pick(
         self,
