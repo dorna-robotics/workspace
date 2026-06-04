@@ -458,13 +458,17 @@ workspace.add_component(name, cfg)         # cfg = same dict shape as the yaml e
 workspace.remove_component(name)
 ```
 
-### `add_component(name, cfg)`
+### `add_component(name, cfg)` — paired with `add_fact`
 
 `cfg` is the **same dict** a `scene/*.j2` yaml entry parses to —
 must include `type`, may include `attach`, plus whatever per-type
 config the component class accepts. Returns the new instance.
 
+Almost every real add will also need a corresponding PDDL fact, so
+the canonical pattern is two calls:
+
 ```python
+# Scene side — adds the solid to the kinematic tree.
 workspace.add_component("cap_99", {
     "type": "cap_2ml",
     "attach": {
@@ -476,20 +480,42 @@ workspace.add_component("cap_99", {
         "offset":        [0, 0, 0, 0, 0, 0],
     },
 })
+
+# State side — tells the planner where it is so subsequent actions
+# can reason about it. Must be called explicitly; the framework
+# never infers facts from scene edits.
+workspace.add_fact("at", "cap_99", "rack_2ml_source.A1")
 ```
 
-After return: the kinematic chain is wired, the 3D viewer reflects
-the new solid, and the Devices / Operator Controls panels re-fetch
-their snapshots (so a new device-backed component shows up in the
-panel without a page reload).
+After both return: the kinematic chain is wired, the 3D viewer
+reflects the new solid, the Devices / Operator Controls panels
+re-snapshot, and the next BT tick sees the new predicate.
 
-### `remove_component(name)`
+### `remove_component(name)` — paired with `remove_fact`
 
 Detaches every solid in the component's assembly from its parent,
 drops the component from `workspace.components`, and broadcasts the
-same "scene changed" event the add path does.
+same "scene changed" event the add path does. As with add, you
+also clean up any predicates that referenced the removed object:
 
 ```python
+# Operator took cap_99 out of the workspace entirely.
+workspace.remove_fact("at", "cap_99", "rack_2ml_source.A1")
+workspace.remove_component("cap_99")
+```
+
+Order doesn't matter, but cleaning facts first (then scene) is the
+defensive choice: a BT tick between the two calls sees a fact
+about an object that still exists, never a fact about a phantom.
+
+`remove_fact` is a silent no-op if the fact isn't present, so you
+don't need to track exactly which predicates were set —
+defensively clear what the action would have set:
+
+```python
+# Forget every cap-related predicate, no matter which ones were live.
+workspace.remove_fact("at",     "cap_99", "rack_2ml_source.A1")
+workspace.remove_fact("capped", "tube_5")
 workspace.remove_component("cap_99")
 ```
 
@@ -515,16 +541,12 @@ mutation so concurrent BT walks see a consistent state.
 Scene topology and planner state (PDDL facts) are **separate
 concerns**. The framework **never** infers one from the other. A
 caller that mutates the scene is responsible for mutating any
-corresponding facts, and vice versa.
+corresponding facts, and vice versa — see the paired examples in
+the `add_component` and `remove_component` sections above.
 
-```python
-# Scene + state, two explicit calls. No magic.
-workspace.add_component("cap_99", {"type": "cap_2ml", "attach": {...}})
-workspace.add_fact("at", "cap_99", "rack_A1_slot_2")
-```
-
-See [bt-framework-guide.md](bt-framework-guide.md) for the
-state-side surface (`add_fact` / `remove_fact` / `facts`).
+The state-side surface (`add_fact` / `remove_fact` / `facts`) is
+documented fully in
+[bt-framework-guide.md §9](bt-framework-guide.md#9-runtime-fact-mutation--add_fact--remove_fact--facts).
 
 ### What the caller is on the hook for
 
