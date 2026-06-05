@@ -243,7 +243,18 @@ class Core:
         # robot is a fault to surface (red dot + auto-pause), not a
         # reason to silently switch to a fake api.
         self._simulation_mode = prm["simulation"]
-        self.dorna = RobotStation(ip=self.robot_ip or "", label=self.name)
+        # RobotStation gets the authored sim flag but always attempts
+        # the real connect — device-guide §16: bus state reflects
+        # hardware reachability regardless of sim. The flag is used
+        # by ``set_simulation`` for runtime toggle and by Core for api
+        # routing; AutoRecover is suspended in sim via the
+        # attachment's ``set_sim`` so a fake/unreachable IP in sim
+        # shows red dot + SIM pill without retry storms.
+        self.dorna = RobotStation(
+            ip=self.robot_ip or "",
+            label=self.name,
+            simulation=self._simulation_mode,
+        )
         self._robot_attachment = None
 
         # Always attach the robot to the device bus when an IP exists,
@@ -657,32 +668,40 @@ class Core:
         return actions
 
     def simulation(self, on: bool = True):
+        """Live sim/real flip — parity with ``MultiMeter.simulation``
+        (see device-guide.md §16).
+
+        Sim is orthogonal to connection state. Three layers flipped:
+
+          1. Robot api selection — ``self.robot_api`` switches
+             between ``SimulationAPI`` (sim) and ``self.dorna``
+             (real). This is what makes recipes run on canned data
+             without touching hardware.
+          2. RobotStation flag — ``set_simulation`` flips
+             ``self.dorna.simulation`` (no connection change). The
+             TCP stays open; bus state keeps reflecting
+             reachability.
+          3. Bus attachment — ``set_sim`` republishes ``info.sim``
+             so the panel SIM pill flips live and AutoRecover
+             suspends or re-arms.
         """
-        Switch between simulation and real robot API.
-        user will call robot api calls through self.robot_api
-        """
-        if self._simulation_mode and on:
-            # already in simulation
-            return
-        elif not self._simulation_mode and not on:
-            # already in normal mode
-            return
-        elif self._simulation_mode and not on:
-            # switch to real robot
+        if self._simulation_mode == bool(on):
+            return  # idempotent
+        if self._simulation_mode and not on:
+            # sim → real: route recipes through the real client
             self._simulation_mode = False
             self.robot_api = self.dorna
             print(f"🟡 {self.name} simulation api disabled")
-        elif not self._simulation_mode and on:
-            # switch to simulation
+        else:
+            # real → sim: route recipes through SimulationAPI
             self._simulation_mode = True
             self.robot_api = SimulationAPI(joints=self.robot_api.joint())
             print(f"🔵 {self.name} simulation api enabled")
 
-        # Propagate the new sim flag to the bus attachment so the panel
-        # badge updates and AutoRecover suspends/re-arms accordingly.
-        # Done outside the branches so a no-op call (already in target
-        # state) doesn't republish info needlessly — set_sim is itself
-        # idempotent.
+        self.dorna.set_simulation(self._simulation_mode)
+
+        # Republish the bus sim flag. set_sim on the attachment is
+        # idempotent + suspends/re-arms AutoRecover.
         if self._robot_attachment is not None:
             self._robot_attachment.set_sim(self._simulation_mode)
 

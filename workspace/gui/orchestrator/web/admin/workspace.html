@@ -192,25 +192,41 @@
     .device-row.is-down  { box-shadow: inset 0 0 0 1px rgba(255,69,58,0.30); }
     .device-row.is-recovering { box-shadow: inset 0 0 0 1px rgba(255,159,10,0.25); }
     .device-row .btn { padding: 3px 9px; font-size: var(--text-xs); border-radius: var(--radius-xs); }
-    .device-row .device-pill {
+    /* Pill styles shared between the inline device row (.device-row)
+       and the detail modal (.device-detail) — same look in both
+       surfaces so SIM reads as the same chip everywhere. */
+    .device-row .device-pill,
+    .device-detail .device-pill {
       font-size: var(--text-xs);
-      padding: 2px 8px;
+      /* Inline-flex + fixed height + line-height:1 stops the
+         uppercased text + letter-spacing from stretching the chip
+         vertically — that was making SIM (~20.5px) taller than the
+         Recover button (~17px) and pushing the row down. Matches the
+         button's effective height. */
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 8px;
+      line-height: 1;
       border-radius: var(--radius-xs);
       color: var(--muted);
       background: rgba(255,255,255,0.06);
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    [data-theme="light"] .device-row .device-pill { background: rgba(0,0,0,0.06); }
+    [data-theme="light"] .device-row .device-pill,
+    [data-theme="light"] .device-detail .device-pill { background: rgba(0,0,0,0.06); }
     /* SIM pill: distinct accent so a sim device never visually blends
        into a real one. Cyan-ish in dark theme to read as "informational,
        not a fault" — not red/orange/green which all carry state meaning. */
-    .device-row .device-pill--sim {
+    .device-row .device-pill--sim,
+    .device-detail .device-pill--sim {
       color: #5ec8ff;
       background: rgba(94,200,255,0.12);
       box-shadow: inset 0 0 0 1px rgba(94,200,255,0.25);
     }
-    [data-theme="light"] .device-row .device-pill--sim {
+    [data-theme="light"] .device-row .device-pill--sim,
+    [data-theme="light"] .device-detail .device-pill--sim {
       color: #0c6cb3;
       background: rgba(12,108,179,0.10);
       box-shadow: inset 0 0 0 1px rgba(12,108,179,0.25);

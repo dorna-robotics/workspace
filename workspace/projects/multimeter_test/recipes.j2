@@ -1,0 +1,8 @@
+# multimeter_test recipes — one alias, ``meter``, pointing at the
+# project's single MultiMeterBk879b component. The recipe class is the
+# model-agnostic ``MultiMeter`` from workspace/recipes/multi_meter.py;
+# it just delegates measurement calls to the component.
+
+meter:
+  class: workspace.recipes.multi_meter.MultiMeter
+  kwargs: {component: multi_meter_1}

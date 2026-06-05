@@ -322,9 +322,15 @@ a:hover { color: var(--accent-h); }
   50%       { box-shadow: 0 0 0 5px transparent; }
 }
 .dot.pulse      { animation: pulse-dot 2s ease-in-out infinite; }
-.dot.ok.pulse   { --dot-pulse: rgba(10,132,255,0.5); background: var(--accent); }
+.dot.ok.pulse   { --dot-pulse: rgba(52,199,89,0.5); }
 .dot.warn.pulse { --dot-pulse: rgba(255,159,10,0.5); }
 .dot.bad.pulse  { --dot-pulse: rgba(255,69,58,0.5); }
+
+/* The workflow's "IDLE/READY → operator's move" state uses a pulsing
+   ok dot inside a ``.pill`` — that one specific surface goes blue.
+   Scoped via ``.pill .dot`` so device-row dots (which also pulse on
+   ok for the "alive" cue) stay green. */
+.pill .dot.ok.pulse { --dot-pulse: rgba(10,132,255,0.5); background: var(--accent); }
 
 /* A pulsing OK dot means IDLE/READY (waiting for the operator's
    first Start). Recolour the surrounding pill blue too so the

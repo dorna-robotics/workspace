@@ -475,7 +475,7 @@ package to every leaf with one variable.
 |---|---|---|---|
 | `self.ctx.workspace` | `Workspace` | SDK root — scene + components | `self.workspace` |
 | `self.ctx.core` | `Core` | robot API (sim or real — chosen by core) | `self.core` |
-| `self.ctx.runtime` | `Runtime` | `rt.step(...)`, `rt.checkpoint()`, pause/end signals | `self.rt` |
+| `self.ctx.runtime` | `Runtime` | `rt.step(...)` (observability, non-blocking), `rt.sleep(...)` / `rt.<robot>(...)` / `rt.checkpoint()` (pause-aware). See [project-guide.md §8 Pause gate](project-guide.md#pause-gate) for the full pause-aware map. | `self.rt` |
 | `self.ctx.recipes` | `dict[str, Recipe]` | name → recipe instance loaded from `recipes.yaml`. **Preferred way to drive hardware.** | `self.rcp` |
 | `self.ctx.state` | `dict` | live world state. `ctx.state["facts"]` is the fact set. **Managed by the framework — don't write to it directly**, return effects from `eff()` instead. | — |
 | `self.ctx.meta` | `dict` | per-run scratch space. Keys: `kwargs`, `objects`, `checks`, `current_tool`, `project`. | — |

@@ -1,315 +1,266 @@
+"""Multimeter / LCR-meter component.
+
+Stationary bench instrument — no robot motion, no tool changer, no
+flange attachment. The component owns the device-bus attachment and
+exposes a sim-agnostic measurement API; recipes / actions / the
+operator UI call the same methods regardless of the underlying sim
+or real driver.
+
+Wire it up in ``scene/base.j2`` like any other component:
+
+    multi_meter_1:
+      type: "multi_meter_bk879b"
+      simulation: false        # port omitted → auto-detect USB port
+      # port: "/dev/ttyUSB0"   # or pin a specific COM port
+
+The model-specific driver (BK Precision 879B today, future Keithley /
+Fluke / etc. tomorrow) lives behind a :class:`BK879BStation`-shaped
+station that implements the Device protocol from
+``workspace/devices/component_contract.py``. Adding a new meter model
+is "swap the station class", not "rewrite the component".
+
+See ``docs/device-guide.md`` for the device contract this component
+follows, and ``docs/component-guide.md`` §7 for the rule that puts
+atomic device operations on the component (here) instead of the
+recipe.
+"""
+
 from __future__ import annotations
 
-import re
-import time
-from dataclasses import dataclass
-from typing import Optional, Tuple
+import logging
+from copy import deepcopy
+from typing import Optional
 
-import serial
-import serial.tools.list_ports
+from mergedeep import merge
+from dorna2 import Solid
 
-
-@dataclass
-class Measurement:
-    primary: float
-    primary_unit: str
-    secondary: float
-    secondary_unit: str
-    function: str
-    frequency: str
-    raw: str
+from workspace.components.factory import register
+from workspace.components.multi_meter.bk879b_station import BK879BStation
+from workspace.devices import AutoRecover, attach_device
 
 
-_FREQ_MAP = {100: "100hz", 120: "120hz", 1000: "1khz", 10000: "10khz"}
-_FREQ_DISPLAY = {"100hz": "100 Hz", "120hz": "120 Hz", "1khz": "1 kHz", "10khz": "10 kHz"}
-_UNITS = {"L": "H", "C": "F", "R": "\u03a9", "Z": "\u03a9"}
-_USB_VIDS = {0x0403, 0x10C4}
-_ERROR_RE = re.compile(r"^E(1[012])\b")
+log = logging.getLogger(__name__)
 
 
-class BK879B:
-    def __init__(
-        self,
-        port: Optional[str] = None,
-        baud: int = 9600,
-        timeout: float = 2.0,
-    ):
-        self.port = port
-        self.baud = baud
-        self.timeout = timeout
-        self.ser: Optional[serial.Serial] = None
-        self._function: str = "C"
-        self._frequency: str = ""
+@register("multi_meter_bk879b")
+class MultiMeterBk879b:
+    DEFAULTS = dict(
+        anchors={"body": {
+            "center": [0, 0, 0, 0, 0, 0],
+            "top":    [0, 0, 42, 0, 0, 0],
+        }},
+        collision_box={"body": [
+            {"pose": [7.5, 0, 25, 0, 0, 0], "scale": [105, 190, 50]},
+        ]},
+        port=None,
+        simulation=True,
+        # ``critical`` controls whether a non-sim, non-reachable
+        # transition pauses the runtime. Default to True — a meter
+        # we can't read is usually a real fault worth pausing for.
+        # Set ``critical: false`` in scene yaml on projects where
+        # the meter is genuinely advisory.
+        critical=True,
+    )
 
-    # ==================================================
-    # Connection lifecycle
-    # ==================================================
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        prm = deepcopy(self.DEFAULTS)
+        merge(prm, cfg)
+        merge(prm, kwargs)
+        prm.setdefault(
+            "type",
+            getattr(self.__class__, "_registered_type", cfg.get("type")),
+        )
+
+        self.name = name
+        self.workspace = workspace
+        self.type = prm["type"]
+
+        # Kinematic assembly — single body solid with the configured
+        # collision box. Multi-solid meters can extend this later by
+        # adding entries to ``anchors`` / ``collision_box``.
+        self.assembly = {
+            k: Solid(
+                type=self.type,
+                anchors=prm["anchors"][k],
+                component=self.name,
+                **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {}),
+            )
+            for k in prm["anchors"]
+        }
+
+        # Authored simulation intent — failures must NOT flip this
+        # (same rule as Core). The operator either authored sim or
+        # didn't; an unreachable real meter is a fault we surface, not
+        # a reason to silently switch to sim.
+        self._simulation_mode = bool(prm["simulation"])
+        self._port = prm["port"]
+        self._critical = bool(prm["critical"])
+
+        # ── The one sim/real branch — component constructor, single
+        #    place. Station handles the unified API; recipes and
+        #    operator buttons never have to think about sim/real. ──
+        self.meter = BK879BStation(
+            port=self._port,
+            simulation=self._simulation_mode,
+            label=self.name,
+        )
+
+        # Always attempt the initial real connection, regardless of
+        # sim — device-guide §16: bus state reflects the publisher's
+        # truth (hardware reachability), sim only controls whether
+        # recipes use canned data and whether auto-pause is gated.
+        # In sim mode, AutoRecover is suspended via
+        # ``attachment.set_sim``, so a failed connect just sits red
+        # without retry storms. Failure does NOT raise.
+        if self._port:
+            self.meter.recover()
+
+        # Bus attachment — gated on ``port`` being set, exactly the
+        # same rule Core uses for ``ip``. Empty port means "no device
+        # claimed here": the component still works (sim returns canned
+        # data, real auto-detects the meter), it just doesn't take an
+        # id on the bus and doesn't render a Devices-panel row. Set
+        # ``port: "/dev/ttyUSB0"`` (or any non-empty string) to claim
+        # a device id and show up in the panel.
+        self._attachment = None
+
+        if self._port:
+            def _make_recover() -> AutoRecover:
+                return AutoRecover(
+                    recover_fn=self.meter.recover,
+                    set_status=self.meter._set_state,
+                    log_label=self.meter.id,
+                )
+
+            try:
+                self._attachment = attach_device(
+                    self.meter,
+                    kind=BK879BStation.KIND,
+                    sim=self._simulation_mode,
+                    critical=self._critical,
+                    meta={"port": self._port},
+                    recover_factory=_make_recover,
+                )
+            except Exception:
+                # Adapter wiring must NOT take down the component —
+                # the meter is still usable for direct measurements.
+                log.exception("MultiMeterBk879b[%s]: attach_device failed", self.name)
+
+    # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
+
+    @property
+    def device_ids(self) -> list[str]:
+        """Device ids this component claims. See docs/device-guide.md §9.
+
+        Empty when ``port`` is unset — the meter is then in
+        "no device claimed" mode (component still works, just no bus
+        presence). Mirrors Core's behaviour: empty ``ip`` → no
+        ``device_ids`` entry → no Devices-panel row.
+        """
+        return [self.meter.id] if self._port else []
+
+    def device_claim(self, device_id: str) -> str:
+        """Project-level sim/real claim for ``device_id``. Mirrors
+        the bus's own ``sim`` flag, but exposed at the workspace
+        layer so the panel can render the SIM pill from one
+        consistent source (see Inspection.device_claim for the same
+        pattern)."""
+        if device_id == self.meter.id:
+            return "sim" if self._simulation_mode else "real"
+        return "real"
+
+    # ── Atomic measurement API (component-level — recipes call these) ──
+    # These are sim-agnostic by construction: the station handles the
+    # branch internally. Returns ``Measurement`` on success, ``None``
+    # when the meter is disconnected and not in sim. Never raises on
+    # transient failures — the station transitions state to ``down``
+    # so AutoRecover takes over.
 
     def is_connected(self) -> bool:
-        return self.ser is not None and self.ser.is_open
+        return self.meter.is_connected()
 
-    def connect(self) -> bool:
-        if self.is_connected():
-            return True
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000):
+        return self.meter.read_capacitance(mode=mode, frequency=frequency)
 
-        if self.port and self._open(self.port):
-            return True
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000):
+        return self.meter.read_inductance(mode=mode, frequency=frequency)
 
-        for info in serial.tools.list_ports.comports():
-            if info.vid in _USB_VIDS or any(
-                h in (info.description or "").upper() for h in ("FTDI", "CP210")
-            ):
-                if self._open(info.device):
-                    return True
+    def read_resistance(self, frequency: int = 1000):
+        return self.meter.read_resistance(frequency=frequency)
 
-        return False
+    def read_impedance(self, frequency: int = 1000):
+        return self.meter.read_impedance(frequency=frequency)
 
-    def close(self) -> None:
-        if self.ser:
-            try:
-                self._send("*GTL")
-            except Exception:
-                pass
-            try:
-                self.ser.close()
-            finally:
-                self.ser = None
+    # ── Operator-action contract (component-guide §8) ─────────────────
+    # Operator-facing buttons in the Operator Controls panel. Wired
+    # so the operator can sanity-check a meter mid-pause without
+    # touching the workflow.
 
-    def _open(self, port: str) -> bool:
-        try:
-            self.ser = serial.Serial(
-                port, self.baud, bytesize=8,
-                parity="N", stopbits=1, timeout=self.timeout,
-            )
-            self.port = port
-            return True
-        except serial.SerialException:
-            self.ser = None
-            return False
+    def read_once_capacitance(self):
+        m = self.read_capacitance()
+        return None if m is None else m.raw
 
-    # ==================================================
-    # Low-level I/O
-    # ==================================================
+    def read_once_inductance(self):
+        m = self.read_inductance()
+        return None if m is None else m.raw
 
-    def _send(self, cmd: str) -> None:
-        if not self.is_connected():
+    def read_once_resistance(self):
+        m = self.read_resistance()
+        return None if m is None else m.raw
+
+    def reconnect(self):
+        """Re-run the connection sequence (same code path AutoRecover
+        uses). Returns True on success, False otherwise. Surfaces as
+        a clean toast in the GUI either way."""
+        return self.meter.recover()
+
+    def release_meter(self):
+        """Close the serial port and mark the meter down. Useful when
+        the operator wants to unplug it physically without a
+        connection-lost alarm spraying the panel."""
+        self.meter.release()
+
+    def simulation(self, on: bool = True):
+        """Live sim/real flip — mirrors ``Core.simulation``. See
+        ``docs/device-guide.md`` §16 for the parity rule that requires
+        every workspace-owned device component to expose this.
+
+        Sim is orthogonal to the connection: this method flips the
+        authored intent, republishes ``info.sim`` for the panel, and
+        suspends/re-arms AutoRecover via the attachment. The serial
+        connection (if open) stays open across the flip — bus state
+        keeps reflecting hardware reachability either way.
+        """
+        new_sim = bool(on)
+        if new_sim == self._simulation_mode:
             return
-        self.ser.write((cmd + "\r\n").encode("ascii"))
-        time.sleep(0.05)
+        self._simulation_mode = new_sim
+        self.meter.set_simulation(new_sim)
+        if self._attachment is not None:
+            self._attachment.set_sim(new_sim)
+        print(
+            f"{'🔵' if new_sim else '🟡'} {self.name} simulation "
+            f"{'enabled' if new_sim else 'disabled'}"
+        )
 
-    def _query(self, cmd: str) -> str:
-        if not self.is_connected():
-            return ""
-        self._send(cmd)
-        raw = self.ser.readline()
-        if not raw:
-            return ""
-        text = raw.decode("ascii", errors="replace").strip()
-        m = _ERROR_RE.match(text)
-        if m:
-            codes = {"10": "Unknown command", "11": "Parameter error", "12": "Syntax error"}
-            raise RuntimeError(f"Meter error E{m.group(1)}: {codes.get(m.group(1), '?')}")
-        return text
+    def operator_actions(self) -> list[dict]:
+        return [
+            {"label": "Read C (once)",  "method": "read_once_capacitance"},
+            {"label": "Read L (once)",  "method": "read_once_inductance"},
+            {"label": "Read R (once)",  "method": "read_once_resistance"},
+            {"label": "Reconnect",      "method": "reconnect"},
+            {"label": "Release",        "method": "release_meter"},
+        ]
 
-    # ==================================================
-    # Identity / handshake
-    # ==================================================
+    # ── Teardown ──────────────────────────────────────────────────────
 
-    def idn(self) -> str:
-        self.ser.reset_input_buffer()
-        return self._query("*IDN?")
-
-    def check_connection(self) -> Tuple[bool, Optional[str]]:
+    def close(self):
+        """Release the bus attachment + close the serial port. Idempotent."""
         try:
-            resp = self.idn()
-            return (True, resp) if resp else (False, None)
+            if self._attachment is not None:
+                self._attachment.close()
         except Exception:
-            return False, None
-
-    def initialize(self, lockout: bool = False) -> str:
-        resp = self.idn()
-        if not resp:
-            raise RuntimeError(
-                "No response from meter. Press the USB button on the front "
-                "panel until the RMT indicator appears, then retry."
-            )
-        if lockout:
-            self._send("*LLO")
-        return resp
-
-    # ==================================================
-    # Configuration
-    # ==================================================
-
-    def set_function(self, func: str) -> None:
-        func = func.upper()
-        self._send(f"FUNCtion:impa {func}")
-        self._function = func
-
-    def get_function(self) -> str:
-        return self._query("FUNCtion:impa?")
-
-    def set_secondary(self, func: str) -> None:
-        self._send(f"FUNCtion:impb {func.upper()}")
-
-    def get_secondary(self) -> str:
-        return self._query("FUNCtion:impb?")
-
-    def set_equivalent(self, mode: str) -> None:
-        self._send(f"FUNCtion:EQUivalent {mode}")
-
-    def get_equivalent(self) -> str:
-        return self._query("FUNCtion:EQUivalent?")
-
-    def set_frequency(self, hz: int) -> None:
-        val = _FREQ_MAP.get(int(hz))
-        if val is None:
-            raise ValueError(f"Frequency must be one of {list(_FREQ_MAP.keys())}, got {hz}")
-        self._send(f"FREQuency {val}")
-        self._frequency = val
-
-    def get_frequency(self) -> str:
-        return self._query("FREQuency?")
-
-    # ==================================================
-    # Relative
-    # ==================================================
-
-    def set_relative(self, on: bool) -> None:
-        self._send(f"CALCulate:RELative:STATe {'ON' if on else 'OFF'}")
-
-    def get_relative_state(self) -> str:
-        return self._query("CALCulate:RELative:STATe?")
-
-    def get_relative_value(self) -> str:
-        return self._query("CALCulate:RELative:VALUe?")
-
-    # ==================================================
-    # Tolerance
-    # ==================================================
-
-    def set_tolerance(self, on: bool) -> None:
-        self._send(f"CALCulate:TOLerance:STATe {'ON' if on else 'OFF'}")
-
-    def get_tolerance_state(self) -> str:
-        return self._query("CALCulate:TOLerance:STATe?")
-
-    def get_tolerance_nominal(self) -> str:
-        return self._query("CALCulate:TOLerance:NOMinal?")
-
-    def get_tolerance_value(self) -> str:
-        return self._query("CALCulate:TOLerance:VALUe?")
-
-    def set_tolerance_range(self, percent: int) -> None:
-        self._send(f"CALCulate:TOLerance:RANGe {percent}")
-
-    def get_tolerance_range(self) -> str:
-        return self._query("CALCulate:TOLerance:RANGe?")
-
-    # ==================================================
-    # Recording
-    # ==================================================
-
-    def set_recording(self, on: bool) -> None:
-        self._send(f"CALCulate:RECording:STATe {'ON' if on else 'OFF'}")
-
-    def get_recording_state(self) -> str:
-        return self._query("CALCulate:RECording:STATe?")
-
-    def get_recording_max(self) -> str:
-        return self._query("CALCulate:RECording:MAXimum?")
-
-    def get_recording_min(self) -> str:
-        return self._query("CALCulate:RECording:MINimum?")
-
-    def get_recording_avg(self) -> str:
-        return self._query("CALCulate:RECording:AVERage?")
-
-    def get_recording_present(self) -> str:
-        return self._query("CALCulate:RECording:PRESent?")
-
-    # ==================================================
-    # Measurement
-    # ==================================================
-
-    def fetch(self) -> str:
-        return self._query("FETCh?")
-
-    def read(self) -> Measurement:
-        raw = self.fetch()
-        if not raw:
-            raise RuntimeError("Empty response from FETCh?")
-
-        parts = [p.strip() for p in raw.split(",")]
-        if len(parts) < 2:
-            raise RuntimeError(f"Bad FETCh? response: {raw!r}")
-
-        primary = float(parts[0])
-        secondary = float(parts[1])
-        unit = _UNITS.get(self._function, "")
-
-        return Measurement(
-            primary=primary,
-            primary_unit=unit,
-            secondary=secondary,
-            secondary_unit="",
-            function=self._function,
-            frequency=self._frequency,
-            raw=raw,
-        )
-
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Measurement:
-        self.set_function("C")
-        self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PAL")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
-
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000) -> Measurement:
-        self.set_function("L")
-        self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PAL")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
-
-    def read_resistance(self, frequency: int = 1000) -> Measurement:
-        self.set_function("R")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
-
-    def read_impedance(self, frequency: int = 1000) -> Measurement:
-        self.set_function("Z")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def list_ports() -> list[dict]:
-    results = []
-    for info in serial.tools.list_ports.comports():
-        likely = info.vid in _USB_VIDS or any(
-            h in (info.description or "").upper() for h in ("FTDI", "CP210")
-        )
-        results.append({"port": info.device, "description": info.description or "", "likely": likely})
-    return results
-
-
-def format_value(value: float, unit: str) -> str:
-    a = abs(value)
-    if a == 0:      return f"0 {unit}"
-    if a >= 1e6:    return f"{value/1e6:.4g} M{unit}"
-    if a >= 1e3:    return f"{value/1e3:.4g} k{unit}"
-    if a >= 1:      return f"{value:.4g} {unit}"
-    if a >= 1e-3:   return f"{value*1e3:.4g} m{unit}"
-    if a >= 1e-6:   return f"{value*1e6:.4g} \u00b5{unit}"
-    if a >= 1e-9:   return f"{value*1e9:.4g} n{unit}"
-    return f"{value*1e12:.4g} p{unit}"
-
-
-def format_frequency(freq: str) -> str:
-    return _FREQ_DISPLAY.get(freq.strip().lower(), freq)
+            log.exception("MultiMeterBk879b[%s]: attachment close raised", self.name)
+        finally:
+            self._attachment = None
+            self.meter.release()

@@ -72,7 +72,28 @@ of these:
 4. **Auto-pause respects both signals.** If `info.sim` is true on the
    bus OR the project claims `sim` for a device, a critical-down on
    that device does not pause the runtime. Either signal alone is
-   sufficient to opt out.
+   sufficient to opt out. Device-down is one of four pause triggers —
+   see [project-guide.md §9 "What triggers Pause"](project-guide.md#what-triggers-pause)
+   for the full list and the entry/atomicity/resume semantics that
+   apply to all of them uniformly.
+5. **Bus presence is gated by an explicit identifier.** Every device
+   component takes one config field that names the physical device
+   (`ip` for Core, `port` for the multimeter, `serial_number` for the
+   camera, etc.). Empty value → no `device_ids` entry, no panel row.
+   Non-empty value → row appears. The `simulation:` flag is
+   **separate** and controls how a *declared* device is treated, not
+   whether it's declared. Same rule for every kind. Two shapes
+   depending on where the publisher lives:
+
+   - **Workspace-owned** (robot, multimeter, in-process pumps): the
+     component also calls `attach_device` itself, gated on the same
+     identifier. Two gates, same condition.
+   - **Daemon-owned** (camera served by a vision-server process,
+     printer served by a printer daemon, etc.): the daemon process
+     owns `attach_device`. The component only gates `device_ids`.
+     One gate; the daemon does its own.
+
+   See §10 for both code shapes.
 
 If you're adding a new device, the rest of this guide is mechanical —
 follow the patterns and these invariants hold by construction.
@@ -429,6 +450,12 @@ bulletproof guarantee lives in the component layer.
 Default is `True`. Only choose `False` when you're sure the workflow is
 fine running while the device is offline.
 
+The `critical:` field is also a normal component config field — expose
+it in your component's `DEFAULTS` so a scene yaml can override it per
+project (e.g. `critical: false` for a meter used only for logging in
+one specific run). Do not invent a separate "advisory" mode or a new
+flag — same field, same name, same default rule for every kind.
+
 ---
 
 ## 8. Where the adapter must live — the only rule
@@ -497,6 +524,7 @@ Blessed kinds (use these names verbatim when applicable):
 | `dosing-arm`  | Dosing / dispensing arms                             |
 | `tool-changer`| Robot tool-changer mechanisms                        |
 | `dorna`       | Dorna robots themselves (when published as devices)  |
+| `multimeter`  | LCR / impedance / multimeter bench instruments       |
 
 If you need a kind not in the table, **add it here in the same change
 that introduces the device** so the catalog stays the single source of
@@ -507,6 +535,15 @@ truth.
 - Stable across reboots — USB serial number is best when one exists.
 - Physical label (`pumpA`, `front-bench`) when there's no serial.
 - Pick a style (lowercase preferred) and stick to it within a kind.
+- **No `/` characters.** MQTT subscribers use single-level wildcards
+  (`device/+/info`, `device/+/state`, `device/+/cmd/+/reply`).
+  A slash in the natural-id pushes the topic suffix to a depth the
+  wildcard can't match, so the orchestrator never sees the publisher
+  and the device renders as `offline / not on bus` even though the
+  station is happily publishing.
+  When deriving an id from a filesystem path (e.g. `/dev/ttyUSB0` or
+  `/dev/serial/by-id/usb-...-port0`), use the path's **basename**, not
+  the full path — see `BK879BStation.id` for the canonical pattern.
 
 Examples:
 
@@ -527,6 +564,57 @@ Camera:130322274110     ← uppercase kind (be consistent)
 camera_main:abc         ← underscore in kind
 ```
 
+### Finding the stable path for a USB-serial device
+
+`/dev/ttyUSB0` is **not** stable — Linux assigns it in enumeration
+order, so it can change on reboot, on replug, or when another
+USB-serial device is added. Use the udev-managed symlinks under
+`/dev/serial/` instead. Works for **any** USB-serial device — FTDI,
+CP210x, Silicon Labs, ACM-class CDC, etc.
+
+```bash
+# Lists every stable USB-serial path on the system, one per line,
+# full path included — ready to paste straight into a scene yaml.
+ls -d /dev/serial/by-id/*
+```
+
+Example output:
+
+```
+$ ls -d /dev/serial/by-id/*
+/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AB0KCDEF-if00-port0
+```
+
+Paste the full path into the scene yaml's identifier field (`port`
+for the multimeter, similar for any USB-serial device). The path
+survives reboots and replugs; the underlying `/dev/ttyUSB*` resolves
+automatically.
+
+Why this glob form: the shell expands `*` to the matched paths
+*before* `ls` runs, so each line is the full path. Bare
+`ls /dev/serial/by-id/` (no glob) prints just basenames, which you'd
+have to prefix manually.
+
+For a sanity-check that also shows what each `by-id` symlink resolves
+to right now:
+
+```bash
+ls -l /dev/serial/by-id/*
+```
+
+**Caveat — generic serials.** Some chips (Silicon Labs CP2102 ships
+many devices with serial `0001`) don't have a unique serial out of
+the box. If you have two devices with the same chip and the same
+default serial, the `by-id` symlink will collide and udev will
+arbitrarily pick one. In that case use `/dev/serial/by-path/` instead
+(stable per physical USB port — always plug the same device into the
+same port):
+
+```bash
+ls -d /dev/serial/by-path/*
+```
+
 ---
 
 ## 10. Workspace-side: declaring the device
@@ -536,40 +624,140 @@ hardware). Now the orchestrator side: how a workspace component tells
 the orchestrator UI "this project depends on these devices" and "this
 is how I'm using each of them."
 
-The contract has two members. Only the first is required.
+The contract has two members. Only `device_ids` is required. Two
+canonical skeletons depending on where the bus publisher lives —
+both gate visibility on the same kind of explicit identifier
+(`serial_number`, `ip`, `port`, `host`, …).
+
+### A. Workspace-owned publisher (robot, multimeter, in-process pump)
+
+The component itself calls `attach_device`. Two gates, same
+condition.
 
 ```python
 class MyComponent:
+    DEFAULTS = dict(
+        serial_number="",     # the explicit connection identifier
+        simulation=True,
+        critical=True,
+    )
+
+    def __init__(self, name, cfg, workspace, **kwargs):
+        ...
+        self._sn = prm["serial_number"]
+        self._simulation_mode = prm["simulation"]
+        self._critical = prm["critical"]
+        self.device = MyDevice(self._sn, simulation=self._simulation_mode)
+
+        # Visibility gate (rule 5 of §1). Empty identifier → no bus
+        # presence, no panel row. Non-empty → attach. SAME condition
+        # below in device_ids.
+        self._attachment = None
+        if self._sn:
+            self._attachment = attach_device(
+                self.device,
+                kind="mydevice",
+                sim=self._simulation_mode,
+                critical=self._critical,
+                recover_factory=lambda: AutoRecover(...),
+            )
+
     @property
     def device_ids(self) -> list[str]:
+        # SAME condition as the attach_device gate above. If you
+        # change one, change both.
+        return [f"mydevice:{self._sn}"] if self._sn else []
+
+    def device_claim(self, device_id: str) -> str:
+        """Optional. Return 'real' or 'sim'."""
+        if self._sn and device_id == f"mydevice:{self._sn}":
+            return "sim" if self._simulation_mode else "real"
+        return "real"
+```
+
+### B. Daemon-owned publisher (camera served by a vision server, etc.)
+
+The bus publisher lives in another process — the daemon on the Pi
+that owns the USB / serial handle. The workspace component is a
+client: it only declares the dependency via `device_ids`, never
+calls `attach_device` itself. The daemon does its own gating, on
+the same kind of identifier. Same visibility rule, one gate.
+
+```python
+class CameraComponent:
+    DEFAULTS = dict(
+        camera_cfg={
+            "serial_number": "",       # the explicit identifier
+            "host": "127.0.0.1",
+            "port": 80,
+            # ... stream / K / D / etc.
+        },
+        simulation=True,
+    )
+
+    def __init__(self, name, workspace, **kwargs):
+        ...
+        cam = prm["camera_cfg"]
+        # The data-path helper. Constructs unconditionally — the helper
+        # handles "no identifier" internally (forces sim, no client
+        # opened). The workspace never calls attach_device; the vision
+        # server owns the publisher on the camera's Pi.
+        self.vision = VisionStation(
+            host=cam["host"], port=cam["port"],
+            serial_number=cam["serial_number"],
+            simulation=prm["simulation"],
+            label=self.name,
+        )
+
+    @property
+    def device_ids(self) -> list[str]:
+        # Gate on the same identifier the vision server uses to claim
+        # its bus topic. Empty serial → no panel row on the workspace
+        # side; the daemon also publishes nothing for this id.
         sn = self.vision.serial_number
         return [f"camera:{sn}"] if sn else []
 
     def device_claim(self, device_id: str) -> str:
-        """Optional. Return 'real' or 'sim'."""
         sn = self.vision.serial_number
         if sn and device_id == f"camera:{sn}":
             return "sim" if self.vision.simulation else "real"
         return "real"
 ```
 
+Note: there is no `critical:` field in DEFAULTS here. The daemon
+owns critical-ness (it sets `critical=` in its own `attach_device`
+call), and the workspace can't override it from a scene yaml. This
+is the legitimate difference between the two shapes — for
+workspace-owned devices, the component's DEFAULTS expose `critical`;
+for daemon-owned devices, they don't.
+
 **`device_ids`** — required. List of `<kind>:<natural-id>` strings the
 component depends on. The scanner that builds the project's device
 panel reads this property; components that don't define it are silently
 ignored.
 
-> **Visibility rule.** A device shows up in the Devices panel **only if
-> some component returns its id from `device_ids`**. If a component
-> gates the id on a config field (e.g. `if self.robot_ip:`), then
-> leaving that field empty in the scene yaml hides the row entirely.
-> Example: `Core` returns `f"dorna:{self.robot_ip}"` only when
-> `robot_ip` is non-empty — `ip: ""` in `scene/base.j2` → no robot
-> row. Same for the camera with `camera_cfg.serial_number`. This is by
-> design: empty means "the project does not care about this device,"
-> useful for projects that genuinely don't use a piece of hardware or
-> want to suppress its row. The `simulation:` flag is **separate** —
-> it controls how a *declared* device is treated, not whether it's
-> declared.
+> **Visibility rule (normative — same for every device kind).** A
+> device row appears in the Devices panel **only if some component
+> returns its id from `device_ids`**. The condition that gates that
+> return must be the explicit connection field for the device — `ip`
+> for Core's robot, `port` for the multimeter, `serial_number` for
+> the camera, etc. Empty value → no entry, no row. Non-empty value →
+> row appears (sim or real per `simulation:`). The `simulation:`
+> flag is **separate**: it controls how a *declared* device is
+> treated, not whether it's declared.
+>
+> Workspace-owned publishers (shape A above) gate `attach_device` on
+> the SAME condition — two gates, identical predicate. Daemon-owned
+> publishers (shape B) gate only `device_ids` on the workspace side;
+> the daemon does its own gating on the daemon side. Either way,
+> "empty identifier" means the same thing to every layer: this
+> project doesn't claim this device.
+>
+> Why one mental model across kinds: operators see one rule
+> ("identifier = device declared"), and component authors don't get
+> to invent per-kind variations. If you catch yourself writing
+> "always attach" (no gate) or "attach only when not sim" (wrong
+> gate), stop — those are bugs against this rule.
 
 **`device_claim(device_id)`** — optional. Returns `"real"` or `"sim"`,
 the project-level claim mode for that device id. This is the
@@ -596,21 +784,31 @@ declaring component agrees. Auto-pause must respect the strictest
 intent — never get fooled into skipping a critical-down by a single
 sim claim from an unrelated component.
 
-Three rules:
+Four rules — same for every device kind, no exceptions:
 
-1. **Declare `device_ids`** on any component that depends on remote
-   devices. Empty list when there's none.
+1. **Gate visibility on the same explicit identifier — everywhere.**
+   One config field per component (`ip`, `port`, `serial_number`, …)
+   names the device; empty = no claim, no bus presence, no panel
+   row. For workspace-owned publishers (shape A), gate both
+   `attach_device` and `device_ids` on it. For daemon-owned
+   publishers (shape B), gate `device_ids` on it on the workspace
+   side; the daemon gates its own `attach_device` on the same
+   identifier on the daemon side.
 
-2. **Compose a per-kind data-path helper** (e.g.
+2. **Declare `device_ids`** on any component that depends on remote
+   devices. Return the same id the publisher uses to claim its
+   topic. Empty list when the identifier is unset.
+
+3. **Compose a per-kind data-path helper** (e.g.
    [`VisionStation`](../workspace/workspace/components/inspection/vision_station.py)
    for cameras). New kinds get their own helper modeled on
    VisionStation. They don't share a base class; they share a *pattern*
    (constructor takes host/port/serial/simulation, exposes operations,
    plus `close()`). The helper does NOT publish to the bus when there's
    a separate daemon for the same device id — let the daemon own the
-   topic (rule 1).
+   topic (rule 1 of §1).
 
-3. **Implement `device_claim`** when the helper has a sim mode the
+4. **Implement `device_claim`** when the helper has a sim mode the
    bus can't see. Default (`"real"`) is safe; only override when there
    really is a sim path the bus is unaware of.
 
@@ -1009,6 +1207,31 @@ When implementing your service:
   about the workspace's sim mode. Use `device_claim` for project-side
   intent; rely on `info.sim` only when the workspace IS the publisher
   (the robot, in-process devices).
+- **Unconditional `attach_device` (no gate on the connection field).**
+  Workspace-owned-publisher mistake. Violates rule 5 of §1: the
+  device shows in the panel even when the user left the connection
+  field empty, so two components with the same scene yaml shape
+  behave differently and the operator can't predict what they'll
+  see. Always gate on the explicit identifier (`ip`, `port`,
+  `serial_number`, etc.) and use the same condition in `device_ids`.
+  See the §10A skeleton for the canonical pattern.
+- **Mismatched gates on `attach_device` and `device_ids`.**
+  Workspace-owned-publisher mistake. If `attach_device` runs but
+  `device_ids` returns `[]`, the bus has a publisher with no panel
+  row (so the project's claim aggregation can't see it and
+  auto-pause is silent). If `device_ids` returns an id but
+  `attach_device` never ran, the panel shows a row with no
+  publisher (perpetually pending). Both halves must be gated on the
+  exact same condition.
+- **Calling `attach_device` from the workspace for a daemon-owned
+  device.** Daemon-owned-publisher mistake. The vision server /
+  printer daemon / etc. already publishes that id; a workspace
+  attach is a second writer on the same retained topic. The
+  conflict-detection guard in `attach_device` will refuse it
+  (`DevicePublisherConflict`), which is what you want — but better:
+  don't call it in the first place. Workspace-side, daemon-owned
+  components only gate `device_ids`; they never call
+  `attach_device`. See the §10B skeleton.
 
 ---
 
@@ -1149,10 +1372,38 @@ pill — operator sees both layers, neither hides the other.
 | `simulation: False` on a daemon-published device, daemon down | red | `real` | red dot, no pill | **paused** |
 | Operator toggles `core.simulation(True)` mid-run | adapter republishes `info.sim=true` | claim flips to sim on next bus event | SIM pill appears live | newly skipped |
 
+### Sim is orthogonal to connection state
+
+This is the **load-bearing invariant** that lets the panel tell the
+truth in every mode:
+
+- **Connection state** (`state` / `msg` on the bus) ALWAYS reflects
+  real hardware reachability. The station attempts the real connect
+  on startup regardless of sim, and `recover()` always does the real
+  reconnect. The dot color is hardware truth.
+- **Sim flag** (`info.sim` on the bus + workspace `device_claim`) is
+  the operator's authored intent. It controls **what recipes do**
+  (canned vs. real I/O) and **whether auto-pause fires on down**
+  (skipped when sim). It does NOT change what the dot shows.
+
+The four useful cells of the cross-product:
+
+| Authored sim | Real reachable | Dot | SIM pill | Auto-pause on down |
+|---|---|---|---|---|
+| `true` | yes | 🟢 | yes | n/a |
+| `true` | no  | 🔴 | yes | **skipped** (sim claim) |
+| `false` | yes | 🟢 | no | n/a |
+| `false` | no  | 🔴 | no | **fires** |
+
+Pre-flight value: develop in sim with the real identifier configured,
+and at-a-glance the panel tells you whether real mode would deploy
+clean. Red + SIM = "sim is fine for dev, but check the wiring before
+you ship."
+
 ### Manual sim toggle at runtime
 
 `core.simulation(True/False)` (and any analogous component-level
-toggle) flips both signals in lockstep:
+toggle) flips three layers in lockstep:
 
 - **Bus signal** — the component calls `attachment.set_sim(True/False)`,
   which republishes the retained `info` payload with `sim=true/false`.
@@ -1161,10 +1412,54 @@ toggle) flips both signals in lockstep:
   whatever's authoritative (e.g. `self._simulation_mode`) live, so a
   `claim_resolver` walking the components picks up the new mode on
   the next call. No explicit invalidation needed.
+- **Station flag** — the component calls
+  `station.set_simulation(True/False)`. This is a **flag flip only**
+  — it does NOT open or close the hardware handle. Connection state
+  remains independent: the bus dot keeps reflecting reachability
+  through and after the flip. The station's `id` stays **stable** so
+  the bus topic doesn't change.
 
 The panel updates within the WS-push latency. Operator sees the SIM
 pill flip on the row and in the modal at the same time as auto-pause
-becomes inactive for that device.
+becomes inactive (or active) for that device.
+
+### Parity rule (normative — every workspace-owned device)
+
+Every workspace-owned device component MUST expose a `simulation(on)`
+method with the shape Core and MultiMeter use:
+
+```python
+def simulation(self, on: bool = True):
+    if self._simulation_mode == bool(on):
+        return                                   # idempotent
+    self._simulation_mode = bool(on)
+    self.<station>.set_simulation(on)            # flips station flag
+    if self._attachment is not None:
+        self._attachment.set_sim(on)             # publishes info.sim
+    # (Core also swaps self.robot_api here for its sim/real abstraction.)
+```
+
+And the **station** class MUST expose `set_simulation(sim)`:
+
+- Flag-only: just `self.simulation = bool(sim)`. Does NOT touch the
+  connection. The bus dot continues to reflect hardware reachability.
+- `id` does NOT change across the flip — sim is a separate axis.
+
+For the **initial connect**: the station attempts it on startup
+regardless of sim. A fake / unreachable identifier in sim mode
+correctly shows red dot + SIM pill ("sim authored, real wouldn't
+work"). AutoRecover is suspended in sim (via the attachment's
+`set_sim`), so the red state doesn't cause retry storms — it just
+sits there as honest pre-flight feedback.
+
+Why mandatory: without this, the operator can't switch a device from
+sim to real (or back) mid-run. Daemon-owned devices (camera, etc.)
+don't need it on the workspace side — the daemon owns the handle and
+exposes its own toggle. But for the workspace-owned shape, missing
+`simulation(on)` silently drops a platform feature.
+
+Both Core (`core.py`) and MultiMeter (`multi_meter_bk879b.py`)
+already follow this shape — copy from either for new device kinds.
 
 ---
 

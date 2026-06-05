@@ -337,12 +337,16 @@ Always use `self.rt` for robot commands and timing — it handles pause, stop, a
 
 | Method | Description |
 |--------|-------------|
-| `rt.checkpoint()` | Blocks if paused, raises if killed — call before any action |
-| `rt.delay(seconds)` | Interruptible sleep |
-| `rt.output(config=...)` | Set IO outputs (gripper, valve, etc.) |
-| `rt.step("message")` | Log a step to the GUI timeline |
-| `rt.jmove(...)` | Joint move — auto-wrapped with checkpoint and alarm handling |
-| `rt.lmove(...)` | Linear move — same auto-wrapping |
+| `rt.checkpoint()` | Blocks if paused, raises if killed — pause-aware |
+| `rt.delay(seconds)` | Interruptible sleep — pause-aware |
+| `rt.output(config=...)` | Set IO outputs (gripper, valve, etc.) — pause-aware |
+| `rt.step("message")` | Log a step to the GUI timeline — observability only, **not pause-aware** |
+| `rt.jmove(...)` | Joint move — auto-wrapped with checkpoint and alarm handling, pause-aware |
+| `rt.lmove(...)` | Linear move — same auto-wrapping, pause-aware |
+
+The pattern is uniform: **observability never blocks; work always
+checkpoints.** See [project-guide.md §8 Pause gate](project-guide.md#pause-gate)
+for the full pause-aware map and the architectural rule.
 
 ---
 

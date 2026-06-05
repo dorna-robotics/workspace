@@ -38,8 +38,15 @@ class BK879B:
         self.baud = baud
         self.timeout = timeout
         self.ser: Optional[serial.Serial] = None
-        self._function: str = "C"
-        self._frequency: str = ""
+        # Cached state — used by set_function/set_equivalent/set_frequency
+        # to skip the SCPI command when the meter is already in the
+        # requested state. The BK 879B beeps + flashes its display on
+        # every settings change (no SCPI command to disable that), so
+        # idempotent guards make repeated reads of the same parameters
+        # silent. None means "unknown" — first call always sends.
+        self._function: Optional[str] = None
+        self._equivalent: Optional[str] = None
+        self._frequency: Optional[str] = None
 
     # ==================================================
     # Connection lifecycle
@@ -52,9 +59,16 @@ class BK879B:
         if self.is_connected():
             return True
 
-        if self.port and self._open(self.port):
-            return True
+        # Explicit port set → use it, no fallback. Falling through to
+        # auto-detect when an explicit port fails would silently open
+        # whatever FTDI / CP210x device happened to be plugged in
+        # (e.g. the robot's USB-RS485 adapter), then waste ~2 s per
+        # port in ``check_connection`` waiting for an IDN response
+        # that never comes. Respect the operator's authored intent.
+        if self.port:
+            return self._open(self.port)
 
+        # No explicit port → auto-detect by USB VID / FTDI / CP210x.
         for info in serial.tools.list_ports.comports():
             if info.vid in _USB_VIDS or any(
                 h in (info.description or "").upper() for h in ("FTDI", "CP210")
@@ -143,6 +157,8 @@ class BK879B:
 
     def set_function(self, func: str) -> None:
         func = func.upper()
+        if self._function == func:
+            return  # already set — skip to avoid the meter's change-beep
         self._send(f"FUNCtion:impa {func}")
         self._function = func
 
@@ -156,7 +172,14 @@ class BK879B:
         return self._query("FUNCtion:impb?")
 
     def set_equivalent(self, mode: str) -> None:
+        # Normalize for comparison so 'PAR'/'PARallel'/'PARALLEL'
+        # all coalesce. The meter accepts any of them and we want
+        # repeated identical calls to be silent regardless of casing.
+        key = mode.strip().upper()
+        if self._equivalent == key:
+            return
         self._send(f"FUNCtion:EQUivalent {mode}")
+        self._equivalent = key
 
     def get_equivalent(self) -> str:
         return self._query("FUNCtion:EQUivalent?")
@@ -165,6 +188,8 @@ class BK879B:
         val = _FREQ_MAP.get(int(hz))
         if val is None:
             raise ValueError(f"Frequency must be one of {list(_FREQ_MAP.keys())}, got {hz}")
+        if self._frequency == val:
+            return
         self._send(f"FREQuency {val}")
         self._frequency = val
 
@@ -260,14 +285,14 @@ class BK879B:
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Measurement:
         self.set_function("C")
-        self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PAL")
+        self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PARallel")
         self.set_frequency(frequency)
         time.sleep(0.3)
         return self.read()
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000) -> Measurement:
         self.set_function("L")
-        self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PAL")
+        self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PARallel")
         self.set_frequency(frequency)
         time.sleep(0.3)
         return self.read()

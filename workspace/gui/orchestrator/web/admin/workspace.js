@@ -693,9 +693,9 @@ function renderDevicesPanel() {
       <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
         <span class="dot ${dotClass}"></span>
         <span class="device-id">${escHtml(d.id)}</span>
-        ${simPill}
         ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
         ${control}
+        ${simPill}
       </div>`;
   }).join("");
   // Inline action buttons: handle click + STOP propagation so clicking
@@ -750,9 +750,19 @@ function _renderDeviceModalBody(d) {
   const isPublisherSim = d.sim === true;
   const isProjectSim = d.claim === "sim";
   const isSim = isPublisherSim || isProjectSim;
-  const dotClass = state === "ok"
+
+  // Pending-Recover overlay — same source of truth as the panel
+  // (``_devicesPending``) so the modal mirrors the row's
+  // "Recovering…" state instead of reverting to "DOWN + Recover".
+  const now = Date.now();
+  const pending = _devicesPending.get(d.id);
+  if (pending && pending.until <= now) _devicesPending.delete(d.id);
+  const isPending = _devicesPending.has(d.id);
+  const visualState = isPending ? "recovering" : state;
+
+  const dotClass = visualState === "ok"
     ? "ok pulse"
-    : state === "recovering" ? "warn pulse" : "bad";
+    : visualState === "recovering" ? "warn pulse" : "bad";
   const ageStr = d.ts ? _agoStr(d.ts * 1000) : "—";
   const meta = (d.meta && Object.keys(d.meta).length)
     ? JSON.stringify(d.meta, null, 2)
@@ -764,16 +774,17 @@ function _renderDeviceModalBody(d) {
   const simTitle = isPublisherSim
     ? "Publisher self-flagged sim"
     : (isProjectSim ? "Project claims this device in sim mode" : "");
+  const msg = (pending?.note || d.msg || "").trim();
 
   body.innerHTML = `
     <div class="dd-id">${escHtml(d.id)}</div>
     <div class="dd-state-row">
       <span class="dot ${dotClass}"></span>
-      <span class="dd-state">${escHtml(state)}</span>
+      <span class="dd-state">${escHtml(visualState)}</span>
       ${isSim ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>` : ""}
       ${online ? "" : `<span class="device-pill">offline</span>`}
     </div>
-    ${(d.msg || "").trim() ? `<div class="dd-msg">${escHtml(d.msg)}</div>` : ""}
+    ${msg ? `<div class="dd-msg">${escHtml(msg)}</div>` : ""}
     <div class="dd-table">
       <div class="dd-key">kind</div>      <div class="dd-val">${escHtml(d.kind || "—")}</div>
       <div class="dd-key">critical</div>  <div class="dd-val">${d.critical === false ? "false" : "true"}</div>
@@ -786,22 +797,27 @@ function _renderDeviceModalBody(d) {
     <pre class="dd-meta">${escHtml(meta)}</pre>
   `;
 
-  // Action buttons in footer: same Recover / offline-pill semantics
-  // as the inline row but full-size for click-friendliness. Suppress
-  // only when the publisher self-flagged sim (no real device exists);
-  // a project-claimed-sim device with a real downed publisher should
-  // still offer Recover so the operator can fix it for other projects.
+  // Action buttons in footer: mirror the inline row's logic exactly
+  // — pending → disabled "Recovering…", down + online → Recover,
+  // down + offline → offline pill, ok/sim → nothing.
   foot.innerHTML = "";
-  if (state !== "ok" && !isPublisherSim) {
+  if (isPending) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-primary";
+    btn.disabled = true;
+    btn.textContent = "Recovering…";
+    foot.appendChild(btn);
+  } else if (state !== "ok" && !isPublisherSim) {
     if (online) {
       const btn = document.createElement("button");
       btn.className = "btn btn-primary";
       btn.textContent = "Recover";
       btn.addEventListener("click", () => {
         recoverDevice(d.id);
-        // Close after kicking; the panel + modal will refresh
-        // independently via WS when the device responds.
-        closeDeviceModal();
+        // Stay open — the modal re-renders via the WS-driven
+        // ``renderDevicesPanel`` loop and immediately reflects the
+        // pending "Recovering…" state so the operator sees the
+        // click landed without losing context.
       });
       foot.appendChild(btn);
     } else {

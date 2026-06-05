@@ -388,9 +388,69 @@ rt.sleep(5.0)  # Interruptible — responds to pause/kill
 rt.checkpoint()  # Blocks if paused, raises KillRequested if killed
 ```
 
-Called automatically after every `rt.step()` and `rt.call()`. Use manually in long loops.
+#### The one rule
 
-Note: `checkpoint()` does **not** raise `ParkRequested` — Park is observed between states, not mid-state. See [§9 Pause / Park / Kill](#pause--park--kill--runtime-control-semantics).
+> **Observability never blocks. Work always checkpoints.**
+
+Anything you call on `rt.*` that *does work* observes pause. Anything that
+just *records* or *reads* state doesn't. This single rule covers every
+runtime method without exception.
+
+#### What is and isn't pause-aware
+
+| Category | Methods | Pause-aware? |
+|---|---|---|
+| **Waiting** | `rt.sleep(s)`, `rt.delay(s)` | ✅ |
+| **Robot / tool work via runtime** | `rt.<robot_method>(...)` — `rt.motor(1)`, `rt.jmove(...)`, `rt.lmove(...)`, `rt.cmove(...)`, any tool/IO method exposed by the robot api | ✅ |
+| **Explicit checkpoint** | `rt.checkpoint()`, `rt.call(fn)` | ✅ |
+| **Observability** | `rt.step(label, level)` — for every level: `info`, `success`, `warning`, `error`, `progress` | ❌ |
+| **Runtime state reads** | `rt.status()`, `rt.state`, `rt.step_info` | ❌ |
+| **Runtime control** | `rt.pause()`, `rt.resume()`, `rt.kill()`, `rt.start()`, `rt.park()` | ❌ |
+| **Direct recipe / component / driver calls** | `rcp["x"].foo()`, `core.dorna.x()`, `self.component.bar()`, `self.driver.cmd()` | ❌ |
+
+#### How robot calls inherit pause-awareness for free
+
+The Runtime's `__getattr__` automatically wraps every `rt.<some_robot_method>(...)`
+call through `self.call(...)`, which checkpoints before running the underlying
+robot method. So you don't have to mark each robot method as pause-aware — it
+inherits the property the moment you reach it via `rt.*`.
+
+The corollary is equally important: **anything you call without going
+through `rt.*` bypasses the gate.** Recipe calls (`rcp["x"].read()`), direct
+component calls (`self.component.foo()`), raw driver SCPI commands — none of
+those check the pause flag. That's deliberate: data and I/O calls don't
+impose timing semantics.
+
+#### When to call `rt.checkpoint()` explicitly
+
+You almost never need to. The pause flag is observed naturally on the
+next `rt.sleep` / `rt.delay` / `rt.<robot>` call your action or recipe
+makes. Explicit `rt.checkpoint()` is only useful when:
+
+- Your action runs a long pure-computation loop (uncommon — workflows
+  are I/O-bound, not CPU-bound).
+- You want a guaranteed pause point between two non-pause-aware calls
+  without any incidental waiting.
+
+#### What this means for action authors
+
+When you write an action, ask: *"When the operator clicks Pause, where
+will my code stop?"*
+
+- If the action has `rt.sleep(...)` between sensor reads → pause is
+  observed there. Common case.
+- If the action only does `rt.step` + recipe reads (no sleep, no robot
+  call) → pause is **not** observed inside this action; the next
+  action's pause-aware call picks it up.
+- If the action runs a tight loop without any pause-aware call →
+  add `rt.checkpoint()` once per iteration.
+
+Most actions get pause behavior automatically because they call
+`rt.<robot>(...)` for motion or `rt.sleep(...)` for timing. Nothing
+extra to wire.
+
+Note: `checkpoint()` does **not** raise `ParkRequested` — Park is observed
+between states, not mid-state. See [§9 Pause / Park / Kill](#pause--park--kill--runtime-control-semantics).
 
 ---
 
@@ -420,11 +480,80 @@ The runtime exposes three control signals. Each interacts differently with the c
 
 | Signal | When it takes effect | What runs after | Use when |
 |---|---|---|---|
-| **Pause** | At the next `rt.checkpoint()` (mid-state OK) | Blocks until you Resume — state continues from where it stopped | You want to inspect, intervene, or wait |
+| **Pause** | At the next pause-aware call (`rt.sleep` / `rt.delay` / `rt.<robot>` / `rt.checkpoint`) — see [§8 Pause gate](#pause-gate) for the full list | Blocks until you Resume — state continues from where it stopped | You want to inspect, intervene, or wait |
 | **Park** | **Between states** — current state runs to completion first | If `trigger: park` is defined → that trigger runs and is the authoritative final cleanup. Otherwise → exit immediately, tools stay where they are | Graceful shutdown — the safe default |
-| **Kill** | At the next `rt.checkpoint()` (mid-state OK) | Nothing — process exits immediately, no cleanup | Emergency halt only — may leave robot/tools in a dirty state |
+| **Kill** | At the next pause-aware call (same set as Pause) | Nothing — process exits immediately, no cleanup | Emergency halt only — may leave robot/tools in a dirty state |
 
 **Why Park is "between states", not mid-state:** many states perform multi-step atomic operations (most importantly tool swaps: `place(old)` then `pick(new)`). Interrupting between those steps would leave the robot in an inconsistent state — e.g. tool placed back but the next pick never happened, while the runtime still thinks a tool is held. Park therefore lets the current state finish, then exits cleanly between states.
 
 If you need to stop *immediately* and accept the consequences, use Kill.
+
+#### What triggers Pause
+
+Four distinct sources can transition the runtime into PAUSED. The
+runtime treats them identically — once `paused == True`, the next
+pause-aware call blocks regardless of source. The differences are
+purely in **who set the flag** and **how the operator should respond**.
+
+| # | Trigger | Set by | Operator action to resume | Code path |
+|---|---|---|---|---|
+| 1 | **Operator clicks Pause** in the dashboard or pendant | The user, via UI | Click Resume when ready | WS cmd `pause` → `runtime_server.py:184` → `rt.pause()` |
+| 2 | **Critical device goes down on the bus** (USB unplug, TCP drop, daemon crash, etc.) | Auto — by `MQTTOrchestrator` watching `device/+/state` topics | Fix the hardware → click Recover on the device row → wait for state=ok → click Resume | `devices/orchestrator.py:351` |
+| 3 | **Robot motion command returns an alarm code** (negative int from a `rt.<robot>` call — limit hit, IK failed, E-stop pressed) | Auto — by `rt.call` itself when a wrapped robot method returns < 0 | Clear the alarm on the robot itself → click Resume | `runtime.py:532` (inside `rt.call`) |
+| 4 | **Project code calls `rt.pause()`** directly (custom checks, action policy, "I want to wait for the operator here") | Your code | Whatever the project documents — usually Resume after handling the situation | Anywhere a `Check` / action / recipe calls `rt.pause()` |
+
+Trigger 2 (device-down auto-pause) has additional gates: it fires only
+when the device is **critical**, **not sim**, and either transitioning
+from ok→down or first-observed-down. Sim devices and project-claimed-sim
+devices never auto-pause. See [device-guide.md §1 rule 4](device-guide.md)
+and [§16 simulation model](device-guide.md) for the full claim
+aggregation logic.
+
+#### Pause atomicity — entry, not middle
+
+A pause is **observed at the entry to a pause-aware call**, not in the
+middle of one. The atomic rule is:
+
+> When the runtime is paused, the **next** pause-aware call your code
+> reaches blocks until Resume. Work already in progress when the pause
+> flag was set runs to completion, and the next call is where the
+> operator sees the freeze.
+
+Why this matters: a robot mid-motion can't be interrupted safely.
+Pause therefore happens at the **boundary** before the next call, never
+mid-execution. If you need an instant freeze accepting the
+consequences, use **Kill** instead.
+
+#### Resume semantics — work runs, nothing is skipped
+
+After Resume, the call that was blocked **runs its work** — it isn't
+skipped or aborted. The internal shape of every pause-aware call is:
+
+```
+1. Enter the call → internal checkpoint()
+2. Checkpoint blocks while paused
+3. Operator clicks Resume → checkpoint returns
+4. The actual work runs (robot move / IO write / sleep tick / …)
+5. Call returns
+```
+
+So `rt.jmove(...)` that was paused at entry will execute the move once
+Resume fires. No silent drops.
+
+**One subtle case: `rt.sleep(seconds)`.** Sleep uses wall-clock
+end-time, not "N seconds of unpaused time." If you pause during a
+`rt.sleep(10)` and resume after the original 10 s window has elapsed,
+sleep **returns immediately** on Resume (the conceptual wait already
+passed). Useful for "wait until ~T seconds from now" semantics; if you
+need "exactly 10 unpaused seconds," compose with `rt.checkpoint()` and
+a custom loop. For typical workflows the wall-clock behavior is what
+you want — by the time the operator resumes, the wait is done.
+
+#### Single mental model
+
+> **Pause sets a flag. The next pause-aware call observes it and
+> blocks. Resume releases the block; the work runs after Resume. Mid-
+> call work is never interrupted — pauses happen at boundaries.**
+
+That one paragraph covers the contract for all four trigger sources.
 

@@ -1,0 +1,21 @@
+# multimeter_test scene — minimal Core + one BK 879B multimeter.
+#
+# Both run in simulation by default so the project works out of the box
+# on any machine. To talk to real hardware: flip ``simulation: false``
+# and set ``port`` to the meter's serial device (or leave ``port: ""``
+# to auto-detect FTDI / CP210x USB ports).
+
+core:
+  type: "core"
+  simulation: true
+  ip: "127.0.0.1"
+  has_rail: false
+  has_tool_changer: false
+  has_motion_plan: false
+  has_camera: false
+
+multi_meter_1:
+  type: "multi_meter_bk879b"
+  simulation: false
+  port: "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+  critical: true

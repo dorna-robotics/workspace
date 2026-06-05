@@ -77,6 +77,7 @@ class RobotStation:
         port: int = 443,
         connect_timeout: int = 5,
         label: str = "robot",
+        simulation: bool = False,
     ):
         self._client = Dorna()
         self.ip = ip
@@ -84,7 +85,17 @@ class RobotStation:
         self.connect_timeout = connect_timeout
         self.label = label
 
-        # Device-protocol attributes (override Dorna's own .msg).
+        # Authored simulation intent. Used by ``set_simulation``
+        # to flip the flag at runtime. Per device-guide §16, sim is
+        # ORTHOGONAL to connection state — sim does NOT skip the
+        # initial connect, and the bus dot keeps reflecting hardware
+        # reachability regardless. Sim controls api routing (Core)
+        # and auto-pause gating (attachment), not the TCP probe.
+        self.simulation = bool(simulation)
+
+        # Device-protocol attributes (override Dorna's own .msg). The
+        # id stays stable across sim toggle so the bus topic doesn't
+        # break — sim is a separate axis surfaced via ``info.sim``.
         self.id = f"dorna:{ip}" if ip else None
         self.state = "down"
         self.msg = "not connected"
@@ -107,18 +118,23 @@ class RobotStation:
         self._on_connection_lost_listeners: list[Callable[[], None]] = []
 
         # Initial connect — non-fatal: a flaky network must not crash
-        # workspace startup. AutoRecover (wired by Core) will retry.
+        # workspace startup. ALWAYS attempted regardless of sim
+        # (device-guide §16: bus state reflects hardware reachability,
+        # sim only suppresses auto-pause via the attachment).
+        # AutoRecover (wired by Core) retries on connection-lost
+        # edges; in sim mode AutoRecover is suspended so a failed
+        # connect just sits red without retry storms.
         if self.ip:
             try:
                 if self._client.connect(self.ip, timeout=self.connect_timeout):
                     self._set_state("ok", "")
                     print(f"✅ {self.label} connected @ {self.ip}")
                 else:
-                    self._set_state("down", "initial connect returned False")
-                    print(f"❌ {self.label} initial connect @ {self.ip} returned False")
+                    self._set_state("down", "connect failed")
+                    print(f"❌ {self.label} connect @ {self.ip} failed")
             except Exception as ex:
-                self._set_state("down", f"initial connect failed: {ex}")
-                print(f"❌ {self.label} initial connect @ {self.ip} failed: {ex}")
+                self._set_state("down", f"connect failed: {ex}")
+                print(f"❌ {self.label} connect @ {self.ip} failed: {ex}")
 
     # ── Device protocol ──────────────────────────────────────────────────
 
@@ -146,6 +162,13 @@ class RobotStation:
         AutoRecover (auto, on connection-lost only) and by the operator
         clicking Recover (manual).
 
+        ALWAYS performs the real reconnect regardless of sim
+        (device-guide §16: bus state reflects hardware reachability).
+        In sim mode, AutoRecover is suspended via
+        ``attachment.set_sim`` so this fires only on direct invocation
+        — the operator can poke the real link from sim to see if it'd
+        be reachable.
+
         Strategy: close (best-effort), reconnect, then **check the
         robot's alarm state via** ``get_alarm()``. Two-way comms +
         ``alarm == 0`` is the only valid path to ``state="ok"``. If
@@ -162,7 +185,7 @@ class RobotStation:
                 pass
             ok = self._client.connect(self.ip, timeout=self.connect_timeout)
             if not ok:
-                self._set_state("down", "reconnect returned False")
+                self._set_state("down", "connect failed")
                 return False
             # Verify alarm state (not just connectivity) before declaring
             # ok. ``get_alarm()`` returns the current alarm code; non-zero
@@ -183,7 +206,7 @@ class RobotStation:
             self._set_state("ok", "")
             return True
         except Exception as ex:
-            self._set_state("down", f"recover failed: {type(ex).__name__}: {ex}")
+            self._set_state("down", f"connect failed: {type(ex).__name__}: {ex}")
             return False
 
     def release(self) -> None:
@@ -195,6 +218,19 @@ class RobotStation:
             self._client.close()
         except Exception:
             pass
+
+    def set_simulation(self, sim: bool) -> None:
+        """Live sim/real flip — flag only. Parity with
+        ``BK879BStation.set_simulation``; both follow the rule in
+        device-guide §16: sim is ORTHOGONAL to connection state.
+
+        The TCP connection (if open) stays open across the flip;
+        ``state`` keeps reflecting hardware reachability either way.
+        The component republishes ``info.sim`` via
+        ``attachment.set_sim`` and swaps recipe routing (Core's
+        ``robot_api``) as needed.
+        """
+        self.simulation = bool(sim)
 
     # ── Internal: state + delegation ─────────────────────────────────────
 

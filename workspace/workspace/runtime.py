@@ -188,6 +188,14 @@ class Runtime:
     def step(self, label, level: str = "info") -> None:
         """Mark a workflow step. Accumulates as a timeline in the dashboard.
 
+        **Not pause-aware.** ``step`` is pure observability — it records a
+        timeline entry and returns. It deliberately does NOT call
+        ``checkpoint()`` so logging a step never blocks. If the runtime
+        is paused, the pause is observed by the next pause-aware call
+        (``rt.sleep`` / ``rt.delay`` / ``rt.<robot_method>`` /
+        ``rt.checkpoint``). See docs/project-guide.md §9 for the
+        full pause-aware/not-pause-aware map.
+
         level: 'info' (default), 'success', 'warning', 'error', or 'progress'.
         For progress: label is a number 0-100 (percentage).
         """
@@ -208,7 +216,7 @@ class Runtime:
                     cb(steps_snapshot, progress_snapshot)
                 except Exception:
                     pass
-            return  # no checkpoint for progress updates
+            return
 
         print(f"[STEP][{level}] {label}")
         entry = {"label": str(label), "level": level}
@@ -222,7 +230,6 @@ class Runtime:
                 cb(steps_snapshot, progress_snapshot)
             except Exception:
                 pass
-        self.checkpoint()
 
     @property
     def step_info(self) -> Optional[dict]:
