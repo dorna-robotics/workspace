@@ -1,0 +1,84 @@
+# Dorna Workspace — AI agent instructions
+
+You're working in the **Dorna Workspace platform** — a Python SDK + Tornado
+orchestrator + 3D viewer + device bus for robotic lab automation. Robots,
+multimeters, cameras, racks, recipes, BT-planned workflows. The
+operator-facing UI is at `workspace/gui/orchestrator/`.
+
+## Read these FIRST
+
+For any non-trivial task, start here. Don't grep docs blindly.
+
+1. **`.claude/skills/README.md`** — task → skill index. Pick the skill that
+   matches what you're about to do; read its SKILL.md before writing code.
+2. **`docs/`** — canonical reference docs. Skills point at specific
+   sections; only read more deeply if the skill says so.
+
+The skill set covers the common contributor tasks:
+adding a device (workspace-owned vs daemon-owned), writing a recipe,
+writing a BT action, adding a physical component, authoring scene yaml,
+enabling sim mode, operator recovery flows, debugging the device bus.
+
+## Always-on conventions
+
+These are platform-wide; every skill assumes them. Don't re-derive.
+
+- **Use `sudo python3` and `sudo pip3`** for any hardware-touching or
+  install-modifying command. The user's group memberships rely on it.
+- **Scene yaml uses explicit values, never commented optionals.** Write
+  `port: ""` to mean "unset," not `# port: "..."`. Reading the yaml should
+  never require uncommenting to learn the truth.
+- **Commit style**: short imperative title with a topical prefix
+  (`device-guide:`, `ui:`, `multi_meter:`, etc.), optional bullet body,
+  always end with `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`
+  when you wrote or assisted with the changes. Never amend or force-push
+  without explicit instruction. Never `--no-verify`.
+- **No backwards-compat hacks.** If something's unused, delete it. No
+  `# removed: …` comments, no dead aliases, no "kept for back-compat
+  until we migrate" cruft unless the back-compat path is genuinely
+  load-bearing AND documented (the WS multiplex's legacy endpoints are
+  the rare exception — see `docs/internal/ws-multiplexing-plan.md`).
+- **Sim is orthogonal to connection state.** Bus dot reflects hardware
+  truth; SIM pill reflects operator intent. Both visible, never
+  conflated. `docs/device-guide.md` §16.
+- **Observability never blocks. Work always checkpoints.** `rt.step` and
+  friends never pause; `rt.sleep` / `rt.delay` / `rt.<robot>` /
+  `rt.checkpoint` always do. `docs/project-guide.md` §8.
+- **The component owns atomic ops. The recipe owns workflows.** Test: "Could
+  the operator press one button?" → component. `docs/component-guide.md` §7.
+
+## What this repo is NOT
+
+- Not a generic Python project — assumes a Dorna robot bench setup.
+- Not a library you import — it's a platform you launch (the orchestrator
+  Tornado server is the main entrypoint).
+- Not multi-tenant — one orchestrator manages one bench's worth of
+  workspaces.
+
+## Workflow expectations
+
+- Before sweeping changes across the platform: read the skill that
+  matches your task, then check the canonical doc section it points to.
+- After non-trivial changes, run a syntax check on touched files
+  (`python3 -c "import ast; ast.parse(open(...).read())"`) and make sure
+  any cross-references you might have invalidated still hold.
+- If a task doesn't match any existing skill, consider whether one should
+  be added — `.claude/skills/README.md` covers the criteria.
+
+## Where the code lives (mental map)
+
+```
+docs/                    canonical reference (read second, after skills)
+.claude/skills/          task-focused playbook (read first)
+workspace/               the platform itself
+  workspace/             Python package (SDK)
+    components/          device + physical component classes
+    recipes/             recipe classes (workflow coordination)
+    bt/                  BT framework — Action, leaf engine, replanner
+    devices/             MQTT device bus, AutoRecover, attach_device
+    runtime.py           Runtime — pause/resume, rt.* API
+    runtime_server.py    Tornado server — admin REST + WS + multiplexer
+  gui/                   web UIs (admin dashboard, pendant, viewer)
+  projects/              BT projects (pace, multimeter_test, …)
+  static/CAD/            3D models (GLB) for components
+```
