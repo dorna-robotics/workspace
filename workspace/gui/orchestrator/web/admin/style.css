@@ -117,7 +117,22 @@
   gap: 10px;
   flex-shrink: 0;
 }
-.modal-head h3 { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.2px; }
+/* min-width:0 + flex shrink + word-break: an h3 with a long unbreakable
+   string (e.g. a long device id) would otherwise force the flex parent
+   wider than the modal's max width; ``overflow: hidden`` clips it but
+   the overlay's ``align-items: center`` still centers based on the
+   intrinsic (wider) width, shifting the whole modal visually left.
+   These four properties let the title shrink + wrap inside its slot
+   so the modal stays where it should. */
+.modal-head h3 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  flex: 1 1 0;
+  min-width: 0;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
 .modal-foot {
   padding: 14px 20px;

@@ -612,7 +612,7 @@ const RECOVER_FALLBACK_MS = 35_000;
 // shape Park / Kill already use.
 async function _confirmRecover(deviceId) {
   return await confirmDialog({
-    title: "Recover device?",
+    title: "Recover Device?",
     body: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
     confirmLabel: "Recover",
     confirmVariant: "primary",
@@ -1795,7 +1795,7 @@ $("btnClearLogs").addEventListener("click", async (e) => {
   // Kill prompt pattern so the operator can't fat-finger away a
   // useful debug log on a tablet.
   if (!await confirmDialog({
-    title: "Clear logs?",
+    title: "Clear Logs?",
     body: "This deletes the workspace log file. Currently buffered output stays in memory but on-disk history is gone.",
     confirmLabel: "Clear",
     confirmVariant: "danger",
