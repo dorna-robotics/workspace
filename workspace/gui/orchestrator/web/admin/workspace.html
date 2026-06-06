@@ -231,6 +231,21 @@
       background: rgba(12,108,179,0.10);
       box-shadow: inset 0 0 0 1px rgba(12,108,179,0.25);
     }
+    /* Recovering pill — amber, matches the row's warn-pulse dot.
+       Used in the device row's text-msg column so operator gets a
+       full-text signal next to "Recovering…" alongside the dot. */
+    .device-row .device-pill--recovering,
+    .device-detail .device-pill--recovering {
+      color: var(--amber);
+      background: rgba(255,159,10,0.12);
+      box-shadow: inset 0 0 0 1px rgba(255,159,10,0.28);
+    }
+    [data-theme="light"] .device-row .device-pill--recovering,
+    [data-theme="light"] .device-detail .device-pill--recovering {
+      color: var(--amber);
+      background: rgba(199,124,10,0.10);
+      box-shadow: inset 0 0 0 1px rgba(199,124,10,0.25);
+    }
 
     /* row is clickable — opens the device detail modal */
     .device-row { cursor: pointer; transition: background-color var(--motion-fast) var(--ease); }
@@ -270,7 +285,8 @@
     }
 
     /* ---- Logs ---- */
-    .log-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer; user-select: none; }
+    .log-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer; user-select: none; transition: opacity var(--motion-fast) var(--ease); }
+    .log-header:active { opacity: 0.55; }
     .log-header .section-label { margin: 0; }
     .log-header .btn { cursor: pointer; }
 

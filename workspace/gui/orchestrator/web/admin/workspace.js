@@ -1,3 +1,8 @@
+// Note: this page currently opens 5 WebSocket connections (steps,
+// status, devices, operator_actions, logs). Architectural cleanup to
+// fold the four workspace-side channels into a single multiplexed WS
+// is planned but deferred — see docs/internal/ws-multiplexing-plan.md
+// for the design and trigger conditions.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 import { connectScheduleWS, disconnectScheduleWS, openScheduleModal } from "./schedule.js";
@@ -110,18 +115,62 @@ $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove
 $("btnParamsLoad").addEventListener("click", () => loadKwargsFromFile(paramsForm, toast));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
-// Device detail modal — close on X button or backdrop click. ESC also.
+// Device detail modal — close on X button or backdrop click.
 const _deviceModal = $("deviceModalOverlay");
 $("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
 _deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
+
+// One global ESC handler closes whichever modal is currently open.
+// Cheaper and more consistent than per-modal keydown handlers (which
+// previously only existed for the device modal — params + opActions
+// modals had no ESC support at all). Closes the topmost visible modal
+// only; if multiple stack up, ESC dismisses one at a time.
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && _deviceModal.classList.contains("show")) closeDeviceModal();
+  if (e.key !== "Escape") return;
+  const _MODAL_IDS = [
+    "deviceModalOverlay",
+    "paramsModalOverlay",
+    "opActionsModalOverlay",
+    "scheduleModalOverlay",
+  ];
+  for (const id of _MODAL_IDS) {
+    const m = document.getElementById(id);
+    if (m && m.classList.contains("show")) {
+      if (id === "deviceModalOverlay") {
+        closeDeviceModal();
+      } else {
+        m.classList.remove("show");
+      }
+      return; // close only the topmost
+    }
+  }
 });
+
+// Cached launch_config to dedupe fetches between openParamsModal +
+// loadRunParams which run back-to-back on first launch. 2 min TTL is
+// fine: the schema rarely changes mid-session and the operator's
+// last-saved values are still echoed by the server on every fetch.
+let _launchConfigCache = null;
+const LAUNCH_CONFIG_TTL_MS = 120_000;
+
+async function _getLaunchConfig() {
+  const now = Date.now();
+  if (_launchConfigCache && (now - _launchConfigCache.at < LAUNCH_CONFIG_TTL_MS)) {
+    return _launchConfigCache.data;
+  }
+  const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
+  _launchConfigCache = { data: j, at: now };
+  return j;
+}
+
+function _invalidateLaunchConfig() {
+  _launchConfigCache = null;
+}
 
 async function openParamsModal(frozen) {
   let schema = {}, values = {}, fetchError = false;
   try {
-    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
+    const j = await _getLaunchConfig();
     schema = j.kwargs_schema || {};
     values = j.kwargs_values || {};
     _wsKwargsValues = values;
@@ -245,9 +294,12 @@ async function refreshLogs() {
 let _logsWs = null;
 let _logsWsClosed = false;
 let _logsWsRetryMs = 1000;
+let _logsWsRetryCount = 0;
+let _logsWsToastShown = false;
 let _logsRenderQueued = false;
 
 const LOGS_BUFFER_BYTES = 256 * 1024;   // ~256 KB rolling buffer
+const LOGS_WS_TOAST_AFTER_RETRIES = 3;  // notify operator after this many failures
 
 function connectLogsWS() {
   // Path is on the orchestrator (the workspace itself doesn't own the
@@ -291,7 +343,17 @@ function _tryLogsWS(url) {
   if (_logsWsClosed) return;
   const ws = new WebSocket(url);
   _logsWs = ws;
-  ws.onopen = () => { _logsWsRetryMs = 1000; };
+  ws.onopen = () => {
+    _logsWsRetryMs = 1000;
+    // Reset the retry counter on successful (re)connect so a later
+    // hiccup gets the same N-retry grace window before the toast fires
+    // again.
+    if (_logsWsRetryCount > 0 && _logsWsToastShown) {
+      toast("Logs streaming restored", "ok");
+    }
+    _logsWsRetryCount = 0;
+    _logsWsToastShown = false;
+  };
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -314,6 +376,14 @@ function _tryLogsWS(url) {
   };
   ws.onclose = () => {
     if (_logsWsClosed) return;
+    _logsWsRetryCount += 1;
+    // Tell the operator once when we've crossed the retry threshold —
+    // they'd otherwise think logs were live when really we've fallen
+    // back to HTTP polling. One-shot via the toastShown latch.
+    if (_logsWsRetryCount === LOGS_WS_TOAST_AFTER_RETRIES && !_logsWsToastShown) {
+      _logsWsToastShown = true;
+      toast("Live log streaming unstable — falling back to polling", "warn");
+    }
     setTimeout(() => _tryLogsWS(url), _logsWsRetryMs);
     _logsWsRetryMs = Math.min(_logsWsRetryMs * 1.5, 8000);
   };
@@ -400,7 +470,13 @@ function updateStatusUI(st) {
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
-  if (prevUpper !== curUpper) loadRunParams();
+  if (prevUpper !== curUpper) {
+    // Invalidate the cached launch_config — a fresh Launch may have
+    // pulled in an edited launch.yaml, so the schema could differ
+    // from the prior session.
+    _invalidateLaunchConfig();
+    loadRunParams();
+  }
 }
 
 let _prevStepCount = 0;
@@ -530,6 +606,19 @@ const _devices = new Map();   // id → snapshot
 const _devicesPending = new Map();
 const RECOVER_FALLBACK_MS = 35_000;
 
+// Confirm prompt before any device-side Recover (inline row OR modal
+// footer). Recover re-initializes a real device on the bus — a
+// fat-finger on a tablet shouldn't trigger it silently. Same dialog
+// shape Park / Kill already use.
+async function _confirmRecover(deviceId) {
+  return await confirmDialog({
+    title: "Recover device?",
+    body: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
+    confirmLabel: "Recover",
+    confirmVariant: "primary",
+  });
+}
+
 function connectDevicesWS(runtimeUrl) {
   // HTTP fetches and recover commands go through the admin proxy at
   // /orchestrator/api/workspace/<name>/devices to avoid cross-origin
@@ -616,6 +705,13 @@ function disconnectDevicesWS() {
   _devicesWsUrl = "";
 }
 
+// Cache of last-rendered HTML for the devices list. WS device_state
+// events fire often; if the visible output hasn't changed (e.g. a
+// state event arrived but the fields we render are identical), skip
+// the innerHTML write entirely. Saves a layout + paint per silent
+// event when nothing visible actually changed.
+let _devicesListLastHtml = null;
+
 function renderDevicesPanel() {
   const el = $("devicesList");
   const badge = $("devicesCountBadge");
@@ -623,7 +719,11 @@ function renderDevicesPanel() {
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
   if (!list.length) {
-    el.innerHTML = `<div class="step-empty">No devices declared</div>`;
+    const emptyHtml = `<div class="step-empty">No devices declared</div>`;
+    if (_devicesListLastHtml !== emptyHtml) {
+      el.innerHTML = emptyHtml;
+      _devicesListLastHtml = emptyHtml;
+    }
     return;
   }
   // Auto-expand the first time devices appear — empty-default UX
@@ -635,7 +735,7 @@ function renderDevicesPanel() {
     if (chev) chev.classList.add("open");
   }
   const now = Date.now();
-  el.innerHTML = list.map(d => {
+  const newHtml = list.map(d => {
     const state = d.state || "down";
     const online = d.online !== false;  // default true for back-compat
     const pending = _devicesPending.get(d.id);
@@ -698,28 +798,45 @@ function renderDevicesPanel() {
         ${simPill}
       </div>`;
   }).join("");
-  // Inline action buttons: handle click + STOP propagation so clicking
-  // the button doesn't also open the device-detail modal.
-  el.querySelectorAll('[data-device-act="recover"]').forEach(btn => {
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const row = ev.currentTarget.closest(".device-row");
-      const id = row?.getAttribute("data-device-id");
-      if (id) recoverDevice(id);
-    });
-  });
-  // Row click anywhere else opens the detail modal.
-  el.querySelectorAll('.device-row').forEach(row => {
-    row.addEventListener("click", () => {
-      const id = row.getAttribute("data-device-id");
-      if (id) openDeviceModal(id);
-    });
-  });
+  // Skip the DOM write when nothing visible changed. WS events stream
+  // often during a run — this catches silent state events (e.g. only
+  // ``ts`` or ``last_update`` changed) and avoids the layout + paint.
+  if (newHtml !== _devicesListLastHtml) {
+    el.innerHTML = newHtml;
+    _devicesListLastHtml = newHtml;
+  }
 
   // Keep an open modal in sync as state events stream in.
   if (_openDeviceId && _devices.has(_openDeviceId)) {
     _renderDeviceModalBody(_devices.get(_openDeviceId));
   }
+}
+
+// Event delegation: one click listener on the parent handles every
+// row + recover button, forever. The previous pattern re-attached a
+// listener per row on every WS event — fine for 2 devices, leaky for
+// many. Delegated handlers also survive innerHTML rewrites; nothing
+// to re-wire.
+function _wireDevicesPanelDelegation() {
+  const el = $("devicesList");
+  if (!el || el.dataset.delegated === "1") return;
+  el.dataset.delegated = "1";
+  el.addEventListener("click", async (ev) => {
+    // Recover button takes priority + cancels row-click open-modal.
+    const recoverBtn = ev.target.closest('[data-device-act="recover"]');
+    if (recoverBtn) {
+      ev.stopPropagation();
+      const row = recoverBtn.closest(".device-row");
+      const id = row?.getAttribute("data-device-id");
+      if (id && await _confirmRecover(id)) recoverDevice(id);
+      return;
+    }
+    const row = ev.target.closest(".device-row");
+    if (row) {
+      const id = row.getAttribute("data-device-id");
+      if (id) openDeviceModal(id);
+    }
+  });
 }
 
 // ── Device detail modal ─────────────────────────────────────────────
@@ -812,7 +929,8 @@ function _renderDeviceModalBody(d) {
       const btn = document.createElement("button");
       btn.className = "btn btn-primary";
       btn.textContent = "Recover";
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
+        if (!await _confirmRecover(d.id)) return;
         recoverDevice(d.id);
         // Stay open — the modal re-renders via the WS-driven
         // ``renderDevicesPanel`` loop and immediately reflects the
@@ -869,6 +987,9 @@ async function recoverDevice(deviceId) {
       return;
     }
     if (reply && reply.ok === false) {
+      // Toast immediately so the operator sees the failure without
+      // having to wait for the 4 s pending mark to expire.
+      toast(`Recover failed: ${reply.msg || "unknown error"}`, "bad");
       _devicesPending.set(deviceId, {
         note: reply.msg || "recover failed",
         until: Date.now() + 4000,
@@ -878,6 +999,9 @@ async function recoverDevice(deviceId) {
     // ok=true (queued): keep showing "Recovering…" — the WS state events
     // own the rest of the lifecycle and will clear the pending mark.
   } catch (e) {
+    // Network-level failure (orchestrator unreachable, CORS, etc.).
+    // Toast so the operator doesn't think the request landed.
+    toast("Recover request failed — check connection", "bad");
     _devicesPending.set(deviceId, {
       note: "request failed",
       until: Date.now() + 4000,
@@ -1377,7 +1501,18 @@ function updateIframe(state, launched) {
   if (!iframeReady || iframeUrl !== targetUrl) {
     iframeReady = true;
     iframeUrl   = targetUrl;
+    // Timer-based load-failure detection. The iframe's ``error`` event
+    // fires unreliably for cross-origin / 404 cases — a missing 3D
+    // server typically just hangs without notifying. Toast after
+    // VIEWER_LOAD_TIMEOUT_MS if ``load`` hasn't fired, so the operator
+    // knows the 3D server isn't reachable (vs. assuming it's "still
+    // loading"). One-shot per src change.
+    const VIEWER_LOAD_TIMEOUT_MS = 10_000;
+    const loadTimer = setTimeout(() => {
+      toast("3D viewer didn't respond — is the workspace process up?", "warn");
+    }, VIEWER_LOAD_TIMEOUT_MS);
     frame.addEventListener("load", () => {
+      clearTimeout(loadTimer);
       frame.contentWindow?.postMessage({ type: "theme", value: theme }, "*");
       // Replay the pendant render state on iframe (re)load. Without
       // this, if pendant was open *before* this iframe finished
@@ -1462,7 +1597,73 @@ setInterval(() => {
 }, 1000);
 
 // ---- Init ----
+// One-time a11y bootstrap: mirror title → aria-label on every icon
+// button. Buttons all have helpful ``title`` already; ``aria-label``
+// is what screen readers announce. Cheaper to do here than to edit
+// every button's HTML, and any future button gets it for free.
+function _hydrateAriaLabels(root = document) {
+  root.querySelectorAll('.btn-icon[title]').forEach((b) => {
+    if (!b.hasAttribute('aria-label')) {
+      b.setAttribute('aria-label', b.title);
+    }
+  });
+}
+
+// Focus management for modals — single observer covers every
+// ``.modal-overlay`` element. When .show is added: remember the
+// previously focused element and move focus into the modal so the
+// keyboard user lands somewhere relevant. When .show is removed:
+// restore focus to wherever it was. Future modals get this for free.
+const _modalFocusStack = new Map();   // overlayEl → previous focus
+function _focusFirstIn(overlay) {
+  const candidates = overlay.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  for (const el of candidates) {
+    if (el.offsetParent !== null && !el.disabled) {
+      el.focus();
+      return;
+    }
+  }
+  // Fallback: make the modal body itself focusable + focus it so ESC
+  // and arrow keys land somewhere.
+  const body = overlay.querySelector('.modal-body') || overlay;
+  body.setAttribute('tabindex', '-1');
+  body.focus();
+}
+function _setupModalFocusObserver() {
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+      const el = m.target;
+      if (!el.classList.contains('modal-overlay')) continue;
+      const wasShown = m.oldValue && m.oldValue.includes('show');
+      const isShown  = el.classList.contains('show');
+      if (!wasShown && isShown) {
+        // Opening — remember current focus, move into modal.
+        _modalFocusStack.set(el, document.activeElement);
+        // Tiny defer so the show transition can paint before we focus
+        // (some elements measure 0 size until visible).
+        requestAnimationFrame(() => _focusFirstIn(el));
+      } else if (wasShown && !isShown) {
+        // Closing — restore.
+        const prev = _modalFocusStack.get(el);
+        _modalFocusStack.delete(el);
+        if (prev && typeof prev.focus === 'function') {
+          try { prev.focus(); } catch {}
+        }
+      }
+    }
+  });
+  document.querySelectorAll('.modal-overlay').forEach((el) => {
+    observer.observe(el, { attributes: true, attributeOldValue: true, attributeFilter: ['class'] });
+  });
+}
+
 async function init() {
+  _hydrateAriaLabels();
+  _setupModalFocusObserver();
+  _wireDevicesPanelDelegation();
   try {
     const j   = await apiFetch("/workspaces");
     const arr = Array.isArray(j?.workspaces) ? j.workspaces : [];
@@ -1548,7 +1749,7 @@ async function loadRunParams() {
     return;
   }
   try {
-    const j = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/launch_config`);
+    const j = await _getLaunchConfig();
     const schema = j.kwargs_schema || {};
     const values = j.kwargs_values || {};
     // Restore the page-side cache from the server's saved values so a
@@ -1590,6 +1791,15 @@ $("btnToggleLogs").addEventListener("click", () => {
 // Clear logs — stop propagation so it doesn't also toggle collapse
 $("btnClearLogs").addEventListener("click", async (e) => {
   e.stopPropagation();
+  // Destructive + irreversible — always confirm. Mirrors the Park /
+  // Kill prompt pattern so the operator can't fat-finger away a
+  // useful debug log on a tablet.
+  if (!await confirmDialog({
+    title: "Clear logs?",
+    body: "This deletes the workspace log file. Currently buffered output stays in memory but on-disk history is gone.",
+    confirmLabel: "Clear",
+    confirmVariant: "danger",
+  })) return;
   try {
     await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
     lastLogs = "";
