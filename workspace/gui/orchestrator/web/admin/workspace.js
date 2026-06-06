@@ -1,8 +1,12 @@
-// Note: this page currently opens 5 WebSocket connections (steps,
-// status, devices, operator_actions, logs). Architectural cleanup to
-// fold the four workspace-side channels into a single multiplexed WS
-// is planned but deferred — see docs/internal/ws-multiplexing-plan.md
-// for the design and trigger conditions.
+// Note: this page opens 3 WebSocket connections:
+//   1. /ws            — multiplexed (steps + status + devices + ops)
+//   2. /ws/schedule   — schedule/Gantt timeline (kept separate)
+//   3. /ws/logs       — logs streaming on the orchestrator (high-volume,
+//                       different owner)
+// Legacy endpoints (/ws/steps, /ws/status, /ws/devices,
+// /ws/operator_actions) remain on the server for back-compat — the
+// orchestrator subscriber + 3D viewer still use /ws/status. See
+// docs/internal/ws-multiplexing-plan.md for design + migration trail.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 import { connectScheduleWS, disconnectScheduleWS, openScheduleModal } from "./schedule.js";
@@ -485,119 +489,146 @@ let _prevStepRunning = false;
 // Matches the empty-by-default behaviour for Devices below.
 let _stepsExpanded = false;
 
-// ---- Direct step WebSocket to runtime ----
-let _stepWs = null;
-let _stepWsClosed = false;
-let _stepWsRetryMs = 1000;
-let _stepWsUrl = "";
+// ── Multiplexed runtime WS ──────────────────────────────────────────
+//
+// Single connection to ``/ws`` on the workspace process that carries
+// steps + status + devices + operator-actions as ``{type, payload}``
+// envelopes. Replaces the four legacy connections (connectStepWS,
+// connectRuntimeStatusWS, connectDevicesWS, connectOpActionsWS) at
+// the admin page.
+//
+// Legacy endpoints stay live on the server for back-compat — the
+// orchestrator's per-workspace subscriber + the 3D viewer still
+// connect to ``/ws/status``, and external monitoring tools (if any)
+// keep working unchanged. See docs/internal/ws-multiplexing-plan.md.
 
-function connectStepWS(runtimeUrl) {
-  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/steps";
-  if (_stepWs && _stepWsUrl === wsUrl) return;  // already connected
-  disconnectStepWS();
-  _stepWsUrl = wsUrl;
-  _stepWsClosed = false;
-  _stepWsRetryMs = 1000;
-  _tryStepWS();
+let _muxWs = null;
+let _muxWsUrl = "";
+let _muxWsClosed = true;
+let _muxWsRetryMs = 1000;
+
+function connectWs(runtimeUrl) {
+  // Cache the base URL for the HTTP recover POST in recoverDevice().
+  _devicesUrl = runtimeUrl;
+  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws";
+  if (_muxWs && _muxWsUrl === wsUrl) return;
+  disconnectWs();
+  _muxWsUrl = wsUrl;
+  _muxWsClosed = false;
+  _muxWsRetryMs = 1000;
+  _devices.clear();
+  _tryMuxWs();
+  // HTTP seed for the devices map — defensive. The mux WS sends a
+  // devices_snapshot envelope on open, but the seed lands faster when
+  // the WS handshake takes a moment, so the operator never sees an
+  // empty Devices panel after Launch.
+  fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices`)
+    .then(r => r.ok ? r.json() : null)
+    .then(payload => {
+      if (!payload || !Array.isArray(payload.devices)) return;
+      for (const d of payload.devices) _devices.set(d.id, d);
+      renderDevicesPanel();
+    })
+    .catch(() => {});
 }
 
-function _tryStepWS() {
-  if (_stepWsClosed || !_stepWsUrl) return;
-  const ws = new WebSocket(_stepWsUrl);
-  _stepWs = ws;
-  ws.onopen = () => { _stepWsRetryMs = 1000; };
+function _tryMuxWs() {
+  if (_muxWsClosed || !_muxWsUrl) return;
+  const ws = new WebSocket(_muxWsUrl);
+  _muxWs = ws;
+  ws.onopen = () => { _muxWsRetryMs = 1000; };
   ws.onmessage = (e) => {
     try {
-      const msg = JSON.parse(e.data);
+      const env = JSON.parse(e.data);
+      _dispatchMuxMessage(env);
+    } catch {}
+  };
+  ws.onclose = () => {
+    if (_muxWsClosed) return;
+    setTimeout(_tryMuxWs, _muxWsRetryMs);
+    _muxWsRetryMs = Math.min(_muxWsRetryMs * 1.5, 8000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function disconnectWs() {
+  _muxWsClosed = true;
+  if (_muxWs) { try { _muxWs.close(); } catch {} _muxWs = null; }
+  _muxWsUrl = "";
+}
+
+// Route envelope ``{type, payload}`` to the existing per-category
+// handler. The handlers themselves (renderStep, updateStatusUI,
+// renderDevicesPanel, renderOperatorActionsPanel) stay unchanged
+// from the legacy paths; only the transport changes.
+function _dispatchMuxMessage(env) {
+  if (!env || typeof env !== "object") return;
+  const payload = env.payload || {};
+  switch (env.type) {
+    case "step_state": {
       const running = isRunning(_lastState);
-      if (Array.isArray(msg.steps) && msg.steps.length) {
-        renderStep({ steps: msg.steps }, running);
+      if (Array.isArray(payload.steps) && payload.steps.length) {
+        renderStep({ steps: payload.steps }, running);
       }
       // Apply the progress snapshot whenever the runtime emits one.
-      // Without this the bar only updated via the slower HTTP poll —
-      // the workflow's final 100% can fire and be replaced by
-      // mark_idle in less than one polling interval, leaving the bar
-      // stuck at the previous value (e.g. 80%).
-      if (typeof msg.progress === "number" && msg.progress >= 0) {
-        updateProgress(msg.progress, isLaunched(_lastState));
+      // Same comment as the legacy /ws/steps handler.
+      if (typeof payload.progress === "number" && payload.progress >= 0) {
+        updateProgress(payload.progress, isLaunched(_lastState));
       }
-    } catch {}
-  };
-  ws.onclose = () => {
-    if (_stepWsClosed) return;
-    setTimeout(_tryStepWS, _stepWsRetryMs);
-    _stepWsRetryMs = Math.min(_stepWsRetryMs * 1.5, 8000);
-  };
-  ws.onerror = () => ws.close();
-}
-
-function disconnectStepWS() {
-  _stepWsClosed = true;
-  if (_stepWs) { try { _stepWs.close(); } catch {} _stepWs = null; }
-  _stepWsUrl = "";
-}
-
-// ── Status WebSocket — push runtime state changes in real time ──────
-let _statusWs = null;
-let _statusWsClosed = false;
-let _statusWsRetryMs = 1000;
-let _statusWsUrl = "";
-
-// Per-workspace runtime status WS — direct connection to the workspace
-// process's /ws/status endpoint. Distinct from api.js's
-// ``connectStatusWS`` which subscribes to the orchestrator-level
-// /orchestrator/ws/status broadcasting all workspaces' statuses on a
-// 2-second poll cycle. This direct connection gets sub-100ms updates.
-function connectRuntimeStatusWS(runtimeUrl) {
-  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/status";
-  if (_statusWs && _statusWsUrl === wsUrl) return;
-  disconnectRuntimeStatusWS();
-  _statusWsUrl = wsUrl;
-  _statusWsClosed = false;
-  _statusWsRetryMs = 1000;
-  _tryStatusWS();
-}
-
-function _tryStatusWS() {
-  if (_statusWsClosed || !_statusWsUrl) return;
-  const ws = new WebSocket(_statusWsUrl);
-  _statusWs = ws;
-  ws.onopen = () => { _statusWsRetryMs = 1000; };
-  ws.onmessage = (e) => {
-    try {
-      const snap = JSON.parse(e.data);
-      // Merge: cached HTTP fields first (port, log, _orch, etc.),
-      // then snap's fresh values on top. The runtime now ships
-      // ``uptime_s`` / ``run_started_at`` / ``run_finished_at`` /
-      // ``step`` / ``devices_summary`` in every WS push, so the
-      // moment state changes those land instantly — no flicker from
-      // a stale HTTP poll's uptime resurrecting itself between the
-      // WS push and the next 1.5 s poll.
-      updateStatusUI({
-        ..._lastHttpStatus,
-        ...snap,
-      });
-    } catch {}
-  };
-  ws.onclose = () => {
-    if (_statusWsClosed) return;
-    setTimeout(_tryStatusWS, _statusWsRetryMs);
-    _statusWsRetryMs = Math.min(_statusWsRetryMs * 1.5, 8000);
-  };
-  ws.onerror = () => ws.close();
-}
-
-function disconnectRuntimeStatusWS() {
-  _statusWsClosed = true;
-  if (_statusWs) { try { _statusWs.close(); } catch {} _statusWs = null; }
-  _statusWsUrl = "";
+      break;
+    }
+    case "runtime_status": {
+      // Merge cached HTTP fields under the fresh WS snapshot — same
+      // pattern as the legacy /ws/status handler.
+      updateStatusUI({ ..._lastHttpStatus, ...payload });
+      break;
+    }
+    case "device_state": {
+      const d = payload;
+      if (!d || !d.id) break;
+      const prev = _devices.get(d.id);
+      _devices.set(d.id, d);
+      if (_devicesPending.has(d.id) && d.state !== "recovering") {
+        _devicesPending.delete(d.id);
+      }
+      // Critical-down operator paging on the rising edge — same
+      // logic as the legacy /ws/devices handler.
+      if (
+        d.state === "down"
+        && d.critical !== false
+        && (!prev || prev.state !== "down")
+      ) {
+        _alarmBeep();
+        _alarmNotify(`${d.id}: ${(d.msg || "down").trim()}`);
+      }
+      renderDevicesPanel();
+      break;
+    }
+    case "devices_snapshot": {
+      const arr = Array.isArray(payload.devices) ? payload.devices : [];
+      _devices.clear();
+      for (const d of arr) {
+        if (d && d.id) _devices.set(d.id, d);
+      }
+      renderDevicesPanel();
+      break;
+    }
+    case "operator_actions": {
+      _opActions = Array.isArray(payload.actions) ? payload.actions : [];
+      renderOperatorActionsPanel();
+      updateOperatorActionsGate(_lastState);
+      break;
+    }
+    case "invoke_result": {
+      const tag = `${payload.component}.${payload.method}`;
+      if (payload.ok) toast(`${tag} ✓`, "ok");
+      else            toast(`${tag}: ${payload.msg || "failed"}`, "bad");
+      break;
+    }
+  }
 }
 
 // ── Devices panel (project-scoped) ───────────────────────────────────
-let _devicesWs = null;
-let _devicesWsUrl = "";
-let _devicesWsClosed = true;
-let _devicesWsRetryMs = 1000;
 let _devicesUrl = "";   // base http URL, used for recover POST
 const _devices = new Map();   // id → snapshot
 // Devices we just clicked Recover on. Holds id → {note, until} so the
@@ -617,92 +648,6 @@ async function _confirmRecover(deviceId) {
     confirmLabel: "Recover",
     confirmVariant: "primary",
   });
-}
-
-function connectDevicesWS(runtimeUrl) {
-  // HTTP fetches and recover commands go through the admin proxy at
-  // /orchestrator/api/workspace/<name>/devices to avoid cross-origin
-  // requests against the workspace's own port. The WebSocket connects
-  // straight to the workspace process — Tornado's WebSocketHandler
-  // accepts cross-origin via check_origin=True, so no proxy needed.
-  _devicesUrl = runtimeUrl;
-  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/devices";
-  if (_devicesWs && _devicesWsUrl === wsUrl) return;
-  disconnectDevicesWS();
-  _devicesWsUrl = wsUrl;
-  _devicesWsClosed = false;
-  _devicesWsRetryMs = 1000;
-  _devices.clear();
-  _tryDevicesWS();
-  // Initial seed via the admin proxy (no CORS).
-  fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices`)
-    .then(r => r.ok ? r.json() : null)
-    .then(payload => {
-      if (!payload || !Array.isArray(payload.devices)) return;
-      for (const d of payload.devices) _devices.set(d.id, d);
-      renderDevicesPanel();
-    })
-    .catch(() => {});
-}
-
-function _tryDevicesWS() {
-  if (_devicesWsClosed || !_devicesWsUrl) return;
-  const ws = new WebSocket(_devicesWsUrl);
-  _devicesWs = ws;
-  ws.onopen = () => { _devicesWsRetryMs = 1000; };
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      // Full snapshot from the server — fired on connect AND any time
-      // ``workspace.add_component`` / ``remove_component`` runs (the
-      // device list could have changed). Replace the in-memory map
-      // wholesale and re-render.
-      if (msg && msg.type === "snapshot" && Array.isArray(msg.devices)) {
-        _devices.clear();
-        for (const d of msg.devices) {
-          if (d && d.id) _devices.set(d.id, d);
-        }
-        renderDevicesPanel();
-        return;
-      }
-      if (msg && msg.type === "device_state" && msg.id) {
-        const prev = _devices.get(msg.id);
-        _devices.set(msg.id, msg);
-        // Any state event for a pending device clears its "in-flight" mark
-        // so the button stops showing "Recovering…" once the cycle ends.
-        if (_devicesPending.has(msg.id) && msg.state !== "recovering") {
-          _devicesPending.delete(msg.id);
-        }
-        // Operator paging on the rising edge of a critical-down. Same UX
-        // as the step-driven alarm banner (audio + desktop notification),
-        // applied uniformly to every device on the bus — robot, camera,
-        // future printer/pipette/etc. We page only on the transition
-        // (prev state was not down) to avoid spamming when the panel
-        // first loads with already-down devices.
-        if (
-          msg.state === "down"
-          && msg.critical !== false
-          && (!prev || prev.state !== "down")
-        ) {
-          _alarmBeep();
-          _alarmNotify(`${msg.id}: ${(msg.msg || "down").trim()}`);
-        }
-        renderDevicesPanel();
-      }
-    } catch {}
-  };
-  ws.onclose = () => {
-    if (_devicesWsClosed) return;
-    setTimeout(_tryDevicesWS, _devicesWsRetryMs);
-    _devicesWsRetryMs = Math.min(_devicesWsRetryMs * 1.5, 8000);
-  };
-  ws.onerror = () => ws.close();
-}
-
-function disconnectDevicesWS() {
-  _devicesWsClosed = true;
-  if (_devicesWs) { try { _devicesWs.close(); } catch {} _devicesWs = null; }
-  _devicesWsUrl = "";
 }
 
 // Cache of last-rendered HTML for the devices list. WS device_state
@@ -1034,52 +979,6 @@ function escHtml(s) {
 // sub-millisecond on the LAN.
 let _opActions = [];              // [{component, label, method}, ...]
 let _opActionsExpanded = false;   // sidebar section collapsed by default
-let _opActionsWs = null;
-let _opActionsWsClosed = false;
-let _opActionsWsUrl = "";
-let _opActionsWsRetryMs = 1000;
-
-function connectOpActionsWS(runtimeUrl) {
-  const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws/operator_actions";
-  if (_opActionsWs && _opActionsWsUrl === wsUrl) return;
-  disconnectOpActionsWS();
-  _opActionsWsUrl = wsUrl;
-  _opActionsWsClosed = false;
-  _opActionsWsRetryMs = 1000;
-  _tryOpActionsWS();
-}
-
-function _tryOpActionsWS() {
-  if (_opActionsWsClosed || !_opActionsWsUrl) return;
-  const ws = new WebSocket(_opActionsWsUrl);
-  _opActionsWs = ws;
-  ws.onopen = () => { _opActionsWsRetryMs = 1000; };
-  ws.onmessage = (e) => {
-    let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
-    if (msg.type === "actions") {
-      _opActions = Array.isArray(msg.actions) ? msg.actions : [];
-      renderOperatorActionsPanel();
-      updateOperatorActionsGate(_lastState);
-    } else if (msg.type === "invoke_result") {
-      const tag = `${msg.component}.${msg.method}`;
-      if (msg.ok) toast(`${tag} ✓`, "ok");
-      else        toast(`${tag}: ${msg.msg || "failed"}`, "bad");
-    }
-  };
-  ws.onclose = () => {
-    if (_opActionsWsClosed) return;
-    setTimeout(_tryOpActionsWS, _opActionsWsRetryMs);
-    _opActionsWsRetryMs = Math.min(_opActionsWsRetryMs * 1.5, 8000);
-  };
-  ws.onerror = () => ws.close();
-}
-
-function disconnectOpActionsWS() {
-  _opActionsWsClosed = true;
-  if (_opActionsWs) { try { _opActionsWs.close(); } catch {} _opActionsWs = null; }
-  _opActionsWsUrl = "";
-}
 
 function _opActionsHtml(disabled) {
   // Group entries by component so the buttons render as a series of
@@ -1137,12 +1036,15 @@ function runOperatorAction(component, method) {
   // Fire-and-forget over the open WS. Reply comes back as an
   // ``invoke_result`` message handled in ``ws.onmessage`` and shown
   // via toast — no per-click promise / await needed.
-  if (!_opActionsWs || _opActionsWs.readyState !== 1) {
+  if (!_muxWs || _muxWs.readyState !== 1) {
     toast(`${component}.${method}: not connected`, "bad");
     return;
   }
   try {
-    _opActionsWs.send(JSON.stringify({ type: "invoke", component, method }));
+    _muxWs.send(JSON.stringify({
+      type: "invoke",
+      payload: { component, method },
+    }));
   } catch (e) {
     toast(`${component}.${method}: ${e}`, "bad");
   }
@@ -1490,13 +1392,12 @@ function updateIframe(state, launched) {
       // looking at where the run ended. The iframe's already-loaded
       // content stays cached in the browser; a fresh Launch will
       // overwrite ``frame.src`` below when the new process is ready.
-      // Step / device / status WSes disconnect — their endpoints are
-      // gone with the process; they'll reconnect on next Launch.
+      // Mux WS (steps + status + devices + ops) disconnects — its
+      // endpoint is gone with the workspace process; will reconnect
+      // on next Launch. Schedule stays its own channel.
       // Logs WS stays connected — its endpoint is on the orchestrator,
       // not the workspace process, and the file persists after kill.
-      disconnectStepWS();
-      disconnectDevicesWS();
-      disconnectRuntimeStatusWS();
+      disconnectWs();
       disconnectScheduleWS();
     }
     return;
@@ -1530,11 +1431,10 @@ function updateIframe(state, launched) {
     }, { once: true });
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
-    connectStepWS(targetUrl);
-    connectDevicesWS(targetUrl);
-    connectRuntimeStatusWS(targetUrl);
+    // Single multiplexed WS handles steps + status + devices +
+    // operator_actions. Schedule WS stays a separate channel.
+    connectWs(targetUrl);
     connectScheduleWS(targetUrl);
-    connectOpActionsWS(targetUrl);
   }
 }
 

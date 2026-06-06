@@ -217,10 +217,52 @@ class StatusHandler(tornado.web.RequestHandler):
 _step_ws_clients: set = set()
 _status_ws_clients: set = set()
 
+# Multiplexed all-channel client set. Used by ``AllWebSocket`` at
+# ``/ws`` — replaces /ws/steps + /ws/status + /ws/devices +
+# /ws/operator_actions for clients that want a single channel.
+# Legacy endpoints stay live (the orchestrator's per-workspace
+# subscriber + the 3D viewer still use ``/ws/status``); the mux is
+# additive, not destructive. See docs/internal/ws-multiplexing-plan.md
+# for the design + migration triggers.
+_all_ws_clients: set = set()
+
 # Captured at server startup so broadcast helpers called from non-IOLoop
 # threads (paho's network thread, the workflow thread) can hop back onto
 # the correct loop. IOLoop.current() from a foreign thread is unreliable.
 _main_ioloop: Optional[tornado.ioloop.IOLoop] = None
+
+
+def _broadcast_dual(
+    legacy_clients: set,
+    legacy_msg: str,
+    mux_type: str,
+    mux_payload: dict,
+) -> None:
+    """Fan an event to legacy WS clients (bare message) AND multiplexed
+    /ws clients (with ``{type, payload}`` envelope) in a single IO loop
+    callback. Skip the mux serialize when no mux clients are connected.
+    """
+    if _main_ioloop is None:
+        return
+    mux_msg = (
+        json.dumps({"type": mux_type, "payload": mux_payload})
+        if _all_ws_clients else None
+    )
+
+    def _send():
+        for c in list(legacy_clients):
+            try:
+                c.write_message(legacy_msg)
+            except Exception:
+                legacy_clients.discard(c)
+        if mux_msg is not None:
+            for c in list(_all_ws_clients):
+                try:
+                    c.write_message(mux_msg)
+                except Exception:
+                    _all_ws_clients.discard(c)
+
+    _main_ioloop.add_callback(_send)
 
 
 class StepWebSocket(tornado.websocket.WebSocketHandler):
@@ -261,16 +303,7 @@ def _broadcast_steps(steps: list, progress: int = -1):
     payload = {"steps": steps}
     if progress is not None and progress >= 0:
         payload["progress"] = progress
-    msg = json.dumps(payload)
-
-    def _send():
-        for c in list(_step_ws_clients):
-            try:
-                c.write_message(msg)
-            except Exception:
-                _step_ws_clients.discard(c)
-
-    _main_ioloop.add_callback(_send)
+    _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
 # --------------------------------------------------
@@ -307,18 +340,7 @@ class StatusWebSocket(tornado.websocket.WebSocketHandler):
 
 def _broadcast_status(status: dict):
     """Called from rt.on_status (any thread) — schedule send on IO loop."""
-    if _main_ioloop is None:
-        return
-    msg = json.dumps(status)
-
-    def _send():
-        for c in list(_status_ws_clients):
-            try:
-                c.write_message(msg)
-            except Exception:
-                _status_ws_clients.discard(c)
-
-    _main_ioloop.add_callback(_send)
+    _broadcast_dual(_status_ws_clients, json.dumps(status), "runtime_status", status)
 
 
 # --------------------------------------------------
@@ -847,12 +869,143 @@ class DeviceWebSocket(tornado.websocket.WebSocketHandler):
         _device_ws_clients.discard(self)
 
 
+# --------------------------------------------------
+# Multiplexed WebSocket — single channel for steps + status + devices
+# + operator_actions. See docs/internal/ws-multiplexing-plan.md.
+# Legacy endpoints (/ws/steps, /ws/status, /ws/devices,
+# /ws/operator_actions) stay live for back-compat — the orchestrator's
+# per-workspace subscriber + the 3D viewer still use /ws/status, and
+# any external monitoring should keep working unchanged.
+# --------------------------------------------------
+class AllWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws — multiplexed channel pushing all event types as
+    ``{type, payload}`` envelopes.
+
+    Server → client envelope types:
+      ``step_state``         — same payload shape /ws/steps sends.
+      ``runtime_status``     — same payload shape /ws/status sends.
+      ``device_state``       — single device update.
+      ``devices_snapshot``   — full devices snapshot (on connect + scene change).
+      ``operator_actions``   — full op-actions snapshot (on connect + scene change).
+      ``invoke_result``      — reply to a client-side ``invoke``.
+
+    Client → server envelope types:
+      ``invoke``             — ``{type, payload: {component, method}}``.
+                               Same safety gates as
+                               :class:`OperatorActionsWebSocket._invoke`.
+
+    A client wanting to ignore a category just doesn't dispatch on its
+    type — there's no required subscribe step. (Server-side
+    subscription filtering is a future addition; see the plan doc.)
+    """
+
+    def check_origin(self, origin):
+        return True
+
+    def initialize(self, rt: Runtime, workspace):
+        self._rt = rt
+        self.workspace = workspace
+
+    def open(self):
+        _all_ws_clients.add(self)
+        # Initial snapshots — same payloads each legacy endpoint sends
+        # on its open(), wrapped in the envelope.
+        try:
+            # Steps + progress.
+            si = self._rt.step_info
+            step_payload = {"steps": (si["steps"] if si else [])}
+            if si and si.get("progress", -1) >= 0:
+                step_payload["progress"] = si["progress"]
+            self._send("step_state", step_payload)
+
+            # Runtime status.
+            self._send("runtime_status", _status_payload(self._rt, self.workspace))
+
+            # Devices — bulk snapshot in one envelope (more efficient
+            # than N device_state envelopes on connect).
+            self._send("devices_snapshot", {
+                "devices": _project_devices_snapshot(self.workspace),
+            })
+
+            # Operator actions.
+            self._send("operator_actions", {
+                "actions": _operator_actions_snapshot(self.workspace),
+            })
+        except Exception:
+            pass
+
+    def on_close(self):
+        _all_ws_clients.discard(self)
+
+    def on_message(self, raw):
+        try:
+            env = json.loads(raw)
+        except Exception:
+            return
+        etype = env.get("type")
+        payload = env.get("payload") or {}
+        if etype == "invoke":
+            self._invoke(
+                str(payload.get("component", "") or ""),
+                str(payload.get("method", "") or ""),
+            )
+
+    def _send(self, etype: str, payload: dict) -> None:
+        try:
+            self.write_message(json.dumps({"type": etype, "payload": payload}))
+        except Exception:
+            pass
+
+    def _invoke(self, component_name: str, method_name: str) -> None:
+        """Same gates + dispatch as OperatorActionsWebSocket._invoke.
+        Reply is a unicast ``invoke_result`` envelope to this client."""
+        from workspace.components.operator_actions import component_operator_actions
+
+        def reply(ok: bool, msg: str = "", result=None) -> None:
+            p = {
+                "component": component_name,
+                "method":    method_name,
+                "ok":        ok,
+            }
+            if msg:
+                p["msg"] = msg
+            if ok and isinstance(result, (str, int, float, bool, list, dict, type(None))):
+                p["result"] = result
+            self._send("invoke_result", p)
+
+        components = getattr(self.workspace, "components", {}) or {}
+        comp = components.get(component_name)
+        if comp is None:
+            reply(False, f"unknown component: {component_name}")
+            return
+
+        declared = {a["method"] for a in component_operator_actions(comp)}
+        if method_name not in declared:
+            reply(False, f"{component_name}.{method_name} is not an operator action")
+            return
+
+        rt = getattr(self.workspace, "rt", None)
+        state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
+        if state in ("RUNNING", "ACTIVE"):
+            reply(False, "cannot run operator actions while workflow is running")
+            return
+
+        try:
+            result = getattr(comp, method_name)()
+        except Exception as ex:
+            reply(False, f"{type(ex).__name__}: {ex}")
+            return
+
+        reply(True, result=result)
+
+
 def _broadcast_scene_changed(workspace):
     """Push fresh snapshots to all clients of the panels whose content
     derives from ``workspace.components`` — namely:
 
-      * /ws/devices         (re-snapshot of the device list)
+      * /ws/devices          (re-snapshot of the device list)
       * /ws/operator_actions (re-snapshot of the operator-actions list)
+      * /ws (multiplexed)    (one envelope per panel type)
 
     Called by ``Workspace._notify_scene_changed`` after a successful
     ``add_component`` / ``remove_component``. Best-effort: a missing
@@ -861,32 +1014,51 @@ def _broadcast_scene_changed(workspace):
     if _main_ioloop is None:
         return
 
-    # Devices panel — same payload shape DeviceWebSocket sends on open.
-    device_payload = json.dumps({
-        "type":     "snapshot",
-        "devices":  _project_devices_snapshot(workspace),
-    }) if _device_ws_clients else None
+    devices_snap = _project_devices_snapshot(workspace) if (_device_ws_clients or _all_ws_clients) else None
+    actions_snap = _operator_actions_snapshot(workspace) if (_op_actions_ws_clients or _all_ws_clients) else None
 
-    # Operator-actions panel — same shape OperatorActionsWebSocket
-    # sends on open.
-    op_payload = json.dumps({
-        "type":    "actions",
-        "actions": _operator_actions_snapshot(workspace),
-    }) if _op_actions_ws_clients else None
+    # Legacy bare-shape messages (each panel has its own pre-existing
+    # message format the legacy clients expect).
+    device_legacy = (
+        json.dumps({"type": "snapshot", "devices": devices_snap})
+        if _device_ws_clients and devices_snap is not None else None
+    )
+    op_legacy = (
+        json.dumps({"type": "actions", "actions": actions_snap})
+        if _op_actions_ws_clients and actions_snap is not None else None
+    )
+    # Mux envelopes (same payloads, wrapped).
+    device_mux = (
+        json.dumps({"type": "devices_snapshot", "payload": {"devices": devices_snap}})
+        if _all_ws_clients and devices_snap is not None else None
+    )
+    op_mux = (
+        json.dumps({"type": "operator_actions", "payload": {"actions": actions_snap}})
+        if _all_ws_clients and actions_snap is not None else None
+    )
 
     def _send():
-        if device_payload is not None:
+        if device_legacy is not None:
             for c in list(_device_ws_clients):
                 try:
-                    c.write_message(device_payload)
+                    c.write_message(device_legacy)
                 except Exception:
                     _device_ws_clients.discard(c)
-        if op_payload is not None:
+        if op_legacy is not None:
             for c in list(_op_actions_ws_clients):
                 try:
-                    c.write_message(op_payload)
+                    c.write_message(op_legacy)
                 except Exception:
                     _op_actions_ws_clients.discard(c)
+        if device_mux is not None or op_mux is not None:
+            for c in list(_all_ws_clients):
+                try:
+                    if device_mux is not None:
+                        c.write_message(device_mux)
+                    if op_mux is not None:
+                        c.write_message(op_mux)
+                except Exception:
+                    _all_ws_clients.discard(c)
 
     _main_ioloop.add_callback(_send)
 
@@ -897,21 +1069,33 @@ def _broadcast_device_event(workspace, event: dict):
     claims so panels stay focused. Augments each event with the
     project's claim mode so a single push carries everything the
     panel needs to render the SIM pill correctly."""
-    if not _device_ws_clients or _main_ioloop is None:
+    if (not _device_ws_clients and not _all_ws_clients) or _main_ioloop is None:
         return
     did = event.get("id")
     if did not in _project_device_ids(workspace):
         return
     augmented = dict(event)
     augmented["claim"] = _project_device_claims(workspace).get(did, "real")
-    payload = json.dumps({"type": "device_state", **augmented})
+    # Legacy clients get the flat ``{type:"device_state", ...}`` shape
+    # they've always seen; mux clients get the envelope.
+    legacy_msg = json.dumps({"type": "device_state", **augmented})
+    mux_msg = (
+        json.dumps({"type": "device_state", "payload": augmented})
+        if _all_ws_clients else None
+    )
 
     def _send():
         for c in list(_device_ws_clients):
             try:
-                c.write_message(payload)
+                c.write_message(legacy_msg)
             except Exception:
                 _device_ws_clients.discard(c)
+        if mux_msg is not None:
+            for c in list(_all_ws_clients):
+                try:
+                    c.write_message(mux_msg)
+                except Exception:
+                    _all_ws_clients.discard(c)
 
     try:
         _main_ioloop.add_callback(_send)
@@ -987,6 +1171,12 @@ class RuntimeServer:
 
             # operator actions — WS-only (list + invoke on one socket)
             (r"/ws/operator_actions", OperatorActionsWebSocket, dict(workspace=self.workspace)),
+
+            # Multiplexed channel — steps + status + devices + operator_actions
+            # on one socket. The admin project page uses this; legacy endpoints
+            # above remain for back-compat (orchestrator subscriber + 3D viewer
+            # still use /ws/status). See docs/internal/ws-multiplexing-plan.md.
+            (r"/ws", AllWebSocket, dict(rt=self.rt, workspace=self.workspace)),
 
             # health
             (r"/healthz", HealthHandler),

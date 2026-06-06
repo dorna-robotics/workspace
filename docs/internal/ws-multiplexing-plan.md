@@ -1,9 +1,13 @@
 # WebSocket Multiplexing — Migration Plan
 
-Status: **planned, not yet executed.** Captured here so future work
-can pick it up cleanly when there's a focused window for it. The
-current 5-WS design works fine on a Pi5 with one project; this
-proposal is architectural cleanup, not a perf emergency.
+Status: **implemented (admin page).** Single `/ws` endpoint added to
+the workspace process, replacing four legacy connections on the
+admin project page. Legacy endpoints remain live for back-compat —
+the orchestrator's per-workspace subscriber + the 3D viewer still
+use `/ws/status`, and external monitoring tools (if any) keep
+working unchanged. The plan below is preserved as the design
+record; sections that still describe future work (subscription
+filtering, schedule fold-in) remain accurate.
 
 ## Today
 
