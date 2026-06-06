@@ -117,21 +117,22 @@
   gap: 10px;
   flex-shrink: 0;
 }
-/* min-width:0 + flex shrink + word-break: an h3 with a long unbreakable
-   string (e.g. a long device id) would otherwise force the flex parent
-   wider than the modal's max width; ``overflow: hidden`` clips it but
-   the overlay's ``align-items: center`` still centers based on the
-   intrinsic (wider) width, shifting the whole modal visually left.
-   These four properties let the title shrink + wrap inside its slot
-   so the modal stays where it should. */
+/* Long titles (e.g. a long device id) truncate with ellipsis on one
+   line instead of wrapping to 3+ lines. The full text stays visible
+   in the modal body (.dd-id) and on hover via the ``title`` attr.
+   ``min-width: 0`` + ``flex: 1 1 0`` are required so the h3 actually
+   shrinks within its flex slot instead of forcing the parent wider
+   than the modal's max-width (which would shift the centered overlay
+   visually left). */
 .modal-head h3 {
   font-size: var(--text-xl);
   font-weight: 600;
   letter-spacing: -0.2px;
   flex: 1 1 0;
   min-width: 0;
-  word-break: break-all;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
 .modal-foot {

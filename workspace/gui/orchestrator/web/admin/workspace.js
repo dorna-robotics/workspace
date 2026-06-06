@@ -847,7 +847,12 @@ function openDeviceModal(id) {
   if (!d) return;
   _openDeviceId = id;
   const overlay = $("deviceModalOverlay");
-  $("deviceModalTitle").textContent = d.id;
+  const titleEl = $("deviceModalTitle");
+  titleEl.textContent = d.id;
+  // Hover/tap-and-hold reveals the full id when the title is truncated
+  // with ellipsis. The id also appears verbatim in the body's .dd-id
+  // block, so this is purely a quick-reveal affordance.
+  titleEl.title = d.id;
   _renderDeviceModalBody(d);
   overlay.classList.add("show");
 }
