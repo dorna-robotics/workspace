@@ -761,6 +761,7 @@
   padding: 10px 0;
   box-shadow: var(--shadow-sm);
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .pendant-steps:empty { display: none; }
 /* Pendant density — large. Shared identity (states, dot glow,

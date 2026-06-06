@@ -506,6 +506,11 @@ let _muxWs = null;
 let _muxWsUrl = "";
 let _muxWsClosed = true;
 let _muxWsRetryMs = 1000;
+// Tracks the mux WS's live health (true between onopen and onclose).
+// The adaptive poll reads this alongside the orchestrator status WS's
+// ``_wsConnected``: when both are alive, polling drops to logs-only;
+// when either is down, the HTTP poll picks up the gap.
+let _muxWsAlive = false;
 
 function connectWs(runtimeUrl) {
   // Cache the base URL for the HTTP recover POST in recoverDevice().
@@ -536,7 +541,10 @@ function _tryMuxWs() {
   if (_muxWsClosed || !_muxWsUrl) return;
   const ws = new WebSocket(_muxWsUrl);
   _muxWs = ws;
-  ws.onopen = () => { _muxWsRetryMs = 1000; };
+  ws.onopen = () => {
+    _muxWsRetryMs = 1000;
+    _muxWsAlive = true;
+  };
   ws.onmessage = (e) => {
     try {
       const env = JSON.parse(e.data);
@@ -544,6 +552,7 @@ function _tryMuxWs() {
     } catch {}
   };
   ws.onclose = () => {
+    _muxWsAlive = false;
     if (_muxWsClosed) return;
     setTimeout(_tryMuxWs, _muxWsRetryMs);
     _muxWsRetryMs = Math.min(_muxWsRetryMs * 1.5, 8000);
@@ -553,6 +562,7 @@ function _tryMuxWs() {
 
 function disconnectWs() {
   _muxWsClosed = true;
+  _muxWsAlive = false;
   if (_muxWs) { try { _muxWs.close(); } catch {} _muxWs = null; }
   _muxWsUrl = "";
 }
@@ -720,7 +730,10 @@ function renderDevicesPanel() {
       : "";
     let control = "";
     if (visualState === "recovering") {
-      control = `<button class="btn btn-sm btn-primary" disabled>Recovering…</button>`;
+      // Amber chip matches the amber warn-pulse dot for visual
+      // coherence — blue-primary disabled button would clash with
+      // the dot's "in progress, not a fault" semantics.
+      control = `<span class="device-pill device-pill--recovering">Recovering…</span>`;
     } else if (state !== "ok" && !isPublisherSim) {
       // Recover applies to any real bus entry that's down — including
       // ones this project happens to claim sim. The operator may still
@@ -869,11 +882,13 @@ function _renderDeviceModalBody(d) {
   // down + offline → offline pill, ok/sim → nothing.
   foot.innerHTML = "";
   if (isPending) {
-    const btn = document.createElement("button");
-    btn.className = "btn btn-primary";
-    btn.disabled = true;
-    btn.textContent = "Recovering…";
-    foot.appendChild(btn);
+    // Amber pill matches the inline row's recovering chip + the
+    // amber warn-pulse dot. No bright blue "primary" button while
+    // we're not actually offering a click.
+    const pill = document.createElement("span");
+    pill.className = "device-pill device-pill--recovering";
+    pill.textContent = "Recovering…";
+    foot.appendChild(pill);
   } else if (state !== "ok" && !isPublisherSim) {
     if (online) {
       const btn = document.createElement("button");
@@ -1446,25 +1461,36 @@ new MutationObserver(() => {
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
 // ---- Adaptive poll (fallback when WS not connected) ----
+//
+// Two independent WS health signals drive this:
+//   * ``_wsConnected``  — orchestrator-level /orchestrator/ws/status
+//     (aggregated, all workspaces). Set by ``connectStatusWS``.
+//   * ``_muxWsAlive``   — workspace-direct /ws (runtime status events).
+//
+// Both being alive means we don't need to poll status at all — logs
+// alone. If EITHER is down, the HTTP refreshStatus picks up the gap
+// so the operator never sits on a stale UI.
 let _wsConnected = false;
 
 function scheduleWsPoll() {
-  if (_wsConnected) {
-    // WS handles status — only poll logs
-    clearTimeout(_pollTimer);
-    const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
+  const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
+  const cadenceMs = active ? 1500 : 4000;
+  clearTimeout(_pollTimer);
+  if (_wsConnected && _muxWsAlive) {
+    // All status sources alive — only poll logs (orchestrator owns
+    // the log file, no WS for slow-tail snapshots).
     _pollTimer = setTimeout(async () => {
       await refreshLogs();
       scheduleWsPoll();
-    }, active ? 1500 : 4000);
+    }, cadenceMs);
     return;
   }
-  const active = ["RUNNING","ACTIVE","LAUNCHED_NOT_READY"].includes(_lastState.toUpperCase());
-  clearTimeout(_pollTimer);
+  // At least one WS is down — keep status fresh via HTTP so the
+  // operator doesn't see a frozen UI while the WS retries.
   _pollTimer = setTimeout(async () => {
     await Promise.all([refreshStatus(), refreshLogs()]);
     scheduleWsPoll();
-  }, active ? 1500 : 4000);
+  }, cadenceMs);
 }
 
 // ---- WebSocket live status ----

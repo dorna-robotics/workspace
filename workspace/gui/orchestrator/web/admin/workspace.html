@@ -38,6 +38,12 @@
     .sidebar-scroll {
       flex: 1;
       overflow-y: auto;
+      /* Native momentum + rubber-band on iOS / iPadOS — without this
+         the tablet operator gets a janky stop-dead scroll. Matches
+         the pattern already used on .stats-bar, .modal-body, and the
+         dashboard's card grid. */
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       padding: 12px 14px;
       display: flex;
       flex-direction: column;
@@ -64,6 +70,8 @@
     .step-timeline {
       max-height: 130px;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       background: var(--bg);
       border: none;
       border-radius: var(--radius-md);
