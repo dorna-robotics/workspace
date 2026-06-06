@@ -203,8 +203,12 @@ _uploads/
 # ended) so the dashboard card can show "Last run ✓ 14:10".
 status/
 
-# Claude Code
-.claude/
+# Claude Code — per-user settings + transcripts stay local. The
+# skills/ subfolder is the exception: it's the project-shared task
+# playbook (see .claude/skills/README.md), version-controlled so
+# every contributor + AI session gets the same conventions.
+.claude/*
+!.claude/skills/
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
