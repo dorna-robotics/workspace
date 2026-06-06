@@ -5,11 +5,13 @@
 // order (a shaker block lands underneath the robot action that
 // triggered it). Consecutive blocks on the same row are joined by a
 // thin connector line. State is driven by explicit framework events.
-
-let _ws = null;
-let _wsUrl = "";
-let _wsClosed = false;
-let _wsRetryMs = 1000;
+//
+// Transport: this module no longer owns a WebSocket. Schedule events
+// arrive via the workspace's multiplexed /ws channel (envelope type
+// ``schedule_event``); workspace.js routes them into ``ingestScheduleEvent``
+// below. The server keeps /ws/schedule alive for back-compat
+// (external monitors, headless scripts) but the admin page reads
+// from the mux. See docs/internal/ws-multiplexing-plan.md.
 
 // One ``schedule`` event from the framework = one slice. We append
 // rather than replace so the operator sees the full job history grow
@@ -45,36 +47,34 @@ function _leafKey(replan_id, leaf_name) {
 let _modalEl = null;
 let _ganttEl = null;
 
-// ── public entrypoint ──────────────────────────────────────────────────
-export function connectScheduleWS(runtimeUrl) {
-  const url = runtimeUrl.replace(/^http/, "ws") + "/ws/schedule";
-  if (_ws && _wsUrl === url) return;
-  disconnectScheduleWS();
-  _wsUrl = url;
-  _wsClosed = false;
-  _wsRetryMs = 1000;
+// ── public entrypoints ─────────────────────────────────────────────────
+
+// Initialize the modal DOM (once per page load). Was bundled into
+// connectScheduleWS when this module owned its own WS; now exposed
+// separately because workspace.js handles transport.
+export function initSchedule() {
   _initDOM();
-  _tryWS();
 }
 
-export function disconnectScheduleWS() {
-  _wsClosed = true;
-  if (_ws) { try { _ws.close(); } catch {} _ws = null; }
-  _wsUrl = "";
+// Reset state on workspace teardown — clears the in-memory Gantt so
+// the next Launch starts from a blank canvas. Replaces the old
+// disconnectScheduleWS behaviour for cache hygiene; no socket to
+// close anymore (transport is the mux WS, owned by workspace.js).
+export function resetSchedule() {
+  _slices.length = 0;
+  _leafState.clear();
+  _leafTiming.clear();
+  _leafOrder.length = 0;
+  _leafGeom.clear();
+  // Force a re-render so the modal blanks out if currently open.
+  if (_modalEl?.classList.contains("show")) _render();
 }
 
-function _tryWS() {
-  if (_wsClosed || !_wsUrl) return;
-  const ws = new WebSocket(_wsUrl);
-  _ws = ws;
-  ws.onopen = () => { _wsRetryMs = 1000; };
-  ws.onmessage = (e) => { try { _ingest(JSON.parse(e.data)); } catch {} };
-  ws.onclose = () => {
-    if (_wsClosed) return;
-    setTimeout(_tryWS, _wsRetryMs);
-    _wsRetryMs = Math.min(_wsRetryMs * 1.5, 8000);
-  };
-  ws.onerror = () => ws.close();
+// Public ingest — workspace.js's mux dispatcher calls this for every
+// ``schedule_event`` envelope. Accepts the raw event object the
+// framework publishes (no envelope wrapper — payload only).
+export function ingestScheduleEvent(event) {
+  _ingest(event);
 }
 
 function _ingest(msg) {

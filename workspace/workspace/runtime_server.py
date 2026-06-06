@@ -241,6 +241,7 @@ def _broadcast_dual(
     """Fan an event to legacy WS clients (bare message) AND multiplexed
     /ws clients (with ``{type, payload}`` envelope) in a single IO loop
     callback. Skip the mux serialize when no mux clients are connected.
+    Honours each mux client's subscription filter via ``c.wants(type)``.
     """
     if _main_ioloop is None:
         return
@@ -258,7 +259,8 @@ def _broadcast_dual(
         if mux_msg is not None:
             for c in list(_all_ws_clients):
                 try:
-                    c.write_message(mux_msg)
+                    if c.wants(mux_type):
+                        c.write_message(mux_msg)
                 except Exception:
                     _all_ws_clients.discard(c)
 
@@ -410,9 +412,15 @@ def _broadcast_schedule_event(event: dict) -> None:
     elif etype in ("action_start", "action_end", "swap_start", "swap_end"):
         _schedule_runtime_events.append(event)
 
-    if _main_ioloop is None or not _schedule_ws_clients:
+    if _main_ioloop is None:
         return
-    msg = json.dumps(event)
+    if not _schedule_ws_clients and not _all_ws_clients:
+        return
+    msg = json.dumps(event)  # legacy /ws/schedule clients
+    mux_msg = (
+        json.dumps({"type": "schedule_event", "payload": event})
+        if _all_ws_clients else None
+    )
 
     def _send():
         for c in list(_schedule_ws_clients):
@@ -420,6 +428,13 @@ def _broadcast_schedule_event(event: dict) -> None:
                 c.write_message(msg)
             except Exception:
                 _schedule_ws_clients.discard(c)
+        if mux_msg is not None:
+            for c in list(_all_ws_clients):
+                try:
+                    if c.wants("schedule_event"):
+                        c.write_message(mux_msg)
+                except Exception:
+                    _all_ws_clients.discard(c)
 
     _main_ioloop.add_callback(_send)
 
@@ -905,6 +920,16 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
     def initialize(self, rt: Runtime, workspace):
         self._rt = rt
         self.workspace = workspace
+        # Per-client subscription filter. ``None`` means "all types"
+        # (back-compat: a client that doesn't send a subscribe message
+        # gets every envelope). A set means "only these types."
+        # Mutated by ``subscribe`` / ``unsubscribe`` client→server
+        # messages; read by ``wants(etype)`` on every broadcast.
+        self._subs: Optional[set] = None
+
+    def wants(self, etype: str) -> bool:
+        """True iff this client is currently subscribed to ``etype``."""
+        return self._subs is None or etype in self._subs
 
     def open(self):
         _all_ws_clients.add(self)
@@ -931,6 +956,15 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             self._send("operator_actions", {
                 "actions": _operator_actions_snapshot(self.workspace),
             })
+
+            # Schedule history — replay every schedule + action/swap
+            # event from the current run so a freshly-opened Gantt
+            # modal shows the same chart the operator was looking at
+            # (same shape ScheduleWebSocket replays on open).
+            for ev in _schedule_history:
+                self._send("schedule_event", ev)
+            for ev in _schedule_runtime_events:
+                self._send("schedule_event", ev)
         except Exception:
             pass
 
@@ -949,8 +983,43 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
                 str(payload.get("component", "") or ""),
                 str(payload.get("method", "") or ""),
             )
+        elif etype == "subscribe":
+            # ``{"type":"subscribe", "payload":{"types":["step_state",
+            # "runtime_status"]}}`` — opt into specific event types
+            # only. First subscribe message replaces the implicit
+            # "all" default with an explicit allowlist.
+            types = payload.get("types") or []
+            if not isinstance(types, list):
+                return
+            if self._subs is None:
+                self._subs = set()
+            for t in types:
+                if isinstance(t, str):
+                    self._subs.add(t)
+        elif etype == "unsubscribe":
+            types = payload.get("types") or []
+            if not isinstance(types, list):
+                return
+            if self._subs is None:
+                # Currently "all" — materialize the implicit set so we
+                # can remove from it. Keep ``invoke_result`` always on
+                # since it's the reply path for client→server invokes.
+                self._subs = {
+                    "step_state", "runtime_status", "device_state",
+                    "devices_snapshot", "operator_actions",
+                    "schedule_event", "invoke_result",
+                }
+            for t in types:
+                if isinstance(t, str) and t != "invoke_result":
+                    self._subs.discard(t)
 
     def _send(self, etype: str, payload: dict) -> None:
+        # Respect the per-client subscription filter for initial-
+        # snapshot sends too. ``invoke_result`` is always allowed —
+        # filtering away the reply to a client's own invoke would be
+        # confusing.
+        if etype != "invoke_result" and not self.wants(etype):
+            return
         try:
             self.write_message(json.dumps({"type": etype, "payload": payload}))
         except Exception:
@@ -1053,9 +1122,9 @@ def _broadcast_scene_changed(workspace):
         if device_mux is not None or op_mux is not None:
             for c in list(_all_ws_clients):
                 try:
-                    if device_mux is not None:
+                    if device_mux is not None and c.wants("devices_snapshot"):
                         c.write_message(device_mux)
-                    if op_mux is not None:
+                    if op_mux is not None and c.wants("operator_actions"):
                         c.write_message(op_mux)
                 except Exception:
                     _all_ws_clients.discard(c)
@@ -1093,7 +1162,8 @@ def _broadcast_device_event(workspace, event: dict):
         if mux_msg is not None:
             for c in list(_all_ws_clients):
                 try:
-                    c.write_message(mux_msg)
+                    if c.wants("device_state"):
+                        c.write_message(mux_msg)
                 except Exception:
                     _all_ws_clients.discard(c)
 

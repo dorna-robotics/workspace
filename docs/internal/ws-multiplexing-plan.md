@@ -1,13 +1,21 @@
 # WebSocket Multiplexing — Migration Plan
 
-Status: **implemented (admin page).** Single `/ws` endpoint added to
-the workspace process, replacing four legacy connections on the
-admin project page. Legacy endpoints remain live for back-compat —
-the orchestrator's per-workspace subscriber + the 3D viewer still
-use `/ws/status`, and external monitoring tools (if any) keep
-working unchanged. The plan below is preserved as the design
-record; sections that still describe future work (subscription
-filtering, schedule fold-in) remain accurate.
+Status: **fully implemented.**
+
+- `/ws` multiplexes steps + status + devices + operator_actions +
+  schedule (all five workspace-side channels).
+- Per-client subscription filter via `subscribe` / `unsubscribe`
+  client→server envelopes — a thin client can opt into a subset of
+  event types and the server filters at send time.
+- Legacy endpoints (`/ws/steps`, `/ws/status`, `/ws/devices`,
+  `/ws/operator_actions`, `/ws/schedule`) remain live for back-compat
+  — the orchestrator's per-workspace status subscriber + the 3D
+  viewer still use `/ws/status`, and any external monitoring tools
+  keep working unchanged.
+- Admin page now opens 2 sockets total: `/ws` (mux) and `/ws/logs`
+  (high-volume stream, orchestrator-owned, kept separate).
+
+The plan below is preserved as the design record.
 
 ## Today
 

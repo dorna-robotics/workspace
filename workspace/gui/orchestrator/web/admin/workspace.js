@@ -1,15 +1,17 @@
-// Note: this page opens 3 WebSocket connections:
-//   1. /ws            — multiplexed (steps + status + devices + ops)
-//   2. /ws/schedule   — schedule/Gantt timeline (kept separate)
-//   3. /ws/logs       — logs streaming on the orchestrator (high-volume,
-//                       different owner)
+// Note: this page opens 2 WebSocket connections:
+//   1. /ws       — multiplexed (steps + status + devices + ops + schedule).
+//                  Supports a client→server subscribe envelope for
+//                  future thin clients that want only a subset of
+//                  event types.
+//   2. /ws/logs  — logs streaming on the orchestrator (high-volume,
+//                  different owner, kept separate)
 // Legacy endpoints (/ws/steps, /ws/status, /ws/devices,
-// /ws/operator_actions) remain on the server for back-compat — the
-// orchestrator subscriber + 3D viewer still use /ws/status. See
-// docs/internal/ws-multiplexing-plan.md for design + migration trail.
+// /ws/operator_actions, /ws/schedule) remain on the server for back-
+// compat — the orchestrator subscriber + 3D viewer still use
+// /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { connectScheduleWS, disconnectScheduleWS, openScheduleModal } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -633,6 +635,14 @@ function _dispatchMuxMessage(env) {
       const tag = `${payload.component}.${payload.method}`;
       if (payload.ok) toast(`${tag} ✓`, "ok");
       else            toast(`${tag}: ${payload.msg || "failed"}`, "bad");
+      break;
+    }
+    case "schedule_event": {
+      // Schedule events (schedule / action_start / action_end /
+      // swap_start / swap_end) used to flow over the separate
+      // /ws/schedule socket. Now they ride the mux; schedule.js's
+      // module-level state ingests them the same way.
+      ingestScheduleEvent(payload);
       break;
     }
   }
@@ -1407,13 +1417,15 @@ function updateIframe(state, launched) {
       // looking at where the run ended. The iframe's already-loaded
       // content stays cached in the browser; a fresh Launch will
       // overwrite ``frame.src`` below when the new process is ready.
-      // Mux WS (steps + status + devices + ops) disconnects — its
-      // endpoint is gone with the workspace process; will reconnect
-      // on next Launch. Schedule stays its own channel.
-      // Logs WS stays connected — its endpoint is on the orchestrator,
-      // not the workspace process, and the file persists after kill.
+      // Mux WS (steps + status + devices + ops + schedule) disconnects
+      // — its endpoint is gone with the workspace process; will
+      // reconnect on next Launch. Logs WS stays connected — its
+      // endpoint is on the orchestrator, not the workspace process,
+      // and the file persists after kill.
       disconnectWs();
-      disconnectScheduleWS();
+      // Drop the in-memory Gantt so the next run starts blank instead
+      // of overlaying onto stale state from the previous workspace.
+      resetSchedule();
     }
     return;
   }
@@ -1447,9 +1459,10 @@ function updateIframe(state, launched) {
     frame.src = targetUrl + "/?theme=" + theme;
     placeholder.style.display = "none";
     // Single multiplexed WS handles steps + status + devices +
-    // operator_actions. Schedule WS stays a separate channel.
+    // operator_actions + schedule.
     connectWs(targetUrl);
-    connectScheduleWS(targetUrl);
+    // Schedule module just needs its modal DOM wired once.
+    initSchedule();
   }
 }
 
