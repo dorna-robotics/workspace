@@ -45,7 +45,7 @@ Scene yaml is the **source of truth for the workspace's physical layout**:
 
 ## Canonical reference implementations
 
-- **pace** (full BT project scene): `workspace/projects/pace/scene/base.j2` and `layout.j2` — robot + fixtures + racks + tools
+- **sample_prep** (full BT project scene): `workspace/projects/sample_prep/scene/base.j2` and `layout.j2` — robot + fixtures + racks + tools
 - **multimeter_test** (minimal scene): `workspace/projects/multimeter_test/scene/base.j2` — Core + one device, no tools
 - **Core component** scene shape: see `docs/component-guide.md` §6 walkthrough
 

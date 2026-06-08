@@ -1,7 +1,8 @@
-# pace_bt
+# sample_prep
 
-Behaviour-tree implementation of the **pace protocol** — a batch of
-tubes processed through `inspect → decap → dispense → recap → shelve`.
+Behaviour-tree implementation of a **sample-preparation protocol** —
+a batch of tubes processed through `inspect → decap → dispense →
+recap → shelve`.
 
 The dispense step branches on the tube's weight: `Inspect`'s sensing
 eff returns `"light"` or `"heavy"` after reading the scale, and the
@@ -12,7 +13,7 @@ preconditions, the planner does the choosing.
 ## Run
 
 ```bash
-cd projects/pace_bt
+cd projects/sample_prep
 sudo python3 main.py --port 5010
 ```
 

@@ -10,9 +10,9 @@ description: "Use when adding an Action class to a BT project. Covers predicate 
 The user says any of:
 - "Add an action to weigh / decap / shake / measure each [item]"
 - "Write a Start / Park / Inspect action"
-- "Extend the pace / multimeter_test protocol"
+- "Extend the sample_prep / multimeter_test protocol"
 
-If the user is starting a **new BT project** from scratch (not just adding one action), see also [`write-recipe`](../write-recipe/SKILL.md) for the recipe layer + look at `workspace/projects/pace/` or `workspace/projects/multimeter_test/` as templates.
+If the user is starting a **new BT project** from scratch (not just adding one action), see also [`write-recipe`](../write-recipe/SKILL.md) for the recipe layer + look at `workspace/projects/sample_prep/` or `workspace/projects/multimeter_test/` as templates.
 
 ## What an action is
 
@@ -50,7 +50,7 @@ The framework auto-registers every Action subclass — no domain.py.
 
 ## Canonical reference implementations
 
-- **pace_bt actions**: `workspace/projects/pace/actions.py` — full PACE protocol (Start, Inspected, LoadedShaker, Dosed40ml, Shaken, Dosed2ml, Park)
+- **sample_prep actions**: `workspace/projects/sample_prep/actions.py` — full sample-preparation protocol (Start, Inspected, LoadedShaker, Dosed40ml, Shaken, Dosed2ml, Park)
 - **multimeter_test actions**: `workspace/projects/multimeter_test/actions.py` — minimal three-action template (Start → ReadMeter × N → Park)
 
 ## Common pitfalls

@@ -79,6 +79,6 @@ workspace/               the platform itself
     runtime.py           Runtime — pause/resume, rt.* API
     runtime_server.py    Tornado server — admin REST + WS + multiplexer
   gui/                   web UIs (admin dashboard, pendant, viewer)
-  projects/              BT projects (pace, multimeter_test, …)
+  projects/              BT projects (sample_prep, multimeter_test, …)
   static/CAD/            3D models (GLB) for components
 ```
