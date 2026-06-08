@@ -1,0 +1,170 @@
+# 4_constraints/constraints.yaml
+# Machine-readable constraints for RL training.
+# base_env.py reads this directly — no Python needed.
+#
+# Constraint types:
+#   bool — true_on / false_on / block
+#   int  — add_on / sub_on / block / max
+#   enum — values / map / penalty
+
+# ── Rewards ────────────────────────────────────────────────────────────────────
+rewards:
+  per_step:    -1.0
+  goal_state:   50.0
+  completion:  200.0
+  background:    5.0
+  idle:          -0.5     # per second of idle time — pushes RL to fill background wait
+
+# ── Constraints ────────────────────────────────────────────────────────────────
+constraints:
+
+  - name: current_tool
+    type: enum
+    observe: true
+    penalty: -15.0
+    options: [gripper, needle, feeder_tool, gripper_2ml]
+    map:
+      # inspect & decap
+      source_rack.pick:   gripper
+      inspector.present:  gripper
+      scale.place:        gripper
+      scale.weight:       gripper
+      scale.pick:         gripper
+      decapper.place:     gripper
+      decapper.decap:     gripper
+      cap_holder.place:   gripper
+      decapper.pick:      gripper
+      working_rack.place: gripper
+      # dose 40ml
+      doser_40ml.immerse:  needle
+      doser_40ml.dispense: needle
+      doser_40ml.retract:  needle
+      # load shaker
+      working_rack.pick:  gripper
+      decapper.place_cap: gripper
+      cap_holder.pick:    gripper
+      decapper.cap:       gripper
+      decapper.pick_cap:  gripper
+      shaker.place:       gripper
+      # feed caps
+      autosampler.above:       feeder_tool
+      autosampler.present_cap: feeder_tool
+      autosampler.pick:        feeder_tool
+      cap_feeder.place:        feeder_tool
+      # retrieve & decap
+      shaker.pick:          gripper
+      inspector.present_2:  gripper
+      decapper.place_2:     gripper
+      decapper.decap_2:     gripper
+      cap_holder.place_2:   gripper
+      decapper.pick_2:      gripper
+      working_rack.place_2: gripper
+      # dose 2ml
+      doser_40ml.immerse_2:      needle
+      doser_40ml.dispense_2:     needle
+      doser_40ml.retract_2:      needle
+      doser_2ml_middle.immerse:  needle
+      doser_2ml_middle.dispense: needle
+      doser_2ml_middle.retract:  needle
+      doser_2ml_end.immerse:     needle
+      doser_2ml_end.dispense:    needle
+      doser_2ml_end.retract:     needle
+      # recap & return 40ml
+      working_rack.pick_2:   gripper
+      decapper.place_final:  gripper
+      cap_holder.pick_2:     gripper
+      decapper.cap_final:    gripper
+      decapper.pick_final:   gripper
+      source_rack.place:     gripper
+      # cap & inspect 2ml
+      rack_2ml.pick:       gripper_2ml
+      decapper.place_2ml:  gripper_2ml
+      cap_feeder.pick:     gripper_2ml
+      decapper.cap_2ml:    gripper_2ml
+      decapper.pick_2ml:   gripper_2ml
+      decapper.vibrate:    gripper_2ml
+      inspector.present_3: gripper_2ml
+      rack_2ml.place:      gripper_2ml
+
+  - name: holding
+    type: bool
+    observe: true
+    true_on:
+      - source_rack.pick
+      - scale.pick
+      - decapper.decap
+      - decapper.pick
+      - cap_holder.pick
+      - cap_holder.pick_2
+      - working_rack.pick
+      - decapper.pick_cap
+      - shaker.pick
+      - decapper.decap_2
+      - decapper.pick_2
+      - working_rack.pick_2
+      - decapper.pick_final
+      - autosampler.pick
+      - rack_2ml.pick
+      - cap_feeder.pick
+      - decapper.pick_2ml
+    false_on:
+      - scale.place
+      - decapper.place
+      - cap_holder.place
+      - working_rack.place
+      - shaker.place
+      - decapper.place_cap
+      - cap_holder.place_2
+      - working_rack.place_2
+      - source_rack.place
+      - cap_feeder.place
+      - decapper.place_2
+      - decapper.place_final
+      - decapper.place_2ml
+      - rack_2ml.place
+      - decapper.cap
+      - decapper.cap_final
+      - decapper.cap_2ml
+    block_on_true:
+      - source_rack.pick
+      - scale.pick
+      - decapper.decap
+      - decapper.pick
+      - cap_holder.pick
+      - cap_holder.pick_2
+      - working_rack.pick
+      - decapper.pick_cap
+      - shaker.pick
+      - decapper.decap_2
+      - decapper.pick_2
+      - working_rack.pick_2
+      - decapper.pick_final
+      - autosampler.pick
+      - rack_2ml.pick
+      - cap_feeder.pick
+      - decapper.pick_2ml
+    block_on_false:
+      - scale.place
+      - decapper.place
+      - cap_holder.place
+      - working_rack.place
+      - shaker.place
+      - decapper.place_cap
+      - cap_holder.place_2
+      - working_rack.place_2
+      - source_rack.place
+      - cap_feeder.place
+      - decapper.place_2
+      - decapper.place_final
+      - decapper.place_2ml
+      - rack_2ml.place
+      - decapper.cap
+      - decapper.cap_final
+      - decapper.cap_2ml
+
+# ── Reward rules ───────────────────────────────────────────────────────────────
+# reward_rules:
+#   - name: fill_idle_time
+#     when: cap_feeder.place
+#     while_incomplete: shaker.shake
+#     reward: 20.0

@@ -1,0 +1,94 @@
+# 2_params/recipes.yaml
+# Maps recipe aliases → class + kwargs passed to the constructor.
+# Aliases are referenced in params.yaml and workflow.py.
+# component names (e.g. tool_rack_144mm_1) come from 1_scene/base.j2.
+#
+# speed_factor is injected at runtime from params.yaml.
+
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true}
+
+gripper_2ml:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_2, left_approach: true}
+
+feeder_tool:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_3, left_approach: true}
+
+needle:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_4, left_approach: true, base_distance: 300, rail_span: 5, rail_step: 5}
+
+cap_holder:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_1, left_approach: false, base_distance: 150, rail_step: 5, rail_span: 5}
+
+autosampler:
+  class: workspace.recipes.feeder.Feeder
+  kwargs: {component: capfeeder_autosampler_2ml_1, left_approach: false}
+
+source_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_amber_40ml_4x7_1, base_distance: 75, rail_span: 5, rail_step: 5}
+
+working_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_amber_40ml_2x4_1, base_distance: 75, rail_span: 5, rail_step: 5}
+
+scale:
+  class: workspace.recipes.scale.Scale
+  kwargs: {component: scale_1, base_distance: 350, rail_step: 5, rail_span: 5}
+
+decapper_1:
+  class: workspace.recipes.decapper.Decapper
+  kwargs: {component: decapper_1, base_distance: 200, rail_step: 5, rail_span: 5}
+
+decapper_2:
+  class: workspace.recipes.decapper.Decapper
+  kwargs: {component: decapper_2, base_distance: 200, rail_step: 5, rail_span: 5}
+
+decapper_3:
+  class: workspace.recipes.decapper.Decapper
+  kwargs: {component: decapper_3, base_distance: 200, rail_step: 5, rail_span: 5}
+
+decapper_4:
+  class: workspace.recipes.decapper.Decapper
+  kwargs: {component: decapper_4, base_distance: 200, rail_step: 5, rail_span: 5}
+
+decapper_5:
+  class: workspace.recipes.decapper.Decapper
+  kwargs: {component: decapper_5, base_distance: 200, rail_step: 5, rail_span: 5}
+
+doser_40ml:
+  class: workspace.recipes.doser.DosingSite
+  kwargs: {component: adapter_plate_amber_40ml_2x4_1, base_distance: 200, rail_span: 5, rail_step: 5}
+
+shaker_1:
+  class: workspace.recipes.shaker.Shaker
+  kwargs: {component: shaker_2slot_1, left_approach: false, base_distance: 100, rail_step: 5, rail_span: 5}
+
+shaker_2:
+  class: workspace.recipes.shaker.Shaker
+  kwargs: {component: shaker_2slot_2, left_approach: false, base_distance: 100, rail_step: 5, rail_span: 5}
+
+doser_2ml_end:
+  class: workspace.recipes.doser.DosingSite
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 100, rail_span: 5, rail_step: 5}
+
+doser_2ml_middle:
+  class: workspace.recipes.doser.DosingSite
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_3, base_distance: 100, rail_span: 5, rail_step: 5}
+
+rack_2ml_end:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, base_distance: 100, rail_span: 5, rail_step: 5}
+
+rack_2ml_middle:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_3, base_distance: 100, rail_span: 5, rail_step: 5}
+
+inspector:
+  class: workspace.recipes.inspector.FixedInspector
+  kwargs: {component: inspection_horizontal_144mm_1, base_distance: 200, rail_span: 5, rail_step: 5, detection_preset: {}}

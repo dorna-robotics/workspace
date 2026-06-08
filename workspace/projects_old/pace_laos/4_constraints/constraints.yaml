@@ -1,0 +1,31 @@
+# 4_constraints/constraints.yaml
+
+rewards:
+  per_step:    -1.0
+  goal_state:   50.0
+  completion:  200.0
+  background:    5.0
+
+constraints:
+
+  - name: current_tool
+    type: enum
+    observe: true
+    penalty: -25.0
+    values: [gripper_large, needle, feeder_tool, gripper_2ml]
+    map:
+      inspected:      gripper_large
+      dosed_40ml:     needle
+      loaded_shaker:  gripper_large
+      shaken:         feeder_tool
+      cap_fed:        feeder_tool
+      retrieved:      gripper_large
+      dosed_2ml:      needle
+      recapped_final: gripper_large
+      capped_2ml:     gripper_2ml
+
+reward_rules:
+  - name: fill_idle_time
+    when: cap_fed
+    while_incomplete: shaken
+    reward: 20.0

@@ -1,0 +1,52 @@
+# 3_protocol/protocol.yaml
+# Defines the states each tube must pass through and their dependencies.
+
+# ── States ────────────────────────────────────────────────────────────────────
+# Each entry is a state a tube must reach.
+# requires: lists states that must be reached first.
+states:
+
+  - name: inspected
+    description: tube picked from source, inspected, weighed, decapped, placed in working rack
+    requires: []
+
+  - name: dosed_40ml
+    description: solvent dispensed into working tube
+    requires: [inspected]
+
+  - name: loaded_shaker
+    description: tube recapped and placed on shaker
+    requires: [dosed_40ml]
+
+  - name: shaken
+    description: shaker runs for shake_duration seconds — no robot needed
+    background: true
+    duration: shake_duration    # reads from 2_params/params.yaml
+    requires: [loaded_shaker]
+
+  - name: cap_fed
+    description: new 2ml cap fed from autosampler to cap holder — fills idle time during shake
+    requires: []                # no dependency — can happen anytime
+    optional: true              # skip gracefully if autosampler is empty
+
+  - name: retrieved
+    description: tube picked from shaker, inspected, decapped, returned to working rack
+    requires: [shaken]
+
+  - name: dosed_2ml
+    description: sample dosed from 40ml tube into 2ml vials
+    requires: [retrieved]
+
+  - name: recapped_final
+    description: 40ml tube recapped and returned to source rack
+    requires: [dosed_2ml]
+
+  - name: capped_2ml
+    description: 2ml vial capped and inspected using fed cap
+    requires: [cap_fed, dosed_2ml]
+
+# ── Goal ──────────────────────────────────────────────────────────────────────
+# All tubes must reach these states for the protocol to be complete.
+goal:
+  - recapped_final
+  - capped_2ml
