@@ -117,20 +117,33 @@ class FeedCap(Action):
     Flow per cap:
       1. ``feeder.above("plate_center")`` — hover over the feeder's
          rotating plate at a safe height. Pure positioning, no IO.
-      2. ``feeder.pick(approach=False)`` — pick the cap currently at
+      2. ``feeder.present_cap(rcp["inspector"])`` — vision-driven
+         slot finder. Walks the feeder's ``index_list`` and calls
+         ``inspector.detect(**preset)`` at each candidate; rotates
+         the feeder to the first slot whose preset matches. In
+         simulation, ``detect`` returns True for the first entry so
+         the feeder stays put — still exercises the call chain.
+      3. ``feeder.pick(approach=False)`` — pick the cap currently at
          the feeder's ``place`` anchor. The suction tool's gripper
          IO fires automatically (built by ``pick_setting``).
          ``approach=False`` skips the corridor — we just hovered, so
          a second corridor would waste time.
-      3. ``cap_holder.place(SLOT)`` — release into the next free
-         slot. ``cap_holder`` is the Rack recipe (resolver pattern);
-         it delegates to ``capholder_autosampler_2ml_5x10_1`` via
-         the adapter plate.
-      4. ``feeder.rotate_in_step(step=1)`` — advance the feeder one
-         slot so the next FeedCap call picks a fresh cap.
+      4. ``cap_holder.place(SLOT, gravity_offset=-15)`` — release
+         into the next free slot. ``cap_holder`` is the Rack recipe
+         (resolver pattern); it delegates to
+         ``capholder_autosampler_2ml_5x10_1`` via the adapter plate.
+         ``gravity_offset=-15`` mm drives the suction cup down past
+         the slot top so the cap seats — the cap holder's ``place``
+         anchor sits flush with the cap, so a positive offset would
+         release into mid-air.
 
-    All four calls are pause-aware through ``rt.*`` — operator can
-    Pause mid-transfer and the motion halts cleanly.
+    Compare to ``sample_prep/actions.py:CapFed`` and
+    ``projects_old/syringe/main.ipynb`` — the same three-step pattern
+    (above → present_cap → pick → place) appears in every project
+    that uses the autosampler feeder.
+
+    All calls are pause-aware through ``rt.*`` — operator can Pause
+    mid-transfer and the motion halts cleanly.
     """
 
     params    = ["cap"]
@@ -152,9 +165,9 @@ class FeedCap(Action):
         rt.step(f"cap {cap + 1}: feeder → cap_holder[{slot}]")
 
         rcp["feeder"].above(anchor="plate_center")
+        rcp["feeder"].present_cap(rcp["inspector"])
         rcp["feeder"].pick(approach=False)
-        rcp["cap_holder"].place(slot)
-        rcp["feeder"].rotate_in_step(step=1)
+        rcp["cap_holder"].place(slot, gravity_offset=-15)
 
         return f"cap {cap + 1} placed at {slot}"
 
