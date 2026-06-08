@@ -50,7 +50,7 @@ for the meter's FTDI / CP210x chip.
 sudo python3 projects/multimeter_test/main.py
 ```
 
-Then open the orchestrator at `http://localhost:5020`. Hit Launch,
+Then open the orchestrator at `http://localhost:5010`. Hit Launch,
 set `batch_size`, and watch readings stream into the Steps timeline.
 
 ## How this exercises the framework

@@ -1,18 +1,19 @@
-"""feeder example entry point. All config lives in launch.yaml.
+"""BT project entry point. All config lives in ``launch.yaml``.
 
-A minimal BT project that demonstrates the cap-feeder + suction
-tool + cap-holder triple:
+Canonical entry point for every BT project on the platform — kept
+identical across projects unless the project has a specific reason
+to diverge. Project-specific behaviour lives in:
 
-  Start            — picks the suction tool from the tool rack
-  FeedCap(cap)     — for each cap, hover over the feeder, pick the
-                      cap currently at the feeder's ``place`` anchor,
-                      drop it in the next cap-holder slot, advance
-                      the feeder by one step
-  Park             — places the suction tool back, parks the robot
+  * ``launch.yaml``   — project name, port, scene, recipes, kwargs
+  * ``recipes.yaml``  — recipe wiring
+  * ``actions.py``    — BT actions
+  * ``checks.py``     — vision / sensor checks
+  * ``scene/*.j2``    — components + populated items
 
-``cap_count`` (operator kwarg) sets how many caps the run transfers.
+This file just loads ``launch.yaml`` and runs the BT runner. If you
+need to copy this for a new project, copy verbatim — no edits.
 
-Framework reference: ../../../../docs/bt-framework-guide.md §2
+Framework reference: docs/bt-framework-guide.md §2
 """
 
 import argparse
@@ -36,6 +37,7 @@ with open(_BASE_DIR / LAUNCH_FILE) as f:
 
 
 def _import_module(rel_path: str):
+    """``'actions.py'`` → ``'actions'``; ``'protocol/actions.py'`` → ``'protocol.actions'``."""
     name = rel_path.removesuffix(".py").replace("/", ".")
     return importlib.import_module(name)
 

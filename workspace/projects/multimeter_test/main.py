@@ -1,11 +1,19 @@
-"""multimeter_test entry point. All config lives in launch.yaml.
+"""BT project entry point. All config lives in ``launch.yaml``.
 
-A minimal BT project that demonstrates the multi_meter component:
-each ReadMeter(t) action waits 10 s, reads the capacitance, and logs
-the value as a workflow step. ``batch_size`` (operator kwarg) sets
-how many reads the run takes.
+Canonical entry point for every BT project on the platform — kept
+identical across projects unless the project has a specific reason
+to diverge. Project-specific behaviour lives in:
 
-Framework reference: ../../../docs/bt-framework-guide.md §2
+  * ``launch.yaml``   — project name, port, scene, recipes, kwargs
+  * ``recipes.yaml``  — recipe wiring
+  * ``actions.py``    — BT actions
+  * ``checks.py``     — vision / sensor checks
+  * ``scene/*.j2``    — components + populated items
+
+This file just loads ``launch.yaml`` and runs the BT runner. If you
+need to copy this for a new project, copy verbatim — no edits.
+
+Framework reference: docs/bt-framework-guide.md §2
 """
 
 import argparse
@@ -29,6 +37,7 @@ with open(_BASE_DIR / LAUNCH_FILE) as f:
 
 
 def _import_module(rel_path: str):
+    """``'actions.py'`` → ``'actions'``; ``'protocol/actions.py'`` → ``'protocol.actions'``."""
     name = rel_path.removesuffix(".py").replace("/", ".")
     return importlib.import_module(name)
 

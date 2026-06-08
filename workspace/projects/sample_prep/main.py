@@ -1,6 +1,19 @@
-"""pace_bt entry point. All config lives in launch.yaml.
+"""BT project entry point. All config lives in ``launch.yaml``.
 
-Framework reference: ../../../docs/bt-framework-guide.md §2
+Canonical entry point for every BT project on the platform — kept
+identical across projects unless the project has a specific reason
+to diverge. Project-specific behaviour lives in:
+
+  * ``launch.yaml``   — project name, port, scene, recipes, kwargs
+  * ``recipes.yaml``  — recipe wiring
+  * ``actions.py``    — BT actions
+  * ``checks.py``     — vision / sensor checks
+  * ``scene/*.j2``    — components + populated items
+
+This file just loads ``launch.yaml`` and runs the BT runner. If you
+need to copy this for a new project, copy verbatim — no edits.
+
+Framework reference: docs/bt-framework-guide.md §2
 """
 
 import argparse
@@ -24,7 +37,7 @@ with open(_BASE_DIR / LAUNCH_FILE) as f:
 
 
 def _import_module(rel_path: str):
-    """'actions.py' → 'actions';  'protocol/actions.py' → 'protocol.actions'."""
+    """``'actions.py'`` → ``'actions'``; ``'protocol/actions.py'`` → ``'protocol.actions'``."""
     name = rel_path.removesuffix(".py").replace("/", ".")
     return importlib.import_module(name)
 

@@ -18,10 +18,13 @@ that the tool-changer auto-swaps on.
 
 ```bash
 cd workspace/projects/examples/feeder
-sudo python3 main.py --port 5030
+sudo python3 main.py
 ```
 
-Operator UI opens at `http://<ip>:5030/`. Pick a cap count (1–10),
+Operator UI opens at `http://<ip>:5010/` (the platform-wide default
+port). If you already have another project running on 5010, pass
+``--port 5020`` (or any free port) to override. Pick a cap count
+(1–10),
 start the run. The 3D view shows caps moving from the feeder into
 the holder slots in real time.
 

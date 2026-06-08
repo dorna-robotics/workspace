@@ -1,7 +1,7 @@
 # multimeter_test/launch.yaml — minimal demo for the multi_meter component.
 
 project_name: multimeter_test    # appears in logs, tree node names, GUI
-port:         5020               # default operator-UI port (env var PORT overrides)
+port:         5010               # default operator-UI port (env var PORT overrides)
 scene:        [scene/base.j2]    # one Core + one BK 879B meter (sim by default)
 recipes:      recipes.j2         # exposes the meter as ``rcp["meter"]``
 actions:      actions.py         # protocol: Start → ReadMeter(t)×batch → Park

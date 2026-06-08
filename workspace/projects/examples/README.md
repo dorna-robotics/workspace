@@ -14,12 +14,14 @@ way:
 
 ```bash
 cd workspace/projects/examples/<name>
-sudo python3 main.py --port 50XX
+sudo python3 main.py
 ```
 
-The operator UI then opens at `http://<ip>:50XX/`. Default ports
-are chosen so multiple examples can run side by side without
-collisions (each example uses a different port).
+The operator UI then opens at `http://<ip>:5010/` (the platform-wide
+default port). Every project — examples, `sample_prep`,
+`multimeter_test` — defaults to 5010 for consistency. If you want
+to run two side by side, override on the second one with
+``--port 5020`` (or any free port).
 
 ## Folder layout (every example)
 
