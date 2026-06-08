@@ -99,7 +99,7 @@ class FeedCap(Action):
         rcp["feeder"].pick(approach=False)
         rcp["cap_holder"].place(slot, gravity_offset=-15)
 
-        return f"cap {cap + 1} placed at {slot}"
+        return "placed"
 
 
 class Park(Action):

@@ -148,16 +148,21 @@ def load_recipes(
         try:
             cls = _import_class(defn["class"])
             kwargs = dict(defn.get("kwargs") or {})
-            comp_name = kwargs.pop("component")
-            try:
-                comp = workspace.components[comp_name]
-            except KeyError:
-                log.warning(
-                    "recipes.yaml[%s]: component %r not in scene — skipping",
-                    alias, comp_name,
-                )
-                continue
-            rcp[alias] = cls(workspace, core, comp, **kwargs)
+            # ``component`` is optional — MobileInspector and similar
+            # robot-camera-only recipes don't take one.
+            comp_name = kwargs.pop("component", None)
+            if comp_name is not None:
+                try:
+                    comp = workspace.components[comp_name]
+                except KeyError:
+                    log.warning(
+                        "recipes.yaml[%s]: component %r not in scene — skipping",
+                        alias, comp_name,
+                    )
+                    continue
+                rcp[alias] = cls(workspace, core, comp, **kwargs)
+            else:
+                rcp[alias] = cls(workspace, core, **kwargs)
         except Exception:
             log.exception("recipes.yaml[%s]: instantiation failed — skipping", alias)
     return rcp
