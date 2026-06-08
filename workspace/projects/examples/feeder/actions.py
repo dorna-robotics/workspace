@@ -76,16 +76,21 @@ def setup(**kwargs):
 
 
 class Start(Action):
-    """First action of every run.
+    """First action of every run — operator's initialisation hook.
 
-    Turns motors on. The BT framework's tool-swap machinery will pick
-    the suction tool on the first FeedCap action automatically (driven
-    by FeedCap's ``tool`` attribute), so Start doesn't need to do a
+    Turns motors on and moves the robot to a known safe joint pose
+    via the planned ``park`` (collision-aware ``smove`` rather than a
+    blind ``jmove``). Put your axis-init / homing / device-warmup
+    calls in ``execute`` — this is the place for them.
+
+    The BT framework's tool-swap machinery will pick the suction tool
+    on the first ``FeedCap`` action automatically (driven by
+    ``FeedCap.tool = "cap_tool"``), so Start doesn't need to do a
     manual pickup.
     """
 
     params   = []
-    duration = 2
+    duration = 5
     resource = "robot"
 
     def pre(self):
@@ -95,9 +100,14 @@ class Start(Action):
         return {"started": (+started(),)}
 
     def execute(self):
-        rt = self.ctx.runtime
+        rt  = self.ctx.runtime
+        rcp = self.ctx.recipes
         rt.motor(1)
-        rt.step("workspace initialised", level="success")
+        # Any recipe inherits ``park`` from the base Recipe class — we
+        # use ``cap_tool`` here because it's the only tool recipe in
+        # this minimal example. Same call sample_prep makes via
+        # ``gripper``.
+        rcp["cap_tool"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
         return "started"
 
 
