@@ -4,17 +4,18 @@ gripper:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# Rack recipe targeting the adapter plate — the resolver walks the
-# kinematic tree to the actual rack underneath (rack_autosampler_2ml_5x10_1).
+# Rack recipe targeting the SBS adapter — the resolver walks the
+# kinematic tree to the actual rack underneath (rack_autosampler_2ml_1).
+# Same pattern as syringe's ``sbs_plate`` recipe.
 tube_rack:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_plate_autosampler_2ml_5x10_1, left_approach: false, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 75, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
 
-# Same Rack recipe pattern; resolves to capholder_autosampler_2ml_5x10_1
-# via its adapter plate.
+# Same Rack recipe pattern; resolves to capholder_autosampler_2ml_1
+# via sbs_adapter_1. Matches syringe's ``cap_holder`` recipe.
 cap_holder:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_plate_autosampler_2ml_5x10_2, left_approach: false, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
+  kwargs: {component: sbs_adapter_1, left_approach: false, base_distance: 50, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
 
 # Decapper recipe — exposes ``cap(...)`` and ``decap(...)`` which
 # wrap pick_setting / place_setting around the chunked screw motion.

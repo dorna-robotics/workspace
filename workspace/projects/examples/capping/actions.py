@@ -25,7 +25,7 @@ capped    = predicate("capped")
 decapped  = predicate("decapped")
 
 
-TUBE_RACK = "rack_autosampler_2ml_5x10_1"
+TUBE_RACK = "rack_autosampler_2ml_1"
 
 
 def setup(**kwargs):
@@ -107,7 +107,7 @@ class Cap(Action):
         rcp["cap_holder"].pick(slot)
         rcp["decapper"].cap(exit=False)
         rcp["decapper"].pick(approach=False, tool_tcp_z_offset=-2)
-        rcp["tube_rack"].place(slot, soft_approach=True)
+        rcp["tube_rack"].place(slot, gravity_offset=4, soft_approach=True)
 
         return "capped"
 
@@ -140,9 +140,9 @@ class Decap(Action):
         rcp["tube_rack"].pick(slot)
         rcp["decapper"].place(exit=False)
         rcp["decapper"].decap(approach=False)
-        rcp["cap_holder"].place(slot, gravity_offset=-15)
-        rcp["decapper"].pick(tool_tcp_z_offset=-2)
-        rcp["tube_rack"].place(slot, soft_approach=True)
+        rcp["cap_holder"].place(slot, soft_approach=True, gravity_offset=4)
+        rcp["decapper"].pick()
+        rcp["tube_rack"].place(slot, gravity_offset=4, soft_approach=True)
 
         return "decapped"
 

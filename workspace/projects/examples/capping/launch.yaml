@@ -17,4 +17,4 @@ kwargs:
     label: Tube count
     hint: Number of tubes to cap, then decap, then return to the rack.
     min: 1
-    max: 10
+    max: 48

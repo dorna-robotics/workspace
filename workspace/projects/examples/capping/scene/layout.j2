@@ -1,7 +1,7 @@
 # capping example — populated items:
 # - 4-finger gripper parked in the tool rack
-# - 50 tubes loaded into the tube rack (one per slot)
-# - 50 caps loaded into the cap holder (one per slot)
+# - 48 tubes loaded into the 6×8 SBS tube rack (one per slot)
+# - 48 caps loaded into the 6×8 SBS cap holder (one per slot)
 
 gripper_4_finger_1:
   type: "gripper_4_finger"
@@ -14,12 +14,12 @@ gripper_4_finger_1:
     child_anchor: "tool_rack_connection"
     offset: [0, 0, 0, 0, 0, 0]
 
-{% for r in "ABCDE" %}
-{% for c in range(1, 10+1) %}
+{% for r in "ABCDEF" %}
+{% for c in range(1, 8+1) %}
 tube_autosampler_2ml_{{ r }}{{ c }}:
   type: "tube_autosampler_2ml"
   attach:
-    parent_name: "rack_autosampler_2ml_5x10_1"
+    parent_name: "rack_autosampler_2ml_1"
     parent_solid: "body"
     parent_anchor: "{{ r }}{{ c }}"
     child_solid: "body"
@@ -28,12 +28,12 @@ tube_autosampler_2ml_{{ r }}{{ c }}:
 {% endfor %}
 {% endfor %}
 
-{% for r in "ABCDE" %}
-{% for c in range(1, 10+1) %}
+{% for r in "ABCDEF" %}
+{% for c in range(1, 8+1) %}
 cap_autosampler_2ml_{{ r }}{{ c }}:
   type: "cap_autosampler_2ml"
   attach:
-    parent_name: "capholder_autosampler_2ml_5x10_1"
+    parent_name: "capholder_autosampler_2ml_1"
     parent_solid: "body"
     parent_anchor: "{{ r }}{{ c }}"
     child_solid: "body"

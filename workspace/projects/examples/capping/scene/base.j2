@@ -92,61 +92,65 @@ fixture_plate_6:
     child_anchor: "corner_3"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Tube rack (5x10 grid of 2 ml tubes) — at the same G5 spot the
-# feeder example uses for its cap feeder.
-adapter_plate_autosampler_2ml_5x10_1:
-  type: "adapter_plate_autosampler_2ml_5x10"
-  attach:
-    parent_name: "fixture_plate_1"
-    parent_solid: "body"
-    parent_anchor: "G5"
-    child_solid: "body"
-    child_anchor: "hole_0"
-    offset: [0, 0, 0, 0, 0, 90]
-
-rack_autosampler_2ml_5x10_1:
-  type: "rack_autosampler_2ml_5x10"
-  attach:
-    parent_name: "adapter_plate_autosampler_2ml_5x10_1"
-    parent_solid: "body"
-    parent_anchor: "place"
-    child_solid: "body"
-    child_anchor: "center"
-    offset: [0, 0, 0, 0, 0, 0]
-
-# Cap holder (5x10 grid of cap-sized slots) — at the C15 spot the
-# feeder example uses for its cap holder.
-adapter_plate_autosampler_2ml_5x10_2:
-  type: "adapter_plate_autosampler_2ml_5x10"
-  attach:
-    parent_name: "fixture_plate_1"
-    parent_solid: "body"
-    parent_anchor: "C15"
-    child_solid: "body"
-    child_anchor: "hole_0"
-    offset: [0, 0, 0, 0, 0, 90]
-
-capholder_autosampler_2ml_5x10_1:
-  type: "capholder_autosampler_2ml_5x10"
-  attach:
-    parent_name: "adapter_plate_autosampler_2ml_5x10_2"
-    parent_solid: "body"
-    parent_anchor: "place"
-    child_solid: "body"
-    child_anchor: "center"
-    offset: [0, 0, 0, 0, 0, 0]
-
-# Decapper — mirrors sample_prep's decapper_1 placement
-# (fixture_plate_4 / H18).
-decapper_1:
-  type: "decapper"
+# Tube rack — SBS-format adapter with a 6×8 autosampler rack on top.
+# Position mirrors the syringe project's ``sbs_adapter_0``
+# (fixture_plate_4 / D6, offset [0,0,0,0,0,90]).
+sbs_adapter_0:
+  type: "adapter_plate_sbs"
   attach:
     parent_name: "fixture_plate_4"
     parent_solid: "body"
-    parent_anchor: "H18"
+    parent_anchor: "D6"
     child_solid: "body"
     child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+rack_autosampler_2ml_1:
+  type: "rack_autosampler_2ml"
+  attach:
+    parent_name: "sbs_adapter_0"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
+
+# Cap holder — SBS-format adapter with a 6×8 cap holder on top.
+# Position mirrors syringe's ``sbs_adapter_1`` (fixture_plate_2 / D14).
+sbs_adapter_1:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "D14"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+capholder_autosampler_2ml_1:
+  type: "capholder_autosampler_2ml"
+  attach:
+    parent_name: "sbs_adapter_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Decapper — same fixture_plate_4 / G4 spot the syringe project
+# uses (``decapper_0`` in syringe/config/base.j2), with the
+# matching offset and IO config.
+decapper_1:
+  type: "decapper"
+  output_enable: [[2, 1, 0.1]]
+  output_disable: [[2, 0, 0.1]]
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "G4"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, -90]
 
 # Tool rack — holds the 4-finger gripper. Same fixture_plate_5 / B18
 # spot the feeder example uses.
