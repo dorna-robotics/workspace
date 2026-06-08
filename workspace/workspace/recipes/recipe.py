@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 from mergedeep import merge
-from collections import deque
 from dorna2 import pose as dorna_pose
 from dorna2 import Pose
 
@@ -199,23 +198,6 @@ class Recipe:
                 return child["child_solid"]
         except Exception:
             pass
-        return None
-
-    def solid_with_anchor(self, initial_solid, anchor):
-        """Breadth-first search the solid subtree rooted at ``initial_solid`` for
-        one that defines ``anchor``. Returns the matching solid or None."""
-        queue = deque([initial_solid])
-        visited = set()
-        while queue:
-            solid = queue.popleft()
-            if solid in visited:
-                continue
-            visited.add(solid)
-            if anchor in solid.anchors:
-                return solid
-            for links in solid.children.values():
-                for link in links:
-                    queue.append(link["child_solid"])
         return None
 
     def solid_hierarchy(self, parent_solid, parent_anchor, connection_anchor="place"):
