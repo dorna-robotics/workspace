@@ -19,7 +19,8 @@ fire the right IO at the right moment, and stay sim-agnostic.
    - [Component vs recipe — the ownership rule](#component-vs-recipe--the-ownership-rule)
    - [Recipes are sim-agnostic](#recipes-are-sim-agnostic)
 2. [The Recipe base class](#2-the-recipe-base-class)
-   - [Construction](#construction)
+   - [`DEFAULTS` reference](#defaults-reference)
+   - [How `__init__` works](#how-__init__-works)
    - [Attributes set on `self`](#attributes-set-on-self)
    - [What the base class promises](#what-the-base-class-promises)
 3. [The motion pipeline — `pick_setting` → `touch`](#3-the-motion-pipeline--pick_setting--touch)
@@ -98,39 +99,132 @@ recipes inherit from it to get pick/place/motion + utility queries +
 calibration. A handful (IO-only, no robot motion) skip the base
 entirely — see §8 Pattern B.
 
-### Construction
+### `DEFAULTS` reference
+
+`Recipe.DEFAULTS` declares every parameter the base class supports.
+Subclasses extend it (their DEFAULTS merge over base); operators
+override per-instance via `recipes.yaml` kwargs (see §7.2).
+
+Grouped by what each key influences:
+
+#### Reference IK — used once at boot to validate the scene
+
+These declare the anchor + offset the constructor probes with
+`core.IK(...)`. Failure raises `RecipeError` immediately.
+
+| Key | Default | What |
+|---|---|---|
+| `target_solid_name` | `"body"` | Which sub-solid of the component owns the reference anchor. |
+| `target_anchor` | `"center"` | Anchor name on `target_solid_name` to validate IK against. |
+| `target_offset` | `[0,0,50,0,180,0]` | XYZ-RPY offset from the anchor — default = 50 mm above with flipped Z so the tool faces down. |
+| `initial_joints` | `[0,0,0,0,0,0,0,0]` | Starting joint guess for the reference IK solve. Set to a known-good pose for difficult workspaces. |
+
+#### IK shape — applied to every motion the recipe issues
+
+| Key | Default | What |
+|---|---|---|
+| `left_approach` | `True` | Robot's left vs right elbow configuration. `True` = left-elbow-up. |
+| `base_distance` | `350` | Rail distance from robot base used for IK (mm). Smaller = robot closer to the component. |
+| `rail_step` | `0` | Step size (mm) for rail search around `base_distance`. `0` = no search, single try at `base_distance`. |
+| `rail_span` | `0` | Number of step-attempts on each side. `rail_step=10, rail_span=3` searches ±30 mm in 10 mm steps. |
+
+#### Motion
+
+| Key | Default | What |
+|---|---|---|
+| `motion_type` | `"lmove"` | Default move type for subsequent waypoints in `touch`. `"lmove"` = Cartesian straight line; `"jmove"` = joint space; any `rt.*` method name also works. |
+| `speed_factor` | `0.5` | Multiplier applied to every move's `vel` / `accel` / `jerk`. Use a smaller value per recipe instance for sensitive sites. |
+| `jmove_vaj` | `[200, 500, 3000]` | `[velocity, acceleration, jerk]` for joint-space moves *before* `speed_factor` is applied. |
+| `lmove_vaj` | `[600, 1400, 6000]` | Same shape, for linear moves. |
+
+#### Calibration
+
+| Key | Default | What |
+|---|---|---|
+| `calibration` | `True` | If `True`, every IK solve passes through `_calibrate_offset` to apply the stored correction. Set `False` for sim or uncalibrated stations. |
+| `calibration_name` | `None` | Storage key for the calibration. If `None`, auto-generated as `{component.name}_{left_approach}_{base_distance}_{rail_step}_{rail_span}` — uniqueness depends on the IK params that produced the corrections. |
+| `calibrate_abc` | `False` | If `True`, calibration corrects rotation (ABC Euler) as well as XYZ. `False` = position-only correction (the common case). |
+| `calibration_targets` | `None` | `{solid_name: [anchor_names]}` mapping for `calibrate()` to walk. If `None`, auto-discovered from every assembly solid by collecting anchors prefixed `clb_`. |
+| `calibration_target_offset` | `[0,0,8,0,0,0]` | Offset applied during calibration touch — typically 8 mm above the calibration mark so the tool seats correctly. |
+| `calibration_tool_solid_name` | `"body"` | Sub-solid of the calibration tool that holds the probe anchor. |
+| `calibration_tool_anchor` | `"tcp"` | Anchor on the calibration tool used as the calibration probe. |
+| `calibration_tool_offset` | `[0,0,0,0,0,0]` | Final offset applied to the tool's calibration probe pose. |
+
+### How `__init__` works
 
 ```python
 def __init__(self, workspace, core, component, **kwargs):
     ...
 ```
 
-Three things happen:
+Seven steps, in order:
 
-1. **DEFAULTS merge** — `prm = deepcopy(Recipe.DEFAULTS); merge(prm, kwargs)`.
-   Caller wins. Subclasses extend the chain (see §7.2 DEFAULTS pattern).
-2. **Reference attributes set** — IK params (`left_approach`,
-   `base_distance`, `rail_step`, `rail_span`), motion params
-   (`motion_type`, `speed_factor`, `*_vaj`), calibration params
-   (`calibration_name`, `calibrate_abc`, `calibration_targets`, …).
-3. **IK validation at boot** — `core.IK(...)` runs against the
-   component's reference anchor. If no valid joint configuration is
-   found, `RecipeError` is raised immediately so the operator sees a
-   clear failure at workspace launch, not silently mid-workflow.
+1. **Merge DEFAULTS + kwargs.**
+   ```python
+   prm = deepcopy(self.DEFAULTS)
+   merge(prm, kwargs)
+   ```
+   Caller wins. When a subclass extends the chain
+   (`Recipe.DEFAULTS → SubClass.DEFAULTS → kwargs`), the subclass
+   is responsible for the extra merge — see §7.2.
+
+2. **Wire references** — `self.workspace`, `self.core`,
+   `self.component`. The `self.rt` property derives from
+   `workspace.rt`; not set as an attribute so it always reflects the
+   live workspace runtime.
+
+3. **Stash IK shape params** — `self.left_approach`,
+   `self.base_distance`, `self.rail_step`, `self.rail_span`. Used
+   by every subsequent IK call as the per-recipe IK config.
+
+4. **Stash motion params** — `self.motion_type`, `self.speed_factor`,
+   `self.jmove_vaj`, `self.lmove_vaj`. Used by `_do_motion` and
+   `_execute_motion_planned` for every move.
+
+5. **Stash calibration params**. Three of them auto-fill:
+   - `self.calibration_name` defaults to a unique-per-IK-shape key
+     generated from the component name + IK params.
+   - `self.calibration_targets` defaults to auto-discovered `clb_*`
+     anchors across every assembly solid.
+   - The remaining four (`calibrate_abc`, `calibration_target_offset`,
+     `calibration_tool_*`) come straight from DEFAULTS / kwargs.
+
+6. **IK validation at boot** —
+   ```python
+   J, C = self.core.IK(
+       target_solid=self.component.assembly[prm["target_solid_name"]],
+       target_anchor=prm["target_anchor"],
+       target_offset=prm["target_offset"],
+       base_distance=self.base_distance,
+       rail_step=self.rail_step,
+       rail_span=self.rail_span,
+       ref_joints=prm["initial_joints"],
+       left_approach=self.left_approach,
+   )
+   if C != 2:
+       raise RecipeError(...)
+   ```
+   The probe runs against the reference IK keys (`target_*`,
+   `initial_joints`). On failure, the operator sees a clear error
+   at workspace launch — not silently halfway through a workflow.
+
+7. **Store `self.ref_joints = J`** — the validated reference pose
+   every subsequent IK call uses as `ref_joints=`. Wrong ref →
+   wrong solutions; the boot validation guarantees you start from a
+   sane one.
+
+After `__init__` returns, the recipe is ready to call.
 
 ### Attributes set on `self`
+
+Summary view of what's on the instance after `__init__`:
 
 | Group | Attributes |
 |---|---|
 | References | `workspace`, `core`, `component`, `rt` (property) |
 | IK | `left_approach`, `base_distance`, `rail_step`, `rail_span`, `ref_joints` |
-| Motion | `motion_type` (`"lmove"` / `"jmove"` / any `rt.*` method), `speed_factor`, `jmove_vaj`, `lmove_vaj` |
-| Calibration | `calibration`, `calibrate_abc`, `calibration_name`, `calibration_targets`, `calibration_target_offset`, `calibration_tool_*` |
-
-The `ref_joints` attribute is special — it's the IK-validated
-reference pose every subsequent IK call uses as `ref_joints=`. Wrong
-ref means wrong solutions; the boot validation guarantees you start
-from a sane one.
+| Motion | `motion_type`, `speed_factor`, `jmove_vaj`, `lmove_vaj` |
+| Calibration | `calibration`, `calibrate_abc`, `calibration_name`, `calibration_targets`, `calibration_target_offset`, `calibration_tool_solid_name`, `calibration_tool_anchor`, `calibration_tool_offset` |
 
 ### What the base class promises
 
