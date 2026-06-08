@@ -4063,8 +4063,8 @@ function rotateSelected(deg) {
   if (meta.attach) {
     if (!Array.isArray(meta.attach.offset)) meta.attach.offset = [0,0,0,0,0,0];
 
-    // NOTE: attach.offset[3..5] is a Rodrigues rotation vector in degrees (axis * angle),
-    // NOT Euler angles. So we must compose rotations with quaternions.
+    // NOTE: attach.offset[3..5] is a Rodrigues rotation vector in degrees
+    // (axis * angle). Compose rotations via quaternions.
     try {
       const qOff = rodriguesDegToQuaternion(meta.attach.offset[3]||0, meta.attach.offset[4]||0, meta.attach.offset[5]||0);
       const qDelta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), (deg*Math.PI)/180); // anchor-frame Z
@@ -4150,8 +4150,8 @@ function flipSelected() {
   if (meta.attach) {
     if (!Array.isArray(meta.attach.offset)) meta.attach.offset = [0,0,0,0,0,0];
 
-    // NOTE: attach.offset[3..5] is a Rodrigues rotation vector in degrees (axis * angle),
-    // NOT Euler angles. Compose the flip (180° about anchor-frame X) via quaternions.
+    // NOTE: attach.offset[3..5] is a Rodrigues rotation vector in degrees
+    // (axis * angle). Compose the flip (180° about anchor-frame X) via quaternions.
     try {
       const qOff = rodriguesDegToQuaternion(meta.attach.offset[3]||0, meta.attach.offset[4]||0, meta.attach.offset[5]||0);
       const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI); // anchor-frame X

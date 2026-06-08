@@ -162,7 +162,7 @@ from workspace.workspace import Workspace
 Anchors are named 6-DOF poses `[x, y, z, rx, ry, rz]`:
 
 - `x, y, z` — position in millimeters, relative to the component origin
-- `rx, ry, rz` — rotation vector in degrees (axis-angle representation, not Euler angles)
+- `rx, ry, rz` — rotation vector in degrees (axis-angle / Rodrigues representation)
 
 ### Anchor names
 
