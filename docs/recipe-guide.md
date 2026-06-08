@@ -13,6 +13,42 @@ fire the right IO at the right moment, and stay sim-agnostic.
 > methods from an action / state / operator button, §4 — Calling the
 > methods is your home.
 
+## Contents
+
+1. [What a recipe is (vs a component)](#1-what-a-recipe-is-vs-a-component)
+   - [Component vs recipe — the ownership rule](#component-vs-recipe--the-ownership-rule)
+   - [Recipes are sim-agnostic](#recipes-are-sim-agnostic)
+2. [The Recipe base class](#2-the-recipe-base-class)
+   - [Construction](#construction)
+   - [Attributes set on `self`](#attributes-set-on-self)
+   - [What the base class promises](#what-the-base-class-promises)
+3. [The motion pipeline — `pick_setting` → `touch`](#3-the-motion-pipeline--pick_setting--touch)
+   - [`pose_offset` — the anchor-local frame](#pose_offset--the-anchor-local-frame)
+   - [Approach path vs target offset](#approach-path-vs-target-offset)
+   - [Path planning — `has_motion_plan` and `first_approach`](#path-planning--has_motion_plan-and-first_approach)
+   - [Parameter tuning](#parameter-tuning)
+4. [Calling the methods (the API)](#4-calling-the-methods-the-api)
+   - [Method comparison](#method-comparison)
+   - [`pick` / `place`](#pick--place)
+   - [`above` / `stand`](#above--stand)
+   - [`immerse` / `retract`](#immerse--retract)
+   - [`rotate` / `vibrate` / `park`](#rotate--vibrate--park)
+   - [`touch` (direct use)](#touch-direct-use)
+5. [Calibration flow](#5-calibration-flow)
+6. [`recipes.yaml` — configuration format](#6-recipesyaml--configuration-format)
+7. [Conventions](#7-conventions)
+   - [7.1 Sim-agnostic](#71-sim-agnostic)
+   - [7.2 DEFAULTS merge pattern](#72-defaults-merge-pattern)
+   - [7.3 Pause-awareness — always via `rt.*`](#73-pause-awareness--always-via-rt)
+   - [7.4 Component-vs-recipe ownership](#74-component-vs-recipe-ownership)
+   - [7.5 The `**kwargs` override behavior — read this carefully](#75-the-kwargs-override-behavior--read-this-carefully)
+8. [Creating your own recipe](#8-creating-your-own-recipe)
+   - [Pattern A: subclass `Recipe`](#pattern-a-subclass-recipe)
+   - [Pattern B: from scratch (no base class)](#pattern-b-from-scratch-no-base-class)
+   - [Where to put it](#where-to-put-it)
+   - [Full end-to-end example](#full-end-to-end-example)
+9. [Catalog](#9-catalog)
+
 ---
 
 ## 1. What a recipe is (vs a component)
