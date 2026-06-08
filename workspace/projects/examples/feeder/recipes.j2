@@ -1,4 +1,11 @@
 # feeder example — recipe wiring. Three recipes, one per device family.
+#
+# ``sf`` (speed factor) is set at the top so all recipes scale together.
+# Drop it to 5–10 for cautious bench tuning; 20–30 is a normal demo
+# speed; above 50 starts straining the motion planner on complex
+# approaches. Same Jinja-templating pattern as sample_prep/recipes.j2.
+
+{%- set sf = 20 -%}
 
 # ToolRack recipe driving the tool-changer's cap-tool slot. The BT
 # framework auto-swaps tools between actions based on each action's
@@ -6,10 +13,7 @@
 # the tool rack itself.
 cap_tool:
   class: workspace.recipes.tool_rack.ToolRack
-  kwargs:
-    component: tool_rack_144mm_1
-    left_approach: true
-    speed_factor: 20
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
 
 # Feeder recipe — rotating-plate cap dispenser. Exposes
 # ``above`` / ``pick`` (overridden with padding=25, smaller than the
@@ -29,7 +33,7 @@ feeder:
   kwargs:
     component: capfeeder_autosampler_2ml_1
     left_approach: false
-    speed_factor: 20
+    speed_factor: {{ sf }}
     index_list:
       - [0, {}]
       - [-1, {}]
@@ -46,8 +50,7 @@ feeder:
 # syringe's detection_preset["cap"]) when running on hardware.
 inspector:
   class: workspace.recipes.inspector.MobileInspector
-  kwargs:
-    detection_preset: {}
+  kwargs: {detection_preset: {}}
 
 # Rack recipe (resolver pattern — Rack delegates to the attached
 # capholder via its kinematic-tree child). Targeting the adapter
@@ -56,10 +59,4 @@ inspector:
 # A1..E10 (5 rows × 10 columns).
 cap_holder:
   class: workspace.recipes.rack.Rack
-  kwargs:
-    component: adapter_plate_autosampler_2ml_5x10_1
-    left_approach: false
-    base_distance: 150
-    rail_step: 5
-    rail_span: 5
-    speed_factor: 20
+  kwargs: {component: adapter_plate_autosampler_2ml_5x10_1, left_approach: false, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
