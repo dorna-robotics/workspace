@@ -144,26 +144,12 @@ capholder_autosampler_2ml_5x10_1:
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Inspector — fixed horizontal camera the feeder uses for vision-driven
-# cap detection. ``present_cap`` (called from FeedCap) cycles through
-# the recipe's ``index_list`` and calls ``inspector.detect(...)`` at
-# each candidate slot; in simulation the call returns True for the
-# first preset, so the feeder doesn't actually rotate. In real mode
-# the bounding-box presets in ``index_list`` are tuned per bench so
-# the right slot wins.
-#
-# Placed at fixture_plate_6 / J18 — same J18 anchor sample_prep uses
-# for its inspector, mounted on a different plate because the feeder
-# example only has plates 1–6.
-inspection_horizontal_144mm_1:
-  type: "inspection_horizontal_144mm"
-  attach:
-    parent_name: "fixture_plate_6"
-    parent_solid: "body"
-    parent_anchor: "J18"
-    child_solid: "body"
-    child_anchor: "hole_0"
-    offset: [0, 0, 0, 0, 0, 180]
+# NOTE on the camera: this example uses a **MobileInspector** — the
+# robot's mounted camera (driven by core.detect()), not a fixed
+# camera component in the scene. ``has_camera: true`` on the core
+# above is enough; no separate inspector hardware is declared here.
+# Matches the syringe project's util.py pattern (the wrapper that
+# inspired this example).
 
 # Tool rack — holds the suction gripper when it's not on the robot.
 # Positioned at fixture_plate_5 / B18, matching the slot

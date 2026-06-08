@@ -35,19 +35,19 @@ feeder:
       - [-1, {}]
       - [1, {}]
 
-# Inspector recipe — fixed horizontal camera. Drives
-# ``rcp["feeder"].present_cap(rcp["inspector"])`` in FeedCap. In
-# simulation ``detect`` returns True; in real mode the vision server
-# runs the detection_preset against the live camera frame.
+# Inspector recipe — MobileInspector wraps the robot's mounted
+# camera (via core.detect()), not a separate camera component. Drives
+# ``rcp["feeder"].present_cap(rcp["inspector"])`` in FeedCap. Same
+# choice as projects_old/syringe/util.py.
+#
+# In simulation ``detect`` returns True; in real mode the vision
+# server runs the detection_preset against the live camera frame.
+# Replace ``detection_preset: {}`` with the bench-tuned preset (see
+# syringe's detection_preset["cap"]) when running on hardware.
 inspector:
-  class: workspace.recipes.inspector.FixedInspector
+  class: workspace.recipes.inspector.MobileInspector
   kwargs:
-    component: inspection_horizontal_144mm_1
-    base_distance: 200
-    rail_step: 5
-    rail_span: 5
     detection_preset: {}
-    speed_factor: 20
 
 # Rack recipe (resolver pattern — Rack delegates to the attached
 # capholder via its kinematic-tree child). Targeting the adapter
