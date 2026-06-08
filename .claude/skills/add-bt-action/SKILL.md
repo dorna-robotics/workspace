@@ -32,7 +32,17 @@ The framework auto-registers every Action subclass — no domain.py.
 3. **`eff()` returns a dict of branches**, not a flat list. `return {"weighed": (+weighed(t), -in_source(t), +in_working(t))}`. `execute()` returns the branch name; framework applies that branch's facts.
 4. **One BT-tick per atomic op.** Don't bundle "pick + decap" into one action — split. Tool swaps and intermediate state transitions belong in their own actions so the planner can schedule + the operator can pause cleanly between.
 5. **Gripper empty at action boundaries** (or use the explicit `gripper_holds(tool)` predicate for multi-action sequences). bt-framework-guide.md §3.7.
-6. **`Start` and `Park` are bookends.** `Start.pre = ~started()` runs once at run start; `Park.pre = started() & all-items-done & ~parked()` runs once at end.
+6. **`Start` / `Park` / `OperatorPark` stay the canonical shape across all projects.** Don't bleed per-item motion / IO / state into them — that's what the per-item actions (`FeedCap`, `Inspected`, `ReadMeter`, …) are for.
+
+    **Canonical `Start`**: `params=[]`, `duration=5`, `resource="robot"`, `pre = ~started()`, `eff = +started()`, `execute = rt.motor(1) + rcp["<tool_alias>"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)`.
+
+    **Canonical `Park`**: `params=[]`, `duration=5`, `tool=None`, `PARK_JOINTS = [0, 185, -94, 0, 0, 0, 100]` (override in subclass if needed), `pre` walks `_ctx_all_objects` to require every per-item predicate plus `~parked()`, `execute = rcp["<tool_alias>"].park(self.PARK_JOINTS, has_motion_plan=True) + rt.motor(0)`.
+
+    **Canonical `OperatorPark`**: three-line subclass of `Park` that flips `trigger = "park"` — fires on the operator's Park button outside the plan.
+
+    Only **three** things vary per project: the tool recipe alias (`gripper` vs `cap_tool` vs your own), the per-item predicate name (`vial_2ml_capped` vs `cap_fed` vs `read_done`), and the object key for `_ctx_all_objects` (`"tube"` vs `"cap"` vs `"sample"`). Everything else stays.
+
+    Canonical reference: `sample_prep/actions.py:Start/Park/OperatorPark`. Examples that follow: `multimeter_test/actions.py`, `examples/feeder/actions.py`.
 7. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
 
 ## Canonical doc references

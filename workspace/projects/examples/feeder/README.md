@@ -14,6 +14,22 @@ that the tool-changer auto-swaps on.
 | **Vision-driven slot finder (`present_cap`)** | `feeder.present_cap(rcp["inspector"])` walks the recipe's `index_list` and rotates the feeder to the first slot whose `inspector.detect(**preset)` returns True. In sim mode `detect` always returns True for the first preset — the call chain runs without rotating the feeder. The same pattern is in `sample_prep/actions.py:CapFed` and `projects_old/syringe/main.ipynb`. |
 | **Per-cap planning** | The PDDL planner sees `cap_count` objects and schedules one `FeedCap(c)` per cap. Reordering, retries, and parallelism (if you ever add a second tool) all fall out of the plan. |
 
+## Convention: `Start` / `Park` / `OperatorPark` stay canonical
+
+These three actions look the same in every project. **All cap-specific
+work lives in `FeedCap`** — Start and Park don't get cap-handling
+motion, cap-cleanup logic, or per-cap predicate logic beyond what's
+strictly needed for the planner to schedule them as bookends.
+
+The only things that vary across projects: the tool recipe alias
+(`cap_tool` here, `gripper` in sample_prep), the per-item predicate
+name (`cap_fed` here, `vial_2ml_capped` in sample_prep), and the
+object key for `_ctx_all_objects` (`"cap"` here, `"tube"` in
+sample_prep). Everything else is structurally identical.
+
+Full rule + canonical shapes: `.claude/skills/add-bt-action/SKILL.md`
+rule 6.
+
 ## Run it
 
 ```bash
