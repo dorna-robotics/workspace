@@ -1,0 +1,161 @@
+# capping example — base scene. Same fixture-plate footprint as
+# the feeder example (plates 1–6) so the geometry comparison is
+# direct; the device set is different: tube rack + cap holder +
+# decapper, served by the 4-finger gripper.
+
+core:
+  type: "core"
+  simulation: true
+  ip: ""
+  has_rail: true
+  has_tool_changer: true
+  has_motion_plan: true
+  has_camera: false
+  robot_attach:
+    rail_carriage_anchor: "hole_1"
+    robot_A0_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+  rail_cfg:
+    type: "rail_hd_500mm"
+    axis: 6
+    offset: 0
+    usem: 1
+    pprm: 4000
+    tprm: 75
+    usee: 1
+    ppre: 4000
+    tpre: 75
+    p: 0.01
+    i: 0.0001
+    d: 0
+    duration: 100
+    threshold: 100
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "D10"
+    child_solid: "rail_base"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_1:
+  type: "fixture_plate"
+  offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_2:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_3:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_4:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_2"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_5:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_6:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Tube rack (5x10 grid of 2 ml tubes) — at the same G5 spot the
+# feeder example uses for its cap feeder.
+adapter_plate_autosampler_2ml_5x10_1:
+  type: "adapter_plate_autosampler_2ml_5x10"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "G5"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+rack_autosampler_2ml_5x10_1:
+  type: "rack_autosampler_2ml_5x10"
+  attach:
+    parent_name: "adapter_plate_autosampler_2ml_5x10_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Cap holder (5x10 grid of cap-sized slots) — at the C15 spot the
+# feeder example uses for its cap holder.
+adapter_plate_autosampler_2ml_5x10_2:
+  type: "adapter_plate_autosampler_2ml_5x10"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "C15"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+capholder_autosampler_2ml_5x10_1:
+  type: "capholder_autosampler_2ml_5x10"
+  attach:
+    parent_name: "adapter_plate_autosampler_2ml_5x10_2"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Decapper — mirrors sample_prep's decapper_1 placement
+# (fixture_plate_4 / H18).
+decapper_1:
+  type: "decapper"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "H18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Tool rack — holds the 4-finger gripper. Same fixture_plate_5 / B18
+# spot the feeder example uses.
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
