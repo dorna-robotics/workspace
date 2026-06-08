@@ -15,7 +15,7 @@ parked    = predicate("parked")
 cap_fed   = predicate("cap_fed")
 
 
-CAP_HOLDER_SLOTS = [f"A{c}" for c in range(1, 10 + 1)]
+CAP_HOLDER = "capholder_autosampler_2ml_5x10_1"
 
 
 def setup(**kwargs):
@@ -90,7 +90,8 @@ class FeedCap(Action):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
 
-        slot = CAP_HOLDER_SLOTS[cap]
+        holder = self.ctx.workspace.components[CAP_HOLDER]
+        slot = holder.slot["body"][cap]
         rt.step(f"cap {cap + 1}: feeder → cap_holder[{slot}]")
 
         rcp["feeder"].above(anchor="plate_center")
