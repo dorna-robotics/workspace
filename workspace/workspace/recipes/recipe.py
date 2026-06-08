@@ -1156,14 +1156,41 @@ class Recipe:
 
         Args:
             rotation: Degrees to add (can be negative).
-            joint: Joint name, e.g. "j0" .. "j5".
+            joint: Joint identifier — string ``"j0".."j7"`` (operator-
+                friendly, matches robot UI labels) OR integer index.
+                ``"J5"``, ``"j5"``, and ``5`` all resolve to the same
+                joint.
             limit: [min, max] joint range used for wrap-around.
             vaj: [velocity, accel, jerk] for the jmove.
+
+        Raises:
+            RecipeError: If ``joint`` isn't a recognised form, or the
+                resolved index is out of range for the live joint vector.
         """
         rt = self.rt
 
+        # Accept "j5" / "J5" / 5 forms. Defensive parse so a typo like
+        # "jx" raises a clear error instead of crashing inside int().
+        if isinstance(joint, int):
+            joint_index = joint
+        elif (
+            isinstance(joint, str)
+            and len(joint) >= 2
+            and joint[0] in ("j", "J")
+            and joint[1:].isdigit()
+        ):
+            joint_index = int(joint[1:])
+        else:
+            raise RecipeError(
+                f"rotate: invalid joint {joint!r} — pass 'j5' or 5"
+            )
+
         current_joint = rt.joint()
-        joint_index = int(joint[1:])
+        if not 0 <= joint_index < len(current_joint):
+            raise RecipeError(
+                f"rotate: joint index {joint_index} out of range "
+                f"(robot has {len(current_joint)} joints)"
+            )
         new_joint = current_joint[:]
         new_joint[joint_index] = (new_joint[joint_index] + rotation + limit[1]) % abs(limit[1] - limit[0]) + limit[0]
 
