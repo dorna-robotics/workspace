@@ -1121,14 +1121,37 @@ class Recipe:
         """Move to a single pose at ``offset`` relative to ``anchor``'s frame.
 
         Pure positioning primitive — no approach waypoints, no touch-down,
-        no attach, no IO. The offset is interpreted in the anchor's local
-        frame (same convention as ``pick_setting``'s internal waypoints).
+        no attach, no IO.
+
+        **Frame of reference for ``offset``**: ``offset`` is interpreted in
+        the frame returned by ``pick_setting`` as ``pose_offset``. That
+        frame is:
+
+        - The **anchor's own frame** when nothing is stacked at the
+          anchor — XYZ from the anchor itself, ABC rotates relative to
+          the anchor. This is the common case.
+        - The **load's ``center`` frame** when something IS stacked at
+          the anchor. If the load was placed without rotation (the
+          typical case — tube sits straight up in a slot), the load's
+          frame and the anchor's frame are aligned, so the offset
+          behaves identically. If the load was placed with a rotation
+          (e.g. a tube held at a 30° tilt), the offset rides the load's
+          tilted axes, NOT the bare anchor's. Same call, different
+          world-frame result depending on what's there.
+
+        99% of layouts place loads center-aligned with their anchor, so
+        treating ``offset`` as "the anchor's local frame" is a safe
+        mental model. The 1% case (rotated mount) is worth knowing.
 
         Args:
             anchor: Target anchor on the component.
-            offset: [x, y, z, a, b, c] in mm + Euler degrees, in the anchor frame.
-                Default = stand exactly at the anchor.
-            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts.
+            offset: [x, y, z, a, b, c] in mm + degrees, interpreted in
+                the frame described above. ABC is a rotation vector in
+                degrees (not radians). Default = stand exactly at the
+                anchor.
+            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts —
+                negative drives along the tool's Z (typically into the
+                workpiece).
             **kwargs: Forwarded to pick_setting / touch.
 
         Example:
