@@ -116,7 +116,7 @@ These declare the anchor + offset the constructor probes with
 |---|---|---|
 | `target_solid_name` | `"body"` | Which sub-solid of the component owns the reference anchor. |
 | `target_anchor` | `"center"` | Anchor name on `target_solid_name` to validate IK against. |
-| `target_offset` | `[0,0,50,0,180,0]` | XYZ-RPY offset from the anchor — default = 50 mm above with flipped Z so the tool faces down. |
+| `target_offset` | `[0,0,50,0,180,0]` | XYZ-ABC offset from the anchor. XYZ in mm; ABC is a rotation vector in **degrees** (not radians). Default = 50 mm above with a 180° flip about Y so the tool faces down. |
 | `initial_joints` | `[0,0,0,0,0,0,0,0]` | Starting joint guess for the reference IK solve. Set to a known-good pose for difficult workspaces. |
 
 #### IK shape — applied to every motion the recipe issues
@@ -143,7 +143,7 @@ These declare the anchor + offset the constructor probes with
 |---|---|---|
 | `calibration` | `True` | If `True`, every IK solve passes through `_calibrate_offset` to apply the stored correction. Set `False` for sim or uncalibrated stations. |
 | `calibration_name` | `None` | Storage key for the calibration. If `None`, auto-generated as `{component.name}_{left_approach}_{base_distance}_{rail_step}_{rail_span}` — uniqueness depends on the IK params that produced the corrections. |
-| `calibrate_abc` | `False` | If `True`, calibration corrects rotation (ABC Euler) as well as XYZ. `False` = position-only correction (the common case). |
+| `calibrate_abc` | `False` | If `True`, calibration corrects the ABC rotation vector (degrees) as well as XYZ. `False` = position-only correction (the common case). |
 | `calibration_targets` | `None` | `{solid_name: [anchor_names]}` mapping for `calibrate()` to walk. If `None`, auto-discovered from every assembly solid by collecting anchors prefixed `clb_`. |
 | `calibration_target_offset` | `[0,0,8,0,0,0]` | Offset applied during calibration touch — typically 8 mm above the calibration mark so the tool seats correctly. |
 | `calibration_tool_solid_name` | `"body"` | Sub-solid of the calibration tool that holds the probe anchor. |
@@ -400,11 +400,12 @@ Positioning primitives — no touch, no attach, no IO.
   stack. Uses the same height math as `pick_setting`, so it ignores
   load-depth correctly.
 - **`stand(anchor, offset=[x, y, z, a, b, c])`** — move to an
-  arbitrary offset in the anchor's local frame.
+  arbitrary offset in the anchor's local frame. XYZ in mm, ABC is a
+  rotation vector in **degrees**.
 
 ```python
 rcp["inspector_1"].above("place", padding=80)
-rcp["inspector_1"].stand("place", offset=[10, 0, 50, 0, 0, 45])
+rcp["inspector_1"].stand("place", offset=[10, 0, 50, 0, 0, 45])   # +10mm X, +50mm Z, 45° about C-axis
 ```
 
 ### `immerse` / `retract`
