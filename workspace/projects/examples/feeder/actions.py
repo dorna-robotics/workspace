@@ -92,7 +92,10 @@ class FeedCap(Action):
 
         holder = self.ctx.workspace.components[CAP_HOLDER]
         slot = holder.slot["body"][cap]
+        total = len(self._ctx_all_objects().get("cap", [])) or 1
+
         rt.step(f"cap {cap + 1}: feeder → cap_holder[{slot}]")
+        rt.step(int((cap + 1) / total * 100), level="progress")
 
         rcp["feeder"].above(anchor="plate_center")
         rcp["feeder"].present_cap(rcp["inspector"])
