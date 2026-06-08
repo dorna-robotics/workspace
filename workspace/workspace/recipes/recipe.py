@@ -853,11 +853,37 @@ class Recipe:
     ):
         """Pick the item at ``anchor``: approach, close gripper, attach, exit.
 
-        Wraps ``pick_setting(...)`` → ``touch(...)``. See ``pick_setting`` for
-        parameter meanings and tool-specific tips.
+        Wraps ``pick_setting(...)`` → ``touch(...)``. See ``pick_setting``
+        for parameter meanings and tool-specific tips.
+
+        Required state:
+            A tool must already be attached to the robot. The item
+            picked is whatever's stacked at the anchor — found by
+            walking the kinematic tree from
+            ``component.assembly[solid_name]`` at ``anchor``.
+
+        Tool Z offsets (``tool_tcp_z_offset`` / ``tool_tip_z_offset``)
+        are along the **tool's Z axis** — which typically points into
+        the workpiece — so negative drives deeper (e.g. ``-5`` for a
+        suction cup that needs to seat).
+
+        ``soft_approach=True`` inserts a second approach waypoint just
+        above the load for a vertical final descent. Recommended for
+        dense racks — the straight-down move avoids hitting
+        neighbouring slots.
+
+        Raises:
+            RecipeError: If no tool is attached
+                (``"no tool attached to the robot"``).
+            IndexError: If the anchor is empty (no item to attach)
+                AND ``attachment`` is True (the default). For empty
+                anchors use ``above`` / ``stand`` instead, or pass
+                ``attachment=False`` for a "pretend pick" (motion + IO
+                without attaching anything to the tool).
 
         Example:
             >>> rcp["tube_rack"].pick(anchor="A1")
+            >>> rcp["tube_rack"].pick(anchor="A1", soft_approach=True)  # dense rack
             >>> rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)  # suction cup
         """
         pick_prm = self.pick_setting(
@@ -1065,8 +1091,39 @@ class Recipe:
     ):
         """Place the held item at ``anchor``: approach, release, detach, exit.
 
-        Wraps ``place_setting(...)`` → ``touch(...)``. See ``place_setting`` for
-        parameter meanings and gripper-specific tips.
+        Wraps ``place_setting(...)`` → ``touch(...)``. See ``place_setting``
+        for parameter meanings and gripper-specific tips.
+
+        Required state:
+            The robot must already be holding an item (found via
+            ``solid_attached_to_tool``). The destination is the named
+            anchor on the component.
+
+        ``gravity_offset`` is the Z-offset applied at touch-down
+        (mm). **Positive** = release slightly above the target
+        (typical for 2/4-finger grippers — let gravity finish the
+        placement). **Negative** = drive deeper (suction cups with a
+        mechanical leveller). Default ``1`` mm.
+
+        ``gravity_offset`` is in the **target's frame** (after any
+        rotation in ``offset``). If you rotate the target 180° about
+        a horizontal axis, the sign of Z flips relative to the world
+        — validate on a real bench.
+
+        ``soft_approach=True`` adds a near-target waypoint above the
+        destination for a vertical final descent. Recommended for
+        racks.
+
+        Raises:
+            RecipeError: If no tool is attached, or if the tool is
+                empty (``"no item in the gripper"``).
+
+        Gotcha:
+            Destination occupancy is not checked. If something is
+            already at the anchor, the new item is attached on top
+            of the existing stack (which is usually wrong). Check
+            via ``solid_attached_to_anchor`` first if you need
+            exclusivity.
 
         Example:
             >>> rcp["tube_rack"].place(anchor="A1")
@@ -1090,18 +1147,36 @@ class Recipe:
         """Hover ``padding`` mm above ``anchor`` — no touch, no attach, no IO.
 
         Uses ``pick_setting`` to compute the safe-above waypoint and stops
-        there. Useful as a pre-positioning step before inspection or manual
-        work. Runs a planned ``smove`` if ``core.has_motion_plan`` is on,
+        there. Useful as a pre-positioning step before inspection,
+        manual work, or a confirmation moment before ``pick``/``place``.
+        Runs a planned ``smove`` if ``core.has_motion_plan`` is on,
         otherwise a plain ``jmove``.
+
+        ``padding`` is measured from the **top of whatever's at the
+        anchor**: the top of the stacked load if loaded, the anchor
+        itself if empty. Empty anchors work — ``above`` doesn't
+        require an item to be there.
+
+        A tool must be attached to the robot (for the IK frame),
+        but the anchor's load and the tool's held item are
+        independent — the tool's load is ignored for the
+        destination's height math.
 
         Args:
             anchor: Target anchor on the component.
             padding: Height above the container/load top (mm).
-            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts — see pick_setting.
-            **kwargs: Forwarded to pick_setting / touch.
+            tool_tcp_z_offset, tool_tip_z_offset: Tool Z shifts —
+                see ``pick_setting``. Negative drives the TCP /
+                tip along the tool's Z axis (typically deeper).
+            **kwargs: Forwarded to ``pick_setting`` / ``touch``.
+
+        Raises:
+            RecipeError: If no tool is attached
+                (``"no tool attached to the robot"``).
 
         Example:
-            >>> rcp["inspector_1"].above("place", padding=80)
+            >>> rcp["inspector_1"].above("place", padding=80)  # 80mm above the inspector
+            >>> rcp["tube_rack"].above("A1")                   # 50mm above whatever's at A1
         """
         pick_prm = self.pick_setting(
             anchor, solid_name,
@@ -1222,12 +1297,22 @@ class Recipe:
         """Oscillate the robot flange through a small Cartesian pattern.
 
         Useful for shaking a tip free, loosening a seal, or mixing.
+        After ``cnt`` repeats the robot returns to its starting joint
+        configuration so the motion is non-displacing.
 
         Args:
-            pattern: List of [x, y, z] offsets in the flange's output frame.
-                The robot sweeps through them in order.
+            pattern: List of [x, y, z] offsets (mm) in the flange's
+                **output frame** — not the world, not the tool. The
+                robot sweeps through them in order. If the wrist is
+                rotated relative to vertical, an ``[x, 0, 0]`` pattern
+                shakes along the flange's local X, which may not be
+                forward in the world frame.
             cnt: Repeat count.
-            vaj: [velocity, accel, jerk] for each jmove.
+            vaj: [velocity, accel, jerk] for each jmove. The default
+                uses high jerk for the snappy shake feel.
+
+        Raises:
+            RecipeError: If IK fails for any waypoint in the pattern.
         """
         rt = self.rt
 
@@ -1334,29 +1419,51 @@ class Recipe:
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
         """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
 
+        Depth-aware ``pick``-style motion for liquid interaction
+        (aspirating, dipping a probe, dispensing into a tube). The
+        held item's **tip** is what reaches ``-dist`` — the math
+        accounts for the load's height so a 30 mm tip and a 100 mm
+        needle both end up the same ``dist`` below the surface.
+
         Two patterns selectable via ``approach``:
 
-        - ``approach=False`` (default): two-phase motion. First hovers at the
-          container top via ``above`` (depth-independent), then dives straight
-          down with ``pick(approach=False)``. Safer when ``dist`` is large
-          because the hover pose ignores depth.
-        - ``approach=True``: single-phase motion via ``pick(approach=True)``,
-          so the full approach corridor (padding/gap waypoints) is used and
-          the depth offset is applied throughout. More efficient when ``dist``
-          is small; requires that ``padding`` comfortably exceeds the load height.
+        - ``approach=False`` (default): **two-phase** motion. First
+          hovers at the container top via ``above`` (depth-independent
+          — safe), then dives straight down with
+          ``pick(approach=False)``. Use for deep dips and fragile
+          containers — reduces sideways approach risk.
+        - ``approach=True``: **single-phase** motion via
+          ``pick(approach=True)``, so the full approach corridor
+          (padding / gap waypoints) is used with the depth offset
+          applied throughout. More efficient when ``dist`` is shallow,
+          but requires ``padding`` to comfortably exceed the load
+          height — otherwise the corridor descent fails IK.
 
-        No attach / IO — used for aspirating, dipping, etc.
+        No attach / no IO — the held item stays attached, the
+        component's IO is not triggered.
+
+        Required state:
+            The robot must be holding a load (otherwise the
+            tip-height math doesn't apply). Inherited from
+            ``_get_tool_and_load_height``.
 
         Args:
-            dist: Depth below the anchor surface (mm). 0 = tip touches surface.
-            anchor: Target anchor (default "place").
-            approach: Pattern selector (see above).
+            dist: Depth below the anchor surface (mm). ``0`` = tip
+                touches surface; positive goes deeper.
+            anchor: Target anchor (default ``"place"``).
+            approach: Pattern selector (see above). Default ``False``.
             padding: Safe height above the target (mm).
-            exit/attachment/trigger_io: All False by default.
+            exit, attachment, trigger_io: All ``False`` by default —
+                ``immerse`` is "deposit but don't release."
+
+        Raises:
+            RecipeError: If no tool is attached, or if the "above"
+                phase fails (two-phase pattern only).
 
         Example:
-            >>> rcp["doser"].immerse(dist=10)                  # hover+dive
-            >>> rcp["pipetting_site"].immerse(dist=5, approach=True)  # single motion
+            >>> rcp["doser"].immerse(dist=10)                          # hover+dive (deep)
+            >>> rcp["pipetting_site"].immerse(dist=5, approach=True)   # single motion (shallow)
+            >>> rcp["doser"].immerse(dist=20, padding=30)              # deeper dip + extra clearance
         """
         _, _, height_load = self._get_tool_and_load_height()
 
@@ -1380,17 +1487,30 @@ class Recipe:
     def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=False, **kwargs):
         """Inverse of ``immerse`` — lift the held load ``dist`` mm above ``anchor``.
 
-        Under the hood, calls ``above`` with tool Z offsets shifted so the tip
-        ends up (anchor + load-height + dist) above the surface. No planning
-        by default (has_motion_plan=False).
+        Under the hood, calls ``above`` with tool Z offsets shifted so
+        the tip ends up ``dist`` mm above the surface (not the load's
+        center — the math accounts for load height).
+
+        **Planning is OFF by default** (``has_motion_plan=False``) —
+        the lift is straight up and rarely needs planning. If you
+        have obstacles above the workspace, pass
+        ``has_motion_plan=True`` explicitly.
+
+        Required state:
+            The robot must be holding a load (same as ``immerse``).
 
         Args:
-            dist: Extra lift above the natural load-height clearance (mm).
-            anchor: Reference anchor (default "place").
-            padding: Extra padding applied by ``above`` (mm, default 0).
+            dist: Extra lift above the natural load-height clearance
+                (mm).
+            anchor: Reference anchor (default ``"place"``).
+            padding: Extra padding applied by ``above`` (mm,
+                default ``0``).
+            has_motion_plan: Default ``False``. Set ``True`` if
+                obstacles are present above.
 
         Example:
-            >>> rcp["doser"].retract(dist=20)   # lift tip 20mm above surface
+            >>> rcp["doser"].retract(dist=20)                 # lift 20mm above
+            >>> rcp["pipetting_site"].retract(dist=10, padding=20)  # + extra clearance
         """
         _, _, height_load = self._get_tool_and_load_height()
 
