@@ -23,17 +23,22 @@ fire the right IO at the right moment, and stay sim-agnostic.
    - [How `__init__` works](#how-__init__-works)
    - [Attributes set on `self`](#attributes-set-on-self)
    - [What the base class promises](#what-the-base-class-promises)
-3. [The motion pipeline — `pick_setting` → `touch`](#3-the-motion-pipeline--pick_setting--touch)
+3. [The `touch` primitive — how every motion is built](#3-the-touch-primitive--how-every-motion-is-built)
    - [`pose_offset` — the anchor-local frame](#pose_offset--the-anchor-local-frame)
    - [Approach path vs target offset](#approach-path-vs-target-offset)
    - [Path planning — `has_motion_plan` and `first_approach`](#path-planning--has_motion_plan-and-first_approach)
    - [Parameter tuning](#parameter-tuning)
 4. [Calling the methods (the API)](#4-calling-the-methods-the-api)
    - [Method comparison](#method-comparison)
-   - [`pick` / `place`](#pick--place)
-   - [`above` / `stand`](#above--stand)
-   - [`immerse` / `retract`](#immerse--retract)
-   - [`rotate` / `vibrate` / `park`](#rotate--vibrate--park)
+   - [`pick`](#pick)
+   - [`place`](#place)
+   - [`above`](#above)
+   - [`stand`](#stand)
+   - [`immerse`](#immerse)
+   - [`retract`](#retract)
+   - [`rotate`](#rotate)
+   - [`vibrate`](#vibrate)
+   - [`park`](#park)
    - [`touch` (direct use)](#touch-direct-use)
 5. [Calibration flow](#5-calibration-flow)
 6. [`recipes.yaml` — configuration format](#6-recipesyaml--configuration-format)
@@ -243,14 +248,28 @@ behaviour summary is in §4.
 
 ---
 
-## 3. The motion pipeline — `pick_setting` → `touch`
+## 3. The `touch` primitive — how every motion is built
 
-Every `pick` / `place` / `above` / `stand` / `immerse` / `retract`
-call goes through the same pipeline:
+**`touch`** is the universal motion primitive. Every high-level
+method in §4 (`pick`, `place`, `above`, `stand`, `immerse`,
+`retract`) ultimately calls it. The helpers `pick_setting` and
+`place_setting` exist solely to compute the param dict that `touch`
+consumes — they don't move the robot themselves.
 
 ```
-pick / place  →  pick_setting / place_setting  →  touch  →  _move_along_path  →  rt.smove | jmove | lmove
-   ↑ public        ↑ compute waypoints           ↑ execute    ↑ step by step      ↑ pause-aware
+pick / place / above / stand / immerse / retract        ← public method
+                       │
+                       ▼
+        pick_setting / place_setting                    ← compute the param dict
+                       │
+                       ▼
+                   touch(**prm)                         ← universal motion primitive
+                       │
+                       ▼
+               _move_along_path                         ← step through waypoints
+                       │
+                       ▼
+        rt.smove | rt.jmove | rt.lmove                  ← pause-aware execution
 ```
 
 Three concepts unlock most customization.
@@ -362,124 +381,456 @@ If none fit, write a subclass that overrides `pick`/`place` with a
 custom `approach_path` or `exit_path` — see Adapter, Hotel, Decapper
 for canonical patterns (§8).
 
-### `pick` / `place`
+### `pick`
 
-Most common call site. Both build the full motion pipeline from
-`pick_setting` / `place_setting` and execute via `touch`.
+**What it does**: drives the robot to an anchor, closes the gripper
+on whatever's there, attaches the picked item to the tool in the
+kinematic tree, and exits straight up. One method, complete
+pick cycle.
 
-```python
-rcp["tube_rack"].pick(anchor="A1")              # grip the tube at A1
-rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)   # drive 5mm deeper (suction cup)
-rcp["tube_rack"].pick(anchor="A1", soft_approach=True)     # extra waypoint just above
+**Use when**: any time you need the robot to carry a physical item
+from a station to anywhere else. Pick is the FROM end of every
+transport.
 
-rcp["tube_rack"].place(anchor="B2")             # release at B2
-rcp["tube_rack"].place(anchor="B2", gravity_offset=-10)    # suction with elbow
-rcp["tube_rack"].place(anchor="B2", soft_approach=True)    # rack — recommended
-```
+**Required**: a tool must be attached to the robot (raises
+`RecipeError` otherwise). The item to pick is found automatically —
+the recipe walks the kinematic tree from `component.assembly[solid_name]`
+at the named anchor and picks up whatever stack is there.
 
-Common params (also accepted by `above` / `stand` via forwarding):
+**Flow (8 steps inside `touch`)**:
+1. Apply `output_approach` IO (gripper open + component preparing to release).
+2. Move through `approach_path` waypoints — the first hop is path-planned if `has_motion_plan` is on.
+3. Touch down at `target_offset` (the anchor pose, adjusted for the load height).
+4. Apply `output_touch` IO (gripper closes, component releases).
+5. Sleep (default `0`) + run any custom `actions`.
+6. Attach the picked solid to the tool in the kinematic tree.
+7. Retract along `exit_path` (back to padding height, exit IO not used for pick).
+8. Apply `output_exit` IO.
+
+**Key parameters**:
 
 | Param | What |
 |---|---|
-| `anchor` | Target anchor name on the component |
+| `anchor` (required) | Target anchor name on the component (`"A1"`, `"place"`, `"slot_3"`, etc.) |
 | `solid_name` | Which sub-solid owns the anchor (default `"body"`) |
-| `component` | Override the recipe's default component |
-| `padding` | Safe-height above target (mm) |
-| `gap` | Soft-approach waypoint clearance (mm) |
-| `tool_tcp_z_offset` | Shift TCP by Z (negative = deeper) |
-| `soft_approach` | Insert extra near-target waypoint (recommended for racks) |
-| `trigger_io` | Build tool/component enable/disable IO (default `True`) |
-| `attachment` | Attach picked solid to tool on touch-down (default `True`) |
-| `gravity_offset` | (place only) Z-offset at touch-down — positive = release just above |
+| `component` | Override the recipe's default component — for racks-on-adapters and similar indirection |
+| `padding` | Safe-height above the target stack (mm) for both the approach hop and the exit |
+| `gap` | Clearance above the load used as the soft-approach waypoint (mm) |
+| `soft_approach` | If `True`, insert a second approach waypoint just above the load for a vertical final descent. **Recommended for racks** — the straight-down move avoids hitting neighbouring slots |
+| `tool_tcp_z_offset` | Shift the TCP by Z (mm). **Negative = drive deeper** — `-5` for suction cups that need to seat, `-2` for decappers that engage cap threads |
+| `tool_tip_z_offset` | Shift the tool tip Z (mm) — affects load-height math without changing TCP |
+| `trigger_io` | If `True`, build the gripper enable / component disable IO sequences automatically (default `True`). Set `False` when the recipe handles IO itself |
+| `attachment` | If `True`, attach the picked solid to the tool on touch-down (default `True`). Set `False` for "pretend pick" workflows like inspection |
+| `actions` | List of `(callable, args, kwargs)` to run during the touch phase — used for sensor reads, custom IO, etc. |
 
-### `above` / `stand`
+**Examples**:
 
-Positioning primitives — no touch, no attach, no IO.
+```python
+rcp["tube_rack"].pick(anchor="A1")
+# Simplest case: 50mm padding, no soft approach, tool's natural TCP
 
-- **`above(anchor, padding=N)`** — hover N mm above the anchor /
-  stack. Uses the same height math as `pick_setting`, so it ignores
-  load-depth correctly.
-- **`stand(anchor, offset=[x, y, z, a, b, c])`** — move to an
-  arbitrary offset in the anchor's local frame. XYZ in mm, ABC is a
-  rotation vector in **degrees**.
+rcp["tube_rack"].pick(anchor="A1", soft_approach=True)
+# Recommended for any dense rack — vertical final descent
+
+rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)
+# Suction cup that needs 5mm extra depth to seat
+
+rcp["tube_rack"].pick(anchor="A1", speed_factor=0.2)
+# Slow this pick (but see §7.5 — speed_factor sticks for next calls too)
+
+rcp["adapter_plate"].pick(anchor="A3", component=workspace.components["rack_falcon_15ml_1"])
+# Adapter holding a rack — target the rack's A3, not the adapter's
+```
+
+**Gotchas**:
+- No tool attached → `RecipeError("no tool attached to the robot")`.
+- Anchor doesn't exist on the named solid → `RecipeError("could not find a valid pose")` from the IK solver.
+- The picked item is whatever's at the anchor's stack — if the operator forgot to load it, you'll grip empty air silently. Defend with a `pre_check` in your BT action.
+
+---
+
+### `place`
+
+**What it does**: mirror of `pick`. Drives the robot to a destination
+anchor with the held item, releases the gripper, detaches the item
+to the destination in the kinematic tree, and exits straight up.
+
+**Use when**: any time the robot needs to deposit a held item at a
+new location. Place is the TO end of every transport.
+
+**Required**: the robot must already be holding an item (raises
+`RecipeError("no item in the gripper")` otherwise). The held item is
+found via `solid_attached_to_tool` — wherever the kinematic tree
+says the load is.
+
+**Flow (mirror of pick)**:
+1. Apply `output_approach` IO (component preparing, gripper still holding).
+2. Approach waypoints.
+3. Touch down at the destination anchor (adjusted by `gravity_offset` — see below).
+4. Apply `output_touch` IO (gripper opens, component grips).
+5. Sleep + custom `actions`.
+6. Detach the held solid from the tool, attach it to the destination.
+7. Retract.
+8. Apply `output_exit` IO.
+
+**Key parameters** (in addition to pick's common ones):
+
+| Param | What |
+|---|---|
+| `offset` | XYZ-ABC offset applied to the target pose (frame transformation) — useful for placing slightly off-anchor without redefining the anchor |
+| `gravity_offset` | Z-offset at touch-down (mm). **Positive = release slightly above the target** (typical for 2/4-finger grippers — let gravity finish the placement). **Negative = drive deeper** (suction cups with mechanical leveler). Default `1` mm |
+| `load_anchor` | Which anchor on the held item is used as its reference point (default `"center"`) |
+
+**Examples**:
+
+```python
+rcp["tube_rack"].place(anchor="B2")
+# Simplest case: release 1mm above target, no soft approach
+
+rcp["tube_rack"].place(anchor="B2", soft_approach=True)
+# Rack placement — vertical final descent
+
+rcp["tube_rack"].place(anchor="B2", gravity_offset=-10)
+# Suction with elbow — needs to push 10mm down to release cleanly
+
+rcp["holder"].place(anchor="slot", offset=[0, 0, 5, 0, 0, 0])
+# Place 5mm above the slot center (the slot's natural target)
+```
+
+**Gotchas**:
+- Robot not holding anything → `RecipeError("no item in the gripper")`.
+- Destination anchor already occupied → no automatic check; the new item gets attached on top of the existing stack. If you need exclusivity, check via `solid_attached_to_anchor` first.
+- `gravity_offset` is in the **target frame** (after rotation). A 180° rotation flips Z, so positive `gravity_offset` may drive deeper in the world frame. Validate on a real bench.
+
+---
+
+### `above`
+
+**What it does**: hover `padding` mm above the anchor (or above the
+stack at the anchor, if something's already there). No touch-down,
+no IO, no attach. Pure positioning.
+
+**Use when**: a pre-positioning step before manual operator work,
+camera inspection, or before a `pick`/`place` that needs the
+operator to confirm visually first.
+
+**How it differs from `stand`**: `above` uses the same height math
+as `pick_setting` (the `pose_offset` accounts for what's stacked at
+the anchor). It correctly hovers above the actual top of the stack,
+not the bare anchor.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `anchor` (required) | Anchor on the component |
+| `padding` | Height above the stack-top (mm). Default `50` |
+| `solid_name`, `component` | Same as `pick` |
+| `tool_tcp_z_offset`, `tool_tip_z_offset` | Tool Z shifts — propagated through |
+
+**Examples**:
 
 ```python
 rcp["inspector_1"].above("place", padding=80)
-rcp["inspector_1"].stand("place", offset=[10, 0, 50, 0, 0, 45])   # +10mm X, +50mm Z, 45° about C-axis
+# 80mm above whatever's sitting at the inspector — useful for camera
+# capture with adjustable working distance.
+
+rcp["tube_rack"].above("A1")
+# Standard 50mm above the tube at A1 — pre-positioning for a
+# subsequent operator manual check.
 ```
 
-### `immerse` / `retract`
+**Gotcha**: planning DOES run (single hop, planned). If you want a
+direct jmove without planning, pass `has_motion_plan=False`.
 
-Depth-aware pick/place variants for liquid interaction. `immerse`
-drives the held load (pipette tip, needle) `dist` mm below the
-anchor's surface; `retract` lifts it out.
+---
+
+### `stand`
+
+**What it does**: move to an arbitrary offset in the anchor's local
+frame. Pure positioning — no touch, no IO, no attach.
+
+**Use when**: you need a specific pose that's NOT "above the stack"
+— e.g. 10 mm to the right of an anchor, or rotated 45° about C, or
+at the anchor itself with a custom angle. `above` covers the
+"hover" case; `stand` covers everything else.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `anchor` (required) | Anchor on the component |
+| `offset` | `[x, y, z, a, b, c]` in the anchor's local frame. XYZ in mm; ABC is a rotation vector in **degrees**. Default `[0,0,0,0,0,0]` (stand exactly at the anchor) |
+| `solid_name`, `component` | Same as `pick` |
+
+**Examples**:
 
 ```python
-rcp["doser"].immerse(dist=10)                    # hover then dive
-rcp["pipetting_site"].immerse(dist=5, approach=True)   # single-phase motion
-rcp["doser"].retract(dist=20)                    # lift 20mm above surface
+rcp["inspector_1"].stand("place", offset=[0, 0, 30, 0, 0, 0])
+# 30mm directly above the anchor, same orientation
+
+rcp["inspector_1"].stand("place", offset=[10, 0, 50, 0, 0, 45])
+# +10mm X, +50mm Z, rotated 45° about C-axis
+
+rcp["robot"].stand("home", offset=[0, 0, 0, 0, 0, 0])
+# Sit exactly at the home anchor
 ```
 
-`immerse` has two patterns:
+**Gotcha**: the `offset` is in the **anchor's frame**, not world. If
+the anchor is rotated (e.g. a tilted tube holder), your `+Z` axis
+follows the anchor's orientation.
 
-- **`approach=False` (default)** — two-phase: hover at container top,
-  then dive straight down. Safer for deep `dist`.
-- **`approach=True`** — single-phase with full corridor (padding/gap)
-  applied with depth offset throughout. More efficient when shallow.
+---
 
-### `rotate` / `vibrate` / `park`
+### `immerse`
 
-Specialized single-purpose motions.
+**What it does**: lower the held load (pipette tip, needle, dispense
+nozzle) `dist` mm below the surface at the anchor. The held item's
+**tip** is what reaches `-dist` — the math accounts for the load's
+height so a 30 mm long tip and a 100 mm long needle both dip the
+same `dist` mm beneath the surface.
 
-- **`rotate(rotation=90, joint="j5")`** — spin one joint. `joint`
-  accepts `"j5"` / `"J5"` / `5` (string or int — all resolve to the
-  same index). Wraps around `limit` so the result stays in range.
-- **`vibrate(pattern=[[2.5,0,0],[-2.5,0,0]], cnt=5)`** — small
-  Cartesian oscillation. Use to shake a tip free, loosen a seal, mix
-  a tube.
-- **`park(joint)`** — move to a known joint configuration. Caller
-  can pass a partial joint vector — missing trailing entries are
-  filled from `rt.joint()` so auxiliary axes (rails, etc.) stay put.
-  Use from a `trigger="park"` action for graceful shutdown.
+**Use when**: aspirating liquid, dispensing into a tube, dipping a
+probe for measurement, anything that ends with the tool's tip below
+the anchor's surface.
+
+**Required**: the robot must be holding a load (raises
+`RecipeError("no tool attached")` if no tool, OR auto-discovers no
+load and uses tool-only depths).
+
+**Two patterns** (selected via `approach=` parameter):
+
+| Pattern | Use when | How it moves |
+|---|---|---|
+| `approach=False` (default) | Deep dips, fragile containers | **Two-phase**: first `above()` at container top (depth-independent — safe), then `pick(approach=False)` straight down at the target depth. Reduces sideways approach risk. |
+| `approach=True` | Shallow dips, fast workflows | **Single-phase**: `pick(approach=True)` with the depth offset baked into the corridor. Faster — one continuous motion. |
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `dist` | Depth below the anchor surface (mm). `0` = tip touches surface. Positive values go deeper |
+| `anchor` | Target anchor (default `"place"`) |
+| `approach` | Pattern selector (see above). Default `False` |
+| `padding` | Safe height above target (mm). Default `10` |
+| `exit`, `attachment`, `trigger_io` | All default `False` — `immerse` is a "deposit but don't release" operation |
+
+**Examples**:
 
 ```python
-rcp["robot"].rotate(rotation=180, joint="j5")   # flip the wrist
-rcp["robot"].rotate(rotation=45, joint=5)        # same, integer index
+rcp["doser"].immerse(dist=10)
+# Two-phase: hover at top, then dive 10mm below surface
 
+rcp["pipetting_site"].immerse(dist=5, approach=True)
+# Single-phase: more efficient for shallow
+
+rcp["doser"].immerse(dist=20, padding=30)
+# Deeper dip with extra hover clearance
+```
+
+**Gotcha**: `approach=True` requires `padding` to comfortably exceed
+the load height; otherwise the corridor descent fails IK. Two-phase
+is safer when you're unsure.
+
+---
+
+### `retract`
+
+**What it does**: inverse of `immerse`. Lifts the held load `dist`
+mm above the anchor's surface (load's tip ends up `dist` mm above
+the surface, not the load's center).
+
+**Use when**: pull out after aspirating, clear out before moving to
+the next station.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `dist` | Extra lift above the natural load-height clearance (mm) |
+| `anchor` | Reference anchor (default `"place"`) |
+| `padding` | Extra padding applied by `above` (mm). Default `0` |
+| `has_motion_plan` | Default `False` — direct jmove, no planning |
+
+**Examples**:
+
+```python
+rcp["doser"].retract(dist=20)
+# Lift tip to 20mm above the surface
+
+rcp["pipetting_site"].retract(dist=10, padding=20)
+# Lift 10mm + extra 20mm padding — useful when next motion needs clearance
+```
+
+**Gotcha**: planning is **off by default** (the lift is straight up
+and rarely needs planning). If you have obstacles above, pass
+`has_motion_plan=True` explicitly.
+
+---
+
+### `rotate`
+
+**What it does**: spin one joint by a relative number of degrees.
+Other joints stay where they are. No Cartesian motion planning —
+direct joint-space jmove.
+
+**Use when**: flipping the wrist (`j5`) to reorient a camera, mild
+re-orientation between operations, joint-level shake.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `rotation` | Degrees to add to the current joint value (can be negative). Default `90` |
+| `joint` | Identifier: `"j5"` / `"J5"` / `5` (string or int). Default `"j5"` |
+| `limit` | `[min, max]` joint range used for wrap-around. Default `[-175, 175]` |
+| `vaj` | `[velocity, accel, jerk]` for the jmove. Default `[500, 3000, 15000]` |
+
+The result wraps within `limit` — if `current + rotation` would
+exceed the range, it wraps to the other side of the limit window
+rather than refusing.
+
+**Examples**:
+
+```python
+rcp["robot"].rotate(rotation=180, joint="j5")
+# Flip the wrist 180°
+
+rcp["robot"].rotate(rotation=45, joint=5)
+# Same joint, integer form
+
+rcp["robot"].rotate(rotation=-30, joint="j4", limit=[-90, 90])
+# Joint 4 by -30°, with a tighter wrap range
+```
+
+**Gotchas**:
+- Invalid joint string (`"jx"`, `"5"`, etc.) → `RecipeError` with a
+  clear "invalid joint" message.
+- Joint index beyond the robot's joint count → `RecipeError`.
+- `rotate` does NOT plan — collisions are caller's responsibility.
+
+---
+
+### `vibrate`
+
+**What it does**: oscillate the robot flange through a small list of
+Cartesian offsets, repeated `cnt` times, then return to the starting
+joint configuration.
+
+**Use when**: shake a stuck tip free, loosen a friction seal, mix
+liquid in a tube, settle a powder.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `pattern` | List of `[x, y, z]` offsets in the flange's output frame (mm). The robot sweeps through them in order. Default `[[2.5,0,0], [-2.5,0,0]]` (5 mm peak-to-peak shake along X) |
+| `cnt` | Repeat count. Default `5` |
+| `vaj` | `[velocity, accel, jerk]` for each step. Default `[300, 10000, 20000]` (high jerk for the snappy feel) |
+
+**Examples**:
+
+```python
 rcp["robot"].vibrate(pattern=[[3,0,0],[-3,0,0]], cnt=10)
+# 6mm peak-to-peak shake along X, 10 times
 
-rcp["robot"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+rcp["pipetting_site"].vibrate(pattern=[[0,0,1],[0,0,-1]], cnt=20)
+# Vertical micro-shake — useful for tip release
 ```
+
+**Gotchas**:
+- `pattern` is in the **flange output frame** — not the world frame
+  or the tool frame. If the wrist is at 90° to vertical, an `[x, 0, 0]`
+  pattern shakes the tool sideways, not forward.
+- IK failure on any waypoint → `RecipeError`.
+
+---
+
+### `park`
+
+**What it does**: move the robot to a known joint configuration —
+typically a safe parking pose at end of run. Goes through pause
+checkpoint + supports motion planning for collision avoidance on the
+way home.
+
+**Use when**: `trigger="park"` action / end-of-workflow cleanup.
+
+**Key parameters**:
+
+| Param | What |
+|---|---|
+| `joint` (required) | Target joint vector (degrees). **May be shorter than the robot's full joint vector** — the missing trailing entries get filled from `rt.joint()` so auxiliary axes (rail, second rail) stay put |
+| `has_motion_plan` | `True` plans a collision-free path; `False` is a single jmove. Default = `core.has_motion_plan` |
+| `motion_plan_kwargs` | Forwarded to `core.motion_plan` (padding, gravity_vec, etc.) when planning is on |
+
+The partial-vector behaviour is important: if your robot has 6 joints
++ a rail (axis 6) + a second rail (axis 7), and you pass
+`park(joint=[0, 0, 90, 0, 90, 0])` (6 entries), the rails are not
+touched — they stay where the workflow left them.
+
+**Examples**:
+
+```python
+rcp["robot"].park(joint=[0, 0, 90, 0, 90, 0])
+# 6 joints — rail/aux axes unchanged
+
+rcp["robot"].park(joint=PARK_JOINTS, has_motion_plan=True,
+                   motion_plan_kwargs={"padding": 30})
+# Plan around obstacles with 30mm padding
+```
+
+**Gotcha**: pause-aware — operator can Pause mid-park, then Resume
+to continue the trip home. Don't use park during a destructive
+sequence (cap unscrewing mid-motion) — finish first, park after.
+
+---
 
 ### `touch` (direct use)
 
-The universal motion primitive. You almost never call this directly
-— `pick`/`place`/`above`/`stand`/`immerse`/`retract` all build the
-param dict via `pick_setting` / `place_setting` and pass it in.
+**What it does**: the universal motion primitive everything else
+calls. Walks the 8-step flow: approach IO → approach path → touch
+IO → sleep + actions → attach → exit path → exit IO.
 
-When you DO call `touch` directly: when your recipe needs a
-completely custom motion shape that `pick_setting` can't express.
-See `ToolRack.pick` / `ToolRack.place` for the canonical example —
-the tool-changer mounts use hand-built `motion_prm` dicts because
-the swap path is unique to that mechanism.
+**Use when**: almost never directly. Only when your recipe needs a
+motion shape that `pick_setting` / `place_setting` can't express
+— e.g. tool-changer mechanisms with non-standard approach
+corridors.
+
+**The canonical example** is `ToolRack.pick` / `ToolRack.place`:
+the swap path is unique to the pneumatic tool-changer mechanism, so
+both methods hand-build the `motion_prm` dict and call `touch`
+directly rather than going through `pick_setting`.
+
+**Signature** (abbreviated — full doc in `touch`'s docstring):
 
 ```python
 self.touch(
-    target_solid=...,
-    target_anchor=...,
-    target_offset=[...],
-    approach_path=[...],
-    output_approach=[...],
-    output_touch=[...],
-    actions=[(callable, args, kwargs), ...],
-    attach=[...],
-    exit_path=[...],
-    output_exit=[...],
-    has_motion_plan=False,
+    target_solid=...,           # solid that owns the target anchor
+    target_anchor=...,          # anchor name
+    target_offset=[...],        # final touch-down offset (None to skip)
+    output_approach=[...],      # IO list applied before approach
+    approach_tool={...},        # {solid, anchor, offset} for the approach pose
+    approach_path=[...],        # list of waypoints before touch
+    approach_j5=None,           # j5 override for the approach
+    output_touch=[...],         # IO list applied at touch-down
+    actions=[(fn, args, kwargs), ...],  # callable list at touch
+    sleep=0,                    # sleep at touch (pause-aware via rt.delay)
+    attach=[child, {parent, ...}],  # solid attachment spec
+    exit_tool={...},            # {solid, anchor, offset} for the exit pose
+    exit_path=[...],            # list of waypoints after touch
+    exit_j5=None,               # j5 override for the exit
+    output_exit=[...],          # IO list applied after exit
+    has_motion_plan=None,       # default = core.has_motion_plan
+    motion_plan_kwargs={},      # forwarded to core.motion_plan
 )
 ```
 
-Full parameter doc in `touch`'s docstring.
+**Returns** `True` on success.
+
+**When to read `touch`'s source vs use the helpers**: if you find
+yourself building waypoint lists or output configs manually, you're
+either doing something exotic (ToolRack-style) or you've missed a
+parameter on `pick_setting`/`place_setting`. Re-read those first.
 
 ---
 
