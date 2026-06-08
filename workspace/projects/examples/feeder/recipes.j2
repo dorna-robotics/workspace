@@ -1,33 +1,13 @@
-# feeder example — recipe wiring. Three recipes, one per device family.
-#
-# ``sf`` (speed factor) is set at the top so all recipes scale together.
-# Drop it to 5–10 for cautious bench tuning; 20–30 is a normal demo
-# speed; above 50 starts straining the motion planner on complex
-# approaches. Same Jinja-templating pattern as sample_prep/recipes.j2.
-
 {%- set sf = 20 -%}
 
-# ToolRack recipe driving the tool-changer's cap-tool slot. The BT
-# framework auto-swaps tools between actions based on each action's
-# ``tool`` attribute (see actions.py). This recipe owns pick/place on
-# the tool rack itself.
 cap_tool:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# Feeder recipe — rotating-plate cap dispenser. Exposes
-# ``above`` / ``pick`` (overridden with padding=25, smaller than the
-# default 50 — the feeder's load envelope is tight),
-# ``rotate_in_step`` (grid-snap advance), and ``present_cap`` (vision-
-# driven — uses ``inspector`` below).
-#
-# ``index_list`` is the candidate-search pattern present_cap walks
-# through: each entry is ``[step, preset]`` where ``preset`` is a
-# kwargs dict passed to ``inspector.detect``. In simulation, detect
-# returns True for the first entry so the feeder doesn't rotate. In
-# real mode the presets here are placeholders — copy the bench-tuned
-# bounding-box filters from ``projects_old/syringe/util.py`` (or
-# generate fresh ones via the operator pendant's vision tab).
+# ``index_list`` is the candidate-search pattern ``present_cap`` walks.
+# Each entry is ``[step, preset]`` — preset is a kwargs dict for
+# ``inspector.detect``. Placeholders below; copy bench-tuned bounding
+# boxes from ``projects_old/syringe/util.py`` for real-mode runs.
 feeder:
   class: workspace.recipes.feeder.Feeder
   kwargs:
@@ -39,24 +19,11 @@ feeder:
       - [-1, {}]
       - [1, {}]
 
-# Inspector recipe — MobileInspector wraps the robot's mounted
-# camera (via core.detect()), not a separate camera component. Drives
-# ``rcp["feeder"].present_cap(rcp["inspector"])`` in FeedCap. Same
-# choice as projects_old/syringe/util.py.
-#
-# In simulation ``detect`` returns True; in real mode the vision
-# server runs the detection_preset against the live camera frame.
-# Replace ``detection_preset: {}`` with the bench-tuned preset (see
-# syringe's detection_preset["cap"]) when running on hardware.
+# MobileInspector — uses the robot's mounted camera via core.detect().
 inspector:
   class: workspace.recipes.inspector.MobileInspector
   kwargs: {detection_preset: {}}
 
-# Rack recipe (resolver pattern — Rack delegates to the attached
-# capholder via its kinematic-tree child). Targeting the adapter
-# plate lets the recipe resolve down to whatever rack is sitting on
-# it; here that's ``capholder_autosampler_2ml_5x10_1``. Slots are
-# A1..E10 (5 rows × 10 columns).
 cap_holder:
   class: workspace.recipes.rack.Rack
   kwargs: {component: adapter_plate_autosampler_2ml_5x10_1, left_approach: false, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}

@@ -1,17 +1,15 @@
 # feeder example — launch config.
 
-project_name: feeder_example      # appears in logs, tree node names, GUI
-port:         5010                # default operator-UI port (env var PORT overrides)
-scene:        [scene/base.j2, scene/layout.j2]   # base components + caps loaded into feeder
-recipes:      recipes.j2          # cap_tool, feeder, cap_holder, inspector (sf set at top)
-actions:      actions.py          # protocol: Start → FeedCap(c) × count → Park
-checks:       checks.py           # empty — no vision/sensor checks in this minimal example
+project_name: feeder_example
+port:         5010
+scene:        [scene/base.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
 
 plan_window:  4
 scheduler:    cpsat
 
-# Operator GUI form. ``cap_count`` controls how many caps the run
-# transfers from the feeder to the cap holder.
 kwargs:
   cap_count:
     type: int

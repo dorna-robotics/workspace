@@ -1,18 +1,4 @@
 # feeder example — base scene.
-#
-# Minimal viable workspace for the feeder demo:
-#   - Core (robot) with rail + tool-changer, simulation on
-#   - 4 chained fixture plates (rail mount + device mounts)
-#   - One tool rack holding the suction gripper
-#   - Cap feeder (autosampler-style — rotating plate that brings caps
-#     to its ``place`` anchor)
-#   - Cap holder (5×10 grid where caps land)
-#
-# Geometry copied from ``sample_prep/scene/base.j2`` so the kinematics
-# are known-good. If you're adapting this example to a different
-# bench, the components stay the same — you only tune the
-# ``attach.parent_anchor`` values to match where things sit on your
-# fixture plate.
 
 core:
   type: "core"
@@ -51,10 +37,6 @@ core:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Fixture-plate chain. Mirrors sample_prep's layout truncated to
-# plates 1–6: plates 1/2/3 form one wing (corner_0 → corner_3),
-# plates 1/4/5/6 form the other (corner_2 + corner_0). Geometry
-# matches sample_prep so anchors line up the same way.
 fixture_plate_1:
   type: "fixture_plate"
   offset: [0, 0, 0, 0, 0, 0]
@@ -109,9 +91,6 @@ fixture_plate_6:
     child_anchor: "corner_3"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Cap feeder — rotating plate that brings one cap at a time to its
-# ``place`` anchor. Caps are loaded in ``layout.j2`` (stacked at
-# ``place``).
 capfeeder_autosampler_2ml_1:
   type: "capfeeder_autosampler_2ml"
   attach:
@@ -122,8 +101,6 @@ capfeeder_autosampler_2ml_1:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0.0002, 0, -90]
 
-# Cap holder — 5×10 grid where caps land. Uses an adapter plate as the
-# rack-mounting base.
 adapter_plate_autosampler_2ml_5x10_1:
   type: "adapter_plate_autosampler_2ml_5x10"
   attach:
@@ -144,17 +121,6 @@ capholder_autosampler_2ml_5x10_1:
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 
-# NOTE on the camera: this example uses a **MobileInspector** — the
-# robot's mounted camera (driven by core.detect()), not a fixed
-# camera component in the scene. ``has_camera: true`` on the core
-# above is enough; no separate inspector hardware is declared here.
-# Matches the syringe project's util.py pattern (the wrapper that
-# inspired this example).
-
-# Tool rack — holds the suction gripper when it's not on the robot.
-# Positioned at fixture_plate_5 / B18, matching the slot
-# sample_prep uses for its ``tool_rack_144mm_3`` (the suction-tool
-# slot). Only one rack is needed here; sample_prep has four.
 tool_rack_144mm_1:
   type: "tool_rack_144mm"
   attach:
