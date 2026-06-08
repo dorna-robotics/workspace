@@ -43,7 +43,7 @@ class PipettingSite(Recipe):
             raise RecipeError("pick_tip failed — could not pick from anchor")
         
         # check if tip is there
-        pipette = self.tool_attached_to_the_robot()
+        pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
         
@@ -66,7 +66,7 @@ class PipettingSite(Recipe):
         component, solid_name = self._resolve_attached_component()
 
         # find the pipette
-        pipette = self.tool_attached_to_the_robot()
+        pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
         
@@ -125,7 +125,7 @@ class PipettingSite(Recipe):
     def aspirate(self, vol, speed=200):
         """Aspirate ``vol`` µL at ``speed`` µL/s. Returns True in simulation."""
         # find the pipette
-        pipette = self.tool_attached_to_the_robot()
+        pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
 
@@ -139,7 +139,7 @@ class PipettingSite(Recipe):
     def dispense(self, vol, speed=500, blowout=False):
         """Dispense ``vol`` µL at ``speed`` µL/s; ``blowout=True`` expels residual volume."""
         # find the pipette
-        pipette = self.tool_attached_to_the_robot()
+        pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
 

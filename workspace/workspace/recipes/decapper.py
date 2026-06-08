@@ -191,7 +191,7 @@ class Decapper(Recipe):
             raise RecipeError("no reference joints defined")
 
         # tool
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
         if tool is None:
             raise RecipeError("no tool attached to the robot")
 

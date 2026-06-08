@@ -41,7 +41,7 @@ class Printer(Recipe):
         the print head. Uses ``gravity_offset=2`` for release clearance.
         """
         # tool
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
 
         # item in tool
         solid_in_tool = self.solid_attached_to_tool(tool)

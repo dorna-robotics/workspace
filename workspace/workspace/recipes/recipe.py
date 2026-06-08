@@ -1,6 +1,5 @@
 # workspace/recipes/recipe.py
 
-import time
 from copy import deepcopy
 from mergedeep import merge
 from collections import deque
@@ -42,6 +41,33 @@ class Recipe:
     )
 
     def __init__(self, workspace, core, component, **kwargs):
+        """Construct the recipe + IK-validate the scene at boot.
+
+        Merges ``self.DEFAULTS`` with ``kwargs`` (caller wins), wires
+        the workspace / core / component references, and **runs IK
+        against the component's reference anchor immediately** so a
+        misconfigured scene (bad anchors, unreachable poses, missing
+        ``clb_*`` calibration targets) raises ``RecipeError`` at
+        workspace boot — never silently during a workflow.
+
+        Args:
+            workspace: The :class:`Workspace` this recipe lives in.
+            core: The :class:`Core` component (robot + kinematics).
+            component: The component this recipe drives.
+            **kwargs: Any ``DEFAULTS`` key — overrides for IK params
+                (``left_approach``, ``base_distance``, …), motion
+                (``speed_factor``, ``motion_type``, ``*_vaj``), or
+                calibration (``calibration_name``, ``calibrate_abc``,
+                …). Unknown keys are merged into the DEFAULTS dict
+                but only used if ``DEFAULTS`` declares them.
+
+        Raises:
+            RecipeError: If no valid reference joints could be found
+                for the component's ``target_solid_name`` /
+                ``target_anchor`` / ``target_offset`` at the given
+                ``base_distance`` / rail range. Fix the scene yaml or
+                widen ``base_distance`` / ``rail_span`` and relaunch.
+        """
         # prm
         prm = deepcopy(self.DEFAULTS)  # default
         merge(prm, kwargs)  # self
@@ -107,26 +133,28 @@ class Recipe:
     # call) into a single recipe method. ``axis_cfg`` is the same dict
     # held in ``core.rail_cfg`` / ``feeder.axis_cfg`` and must contain:
     # axis, offset, usem, usee, pprm, tprm, ppre, tpre, p, i, d,
-    # duration, threshold. The 1 s sleeps mirror the project startup
-    # notebooks. SimulationAPI stubs each underlying SDK call to return
-    # 2 immediately, so these helpers work transparently in sim mode
+    # duration, threshold. The 1 s settle between SDK calls is via
+    # ``rt.delay`` so an operator pause mid-startup is honoured.
+    # SimulationAPI stubs each underlying SDK call to return 2
+    # immediately, so these helpers work transparently in sim mode
     # too — no special-casing needed here.
     def set_axis_with_stop(self, axis_cfg, dir=-1):
         """Init an axis and home it against a hard stop (rail-style)."""
         api = self.core.robot_api
+        rt = self.rt
         api.set_axis(
             index=axis_cfg["axis"],
             usem=axis_cfg["usem"], usee=axis_cfg["usee"],
             pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
             ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
         )
-        time.sleep(1)
+        rt.delay(1)
         api.set_pid(
             index=axis_cfg["axis"],
             p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
             duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
         )
-        time.sleep(1)
+        rt.delay(1)
         return api.home_with_stop(
             index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
         )
@@ -134,34 +162,25 @@ class Recipe:
     def set_axis_with_encoder(self, axis_cfg):
         """Init an axis and home it against an encoder index (feeder-style)."""
         api = self.core.robot_api
+        rt = self.rt
         api.set_axis(
             index=axis_cfg["axis"],
             usem=axis_cfg["usem"], usee=axis_cfg["usee"],
             pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
             ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
         )
-        time.sleep(1)
+        rt.delay(1)
         api.set_pid(
             index=axis_cfg["axis"],
             p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
             duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
         )
-        time.sleep(1)
+        rt.delay(1)
         return api.home_with_encoder_index(
             index=axis_cfg["axis"], val=axis_cfg["offset"],
         )
 
     # ── Solid / tool queries ────────────────────────────────────────────────
-
-    def tool_attached_to_the_robot(self):
-        """Return the tool component currently held by the robot, or None.
-
-        Thin delegate to ``self.core.current_tool()`` — the kinematic
-        walk now lives on Core (atomic device-state query belongs on
-        the component, see component-guide §7). Kept here for
-        back-compat with existing recipes.
-        """
-        return self.core.current_tool()
 
     def solid_attached_to_tool(self, tool):
         """Return the solid currently gripped by ``tool`` (at its ``tcp`` anchor), or None."""
@@ -346,10 +365,21 @@ class Recipe:
             )
 
     def _build_io_config(self, tool, component, trigger_io):
-        """Build output_approach, output_touch, output_exit lists for pick or place.
+        """Build the four IO building-block lists for pick / place.
 
-        Returns (output_approach, output_touch, output_exit) for pick semantics.
-        Caller swaps approach/touch order for place semantics.
+        Returns:
+            Tuple ``(tool_enable, tool_disable, component_enable,
+            component_disable)``. Each element is a list of
+            ``[config, get_call, set_call]`` triples ready for
+            ``_apply_output_config``. The caller composes them into
+            ``output_approach`` / ``output_touch`` per the operation:
+
+            - **pick**: approach = ``tool_disable + component_enable``,
+              touch = ``tool_enable + component_disable``.
+            - **place**: approach = ``component_disable + tool_enable``,
+              touch = ``component_enable + tool_disable``.
+
+            If ``trigger_io`` is False, returns four empty lists.
         """
         if not trigger_io:
             return [], [], [], []
@@ -407,7 +437,7 @@ class Recipe:
 
         Returns (tool, load_list, height_load).
         """
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
         if tool is None:
             raise RecipeError("no tool attached to the robot")
         load_list = [self.solid_attached_to_tool(tool)]
@@ -729,7 +759,7 @@ class Recipe:
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")
 
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
         if tool is None:
             raise RecipeError("no tool attached to the robot")
 
@@ -920,7 +950,7 @@ class Recipe:
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")
 
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
         if tool is None:
             raise RecipeError("no tool attached to the robot")
 
@@ -1400,7 +1430,7 @@ class Recipe:
         from ``clb_*`` anchors on the component). Each anchor triggers a
         ``calibrate_anchor`` prompt — interactive.
         """
-        tool = self.tool_attached_to_the_robot()
+        tool = self.core.current_tool()
         tool_solid = tool.assembly[self.calibration_tool_solid_name]
 
         _calibration_targets = calibration_targets or self.calibration_targets
