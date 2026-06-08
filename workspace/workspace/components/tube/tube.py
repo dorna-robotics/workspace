@@ -6,7 +6,7 @@ from dorna2 import Solid
 class Tube:
     DEFAULTS = dict(
         anchors={
-            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "place_cap":[0, 0, 0, 0, 0, 0]},
+            "body": {"center":[0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0], "place":[0, 0, 0, 0, 0, 0], "cap_seat":[0, 0, 0, 0, 0, 0]},
         },
         size = [0, 0, 0] # [dx, dy, dz]
     )
@@ -28,7 +28,7 @@ class Tube:
 
         # slot
         self.slot = {
-            "body": ["place_cap"],
+            "body": ["cap_seat"],
         }
 
         # size

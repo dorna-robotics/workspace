@@ -237,7 +237,7 @@ class Decapper(Recipe):
 
         # place setting
         place_prm = self.place_setting(
-            anchor="place_cap",
+            anchor="cap_seat",
             solid_name="body",
             component=component_tube,
             offset=[0, 0, 0, 0, 0, 0],
