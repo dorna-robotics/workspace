@@ -27,7 +27,7 @@ core:
     robot_A0_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
   rail_cfg:
-    type: "rail_hd_1000mm"
+    type: "rail_hd_500mm"
     axis: 6
     offset: 0
     usem: 1
@@ -49,6 +49,10 @@ core:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
 
+# Fixture-plate chain. Mirrors sample_prep's layout truncated to
+# plates 1–6: plates 1/2/3 form one wing (corner_0 → corner_3),
+# plates 1/4/5/6 form the other (corner_2 + corner_0). Geometry
+# matches sample_prep so anchors line up the same way.
 fixture_plate_1:
   type: "fixture_plate"
   offset: [0, 0, 0, 0, 0, 0]
@@ -57,6 +61,16 @@ fixture_plate_2:
   type: "fixture_plate"
   attach:
     parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_3:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_2"
     parent_solid: "body"
     parent_anchor: "corner_0"
     child_solid: "body"
@@ -73,10 +87,20 @@ fixture_plate_4:
     child_anchor: "corner_3"
     offset: [0, 0, 0, 0, 0, 0]
 
-fixture_plate_8:
+fixture_plate_5:
   type: "fixture_plate"
   attach:
-    parent_name: "fixture_plate_2"
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_6:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_5"
     parent_solid: "body"
     parent_anchor: "corner_0"
     child_solid: "body"
@@ -119,13 +143,15 @@ capholder_autosampler_2ml_5x10_1:
     offset: [0, 0, 0, 0, 0, 0]
 
 # Tool rack — holds the suction gripper when it's not on the robot.
-# Only one slot is used in this example; sample_prep uses 4.
+# Positioned at fixture_plate_5 / B18, matching the slot
+# sample_prep uses for its ``tool_rack_144mm_3`` (the suction-tool
+# slot). Only one rack is needed here; sample_prep has four.
 tool_rack_144mm_1:
   type: "tool_rack_144mm"
   attach:
-    parent_name: "fixture_plate_8"
+    parent_name: "fixture_plate_5"
     parent_solid: "body"
-    parent_anchor: "J18"
+    parent_anchor: "B18"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
