@@ -404,16 +404,6 @@ transport.
 the recipe walks the kinematic tree from `component.assembly[solid_name]`
 at the named anchor and picks up whatever stack is there.
 
-**Flow (8 steps inside `touch`)**:
-1. Apply `output_approach` IO (gripper open + component preparing to release).
-2. Move through `approach_path` waypoints — the first hop is path-planned if `has_motion_plan` is on.
-3. Touch down at `target_offset` (the anchor pose, adjusted for the load height).
-4. Apply `output_touch` IO (gripper closes, component releases).
-5. Sleep (default `0`) + run any custom `actions`.
-6. Attach the picked solid to the tool in the kinematic tree.
-7. Retract along `exit_path` (back to padding height, exit IO not used for pick).
-8. Apply `output_exit` IO.
-
 **Key parameters**:
 
 | Param | What |
@@ -424,8 +414,8 @@ at the named anchor and picks up whatever stack is there.
 | `padding` | Safe-height above the target stack (mm) for both the approach hop and the exit |
 | `gap` | Clearance above the load used as the soft-approach waypoint (mm) |
 | `soft_approach` | If `True`, insert a second approach waypoint just above the load for a vertical final descent. **Recommended for racks** — the straight-down move avoids hitting neighbouring slots |
-| `tool_tcp_z_offset` | Shift the TCP by Z (mm). **Negative = drive deeper** — `-5` for suction cups that need to seat, `-2` for decappers that engage cap threads |
-| `tool_tip_z_offset` | Shift the tool tip Z (mm) — affects load-height math without changing TCP |
+| `tool_tcp_z_offset` | Shift the TCP along the **tool's Z axis** (mm). Tool Z typically points into the workpiece, so **negative = drive deeper** — `-5` for suction cups that need to seat, `-2` for decappers that engage cap threads |
+| `tool_tip_z_offset` | Shift the tool tip along the **tool's Z axis** (mm). Same sign convention — negative = deeper. Affects load-height math without changing TCP |
 | `trigger_io` | If `True`, build the gripper enable / component disable IO sequences automatically (default `True`). Set `False` when the recipe handles IO itself |
 | `attachment` | If `True`, attach the picked solid to the tool on touch-down (default `True`). Set `False` for "pretend pick" workflows like inspection |
 | `actions` | List of `(callable, args, kwargs)` to run during the touch phase — used for sensor reads, custom IO, etc. |
@@ -469,16 +459,6 @@ new location. Place is the TO end of every transport.
 `RecipeError("no item in the gripper")` otherwise). The held item is
 found via `solid_attached_to_tool` — wherever the kinematic tree
 says the load is.
-
-**Flow (mirror of pick)**:
-1. Apply `output_approach` IO (component preparing, gripper still holding).
-2. Approach waypoints.
-3. Touch down at the destination anchor (adjusted by `gravity_offset` — see below).
-4. Apply `output_touch` IO (gripper opens, component grips).
-5. Sleep + custom `actions`.
-6. Detach the held solid from the tool, attach it to the destination.
-7. Retract.
-8. Apply `output_exit` IO.
 
 **Key parameters** (in addition to pick's common ones):
 
