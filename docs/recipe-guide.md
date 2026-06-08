@@ -305,6 +305,13 @@ Full path consumed by `touch` is `approach_path + [target_offset]`
 
 ### Path planning — `has_motion_plan` and `first_approach`
 
+> **Term: "hop".** A hop is a single robot motion from one pose to
+> the next waypoint. The approach path is a list of waypoints; the
+> transition from the current pose to waypoint 1 is the **first
+> hop**, current pose → waypoint 1 → waypoint 2 → target_offset is
+> three hops total. Only hops do work — IO toggles, sleeps, and
+> attach updates happen between hops, not during them.
+
 Planning runs **only on the first hop of an approach path**. The
 gate inside `_move_along_path`:
 
