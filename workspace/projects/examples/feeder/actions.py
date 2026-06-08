@@ -160,20 +160,34 @@ class FeedCap(Action):
 
 
 class Park(Action):
-    """Last action of every run. Motors off, parked flag set.
+    """Final park step — runs after every cap has finished.
+
+    Planned by the PDDL planner like any other action; ``pre``
+    requires that every cap is done so the planner schedules it last.
+    Subclass and set ``trigger = "park"`` to reuse the same motion
+    as an operator-initiated cleanup (see ``OperatorPark``).
 
     The tool is auto-returned to the tool rack by the BT framework's
-    tool-swap machinery when Park (which has no ``tool``) runs after
-    the last FeedCap.
+    tool-swap machinery when Park (which has ``tool = None``) runs
+    after the last FeedCap.
     """
 
-    params   = []
-    duration = 1
-    resource = "robot"
+    params      = []
+    duration    = 5
+    resource    = "robot"
+    tool        = None
+    PARK_JOINTS = [0, 185, -94, 0, 0, 0, 100]  # override in subclasses if needed
 
     def pre(self):
+        # Expr form (not raw bool) so ``build_precedence`` walks the
+        # dependency tree and slots Park after the last per-cap action.
+        # ``_ctx_all_objects`` is the un-sliced object list so the
+        # precondition references every cap in the batch, not just the
+        # current slice.
         caps = self._ctx_all_objects().get("cap", [])
-        expr = ~parked() & started()
+        if not caps:
+            return ~parked()
+        expr = ~parked()
         for c in caps:
             expr = expr & cap_fed(c)
         return expr
@@ -182,7 +196,20 @@ class Park(Action):
         return {"parked": (+parked(),)}
 
     def execute(self):
-        rt = self.ctx.runtime
+        rt  = self.ctx.runtime
+        rcp = self.ctx.recipes
+        rcp["cap_tool"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
-        rt.step("workspace parked", level="success")
         return "parked"
+
+
+class OperatorPark(Park):
+    """Operator-initiated park — runs when the user clicks Park.
+
+    Inherits Park's motion + effects; the only difference is
+    ``trigger = "park"``, which puts this outside the normal plan:
+    the framework runs it as a one-off cleanup subtree when the
+    operator clicks the Park button. It does *not* appear in the
+    schedule and is *not* sequenced by the planner.
+    """
+    trigger = "park"
