@@ -1131,17 +1131,13 @@ class Recipe:
           anchor — XYZ from the anchor itself, ABC rotates relative to
           the anchor. This is the common case.
         - The **load's ``center`` frame** when something IS stacked at
-          the anchor. If the load was placed without rotation (the
-          typical case — tube sits straight up in a slot), the load's
-          frame and the anchor's frame are aligned, so the offset
-          behaves identically. If the load was placed with a rotation
-          (e.g. a tube held at a 30° tilt), the offset rides the load's
-          tilted axes, NOT the bare anchor's. Same call, different
-          world-frame result depending on what's there.
-
-        99% of layouts place loads center-aligned with their anchor, so
-        treating ``offset`` as "the anchor's local frame" is a safe
-        mental model. The 1% case (rotated mount) is worth knowing.
+          the anchor. If the load was placed without rotation (tube
+          sits straight up in a slot), the load's frame and the
+          anchor's frame are aligned, so the offset behaves
+          identically. If the load was placed with a rotation (e.g. a
+          tube held at a 30° tilt), the offset rides the load's tilted
+          axes, NOT the bare anchor's — same call, different world-frame
+          result depending on what's there and how it's mounted.
 
         Args:
             anchor: Target anchor on the component.
