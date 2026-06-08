@@ -1,0 +1,40 @@
+# feeder example — populated items.
+#
+# The base scene has empty fixtures + components; this layout file
+# loads them with the things the run needs:
+#
+#   - 1 suction gripper, parked on the tool rack
+#   - 10 caps, queued at the feeder's ``place`` anchor (the feeder
+#     rotates them into picking position one at a time)
+#
+# Cap-holder slots stay empty at boot — the FeedCap action attaches
+# caps to A1, A2, … in order.
+
+# Suction tool — parked in the tool rack at startup.
+gripper_suction_1:
+  type: "gripper_suction"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Caps loaded into the feeder. All attach at the feeder's ``place``
+# anchor — the feeder's rotation mechanism brings one cap at a time
+# into the picking position kinematically (in the model they sit
+# stacked at the same anchor; the recipe's ``rotate_in_step`` advances
+# which one is "current").
+{% for i in range(1, 10+1) %}
+cap_autosampler_2ml_{{ i }}:
+  type: "cap_autosampler_2ml"
+  attach:
+    parent_name: "capfeeder_autosampler_2ml_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}

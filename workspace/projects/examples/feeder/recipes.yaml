@@ -1,0 +1,40 @@
+# feeder example — recipe wiring. Three recipes, one per device family.
+
+# ToolRack recipe driving the tool-changer's cap-tool slot. The BT
+# framework auto-swaps tools between actions based on each action's
+# ``tool`` attribute (see actions.py). This recipe owns pick/place on
+# the tool rack itself.
+cap_tool:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs:
+    component: tool_rack_144mm_1
+    left_approach: true
+    speed_factor: 20
+
+# Feeder recipe — rotating-plate cap dispenser. Exposes
+# ``above`` / ``pick`` (overridden with padding=25, smaller than the
+# default 50 — the feeder's load envelope is tight),
+# ``rotate_in_step`` (grid-snap advance), and ``present_cap`` (vision-
+# driven — not used in this example since the base scene has no
+# camera).
+feeder:
+  class: workspace.recipes.feeder.Feeder
+  kwargs:
+    component: capfeeder_autosampler_2ml_1
+    left_approach: false
+    speed_factor: 20
+
+# Rack recipe (resolver pattern — Rack delegates to the attached
+# capholder via its kinematic-tree child). Targeting the adapter
+# plate lets the recipe resolve down to whatever rack is sitting on
+# it; here that's ``capholder_autosampler_2ml_5x10_1``. Slots are
+# A1..E10 (5 rows × 10 columns).
+cap_holder:
+  class: workspace.recipes.rack.Rack
+  kwargs:
+    component: adapter_plate_autosampler_2ml_5x10_1
+    left_approach: false
+    base_distance: 150
+    rail_step: 5
+    rail_span: 5
+    speed_factor: 20
