@@ -93,15 +93,12 @@ fixture_plate_6:
     offset: [0, 0, 0, 0, 0, 0]
 
 # Tube rack — SBS-format adapter with a 6×8 autosampler rack on top.
-# Syringe's sbs_adapter_0 lives at fixture_plate_4 / D6, but in our
-# truncated plate chain (corner_3→corner_2 instead of syringe's
-# corner_0→corner_2) the same anchor sits out of the rail's IK
-# range. Moved onto fixture_plate_1 / D6 instead — same anchor
-# label, closer to the rail. Decapper stays where syringe puts it.
+# Position mirrors syringe's ``sbs_adapter_0``
+# (fixture_plate_4 / D6, offset [0,0,0,0,0,90]).
 sbs_adapter_0:
   type: "adapter_plate_sbs"
   attach:
-    parent_name: "fixture_plate_1"
+    parent_name: "fixture_plate_4"
     parent_solid: "body"
     parent_anchor: "D6"
     child_solid: "body"
