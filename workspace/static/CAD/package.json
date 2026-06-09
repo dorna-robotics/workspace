@@ -1,0 +1,12 @@
+{
+  "name": "workspace-cad-compressor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local devDependency for compressing the workspace's CAD GLBs. Run ./compress.sh — it installs the tool on first use, then compresses every .glb in this folder with Draco.",
+  "scripts": {
+    "compress": "./compress.sh"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.0.0"
+  }
+}

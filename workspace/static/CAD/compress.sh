@@ -6,29 +6,33 @@
 # loads both compressed and uncompressed GLBs transparently, so a
 # file that hasn't been through this script still works, just bigger.
 #
-# Compression is fully offline; only the one-time install of
-# gltf-transform needs internet.
+# Only system requirement: nodejs. The gltf-transform tool itself
+# is a local devDependency declared in package.json — the script
+# installs it the first time you run, then runs fully offline
+# thereafter.
 
 set -e
+cd "$(dirname "$0")"
 
-# ── One-time setup ────────────────────────────────────────────────────
-# If gltf-transform isn't installed, do this once:
-#
-#   # Install nodejs (Pi / Debian — picks an LTS version):
-#   curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-#   sudo apt-get install -y nodejs
-#
-#   # Install the compressor globally:
-#   sudo npm install -g @gltf-transform/cli
-
-if ! command -v gltf-transform >/dev/null 2>&1; then
-    echo "error: gltf-transform not installed."
-    echo "       sudo npm install -g @gltf-transform/cli"
+# ── Check for nodejs ──────────────────────────────────────────────────
+if ! command -v node >/dev/null 2>&1; then
+    echo "error: nodejs not installed."
+    echo "  Pi / Debian:"
+    echo "    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -"
+    echo "    sudo apt-get install -y nodejs"
     exit 1
 fi
 
-cd "$(dirname "$0")"
+# ── Install the compressor locally if not already present ─────────────
+LOCAL_BIN="./node_modules/.bin/gltf-transform"
+if [ ! -x "$LOCAL_BIN" ]; then
+    echo "first-time setup: installing gltf-transform (needs internet)…"
+    npm install --silent --no-audit --no-fund
+    echo "done. Future runs will use the local install, no internet needed."
+    echo
+fi
 
+# ── Compress every GLB in this folder ─────────────────────────────────
 total_before=0
 total_after=0
 
@@ -38,8 +42,8 @@ for f in *.glb; do
     total_before=$((total_before + size_before))
 
     # ``optimize`` runs the recommended pipeline: dedup, prune, weld,
-    # Draco compression. ``--simplify`` is omitted — keep full topology.
-    gltf-transform optimize "$f" "$f.tmp" \
+    # Draco compression. Keep full topology (no --simplify).
+    "$LOCAL_BIN" optimize "$f" "$f.tmp" \
         --compress draco \
         2>/dev/null >/dev/null && mv "$f.tmp" "$f"
 
@@ -52,7 +56,9 @@ for f in *.glb; do
 done
 
 echo
-printf "total: %d K → %d K  (-%d%%)\n" \
-    $((total_before / 1024)) \
-    $((total_after / 1024)) \
-    $(( (total_before - total_after) * 100 / total_before ))
+if [ "$total_before" -gt 0 ]; then
+    printf "total: %d K → %d K  (-%d%%)\n" \
+        $((total_before / 1024)) \
+        $((total_after / 1024)) \
+        $(( (total_before - total_after) * 100 / total_before ))
+fi

@@ -62,16 +62,25 @@ full size. The script prints per-file sizes so you'll see the win:
 total: 50116 K → 7234 K  (-85%)
 ```
 
-**One-time setup** (needs internet only for the install):
+**One-time setup**: just install nodejs. The compression tool itself
+is a local devDependency in
+`workspace/static/CAD/package.json` — `compress.sh` runs `npm
+install` for you the first time you invoke it.
 
 ```bash
-# Install nodejs (Pi / Debian — picks an LTS version):
+# Pi / Debian — install nodejs (picks an LTS version):
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Install the compressor globally:
-sudo npm install -g @gltf-transform/cli
+# That's it. Now:
+cd workspace/static/CAD && ./compress.sh
+# First run: ~30 s to npm install gltf-transform locally.
+# Subsequent runs: no network, just the compression.
 ```
+
+No global `npm install -g` needed; the compressor lives in
+`workspace/static/CAD/node_modules/` (gitignored — re-created on
+demand by `compress.sh`).
 
 The **runtime never needs internet** — the Draco decoder is vendored
 locally at `workspace/gui/vendor/three-addons/draco/` (~340 KB of
