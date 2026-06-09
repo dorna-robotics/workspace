@@ -26,7 +26,23 @@ WEB_DIR = os.path.join(BASE_DIR, "gui", "orchestrator", "web")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 VENDOR_DIR = os.path.join(BASE_DIR, "gui", "vendor")
 
-DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
+# Cache control. Default OFF — static assets (GLB models, JS, CSS)
+# get normal browser caching, which makes page reloads ~10× faster
+# on a typical scene because 49 MB of CAD models stop being
+# re-downloaded every time. Combined with the stable
+# ``_CONFIG_VERSION`` below, browsers serve from disk on reload.
+# Set ``DEV_NOCACHE=1`` when actively editing GUI / static files in
+# the running tree and you want every refresh to pull fresh content.
+DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "0") == "1"
+
+# Cache-bust query string appended to every GLB / static URL by the
+# viewer (see web/index.html ``versioned()``). Stable per server
+# process — same value on every request — so the browser sees
+# matching URLs across reloads and serves from its disk cache.
+# Restart the server to invalidate (or override with
+# ``CONFIG_VERSION`` env var, e.g. set to your git SHA in
+# production).
+_CONFIG_VERSION = os.environ.get("CONFIG_VERSION") or str(int(time.time()))
 
 
 # --------------------------------------------------
@@ -133,8 +149,10 @@ class FallbackStaticHandler(NoCacheStaticFileHandler):
 class ConfigVersionHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "application/json")
-        # simple cache-buster; doesn’t need to be fancy
-        self.write(json.dumps({"version": str(int(time.time()))}))
+        # Stable per server process (see ``_CONFIG_VERSION``). Same
+        # value on every request → the viewer's ``versioned()`` builds
+        # identical GLB URLs across reloads → browser cache hits.
+        self.write(json.dumps({"version": _CONFIG_VERSION}))
 
 
 class HealthHandler(tornado.web.RequestHandler):
