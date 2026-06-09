@@ -16,7 +16,6 @@ from workspace.devices import AutoRecover, attach_device
 import time
 
 
-
 class SplinePath:
     """Natural cubic spline through a list of points in joint space."""
     def __init__(self, points):
@@ -191,7 +190,7 @@ class Core:
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
-            self.rail_min = -75.0
+            self.rail_min = -75
             self.rail_max = 400.0
         elif self.rail_cfg["type"] == "rail_hd_1000mm":
             self.rail_min = -80.0

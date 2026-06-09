@@ -35,7 +35,7 @@ class Hotel(Recipe):
         )
         
     
-    def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, **kwargs):
+    def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
         """Pick a plate from the hotel shelf at ``level`` using a lateral slide-in approach.
 
         Hotels have side-loaded shelves, so the approach enters from the
@@ -65,10 +65,10 @@ class Hotel(Recipe):
                     [self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]
 
         # run touch
-        return self.touch(**motion_prm)
+        return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
 
 
-    def place(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", **kwargs):
+    def place(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, load_anchor="center", motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
             """Place a plate into the hotel shelf at ``level`` via a lateral slide-in.
 
             Mirror of ``pick`` — approaches from the side, slides in, lowers,
@@ -92,4 +92,4 @@ class Hotel(Recipe):
                         [self.component.size[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]
 
             # run touch
-            return self.touch(**motion_prm)
+            return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)

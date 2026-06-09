@@ -31,7 +31,7 @@ class Adapter(Recipe):
         )
         
 
-    def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, **kwargs):
+    def pick(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
         """Pick from adapter using a 3-waypoint approach with +10mm X bias.
 
         Overrides the base pick so the gripper comes in slightly to the side
@@ -49,10 +49,10 @@ class Adapter(Recipe):
                                     [10, 0, motion_prm["height_load"], 0, 0, 0]]
 
         # run touch
-        return self.touch(**motion_prm)
+        return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
 
 
-    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", **kwargs):
+    def place(self, anchor="place", solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=75, gap=2, load_anchor="center", motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
             """Place into adapter with a 2-waypoint angled exit.
 
             Uses ``soft_approach=True`` and an exit path that lifts straight
@@ -69,4 +69,4 @@ class Adapter(Recipe):
                         [0, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0]]
 
             # run touch
-            return self.touch(**motion_prm)
+            return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
