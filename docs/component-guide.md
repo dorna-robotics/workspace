@@ -32,6 +32,64 @@ The filename must match the registered type name exactly — `@register("custom_
 - Z-axis points up
 - Keep the model lightweight for faster rendering
 
+### Compression
+
+The 3D viewer supports **Draco-compressed** GLBs out of the box —
+typically 5-10× smaller than uncompressed without any visual or
+behavioural change. The GLTFLoader handles both compressed and
+uncompressed transparently, so an uncompressed file works fine,
+just bigger over the wire.
+
+**Adding a new model:**
+
+1. Drop the `.glb` in `workspace/static/CAD/` (or your project's
+   own `CAD/` folder).
+2. Run the compression script:
+   ```bash
+   cd workspace/static/CAD && ./compress.sh
+   ```
+   Re-running is idempotent — already-compressed files stay
+   (near-)the same size.
+3. Commit. The compressed binary lands in git.
+
+Forgetting step 2 isn't fatal — the model still loads, just at
+full size. The script prints per-file sizes so you'll see the win:
+
+```
+  decapper.glb                            5634 K →  810 K  (-85%)
+  capfeeder_autosampler_2ml.glb           4124 K →  512 K  (-87%)
+  ...
+total: 50116 K → 7234 K  (-85%)
+```
+
+**One-time setup** (needs internet only for the install):
+
+```bash
+# Install nodejs (Pi / Debian — picks an LTS version):
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install the compressor globally:
+sudo npm install -g @gltf-transform/cli
+```
+
+The **runtime never needs internet** — the Draco decoder is vendored
+locally at `workspace/gui/vendor/three-addons/draco/` (~340 KB of
+WASM + JS, served by the orchestrator's own web server like every
+other static asset).
+
+**Performance reality check:** Draco affects download size only.
+- Cold load (browser cache empty): **big win** — 5-10× less data.
+- Warm load (cached): **identical** — the GLB is already on disk.
+- FPS during viewing: **identical** — same triangles in GPU memory.
+- Parse time: small one-time WASM decompression on first load per
+  model (typically 20-100 ms; imperceptible).
+
+If your bottleneck is "page is slow to load fresh", Draco helps a
+lot. If it's "the scene runs choppy once loaded", Draco does
+nothing — that's a different problem (too many triangles, too many
+materials, etc.).
+
 ---
 
 ## 3. Python class
