@@ -116,11 +116,13 @@ rack_autosampler_2ml_1:
     offset: [0, 0, 0, 0, 0, 0]
 
 # Cap holder — SBS-format adapter with a 6×8 cap holder on top.
-# Position mirrors syringe's ``sbs_adapter_1`` (fixture_plate_2 / D14).
+# Mounted on fixture_plate_1 / D14 (same anchor as syringe's
+# ``sbs_adapter_1`` but on plate 1 instead of plate 2 — keeps it on
+# the main fixture so cap-pick reach stays inside the rail range).
 sbs_adapter_1:
   type: "adapter_plate_sbs"
   attach:
-    parent_name: "fixture_plate_2"
+    parent_name: "fixture_plate_1"
     parent_solid: "body"
     parent_anchor: "D14"
     child_solid: "body"
