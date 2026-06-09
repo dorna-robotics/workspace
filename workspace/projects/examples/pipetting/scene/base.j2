@@ -90,47 +90,49 @@ fixture_plate_6:
     child_anchor: "corner_3"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Falcon 15ml rack base — full rack of falcon tubes sits on this.
-# Same fixture_plate_3 / D10 placement the printer project uses.
+# Falcon 15ml rack base. Pipetting setup moved to fixture_plate_4
+# (same anchors the printer project uses — D10 / C19 / G19 — just
+# on a different plate in our chain).
 adapter_falcon:
   type: "adapter_plate_falcon_15ml"
   attach:
-    parent_name: "fixture_plate_3"
+    parent_name: "fixture_plate_4"
     parent_solid: "body"
     parent_anchor: "D10"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
 
-# SBS plate holder #0 — tip rack. Printer's C19 placement.
+# SBS plate holder #0 — tip rack.
 adapter_sbs_0:
   type: "adapter_plate_sbs"
   attach:
-    parent_name: "fixture_plate_3"
+    parent_name: "fixture_plate_4"
     parent_solid: "body"
     parent_anchor: "C19"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
 
-# SBS plate holder #1 — waste bin. Printer's G19 placement.
+# SBS plate holder #1 — waste bin.
 adapter_sbs_1:
   type: "adapter_plate_sbs"
   attach:
-    parent_name: "fixture_plate_3"
+    parent_name: "fixture_plate_4"
     parent_solid: "body"
     parent_anchor: "G19"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Tool rack — holds the pipettor.
+# Tool rack — holds the pipettor. H17 anchor matches the printer
+# project's tool_rack_1 position.
 tool_rack_144mm_1:
   type: "tool_rack_144mm"
   attach:
     parent_name: "fixture_plate_5"
     parent_solid: "body"
-    parent_anchor: "B18"
+    parent_anchor: "H17"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
