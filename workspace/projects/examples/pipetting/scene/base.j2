@@ -125,10 +125,11 @@ adapter_sbs_1:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 0]
 
-# Tool rack — holds the pipettor. H17 anchor matches the printer
-# project's tool_rack_1 position.
-tool_rack_144mm_1:
-  type: "tool_rack_144mm"
+# Tool rack — holds the pipettor. Printer uses tool_rack_192mm
+# (taller) for the pipettor slot since the pipettor is taller than
+# a standard gripper and needs the clearance.
+tool_rack_192mm_1:
+  type: "tool_rack_192mm"
   attach:
     parent_name: "fixture_plate_5"
     parent_solid: "body"
