@@ -85,8 +85,10 @@
       camera.up.set(0,0,1);
       camera.position.set(2400, 900, 1200);
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-      renderer.setPixelRatio(window.devicePixelRatio);
+      // antialias OFF + pixel ratio capped at 1.5 for FPS on Retina/4K.
+      // See orchestrator/index.html — same rationale.
+      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
