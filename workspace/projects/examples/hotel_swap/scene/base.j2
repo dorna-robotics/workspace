@@ -1,0 +1,149 @@
+# hotel_swap example — base scene.
+# Same plates 1-6 footprint as feeder / capping examples.
+
+core:
+  type: "core"
+  simulation: true
+  ip: ""
+  has_rail: true
+  has_tool_changer: true
+  has_motion_plan: true
+  has_camera: false
+  robot_attach:
+    rail_carriage_anchor: "hole_1"
+    robot_A0_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+  rail_cfg:
+    type: "rail_hd_500mm"
+    axis: 6
+    offset: 0
+    usem: 1
+    pprm: 4000
+    tprm: 75
+    usee: 1
+    ppre: 4000
+    tpre: 75
+    p: 0.01
+    i: 0.0001
+    d: 0
+    duration: 100
+    threshold: 100
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "D10"
+    child_solid: "rail_base"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_1:
+  type: "fixture_plate"
+  offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_2:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_3:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_4:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_2"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_5:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_6:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Hotel A — 4-level SBS-format shelf, at the syringe project's
+# hotel_0 spot (fixture_plate_4 / G14).
+hotel_0:
+  type: "hotel_sbs_76h_4lvl"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "G14"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# Hotel B — symmetric on the other wing (fixture_plate_3 / G14).
+hotel_1:
+  type: "hotel_sbs_76h_4lvl"
+  attach:
+    parent_name: "fixture_plate_3"
+    parent_solid: "body"
+    parent_anchor: "G14"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# Two SBS plate holders on the main fixture plate. Same anchor
+# pattern as the capping example's cap_holder placement that's
+# known to be reachable.
+sbs_adapter_0:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D6"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+sbs_adapter_1:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D17"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# Tool rack — holds the SBS-width gripper. Same fixture_plate_5 / B18
+# spot every example uses.
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]

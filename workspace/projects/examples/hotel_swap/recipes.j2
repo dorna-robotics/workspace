@@ -1,0 +1,27 @@
+{%- set sf = 20 -%}
+
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Hotel recipes — one per shelf. The recipe's ``pick(level)`` /
+# ``place(level)`` build the ``place_{level}`` anchor and run the
+# lateral slide-in approach the hotel needs.
+hotel_a:
+  class: workspace.recipes.hotel.Hotel
+  kwargs: {component: hotel_0, left_approach: true, base_distance: 150, speed_factor: {{ sf }}}
+
+hotel_b:
+  class: workspace.recipes.hotel.Hotel
+  kwargs: {component: hotel_1, left_approach: true, base_distance: 150, speed_factor: {{ sf }}}
+
+# SBS plate holders — the Adapter recipe handles the side-loaded
+# 3-waypoint approach for picking/placing whole plates on the
+# adapter. Same pattern as syringe's ``sbs_adapter`` recipe.
+holder_a:
+  class: workspace.recipes.adapter.Adapter
+  kwargs: {component: sbs_adapter_0, left_approach: true, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+holder_b:
+  class: workspace.recipes.adapter.Adapter
+  kwargs: {component: sbs_adapter_1, left_approach: false, base_distance: 50, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}

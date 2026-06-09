@@ -47,6 +47,7 @@ recipes. Copy the folder, rename, edit. No cross-folder coupling.
 |---|---|
 | [`feeder/`](feeder/) | Cap feeder + suction tool → cap holder. Tool-rack swap, feeder rotation, rack placement, vision-driven `present_cap`. |
 | [`capping/`](capping/) | Full cap + decap roundtrip with the decapper + 4-finger gripper. Tube rack + cap holder + decapper, split-action planning (`Cap` then `Decap`). |
+| [`hotel_swap/`](hotel_swap/) | Swap plates pairwise between two SBS hotels via two plate holders. `Hotel` recipe (lateral slide-in) + `Adapter` recipe (biased approach) + `gripper_sbs_width`. |
 
 More examples will be added incrementally as common patterns emerge
 that contributors keep needing to look up.
