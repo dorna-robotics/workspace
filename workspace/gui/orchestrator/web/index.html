@@ -141,7 +141,8 @@
       "three": "/vendor/three.module.js",
       "three/addons/controls/OrbitControls.js": "/vendor/three-addons/OrbitControls.js",
       "three/addons/loaders/GLTFLoader.js": "/vendor/three-addons/GLTFLoader.js",
-      "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js"
+      "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js",
+      "three/addons/loaders/DRACOLoader.js": "/vendor/three-addons/DRACOLoader.js"
     }
   }
   </script>
@@ -199,6 +200,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
     import { RGBELoader }    from "three/addons/loaders/RGBELoader.js";
+    import { DRACOLoader }   from "three/addons/loaders/DRACOLoader.js";
     import io from "/vendor/socket.io.esm.min.js";
 
     // -------- cache-busting --------
@@ -343,7 +345,16 @@
       });
 
       // ── GLTF + object management ──────────────────────────────────────────
+      // DRACOLoader is configured with a LOCAL decoder path so the
+      // viewer works without internet. Files vendored at
+      // /vendor/three-addons/draco/ (.wasm + js wrapper + js fallback).
+      // GLTFLoader handles BOTH Draco-compressed and uncompressed GLBs
+      // transparently — if the GLB has KHR_draco_mesh_compression, the
+      // decoder runs; otherwise it's a no-op.
+      const dracoLoader   = new DRACOLoader();
+      dracoLoader.setDecoderPath("/vendor/three-addons/draco/");
       const gltfLoader    = new GLTFLoader();
+      gltfLoader.setDRACOLoader(dracoLoader);
       const objectsByName = new Map();
 
       // ── Collision visuals ─────────────────────────────────────────────────

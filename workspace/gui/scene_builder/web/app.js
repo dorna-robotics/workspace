@@ -30,7 +30,19 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+    import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
     import io from "/vendor/socket.io.esm.min.js";
+
+    // Shared Draco decoder — used by every GLTFLoader instance in this
+    // module. Path is local (no internet). Handles both Draco-compressed
+    // and uncompressed GLBs transparently.
+    const _sbDracoLoader = new DRACOLoader();
+    _sbDracoLoader.setDecoderPath("/vendor/three-addons/draco/");
+    function makeGltfLoader() {
+      const ldr = new GLTFLoader();
+      ldr.setDRACOLoader(_sbDracoLoader);
+      return ldr;
+    }
 
     // -------- API base path --------
     const SB_API = "/scene-builder/api";
@@ -216,7 +228,7 @@
       fill.position.set(-800, -600, 600); scene.add(fill);
 
       // --- GLTF + object management ---
-      const gltfLoader = new GLTFLoader();
+      const gltfLoader = makeGltfLoader();
       const objectsByName = new Map();
       window.objectsByName = objectsByName;
 
@@ -4491,7 +4503,7 @@ async function _loadThumbModel(modelKey, glbUrl) {
         const root = new THREE.Group();
         const solids = js.blueprint.solids.filter(s => s && s.glb);
         const loads = solids.map(s => new Promise((resolve) => {
-          new GLTFLoader().load(s.glb, (gltf) => resolve({ scene: gltf.scene, pose: s.pose || [0,0,0,0,0,0] }), undefined, () => resolve(null));
+          makeGltfLoader().load(s.glb, (gltf) => resolve({ scene: gltf.scene, pose: s.pose || [0,0,0,0,0,0] }), undefined, () => resolve(null));
         }));
         const results = await Promise.all(loads);
         for (const r of results) {
@@ -4511,7 +4523,7 @@ async function _loadThumbModel(modelKey, glbUrl) {
   }
   // Single GLB fallback
   return new Promise((resolve, reject) => {
-    new GLTFLoader().load(glbUrl, (gltf) => resolve(gltf.scene), undefined, reject);
+    makeGltfLoader().load(glbUrl, (gltf) => resolve(gltf.scene), undefined, reject);
   });
 }
 
