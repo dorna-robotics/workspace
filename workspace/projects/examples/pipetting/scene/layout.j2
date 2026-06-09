@@ -1,0 +1,85 @@
+# pipetting example — populated items:
+# - pipettor tool parked in the tool rack
+# - falcon 15ml rack on adapter_falcon, fully loaded with 20 tubes (4×5)
+# - tip rack on adapter_sbs_0, fully loaded with 96 axygen 180 µL tips
+# - tip waste bin on adapter_sbs_1, empty
+# (No liquid simulated in the tubes — the workflow is the demo,
+# not actual fluid tracking.)
+
+pipettor:
+  type: "pipettor_sp28_40mm"
+  has_tool_changer: true
+  port: ""
+  simulation: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Falcon 15ml rack sitting on the falcon adapter.
+rack_falcon:
+  type: "rack_falcon_15ml"
+  rvec_safe: [0, 0, 135]
+  attach:
+    parent_name: "adapter_falcon"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# 20 falcon 15ml tubes — full rack (4 rows × 5 cols).
+{% for r in "ABCD" %}
+{% for c in range(1, 5+1) %}
+tube_falcon_{{ r }}{{ c }}:
+  type: "tube_falcon_15ml"
+  attach:
+    parent_name: "rack_falcon"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+# Tip rack — 96 axygen 180 µL tips (8 rows × 12 cols).
+rack_tip:
+  type: "rack_axygen_180ul"
+  rvec_safe: [0, 0, 180]
+  attach:
+    parent_name: "adapter_sbs_0"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+{% for r in "ABCDEFGH" %}
+{% for c in range(1, 12+1) %}
+tip_{{ r }}{{ c }}:
+  type: "tip_axygen_180ul"
+  attach:
+    parent_name: "rack_tip"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}
+
+# Tip waste bin (no tips loaded; this is where eject_tip drops them).
+tip_waste_bin:
+  type: "rack_tip_waste_bin"
+  rvec_safe: [0, 0, 180]
+  attach:
+    parent_name: "adapter_sbs_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]

@@ -1,0 +1,135 @@
+# pipetting example — base scene.
+# Same plates 1-6 footprint as the other examples.
+
+core:
+  type: "core"
+  simulation: true
+  ip: ""
+  has_rail: true
+  has_tool_changer: true
+  has_motion_plan: true
+  has_camera: false
+  robot_attach:
+    rail_carriage_anchor: "hole_1"
+    robot_A0_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+  rail_cfg:
+    type: "rail_hd_500mm"
+    axis: 6
+    offset: 0
+    usem: 1
+    pprm: 4000
+    tprm: 75
+    usee: 1
+    ppre: 4000
+    tpre: 75
+    p: 0.01
+    i: 0.0001
+    d: 0
+    duration: 100
+    threshold: 100
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "D10"
+    child_solid: "rail_base"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_1:
+  type: "fixture_plate"
+  offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_2:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_3:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_4:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_2"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_5:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_6:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Falcon 15ml rack base — full rack of falcon tubes sits on this.
+adapter_falcon:
+  type: "adapter_plate_falcon_15ml"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D6"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# SBS plate holder #0 — tip rack lives on this.
+adapter_sbs_0:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D11"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# SBS plate holder #1 — tip waste bin lives on this.
+adapter_sbs_1:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D17"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# Tool rack — holds the pipettor.
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]

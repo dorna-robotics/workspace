@@ -1,0 +1,20 @@
+# pipetting example — launch config.
+
+project_name: pipetting_example
+port:         5010
+scene:        [scene/base.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+kwargs:
+  transfer_count:
+    type: int
+    default: 2
+    label: Transfer count
+    hint: Number of pipette transfers (A1 → A{T+2}). Each transfer uses a fresh tip.
+    min: 1
+    max: 4
