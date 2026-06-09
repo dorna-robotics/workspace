@@ -28,6 +28,31 @@ decapped  = predicate("decapped")
 TUBE_RACK = "rack_autosampler_2ml_1"
 
 
+def _progress_pct(action, *, kind: str) -> int:
+    """Monotonic progress percentage from action state.
+
+    Each tube contributes two transitions: cap-step + decap-step.
+    A tube has completed the cap-step if ``capped(t)`` is currently
+    set OR ``decapped(t)`` is (Decap removes capped but adds
+    decapped — the "OR" preserves the count across that swap).
+    Decap-step count is simpler: ``decapped(t)`` in state.
+
+    Each transition adds exactly +1 to the combined count, so the
+    bar advances monotonically regardless of plan order.
+    """
+    tubes = action._ctx_all_objects().get("tube", [])
+    total = len(tubes) or 1
+    state = action.state
+    cap_step   = sum(1 for t in tubes if (capped.name, t) in state or (decapped.name, t) in state)
+    decap_step = sum(1 for t in tubes if (decapped.name, t) in state)
+    # this action's eff hasn't applied yet — count it as +1
+    if kind == "cap":
+        cap_step += 1
+    elif kind == "decap":
+        decap_step += 1
+    return int((cap_step + decap_step) / (2 * total) * 100)
+
+
 def setup(**kwargs):
     tube_count = int(kwargs.get("tube_count", 1))
     tubes = list(range(tube_count))
@@ -97,10 +122,9 @@ class Cap(Action):
 
         tube_rack = self.ctx.workspace.components[TUBE_RACK]
         slot = tube_rack.slot["body"][tube]
-        total = len(self._ctx_all_objects().get("tube", [])) or 1
 
         rt.step(f"cap {tube + 1}: tube {slot} → decapper")
-        rt.step(int((tube + 1) / total * 50), level="progress")
+        rt.step(_progress_pct(self, kind="cap"), level="progress")
 
         rcp["tube_rack"].pick(slot)
         rcp["decapper"].place()
@@ -132,10 +156,9 @@ class Decap(Action):
 
         tube_rack = self.ctx.workspace.components[TUBE_RACK]
         slot = tube_rack.slot["body"][tube]
-        total = len(self._ctx_all_objects().get("tube", [])) or 1
 
         rt.step(f"decap {tube + 1}: tube {slot} → decapper → unscrew")
-        rt.step(int(50 + (tube + 1) / total * 50), level="progress")
+        rt.step(_progress_pct(self, kind="decap"), level="progress")
 
         rcp["tube_rack"].pick(slot)
         rcp["decapper"].place(exit=False)
