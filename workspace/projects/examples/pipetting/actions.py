@@ -21,10 +21,13 @@ parked      = predicate("parked")
 transferred = predicate("transferred")
 
 
+# Component names — actions look up slot lists on these at runtime
+# instead of hardcoding anchor lists. Each rack class populates
+# ``slot["body"]`` with its row × col grid in iteration order.
+FALCON_RACK    = "rack_falcon"
+TIP_RACK       = "rack_tip"
+
 # Pipetting parameters
-SOURCE_ANCHOR  = "A1"
-DEST_ANCHORS   = ["A2", "A3", "A4", "A5"]   # one per transfer index
-TIP_ANCHORS    = ["A1", "A2", "A3", "A4"]   # fresh tip per transfer
 IMMERSE_DEPTH  = 20    # mm below the tube top
 VOL_UL         = 400   # microliters
 
@@ -110,24 +113,30 @@ class Transfer(Action):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
 
-        tip_slot  = TIP_ANCHORS[transfer]
-        dest_slot = DEST_ANCHORS[transfer]
+        # Read slot lists from the components — source is the
+        # falcon rack's first slot (A1); destination walks the rest.
+        # Tip per transfer is the next free slot on the tip rack.
+        falcon_slots = self.ctx.workspace.components[FALCON_RACK].slot["body"]
+        tip_slots    = self.ctx.workspace.components[TIP_RACK].slot["body"]
+        source_anchor = falcon_slots[0]
+        dest_anchor   = falcon_slots[transfer + 1]
+        tip_anchor    = tip_slots[transfer]
 
-        rt.step(f"transfer {transfer + 1}: tip {tip_slot}, {SOURCE_ANCHOR} → {dest_slot}")
+        rt.step(f"transfer {transfer + 1}: tip {tip_anchor}, {source_anchor} → {dest_anchor}")
         rt.step(_progress_pct(self), level="progress")
 
         # 1. Pick a fresh tip onto the pipettor.
-        rcp["tip_rack"].pick_tip(tip_slot)
+        rcp["tip_rack"].pick_tip(tip_anchor)
 
         # 2. Aspirate from the source tube.
-        rcp["falcon_pipette"].immerse(anchor=SOURCE_ANCHOR, depth=IMMERSE_DEPTH)
+        rcp["falcon_pipette"].immerse(anchor=source_anchor, depth=IMMERSE_DEPTH)
         rcp["falcon_pipette"].aspirate(vol=VOL_UL)
-        rcp["falcon_pipette"].retract(anchor=SOURCE_ANCHOR)
+        rcp["falcon_pipette"].retract(anchor=source_anchor)
 
         # 3. Dispense into the destination tube.
-        rcp["falcon_pipette"].immerse(anchor=dest_slot, depth=IMMERSE_DEPTH)
+        rcp["falcon_pipette"].immerse(anchor=dest_anchor, depth=IMMERSE_DEPTH)
         rcp["falcon_pipette"].dispense(vol=VOL_UL)
-        rcp["falcon_pipette"].retract(anchor=dest_slot)
+        rcp["falcon_pipette"].retract(anchor=dest_anchor)
 
         # 4. Drop the used tip into the waste bin.
         rcp["waste_bin"].eject_tip()

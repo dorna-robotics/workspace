@@ -15,6 +15,6 @@ kwargs:
     type: int
     default: 2
     label: Transfer count
-    hint: Number of pipette transfers (A1 → A{T+2}). Each transfer uses a fresh tip.
+    hint: Number of pipette transfers. Source is the rack's first slot; destinations walk the rest in iteration order. Each transfer uses a fresh tip.
     min: 1
-    max: 4
+    max: 19
