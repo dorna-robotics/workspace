@@ -9,7 +9,7 @@ gripper:
 # Same pattern as syringe's ``sbs_plate`` recipe.
 tube_rack:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
 
 # Same Rack recipe pattern; resolves to capholder_autosampler_2ml_1
 # via sbs_adapter_1. Matches syringe's ``cap_holder`` recipe.
