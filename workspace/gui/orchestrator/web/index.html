@@ -232,11 +232,10 @@
       camera.up.set(0, 0, 1);
       camera.position.set(2400, 900, 1200);
 
-      // antialias OFF + pixel ratio capped at 1.5 — together these halve
-      // fragment-shader work on Retina/4K displays. Edges look very
-      // slightly jaggier; FPS win is real on busy scenes. Bump back to
-      // ``antialias: true`` and cap 2 if you need pixel-perfect edges.
-      const renderer = new THREE.WebGLRenderer({ antialias: false });
+      // Pixel ratio capped at 1.5 — on Retina/4K this cuts fragment-shader
+      // work ~40% with essentially invisible visual cost (vs the default
+      // cap of 2). Antialias stays ON so edges stay clean.
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
