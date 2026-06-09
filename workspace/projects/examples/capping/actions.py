@@ -29,7 +29,7 @@ TUBE_RACK = "rack_autosampler_2ml_1"
 
 
 def _progress_pct(action, *, kind: str) -> int:
-    """Monotonic progress percentage from action state.
+    """Monotonic progress percentage from live runtime facts.
 
     Each tube contributes two transitions: cap-step + decap-step.
     A tube has completed the cap-step if ``capped(t)`` is currently
@@ -39,12 +39,18 @@ def _progress_pct(action, *, kind: str) -> int:
 
     Each transition adds exactly +1 to the combined count, so the
     bar advances monotonically regardless of plan order.
+
+    Reads facts from ``action.ctx.state["facts"]`` — the live runtime
+    fact set. ``action.state`` is only populated by the framework
+    during ``pre()`` / ``eff()`` (planning); inside ``execute()`` it
+    is None.
     """
     tubes = action._ctx_all_objects().get("tube", [])
     total = len(tubes) or 1
-    state = action.state
-    cap_step   = sum(1 for t in tubes if (capped.name, t) in state or (decapped.name, t) in state)
-    decap_step = sum(1 for t in tubes if (decapped.name, t) in state)
+    ctx_state = getattr(action.ctx, "state", None) or {}
+    facts = ctx_state.get("facts") or set()
+    cap_step   = sum(1 for t in tubes if (capped.name, t) in facts or (decapped.name, t) in facts)
+    decap_step = sum(1 for t in tubes if (decapped.name, t) in facts)
     # this action's eff hasn't applied yet — count it as +1
     if kind == "cap":
         cap_step += 1
