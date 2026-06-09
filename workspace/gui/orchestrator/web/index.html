@@ -142,8 +142,7 @@
       "three/addons/controls/OrbitControls.js": "/vendor/three-addons/OrbitControls.js",
       "three/addons/loaders/GLTFLoader.js": "/vendor/three-addons/GLTFLoader.js",
       "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js",
-      "three/addons/loaders/DRACOLoader.js": "/vendor/three-addons/DRACOLoader.js",
-      "three/addons/libs/stats.module.js": "/vendor/three-addons/stats.module.js"
+      "three/addons/loaders/DRACOLoader.js": "/vendor/three-addons/DRACOLoader.js"
     }
   }
   </script>
@@ -202,7 +201,6 @@
     import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
     import { RGBELoader }    from "three/addons/loaders/RGBELoader.js";
     import { DRACOLoader }   from "three/addons/loaders/DRACOLoader.js";
-    import Stats             from "three/addons/libs/stats.module.js";
     import io from "/vendor/socket.io.esm.min.js";
 
     // -------- cache-busting --------
@@ -1075,24 +1073,8 @@
         }
       }
 
-      // ── Performance stats (top-left) — toggle with ``?stats=1`` ──────────
-      // Three.js's standard Stats panel. Three pages: FPS, MS (frame
-      // time), MB (heap). Off by default so it doesn't clutter the
-      // operator UI; append ``?stats=1`` to the URL to enable.
-      const _showStats = new URLSearchParams(window.location.search).get("stats") === "1";
-      let _stats = null;
-      if (_showStats) {
-        _stats = new Stats();
-        _stats.dom.style.position = "fixed";
-        _stats.dom.style.top  = "8px";
-        _stats.dom.style.left = "8px";
-        _stats.dom.style.zIndex = "999";
-        document.body.appendChild(_stats.dom);
-      }
-
       // ── Animate ───────────────────────────────────────────────────────────
       function animate() {
-        if (_stats) _stats.begin();
         flushPendingUpdates();
         // Skip the heavy work when either the user has toggled the
         // eye off, *or* the parent has paused us (pendant open).
@@ -1110,7 +1092,6 @@
           vcGroup.quaternion.copy(camera.quaternion).invert();
           vcRenderer.render(vcScene, vcCamera);
         }
-        if (_stats) _stats.end();
         requestAnimationFrame(animate);
       }
       animate();
