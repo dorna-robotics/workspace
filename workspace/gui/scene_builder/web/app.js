@@ -2088,6 +2088,8 @@ function ensureBuilderBar() {
   function _showNewSceneModal() {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
+      // ``modal-overlay`` → covers the navbar (see vendor/nav.css).
+      overlay.className = "modal-overlay";
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
       overlay.innerHTML = `
         <div style="width:min(480px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
@@ -6182,6 +6184,10 @@ async function __spawnCollisionBox(targetName, anchorName, solidKey, size) {
 function __sbTextModal({ title = "", label = "", value = "", placeholder = "", okLabel = "OK", hint = "" } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
+    // ``modal-overlay`` opts out of the nav's sibling margin-shift so the
+    // backdrop covers the whole viewport (including the navbar) — see
+    // vendor/nav.css. Without it the navbar peeks through on the left.
+    overlay.className = "modal-overlay";
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
     overlay.innerHTML = `
       <div style="width:min(420px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
