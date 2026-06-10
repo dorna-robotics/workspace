@@ -6176,6 +6176,48 @@ async function __spawnCollisionBox(targetName, anchorName, solidKey, size) {
   showToast("Collision box " + name + " created.");
 }
 
+// ── Reusable text-input modal ───────────────────────────────────────
+// Matches the New Scene / Parameters modal styling. Resolves to the
+// trimmed string on confirm, or null on cancel/escape/backdrop.
+function __sbTextModal({ title = "", label = "", value = "", placeholder = "", okLabel = "OK", hint = "" } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
+    overlay.innerHTML = `
+      <div style="width:min(420px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border2);display:flex;align-items:center;">
+          <h3 style="font-size:16px;font-weight:600;letter-spacing:-0.2px;">${title}</h3>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost btn-sm btn-icon" id="tmClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:10px;">
+          ${label ? `<label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">${label}</label>` : ""}
+          <input class="input" id="tmInput" type="text" placeholder="${placeholder}"/>
+          ${hint ? `<div style="font-size:12px;color:var(--muted);margin-top:2px;">${hint}</div>` : ""}
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border2);display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" id="tmCancel">Cancel</button>
+          <button class="btn btn-primary" id="tmOk">${okLabel}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector("#tmInput");
+    input.value = value || "";
+    setTimeout(() => { input.focus(); input.select(); }, 80);
+
+    function cleanup(result) { overlay.remove(); resolve(result); }
+    overlay.querySelector("#tmCancel").addEventListener("click", () => cleanup(null));
+    overlay.querySelector("#tmClose").addEventListener("click", () => cleanup(null));
+    overlay.querySelector("#tmOk").addEventListener("click", () => cleanup(input.value.trim()));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cleanup(input.value.trim()); } });
+    document.addEventListener("keydown", function onKey(e) {
+      if (e.key === "Escape") { document.removeEventListener("keydown", onKey); cleanup(null); }
+    });
+  });
+}
+
 // ── Multi-file helpers ──────────────────────────────────────────────
 // Lazily tag any component that doesn't have a ``__file`` yet with the
 // currently-active file. Called from the preview tick + save, so a
@@ -6719,9 +6761,16 @@ ensureBuilderBar();
       nameEl.title = "Double-click to rename";
       // Double-click the name to rename — updates the file list, the
       // active target if needed, and every component tagged with it.
-      nameEl.addEventListener("dblclick", (e) => {
+      nameEl.addEventListener("dblclick", async (e) => {
         e.stopPropagation();
-        let next = prompt("Rename file:", fname);
+        let next = await __sbTextModal({
+          title: "Rename file",
+          label: "File name",
+          value: fname,
+          placeholder: "scene.j2",
+          okLabel: "Rename",
+          hint: "Components in this file are written here on save.",
+        });
         if (next === null) return;
         next = next.trim();
         if (!next || next === fname) return;
@@ -6815,8 +6864,15 @@ ensureBuilderBar();
     const add = document.createElement("button");
     add.className = "sb-file-add";
     add.textContent = "+ add file";
-    add.addEventListener("click", () => {
-      let name = prompt("New file name (e.g. layout.j2):", "layout.j2");
+    add.addEventListener("click", async () => {
+      let name = await __sbTextModal({
+        title: "Add file",
+        label: "File name",
+        value: "",
+        placeholder: "layout.j2",
+        okLabel: "Add",
+        hint: "New components you add will be written to this file.",
+      });
       if (!name) return;
       name = name.trim();
       if (!name) return;
