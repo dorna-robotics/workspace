@@ -635,11 +635,6 @@
         updateAnchorsNow(); // position immediately once
       }
 
-      // Exposed so the collision-box resize can refresh anchor dots
-      // live as the box changes size.
-      window.__sbBuildAnchorsFor = buildAnchorsFor;
-      window.__sbActiveAnchorObjName = () => (activeAnchors && activeAnchors.obj && activeAnchors.obj.name) || null;
-
       // ---- UPDATE ANCHORS (updated: no 3D comp/solid labels anymore) ----
       function updateAnchorsNow() {
         if (!activeAnchors) return;
@@ -713,20 +708,6 @@
       let downInfo = null; // {button,x,y,time}
 
       renderer.domElement.addEventListener("pointerdown", (e) => {
-        // Check for resize handle drag
-        if (e.button === 0 && __resizeHandleGroup) {
-          setPointerFromEvent(e);
-          const raycaster = new THREE.Raycaster();
-          raycaster.setFromCamera(pointer, camera);
-          const handleMeshes = [];
-          __resizeHandleGroup.traverse(o => { if (o.isMesh && o.userData.__isResizeHandle) handleMeshes.push(o); });
-          const hits = raycaster.intersectObjects(handleMeshes, false);
-          if (hits.length) {
-            __onResizePointerDown(hits[0].object, e);
-            e.stopPropagation();
-            return;
-          }
-        }
         downInfo = {
           button: e.button,
           x: e.clientX,
@@ -740,7 +721,6 @@
       });
 
       renderer.domElement.addEventListener("pointerup", (e) => {
-        if (__resizeDrag) { __onResizePointerUp(); return; }
         if (!downInfo) return;
         const dt = performance.now() - downInfo.time;
         const dx = Math.abs(e.clientX - downInfo.x);
@@ -1170,13 +1150,11 @@ if (node) {
 
       let __hoveredAnchorPick = null;
       renderer.domElement.addEventListener("pointermove", (e) => {
-        if (__resizeDrag) { __onResizePointerMove(e); markDirty(); return; }
         setPointerFromEvent(e);
         const hit = pickFirstMesh();
-        const isResizeHandle = hit?.object?.userData?.__isResizeHandle;
         const isAnchorHit = hit?.object?.userData?.__isAnchorPick;
         renderer.domElement.style.cursor =
-          isResizeHandle ? "ew-resize" : isAnchorHit ? "pointer" : (hit && hit.object?.isMesh) ? "pointer" : "default";
+          isAnchorHit ? "pointer" : (hit && hit.object?.isMesh) ? "pointer" : "default";
 
         // Anchor hover effect
         if (wantAnchorHitZones()) {
@@ -3421,269 +3399,7 @@ function updateSidebarProps(name) {
   }
 }
 
-// ── Collision box resize handles ──
-let __resizeHandleGroup = null;
-let __resizeHandleTarget = null;
-let __resizeDrag = null;
-
-const HANDLE_RADIUS = 5;
-const HANDLE_COLOR = 0x44aaff;
-const HANDLE_HOVER_COLOR = 0x88ccff;
-
-function __createResizeHandles(name) {
-  __removeResizeHandles();
-  const obj = objectsByName.get(name);
-  if (!obj) return;
-  const comp = window.builderState.components[name];
-  if (!comp || comp.type !== "collision_box") return;
-  const size = comp.size || [100, 100, 100];
-  const [sx, sy, sz] = size;
-
-  const group = new THREE.Group();
-  group.name = "__resizeHandles__";
-  group.userData.__isResizeHandleGroup = true;
-
-  const faces = [
-    { axis: 0, sign:  1, pos: [ sx/2,    0, sz/2] },
-    { axis: 0, sign: -1, pos: [-sx/2,    0, sz/2] },
-    { axis: 1, sign:  1, pos: [    0, sy/2, sz/2] },
-    { axis: 1, sign: -1, pos: [    0,-sy/2, sz/2] },
-    { axis: 2, sign:  1, pos: [    0,    0, sz  ] },
-    { axis: 2, sign: -1, pos: [    0,    0, 0   ] },
-  ];
-
-  const minDim = Math.min(sx, sy, sz);
-  const handleR = Math.max(2, Math.min(HANDLE_RADIUS, minDim * 0.12));
-  const geom = new THREE.SphereGeometry(handleR, 12, 12);
-  for (const f of faces) {
-    const mat = new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true, opacity: 0.85 });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(f.pos[0], f.pos[1], f.pos[2]);
-    mesh.renderOrder = 30;
-    mesh.userData = { __isResizeHandle: true, axis: f.axis, sign: f.sign, componentName: name };
-    group.add(mesh);
-    pickableMeshes.add(mesh);
-  }
-
-  obj.add(group);
-  __resizeHandleGroup = group;
-  __resizeHandleTarget = name;
-  markDirty();
-}
-
-function __removeResizeHandles() {
-  if (__resizeHandleGroup) {
-    __resizeHandleGroup.traverse(o => {
-      if (o.isMesh) {
-        pickableMeshes.delete(o);
-        o.geometry?.dispose?.();
-        o.material?.dispose?.();
-      }
-    });
-    __resizeHandleGroup.parent?.remove(__resizeHandleGroup);
-    __resizeHandleGroup = null;
-    __resizeHandleTarget = null;
-    markDirty();
-  }
-}
-
-function __updateResizeHandlePositions(size) {
-  if (!__resizeHandleGroup) return;
-  const [sx, sy, sz] = size;
-  const positions = [
-    [ sx/2,    0, sz/2],
-    [-sx/2,    0, sz/2],
-    [    0, sy/2, sz/2],
-    [    0,-sy/2, sz/2],
-    [    0,    0, sz  ],
-    [    0,    0, 0   ],
-  ];
-  let i = 0;
-  __resizeHandleGroup.children.forEach(c => {
-    if (c.isMesh && c.userData.__isResizeHandle && i < positions.length) {
-      c.position.set(positions[i][0], positions[i][1], positions[i][2]);
-      i++;
-    }
-  });
-}
-
-// Collision-box anchors derived from size — mirrors collision_box.py:
-// center is the bottom-centre (origin); left/right/front/back are the
-// ±X / ±Y side-face centres at mid-height.
-function __colBoxAnchors(size) {
-  const [sx, sy, sz] = size;
-  return {
-    center: [0, 0, 0, 0, 0, 0],
-    right:  [ sx / 2, 0, sz / 2, 0, 0, 0],
-    left:   [-sx / 2, 0, sz / 2, 0, 0, 0],
-    front:  [0,  sy / 2, sz / 2, 0, 0, 0],
-    back:   [0, -sy / 2, sz / 2, 0, 0, 0],
-  };
-}
-
-function __rebuildCollisionBox(name, size) {
-  const obj = objectsByName.get(name);
-  if (!obj) return;
-  const [sx, sy, sz] = size;
-
-  // Keep the face anchors on the current faces as the box resizes.
-  const anchors = __colBoxAnchors(size);
-  obj.userData.anchors = anchors;
-  if (obj.userData.anchorsBySolid && typeof obj.userData.anchorsBySolid === "object") {
-    const solidKey = Object.keys(obj.userData.anchorsBySolid)[0] || "solid_0";
-    obj.userData.anchorsBySolid[solidKey] = anchors;
-  }
-
-  // Rebuild the procedural transparent viz box
-  let vizNode = null;
-  obj.traverse(o => { if (o.userData?.__colBoxViz) vizNode = o; });
-  if (vizNode) {
-    vizNode.traverse(o => { if (o.isMesh) { pickableMeshes.delete(o); o.geometry?.dispose(); o.material?.dispose(); } });
-    vizNode.parent?.remove(vizNode);
-  }
-  const boxGeom = new THREE.BoxGeometry(sx, sy, sz);
-  const boxMat = new THREE.MeshBasicMaterial({
-    color: 0xaaaaaa, transparent: true, opacity: 0.06,
-    depthWrite: false, side: THREE.DoubleSide
-  });
-  const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-  boxMesh.position.set(0, 0, sz / 2);
-  boxMesh.userData.componentName = name;
-  const newViz = new THREE.Group();
-  newViz.name = "__colBoxViz__";
-  newViz.userData.__colBoxViz = true;
-  newViz.add(boxMesh);
-  addEdgeOverlay(newViz);
-  obj.add(newViz);
-
-  // Find or create collision group
-  let colGroup = null;
-  obj.traverse(o => { if (o.userData?.__isCollisionGroup) colGroup = o; });
-  if (!colGroup) {
-    colGroup = new THREE.Group();
-    colGroup.name = "__collision__";
-    colGroup.visible = showCollisionBoxes;
-    colGroup.userData.__isCollisionGroup = true;
-    obj.add(colGroup);
-  }
-
-  const boxes = [{ pose: [0, 0, sz / 2, 0, 0, 0], scale: [sx, sy, sz] }];
-  fillCollisionGroup(colGroup, boxes, false);
-  // Re-register collision meshes as pickable
-  colGroup.traverse(o => {
-    if (o.isMesh) { o.userData.componentName = name; pickableMeshes.add(o); }
-  });
-  markDirty();
-}
-
-// Pointer handlers for resize drag
-function __onResizePointerDown(handleMesh, event) {
-  const name = handleMesh.userData.componentName;
-  const comp = window.builderState.components[name];
-  if (!comp) return;
-  const size = [...(comp.size || [100, 100, 100])];
-  const axis = handleMesh.userData.axis; // 0=x, 1=y, 2=z
-  const sign = handleMesh.userData.sign;
-
-  // World position of handle
-  const handleWorld = new THREE.Vector3();
-  handleMesh.getWorldPosition(handleWorld);
-
-  // Create drag plane perpendicular to camera but through the handle
-  const camDir = new THREE.Vector3();
-  camera.getWorldDirection(camDir);
-  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, handleWorld);
-
-  const rc = new THREE.Raycaster();
-  const startPoint = new THREE.Vector3();
-  const rect = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
-  );
-  rc.setFromCamera(ndc, camera);
-  rc.ray.intersectPlane(plane, startPoint);
-
-  // Get the object's world axis direction
-  const obj = objectsByName.get(name);
-  const axisVec = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
-  if (obj) axisVec.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()));
-
-  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec };
-  controls.enabled = false;
-}
-
-function __onResizePointerMove(event) {
-  if (!__resizeDrag) return;
-  const { name, axis, sign, startSize, plane, startPoint, axisVec } = __resizeDrag;
-
-  const rc = new THREE.Raycaster();
-  const rect = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
-  );
-  rc.setFromCamera(ndc, camera);
-  const point = new THREE.Vector3();
-  if (!rc.ray.intersectPlane(plane, point)) return;
-
-  const delta = point.clone().sub(startPoint);
-  const dist = delta.dot(axisVec) * sign;
-
-  const newSize = [...startSize];
-  newSize[axis] = Math.round(Math.max(1, startSize[axis] + dist) * 10) / 10;
-
-  __rebuildCollisionBox(name, newSize);
-  __updateResizeHandlePositions(newSize);
-  markDirty();
-}
-
-function __onResizePointerUp() {
-  if (!__resizeDrag) return;
-  const { name } = __resizeDrag;
-  controls.enabled = true;
-
-  // Read final size from current handle positions
-  const obj = objectsByName.get(name);
-  if (obj) {
-    let colGroup = null;
-    obj.traverse(o => { if (o.userData?.__isCollisionGroup) colGroup = o; });
-    if (colGroup && colGroup.children.length) {
-      const box = colGroup.children[0];
-      const geom = box.geometry;
-      if (geom && geom.parameters) {
-        const _q = v => Math.round(v * 10) / 10;
-        const finalSize = [_q(geom.parameters.width), _q(geom.parameters.height), _q(geom.parameters.depth)];
-        // Store in builderState
-        const comp = window.builderState.components[name];
-        if (comp) comp.size = finalSize;
-        // Keep the face anchors current at the final size.
-        obj.userData.anchors = __colBoxAnchors(finalSize);
-        // Emit update
-        socket.emit("upstream_update", { [name]: { builder: { size: finalSize } } });
-        // If this box's anchors are on screen, redraw them at the new
-        // face positions.
-        try {
-          if (window.__sbActiveAnchorObjName && window.__sbActiveAnchorObjName() === name) {
-            window.__sbBuildAnchorsFor && window.__sbBuildAnchorsFor(obj);
-          }
-        } catch(_) {}
-      }
-    }
-  }
-
-  __resizeDrag = null;
-  markDirty();
-}
-
 function setSelected(name) {
-  // Update resize handles
-  if (name && window.builderState.components[name]?.type === "collision_box") {
-    __createResizeHandles(name);
-  } else {
-    __removeResizeHandles();
-  }
-
   window.builderState.selectedName = name;
 
   // Selection can come from multi-solid meshes. Prefer builderState meta, but fall back to scene userdata.
