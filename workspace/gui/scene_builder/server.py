@@ -914,16 +914,6 @@ class SaveConfigHandler(tornado.web.RequestHandler):
         self.set_status(204)
         self.finish()
 
-    @staticmethod
-    def _safe_name(name):
-        """Reject path traversal; force a .j2/.yaml/.yml basename."""
-        base = os.path.basename(str(name or "")).strip()
-        if not base or base in (".", ".."):
-            return None
-        if not base.endswith((".j2", ".yaml", ".yml")):
-            base += ".j2"
-        return base
-
     def post(self):
         try:
             data = json.loads(self.request.body.decode("utf-8") or "{}")
@@ -932,36 +922,13 @@ class SaveConfigHandler(tornado.web.RequestHandler):
             self.finish({"ok": False, "error": "Invalid JSON"})
             return
 
-        os.makedirs(OUT_DIR, exist_ok=True)
-
-        # New multi-file shape: { "files": { "base.j2": {...}, "layout.j2": {...} } }
-        # Each value is a components dict; written to OUT_DIR/<name>.
-        files = data.get("files")
-        if isinstance(files, dict) and files:
-            written = []
-            for raw_name, comps in files.items():
-                if not isinstance(comps, dict):
-                    continue
-                safe = self._safe_name(raw_name)
-                if not safe:
-                    continue
-                path = os.path.join(OUT_DIR, safe)
-                with open(path, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(comps, f, sort_keys=False, default_flow_style=False)
-                written.append(path)
-            if not written:
-                self.set_status(400)
-                self.finish({"ok": False, "error": "no valid files to write"})
-                return
-            self.finish({"ok": True, "paths": written})
-            return
-
-        # Legacy single-file shape: { "components": {...} } → config.j2
         components = data.get("components") or {}
         if not isinstance(components, dict):
             self.set_status(400)
             self.finish({"ok": False, "error": "components must be an object"})
             return
+
+        os.makedirs(OUT_DIR, exist_ok=True)
 
         # Write YAML similar to other project configs
         # Keep key order stable-ish: disable sort_keys
@@ -1016,8 +983,6 @@ class SetProjectHandler(tornado.web.RequestHandler):
 
 # patch handler into app
 app.add_handlers(r".*$", [(r"/save_config", SaveConfigHandler)])
-# Same handler under the /api prefix the frontend uses (SB_API).
-app.add_handlers(r".*$", [(r"/api/save_config", SaveConfigHandler)])
 app.add_handlers(r".*$", [(r"/api/set_project", SetProjectHandler)])
 
 # catalog endpoint (CAD/*.glb)

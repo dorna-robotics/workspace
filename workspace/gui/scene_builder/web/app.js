@@ -6459,28 +6459,34 @@ entries.push([saveName, out]);
   return cfg;
 }
 
+function __downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "text/yaml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function saveConfig() {
-  // Partition by file and write each one server-side. Browsers can't
-  // cleanly download N files at once, so the scene builder writes the
-  // files into its output folder (projects/builder/) — same place the
-  // single-file save used to land.
+  // Partition by file and download each one to the user's computer.
+  // A single-file scene is one clean download; with several files the
+  // browser downloads them one after another (it may ask once to allow
+  // multiple downloads).
   const byFile = buildConfigByFile();
-  try {
-    const res = await fetch(SB_API + "/save_config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files: byFile }),
-    });
-    const j = await res.json();
-    if (j && j.ok) {
-      const names = Object.keys(byFile).join(", ");
-      showToast("Saved " + names);
-    } else {
-      showToast("Save failed: " + (j && j.error || "unknown"), "bad");
-    }
-  } catch (e) {
-    showToast("Save failed: " + (e.message || e), "bad");
+  const names = Object.keys(byFile);
+  if (!names.length) { showToast("Nothing to save"); return; }
+
+  for (let i = 0; i < names.length; i++) {
+    const fname = names[i];
+    __downloadTextFile(fname, toYamlString(byFile[fname]));
+    // Small stagger so browsers reliably fire each download.
+    if (i < names.length - 1) await new Promise(r => setTimeout(r, 250));
   }
+  showToast("Downloaded " + names.join(", "));
 }
 
 
