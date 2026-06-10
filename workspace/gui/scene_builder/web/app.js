@@ -1633,8 +1633,18 @@ const builderState = {
   mode: "IDLE", // IDLE | PICK_TARGET_OBJECT | PICK_TARGET_ANCHOR
   pending: null, // { name, type, sourceAnchor, childSolid }
   targetName: null,
-  components: {}, // name -> {type, attach?, offset?}
+  components: {}, // name -> {type, attach?, offset?, __file?}
   panMode: false,
+
+  // --- Multi-file config ---
+  // The scene is one merged object (so cross-file references resolve),
+  // but each component is tagged with the file it belongs to via
+  // ``components[name].__file``. ``files`` is the ordered list of
+  // output files (merge order = array order, like the launcher's
+  // ``scene: [base.j2, layout.j2]``). ``activeFile`` is the checked
+  // target — new components get tagged with it.
+  files: ["base.j2", "layout.j2"],
+  activeFile: "base.j2",
 
   // --- Undo / Redo ---
   // We track atomic actions (create, attach, pattern-batch) so:
@@ -6165,6 +6175,48 @@ async function __spawnCollisionBox(targetName, anchorName, solidKey, size) {
   showToast("Collision box " + name + " created.");
 }
 
+// ── Multi-file helpers ──────────────────────────────────────────────
+// Lazily tag any component that doesn't have a ``__file`` yet with the
+// currently-active file. Called from the preview tick + save, so a
+// component created while a given file is "checked" gets bound to it.
+function __assignUntaggedToActive() {
+  const bs = window.builderState;
+  if (!bs || !bs.components) return;
+  const active = bs.activeFile || (bs.files && bs.files[0]) || "layout.j2";
+  for (const meta of Object.values(bs.components)) {
+    if (meta && !meta.__file) meta.__file = active;
+  }
+}
+
+// Which output file a final config name belongs to. Handles the
+// core_1 → core rename that buildConfigObject applies.
+function __fileForName(name) {
+  const bs = window.builderState;
+  const comps = (bs && bs.components) || {};
+  const fallback = (bs && bs.activeFile) || (bs && bs.files && bs.files[0]) || "layout.j2";
+  if (comps[name] && comps[name].__file) return comps[name].__file;
+  if (name === "core" && comps["core_1"] && comps["core_1"].__file) return comps["core_1"].__file;
+  return fallback;
+}
+
+// Partition the merged config into { filename: {name: out, ...}, ... }.
+// Every declared file is represented (even if empty) so the file
+// structure is preserved on save.
+function buildConfigByFile() {
+  __assignUntaggedToActive();
+  const merged = buildConfigObject();
+  const bs = window.builderState;
+  const files = (bs && bs.files && bs.files.length) ? bs.files.slice() : ["layout.j2"];
+  const out = {};
+  for (const f of files) out[f] = {};
+  for (const [name, val] of Object.entries(merged)) {
+    let f = __fileForName(name);
+    if (!out[f]) out[f] = {};   // component tagged to a file not in the list — keep it
+    out[f][name] = val;
+  }
+  return out;
+}
+
 function buildConfigObject() {
   // Build the config from what the user actually spawned/anchored.
   // NOTE: We do NOT inject any default cores/robots. If you want a core,
@@ -6179,7 +6231,7 @@ function buildConfigObject() {
 
 	// Copy any additional options captured at create-time.
     // Skip internal builder-only keys that should not appear in config output.
-    const __builderInternalKeys = new Set(["type", "attach", "capParent", "patternParent", "patternMode", "poseABC", "poseYaw", "offset"]);
+    const __builderInternalKeys = new Set(["type", "attach", "capParent", "patternParent", "patternMode", "poseABC", "poseYaw", "offset", "__file"]);
     for (const [k, v] of Object.entries(meta)) {
       if (__builderInternalKeys.has(k)) continue;
       out[k] = v;
@@ -6314,21 +6366,28 @@ entries.push([saveName, out]);
   return cfg;
 }
 
-function saveConfig() {
-  const cfg = buildConfigObject();
-  const yamlText = toYamlString(cfg);
-
-  const blob = new Blob([yamlText], { type: "text/yaml" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "config.j2";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-
-  showToast("Downloaded config.j2");
+async function saveConfig() {
+  // Partition by file and write each one server-side. Browsers can't
+  // cleanly download N files at once, so the scene builder writes the
+  // files into its output folder (projects/builder/) — same place the
+  // single-file save used to land.
+  const byFile = buildConfigByFile();
+  try {
+    const res = await fetch(SB_API + "/save_config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: byFile }),
+    });
+    const j = await res.json();
+    if (j && j.ok) {
+      const names = Object.keys(byFile).join(", ");
+      showToast("Saved " + names);
+    } else {
+      showToast("Save failed: " + (j && j.error || "unknown"), "bad");
+    }
+  } catch (e) {
+    showToast("Save failed: " + (e.message || e), "bad");
+  }
 }
 
 
@@ -6473,11 +6532,18 @@ ensureBuilderBar();
     try { window.__updateConfigPreview(); } catch(e) {}
   }
 
-  // Load a parsed config into the scene
-  async function __loadConfigToScene(cfg) {
-    __clearScene();
-    // Small delay to let deletions propagate
-    await new Promise(r => setTimeout(r, 200));
+  // Load a parsed config into the scene.
+  // opts.clear  — wipe the scene first (default true; false to add to it)
+  // opts.file   — source filename; each loaded component is tagged with
+  //               it so a later save writes it back to the same file.
+  async function __loadConfigToScene(cfg, opts = {}) {
+    const doClear = opts.clear !== false;
+    const srcFile = opts.file || null;
+    if (doClear) {
+      __clearScene();
+      // Small delay to let deletions propagate
+      await new Promise(r => setTimeout(r, 200));
+    }
 
     const allEntries = Object.entries(cfg).filter(([, v]) => v && typeof v === "object" && v.type);
 
@@ -6510,6 +6576,12 @@ ensureBuilderBar();
       } catch(e) {
         console.warn("loadConfig: failed to spawn", cfgName, e);
         continue;
+      }
+
+      // Tag this component with the file it came from so a later save
+      // partitions it back to the same place.
+      if (srcFile && window.builderState.components[cfgName]) {
+        window.builderState.components[cfgName].__file = srcFile;
       }
 
       // For attached objects: store attach in builderState immediately so the
@@ -6561,22 +6633,41 @@ ensureBuilderBar();
     }
 
     try { window.__updateConfigPreview(); } catch(e) {}
-    showToast("Config loaded");
+    // Toast is shown by the caller (single combined message for a
+    // multi-file load).
   }
 
-  // Wire file input to load button
+  // Wire file input to load button. Multiple files load together —
+  // they merge into one scene (so cross-file references resolve) and
+  // each becomes an entry in the files list, with its components
+  // tagged so a save writes them back to the same file.
   if (fileInput) {
     fileInput.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
       try {
-        const text = await file.text();
-        const cfg = __parseSimpleYaml(text);
-        if (!cfg || !Object.keys(cfg).length) {
-          showToast("Empty or invalid config file");
-          return;
+        const bs = window.builderState;
+        const loadedNames = [];
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const text = await file.text();
+          const cfg = __parseSimpleYaml(text);
+          if (!cfg || !Object.keys(cfg).length) continue;
+          // Clear only on the first file; the rest add to the scene.
+          await __loadConfigToScene(cfg, { clear: i === 0, file: file.name });
+          loadedNames.push(file.name);
+          if (!bs.files.includes(file.name)) bs.files.push(file.name);
         }
-        await __loadConfigToScene(cfg);
+        if (loadedNames.length) {
+          // Replace the default file list with what was actually loaded,
+          // preserving load order. Active target = last file loaded.
+          bs.files = loadedNames.slice();
+          bs.activeFile = loadedNames[loadedNames.length - 1];
+          try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
+          showToast("Loaded " + loadedNames.join(", "));
+        } else {
+          showToast("Empty or invalid config file(s)");
+        }
       } catch(err) {
         console.error("loadConfig error:", err);
         showToast("Failed to load config: " + (err.message || err));
@@ -6586,8 +6677,93 @@ ensureBuilderBar();
   }
   if (loadBtn) loadBtn.addEventListener("click", () => { fileInput?.click(); });
 
+  // ── Files list: rows with a radio (active target) + count + delete ──
+  const filesListEl = document.getElementById("sbFilesList");
+  function renderFilesList() {
+    if (!filesListEl) return;
+    const bs = window.builderState;
+    if (!bs.files || !bs.files.length) bs.files = ["layout.j2"];
+    if (!bs.activeFile || !bs.files.includes(bs.activeFile)) bs.activeFile = bs.files[0];
+
+    // Count components per file (lazy-tag first so new ones are counted).
+    __assignUntaggedToActive();
+    const counts = {};
+    for (const f of bs.files) counts[f] = 0;
+    for (const meta of Object.values(bs.components)) {
+      const f = (meta && meta.__file) || bs.activeFile;
+      counts[f] = (counts[f] || 0) + 1;
+    }
+
+    filesListEl.innerHTML = "";
+    for (const fname of bs.files) {
+      const row = document.createElement("div");
+      row.className = "sb-file-row" + (fname === bs.activeFile ? " active" : "");
+      row.title = "Click to make this the target for new items";
+
+      const radio = document.createElement("span");
+      radio.className = "sb-file-radio";
+      row.appendChild(radio);
+
+      const nameEl = document.createElement("span");
+      nameEl.className = "sb-file-name";
+      nameEl.textContent = fname;
+      row.appendChild(nameEl);
+
+      const countEl = document.createElement("span");
+      countEl.className = "sb-file-count";
+      countEl.textContent = counts[fname] || 0;
+      row.appendChild(countEl);
+
+      // Delete (only if more than one file remains).
+      if (bs.files.length > 1) {
+        const del = document.createElement("span");
+        del.className = "sb-file-del";
+        del.textContent = "×";
+        del.title = "Remove file (its items move to the first file)";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const idx = bs.files.indexOf(fname);
+          if (idx < 0) return;
+          bs.files.splice(idx, 1);
+          const fallback = bs.files[0];
+          // Reassign orphaned components to the first remaining file.
+          for (const meta of Object.values(bs.components)) {
+            if (meta && meta.__file === fname) meta.__file = fallback;
+          }
+          if (bs.activeFile === fname) bs.activeFile = fallback;
+          renderFilesList();
+        });
+        row.appendChild(del);
+      }
+
+      row.addEventListener("click", () => {
+        bs.activeFile = fname;
+        renderFilesList();
+      });
+      filesListEl.appendChild(row);
+    }
+
+    // "+ add file" button.
+    const add = document.createElement("button");
+    add.className = "sb-file-add";
+    add.textContent = "+ add file";
+    add.addEventListener("click", () => {
+      let name = prompt("New file name (e.g. layout.j2):", "");
+      if (!name) return;
+      name = name.trim();
+      if (!name) return;
+      if (!/\.(j2|yaml|yml)$/.test(name)) name += ".j2";
+      if (!bs.files.includes(name)) bs.files.push(name);
+      bs.activeFile = name;   // new file becomes the active target
+      renderFilesList();
+    });
+    filesListEl.appendChild(add);
+  }
+  window.__renderFilesList = renderFilesList;
+
   function updateConfigPreview() {
     try {
+      renderFilesList();
       const cfg = buildConfigObject();
       const keys = Object.keys(cfg);
       if (!keys.length) {
