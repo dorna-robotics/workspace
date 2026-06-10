@@ -3582,13 +3582,22 @@ function __onResizePointerDown(handleMesh, event) {
   const axisVec = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
   if (obj) axisVec.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()));
 
-  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec };
+  // Remember the start position so asymmetric resize can translate the
+  // component absolutely (not incrementally) on each move — keeping the
+  // opposite face pinned while the dragged face moves.
+  const startPos = obj ? obj.position.clone() : new THREE.Vector3();
+
+  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec, startPos };
   controls.enabled = false;
 }
 
+// Minimum collision-box edge length (mm). A dragged face can't cross
+// the opposite face — it stops here.
+const __COLBOX_MIN = 1;
+
 function __onResizePointerMove(event) {
   if (!__resizeDrag) return;
-  const { name, axis, sign, startSize, plane, startPoint, axisVec } = __resizeDrag;
+  const { name, axis, sign, startSize, plane, startPoint, axisVec, startPos } = __resizeDrag;
 
   const rc = new THREE.Raycaster();
   const rect = renderer.domElement.getBoundingClientRect();
@@ -3601,10 +3610,28 @@ function __onResizePointerMove(event) {
   if (!rc.ray.intersectPlane(plane, point)) return;
 
   const delta = point.clone().sub(startPoint);
-  const dist = delta.dot(axisVec) * sign;
+  const dist = delta.dot(axisVec) * sign;   // >0 = drag the face outward
 
   const newSize = [...startSize];
-  newSize[axis] = Math.round(Math.max(1, startSize[axis] + dist) * 10) / 10;
+  newSize[axis] = Math.round(Math.max(__COLBOX_MIN, startSize[axis] + dist) * 10) / 10;
+
+  // Asymmetric resize: grow only the dragged face, keep the opposite
+  // one pinned by translating the whole component. ``g`` is the actual
+  // (clamped) size change.
+  //  - X / Y: the box geometry is centered on the origin, so growing
+  //    by g moves both faces by g/2. Shift the component by sign·g/2
+  //    toward the dragged face so the opposite face stays put.
+  //  - Z: the geometry is base-pinned (bottom face on the origin). The
+  //    top (+) handle already keeps the base fixed (shift 0); the
+  //    bottom (−) handle needs a −g shift so the top stays put.
+  const g = newSize[axis] - startSize[axis];
+  let move = 0;
+  if (axis === 2) move = Math.min(sign, 0) * g;   // 0 for top, −g for bottom
+  else            move = sign * g / 2;
+  const obj = objectsByName.get(name);
+  if (obj && startPos) {
+    obj.position.copy(startPos).addScaledVector(axisVec, move);
+  }
 
   __rebuildCollisionBox(name, newSize);
   __updateResizeHandlePositions(newSize);
@@ -3630,8 +3657,14 @@ function __onResizePointerUp() {
         // Store in builderState
         const comp = window.builderState.components[name];
         if (comp) comp.size = finalSize;
-        // Emit update
-        socket.emit("upstream_update", { [name]: { builder: { size: finalSize } } });
+        // The asymmetric resize translated the component to pin the
+        // opposite face — persist the new pose too so the server echo
+        // doesn't snap it back, and so a save emits the right offset.
+        const rv = window.quaternionToRodriguesDeg
+          ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+        const pose = [_q(obj.position.x), _q(obj.position.y), _q(obj.position.z), rv[0] || 0, rv[1] || 0, rv[2] || 0];
+        obj.userData.__builderPoseGuard = performance.now();
+        socket.emit("upstream_update", { [name]: { builder: { size: finalSize }, pose } });
       }
     }
   }
