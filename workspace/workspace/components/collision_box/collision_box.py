@@ -43,6 +43,13 @@ class CollisionBox:
             "left":   [-sx / 2, 0, sz / 2, 0, 0, 0],
             "front":  [0,  sy / 2, sz / 2, 0, 0, 0],
             "back":   [0, -sy / 2, sz / 2, 0, 0, 0],
+            # Footprint corners on the bottom plane (z = 0), same
+            # orientation convention as fixture_plate:
+            # 0 = (-x,+y), 1 = (+x,+y), 2 = (+x,-y), 3 = (-x,-y).
+            "corner_0": [-sx / 2,  sy / 2, 0, 0, 0, 0],
+            "corner_1": [ sx / 2,  sy / 2, 0, 0, 0, 0],
+            "corner_2": [ sx / 2, -sy / 2, 0, 0, 0, 0],
+            "corner_3": [-sx / 2, -sy / 2, 0, 0, 0, 0],
         })
 
         # collision box centered with bottom face at origin
