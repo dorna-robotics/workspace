@@ -1,0 +1,12 @@
+# Custom CAD models for this project's components.
+#
+# Drop ``.glb`` files here named after the registered type:
+#   @register("my_holder")  →  CAD/my_holder.glb
+#
+# The runtime checks this folder first, then falls back to the
+# platform-wide ``workspace/static/CAD/``. So if you have a model
+# with the same name as a built-in, yours wins.
+#
+# Compression: this folder has its own ``compress.sh`` workflow
+# (see ``workspace/static/CAD/compress.sh``) — copy it here if
+# you want to Draco-compress your project-local GLBs.

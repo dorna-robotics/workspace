@@ -1,0 +1,16 @@
+# apc — launch config.
+
+project_name: apc
+port:         5010
+scene:        [scene/base.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+# Project starts with no per-item actions — Start runs, robot parks,
+# Park ends the workflow. Add per-item actions + their kwargs as the
+# protocol grows.
+kwargs: {}
