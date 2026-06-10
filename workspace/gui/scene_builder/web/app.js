@@ -635,6 +635,11 @@
         updateAnchorsNow(); // position immediately once
       }
 
+      // Exposed so the collision-box resize can refresh anchor dots
+      // live as the box changes size.
+      window.__sbBuildAnchorsFor = buildAnchorsFor;
+      window.__sbActiveAnchorObjName = () => (activeAnchors && activeAnchors.obj && activeAnchors.obj.name) || null;
+
       // ---- UPDATE ANCHORS (updated: no 3D comp/solid labels anymore) ----
       function updateAnchorsNow() {
         if (!activeAnchors) return;
@@ -3502,10 +3507,32 @@ function __updateResizeHandlePositions(size) {
   });
 }
 
+// Collision-box anchors derived from size — mirrors collision_box.py:
+// center is the bottom-centre (origin); left/right/front/back are the
+// ±X / ±Y side-face centres at mid-height.
+function __colBoxAnchors(size) {
+  const [sx, sy, sz] = size;
+  return {
+    center: [0, 0, 0, 0, 0, 0],
+    right:  [ sx / 2, 0, sz / 2, 0, 0, 0],
+    left:   [-sx / 2, 0, sz / 2, 0, 0, 0],
+    front:  [0,  sy / 2, sz / 2, 0, 0, 0],
+    back:   [0, -sy / 2, sz / 2, 0, 0, 0],
+  };
+}
+
 function __rebuildCollisionBox(name, size) {
   const obj = objectsByName.get(name);
   if (!obj) return;
   const [sx, sy, sz] = size;
+
+  // Keep the face anchors on the current faces as the box resizes.
+  const anchors = __colBoxAnchors(size);
+  obj.userData.anchors = anchors;
+  if (obj.userData.anchorsBySolid && typeof obj.userData.anchorsBySolid === "object") {
+    const solidKey = Object.keys(obj.userData.anchorsBySolid)[0] || "solid_0";
+    obj.userData.anchorsBySolid[solidKey] = anchors;
+  }
 
   // Rebuild the procedural transparent viz box
   let vizNode = null;
@@ -3630,8 +3657,17 @@ function __onResizePointerUp() {
         // Store in builderState
         const comp = window.builderState.components[name];
         if (comp) comp.size = finalSize;
+        // Keep the face anchors current at the final size.
+        obj.userData.anchors = __colBoxAnchors(finalSize);
         // Emit update
         socket.emit("upstream_update", { [name]: { builder: { size: finalSize } } });
+        // If this box's anchors are on screen, redraw them at the new
+        // face positions.
+        try {
+          if (window.__sbActiveAnchorObjName && window.__sbActiveAnchorObjName() === name) {
+            window.__sbBuildAnchorsFor && window.__sbBuildAnchorsFor(obj);
+          }
+        } catch(_) {}
       }
     }
   }

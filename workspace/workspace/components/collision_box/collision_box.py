@@ -31,6 +31,20 @@ class CollisionBox:
         self.size = prm["size"]
         sx, sy, sz = self.size
 
+        # Face anchors derived from size — so they always sit on the
+        # current faces (they move as the box opens/closes). ``center``
+        # is the bottom-centre (component origin); left/right/front/back
+        # are the centres of the ±X / ±Y side faces at mid-height.
+        anchors = dict(prm["anchors"])
+        anchors["body"] = dict(anchors.get("body", {}))
+        anchors["body"].update({
+            "center": [0, 0, 0, 0, 0, 0],
+            "right":  [ sx / 2, 0, sz / 2, 0, 0, 0],
+            "left":   [-sx / 2, 0, sz / 2, 0, 0, 0],
+            "front":  [0,  sy / 2, sz / 2, 0, 0, 0],
+            "back":   [0, -sy / 2, sz / 2, 0, 0, 0],
+        })
+
         # collision box centered with bottom face at origin
         collision_box = {"body": [
             {"pose": [0.0, 0.0, sz / 2, 0.0, 0.0, 0.0], "scale": [float(sx), float(sy), float(sz)]}
@@ -38,5 +52,5 @@ class CollisionBox:
 
         # assembly
         self.assembly = {
-            k: Solid(type=self.type, anchors=prm["anchors"][k], component=self.name, **({"collision_box": collision_box[k]} if k in collision_box else {})) for k in prm["anchors"]
+            k: Solid(type=self.type, anchors=anchors[k], component=self.name, **({"collision_box": collision_box[k]} if k in collision_box else {})) for k in anchors
         }
