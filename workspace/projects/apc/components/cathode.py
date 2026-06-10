@@ -6,8 +6,8 @@ from workspace.components.factory import register
 
 
 # Static rotating-cylinder arm mount. Single solid, no motion, no IO.
-@register("rotating_cylinder_arm_apc")
-class RotatingCylinderArmApc:
+@register("cathode")
+class Cathode:
     DEFAULTS = dict(
         anchors={
             "body": {
@@ -35,7 +35,7 @@ class RotatingCylinderArmApc:
 
         self.assembly = {
             k: Solid(
-                type="rotating_cylinder_arm_apc",
+                type=self.type,
                 anchors=prm["anchors"][k],
                 component=self.name,
                 **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {}),

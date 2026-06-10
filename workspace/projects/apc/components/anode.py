@@ -4,11 +4,8 @@ from dorna2 import Solid
 
 from workspace.components.factory import register
 
-# apc_plate — will replace apc_base + apc_adapter. Simple stub for now:
-# center/place/top anchors and a placeholder collision box. Fill in the real
-# hole_*/clb_* anchors and collision_box dims from the plate CAD.
-@register("apc_plate")
-class ApcPlate:
+@register("anode")
+class Anode:
     DEFAULTS = dict(
         anchors={"body": {
             "center": [0, 0, 0, 0, 0, 0],
