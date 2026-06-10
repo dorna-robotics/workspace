@@ -1642,9 +1642,10 @@ const builderState = {
   // ``components[name].__file``. ``files`` is the ordered list of
   // output files (merge order = array order, like the launcher's
   // ``scene: [base.j2, layout.j2]``). ``activeFile`` is the checked
-  // target — new components get tagged with it.
-  files: ["base.j2", "layout.j2"],
-  activeFile: "base.j2",
+  // target — new components get tagged with it. Defaults to a single
+  // file; use "+ add file" to split the scene.
+  files: ["scene.j2"],
+  activeFile: "scene.j2",
 
   // --- Undo / Redo ---
   // We track atomic actions (create, attach, pattern-batch) so:
@@ -6182,7 +6183,7 @@ async function __spawnCollisionBox(targetName, anchorName, solidKey, size) {
 function __assignUntaggedToActive() {
   const bs = window.builderState;
   if (!bs || !bs.components) return;
-  const active = bs.activeFile || (bs.files && bs.files[0]) || "layout.j2";
+  const active = bs.activeFile || (bs.files && bs.files[0]) || "scene.j2";
   for (const meta of Object.values(bs.components)) {
     if (meta && !meta.__file) meta.__file = active;
   }
@@ -6193,7 +6194,7 @@ function __assignUntaggedToActive() {
 function __fileForName(name) {
   const bs = window.builderState;
   const comps = (bs && bs.components) || {};
-  const fallback = (bs && bs.activeFile) || (bs && bs.files && bs.files[0]) || "layout.j2";
+  const fallback = (bs && bs.activeFile) || (bs && bs.files && bs.files[0]) || "scene.j2";
   if (comps[name] && comps[name].__file) return comps[name].__file;
   if (name === "core" && comps["core_1"] && comps["core_1"].__file) return comps["core_1"].__file;
   return fallback;
@@ -6206,7 +6207,7 @@ function buildConfigByFile() {
   __assignUntaggedToActive();
   const merged = buildConfigObject();
   const bs = window.builderState;
-  const files = (bs && bs.files && bs.files.length) ? bs.files.slice() : ["layout.j2"];
+  const files = (bs && bs.files && bs.files.length) ? bs.files.slice() : ["scene.j2"];
   const out = {};
   for (const f of files) out[f] = {};
   for (const [name, val] of Object.entries(merged)) {
@@ -6682,7 +6683,7 @@ ensureBuilderBar();
   function renderFilesList() {
     if (!filesListEl) return;
     const bs = window.builderState;
-    if (!bs.files || !bs.files.length) bs.files = ["layout.j2"];
+    if (!bs.files || !bs.files.length) bs.files = ["scene.j2"];
     if (!bs.activeFile || !bs.files.includes(bs.activeFile)) bs.activeFile = bs.files[0];
 
     // Count components per file (lazy-tag first so new ones are counted).
@@ -6698,7 +6699,7 @@ ensureBuilderBar();
     for (const fname of bs.files) {
       const row = document.createElement("div");
       row.className = "sb-file-row" + (fname === bs.activeFile ? " active" : "");
-      row.title = "Click to make this the target for new items";
+      row.title = "Click to make this the target for new items · double-click the name to rename";
 
       const radio = document.createElement("span");
       radio.className = "sb-file-radio";
@@ -6707,6 +6708,25 @@ ensureBuilderBar();
       const nameEl = document.createElement("span");
       nameEl.className = "sb-file-name";
       nameEl.textContent = fname;
+      nameEl.title = "Double-click to rename";
+      // Double-click the name to rename — updates the file list, the
+      // active target if needed, and every component tagged with it.
+      nameEl.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        let next = prompt("Rename file:", fname);
+        if (next === null) return;
+        next = next.trim();
+        if (!next || next === fname) return;
+        if (!/\.(j2|yaml|yml)$/.test(next)) next += ".j2";
+        if (bs.files.includes(next)) { showToast("A file named " + next + " already exists", "bad"); return; }
+        const idx = bs.files.indexOf(fname);
+        if (idx >= 0) bs.files[idx] = next;
+        for (const meta of Object.values(bs.components)) {
+          if (meta && meta.__file === fname) meta.__file = next;
+        }
+        if (bs.activeFile === fname) bs.activeFile = next;
+        renderFilesList();
+      });
       row.appendChild(nameEl);
 
       const countEl = document.createElement("span");
@@ -6748,7 +6768,7 @@ ensureBuilderBar();
     add.className = "sb-file-add";
     add.textContent = "+ add file";
     add.addEventListener("click", () => {
-      let name = prompt("New file name (e.g. layout.j2):", "");
+      let name = prompt("New file name (e.g. layout.j2):", "layout.j2");
       if (!name) return;
       name = name.trim();
       if (!name) return;
