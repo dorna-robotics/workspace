@@ -754,7 +754,16 @@ class CADStaticHandler(tornado.web.StaticFileHandler):
         return absolute_path
 
 def scan_project_components(project_dir):
-    """Scan a project's components/ folder for @register types."""
+    """Scan a project's components/ folder for @register types AND import
+    each module so its ``@register`` decorator actually runs.
+
+    Regex-scanning the source only gives us the type→file map for the
+    catalog; without importing the module, the factory registry never
+    learns the type and ``create_component`` raises "Unknown component
+    type" (→ instantiate 500, no anchors/collision in the builder). So
+    we import each file here, registering it with the factory the same
+    way the library components are at startup.
+    """
     out = {}
     comp_dir = os.path.join(project_dir, "components")
     if not os.path.isdir(comp_dir):
@@ -768,8 +777,18 @@ def scan_project_components(project_dir):
                 src = open(fp, "r", encoding="utf-8", errors="ignore").read()
             except Exception:
                 continue
-            for mm in REGISTER_RE.finditer(src):
-                out[mm.group(1)] = fp
+            types = [mm.group(1) for mm in REGISTER_RE.finditer(src)]
+            if not types:
+                continue
+            # Import the module so its @register decorator runs and the
+            # factory can actually instantiate the type.
+            try:
+                load_module_from_path(fp, f"_project_component_{os.path.splitext(fn)[0]}")
+            except Exception as e:
+                print(f"[builder] failed to import project component {fp}: {e}")
+                continue
+            for t in types:
+                out[t] = fp
     return out
 
 STATIC_DIR = os.path.join(PARENT_DIR, "static")
