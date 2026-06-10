@@ -6,8 +6,8 @@ class Arm:
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0]}},
         # cfg
-        output_enable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_disable = [[None, None, 0.1]], # [[pin, index, time]]
+        output_enable = [[None, None, 0]], # [[pin, index, time]]
+        output_disable = [[None, None, 0]], # [[pin, index, time]]
     )
 
     def __init__(self, name: str, workspace, type=None, **kwargs):

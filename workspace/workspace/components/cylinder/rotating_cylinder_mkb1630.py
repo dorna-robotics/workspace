@@ -44,8 +44,8 @@ class RotatingCylinderMKB1630:
         toggle_range = [[90.0, 0.0], [0.0, -37.0]],
         toggle_period = 1,  # second, time to toggle from one state to another
         # pneumatic IO  [[pin, index, time]]
-        output_enable=[[None, None, 1]],
-        output_disable=[[None, None, 1]],
+        output_enable=[[None, None, 0.1]],
+        output_disable=[[None, None, 0.1]],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

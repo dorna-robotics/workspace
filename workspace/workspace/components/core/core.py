@@ -190,14 +190,14 @@ class Core:
         self.has_rail = prm["has_rail"]
         self.rail_cfg = prm["rail_cfg"]
         if self.rail_cfg["type"] == "rail_hd_500mm":
-            self.rail_min = -75
-            self.rail_max = 400.0
+            self.rail_min = -159
+            self.rail_max = 316.0
         elif self.rail_cfg["type"] == "rail_hd_1000mm":
-            self.rail_min = -80.0
-            self.rail_max = 920.0
+            self.rail_min = -199.0
+            self.rail_max = 801.0
         elif self.rail_cfg["type"] == "rail_hd_2000mm":
-            self.rail_min = -80.0
-            self.rail_max = 1920.0
+            self.rail_min = -280.0
+            self.rail_max = 1720.0
         else:
             raise ValueError(f"Unsupported rail type: {self.rail_cfg['type']}")
         
@@ -339,21 +339,15 @@ class Core:
                 rail_base_anchors = {
                     "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
-                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_1": [400.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_2": [400.0, -37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 25/2, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [400.0, 25/2, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [400.0, -25/2, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -25/2, 0.0, 0.0, 0.0, 0.0],
                 }
-                # Third box trimmed from 102 mm → 82 mm tall so it sits at
-                # the same height as the other two (all end at z=82 =
-                # carriage height). The original 102 mm extended 20 mm
-                # above the carriage and blocked arm configurations that
-                # reach over the rail — showed up in calibration when the
-                # carriage parked near rail_min and the arm twisted back.
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [170.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 183.5, 82]},
-                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [170.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 82]}
+                    {"pose": [170.0-84, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 183.5, 82]},
+                    {"pose": [-176.105-84, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [170.0-84, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -361,15 +355,15 @@ class Core:
                 rail_base_anchors = {
                     "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
-                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_1": [920.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_2": [920.0, -37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [800.0, 12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [800.0, -12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                 }
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [420.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
-                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [420.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
+                    {"pose": [420.0-119, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
+                    {"pose": [-176.105-119, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [420.0-119, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_1000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -377,15 +371,15 @@ class Core:
                 rail_base_anchors = {
                     "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     "carriage": [0.0, 0.0, 82.0, 0.0, 0.0, 0.0],
-                    "hole_0": [0.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_1": [1920.0, 37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_2": [1920.0, -37.5, 0.0, 0.0, 0.0, 0.0],
-                    "hole_3": [0.0, -37.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_0": [0.0, 12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_1": [1600.0, 12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_2": [1600.0, -12.5, 0.0, 0.0, 0.0, 0.0],
+                    "hole_3": [0.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                 }
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [920.0, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 183.5, 82]},
-                    {"pose": [-176.105, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [920.0, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 82]}
+                    {"pose": [920.0-340, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 183.5, 82]},
+                    {"pose": [-176.105-340, 120, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
+                    {"pose": [920.0-340, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_2000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
