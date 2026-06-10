@@ -1375,6 +1375,7 @@ if (node) {
                   if (spec.type === "collision_box") {
                     const comp = window.builderState.components[root.name];
                     const sz = (comp && comp.size) || [100, 100, 100];
+                    const [cx, cy, cz] = __colBoxCenterLocal(comp || { size: sz });
                     // Add procedural transparent box with edge overlay
                     const boxGeom = new THREE.BoxGeometry(sz[0], sz[1], sz[2]);
                     const boxMat = new THREE.MeshBasicMaterial({
@@ -1382,7 +1383,7 @@ if (node) {
                       depthWrite: false, side: THREE.DoubleSide
                     });
                     const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-                    boxMesh.position.set(0, 0, sz[2] / 2);
+                    boxMesh.position.set(cx, cy, cz);
                     const vizGroup = new THREE.Group();
                     vizGroup.name = "__colBoxViz__";
                     vizGroup.userData.__colBoxViz = true;
@@ -1442,13 +1443,14 @@ if (node) {
                 if (spec.type === "collision_box") {
                   const comp = window.builderState.components[root.name];
                   const sz = (comp && comp.size) || [100, 100, 100];
+                  const [cx, cy, cz] = __colBoxCenterLocal(comp || { size: sz });
                   const boxGeom = new THREE.BoxGeometry(sz[0], sz[1], sz[2]);
                   const boxMat = new THREE.MeshBasicMaterial({
                     color: 0xaaaaaa, transparent: true, opacity: 0.06,
                     depthWrite: false, side: THREE.DoubleSide
                   });
                   const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-                  boxMesh.position.set(0, 0, sz[2] / 2);
+                  boxMesh.position.set(cx, cy, cz);
                   const vizGroup = new THREE.Group();
                   vizGroup.name = "__colBoxViz__";
                   vizGroup.userData.__colBoxViz = true;
@@ -3425,6 +3427,16 @@ const HANDLE_RADIUS = 5;
 const HANDLE_COLOR = 0x44aaff;
 const HANDLE_HOVER_COLOR = 0x88ccff;
 
+// Local box-center for a collision_box, accounting for ``box_offset``.
+// box_offset [0,0,0] keeps the box centered in X/Y with its bottom face
+// on the origin in Z (legacy placement); a non-zero offset shifts the
+// box while the component origin stays put (asymmetric resize).
+function __colBoxCenterLocal(comp) {
+  const size = (comp && comp.size) || [100, 100, 100];
+  const bo = (comp && comp.box_offset) || [0, 0, 0];
+  return [bo[0] || 0, bo[1] || 0, size[2] / 2 + (bo[2] || 0)];
+}
+
 function __createResizeHandles(name) {
   __removeResizeHandles();
   const obj = objectsByName.get(name);
@@ -3433,18 +3445,19 @@ function __createResizeHandles(name) {
   if (!comp || comp.type !== "collision_box") return;
   const size = comp.size || [100, 100, 100];
   const [sx, sy, sz] = size;
+  const [cx, cy, cz] = __colBoxCenterLocal(comp);
 
   const group = new THREE.Group();
   group.name = "__resizeHandles__";
   group.userData.__isResizeHandleGroup = true;
 
   const faces = [
-    { axis: 0, sign:  1, pos: [ sx/2,    0, sz/2] },
-    { axis: 0, sign: -1, pos: [-sx/2,    0, sz/2] },
-    { axis: 1, sign:  1, pos: [    0, sy/2, sz/2] },
-    { axis: 1, sign: -1, pos: [    0,-sy/2, sz/2] },
-    { axis: 2, sign:  1, pos: [    0,    0, sz  ] },
-    { axis: 2, sign: -1, pos: [    0,    0, 0   ] },
+    { axis: 0, sign:  1, pos: [cx + sx/2, cy,        cz       ] },
+    { axis: 0, sign: -1, pos: [cx - sx/2, cy,        cz       ] },
+    { axis: 1, sign:  1, pos: [cx,        cy + sy/2, cz       ] },
+    { axis: 1, sign: -1, pos: [cx,        cy - sy/2, cz       ] },
+    { axis: 2, sign:  1, pos: [cx,        cy,        cz + sz/2] },
+    { axis: 2, sign: -1, pos: [cx,        cy,        cz - sz/2] },
   ];
 
   const minDim = Math.min(sx, sy, sz);
@@ -3482,16 +3495,18 @@ function __removeResizeHandles() {
   }
 }
 
-function __updateResizeHandlePositions(size) {
+function __updateResizeHandlePositions(size, boxOffset) {
   if (!__resizeHandleGroup) return;
   const [sx, sy, sz] = size;
+  const bo = boxOffset || [0, 0, 0];
+  const cx = bo[0] || 0, cy = bo[1] || 0, cz = sz / 2 + (bo[2] || 0);
   const positions = [
-    [ sx/2,    0, sz/2],
-    [-sx/2,    0, sz/2],
-    [    0, sy/2, sz/2],
-    [    0,-sy/2, sz/2],
-    [    0,    0, sz  ],
-    [    0,    0, 0   ],
+    [cx + sx/2, cy,        cz       ],
+    [cx - sx/2, cy,        cz       ],
+    [cx,        cy + sy/2, cz       ],
+    [cx,        cy - sy/2, cz       ],
+    [cx,        cy,        cz + sz/2],
+    [cx,        cy,        cz - sz/2],
   ];
   let i = 0;
   __resizeHandleGroup.children.forEach(c => {
@@ -3502,10 +3517,12 @@ function __updateResizeHandlePositions(size) {
   });
 }
 
-function __rebuildCollisionBox(name, size) {
+function __rebuildCollisionBox(name, size, boxOffset) {
   const obj = objectsByName.get(name);
   if (!obj) return;
   const [sx, sy, sz] = size;
+  const bo = boxOffset || (window.builderState.components[name] && window.builderState.components[name].box_offset) || [0, 0, 0];
+  const cx = bo[0] || 0, cy = bo[1] || 0, cz = sz / 2 + (bo[2] || 0);
 
   // Rebuild the procedural transparent viz box
   let vizNode = null;
@@ -3520,7 +3537,7 @@ function __rebuildCollisionBox(name, size) {
     depthWrite: false, side: THREE.DoubleSide
   });
   const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-  boxMesh.position.set(0, 0, sz / 2);
+  boxMesh.position.set(cx, cy, cz);
   boxMesh.userData.componentName = name;
   const newViz = new THREE.Group();
   newViz.name = "__colBoxViz__";
@@ -3540,7 +3557,7 @@ function __rebuildCollisionBox(name, size) {
     obj.add(colGroup);
   }
 
-  const boxes = [{ pose: [0, 0, sz / 2, 0, 0, 0], scale: [sx, sy, sz] }];
+  const boxes = [{ pose: [cx, cy, cz, 0, 0, 0], scale: [sx, sy, sz] }];
   fillCollisionGroup(colGroup, boxes, false);
   // Re-register collision meshes as pickable
   colGroup.traverse(o => {
@@ -3582,12 +3599,12 @@ function __onResizePointerDown(handleMesh, event) {
   const axisVec = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
   if (obj) axisVec.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()));
 
-  // Remember the start position so asymmetric resize can translate the
-  // component absolutely (not incrementally) on each move — keeping the
-  // opposite face pinned while the dragged face moves.
-  const startPos = obj ? obj.position.clone() : new THREE.Vector3();
+  // Asymmetric resize keeps the component ORIGIN fixed and shifts the
+  // box's center (``box_offset``) so only the dragged face moves. Stash
+  // the start offset so each move computes the new offset absolutely.
+  const startBoxOffset = [...((comp.box_offset) || [0, 0, 0])];
 
-  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec, startPos };
+  __resizeDrag = { name, axis, sign, startSize: size, plane, startPoint, axisVec, startBoxOffset };
   controls.enabled = false;
 }
 
@@ -3597,7 +3614,7 @@ const __COLBOX_MIN = 1;
 
 function __onResizePointerMove(event) {
   if (!__resizeDrag) return;
-  const { name, axis, sign, startSize, plane, startPoint, axisVec, startPos } = __resizeDrag;
+  const { name, axis, sign, startSize, plane, startPoint, axisVec, startBoxOffset } = __resizeDrag;
 
   const rc = new THREE.Raycaster();
   const rect = renderer.domElement.getBoundingClientRect();
@@ -3616,25 +3633,24 @@ function __onResizePointerMove(event) {
   newSize[axis] = Math.round(Math.max(__COLBOX_MIN, startSize[axis] + dist) * 10) / 10;
 
   // Asymmetric resize: grow only the dragged face, keep the opposite
-  // one pinned by translating the whole component. ``g`` is the actual
-  // (clamped) size change.
-  //  - X / Y: the box geometry is centered on the origin, so growing
-  //    by g moves both faces by g/2. Shift the component by sign·g/2
-  //    toward the dragged face so the opposite face stays put.
-  //  - Z: the geometry is base-pinned (bottom face on the origin). The
-  //    top (+) handle already keeps the base fixed (shift 0); the
-  //    bottom (−) handle needs a −g shift so the top stays put.
+  // face — and the component ORIGIN — fixed by shifting the box's
+  // center offset. ``g`` is the actual (clamped) size change.
+  //  - X / Y: the box center sits at box_offset; growing by g moves
+  //    both faces by g/2, so shift the offset by sign·g/2 toward the
+  //    dragged face → opposite face holds.
+  //  - Z: the box base sits at box_offset.z; the top (+) handle keeps
+  //    the base fixed (no shift), the bottom (−) handle shifts −g so
+  //    the top holds.
   const g = newSize[axis] - startSize[axis];
-  let move = 0;
-  if (axis === 2) move = Math.min(sign, 0) * g;   // 0 for top, −g for bottom
-  else            move = sign * g / 2;
-  const obj = objectsByName.get(name);
-  if (obj && startPos) {
-    obj.position.copy(startPos).addScaledVector(axisVec, move);
-  }
+  const newBoxOffset = [...(startBoxOffset || [0, 0, 0])];
+  const shift = (axis === 2) ? Math.min(sign, 0) * g : sign * g / 2;
+  newBoxOffset[axis] = Math.round(((newBoxOffset[axis] || 0) + shift) * 10) / 10;
 
-  __rebuildCollisionBox(name, newSize);
-  __updateResizeHandlePositions(newSize);
+  const comp = window.builderState.components[name];
+  if (comp) comp.box_offset = newBoxOffset;
+
+  __rebuildCollisionBox(name, newSize, newBoxOffset);
+  __updateResizeHandlePositions(newSize, newBoxOffset);
   markDirty();
 }
 
@@ -3654,17 +3670,12 @@ function __onResizePointerUp() {
       if (geom && geom.parameters) {
         const _q = v => Math.round(v * 10) / 10;
         const finalSize = [_q(geom.parameters.width), _q(geom.parameters.height), _q(geom.parameters.depth)];
-        // Store in builderState
+        // Store in builderState (size + the box-center offset that the
+        // asymmetric resize produced — the component origin stays put).
         const comp = window.builderState.components[name];
+        const boxOffset = (comp && comp.box_offset) || [0, 0, 0];
         if (comp) comp.size = finalSize;
-        // The asymmetric resize translated the component to pin the
-        // opposite face — persist the new pose too so the server echo
-        // doesn't snap it back, and so a save emits the right offset.
-        const rv = window.quaternionToRodriguesDeg
-          ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
-        const pose = [_q(obj.position.x), _q(obj.position.y), _q(obj.position.z), rv[0] || 0, rv[1] || 0, rv[2] || 0];
-        obj.userData.__builderPoseGuard = performance.now();
-        socket.emit("upstream_update", { [name]: { builder: { size: finalSize }, pose } });
+        socket.emit("upstream_update", { [name]: { builder: { size: finalSize, box_offset: boxOffset } } });
       }
     }
   }

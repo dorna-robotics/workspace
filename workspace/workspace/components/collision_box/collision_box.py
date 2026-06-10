@@ -10,7 +10,13 @@ class CollisionBox:
         anchors={
             "body": {"center": [0, 0, 0, 0, 0, 0]},
         },
-        size=[100, 100, 100],  # [dx, dy, dz]
+        size=[100, 100, 100],   # [dx, dy, dz]
+        # Box-center offset from the component origin, [dx, dy, dz].
+        # Default [0, 0, 0] = box centered on the origin in X/Y with its
+        # bottom face on the origin in Z. The scene builder sets this
+        # when you resize a single face (asymmetric resize) so the
+        # origin stays put while one face moves.
+        box_offset=[0, 0, 0],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -31,9 +37,16 @@ class CollisionBox:
         self.size = prm["size"]
         sx, sy, sz = self.size
 
-        # collision box centered with bottom face at origin
+        # box-center offset (default keeps the box centered in X/Y with
+        # the bottom face on the origin in Z)
+        bx, by, bz = (list(prm.get("box_offset") or [0, 0, 0]) + [0, 0, 0])[:3]
+
+        # collision box: centre at (bx, by, sz/2 + bz) so box_offset
+        # [0,0,0] reproduces the legacy "bottom face on the origin"
+        # placement, and a non-zero offset shifts the box while the
+        # component origin stays fixed.
         collision_box = {"body": [
-            {"pose": [0.0, 0.0, sz / 2, 0.0, 0.0, 0.0], "scale": [float(sx), float(sy), float(sz)]}
+            {"pose": [float(bx), float(by), sz / 2 + float(bz), 0.0, 0.0, 0.0], "scale": [float(sx), float(sy), float(sz)]}
         ]}
 
         # assembly
