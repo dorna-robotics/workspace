@@ -1077,8 +1077,31 @@ async def upstream_update(sid, payload):
 async def reset_scene(sid):
     world_state.clear()
     await sio.emit("scene_reset")
-    return "ok"
-    return "ok"
+
+
+class ResetHandler(tornado.web.RequestHandler):
+    """Clear the whole server-side scene synchronously.
+
+    The ``reset_scene`` socket event is fire-and-forget — if the page
+    reloads before it lands, ``world_state`` survives and the "cleared"
+    scene comes right back on reconnect. This HTTP endpoint clears it
+    in-band so the caller can await it *before* reloading."""
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    def post(self):
+        global world_state
+        world_state.clear()
+        self.finish({"ok": True})
+
+
+app.add_handlers(r".*$", [(r"/api/reset", ResetHandler)])
 
 if __name__ == "__main__":
     app.listen(PORT)

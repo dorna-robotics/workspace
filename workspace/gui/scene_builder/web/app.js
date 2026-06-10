@@ -2052,7 +2052,11 @@ function ensureBuilderBar() {
     const path = await _showNewSceneModal();
     if (path === null) return; // cancelled
 
-    // Clear server scene state
+    // Clear server scene state. Await the HTTP reset so world_state is
+    // definitely cleared before we reload — a fire-and-forget socket
+    // emit can be dropped when the page tears down, leaving the old
+    // scene to come back on reconnect.
+    try { await fetch(SB_API + "/reset", { method: "POST" }); } catch(e) {}
     try { window.socket?.emit?.("reset_scene"); } catch(e) {}
 
     // Set project path (can be empty for no project)
