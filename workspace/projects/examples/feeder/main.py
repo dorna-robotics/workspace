@@ -19,6 +19,7 @@ Framework reference: docs/bt-framework-guide.md §2
 import argparse
 import importlib
 import os
+import pkgutil
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,26 @@ PORT_ENV_VAR  = "PORT"
 _BASE_DIR = Path(__file__).parent
 with open(_BASE_DIR / LAUNCH_FILE) as f:
     LAUNCH = yaml.safe_load(f)
+
+
+def _register_project_components():
+    """Import every module in this project's ``components/`` package so
+    their ``@register("...")`` decorators run before the scene boots.
+
+    Mirrors how the library's ``workspace/components`` package auto-
+    imports itself. Without this, a scene that references a project-
+    local ``type:`` fails with "Unknown component type". Keeps main.py
+    project-agnostic — drop a registered module in ``components/`` and
+    it just works, no edits here."""
+    comp_dir = _BASE_DIR / "components"
+    if not comp_dir.is_dir():
+        return
+    for mod in pkgutil.iter_modules([str(comp_dir)]):
+        if not mod.name.startswith("_"):
+            importlib.import_module(f"components.{mod.name}")
+
+
+_register_project_components()
 
 
 def _import_module(rel_path: str):
@@ -68,7 +89,15 @@ def main():
     )
     args = p.parse_args()
 
-    ws = Workspace(config_path=LAUNCH["scene"], port=args.port)
+    # Resolve scene paths relative to the project dir (like recipes /
+    # launch.yaml) so the launch is cwd-independent — the orchestrator
+    # runs main.py by absolute path from an arbitrary working directory.
+    scene = LAUNCH["scene"]
+    if isinstance(scene, str):
+        scene = [scene]
+    scene = [str(_BASE_DIR / p) for p in scene]
+
+    ws = Workspace(config_path=scene, port=args.port)
     RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()
 
 
