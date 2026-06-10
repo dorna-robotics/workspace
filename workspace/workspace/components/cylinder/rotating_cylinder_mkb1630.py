@@ -60,7 +60,7 @@ class RotatingCylinderMKB1630:
 
         self.assembly = {
             k: Solid(
-                type=f"rotating_cylinder_{k}",
+                type=f"rotating_cylinder_mkb1630_{k}",
                 anchors=prm["anchors"][k],
                 component=self.name,
                 **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {}),

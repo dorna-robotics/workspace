@@ -2384,9 +2384,9 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
   let meshes = null;
   let glb = (meta && meta.glb) ? meta.glb : `/static/CAD/${type}.glb`;
   let collisionLocalSingle = [];
+  let boxForGripSingle = false;
   if (blueprint && Array.isArray(blueprint.solids) && blueprint.solids.length) {
     try { collisionLocalSingle = blueprint.solids[0].collisionLocal || []; } catch (e) { collisionLocalSingle = []; }
-    let boxForGripSingle = false;
     try { boxForGripSingle = !!blueprint.solids[0].boxForGrip; } catch (e) {}
     meshes = [];
     for (const s of blueprint.solids) {
@@ -2534,9 +2534,9 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
   let meshes = null;
   let glb = (meta && meta.glb) ? meta.glb : `/static/CAD/${type}.glb`;
   let collisionLocalSingle = [];
+  let boxForGripSingle = false;
   if (blueprint && Array.isArray(blueprint.solids) && blueprint.solids.length) {
     try { collisionLocalSingle = blueprint.solids[0].collisionLocal || []; } catch (e) { collisionLocalSingle = []; }
-    let boxForGripSingle = false;
     try { boxForGripSingle = !!blueprint.solids[0].boxForGrip; } catch (e) {}
     meshes = [];
     for (const s of blueprint.solids) {
