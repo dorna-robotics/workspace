@@ -15,7 +15,7 @@
       "count": 1084,
       "max": [
         2.1500000953674316,
-        2.1439878940582275,
+        2.1439387798309326,
         0
       ],
       "min": [
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3385
+      "byteLength": 3438
     }
   ],
   "buffers": [
     {
       "uri": "robot_flange.glb.bin",
-      "byteLength": 3385
+      "byteLength": 3438
     }
   ],
   "materials": [

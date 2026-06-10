@@ -16,7 +16,7 @@
       "max": [
         0.3149999976158142,
         0.3149999976158142,
-        0.1310659945011139
+        0.1310529112815857
       ],
       "min": [
         -0.3149999976158142,
@@ -32,15 +32,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1170
+      "count": 1152
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 363,
+      "count": 360,
       "max": [
-        0.38749998807907104,
-        0.38749998807907104,
+        0.38756561279296875,
+        0.38756561279296875,
         4.400000095367432
       ],
       "min": [
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 363
+      "count": 360
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 740
+      "byteLength": 757
     },
     {
       "buffer": 0,
-      "byteOffset": 740,
-      "byteLength": 1209
+      "byteOffset": 757,
+      "byteLength": 1157
     }
   ],
   "buffers": [
     {
       "uri": "microtube.glb.bin",
-      "byteLength": 1949
+      "byteLength": 1914
     }
   ],
   "materials": [

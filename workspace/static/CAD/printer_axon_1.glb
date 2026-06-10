@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 62814
+      "count": 51096
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17435,
+      "count": 14864,
       "max": [
         24.386499404907227,
-        13,
-        18.850000381469727
+        12.9986572265625,
+        18.851247787475586
       ],
       "min": [
         -31.613500595092773,
@@ -27,19 +27,19 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17435
+      "count": 14864
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 17435
+      "count": 14864
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 59557
+      "byteLength": 52012
     }
   ],
   "samplers": [
@@ -66,7 +66,7 @@
   "buffers": [
     {
       "uri": "printer_axon_1.glb.bin",
-      "byteLength": 59557
+      "byteLength": 52012
     }
   ],
   "materials": [

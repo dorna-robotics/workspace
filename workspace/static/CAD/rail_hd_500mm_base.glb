@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 13260
+      "count": 11958
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4298,
+      "count": 3916,
       "max": [
         54,
-        5.25,
-        5.300000190734863
+        5.251129150390625,
+        5.298913478851318
       ],
       "min": [
         -14,
@@ -27,21 +27,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4298
+      "count": 3916
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 106884
+      "count": 95598
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 35403,
+      "count": 32113,
       "max": [
         53.5,
-        9.350000381469727,
-        7.599917888641357
+        9.349584579467773,
+        7.600315570831299
       ],
       "min": [
         -21.100000381469727,
@@ -52,21 +52,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 35403
+      "count": 32113
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 28878
+      "count": 26472
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 10014,
+      "count": 9229,
       "max": [
         55,
-        5.849999904632568,
-        7.300000190734863
+        5.847949504852295,
+        7.301373481750488
       ],
       "min": [
         -20.899999618530273,
@@ -77,21 +77,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 10014
+      "count": 9229
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 23154
+      "count": 21792
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7194,
+      "count": 6883,
       "max": [
-        -14.239999771118164,
+        -14.240209579467773,
         16.84000015258789,
-        7.460000038146973
+        7.460022926330566
       ],
       "min": [
         -20.959999084472656,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7194
+      "count": 6883
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 12559
+      "byteLength": 11636
     },
     {
       "buffer": 0,
-      "byteOffset": 12559,
-      "byteLength": 106542
+      "byteOffset": 11636,
+      "byteLength": 97398
     },
     {
       "buffer": 0,
-      "byteOffset": 119101,
-      "byteLength": 25524
+      "byteOffset": 109034,
+      "byteLength": 24132
     },
     {
       "buffer": 0,
-      "byteOffset": 144625,
-      "byteLength": 22664
+      "byteOffset": 133166,
+      "byteLength": 21652
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_500mm_base.glb.bin",
-      "byteLength": 167289
+      "byteLength": 154818
     }
   ],
   "materials": [

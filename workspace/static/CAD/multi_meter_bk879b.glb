@@ -7,15 +7,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3174
+      "count": 2634
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 625,
+      "count": 467,
       "max": [
-        4.5,
-        4,
+        4.49957275390625,
+        3.99993896484375,
         9.5
       ],
       "min": [
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 625
+      "count": 467
     },
     {
       "type": "SCALAR",
@@ -39,9 +39,9 @@
       "componentType": 5126,
       "count": 96,
       "max": [
-        3.5999999046325684,
-        3.9999899864196777,
-        8.199999809265137
+        3.60012149810791,
+        3.9999001026153564,
+        8.19999885559082
       ],
       "min": [
         -3.5999999046325684,
@@ -64,9 +64,9 @@
       "componentType": 5126,
       "count": 184,
       "max": [
-        3,
-        4.1999897956848145,
-        7.900000095367432
+        2.9997072219848633,
+        4.199723720550537,
+        7.90000057220459
       ],
       "min": [
         -3,
@@ -84,23 +84,23 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3134
+      "byteLength": 2846
     },
     {
       "buffer": 0,
-      "byteOffset": 3134,
-      "byteLength": 586
+      "byteOffset": 2846,
+      "byteLength": 572
     },
     {
       "buffer": 0,
-      "byteOffset": 3720,
-      "byteLength": 480
+      "byteOffset": 3418,
+      "byteLength": 483
     }
   ],
   "buffers": [
     {
       "uri": "multi_meter_bk879b.glb.bin",
-      "byteLength": 4200
+      "byteLength": 3901
     }
   ],
   "materials": [

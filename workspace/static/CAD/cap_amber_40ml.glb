@@ -14,9 +14,9 @@
       "componentType": 5126,
       "count": 316,
       "max": [
-        1.2999999523162842,
+        1.3000030517578125,
         1.2990460395812988,
-        1.399999976158142
+        1.3999851942062378
       ],
       "min": [
         -1.2961859703063965,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1016
+      "byteLength": 1081
     }
   ],
   "buffers": [
     {
       "uri": "cap_amber_40ml.glb.bin",
-      "byteLength": 1016
+      "byteLength": 1081
     }
   ],
   "materials": [

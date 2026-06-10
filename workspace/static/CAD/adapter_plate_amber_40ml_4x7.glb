@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4464
+      "count": 4218
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1568,
+      "count": 1486,
       "max": [
         10.25,
-        5.25,
-        1
+        5.2496337890625,
+        1.0004088878631592
       ],
       "min": [
         -10.25,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1568
+      "count": 1486
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4672
+      "byteLength": 4578
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_amber_40ml_4x7.glb.bin",
-      "byteLength": 4672
+      "byteLength": 4578
     }
   ],
   "materials": [

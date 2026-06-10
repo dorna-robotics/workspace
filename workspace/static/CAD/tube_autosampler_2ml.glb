@@ -14,8 +14,8 @@
       "componentType": 5126,
       "count": 641,
       "max": [
-        0.5766000151634216,
-        0.5791490077972412,
+        0.5765158534049988,
+        0.5791248083114624,
         3.200000047683716
       ],
       "min": [
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3416
+      "byteLength": 3420
     }
   ],
   "buffers": [
     {
       "uri": "tube_autosampler_2ml.glb.bin",
-      "byteLength": 3416
+      "byteLength": 3420
     }
   ],
   "materials": [

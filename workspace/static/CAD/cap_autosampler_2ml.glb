@@ -14,9 +14,9 @@
       "componentType": 5126,
       "count": 402,
       "max": [
-        0.5782979726791382,
+        0.5782989859580994,
         0.5795739889144897,
-        0.6299999952316284
+        0.6299856305122375
       ],
       "min": [
         -0.5799999833106995,
@@ -40,7 +40,7 @@
       "count": 30,
       "max": [
         0.30000001192092896,
-        0.2983570098876953,
+        0.2983468770980835,
         0.5299999713897705
       ],
       "min": [
@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1333
+      "byteLength": 1349
     },
     {
       "buffer": 0,
-      "byteOffset": 1333,
-      "byteLength": 283
+      "byteOffset": 1349,
+      "byteLength": 282
     }
   ],
   "buffers": [
     {
       "uri": "cap_autosampler_2ml.glb.bin",
-      "byteLength": 1616
+      "byteLength": 1631
     }
   ],
   "materials": [

@@ -7,15 +7,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1128
+      "count": 1008
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 387,
+      "count": 369,
       "max": [
-        0.36000001430511475,
-        0.36000001430511475,
+        0.3598681688308716,
+        0.3598681688308716,
         5.199999809265137
       ],
       "min": [
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 387
+      "count": 369
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1442
+      "byteLength": 1311
     }
   ],
   "buffers": [
     {
       "uri": "tip_axygen_180ul.glb.bin",
-      "byteLength": 1442
+      "byteLength": 1311
     }
   ],
   "materials": [

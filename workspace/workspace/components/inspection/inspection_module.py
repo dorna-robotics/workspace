@@ -7,23 +7,11 @@ from workspace.components.inspection.inspection import Inspection
 @register("inspection_module")
 class InspectionModule(Inspection):
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [9, 0, 27, 0, 0, 180], "place": [9, 0, 37, 0, 0, 180], "top": [0, 0, 27, 0, 0, 0],
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [-9, 0, 27, 0, 0, 0], "place": [-9, 0, 27+70, 0, 0, 0], "top": [0, 0, 27, 0, 0, 0],
                 "hole_0": [0, 31.25, 0, 0, 0, 0], "hole_1": [0, 56.25, 0, 0, 0, 0]}},
         collision_box = {"body":[
                 {"pose":[-(38/2), 22.5, 27/2, 0, 0, 0], "scale":[45.5+39, 91.5, 27]},#[xyzabc] , [lx,ly,lz]
         ]},
-        camera = {
-            "stream": {"width":848, "height":480, "fps":15},
-            "K": None,
-            "D": None,
-            "mode": "bgrd",
-            "filter": {},
-            "exposure": None,
-            "native_res": None,
-        },
-        # cfg
-        camera_serial_number="",
-        simulation=True,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

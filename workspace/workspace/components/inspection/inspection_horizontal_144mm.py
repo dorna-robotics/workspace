@@ -12,7 +12,6 @@ class InspectionHorizontal144mm(Inspection):
         collision_box = {"body":[
                 {"pose":[5,0,195/2,0,0,0], "scale":[75,65,195]},#[xyzabc] , [lx,ly,lz]
         ]},
-        simulation=True,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

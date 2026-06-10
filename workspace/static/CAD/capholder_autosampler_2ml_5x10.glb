@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 26460
+      "count": 26448
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8792,
+      "count": 8788,
       "max": [
         9.699999809265137,
-        5.0625,
-        1.0499999523162842
+        5.062019348144531,
+        1.0503448247909546
       ],
       "min": [
         -9.699999809265137,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8792
+      "count": 8788
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 19488
+      "byteLength": 19521
     }
   ],
   "buffers": [
     {
       "uri": "capholder_autosampler_2ml_5x10.glb.bin",
-      "byteLength": 19488
+      "byteLength": 19521
     }
   ],
   "materials": [

@@ -15,8 +15,8 @@
       "count": 6638,
       "max": [
         6.388000011444092,
-        4.27400016784668,
-        2.549999952316284
+        4.273746490478516,
+        2.550053119659424
       ],
       "min": [
         -6.388000011444092,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 14949
+      "byteLength": 14880
     }
   ],
   "buffers": [
     {
       "uri": "rack_autosampler_2ml.glb.bin",
-      "byteLength": 14949
+      "byteLength": 14880
     }
   ],
   "materials": [

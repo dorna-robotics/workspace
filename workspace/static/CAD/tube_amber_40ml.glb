@@ -7,15 +7,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4620
+      "count": 4560
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 868,
+      "count": 858,
       "max": [
-        1.375,
-        1.3649749755859375,
+        1.3747406005859375,
+        1.3650500774383545,
         9.5
       ],
       "min": [
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 868
+      "count": 858
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4763
+      "byteLength": 4585
     }
   ],
   "buffers": [
     {
       "uri": "tube_amber_40ml.glb.bin",
-      "byteLength": 4763
+      "byteLength": 4585
     }
   ],
   "materials": [

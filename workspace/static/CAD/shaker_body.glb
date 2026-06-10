@@ -7,15 +7,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 11334
+      "count": 11016
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3772,
+      "count": 3719,
       "max": [
-        2.5,
-        4.25,
+        2.500227451324463,
+        4.250152111053467,
         14.600000381469727
       ],
       "min": [
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3772
+      "count": 3719
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 9342
+      "count": 9222
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3133,
+      "count": 3113,
       "max": [
-        3.25,
-        5.099999904632568,
+        3.2501769065856934,
+        5.100240707397461,
         14.600000381469727
       ],
       "min": [
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3133
+      "count": 3113
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 9845
+      "byteLength": 10221
     },
     {
       "buffer": 0,
-      "byteOffset": 9845,
-      "byteLength": 7868
+      "byteOffset": 10221,
+      "byteLength": 7819
     }
   ],
   "buffers": [
     {
       "uri": "shaker_body.glb.bin",
-      "byteLength": 17713
+      "byteLength": 18040
     }
   ],
   "materials": [

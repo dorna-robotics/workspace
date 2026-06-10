@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 16572
+      "count": 16140
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5913,
+      "count": 5795,
       "max": [
         8.077349662780762,
-        5.57735013961792,
-        7.800000190734863
+        5.577014446258545,
+        7.799772262573242
       ],
       "min": [
         -8.077349662780762,
@@ -27,21 +27,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5913
+      "count": 5795
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 23844
+      "count": 23838
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7730,
+      "count": 7729,
       "max": [
         8.25,
-        5.75,
-        7.800000190734863
+        5.749542236328125,
+        7.800127983093262
       ],
       "min": [
         -8.25,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7730
+      "count": 7729
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 17165
+      "byteLength": 16878
     },
     {
       "buffer": 0,
-      "byteOffset": 17165,
-      "byteLength": 17807
+      "byteOffset": 16878,
+      "byteLength": 17889
     }
   ],
   "buffers": [
     {
       "uri": "rack_falcon_15ml.glb.bin",
-      "byteLength": 34972
+      "byteLength": 34767
     }
   ],
   "materials": [
