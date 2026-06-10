@@ -6471,22 +6471,17 @@ function __downloadTextFile(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-async function saveConfig() {
-  // Partition by file and download each one to the user's computer.
-  // A single-file scene is one clean download; with several files the
-  // browser downloads them one after another (it may ask once to allow
-  // multiple downloads).
-  const byFile = buildConfigByFile();
-  const names = Object.keys(byFile);
-  if (!names.length) { showToast("Nothing to save"); return; }
+function __activeFileName() {
+  const bs = window.builderState;
+  return (bs && bs.activeFile) || (bs && bs.files && bs.files[0]) || "scene.j2";
+}
 
-  for (let i = 0; i < names.length; i++) {
-    const fname = names[i];
-    __downloadTextFile(fname, toYamlString(byFile[fname]));
-    // Small stagger so browsers reliably fire each download.
-    if (i < names.length - 1) await new Promise(r => setTimeout(r, 250));
-  }
-  showToast("Downloaded " + names.join(", "));
+function saveConfig() {
+  // Download the currently selected file (its components only).
+  const active = __activeFileName();
+  const comps = buildConfigByFile()[active] || {};
+  __downloadTextFile(active, toYamlString(comps));
+  showToast("Downloaded " + active);
 }
 
 
@@ -6505,7 +6500,9 @@ ensureBuilderBar();
     const origHtml = copyBtn.innerHTML;
     copyBtn.addEventListener("click", () => {
       try {
-        const cfg = buildConfigObject();
+        // Copy the currently selected file's text.
+        const active = __activeFileName();
+        const cfg = buildConfigByFile()[active] || {};
         const yaml = toYamlString(cfg);
         const onSuccess = () => {
           copyBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
@@ -6736,37 +6733,32 @@ ensureBuilderBar();
     // multi-file load).
   }
 
-  // Wire file input to load button. Multiple files load together —
-  // they merge into one scene (so cross-file references resolve) and
-  // each becomes an entry in the files list, with its components
-  // tagged so a save writes them back to the same file.
+  // Wire file input to load button. Upload loads a single file INTO the
+  // currently selected file slot: it replaces that file's components,
+  // leaving the other files' components in the scene (so cross-file
+  // references still resolve).
   if (fileInput) {
     fileInput.addEventListener("change", async (e) => {
-      const files = Array.from(e.target.files || []);
-      if (!files.length) return;
+      const file = (e.target.files || [])[0];
+      if (!file) return;
       try {
         const bs = window.builderState;
-        const loadedNames = [];
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const text = await file.text();
-          const cfg = __parseSimpleYaml(text);
-          if (!cfg || !Object.keys(cfg).length) continue;
-          // Clear only on the first file; the rest add to the scene.
-          await __loadConfigToScene(cfg, { clear: i === 0, file: file.name });
-          loadedNames.push(file.name);
-          if (!bs.files.includes(file.name)) bs.files.push(file.name);
-        }
-        if (loadedNames.length) {
-          // Replace the default file list with what was actually loaded,
-          // preserving load order. Active target = last file loaded.
-          bs.files = loadedNames.slice();
-          bs.activeFile = loadedNames[loadedNames.length - 1];
-          try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
-          showToast("Loaded " + loadedNames.join(", "));
-        } else {
-          showToast("Empty or invalid config file(s)");
-        }
+        const target = __activeFileName();
+        const text = await file.text();
+        const cfg = __parseSimpleYaml(text);
+        if (!cfg || !Object.keys(cfg).length) { showToast("Empty or invalid config file"); fileInput.value = ""; return; }
+
+        // Remove the components currently in the target file, then load
+        // the uploaded ones tagged to it. Other files are untouched.
+        const toDelete = Object.entries(bs.components)
+          .filter(([, m]) => m && ((m.__file || bs.activeFile) === target))
+          .map(([n]) => n);
+        for (const n of toDelete) { try { __applyDelete(n); } catch(_) {} }
+        if (toDelete.length) await new Promise(r => setTimeout(r, 150));
+
+        await __loadConfigToScene(cfg, { clear: false, file: target });
+        try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
+        showToast("Loaded " + file.name + " → " + target);
       } catch(err) {
         console.error("loadConfig error:", err);
         showToast("Failed to load config: " + (err.message || err));
