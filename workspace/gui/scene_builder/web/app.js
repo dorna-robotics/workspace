@@ -2241,6 +2241,9 @@ function openModal(title, buttons) {
   if (bg) bg.remove();
   bg = document.createElement("div");
   bg.id = "builderModalBg";
+  // ``modal-overlay`` → covers the navbar (opts out of the nav's
+  // sibling margin-shift, see vendor/nav.css).
+  bg.className = "modal-overlay";
   bg.style.position = "fixed";
   bg.style.inset = "0";
   bg.style.background = "rgba(0,0,0,0.25)";
@@ -4314,6 +4317,9 @@ function openInsertMenu() {
   if (bg) bg.remove();
   bg = document.createElement("div");
   bg.id = "builderModalBg";
+  // ``modal-overlay`` → covers the navbar (opts out of the nav's
+  // sibling margin-shift, see vendor/nav.css).
+  bg.className = "modal-overlay";
   bg.style.position = "fixed";
   bg.style.inset = "0";
   bg.style.background = _isLight ? "rgba(0,0,0,0.20)" : "rgba(0,0,0,0.35)";

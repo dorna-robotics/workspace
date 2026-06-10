@@ -873,13 +873,16 @@ class TypeMetaHandler(tornado.web.RequestHandler):
         options = ast_extract_cfg_get_options(src)
 
         # Builder UI auto-generates checkboxes/fields from discovered options.
-        # Hide internal toggles that exist in some components but are not useful in Builder.
-        # IMPORTANT: do not hardcode has_* flags; only filter known-noisy ones.
-        if "gripper" in str(t).lower():
-            options = [o for o in options if o.get("name") != "output_enable"]
-
-        if "decapper" in str(t).lower():
-            options = [o for o in options if o.get("name") != "output_enable"]
+        # Hide internal toggles that exist in some components but are not
+        # useful in Builder. IMPORTANT: do not hardcode has_* flags; only
+        # filter known-noisy ones.
+        #
+        # Pneumatic IO config (``output_enable`` / ``output_disable`` =
+        # [[pin, index, time]]) is never builder-relevant — it's actuator
+        # wiring, set in the scene yaml, and the sim is always initialized
+        # to match the real device. Hide it for every component.
+        _HIDDEN_OPTS = {"output_enable", "output_disable"}
+        options = [o for o in options if o.get("name") not in _HIDDEN_OPTS]
 
         # Instantiate component with defaults (no options) to mirror simulation.
         anchors_by_solid = {}
