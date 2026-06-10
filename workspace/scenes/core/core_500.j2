@@ -1,0 +1,107 @@
+# core_500 — reusable bench chassis for the Core robot on a 500 mm rail.
+#
+# What this provides: the Core (robot + tool changer + motion planner)
+# mounted on a rail_hd_500mm, plus the standard 6-plate fixture chain.
+# It does NOT place any devices (tool racks, holders, racks) — those are
+# project-specific and go in the project's own layout file.
+#
+# Use it by composing in launch.yaml (the launcher merges the list in
+# order, later files override earlier ones):
+#
+#     scene: [../../scenes/core/core_500.j2, scene/layout.j2]
+#
+# To move to a longer rail later, swap this for core_1000.j2 /
+# core_2000.j2 — only the rail type + bounds differ.
+#
+# Anchors a project can attach to (per fixture plate): corner_0..corner_3
+# on the plate edges plus the grid holes (A1..J18-style). See
+# docs/component-guide.md for the fixture_plate anchor reference.
+
+core:
+  type: "core"
+  simulation: true
+  ip: ""
+  has_rail: true
+  has_tool_changer: true
+  has_motion_plan: true
+  has_camera: false
+  robot_attach:
+    rail_carriage_anchor: "hole_1"
+    robot_A0_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+  rail_cfg:
+    type: "rail_hd_500mm"
+    axis: 6
+    offset: 0
+    usem: 1
+    pprm: 4000
+    tprm: 75
+    usee: 1
+    ppre: 4000
+    tpre: 75
+    p: 0.01
+    i: 0.0001
+    d: 0
+    duration: 100
+    threshold: 100
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "D10"
+    child_solid: "rail_base"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_1:
+  type: "fixture_plate"
+  offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_2:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_3:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_4:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "corner_2"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_5:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
+
+fixture_plate_6:
+  type: "fixture_plate"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "corner_0"
+    child_solid: "body"
+    child_anchor: "corner_3"
+    offset: [0, 0, 0, 0, 0, 0]
