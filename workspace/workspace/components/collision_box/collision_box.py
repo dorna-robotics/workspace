@@ -39,10 +39,13 @@ class CollisionBox:
         anchors["body"] = dict(anchors.get("body", {}))
         anchors["body"].update({
             "center": [0, 0, 0, 0, 0, 0],
-            "right":  [ sx / 2, 0, sz / 2, 0, 0, 0],
-            "left":   [-sx / 2, 0, sz / 2, 0, 0, 0],
-            "front":  [0,  sy / 2, sz / 2, 0, 0, 0],
-            "back":   [0, -sy / 2, sz / 2, 0, 0, 0],
+            # front / back along ±X, left / right along ±Y, all on the
+            # bottom plane (z = 0). Convention: facing +X, so front=+X,
+            # back=-X, left=+Y, right=-Y.
+            "front":  [ sx / 2, 0, 0, 0, 0, 0],
+            "back":   [-sx / 2, 0, 0, 0, 0, 0],
+            "left":   [0,  sy / 2, 0, 0, 0, 0],
+            "right":  [0, -sy / 2, 0, 0, 0, 0],
             # Footprint corners on the bottom plane (z = 0), same
             # orientation convention as fixture_plate:
             # 0 = (-x,+y), 1 = (+x,+y), 2 = (+x,-y), 3 = (-x,-y).
