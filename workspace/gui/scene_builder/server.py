@@ -633,10 +633,11 @@ def instantiate_component_blueprint(type_name: str, options: dict):
     if hasattr(comp, "assembly") and isinstance(comp.assembly, dict):
         world_Ts = _compute_world_Ts_for_solids(comp.assembly)
         for solid_name, solid in comp.assembly.items():
-            # solid.type is the CAD name
+            # solid.type is the CAD name. Resolve the glb from the active
+            # project's CAD/ folder first, then the library — same
+            # project-first order the runtime server uses.
             stype = getattr(solid, "type", None) or solid_name
-            glb_path = os.path.join(CAD_DIR, f"{stype}.glb")
-            glb_url = f"/static/CAD/{stype}.glb" if os.path.exists(glb_path) else None
+            glb_url = _resolve_cad_glb_url(stype)
 
             pose = [0, 0, 0, 0, 0, 0]
             try:
@@ -701,6 +702,57 @@ COMPONENT_MAP = scan_registered_components()
 _project_path = None
 _project_component_map = {}
 
+
+def _project_cad_dir():
+    """The active project's CAD/ folder, or None if no project is set."""
+    return os.path.join(_project_path, "CAD") if _project_path else None
+
+
+def _resolve_cad_glb_url(stype):
+    """URL for a component type's glb, project CAD first then library.
+
+    Returns ``/static/CAD/<type>.glb`` if the file exists in the project's
+    CAD/ folder or the library static/CAD/, else None. The CAD static
+    handler resolves which folder actually serves it (project-first too),
+    so the URL is the same either way.
+    """
+    name = f"{stype}.glb"
+    proj = _project_cad_dir()
+    if proj and os.path.exists(os.path.join(proj, name)):
+        return f"/static/CAD/{name}"
+    if os.path.exists(os.path.join(CAD_DIR, name)):
+        return f"/static/CAD/{name}"
+    return None
+
+
+class CADStaticHandler(tornado.web.StaticFileHandler):
+    """Serve ``/static/CAD/*`` from the active project's CAD/ folder first,
+    falling back to the library ``workspace/static/CAD/``. Mirrors the
+    runtime server's project-first asset resolution so project-local
+    meshes (+ their .bin buffers / textures) render in the builder."""
+
+    def get_absolute_path(self, root, path):
+        proj = _project_cad_dir()
+        if proj:
+            cand = os.path.abspath(os.path.join(proj, path))
+            if os.path.isfile(cand):
+                return cand
+        return os.path.abspath(os.path.join(root, path))
+
+    def validate_absolute_path(self, root, absolute_path):
+        # Allow files under either the library CAD root or the project one.
+        roots = [os.path.abspath(root)]
+        proj = _project_cad_dir()
+        if proj:
+            roots.append(os.path.abspath(proj))
+        if not any(absolute_path == r or absolute_path.startswith(r + os.sep) for r in roots):
+            raise tornado.web.HTTPError(403)
+        if not os.path.exists(absolute_path):
+            raise tornado.web.HTTPError(404)
+        if not os.path.isfile(absolute_path):
+            raise tornado.web.HTTPError(403)
+        return absolute_path
+
 def scan_project_components(project_dir):
     """Scan a project's components/ folder for @register types."""
     out = {}
@@ -736,6 +788,9 @@ DEV_NOCACHE = os.environ.get("DEV_NOCACHE", "1") == "1"
 
 sio = socketio.AsyncServer(async_mode="tornado", cors_allowed_origins="*")
 app = tornado.web.Application([
+    # CAD assets: project CAD/ first, then library static/CAD/ (must be
+    # registered before the generic /static handler so it wins).
+    (r"/static/CAD/(.*)", CADStaticHandler, {"path": CAD_DIR}),
     (r"/static/(.*)", tornado.web.StaticFileHandler, {"path": STATIC_DIR}),
     (r"/socket.io/(.*)", socketio.get_tornado_handler(sio)),
     # /save_config is added below after SaveConfigHandler definition
