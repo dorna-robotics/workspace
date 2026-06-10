@@ -6699,7 +6699,15 @@ ensureBuilderBar();
     for (const fname of bs.files) {
       const row = document.createElement("div");
       row.className = "sb-file-row" + (fname === bs.activeFile ? " active" : "");
-      row.title = "Click to make this the target for new items · double-click the name to rename";
+      row.title = "Click to make this the target for new items · double-click the name to rename · drag to reorder";
+      row.draggable = true;
+      row.dataset.file = fname;
+
+      // Drag handle (grip) — affordance for reordering.
+      const grip = document.createElement("span");
+      grip.className = "sb-file-grip";
+      grip.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+      row.appendChild(grip);
 
       const radio = document.createElement("span");
       radio.className = "sb-file-radio";
@@ -6734,28 +6742,45 @@ ensureBuilderBar();
       countEl.textContent = counts[fname] || 0;
       row.appendChild(countEl);
 
-      // Reorder — file order is the merge order (later files override
-      // earlier ones, like the launcher's ``scene: [...]`` list).
-      const myIdx = bs.files.indexOf(fname);
-      const mkMove = (dir, label, title, enabled) => {
-        const b = document.createElement("span");
-        b.className = "sb-file-move" + (enabled ? "" : " disabled");
-        b.textContent = label;
-        b.title = title;
-        if (enabled) {
-          b.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const i = bs.files.indexOf(fname);
-            const j = i + dir;
-            if (i < 0 || j < 0 || j >= bs.files.length) return;
-            const t = bs.files[i]; bs.files[i] = bs.files[j]; bs.files[j] = t;
-            renderFilesList();
-          });
-        }
-        return b;
-      };
-      row.appendChild(mkMove(-1, "▲", "Move up (earlier in merge order)", myIdx > 0));
-      row.appendChild(mkMove(+1, "▼", "Move down (later in merge order)", myIdx < bs.files.length - 1));
+      // Drag-and-drop reorder. File order is the merge order (later
+      // files override earlier ones, like ``scene: [base.j2,
+      // layout.j2]``). Dropping a row before/after another reorders
+      // ``builderState.files``.
+      row.addEventListener("dragstart", (e) => {
+        row.classList.add("dragging");
+        try { e.dataTransfer.setData("text/plain", fname); e.dataTransfer.effectAllowed = "move"; } catch(_) {}
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        filesListEl.querySelectorAll(".sb-file-row").forEach(r => r.classList.remove("drop-above", "drop-below"));
+      });
+      row.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        try { e.dataTransfer.dropEffect = "move"; } catch(_) {}
+        const rect = row.getBoundingClientRect();
+        const below = (e.clientY - rect.top) > rect.height / 2;
+        row.classList.toggle("drop-below", below);
+        row.classList.toggle("drop-above", !below);
+      });
+      row.addEventListener("dragleave", () => {
+        row.classList.remove("drop-above", "drop-below");
+      });
+      row.addEventListener("drop", (e) => {
+        e.preventDefault();
+        let src;
+        try { src = e.dataTransfer.getData("text/plain"); } catch(_) { src = null; }
+        row.classList.remove("drop-above", "drop-below");
+        if (!src || src === fname) return;
+        const rect = row.getBoundingClientRect();
+        const below = (e.clientY - rect.top) > rect.height / 2;
+        const from = bs.files.indexOf(src);
+        if (from < 0) return;
+        bs.files.splice(from, 1);
+        let to = bs.files.indexOf(fname);
+        if (below) to += 1;
+        bs.files.splice(to, 0, src);
+        renderFilesList();
+      });
 
       // Delete (only if more than one file remains).
       if (bs.files.length > 1) {
