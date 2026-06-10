@@ -3,7 +3,6 @@ from mergedeep import merge
 from dorna2 import Solid
 
 from workspace.components.factory import register
-# new comment
 
 # apc_plate — will replace apc_base + apc_adapter. Simple stub for now:
 # center/place/top anchors and a placeholder collision box. Fill in the real
