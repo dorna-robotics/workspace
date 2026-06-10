@@ -7,81 +7,81 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5886
+      "count": 5220
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2058,
+      "count": 1712,
       "max": [
-        2.7504944801330566,
-        7.300182819366455,
-        17.399999618530273
+        3.25,
+        0.6000000238418579,
+        3.25
       ],
       "min": [
-        -2.75,
-        -2.9000000953674316,
-        0
+        -3.25,
+        0,
+        -3.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2058
+      "count": 1712
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 756
+      "count": 10194
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 260,
+      "count": 3385,
       "max": [
-        2.8696789741516113,
-        2.4996237754821777,
-        17.520000457763672
+        1.4500000476837158,
+        11,
+        1.4500000476837158
       ],
       "min": [
-        -2.869999885559082,
-        -2.5,
-        0.10000000149011612
+        -1.4500000476837158,
+        0.5,
+        -1.4500000476837158
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 260
+      "count": 3385
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5528
+      "byteLength": 4229
     },
     {
       "buffer": 0,
-      "byteOffset": 5528,
-      "byteLength": 740
+      "byteOffset": 4229,
+      "byteLength": 7861
     }
   ],
   "buffers": [
     {
-      "uri": "robot_A4.glb.bin",
-      "byteLength": 6268
+      "uri": "rotating_cylinder_mkb1630_housing.glb.bin",
+      "byteLength": 12090
     }
   ],
   "materials": [
     {
-      "name": "Powder_Coat_(Black).003",
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.09803900122642517,
-          0.09803900122642517,
-          0.09803900122642517,
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
           1
         ],
         "metallicFactor": 0
@@ -93,13 +93,13 @@
       }
     },
     {
-      "name": "Powder_Coat_(White).002",
+      "name": "Opaque(216,216,216)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.9647060036659241,
-          0.9647060036659241,
-          0.9529410004615784,
+          0.8470590114593506,
+          0.8470590114593506,
+          0.8470590114593506,
           1
         ],
         "metallicFactor": 0
@@ -113,7 +113,7 @@
   ],
   "meshes": [
     {
-      "name": "A4 v4",
+      "name": "probe_spring_housing",
       "primitives": [
         {
           "attributes": {
@@ -156,7 +156,13 @@
   ],
   "nodes": [
     {
-      "name": "A4 v4",
+      "name": "probe_spring_housing",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

@@ -7,51 +7,51 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 924
+      "count": 85020
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 275,
+      "count": 30000,
       "max": [
-        6.369999885559082,
-        4.250331878662109,
-        4.59971284866333
+        171.10000610351562,
+        7.590490341186523,
+        5.24549674987793
       ],
       "min": [
-        -6.369999885559082,
-        -4.25,
-        0
+        -55,
+        0,
+        -17.940000534057617
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 275
+      "count": 30000
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 994
+      "byteLength": 82481
     }
   ],
   "buffers": [
     {
-      "uri": "rack_tip_waste_bin.glb.bin",
-      "byteLength": 994
+      "uri": "rail_hd_2000mm_base.glb.bin",
+      "byteLength": 82481
     }
   ],
   "materials": [
     {
-      "name": "EPX_86FR_(with_Carbon_M2_M3_L1_3D_Printers)",
+      "name": "Opaque(160,160,160).006",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.24705900251865387,
-          0.24705900251865387,
-          0.24705900251865387,
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
           1
         ],
         "metallicFactor": 0
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "tip_waste_bin",
+      "name": "rail2000origin",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "tip_waste_bin",
+      "name": "rail2000origin",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

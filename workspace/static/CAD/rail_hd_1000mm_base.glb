@@ -7,45 +7,45 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 65970
+      "count": 98916
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 22741,
+      "count": 33844,
       "max": [
-        103,
-        17.941434860229492,
-        7.596941947937012
+        91.0999984741211,
+        7.596941947937012,
+        5.251070022583008
       ],
       "min": [
-        -23.100000381469727,
-        -5.849999904632568,
-        0
+        -35,
+        0,
+        -17.940000534057617
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 22741
+      "count": 33844
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 59332
+      "byteLength": 94337
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_1000mm_base.glb.bin",
-      "byteLength": 59332
+      "byteLength": 94337
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.009",
+      "name": "Opaque(160,160,160).005",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "Rail Assembly HD Series 1000mm.002",
+      "name": "rail1000origin.001",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "Rail Assembly HD Series 1000mm",
+      "name": "rail1000origin",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

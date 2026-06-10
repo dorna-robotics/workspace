@@ -14,9 +14,9 @@
       "componentType": 5126,
       "count": 1912,
       "max": [
-        2.325000047683716,
-        2.700000047683716,
-        2.325000047683716
+        2.3251187801361084,
+        2.699816942214966,
+        2.3249998092651367
       ],
       "min": [
         -2.325000047683716,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5064
+      "byteLength": 5116
     }
   ],
   "buffers": [
     {
       "uri": "inspection_module.glb.bin",
-      "byteLength": 5064
+      "byteLength": 5116
     }
   ],
   "materials": [

@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 30048
+      "count": 29988
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 9622,
+      "count": 9610,
       "max": [
         6.369999885559082,
         4.250331878662109,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 9622
+      "count": 9610
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 14439
+      "byteLength": 14333
     }
   ],
   "buffers": [
     {
       "uri": "rack_axygen_180ul.glb.bin",
-      "byteLength": 14439
+      "byteLength": 14333
     }
   ],
   "materials": [
