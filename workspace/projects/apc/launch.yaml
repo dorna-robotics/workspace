@@ -2,7 +2,7 @@
 
 project_name: apc
 port:         5010
-scene:        [scene/base.j2, scene/layout.j2]
+scene:        [scene/core_500.j2, scene/base.j2, scene/layout.j2]
 recipes:      recipes.j2
 actions:      actions.py
 checks:       checks.py
