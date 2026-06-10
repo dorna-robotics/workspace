@@ -439,6 +439,16 @@ select.input { cursor: pointer; }
 }
 .sb-file-name { flex: 1 1 auto; color: var(--text); }
 .sb-file-count { color: var(--text-dim, #888); font-size: 10px; }
+.sb-file-move {
+  flex: 0 0 auto;
+  color: var(--text-dim, #888);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 0 1px;
+}
+.sb-file-move:hover { color: var(--accent, #4f9cf9); }
+.sb-file-move.disabled { opacity: 0.22; cursor: default; pointer-events: none; }
 .sb-file-del {
   flex: 0 0 auto;
   color: var(--text-dim, #888);

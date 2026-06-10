@@ -6734,6 +6734,29 @@ ensureBuilderBar();
       countEl.textContent = counts[fname] || 0;
       row.appendChild(countEl);
 
+      // Reorder — file order is the merge order (later files override
+      // earlier ones, like the launcher's ``scene: [...]`` list).
+      const myIdx = bs.files.indexOf(fname);
+      const mkMove = (dir, label, title, enabled) => {
+        const b = document.createElement("span");
+        b.className = "sb-file-move" + (enabled ? "" : " disabled");
+        b.textContent = label;
+        b.title = title;
+        if (enabled) {
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const i = bs.files.indexOf(fname);
+            const j = i + dir;
+            if (i < 0 || j < 0 || j >= bs.files.length) return;
+            const t = bs.files[i]; bs.files[i] = bs.files[j]; bs.files[j] = t;
+            renderFilesList();
+          });
+        }
+        return b;
+      };
+      row.appendChild(mkMove(-1, "▲", "Move up (earlier in merge order)", myIdx > 0));
+      row.appendChild(mkMove(+1, "▼", "Move down (later in merge order)", myIdx < bs.files.length - 1));
+
       // Delete (only if more than one file remains).
       if (bs.files.length > 1) {
         const del = document.createElement("span");
