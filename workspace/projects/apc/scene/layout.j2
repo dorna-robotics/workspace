@@ -10,6 +10,8 @@ anode_1:
 
 rotating_cylinder_mkb1630_1:
   type: "rotating_cylinder_mkb1630"
+  output_enable: [[0, 1, 0]]
+  output_disable: [[0, 0, 0]]
   attach:
     parent_name: "fixture_plate_1"
     parent_solid: "body"
@@ -22,8 +24,8 @@ cathode_1:
   type: "cathode"
   attach:
     parent_name: "rotating_cylinder_mkb1630_1"
-    parent_solid: "housing"
-    parent_anchor: "top"
+    parent_solid: "plunger"
+    parent_anchor: "place"
     child_solid: "body"
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]

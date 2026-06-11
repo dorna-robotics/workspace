@@ -20,8 +20,7 @@ class RotatingCylinderMKB1630:
         anchors={
             "housing": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "output": [0, 0, 59, 0, 0, 0],
-                "top":    [0, 0, 150.5, 0, 0, 0],
+                "place": [0, 0, 54, 0, 0, 0],
                 "hole_0": [ 25,  25, 0, 0, 0, 0],
                 "hole_1": [-25,  25, 0, 0, 0, 0],
                 "hole_2": [-25, -25, 0, 0, 0, 0],
@@ -29,13 +28,15 @@ class RotatingCylinderMKB1630:
             },
             "plunger": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "input":  [0, 0, 5, 0, 0, 0],
+                "place":    [0, 0, 86.5, 0, 0, 0],
             },
         },
         collision_box={
             "housing": [
                 {"pose": [0, 0, (65 + 6.5) / 2, 0.0, 0.0, 0.0], "scale": [65, 65, 65 + 6.5]},
-                {"pose": [0, 0, 150.5/2, 0.0, 0.0, 0.0], "scale": [14, 14, 150.5]},
+            ],
+            "plunger": [
+                {"pose": [0, 0, 86.5/2, 0.0, 0.0, 0.0], "scale": [14, 14, 86.5]},
             ],
         },
         # limit — [start, end] plunger poses; each pose is [rotation (deg about
@@ -44,8 +45,8 @@ class RotatingCylinderMKB1630:
         toggle_range = [[90.0, 0.0], [0.0, -37.0]],
         toggle_period = 1,  # second, time to toggle from one state to another
         # pneumatic IO  [[pin, index, time]]
-        output_enable=[[None, None, 0.1]],
-        output_disable=[[None, None, 0.1]],
+        output_enable=[[None, None, 0]],
+        output_disable=[[None, None, 0]],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -145,8 +146,8 @@ class RotatingCylinderMKB1630:
     def update_pose(self):
         self.assembly["plunger"].attach_to(
             parent=self.assembly["housing"],
-            parent_anchor="output",
-            child_anchor="input",
+            parent_anchor="place",
+            child_anchor="center",
             offset=[0, 0, self.extension, 0, 0, self.rotation],
             offset_frame="parent",
         )

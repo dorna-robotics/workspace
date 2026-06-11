@@ -12,8 +12,6 @@ class Cathode:
         anchors={
             "body": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "top":    [0, 0, 13.5, 0, 0, 0],
-                "place":  [0, 0, 10, 0, 0, 0],
             },
         },
         collision_box={
