@@ -470,6 +470,11 @@ def _broadcast_schedule_event(event: dict) -> None:
 #   WS   /ws/devices            → push device_state events as they happen
 _device_ws_clients: set = set()
 _op_actions_ws_clients: set = set()
+# Operator actions currently executing, keyed "component.method". An action
+# runs on a worker thread (so the IOLoop stays free); this guards against a
+# second invocation of the same action piling on while the first is still in
+# flight (e.g. mashing Enable, which would overlap the cylinder animation).
+_op_actions_inflight: set = set()
 
 
 def _project_device_ids(workspace) -> set[str]:
@@ -820,7 +825,7 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
     def on_close(self):
         _op_actions_ws_clients.discard(self)
 
-    def on_message(self, raw):
+    async def on_message(self, raw):
         try:
             msg = json.loads(raw)
         except Exception:
@@ -829,9 +834,9 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
             return
         component_name = str(msg.get("component", "") or "")
         method_name    = str(msg.get("method", "") or "")
-        self._invoke(component_name, method_name)
+        await self._invoke(component_name, method_name)
 
-    def _invoke(self, component_name: str, method_name: str):
+    async def _invoke(self, component_name: str, method_name: str):
         from workspace.components.operator_actions import component_operator_actions
 
         def reply(ok: bool, msg: str = "", result=None):
@@ -866,11 +871,24 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
             reply(False, "cannot run operator actions while workflow is running")
             return
 
+        # An operator action may block (animation, sleep, a motion). Run it
+        # on a worker thread so the IOLoop stays responsive — otherwise the
+        # whole server (WS + HTTP + 3D viewer) freezes for the action's
+        # duration. The check-and-add below runs on the IOLoop before the
+        # await, so it's race-free.
+        key = f"{component_name}.{method_name}"
+        if key in _op_actions_inflight:
+            reply(False, f"{key} is already running")
+            return
+        _op_actions_inflight.add(key)
         try:
-            result = getattr(comp, method_name)()
+            loop = tornado.ioloop.IOLoop.current()
+            result = await loop.run_in_executor(None, getattr(comp, method_name))
         except Exception as ex:
             reply(False, f"{type(ex).__name__}: {ex}")
             return
+        finally:
+            _op_actions_inflight.discard(key)
 
         reply(True, result=result)
 
