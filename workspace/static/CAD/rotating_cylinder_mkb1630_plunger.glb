@@ -14,9 +14,9 @@
       "componentType": 5126,
       "count": 480,
       "max": [
-        0.800000011920929,
+        0.799792468547821,
         9.649999618530273,
-        0.800000011920929
+        0.799792468547821
       ],
       "min": [
         -0.800000011920929,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1642
+      "byteLength": 1641
     }
   ],
   "buffers": [
     {
       "uri": "rotating_cylinder_mkb1630_plunger.glb.bin",
-      "byteLength": 1642
+      "byteLength": 1641
     }
   ],
   "materials": [

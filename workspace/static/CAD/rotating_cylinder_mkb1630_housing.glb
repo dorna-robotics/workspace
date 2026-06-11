@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 10194
+      "count": 10158
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3385,
+      "count": 3379,
       "max": [
         1.4500000476837158,
         11,
@@ -52,7 +52,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3385
+      "count": 3379
     }
   ],
   "bufferViews": [
@@ -64,18 +64,18 @@
     {
       "buffer": 0,
       "byteOffset": 4229,
-      "byteLength": 7861
+      "byteLength": 7729
     }
   ],
   "buffers": [
     {
       "uri": "rotating_cylinder_mkb1630_housing.glb.bin",
-      "byteLength": 12090
+      "byteLength": 11958
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin",
+      "name": "Steel_-_Satin.004",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -113,7 +113,7 @@
   ],
   "meshes": [
     {
-      "name": "probe_spring_housing",
+      "name": "probe cylider",
       "primitives": [
         {
           "attributes": {
@@ -156,7 +156,7 @@
   ],
   "nodes": [
     {
-      "name": "probe_spring_housing",
+      "name": "probe cylider",
       "rotation": [
         0.7071068286895752,
         0,

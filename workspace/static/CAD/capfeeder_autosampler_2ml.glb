@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 26196
+      "count": 26052
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8806,
+      "count": 8781,
       "max": [
         1.1974118947982788,
         5.003480434417725,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8806
+      "count": 8781
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 151476
+      "count": 148848
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 49584,
+      "count": 48852,
       "max": [
         10.34347152709961,
         16.1106014251709,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 49584
+      "count": 48852
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 31272
+      "byteLength": 31161
     },
     {
       "buffer": 0,
-      "byteOffset": 31272,
-      "byteLength": 164869
+      "byteOffset": 31161,
+      "byteLength": 162336
     }
   ],
   "buffers": [
     {
       "uri": "capfeeder_autosampler_2ml.glb.bin",
-      "byteLength": 196141
+      "byteLength": 193497
     }
   ],
   "materials": [

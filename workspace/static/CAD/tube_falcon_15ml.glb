@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1134
+      "count": 1128
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 359,
+      "count": 358,
       "max": [
         0.9250457882881165,
         0.9250457882881165,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 359
+      "count": 358
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1158
+      "byteLength": 1081
     }
   ],
   "buffers": [
     {
       "uri": "tube_falcon_15ml.glb.bin",
-      "byteLength": 1158
+      "byteLength": 1081
     }
   ],
   "materials": [

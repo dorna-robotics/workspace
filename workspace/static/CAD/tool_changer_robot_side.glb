@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5026
+      "byteLength": 5053
     },
     {
       "buffer": 0,
-      "byteOffset": 5026,
-      "byteLength": 311
+      "byteOffset": 5053,
+      "byteLength": 314
     }
   ],
   "buffers": [
     {
       "uri": "tool_changer_robot_side.glb.bin",
-      "byteLength": 5337
+      "byteLength": 5367
     }
   ],
   "materials": [

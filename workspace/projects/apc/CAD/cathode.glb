@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 53832
+      "count": 53682
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 18086,
+      "count": 18049,
       "max": [
-        11.198653221130371,
+        1.600000023841858,
         1.899999976158142,
-        1.600000023841858
+        11.198653221130371
       ],
       "min": [
         -1.600000023841858,
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 18086
+      "count": 18049
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 53532
+      "byteLength": 53376
     }
   ],
   "buffers": [
     {
       "uri": "cathode.glb.bin",
-      "byteLength": 53532
+      "byteLength": 53376
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.003",
+      "name": "Steel_-_Satin.005",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "rotating_cylinder_arm_apc",
+      "name": "rotating_cylinder_arm_apc.001",
       "primitives": [
         {
           "attributes": {

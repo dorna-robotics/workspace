@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4398
+      "count": 4392
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1546,
+      "count": 1544,
       "max": [
         7.75,
         2.74969482421875,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1546
+      "count": 1544
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4726
+      "byteLength": 4739
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_autosampler_2ml_5x10.glb.bin",
-      "byteLength": 4726
+      "byteLength": 4739
     }
   ],
   "materials": [
