@@ -1,0 +1,27 @@
+# runtime_disc example — layout on top of the shared core_500 chassis.
+#
+# Deliberately minimal: just a tool rack and a parked gripper so the
+# robot has something to hold. The DISC is NOT here — it's created at
+# runtime via workspace.add_component (see actions.py), which is the
+# whole point of this example.
+
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+gripper_4_finger_1:
+  type: "gripper_4_finger"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]

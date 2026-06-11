@@ -1,0 +1,9 @@
+{%- set sf = 20 -%}
+
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# ── Project-specific recipes go below ────────────────────────────────
+# Add aliases here for whatever the disc spawn/kill flow needs (e.g. a
+# Rack recipe over the disc-holder the disc gets placed on).

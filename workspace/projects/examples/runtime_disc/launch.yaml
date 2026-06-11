@@ -1,0 +1,23 @@
+# runtime_disc example — launch config.
+#
+# Demonstrates RUNTIME scene mutation: a disc is spawned into the scene
+# programmatically (workspace.add_component), not declared in the scene
+# yaml like the other examples — and removed again later
+# (workspace.remove_component). The scene below is just the bench
+# chassis + a tool the robot can pick the disc with.
+
+project_name: runtime_disc
+port:         5010
+# Uses the SHARED core_500 chassis (core + rail + 6 plates + boundary
+# collision boxes), then the project's own layout on top.
+scene:        [../../../scenes/core/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+# Scaffold: Start runs, robot parks, Park ends the workflow. The
+# spawn/kill-disc actions get added between them.
+kwargs: {}
