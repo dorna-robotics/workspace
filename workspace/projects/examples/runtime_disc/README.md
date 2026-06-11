@@ -1,49 +1,59 @@
-# runtime_disc — spawn and kill a component at runtime
+# runtime_disc — spawn discs at runtime, then transfer them
 
-Standalone BT example that demonstrates **runtime scene mutation**: a
-disc is created in the scene *programmatically while the workflow runs*
-— not declared in the scene yaml like every other example — and removed
-again later.
+Standalone BT example that demonstrates **runtime scene mutation**: 14
+discs are created in the scene *programmatically while the workflow
+runs* (`workspace.add_component`) — not declared in the scene yaml like
+every other example — and the robot then transfers each one with the
+suction tool.
 
-The one real difference from the other examples:
+## The flow
+
+```
+Start          motor on + park (canonical)
+SpawnDiscs     add 14 discs at runtime: in_1[A1..A7] + in_2[A1..A7]
+Transfer(d)    ×14 — pick disc from its in slot, place in the paired out slot
+Park           motor off (canonical)
+```
+
+Pairing (same slot index, holder paired by number):
+
+```
+in_1[A_k]  →  out_1[A_k]      discs 0..6
+in_2[A_k]  →  out_2[A_k]      discs 7..13
+```
+
+**14 picks total.** Suction tool drives deeper on pick
+(`tool_tcp_z_offset=-10`) and presses on release (`gravity_offset=-5`).
+(`out_3` is spare — the scene has three out-holders but only two are
+paired.)
+
+## What's different from the other examples
 
 | | Others | runtime_disc |
 |---|---|---|
-| **The item** | declared in `scene/layout.j2` | spawned at runtime with `workspace.add_component`, removed with `workspace.remove_component` |
+| **The items** | declared in `scene/layout.j2` | spawned at runtime via `workspace.add_component` |
 
 The chassis is a local `scene/core_500.j2` (copied from
-`scenes/core/core_500.j2`) so the project is fully self-contained.
+`scenes/core/core_500.j2`) so the project is fully self-contained. The
+in/out holders are `adapter_disc_holder` + `stack_holder_disc_in/out`
+(flat `A1..A7` slots); the Rack recipes target the adapters and the
+resolver walks down to the stack holder underneath.
 
-## The runtime API
-
-On `self.ctx.workspace` inside an action's `execute`:
+## The runtime API (in `SpawnDiscs.execute`)
 
 ```python
 ws = self.ctx.workspace
-
-# Spawn — cfg is the same dict shape as a scene yaml entry:
-disc = ws.add_component("disc_1", {
+ws.add_component("disc_0", {
     "type": "disc_22mm",
-    "attach": { "parent_name": "...", "parent_solid": "body",
-                "parent_anchor": "...", "child_solid": "body",
+    "attach": { "parent_name": "stack_holder_disc_in_1", "parent_solid": "body",
+                "parent_anchor": "A1", "child_solid": "body",
                 "child_anchor": "center", "offset": [0, 0, 0, 0, 0, 0] },
 })
-ws.add_fact(...)         # tell the planner the world changed
-
-# Kill — detaches its solids and drops it from the scene:
-ws.remove_component("disc_1")
-ws.remove_fact(...)
 ```
 
-`add_component` refuses a duplicate name and (mid-run) device-backed
-components. `remove_component` refuses `core`, a tool mounted on the
-robot, and (mid-run) device-backed components. Both take the scene lock,
-so they're safe to call from the BT thread.
-
-## Current state
-
-Scaffold only — the canonical `Start` → `Park` trio with no per-item
-action yet. The spawn-disc and kill-disc actions go between them.
+`add_component` takes the scene lock, so it's safe from the BT thread.
+The transfers move the discs kinematically (pick attaches to the tool,
+place re-attaches to the out slot) — no add/remove needed for the move.
 
 ## Run it
 
@@ -52,7 +62,8 @@ cd workspace/projects/examples/runtime_disc
 sudo python3 main.py
 ```
 
-Operator UI at `http://<ip>:5010/`. Sim mode by default.
+Operator UI at `http://<ip>:5010/`. Sim mode by default. Progress bar
+tracks completed transfers.
 
 ## Files
 
@@ -61,7 +72,7 @@ Operator UI at `http://<ip>:5010/`. Sim mode by default.
 | `main.py` | Canonical BT entry point (byte-identical to other examples) |
 | `launch.yaml` | Port 5010; scene composes the local `core_500.j2` |
 | `scene/core_500.j2` | Local copy of the bench chassis (self-contained) |
-| `recipes.j2` | `gripper` (ToolRack) — add disc-handling recipes as needed |
-| `scene/layout.j2` | Tool rack + parked suction gripper — the disc is spawned at runtime |
-| `actions.py` | `Start` → `Park`; documents the `add_component`/`remove_component` hooks |
+| `scene/layout.j2` | Tool rack + suction gripper + the in/out disc holders |
+| `recipes.j2` | `gripper` (ToolRack) + `disc_in_1/2`, `disc_out_1/2` (Rack) |
+| `actions.py` | `Start` → `SpawnDiscs` → `Transfer(d)` ×14 → `Park` |
 | `checks.py` | Empty stub |
