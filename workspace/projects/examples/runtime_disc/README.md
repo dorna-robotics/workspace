@@ -5,12 +5,14 @@ disc is created in the scene *programmatically while the workflow runs*
 — not declared in the scene yaml like every other example — and removed
 again later.
 
-Two differences from the other examples:
+The one real difference from the other examples:
 
 | | Others | runtime_disc |
 |---|---|---|
-| **Chassis** | local `scene/base.j2` | the **shared** `scenes/core/core_500.j2` |
 | **The item** | declared in `scene/layout.j2` | spawned at runtime with `workspace.add_component`, removed with `workspace.remove_component` |
+
+The chassis is a local `scene/core_500.j2` (copied from
+`scenes/core/core_500.j2`) so the project is fully self-contained.
 
 ## The runtime API
 
@@ -57,8 +59,9 @@ Operator UI at `http://<ip>:5010/`. Sim mode by default.
 | File | Purpose |
 |---|---|
 | `main.py` | Canonical BT entry point (byte-identical to other examples) |
-| `launch.yaml` | Port 5010; scene composes the shared `core_500.j2` |
+| `launch.yaml` | Port 5010; scene composes the local `core_500.j2` |
+| `scene/core_500.j2` | Local copy of the bench chassis (self-contained) |
 | `recipes.j2` | `gripper` (ToolRack) — add disc-handling recipes as needed |
-| `scene/layout.j2` | Tool rack + parked gripper only — the disc is spawned at runtime |
+| `scene/layout.j2` | Tool rack + parked suction gripper — the disc is spawned at runtime |
 | `actions.py` | `Start` → `Park`; documents the `add_component`/`remove_component` hooks |
 | `checks.py` | Empty stub |

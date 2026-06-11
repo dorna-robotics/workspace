@@ -8,9 +8,9 @@
 
 project_name: runtime_disc
 port:         5010
-# Uses the SHARED core_500 chassis (core + rail + 6 plates + boundary
-# collision boxes), then the project's own layout on top.
-scene:        [../../../scenes/core/core_500.j2, scene/layout.j2]
+# Self-contained: a local copy of the core_500 chassis (core + rail +
+# 6 plates + boundary collision boxes), then the project's own layout.
+scene:        [scene/core_500.j2, scene/layout.j2]
 recipes:      recipes.j2
 actions:      actions.py
 checks:       checks.py
