@@ -134,7 +134,7 @@ class RotatingCylinderMKB1630:
             ratio = (current - start) / self.toggle_period
             self.rotation  = r0 + (r1 - r0) * ratio
             self.extension = e0 + (e1 - e0) * ratio
-            time.sleep(0.03)
+            time.sleep(0.015)  # ~60fps
         self.rotation, self.extension = r1, e1
 
     def operator_actions(self) -> list[dict]:
