@@ -1007,7 +1007,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
     def on_close(self):
         _all_ws_clients.discard(self)
 
-    def on_message(self, raw):
+    async def on_message(self, raw):
         try:
             env = json.loads(raw)
         except Exception:
@@ -1015,7 +1015,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
         etype = env.get("type")
         payload = env.get("payload") or {}
         if etype == "invoke":
-            self._invoke(
+            await self._invoke(
                 str(payload.get("component", "") or ""),
                 str(payload.get("method", "") or ""),
             )
@@ -1061,9 +1061,12 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
         except Exception:
             pass
 
-    def _invoke(self, component_name: str, method_name: str) -> None:
+    async def _invoke(self, component_name: str, method_name: str) -> None:
         """Same gates + dispatch as OperatorActionsWebSocket._invoke.
-        Reply is a unicast ``invoke_result`` envelope to this client."""
+        Reply is a unicast ``invoke_result`` envelope to this client.
+        The method runs on a worker thread so a blocking action (the
+        cylinder animation, a sleep, a motion) never freezes the IOLoop
+        — this is the channel the project page actually uses."""
         from workspace.components.operator_actions import component_operator_actions
 
         def reply(ok: bool, msg: str = "", result=None) -> None:
@@ -1095,11 +1098,21 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             reply(False, "cannot run operator actions while workflow is running")
             return
 
+        # Off the IOLoop, with an in-flight guard against pile-up — see
+        # OperatorActionsWebSocket._invoke for the full rationale.
+        key = f"{component_name}.{method_name}"
+        if key in _op_actions_inflight:
+            reply(False, f"{key} is already running")
+            return
+        _op_actions_inflight.add(key)
         try:
-            result = getattr(comp, method_name)()
+            loop = tornado.ioloop.IOLoop.current()
+            result = await loop.run_in_executor(None, getattr(comp, method_name))
         except Exception as ex:
             reply(False, f"{type(ex).__name__}: {ex}")
             return
+        finally:
+            _op_actions_inflight.discard(key)
 
         reply(True, result=result)
 
