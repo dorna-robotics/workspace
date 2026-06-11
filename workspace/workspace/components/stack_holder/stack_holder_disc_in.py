@@ -11,12 +11,11 @@ class StackHolderDiscIn(StackHolder):
             {"body":[
                 {"pose":[0, 0, 34, 0, 0, 0], "scale":[237, 42, 68]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[77.943, 0, 8],            # col 1: x (3*pitch so col 4 lands on 0), y, base z
-        pitch=[-25.981, 0, 0.254],        # x step per col, y step per row, z step per disc
+        offset=[77.943, 0, 8],            # A1: x (3*pitch so col 4 lands on 0), y, slot z
+        pitch=[-25.981, 0],               # x step per col, y step per row
         rvec_safe=[0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("A") + 1)], # A — single row (1 deep in Y)
-        cols= [i for i in range(1, 7 + 1)],                   # 1-7 columns along X
-        layers=[i for i in range(0, 225)],                    # 0-224 disc stack up Z
+        cols= [i for i in range(1, 7 + 1)],                   # 1-7 columns along X → A1..A7
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

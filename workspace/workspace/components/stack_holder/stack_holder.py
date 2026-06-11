@@ -3,23 +3,20 @@ from mergedeep import merge
 from dorna2 import Solid
 
 
-# 3D analog of Rack. Rack lays a flat X-Y grid; StackHolder adds a Z axis on
-# top while keeping Rack's X-Y convention exactly: rows are letters (A..)
-# along Y, cols are numbers (1..) along X. On top of that a layer index runs
-# along Z, appended after an underscore and counted from 0. So an anchor is
-# <row><col>_<layer> — e.g. A1_0 (first cell, bottom layer) or A6_2 (row A,
-# col 6, third layer up). Everything else mirrors Rack
-# (offset/pitch/rvec_safe/slot); pitch is the [x, y, z] step per (col, row, layer).
+# Flat X-Y grid of slots, same convention as Rack: rows are letters (A..)
+# along Y, cols are numbers (1..) along X. An anchor is <row><col> — e.g.
+# A1 (first cell) or A6 (row A, col 6). ``offset`` is the position of the
+# first cell (A1) and ``pitch`` is the [x, y] step per (col, row);
+# ``offset[2]`` sets the slot z height.
 class StackHolder:
     DEFAULTS = dict(
         anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0]}},
         size = [0, 0, 0], # [dx, dy, dz]
-        offset= [0, 0, 0],
-        pitch=[9, 9, 1],                  # x step per col, y step per row, z step per layer
+        offset= [0, 0, 0],                                    # A1 position [x, y, z]
+        pitch=[9, 9],                                         # x step per col, y step per row
         rvec_safe = [0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("H") + 1)], # letters -> Y  (A..)
         cols= [i for i in range(1, 13)],                      # numbers -> X  (1..)
-        layers=[i for i in range(0, 6)],                      # Z -> _<n>     (0..)
     )
 
     def __init__(self, name: str, workspace, type=None, **kwargs):
@@ -37,17 +34,15 @@ class StackHolder:
         self.rvec_safe = prm["rvec_safe"]
         self.rows = prm["rows"]
         self.cols = prm["cols"]
-        self.layers = prm["layers"]
 
-        # index anchors — Rack's X-Y grid (rows->Y letters, cols->X numbers)
-        # plus a Z layer appended as _<n> (from 0); anchor is <row><col>_<layer>
+        # index anchors — Rack's X-Y grid (rows->Y letters, cols->X numbers);
+        # anchor is <row><col> (e.g. A1, A2, ...)
         for r_idx, r in enumerate(self.rows):
             y = self.offset[1] + r_idx * self.pitch[1]
             for c_idx, c in enumerate(self.cols):
                 x = self.offset[0] + c_idx * self.pitch[0]
-                for l_idx, l in enumerate(self.layers):
-                    z = self.offset[2] + l_idx * self.pitch[2]
-                    prm["anchors"][next(iter(prm["anchors"]))][f"{r}{c}_{l}"] = [x, y, z] + self.rvec_safe
+                z = self.offset[2]
+                prm["anchors"][next(iter(prm["anchors"]))][f"{r}{c}"] = [x, y, z] + self.rvec_safe
 
         # assembly
         self.assembly = {
@@ -56,5 +51,5 @@ class StackHolder:
 
         # slot
         self.slot = {
-           next(iter(prm["anchors"])): [f"{r}{c}_{l}" for r in self.rows for c in self.cols for l in self.layers]
+           next(iter(prm["anchors"])): [f"{r}{c}" for r in self.rows for c in self.cols]
         }
