@@ -18,6 +18,13 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
-# Scaffold: Start runs, robot parks, Park ends the workflow. The
-# spawn/kill-disc actions get added between them.
-kwargs: {}
+# One cycle = create a disc at a random in slot → transfer it to a
+# random out slot → remove it. ``batch_size`` is how many cycles to run.
+kwargs:
+  batch_size:
+    type: int
+    default: 5
+    label: Batch size
+    hint: Number of create → transfer → remove cycles to run.
+    min: 1
+    max: 50

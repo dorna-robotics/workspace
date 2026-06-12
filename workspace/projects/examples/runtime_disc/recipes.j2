@@ -11,16 +11,20 @@ gripper:
 # adapter's ``place`` anchor). Slots are A1..A7.
 disc_in_1:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_disc_holder_1, left_approach: false, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: adapter_disc_holder_1, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
 
 disc_in_2:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_disc_holder_2, left_approach: false, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: adapter_disc_holder_2, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
 
 disc_out_1:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_disc_holder_3, left_approach: false, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: adapter_disc_holder_3, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
 
 disc_out_2:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: adapter_disc_holder_4, left_approach: false, base_distance: 200, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: adapter_disc_holder_4, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+disc_out_3:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_holder_5, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}

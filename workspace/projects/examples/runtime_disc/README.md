@@ -1,87 +1,72 @@
-# runtime_disc — dynamic components, the documented way
+# runtime_disc — create / transfer / remove a disc per cycle
 
-Reference example for **creating (and removing) components at runtime**.
-14 discs are spawned into the scene *while the workflow runs*
-(`workspace.add_component`) — not declared in the scene yaml — and the
-robot transfers each one with the suction tool.
+Reference example for **creating and removing components at runtime**,
+the documented way (docs/component-guide.md §9,
+docs/bt-framework-guide.md §9).
 
-The point is to show the **explicit-mutation rule** done correctly:
-scene topology and planner state are separate concerns, and the caller
-pairs every scene edit with the matching fact
-(docs/component-guide.md §9, docs/bt-framework-guide.md §9).
+Each **cycle** is one disc's whole lifecycle:
+
+```
+1. CREATE    workspace.add_component — a disc at a RANDOM in-holder slot,
+             lifted by a random z1 ∈ [0, 57.15] mm
+2. TRANSFER  pick it, place it at a RANDOM out-holder slot, lifted by a
+             random z2 ∈ [0, 57.15] mm
+3. REMOVE    workspace.remove_component — the disc is consumed
+```
+
+`batch_size` (operator kwarg) is how many cycles to run. Only **one
+disc exists at a time** — it's created and removed inside the same
+`Cycle` action — so the disc is a *transient* scene object, not a
+persistent planning object. The single planning fact is `cycled(i)`.
+
+## Why it's bulletproof
+
+| Concern | How it's handled |
+|---|---|
+| **Plan ↔ runtime agreement** | Randomness lives only in `execute`. `pre`/`eff` are deterministic (`cycled(i)`), so the plan is always `Cycle(0..n-1)` no matter the dice. |
+| **No orphan facts** | `eff` only ever ADDS `cycled(i)`. A failure can leave a stray *scene* disc but never a dangling *fact*. |
+| **Balanced scene edits** | Every `add_component` is matched by a `remove_component` in the same action; the disc never outlives its cycle. |
+| **Idempotent retries** | Each cycle defensively removes a leftover `disc_<i>` before creating, so a retried cycle starts clean (a second `add_component` of a live name would raise). |
 
 ## The pattern (inside a BT action)
 
 ```
-execute()  →  scene side    — workspace.add_component(name, cfg)
-eff()      →  planner side   — the location fact the new object gets
+execute()  →  scene side    — workspace.add_component(...) / remove_component(...)
+eff()      →  planner side   — the fact the cycle leaves behind (cycled(i))
 ```
 
-`SpawnDiscs.execute` calls `add_component` per disc; `SpawnDiscs.eff`
-declares `at_in(d)` for every disc. The framework applies the eff once
-`execute` succeeds, so the disc becomes a **located planning object** —
-no separate `add_fact` call is needed *from inside an action*, because
-the eff already is the explicit fact mutation. (Use
-`workspace.add_fact` / `remove_fact` only when mutating **outside** an
-action — e.g. an operator-recovery hook — where there's no eff to carry
-the fact.)
-
-Because the eff is a *declared* effect, the planner foresees it: even
-though no disc exists at plan time, it knows `SpawnDiscs` will produce
-`at_in(d)` and schedules the 14 transfers accordingly.
+Inside an action the `eff` IS the explicit fact mutation — no separate
+`add_fact`/`remove_fact` is needed (those are for mutating **outside**
+an action, e.g. an operator-recovery hook). Here the disc carries no
+persistent fact because it never outlives the action; if you instead
+kept a disc around across actions, you'd give it a location fact (e.g.
+`at_in(d)`) declared in the creating action's `eff` and dropped in the
+removing action's `eff` — same rule, just spanning actions.
 
 ## Flow
 
 ```
 Start          motor on + park (canonical)
-SpawnDiscs     add 14 discs at runtime; eff: at_in(d)        (CREATE)
-Transfer(d)    pick in slot → place paired out slot;
-               eff: -at_in(d) +at_out(d)                     (MOVE, kinematic)
+Cycle(i)       create → transfer → remove   (×batch_size)
 Park           motor off (canonical)
 ```
 
-```
-in_1[A_k] → out_1[A_k]   discs 0..6
-in_2[A_k] → out_2[A_k]   discs 7..13
-```
+The transfer is kinematic (`pick` attaches the disc to the tool,
+`place` re-attaches it under the out holder). The suction tool drives
+deeper on pick (`tool_tcp_z_offset=-10`) and presses on release
+(`gravity_offset=-5`). The spawn's `z1` lift is honoured automatically —
+`pick` finds the disc by walking the kinematic tree to wherever it
+actually sits.
 
-14 picks. The suction tool drives deeper on pick (`tool_tcp_z_offset=-10`)
-and presses on release (`gravity_offset=-5`). `out_3` is spare.
-
-The transfer move is purely **kinematic** — `pick` attaches the disc to
-the tool, `place` re-attaches it under the out holder — so only the
-location fact changes; no add/remove is needed for the move itself.
-
-## Removing a component (the symmetric op)
-
-To *consume* a disc instead of placing it — the removal half of the
-rule — pair `remove_component` with the eff dropping the fact:
-
-```python
-# in an action's execute:
-self.ctx.workspace.remove_component(f"disc_{d}")
-# and in its eff:  {"consumed": (-at_out(d), +consumed(d))}
-```
-
-Outside an action (operator recovery, vision correction), do it
-explicitly and clean the fact first, then the scene:
-
-```python
-ws.remove_fact("at_out", d)
-ws.remove_component(f"disc_{d}")
-```
-
-`remove_fact` is a silent no-op if the fact isn't set, so you can
-defensively clear whatever the action would have set.
+Targets: in ∈ {in_1, in_2}, out ∈ {out_1, out_2, out_3}, slot ∈ A1..A7.
 
 ## What's different from the other examples
 
 | | Others | runtime_disc |
 |---|---|---|
-| **The items** | declared in `scene/layout.j2` | spawned at runtime via `workspace.add_component`, planner-tracked via `at_in`/`at_out` |
+| **The item** | declared in `scene/layout.j2` | created **and removed** at runtime via `workspace.add_component` / `remove_component` |
 
-The chassis is a local `scene/core_500.j2` (copied from
-`scenes/core/core_500.j2`) so the project is self-contained. The in/out
+The chassis is a local `scene/core_500.j2` (self-contained). The in/out
 holders are `adapter_disc_holder` + `stack_holder_disc_in/out` (flat
 `A1..A7` slots); the Rack recipes target the adapters and the resolver
 walks down to the stack holder underneath.
@@ -93,18 +78,19 @@ cd workspace/projects/examples/runtime_disc
 sudo python3 main.py
 ```
 
-Operator UI at `http://<ip>:5010/`. Sim mode by default. The holders
-are **empty at launch** — the discs appear when you press Start (that's
-`SpawnDiscs` running). Progress bar tracks completed transfers.
+Operator UI at `http://<ip>:5010/`. Sim mode by default. Pick
+`batch_size`, press Start — the holders are empty at launch; a disc
+appears, gets transferred, and vanishes each cycle. Progress bar tracks
+completed cycles.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `main.py` | Canonical BT entry point (byte-identical to other examples) |
-| `launch.yaml` | Port 5010; scene composes the local `core_500.j2` |
+| `launch.yaml` | Port 5010; `batch_size` kwarg; scene composes the local `core_500.j2` |
 | `scene/core_500.j2` | Local copy of the bench chassis (self-contained) |
 | `scene/layout.j2` | Tool rack + suction gripper + the in/out disc holders |
-| `recipes.j2` | `gripper` (ToolRack) + `disc_in_1/2`, `disc_out_1/2` (Rack) |
-| `actions.py` | `Start` → `SpawnDiscs` → `Transfer(d)` ×14 → `Park` |
+| `recipes.j2` | `gripper` (ToolRack) + `disc_in_1/2`, `disc_out_1/2/3` (Rack) |
+| `actions.py` | `Start` → `Cycle(i)` ×batch_size → `Park` |
 | `checks.py` | Empty stub |
