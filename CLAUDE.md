@@ -19,6 +19,30 @@ adding a device (workspace-owned vs daemon-owned), writing a recipe,
 writing a BT action, adding a physical component, authoring scene yaml,
 enabling sim mode, operator recovery flows, debugging the device bus.
 
+## Gold exemplars — READ the matching one BEFORE writing code
+
+The projects under `workspace/projects/` (especially
+`workspace/projects/examples/`) are **curated, working, canonical
+reference code**. They are the source of truth for "how we do it here" —
+match their structure, naming, and conventions exactly. Before writing
+any of the following, OPEN and study the listed exemplar(s) first; do
+not author from memory or first principles.
+
+| Writing a… | Read first (gold) |
+|---|---|
+| **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park) | `projects/examples/runtime/actions.py`, plus `projects/examples/feeder/actions.py` (simple) or `projects/examples/capping/actions.py` (multi-action + progress) |
+| **Runtime scene mutation** (`add_component`/`remove_component` paired with facts, the explicit-mutation rule) | `projects/examples/runtime/` (whole project — the reference for this) |
+| **Recipe wiring** (`recipes.j2`) | `projects/examples/feeder/recipes.j2`, `projects/examples/capping/recipes.j2` |
+| **Scene yaml** (chassis + layout, attach hierarchy) | `projects/examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
+| **Custom component** | `projects/apc/components/*.py`; library components under `workspace/components/` |
+| **Project entry point** (`main.py`, `launch.yaml`, `checks.py`) | any example — `main.py` is byte-identical across all projects (copy verbatim); `launch.yaml` + `checks.py` follow the example shape |
+
+Convention these encode (don't re-derive): `main.py` is canonical and
+identical everywhere; `Start` / `Park` / `OperatorPark` keep the same
+shape across projects (only the per-item predicate + tool + object key
+vary); projects compose a `core_500.j2` chassis + a `layout.j2`. When in
+doubt, copy the closest example and change the minimum.
+
 ## Always-on conventions
 
 These are platform-wide; every skill assumes them. Don't re-derive.
