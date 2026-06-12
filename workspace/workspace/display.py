@@ -76,10 +76,22 @@ class Display:
             self._period = 1.0 / self.fps
 
     def send_snapshot(self):
-        """Force a full snapshot send (manual). Clears delta cache."""
-        self._last_sent.clear()
+        """Force a full snapshot send (manual). Clears the delta cache.
+
+        Also flags any object that VANISHED since the last send with
+        ``delete: true``. A plain snapshot only *omits* a removed object,
+        which the viewer treats as "unchanged" and leaves the stale mesh
+        on screen — so a runtime ``remove_component`` wouldn't visually
+        disappear. We diff the previously-sent keys against the new
+        snapshot and append a delete marker for the gone ones, in the
+        SAME payload (a separate emit could be dropped by the
+        inflight-replace path)."""
         try:
+            prev_keys = set(self._last_sent.keys())
             snap = self._build_snapshot()
+            for k in prev_keys - set(snap.keys()):
+                snap[k] = {"delete": True}
+            self._last_sent.clear()
             self._emit_update(snap)
         except Exception as e:
             print("[Display] error in send_snapshot:", e)
