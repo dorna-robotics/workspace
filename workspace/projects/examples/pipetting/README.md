@@ -76,8 +76,8 @@ rule 6.
 | `main.py` | Standard BT entry point (byte-identical to other examples) |
 | `launch.yaml` | Port 5010, `transfer_count` kwarg (1–4) |
 | `recipes.j2` | 4 recipes: `gripper`, `falcon_pipette`, `tip_rack`, `waste_bin` |
-| `scene/base.j2` | Plates 1–6 + 3 adapters + tool rack |
-| `scene/layout.j2` | Pipettor parked + 20 falcon tubes + 96 tips + empty waste bin |
+| `scene/core_500.j2` | Local copy of the bench chassis (core + rail + 6 plates + boundary collision boxes) |
+| `scene/layout.j2` | Devices (adapters/racks/holders/tool rack) + populated items |
 | `actions.py` | `Start` → `Transfer(t) × transfer_count` → `Park` |
 | `checks.py` | Empty stub |
 

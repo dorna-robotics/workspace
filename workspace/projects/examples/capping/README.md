@@ -80,7 +80,7 @@ rule 6.
    whole 5×10 grid automatically — no slot list to maintain.
 3. **Multiple decappers**: in real PACE-style protocols, parallel
    decappers exist (`decapper_1` … `decapper_4`). Add them to
-   `scene/base.j2`, add a recipe alias per decapper, and have
+   `scene/core_500.j2`, add a recipe alias per decapper, and have
    `Cap` / `Decap` route to a specific one based on the tube
    index (modulo). The planner can then run multiple Cap actions
    in parallel.
@@ -101,8 +101,8 @@ related actions for the full pattern.
 | `main.py` | Standard BT entry point (byte-identical to other examples) |
 | `launch.yaml` | Port, scene, recipes, `tube_count` kwarg |
 | `recipes.j2` | 4 recipe aliases: `gripper`, `tube_rack`, `cap_holder`, `decapper` |
-| `scene/base.j2` | Plates 1–6 + tube rack + cap holder + decapper + tool rack |
-| `scene/layout.j2` | 4-finger gripper parked + 50 tubes + 50 caps |
+| `scene/core_500.j2` | Local copy of the bench chassis (core + rail + 6 plates + boundary collision boxes) |
+| `scene/layout.j2` | Devices (adapters/racks/holders/tool rack) + populated items |
 | `actions.py` | `Start` → `Cap(t) × N` → `Decap(t) × N` → `Park` |
 | `checks.py` | Empty stub |
 

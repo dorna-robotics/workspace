@@ -60,7 +60,7 @@ rule 6.
    match the hotel's level count.
 2. **Different plate type**: swap `rack_autosampler_2ml` (used here
    as the moved plate) for whatever SBS-footprint rack you have.
-3. **Vision-based plate detection**: scene/base.j2 has
+3. **Vision-based plate detection**: scene/core_500.j2 has
    `has_camera: false`. Flip to true, add a MobileInspector
    recipe, and call `inspector.detect(...)` before each pick if
    you want runtime "is the plate actually there?" checks.
@@ -72,8 +72,8 @@ rule 6.
 | `main.py` | Standard BT entry point (byte-identical to other examples) |
 | `launch.yaml` | Port 5010, `level_count` operator kwarg (1–4) |
 | `recipes.j2` | 5 recipe aliases: `gripper`, `hotel_a`, `hotel_b`, `holder_a`, `holder_b` |
-| `scene/base.j2` | Plates 1–6 + 2 hotels + 2 SBS adapters + tool rack |
-| `scene/layout.j2` | gripper_sbs_width parked + 4 plates per hotel |
+| `scene/core_500.j2` | Local copy of the bench chassis (core + rail + 6 plates + boundary collision boxes) |
+| `scene/layout.j2` | Devices (adapters/racks/holders/tool rack) + populated items |
 | `actions.py` | `Start` → `Swap(level) × level_count` → `Park` |
 | `checks.py` | Empty stub |
 

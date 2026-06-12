@@ -1,3 +1,57 @@
+# pipetting example — layout on the shared core_500 chassis.
+# Devices (adapters, racks, holders, tool rack) attach to the
+# fixture plates from scene/core_500.j2; populated items below.
+
+# Falcon 15ml rack base. Pipetting setup moved to fixture_plate_4
+# (same anchors the printer project uses — D10 / C19 / G19 — just
+# on a different plate in our chain).
+adapter_falcon:
+  type: "adapter_plate_falcon_15ml"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D10"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# SBS plate holder #0 — tip rack.
+adapter_sbs_0:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "C19"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# SBS plate holder #1 — waste bin.
+adapter_sbs_1:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "G19"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Tool rack — holds the pipettor. Printer uses tool_rack_192mm
+# (taller) for the pipettor slot since the pipettor is taller than
+# a standard gripper and needs the clearance.
+tool_rack_192mm_1:
+  type: "tool_rack_192mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "H17"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── populated items ──────────────────────────────────────────────
+
 # pipetting example — populated items:
 # - pipettor tool parked in the tool rack
 # - falcon 15ml rack on adapter_falcon, fully loaded with 20 tubes (4×5)

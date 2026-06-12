@@ -1,3 +1,83 @@
+# capping example — layout on the shared core_500 chassis.
+# Devices (adapters, racks, holders, tool rack) attach to the
+# fixture plates from scene/core_500.j2; populated items below.
+
+# Tube rack — SBS-format adapter with a 6×8 autosampler rack on top.
+# Position mirrors syringe's ``sbs_adapter_0``
+# (fixture_plate_4 / D6, offset [0,0,0,0,0,90]).
+sbs_adapter_0:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D6"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+rack_autosampler_2ml_1:
+  type: "rack_autosampler_2ml"
+  attach:
+    parent_name: "sbs_adapter_0"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Cap holder — SBS-format adapter with a 6×8 cap holder on top.
+# Mounted on fixture_plate_1 / D14 (same anchor as syringe's
+# ``sbs_adapter_1`` but on plate 1 instead of plate 2 — keeps it on
+# the main fixture so cap-pick reach stays inside the rail range).
+sbs_adapter_1:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D17"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+capholder_autosampler_2ml_1:
+  type: "capholder_autosampler_2ml"
+  attach:
+    parent_name: "sbs_adapter_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# Decapper — same fixture_plate_4 / G4 spot the syringe project
+# uses (``decapper_0`` in syringe/config/base.j2), with the
+# matching offset and IO config.
+decapper_1:
+  type: "decapper"
+  output_enable: [[2, 1, 0.1]]
+  output_disable: [[2, 0, 0.1]]
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "G4"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, -90]
+
+# Tool rack — holds the 4-finger gripper. Same fixture_plate_5 / B18
+# spot the feeder example uses.
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── populated items ──────────────────────────────────────────────
+
 # capping example — populated items:
 # - 4-finger gripper parked in the tool rack
 # - 48 tubes loaded into the 6×8 SBS tube rack (one per slot)

@@ -1,3 +1,49 @@
+# feeder example — layout on the shared core_500 chassis.
+# Devices (adapters, racks, holders, tool rack) attach to the
+# fixture plates from scene/core_500.j2; populated items below.
+
+capfeeder_autosampler_2ml_1:
+  type: "capfeeder_autosampler_2ml"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "G5"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0.0002, 0, -90]
+
+adapter_plate_autosampler_2ml_5x10_1:
+  type: "adapter_plate_autosampler_2ml_5x10"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "C15"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+capholder_autosampler_2ml_5x10_1:
+  type: "capholder_autosampler_2ml_5x10"
+  attach:
+    parent_name: "adapter_plate_autosampler_2ml_5x10_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── populated items ──────────────────────────────────────────────
+
 # feeder example — populated items: suction tool + 10 caps in the feeder.
 
 gripper_suction_1:

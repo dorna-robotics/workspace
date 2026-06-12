@@ -45,7 +45,7 @@ start the run. The 3D view shows caps moving from the feeder into
 the holder slots in real time.
 
 The scene runs in **simulation by default** (`core.simulation: true`
-in `scene/base.j2`). No hardware needed — works on any machine.
+in `scene/core_500.j2`). No hardware needed — works on any machine.
 
 ## How to adapt this to your bench
 
@@ -67,7 +67,7 @@ in `scene/base.j2`). No hardware needed — works on any machine.
 4. **More caps**: raise the `kwargs.cap_count.max` in `launch.yaml`
    and extend `CAP_HOLDER_SLOTS` in `actions.py`.
 
-5. **Add vision**: scene/base.j2 has `has_camera: false`. Flip to
+5. **Add vision**: scene/core_500.j2 has `has_camera: false`. Flip to
    `true`, add a vision component, and swap
    `feeder.pick(approach=False)` for
    `feeder.present_cap(rcp["inspector"])` — see
@@ -91,8 +91,8 @@ extend.
 | `main.py` | Standard BT entry point — identical across examples |
 | `launch.yaml` | Project name, port, scene, recipes, kwargs form |
 | `recipes.yaml` | 3 recipe aliases: `cap_tool`, `feeder`, `cap_holder` |
-| `scene/base.j2` | Core + fixtures + tool rack + feeder + cap holder |
-| `scene/layout.j2` | Suction tool parked + 10 caps loaded into feeder |
+| `scene/core_500.j2` | Local copy of the bench chassis (core + rail + 6 plates + boundary collision boxes) |
+| `scene/layout.j2` | Devices (adapters/racks/holders/tool rack) + populated items |
 | `actions.py` | `Start` → `FeedCap(c) × cap_count` → `Park` |
 | `checks.py` | Empty stub — no vision/sensor predicates needed |
 
