@@ -1,4 +1,4 @@
-"""runtime_disc protocol — Start → Cycle(i) ×batch_size → Park.
+"""runtime protocol — Start → Cycle(i) ×batch_size → Park.
 
 Each ``Cycle`` is a full disc lifecycle, done the documented way
 (docs/component-guide.md §9, docs/bt-framework-guide.md §9):

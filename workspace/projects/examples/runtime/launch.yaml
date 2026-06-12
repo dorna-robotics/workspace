@@ -1,4 +1,4 @@
-# runtime_disc example — launch config.
+# runtime example — launch config.
 #
 # Demonstrates RUNTIME scene mutation: a disc is spawned into the scene
 # programmatically (workspace.add_component), not declared in the scene
@@ -6,7 +6,7 @@
 # (workspace.remove_component). The scene below is just the bench
 # chassis + a tool the robot can pick the disc with.
 
-project_name: runtime_disc
+project_name: runtime
 port:         5010
 # Self-contained: a local copy of the core_500 chassis (core + rail +
 # 6 plates + boundary collision boxes), then the project's own layout.

@@ -1,4 +1,4 @@
-# runtime_disc — create / transfer / remove a disc per cycle
+# runtime — create / transfer / remove a disc per cycle
 
 Reference example for **creating and removing components at runtime**,
 the documented way (docs/component-guide.md §9,
@@ -62,7 +62,7 @@ Targets: in ∈ {in_1, in_2}, out ∈ {out_1, out_2, out_3}, slot ∈ A1..A7.
 
 ## What's different from the other examples
 
-| | Others | runtime_disc |
+| | Others | runtime |
 |---|---|---|
 | **The item** | declared in `scene/layout.j2` | created **and removed** at runtime via `workspace.add_component` / `remove_component` |
 
@@ -74,7 +74,7 @@ walks down to the stack holder underneath.
 ## Run it
 
 ```bash
-cd workspace/projects/examples/runtime_disc
+cd workspace/projects/examples/runtime
 sudo python3 main.py
 ```
 
