@@ -1732,18 +1732,11 @@ $("btnToggleLogs").addEventListener("click", () => {
   if (_logsExpanded) refreshLogs();
 });
 
-// Clear logs — stop propagation so it doesn't also toggle collapse
+// Clear logs — stop propagation so it doesn't also toggle collapse.
+// No confirm modal: clearing logs is cheap and reversible enough
+// (buffered output stays in memory), so just do it on click.
 $("btnClearLogs").addEventListener("click", async (e) => {
   e.stopPropagation();
-  // Destructive + irreversible — always confirm. Mirrors the Park /
-  // Kill prompt pattern so the operator can't fat-finger away a
-  // useful debug log on a tablet.
-  if (!await confirmDialog({
-    title: "Clear Logs?",
-    body: "This deletes the workspace log file. Currently buffered output stays in memory but on-disk history is gone.",
-    confirmLabel: "Clear",
-    confirmVariant: "danger",
-  })) return;
   try {
     await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
     lastLogs = "";
