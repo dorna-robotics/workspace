@@ -1,0 +1,19 @@
+# inspection example — launch config.
+#
+# Scene: SBS rack of capped 2ml tubes + a fixed inspection station
+# (printer-like) + a stand-alone inspection module on the ground.
+# This commit is scene-first — Start/Park scaffold only; the inspect
+# workflow (pick tube → present to vision → rotate/detect → return)
+# gets added next.
+
+project_name: inspection
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+kwargs: {}

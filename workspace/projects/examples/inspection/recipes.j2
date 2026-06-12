@@ -1,0 +1,15 @@
+{%- set sf = 20 -%}
+
+# 4-finger gripper, parked in the tool rack.
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Tube rack — Rack recipe over the SBS adapter; resolver walks down to
+# rack_autosampler_2ml_1. Slots A1..F8.
+tube_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# ── Inspection recipes go here next ─────────────────────────────────
+# e.g. a MobileInspector / fixed inspection_horizontal_144mm recipe.
