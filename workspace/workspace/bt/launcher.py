@@ -264,7 +264,7 @@ def run_protocol(
     tick_hz: float = 10.0,
     project_name: Optional[str] = None,
     plan_window: int = 4,
-    slice_dim: str = "tube",
+    slice_dim: Optional[str] = None,
     scheduler: str = "cpsat",
     **kwargs,
 ) -> py_trees.common.Status:
@@ -453,11 +453,32 @@ def run_protocol(
 
     # ── Slicing wiring (no-op when item_done absent or batch fits) ────
     #
+    # Resolve ``slice_dim`` — the ``objects`` key the planner windows
+    # along. When unset (the default), auto-infer it: a single-dimension
+    # protocol (one ``objects`` key, which is ~every lab protocol) slices
+    # along that key, so windowed planning "just works" regardless of
+    # what the key is named. Only multi-dimension protocols need to name
+    # the dim explicitly (via ``launch.yaml: slice_dim``). Previously
+    # this defaulted to the literal ``"tube"``, so any project whose key
+    # wasn't named "tube" silently lost windowing and planned the whole
+    # batch at once.
+    if slice_dim is None:
+        keys = list(objects.keys())
+        slice_dim = keys[0] if len(keys) == 1 else None
+        if slice_dim is not None:
+            log.info("Launcher: auto-inferred slice_dim=%r", slice_dim)
+        elif item_done is not None and len(keys) > 1:
+            log.warning(
+                "Launcher: item_done set but %d object dims %r — "
+                "no slice_dim given, so planning is NOT windowed. Pass "
+                "slice_dim (launch.yaml) to enable it.", len(keys), keys,
+            )
+
     # Two views of the slicing dim:
     #   * ``all_items``  — full operator-supplied set (stays constant)
     #   * ``ctx.meta["objects"][slice_dim]`` — current window the
     #     planner thinks about. Re-assigned each rebuild.
-    all_items: list = list(objects.get(slice_dim, []))
+    all_items: list = list(objects.get(slice_dim, [])) if slice_dim else []
     slicing_active = (
         item_done is not None
         and len(all_items) > int(plan_window)

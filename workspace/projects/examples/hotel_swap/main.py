@@ -76,6 +76,9 @@ def workflow_fn(*, workspace, core, **kwargs):
         checks=check_fns,
         project_name=LAUNCH["project_name"],
         plan_window=int(LAUNCH.get("plan_window", 4)),
+        # Unset → the launcher auto-infers it from the single objects
+        # key. Only multi-dimension protocols need to name it here.
+        slice_dim=LAUNCH.get("slice_dim"),
         scheduler=str(LAUNCH.get("scheduler", "cpsat")),
         **kwargs,
     )
