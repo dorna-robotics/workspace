@@ -1,19 +1,32 @@
-"""runtime_disc protocol — Start → SpawnDiscs → Transfer(d) ×14 → Park.
+"""runtime_disc protocol — dynamic components done the documented way.
 
-Demonstrates RUNTIME scene mutation. ``SpawnDiscs`` creates 14 discs in
-the scene programmatically (``workspace.add_component``) — 7 in each of
-the two *in* holders, slots A1..A7 — instead of declaring them in the
-scene yaml. Each ``Transfer(d)`` then has the robot pick a disc from its
-*in* slot and place it in the matching slot of the paired *out* holder:
+The teaching point: a component created at runtime must be paired with
+the PDDL fact that describes it. Scene topology and planner state are
+**separate concerns** — the framework never infers one from the other
+(docs/component-guide.md §9, docs/bt-framework-guide.md §9).
 
-    in_1[A_k]  →  out_1[A_k]      (discs 0..6)
-    in_2[A_k]  →  out_2[A_k]      (discs 7..13)
+Inside a BT action that pairing is:
 
-14 picks total. The suction tool drives further down on pick
-(``tool_tcp_z_offset=-10``) and presses on release (``gravity_offset=-5``).
+    execute()  →  scene side   — workspace.add_component(...)
+    eff()      →  planner side — the location fact the new object gets
 
-``Start`` / ``Park`` / ``OperatorPark`` stay the canonical shape — all the
-project-specific work lives in ``SpawnDiscs`` and ``Transfer``.
+The framework applies ``eff`` after ``execute`` succeeds, so declaring
+``at_in(d)`` in ``SpawnDiscs.eff`` *is* the explicit fact mutation — no
+separate ``add_fact`` call is needed from inside the action. (Use
+``workspace.add_fact`` only when mutating outside an action, e.g. an
+operator-recovery hook — same rule, no eff to carry it.) The symmetric
+removal is ``workspace.remove_component`` + the eff dropping the fact
+(``-at_out(d)``); see the note on ``Transfer`` and the README.
+
+Flow:
+
+    Start          motor on + park (canonical)
+    SpawnDiscs     add 14 discs at runtime; eff places at_in(d)  (CREATE)
+    Transfer(d)    pick from in slot → place in paired out slot;
+                   eff:  -at_in(d) +at_out(d)                    (MOVE)
+    Park           motor off (canonical)
+
+    in_1[A_k] → out_1[A_k]  (discs 0..6) ; in_2[A_k] → out_2[A_k] (7..13)
 """
 
 from __future__ import annotations
@@ -21,10 +34,11 @@ from __future__ import annotations
 from workspace.bt import Action, predicate
 
 
-started     = predicate("started")
-loaded      = predicate("loaded")
-transferred = predicate("transferred")
-parked      = predicate("parked")
+started = predicate("started")
+spawned = predicate("spawned")
+at_in   = predicate("at_in")    # disc d sits in its IN holder slot
+at_out  = predicate("at_out")   # disc d sits in its OUT holder slot
+parked  = predicate("parked")
 
 
 # 14 discs: 0..6 → holder 1 (in_1 / out_1), 7..13 → holder 2.
@@ -41,10 +55,15 @@ def _slot(d):
     return f"A{(d % 7) + 1}"
 
 
-def _progress_pct(action):
-    """Monotonic % from completed transfers in the live fact set.
+def _disc_name(d):
+    """Scene component name for disc index ``d``."""
+    return f"disc_{d}"
 
-    ``action.ctx.state["facts"]`` is the runtime fact set; ``action.state``
+
+def _progress_pct(action):
+    """Monotonic % from discs already at their OUT slot.
+
+    Reads the live fact set (``action.ctx.state["facts"]``); ``action.state``
     is only populated during planning (pre/eff) and is None in execute.
     This action's eff hasn't applied yet, so count it as +1.
     """
@@ -52,27 +71,31 @@ def _progress_pct(action):
     total = len(discs) or 1
     ctx_state = getattr(action.ctx, "state", None) or {}
     facts = ctx_state.get("facts") or set()
-    done = sum(1 for d in discs if (transferred.name, d) in facts)
+    done = sum(1 for d in discs if (at_out.name, d) in facts)
     return int((done + 1) / total * 100)
 
 
 def setup(**kwargs):
+    # The discs are planning objects, but they have NO location facts at
+    # plan time — they don't exist in the scene yet. SpawnDiscs creates
+    # them and declares at_in(d), which the planner foresees (it's a
+    # declared effect), so it can schedule the transfers.
     discs = list(range(DISC_COUNT))
 
     def item_done(state, disc):
-        return (transferred.name, disc) in state
+        return (at_out.name, disc) in state
 
     def goal(state):
         return (
             (started.name,) in state
-            and (loaded.name,) in state
+            and (spawned.name,) in state
             and all(item_done(state, d) for d in discs)
             and (parked.name,) in state
         )
 
     goal_facts = frozenset(
-        [(transferred.name, d) for d in discs]
-        + [(started.name,), (loaded.name,), (parked.name,)]
+        [(at_out.name, d) for d in discs]
+        + [(started.name,), (spawned.name,), (parked.name,)]
     )
 
     return {
@@ -104,12 +127,20 @@ class Start(Action):
 
 
 class SpawnDiscs(Action):
-    """Create the 14 discs in the scene at runtime.
+    """Create the 14 discs in the scene at runtime — the CREATE demo.
 
-    No robot — pure scene mutation. Each disc is attached to its *in*
-    holder's slot (``workspace.add_component`` with an ``attach`` block,
-    the same shape a scene yaml entry would have). The transfers then
-    move them; nothing is declared in the yaml.
+    Scene side (``execute``): ``workspace.add_component`` per disc, each
+    attached to its IN holder slot. ``cfg`` is the same dict shape a
+    ``scene/*.j2`` entry parses to.
+
+    Planner side (``eff``): ``at_in(d)`` for every disc. This is the
+    explicit half of the explicit-mutation rule — the framework applies
+    the eff once ``execute`` succeeds, so the planner now knows each disc
+    sits in its IN slot and can reason about the transfers. No separate
+    ``add_fact`` call: inside an action, the eff *is* the fact mutation.
+
+    No robot — pure scene mutation. ``spawned`` gates it so it runs once
+    (a second ``add_component`` of the same name would raise).
     """
     params   = []
     duration = 1
@@ -117,15 +148,16 @@ class SpawnDiscs(Action):
     # tool left unset (default) — not a robot action, no tool swap.
 
     def pre(self):
-        return started() & ~loaded()
+        return started() & ~spawned()
 
     def eff(self):
-        return {"loaded": (+loaded(),)}
+        discs = self._ctx_all_objects().get("disc", [])
+        return {"spawned": tuple([+spawned()] + [+at_in(d) for d in discs])}
 
     def execute(self):
         ws = self.ctx.workspace
         for d in range(DISC_COUNT):
-            ws.add_component(f"disc_{d}", {
+            ws.add_component(_disc_name(d), {
                 "type": "disc_22mm",
                 "attach": {
                     "parent_name":   f"stack_holder_disc_in_{_holder(d)}",
@@ -136,14 +168,26 @@ class SpawnDiscs(Action):
                     "offset":        [0, 0, 0, 0, 0, 0],
                 },
             })
-        return "loaded"
+        return "spawned"
 
 
 class Transfer(Action):
-    """Pick one disc from its *in* slot, place it in the paired *out* slot.
+    """Pick one disc from its IN slot, place it in the paired OUT slot.
+
+    The move is purely kinematic — ``pick`` attaches the disc to the
+    tool, ``place`` re-attaches it under the OUT holder, so no
+    add/remove is needed here; only the location fact changes
+    (``-at_in(d) +at_out(d)``). The recipe finds the physical disc by
+    walking the kinematic tree from the slot, so the planner object
+    (index ``d``) and the scene component (``disc_d``) stay in sync via
+    the ``_slot`` / ``_holder`` mapping.
 
     Suction tool drives deeper on pick (``tool_tcp_z_offset=-10``) and
     presses on release (``gravity_offset=-5``).
+
+    (To instead *consume* a disc — the removal half of the rule — you'd
+    ``workspace.remove_component(_disc_name(d))`` in execute and drop the
+    fact in eff with ``-at_out(d)``. See the README.)
     """
     params   = ["disc"]
     duration = 10
@@ -151,10 +195,10 @@ class Transfer(Action):
     tool     = "gripper"
 
     def pre(self, disc):
-        return loaded() & ~transferred(disc)
+        return at_in(disc)
 
     def eff(self, disc):
-        return {"transferred": (+transferred(disc),)}
+        return {"moved": (-at_in(disc), +at_out(disc))}
 
     def execute(self, disc):
         rt  = self.ctx.runtime
@@ -166,11 +210,11 @@ class Transfer(Action):
 
         rcp[f"disc_in_{holder}"].pick(slot, tool_tcp_z_offset=-10)
         rcp[f"disc_out_{holder}"].place(slot, gravity_offset=-5)
-        return "transferred"
+        return "moved"
 
 
 class Park(Action):
-    """Final park — planned by PDDL after every disc is transferred.
+    """Final park — planned by PDDL after every disc is at its OUT slot.
 
     Subclass and set ``trigger = "park"`` to reuse the same motion as an
     operator-initiated cleanup (see ``OperatorPark``).
@@ -183,9 +227,9 @@ class Park(Action):
 
     def pre(self):
         discs = self._ctx_all_objects().get("disc", [])
-        expr = ~parked() & loaded()
+        expr = ~parked() & spawned()
         for d in discs:
-            expr = expr & transferred(d)
+            expr = expr & at_out(d)
         return expr
 
     def eff(self):
