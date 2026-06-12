@@ -36,17 +36,23 @@ gripper_4_finger_1:
 inspection_horizontal_144mm_1:
   type: "inspection_horizontal_144mm"
   attach:
-    parent_name: "fixture_plate_3"
+    parent_name: "fixture_plate_1"
     parent_solid: "body"
-    parent_anchor: "H2"
+    parent_anchor: "H18"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
 
-# Stand-alone inspection module sitting on the ground (free-standing).
+# Stand-alone inspection module, mounted on fixture_plate_1.
 inspection_module_1:
   type: "inspection_module"
-  offset: [600, -300, 0, 0, 0, 0]
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "H2"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
 
 # ── SBS tube rack, fully loaded with capped 2 ml tubes ──────────────
 sbs_adapter_0:
