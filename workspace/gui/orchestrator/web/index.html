@@ -114,26 +114,34 @@
       touch-action: none;
     }
 
-    /* ---- Info Bar (bottom-left) ---- */
+    /* ---- Info Bar (bottom-left) — matches the scene builder style:
+            frosted rounded pills, mono font, translucent accents ---- */
     #infoBar {
       position: fixed;
       bottom: 18px;
-      left: 22px;
+      left: 18px;
       display: none;
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      color: #fff;
+      align-items: center;
+      gap: 4px;
       z-index: 999;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
     }
     .infoLabel {
-      padding: 5px 13px;
-      display: inline-block;
+      padding: 5px 12px;
+      display: inline-flex;
+      align-items: center;
       white-space: nowrap;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 8px;
+      border: none;
     }
-    #infoName  { background: #0b3d91; border-radius: 6px 0 0 6px; }
-    #infoType  { background: #1a5c00; }
-    #infoSolid { background: #6b4d00; border-radius: 0 6px 6px 0; }
+    #infoName  { background: rgba(10,132,255,0.75); color: #e0eeff; }
+    #infoType  { background: rgba(52,199,89,0.70); color: #d1fae5; }
+    #infoSolid { background: rgba(255,159,10,0.70); color: #fef3c7; }
   </style>
   <script type="importmap">
   {
