@@ -320,6 +320,10 @@ class Core:
             simulation=(not self.has_camera) or bool(prm["simulation"]),
             label=f"{self.name} camera",
         )
+        # Detection the operator "Detect" button runs (last registered;
+        # mirrors Inspection). Only surfaced when has_camera (see
+        # operator_actions).
+        self._default_detection = "default"
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
@@ -658,6 +662,8 @@ class Core:
                 {"label": "Attach Tool", "method": "tool_attach"},
                 {"label": "Detach Tool", "method": "tool_detach"},
             ]
+        if self.has_camera:
+            actions += [{"label": "Detect", "method": "operator_detect"}]
         return actions
 
     def simulation(self, on: bool = True):
@@ -958,7 +964,14 @@ class Core:
         # to the matching dorna2.Dorna instance for hand-eye geometry.
         if "robot_host" not in detection_preset and getattr(self, "ip", None):
             detection_preset["robot_host"] = self.ip
+        self._default_detection = name
         return self.vision.add_detection(name, **detection_preset)
+
+    def operator_detect(self):
+        """No-arg ``detect`` for the Operator Actions UI — runs the
+        default detection. Surfaced only when ``has_camera`` (see
+        ``operator_actions``). Mirrors ``Inspection.operator_detect``."""
+        return self.detect(self._default_detection)
 
     def capture(self, name: str, data=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)

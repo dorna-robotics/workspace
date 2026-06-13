@@ -81,6 +81,10 @@ class Inspection:
             label=self.name,
         )
 
+        # Detection the operator "Detect" button runs (the last one
+        # registered via ``add_detection``; defaults to "default").
+        self._default_detection = "default"
+
     # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
 
     @property
@@ -107,6 +111,7 @@ class Inspection:
     # ── Convenience wrappers (delegate to the helper) ──────────────────
 
     def add_detection(self, name: str, **detection_preset) -> bool:
+        self._default_detection = name
         return self.vision.add_detection(name, **detection_preset)
 
     def capture(self, name: str, data=None) -> dict:
@@ -124,6 +129,19 @@ class Inspection:
         run on the previously cached frame. See VisionStation.detect.
         """
         return self.vision.detect(name, retval=retval, use_last=use_last, data=data, **kwargs)
+
+    # ── Operator action (workspace.components.operator_actions) ────────
+
+    def operator_detect(self):
+        """No-arg ``detect`` for the Operator Actions UI — runs the
+        default detection (the last one registered, or "default"). In
+        sim this returns the canned ``retval``; against a real vision
+        server it returns the detection result. Inherited by every
+        inspection component (module, horizontal, …)."""
+        return self.detect(self._default_detection)
+
+    def operator_actions(self) -> list[dict]:
+        return [{"label": "Detect", "method": "operator_detect"}]
 
     def close(self):
         self.vision.close()
