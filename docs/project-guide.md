@@ -452,6 +452,102 @@ extra to wire.
 Note: `checkpoint()` does **not** raise `ParkRequested` — Park is observed
 between states, not mid-state. See [§9 Pause / Park / Kill](#pause--park--kill--runtime-control-semantics).
 
+### Device reads + declarative retry
+
+A device read (`rcp["scale"].weight()`, `rcp["meter"].read_resistance()`,
+`rcp["inspector"].detect()`) can fail mid-run — the instrument drops, the
+TCP link stalls, the camera server hiccups. The platform handles this in
+two cooperating-but-independent layers. Understand both; the second is the
+one you write.
+
+#### Layer 1 — who pauses the robot (bus-driven, automatic)
+
+When a **`critical: true`, non-sim** device goes `down`, the **orchestrator**
+pauses the runtime. The chain is entirely bus-driven and has *nothing to
+do with your action*:
+
+```
+read fails → station._set_state("down") → adapter publishes device/<id>/state=down
+          → MQTTOrchestrator sees critical+down → runtime.pause()
+```
+
+So the robot pauses whether or not your action notices the failed read.
+The pause lands at the **next pause-aware call** (`rt.<robot>`, `rt.sleep`)
+— the device read itself isn't a checkpoint (it bypasses the gate, per the
+table above), so an in-flight read finishes, then the next motion holds.
+This pause does **not** fire when the device is sim (publisher-sim or the
+project claims sim) — there's no real failure to react to.
+
+You don't write any of this. Set `critical: true` on the device and it
+happens.
+
+#### Layer 2 — re-doing the read after recovery (declarative, you write it)
+
+Pausing stops the robot, but the *reading was never captured*. To redo
+**just the read** — without repeating the motions around it — make the
+read its own action and let the **planner** retry it. Don't write a retry
+loop or reach for `with_retry`; encode it in pre/eff so retry falls out of
+the plan:
+
+**The three rules:**
+
+1. **Make the read its own action**, separate from the motions. Don't
+   bundle place + read + pick into one action — then a failed read forces
+   you to redo the arm moves. Split them: `PlaceOnScale` / `Weigh` (read
+   only) / `PickFromScale`.
+
+2. **Assert the success fact only on success.** The read action's `eff`
+   adds `weighed(item)`; its `execute` returns the eff branch **only when
+   it got a value**, and returns **`False`** otherwise:
+
+   ```python
+   class Weigh(Action):           # pure read, no motion
+       params = ["tube"]
+       resource = "robot"
+       def pre(self, tube):  return on_scale(tube) & ~weighed(tube)
+       def eff(self, tube):  return {"weighed": (+weighed(tube),)}
+       def execute(self, tube):
+           grams = self.ctx.recipes["scale"].weight()
+           if grams is None:
+               return False        # FAIL — weighed(tube) NOT asserted
+           return "weighed"        # success → weighed(tube) becomes true
+   ```
+
+   Returning `False` fails the leaf and **applies no effect** (BT contract:
+   `execute` returns the eff-branch string on success, `False` on failure
+   — never `None`).
+
+3. **Let the existing replan do the retry.** The launcher already wraps the
+   body in `replan_on_failure`, so a failed leaf rebuilds the plan from the
+   **observed world**. There, `on_scale(item) & ~weighed(item)` is still
+   true (the item never left the pan), so the planner **re-selects the read
+   action**. The retry *is* the plan — no loop, no special case.
+
+Putting the layers together, end to end:
+
+```
+Weigh runs → weight() returns None → return False  → leaf FAILS, weighed(t) not set
+  (meanwhile, if critical+real: bus down → orchestrator paused the runtime)
+operator/AutoRecover reconnects → resume
+engine replans from observed state → on_scale(t) & ~weighed(t) still holds
+  → Weigh re-selected → weight() succeeds → weighed(t) set → flow continues
+```
+
+The tube stayed on the pan the whole time (`on_scale` held), so **only the
+read was retried — no motion repeated.** This same shape works for *any*
+device read: keep it its own action, assert the fact only on success,
+return `False` otherwise. The reference implementation is
+`projects/examples/scale/actions.py` (`PlaceOnScale` / `Weigh` /
+`PickFromScale`).
+
+> **Why not `with_retry`?** `with_retry` re-runs the *same leaf* blindly N
+> times. The declarative approach replans from the real world, so it
+> naturally composes with pause/recover (it waits for the device to come
+> back), with windowed slicing, and with anything else the planner knows.
+> Reach for `with_retry` only for a transient that needs an immediate
+> in-place retry with no world change; for "redo this until its goal-fact
+> holds," use pre/eff.
+
 ---
 
 ## 9. Running a project

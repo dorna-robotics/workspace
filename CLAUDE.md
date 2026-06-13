@@ -31,6 +31,7 @@ not author from memory or first principles.
 | Writing a… | Read first (gold) |
 |---|---|
 | **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park) | `projects/examples/runtime/actions.py`, plus `projects/examples/feeder/actions.py` (simple) or `projects/examples/capping/actions.py` (multi-action + progress) |
+| **Device read with declarative retry** (read is its own action; assert the success fact only on a valid reading, `return False` otherwise; planner re-selects it after recover — no `with_retry`/loop) | `projects/examples/scale/actions.py` (`PlaceOnScale`/`Weigh`/`PickFromScale`); the why is `docs/project-guide.md` §8 "Device reads + declarative retry" |
 | **Runtime scene mutation** (`add_component`/`remove_component` paired with facts, the explicit-mutation rule) | `projects/examples/runtime/` (whole project — the reference for this) |
 | **Recipe wiring** (`recipes.j2`) | `projects/examples/feeder/recipes.j2`, `projects/examples/capping/recipes.j2` |
 | **Scene yaml** (chassis + layout, attach hierarchy) | `projects/examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
