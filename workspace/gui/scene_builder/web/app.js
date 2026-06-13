@@ -200,6 +200,23 @@
       const _initGridBtn = document.getElementById("btnGrid");
       if (_initGridBtn) _initGridBtn.classList.add("active");
 
+      // Per-object edge outlines (the black lines around each component).
+      // On by default; addEdgeOverlay seeds new objects from this flag.
+      let _sbShowEdges = true;
+      window.__sbToggleEdges = () => {
+        _sbShowEdges = !_sbShowEdges;
+        scene.traverse(o => {
+          const el = o.userData && o.userData.__edgeLines;
+          if (el) el.visible = _sbShowEdges;
+        });
+        const btn = document.getElementById("btnEdges");
+        if (btn) btn.classList.toggle("active", _sbShowEdges);
+        markDirty();
+      };
+      // Edges start active
+      const _initEdgesBtn = document.getElementById("btnEdges");
+      if (_initEdgesBtn) _initEdgesBtn.classList.add("active");
+
       function axisLine(start, end, color) {
         const geom = new THREE.BufferGeometry();
         geom.setAttribute(
@@ -1263,6 +1280,9 @@ if (node) {
           });
           const edgeLines = new THREE.LineSegments(edgesGeo, edgesMat);
           edgeLines.renderOrder = 10;
+          // Respect the current toggle so objects added while edges are
+          // hidden don't pop back in with outlines.
+          edgeLines.visible = _sbShowEdges;
           obj.add(edgeLines);
           obj.userData.__edgeLines = edgeLines;
         });
@@ -2144,6 +2164,13 @@ function ensureBuilderBar() {
       collisionActive = !collisionActive;
       collisionBtn.classList.toggle("active", collisionActive);
       try { setCollisionVisible(collisionActive); } catch(e) {}
+    });
+  }
+
+  const edgesBtn = document.getElementById("btnEdges");
+  if (edgesBtn) {
+    edgesBtn.addEventListener("click", () => {
+      try { window.__sbToggleEdges?.(); } catch(e) {}
     });
   }
 

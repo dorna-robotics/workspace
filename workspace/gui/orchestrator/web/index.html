@@ -181,6 +181,11 @@
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
       </svg>
     </button>
+    <button class="ctrl-btn active" id="btnEdges" title="Toggle edge outlines">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="8.5" x2="22" y2="8.5"/><line x1="2" y1="15.5" x2="22" y2="15.5"/>
+      </svg>
+    </button>
   </div>
 
   <!-- ViewCube + Reset view (grouped bottom-right) -->
@@ -381,6 +386,9 @@
 
       // ── UI button handlers ────────────────────────────────────────────────
       let showCollisionBoxes = false;
+      // Per-object edge outlines (the black lines around each component).
+      // On by default; addEdgeOverlay seeds new objects from this flag.
+      let showEdges = true;
 
       document.getElementById("btnGrid").addEventListener("click", () => {
         showGrid = !showGrid;
@@ -393,6 +401,16 @@
         collisionWorldGroup.visible  = showCollisionBoxes;
         collisionFlangeGroup.visible = showCollisionBoxes;
         document.getElementById("btnCollision").classList.toggle("active", showCollisionBoxes);
+      });
+
+      document.getElementById("btnEdges").addEventListener("click", () => {
+        showEdges = !showEdges;
+        // Flip every existing edge overlay in the scene.
+        scene.traverse(o => {
+          const el = o.userData && o.userData.__edgeLines;
+          if (el) el.visible = showEdges;
+        });
+        document.getElementById("btnEdges").classList.toggle("active", showEdges);
       });
 
       // Render toggle — pause/resume the render loop to save GPU
@@ -957,6 +975,9 @@
             new THREE.LineBasicMaterial({ color: 0x000000, toneMapped: false })
           );
           el.renderOrder = 10;
+          // Respect the current toggle so objects added while edges are
+          // hidden don't pop back in with outlines.
+          el.visible = showEdges;
           obj.add(el);
           obj.userData.__edgeLines = el;
         });
