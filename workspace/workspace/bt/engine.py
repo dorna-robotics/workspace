@@ -198,8 +198,15 @@ class BTEngine:
                             time.sleep(min(period, 0.1))
                             next_tick = time.monotonic()
                             continue
-                    if not self._enter_cleanup():
-                        return py_trees.common.Status.SUCCESS  # nothing to clean
+                    # Defer Park while the robot is holding a picked item:
+                    # keep ticking the plan until the current item is placed
+                    # (the hand is empty), so a graceful Park never strands a
+                    # load mid-air (drop / collision risk). Only with an empty
+                    # hand do we swap in the trigger="park" cleanup tree.
+                    if not self._tool_holds_load():
+                        if not self._enter_cleanup():
+                            return py_trees.common.Status.SUCCESS
+                    # else: fall through and advance the plan one more action  # nothing to clean
 
                 if self._runtime_paused():
                     # Don't tick during pause. Sleep a short period and
@@ -270,6 +277,19 @@ class BTEngine:
             return False
         e = getattr(self._runtime, "parking", None)
         return bool(e() if callable(e) else e)
+
+    def _tool_holds_load(self) -> bool:
+        """True if the robot's mounted tool is holding a picked item.
+
+        Used to defer Park until the hand is empty. Reads ``core``
+        (Runtime.robot_api). Fail-safe: any error returns False, so an
+        undetectable state never blocks Park (preserves old behaviour)."""
+        core = getattr(self._runtime, "robot_api", None)
+        fn = getattr(core, "tool_holds_load", None)
+        try:
+            return bool(fn()) if callable(fn) else False
+        except Exception:
+            return False
 
     def _active_recipe_leaf(self):
         """Find the currently-running RecipeAction leaf, if any.

@@ -600,6 +600,23 @@ class Core:
             return None
         return None
 
+    def tool_holds_load(self) -> bool:
+        """True if the mounted tool is currently holding a picked item —
+        a solid attached at its ``tcp`` anchor (e.g. a tube in the
+        gripper). Used to defer a graceful Park until the robot's hand
+        is empty, so a held item is never stranded mid-air. Returns
+        False when nothing is mounted or the hand is empty."""
+        tool = self.current_tool()
+        if tool is None:
+            return False
+        try:
+            body = tool.assembly[next(iter(tool.assembly))]
+            for _ in body.children["tcp"]:
+                return True
+        except (KeyError, AttributeError, StopIteration, TypeError):
+            pass
+        return False
+
     def motor_enable(self):
         self.workspace.rt.motor(1)
 
