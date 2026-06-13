@@ -16,4 +16,11 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
-kwargs: {}
+kwargs:
+  batch_size:
+    type: int
+    default: 4
+    label: Batch size
+    hint: How many tubes to inspect (pick → present to both stations → place).
+    min: 1
+    max: 48

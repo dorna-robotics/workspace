@@ -13,3 +13,14 @@ tube_rack:
 
 # ── Inspection recipes go here next ─────────────────────────────────
 # e.g. a MobileInspector / fixed inspection_horizontal_144mm recipe.
+
+# Two fixed inspection stations. FixedInspector.present(...) moves the
+# robot so the held tube faces the station's camera; detect() runs the
+# (sim-safe) detection.
+inspector_1:
+  class: workspace.recipes.inspector.FixedInspector
+  kwargs: {component: inspection_horizontal_144mm_1, base_distance: 200, rail_step: 5, rail_span: 5, detection_preset: {}, speed_factor: {{ sf }}}
+
+inspector_2:
+  class: workspace.recipes.inspector.FixedInspector
+  kwargs: {component: inspection_module_1, base_distance: 200, rail_step: 5, rail_span: 5, detection_preset: {}, speed_factor: {{ sf }}}
