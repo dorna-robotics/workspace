@@ -11,8 +11,9 @@ tube_rack:
   kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
 
 # Scale — pick/place onto the pan ("place" anchor) + weight().
-# base_distance 350 puts the pan in reach at plate_6/C13 (verified with
-# core.IK).
+# base_distance 350 with rail_step 20 reaches the pan at plate_6/C13.
+# (rail_step 5 was too coarse to land a rail solution at 350 — IK
+# returned no joints; verified with core.IK.)
 scale:
   class: workspace.recipes.scale.Scale
-  kwargs: {component: scale_spx222_1, base_distance: 350, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
+  kwargs: {component: scale_spx222_1, base_distance: 350, rail_step: 20, rail_span: 5, speed_factor: {{ sf }}}
