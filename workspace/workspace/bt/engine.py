@@ -205,8 +205,10 @@ class BTEngine:
                     # hand do we swap in the trigger="park" cleanup tree.
                     if not self._tool_holds_load():
                         if not self._enter_cleanup():
+                            # nothing to clean (no trigger="park" actions)
                             return py_trees.common.Status.SUCCESS
-                    # else: fall through and advance the plan one more action  # nothing to clean
+                    # else: hand not empty — fall through and advance the
+                    # plan one more action, then re-check at the next boundary
 
                 if self._runtime_paused():
                     # Don't tick during pause. Sleep a short period and
