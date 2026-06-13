@@ -75,8 +75,8 @@ class ScaleSpx222:
         simulation=True,
         # ``critical`` controls whether a non-sim, unreachable transition
         # pauses the runtime. A scale we can't read is often advisory, so
-        # default False (set ``critical: true`` where a weight is mandatory).
-        critical=False,
+        # default True (set ``critical: true`` where a weight is mandatory).
+        critical=True,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -181,8 +181,11 @@ class ScaleSpx222:
         return self.scale.weigh_stable(timeout=timeout)
 
     def weight(self, stable: bool = True, timeout: float = 10.0):
-        """Just the weight in grams (float or None)."""
-        return self.scale.weight(stable=stable, timeout=timeout)
+        """Weight in grams (float or None). ``stable=True`` waits for a
+        settled reading (``weigh_stable``); ``stable=False`` takes an
+        instantaneous one (``weigh``)."""
+        r = self.weigh_stable(timeout=timeout) if stable else self.weigh()
+        return None if r is None else r.weight
 
     # ── Operator actions (component-guide §8) ─────────────────────────
 
