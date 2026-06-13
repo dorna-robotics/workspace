@@ -1474,11 +1474,16 @@ explicit, per-call, and uniform across every device.
 Every sim-capable device read method takes one optional parameter,
 **`sim_return`**, and obeys three rules:
 
-1. **`sim_return` is exactly what the method returns.** Whatever type the
-   real call produces, that's what you pass in sim and that's what comes
-   back. A `Reading` for the scale's `weigh()`, a `float` for its
-   `weight()`, a `Measurement` for the meter's `read_*()`, a list for
-   vision's `detect()`. No wrapping, no unwrapping, no cross-type magic.
+1. **`sim_return` always has the same format as the method's real
+   return.** This is the load-bearing rule — the type/shape of
+   `sim_return` (and of its in-signature default) is *determined by* what
+   the real call produces, never chosen for convenience. A `Reading` for
+   the scale's `weigh()`, a `float` for its `weight()`, a `Measurement`
+   for the meter's `read_*()`, a list for vision's `detect()`. So a sim
+   value is indistinguishable from a real one to every caller —
+   `m.primary`, `r.weight`, `len(hits)` all work the same. No wrapping, no
+   unwrapping, no cross-type magic. If you change a method's real return
+   type, change its `sim_return` to match in the same edit.
 
 2. **The default lives in the signature.** The canned sim value is the
    parameter's default, written right in the method signature — shaped
