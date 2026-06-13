@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3414
+      "count": 3402
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1132,
+      "count": 1128,
       "max": [
         3.2502989768981934,
         5.999856948852539,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1132
+      "count": 1128
     },
     {
       "type": "SCALAR",
@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2980
+      "byteLength": 3006
     },
     {
       "buffer": 0,
-      "byteOffset": 2980,
+      "byteOffset": 3006,
       "byteLength": 188
     }
   ],
   "buffers": [
     {
       "uri": "tool_rack_192mm.glb.bin",
-      "byteLength": 3168
+      "byteLength": 3194
     }
   ],
   "materials": [

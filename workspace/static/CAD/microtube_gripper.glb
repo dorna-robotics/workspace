@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 20754
+      "count": 20436
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 6849,
+      "count": 6787,
       "max": [
         2.1499595642089844,
         2.1499595642089844,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 6849
+      "count": 6787
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 20439
+      "byteLength": 20207
     }
   ],
   "buffers": [
     {
       "uri": "microtube_gripper.glb.bin",
-      "byteLength": 20439
+      "byteLength": 20207
     }
   ],
   "materials": [

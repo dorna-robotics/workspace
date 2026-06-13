@@ -3,9 +3,9 @@
 #
 # Contents:
 #   - tool rack + 4-finger gripper (to pick/present tubes)
-#   - inspection_horizontal_144mm — fixed vision station mounted on a
+#   - inspection_vertical_144mm — fixed vision station mounted on a
 #     plate (same pattern as the printer's ``vision_station``)
-#   - inspection_module — a stand-alone vision module on the ground
+#   - inspection_horizontal — a stand-alone vision module on the ground
 #   - SBS tube rack fully loaded with 48 capped 2 ml tubes (a cap sits
 #     on each tube's ``cap_seat``)
 
@@ -33,8 +33,8 @@ gripper_4_finger_1:
 
 # ── Inspection ──────────────────────────────────────────────────────
 # Fixed vision station mounted on a plate (printer-like).
-inspection_horizontal_144mm_1:
-  type: "inspection_horizontal_144mm"
+inspection_vertical_144mm_1:
+  type: "inspection_vertical_144mm"
   attach:
     parent_name: "fixture_plate_1"
     parent_solid: "body"
@@ -44,8 +44,8 @@ inspection_horizontal_144mm_1:
     offset: [0, 0, 0, 0, 0, 90]
 
 # Stand-alone inspection module, mounted on fixture_plate_1.
-inspection_module_1:
-  type: "inspection_module"
+inspection_horizontal_1:
+  type: "inspection_horizontal"
   attach:
     parent_name: "fixture_plate_1"
     parent_solid: "body"

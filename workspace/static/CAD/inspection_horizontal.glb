@@ -7,45 +7,45 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 14400
+      "count": 5868
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4717,
+      "count": 1916,
       "max": [
-        3.9001708030700684,
-        3.249725341796875,
-        19.375
+        2.3251187801361084,
+        2.699816942214966,
+        2.3249998092651367
       ],
       "min": [
-        -3.25,
-        -3.25,
-        0
+        -2.325000047683716,
+        0,
+        -6.824999809265137
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4717
+      "count": 1916
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11710
+      "byteLength": 5185
     }
   ],
   "buffers": [
     {
-      "uri": "inspection_horizontal_144mm.glb.bin",
-      "byteLength": 11710
+      "uri": "inspection_horizontal.glb.bin",
+      "byteLength": 5185
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.003",
+      "name": "Opaque(160,160,160).001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "Horizontal Inspection",
+      "name": "Orgin Inspection.001",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "Horizontal Inspection",
+      "name": "Orgin Inspection",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

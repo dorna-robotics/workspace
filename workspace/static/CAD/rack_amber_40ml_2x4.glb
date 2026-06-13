@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5454
+      "count": 5448
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1807,
+      "count": 1806,
       "max": [
         8.25,
         4.250274658203125,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1807
+      "count": 1806
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4906
+      "byteLength": 4902
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_2x4.glb.bin",
-      "byteLength": 4906
+      "byteLength": 4902
     }
   ],
   "materials": [

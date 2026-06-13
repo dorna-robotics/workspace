@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 2490
+      "count": 2466
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 443,
+      "count": 439,
       "max": [
         4.49957275390625,
         3.99993896484375,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 443
+      "count": 439
     },
     {
       "type": "SCALAR",
@@ -84,23 +84,23 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2657
+      "byteLength": 2716
     },
     {
       "buffer": 0,
-      "byteOffset": 2657,
-      "byteLength": 582
+      "byteOffset": 2716,
+      "byteLength": 580
     },
     {
       "buffer": 0,
-      "byteOffset": 3239,
+      "byteOffset": 3296,
       "byteLength": 480
     }
   ],
   "buffers": [
     {
       "uri": "multi_meter_bk879b.glb.bin",
-      "byteLength": 3719
+      "byteLength": 3776
     }
   ],
   "materials": [

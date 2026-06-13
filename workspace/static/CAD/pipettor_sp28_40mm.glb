@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 35292
+      "count": 35184
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 11148,
+      "count": 11126,
       "max": [
         2.1496129035949707,
         2.1501264572143555,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 11148
+      "count": 11126
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 36535
+      "byteLength": 36756
     }
   ],
   "buffers": [
     {
       "uri": "pipettor_sp28_40mm.glb.bin",
-      "byteLength": 36535
+      "byteLength": 36756
     }
   ],
   "materials": [

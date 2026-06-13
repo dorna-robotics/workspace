@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3433
+      "byteLength": 3424
     }
   ],
   "buffers": [
     {
       "uri": "tube_autosampler_2ml.glb.bin",
-      "byteLength": 3433
+      "byteLength": 3424
     }
   ],
   "materials": [

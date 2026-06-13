@@ -24,8 +24,8 @@ single objects dim, so windowed planning auto-engages (`plan_window`).
 
 | Item | |
 |---|---|
-| `inspection_horizontal_144mm_1` | fixed vision station, on `fixture_plate_1 / H18` (printer-like) |
-| `inspection_module_1` | second station, on `fixture_plate_1 / D16` |
+| `inspection_vertical_144mm_1` | fixed vision station, on `fixture_plate_1 / H18` (printer-like) |
+| `inspection_horizontal_1` | second station, on `fixture_plate_1 / D16` |
 | `adapter_plate_sbs` → `rack_autosampler_2ml` | SBS rack, 48 slots |
 | 48 `tube_autosampler_2ml` + 48 `cap_autosampler_2ml` | a capped tube in every slot (cap on each tube's `cap_seat`) |
 | tool rack + `gripper_4_finger` | the tube-handling tool |
@@ -38,8 +38,8 @@ Built on the shared `core_500.j2` chassis (self-contained local copy).
 |---|---|---|
 | `gripper` | `ToolRack` | `tool_rack_144mm_1` |
 | `tube_rack` | `Rack` | `sbs_adapter_0` → rack |
-| `inspector_1` | `FixedInspector` | `inspection_horizontal_144mm_1` |
-| `inspector_2` | `FixedInspector` | `inspection_module_1` |
+| `inspector_1` | `FixedInspector` | `inspection_vertical_144mm_1` |
+| `inspector_2` | `FixedInspector` | `inspection_horizontal_1` |
 
 ## Run it
 

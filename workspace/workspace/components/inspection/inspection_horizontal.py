@@ -4,8 +4,8 @@ from workspace.components.factory import register
 from workspace.components.inspection.inspection import Inspection
 
 
-@register("inspection_module")
-class InspectionModule(Inspection):
+@register("inspection_horizontal")
+class InspectionHorizontal(Inspection):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [-9, 0, 27-3.7, 0, 0, 0], "place": [-9, 0, 27-3.7+70, 0, 0, 0], "top": [0, 0, 27-3.7+70, 0, 0, 0],
                 "hole_0": [0, 31.25, 0, 0, 0, 0], "hole_1": [0, 56.25, 0, 0, 0, 0]}},

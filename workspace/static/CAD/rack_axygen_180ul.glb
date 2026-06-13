@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 14401
+      "byteLength": 14434
     }
   ],
   "buffers": [
     {
       "uri": "rack_axygen_180ul.glb.bin",
-      "byteLength": 14401
+      "byteLength": 14434
     }
   ],
   "materials": [
