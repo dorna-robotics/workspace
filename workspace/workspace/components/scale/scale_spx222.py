@@ -41,7 +41,7 @@ from dorna2 import Solid
 from workspace.components.factory import register
 from workspace.components.scale.spx222_station import SPX222Station
 from workspace.components.scale.spx222_driver import Reading
-from workspace.devices import AutoRecover, LivenessProbe, attach_device
+from workspace.devices import AutoRecover, attach_device
 
 
 log = logging.getLogger(__name__)
@@ -150,28 +150,6 @@ class ScaleSpx222:
             except Exception:
                 log.exception("ScaleSpx222[%s]: attach_device failed", self.name)
 
-        # ── Liveness watchdog ──
-        # AutoRecover is reactive (device-guide §5: "not a watchdog").
-        # Without a heartbeat, a mid-run cable pull is only noticed on the
-        # next blocking read — up to the stable-weigh timeout (~10 s) of
-        # "green but dead". This probe pings the balance (MT-SICS I2, short
-        # timeout) every second; the moment a ping fails it flips the bus
-        # ``down`` (red dot in ~1-2 s) and nudges AutoRecover to reconnect.
-        # Started only for a real, bus-attached device — sim has nothing to
-        # watch; suspended/re-armed in ``simulation()`` alongside recovery.
-        self._liveness = None
-        if self._ip and not self._simulation_mode and self._attachment is not None:
-            self._liveness = LivenessProbe(
-                probe_fn=self.scale.ping,          # real I2 round-trip, not socket-present
-                on_down=lambda msg: self.scale._set_state("down", msg),
-                recover=self._attachment.recover,
-                is_ok_fn=lambda: self.scale.state == "ok",
-                interval=1.0,
-                down_msg="unreachable (liveness probe)",
-                log_label=self.scale.id,
-            )
-            self._liveness.start()
-
     # ── DeviceComponent contract ──────────────────────────────────────
 
     @property
@@ -235,8 +213,7 @@ class ScaleSpx222:
         """Live sim/real flip — mirrors ``Core.simulation`` /
         ``MultiMeterBk879b.simulation`` (device-guide §16 parity rule).
         Flips the authored intent, republishes ``info.sim``, and
-        suspends/re-arms AutoRecover + the liveness watchdog. The TCP
-        connection stays open."""
+        suspends/re-arms AutoRecover. The TCP connection stays open."""
         new_sim = bool(on)
         if new_sim == self._simulation_mode:
             return
@@ -244,29 +221,6 @@ class ScaleSpx222:
         self.scale.set_simulation(new_sim)
         if self._attachment is not None:
             self._attachment.set_sim(new_sim)
-
-        # Liveness watchdog tracks sim alongside recovery: stop it going
-        # into sim (nothing to watch); re-create it going back to real so
-        # it binds to the FRESH AutoRecover the attachment just re-armed
-        # (the old recover reference is now stale).
-        if self._liveness is not None:
-            try:
-                self._liveness.stop()
-            except Exception:
-                log.exception("ScaleSpx222[%s]: liveness stop raised", self.name)
-            self._liveness = None
-        if not new_sim and self._ip and self._attachment is not None:
-            self._liveness = LivenessProbe(
-                probe_fn=self.scale.ping,
-                on_down=lambda msg: self.scale._set_state("down", msg),
-                recover=self._attachment.recover,
-                is_ok_fn=lambda: self.scale.state == "ok",
-                interval=1.0,
-                down_msg="unreachable (liveness probe)",
-                log_label=self.scale.id,
-            )
-            self._liveness.start()
-
         print(f"{'🔵' if new_sim else '🟡'} {self.name} simulation "
               f"{'enabled' if new_sim else 'disabled'}")
 
@@ -280,15 +234,7 @@ class ScaleSpx222:
     # ── Teardown ──────────────────────────────────────────────────────
 
     def close(self):
-        """Stop the liveness watchdog, release the bus attachment + close
-        the socket. Idempotent."""
-        try:
-            if self._liveness is not None:
-                self._liveness.stop()
-        except Exception:
-            log.exception("ScaleSpx222[%s]: liveness stop raised", self.name)
-        finally:
-            self._liveness = None
+        """Release the bus attachment + close the socket. Idempotent."""
         try:
             if self._attachment is not None:
                 self._attachment.close()
