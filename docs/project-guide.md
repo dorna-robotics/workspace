@@ -580,6 +580,54 @@ the robot leaves; `"robot"` when the robot waits.**
 > in-place retry with no world change; for "redo this until its goal-fact
 > holds," use pre/eff.
 
+### Single-occupancy resources — the gripper holds one item
+
+A subtle planning trap, and one almost every multi-item protocol hits.
+The planner is free to reorder actions whose preconditions are
+independently satisfiable. If each action only references **its own
+item's** facts — `Pick`'s pre is `started() & ~picked(t)` — then `Pick(0)`,
+`Pick(1)`, `Pick(2)` are all independently applicable, and the planner
+will happily schedule **all the picks first**, then all the places. That's
+physically impossible: there's one gripper, it holds one item.
+
+The symptom is a schedule like
+`Pick(3) Pick(0) Pick(1) Pick(2) PlaceOnScale(0) PlaceOnScale(2) …` —
+batched by action across items instead of one item completed end-to-end.
+
+The fix is to model the **capacity-1 physical resources** as facts the
+planner must respect — most commonly the **gripper** (`hand_empty`), and
+any fixture an item rests on exclusively (a scale pan `pan_empty`, a single
+inspection nest, etc.). A capacity-1 resource is a **no-arg fact** that's
+*consumed* when the slot fills and *restored* when it empties:
+
+```python
+hand_empty = predicate("hand_empty")     # gripper holds no item
+
+class Start(Action):
+    def eff(self): return {"started": (+started(), +hand_empty())}   # seed it
+
+class Pick(Action):
+    def pre(self, t):  return started() & hand_empty() & ~picked(t)
+    def eff(self, t):  return {"picked": (+picked(t), -hand_empty())} # hand now full
+
+class Place(Action):
+    def pre(self, t):  return off_scale(t) & ~placed(t)
+    def eff(self, t):  return {"placed": (+placed(t), +hand_empty())} # hand frees
+```
+
+Now `Pick(1)` can't be scheduled until whatever filled the hand has
+emptied it (a `Place` or a hand-off), so the planner is forced to finish
+one item's hand-occupancy before starting the next. Use `+fact` to
+restore, `-fact` to consume (the `eff` branch is a tuple of these). Seed
+the resource's initial state in `Start.eff`.
+
+Rule: **for every physical slot that holds at most one item — the gripper,
+a pan, a nest, a single-tube fixture — add a no-arg `_empty` fact,
+consume it on fill, restore it on empty.** The reference implementation is
+`projects/examples/scale/actions.py` (`hand_empty` + `pan_empty`). Without
+it, single-item protocols look fine in small batches by luck and produce
+impossible schedules as soon as the planner finds the reordering.
+
 ---
 
 ## 9. Running a project

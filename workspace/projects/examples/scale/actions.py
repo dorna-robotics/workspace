@@ -59,6 +59,16 @@ off_scale = predicate("off_scale")  # tube re-gripped and lifted off the pan
 placed    = predicate("placed")     # tube returned to its slot
 parked    = predicate("parked")
 
+# ── Single-occupancy resources (capacity-1, no args) ──────────────────
+# Without these, nothing tells the planner the gripper holds ONE tube and
+# the scale pan holds ONE tube — so it freely batches Pick(0..N) before any
+# Place, which is physically impossible (one gripper, one pan). These facts
+# model that: each is consumed (-fact) when the slot fills and restored
+# (+fact) when it empties, forcing strictly one-tube-at-a-time through both
+# the hand and the pan. See project-guide §8 "Single-occupancy resources".
+hand_empty = predicate("hand_empty")   # gripper holds no tube
+pan_empty  = predicate("pan_empty")    # balance pan is free
+
 
 RACK = "rack_autosampler_2ml_1"
 
@@ -126,7 +136,8 @@ class Start(Action):
         return ~started()
 
     def eff(self):
-        return {"started": (+started(),)}
+        # Seed the single-occupancy resources: hand and pan both start empty.
+        return {"started": (+started(), +hand_empty(), +pan_empty())}
 
     def execute(self):
         rt  = self.ctx.runtime
@@ -144,10 +155,11 @@ class Pick(Action):
     tool     = "gripper"
 
     def pre(self, tube):
-        return started() & ~picked(tube)
+        # hand_empty gates one-at-a-time: can't pick a tube while holding one.
+        return started() & hand_empty() & ~picked(tube)
 
     def eff(self, tube):
-        return {"picked": (+picked(tube),)}
+        return {"picked": (+picked(tube), -hand_empty())}   # hand now full
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -167,10 +179,12 @@ class PlaceOnScale(Action):
     tool     = "gripper"
 
     def pre(self, tube):
-        return picked(tube) & ~on_scale(tube)
+        # pan_empty gates one-at-a-time on the scale.
+        return picked(tube) & pan_empty() & ~on_scale(tube)
 
     def eff(self, tube):
-        return {"on_scale": (+on_scale(tube),)}
+        # Tube leaves the hand onto the pan: hand frees, pan fills.
+        return {"on_scale": (+on_scale(tube), +hand_empty(), -pan_empty())}
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -235,10 +249,12 @@ class PickFromScale(Action):
     tool     = "gripper"
 
     def pre(self, tube):
-        return weighed(tube) & ~off_scale(tube)
+        # hand_empty required to re-grip; the same tube is on the pan.
+        return weighed(tube) & hand_empty() & ~off_scale(tube)
 
     def eff(self, tube):
-        return {"off_scale": (+off_scale(tube),)}
+        # Tube back into the hand off the pan: hand fills, pan frees.
+        return {"off_scale": (+off_scale(tube), -hand_empty(), +pan_empty())}
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -259,7 +275,7 @@ class Place(Action):
         return off_scale(tube) & ~placed(tube)
 
     def eff(self, tube):
-        return {"placed": (+placed(tube),)}
+        return {"placed": (+placed(tube), +hand_empty())}   # tube back in rack, hand frees
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes

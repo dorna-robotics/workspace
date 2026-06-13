@@ -27,6 +27,13 @@ presented2  = predicate("presented2")   # shown to station 2
 placed      = predicate("placed")       # tube returned to its slot
 parked      = predicate("parked")
 
+# Single-occupancy: the gripper holds ONE tube. Without this the planner
+# can batch all the Picks before any Place (impossible — one gripper).
+# Consumed on Pick, restored on Place; the tube is held the whole
+# Pick→Present1→Present2→Place chain, so the Presents don't touch it.
+# See project-guide §8 "Single-occupancy resources".
+hand_empty  = predicate("hand_empty")   # gripper holds no tube
+
 
 RACK = "rack_autosampler_2ml_1"
 
@@ -89,7 +96,7 @@ class Start(Action):
         return ~started()
 
     def eff(self):
-        return {"started": (+started(),)}
+        return {"started": (+started(), +hand_empty())}   # gripper starts empty
 
     def execute(self):
         rt  = self.ctx.runtime
@@ -107,10 +114,10 @@ class Pick(Action):
     tool     = "gripper"
 
     def pre(self, tube):
-        return started() & ~picked(tube)
+        return started() & hand_empty() & ~picked(tube)
 
     def eff(self, tube):
-        return {"picked": (+picked(tube),)}
+        return {"picked": (+picked(tube), -hand_empty())}   # hand now full
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -176,7 +183,7 @@ class Place(Action):
         return presented2(tube) & ~placed(tube)
 
     def eff(self, tube):
-        return {"placed": (+placed(tube),)}
+        return {"placed": (+placed(tube), +hand_empty())}   # tube back in rack, hand frees
 
     def execute(self, tube):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
