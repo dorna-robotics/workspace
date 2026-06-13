@@ -1,0 +1,18 @@
+{%- set sf = 20 -%}
+
+# 4-finger gripper, parked in the tool rack.
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Tube rack — Rack over the SBS adapter; resolves to rack_autosampler_2ml_1.
+tube_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# Scale — pick/place onto the pan ("place" anchor) + weight().
+# base_distance 150 puts the pan in reach at plate_1/C13 (verified with
+# core.IK; sample_prep's 350 was tuned for its own plate geometry).
+scale:
+  class: workspace.recipes.scale.Scale
+  kwargs: {component: scale_spx222_1, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
