@@ -460,7 +460,7 @@ class Recipe:
             dorna_pose.transform_pose(
                 [0, 0, 0, 0, 0, 0],
                 from_frame=component.assembly[solid_name].pose("top"),
-                to_frame=component.assembly[solid_name].pose("place"),
+                to_frame=component.assembly[solid_name].pose(anchor), # "place"
             )[2]
         )
 

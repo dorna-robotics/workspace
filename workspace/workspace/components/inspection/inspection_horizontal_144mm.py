@@ -7,7 +7,7 @@ from workspace.components.inspection.inspection import Inspection
 @register("inspection_horizontal_144mm")
 class InspectionHorizontal144mm(Inspection):
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [175, 0, 94+30, 0, 0, 180], "top": [0, 0, 144, 0, 0, 0],
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [39-3.7, 9, 172.75, 69.28203230275508, 69.28203230275508, -69.2820323027551], "place": [39-3.7+70, 9, 172.75, 0, 0, 180], "top": [0, 0, 195, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
         collision_box = {"body":[
                 {"pose":[5,0,195/2,0,0,0], "scale":[75,65,195]},#[xyzabc] , [lx,ly,lz]

@@ -183,7 +183,7 @@ class Place(Action):
         slot = _slot(self, tube)
         rt.step(f"tube {tube + 1}: place back to rack[{slot}]")
         rt.step(_progress_pct(self), level="progress")
-        rcp["tube_rack"].place(slot, soft_approach=True)
+        rcp["tube_rack"].place(slot, gravity_offset=4, soft_approach=True)
         return "placed"
 
 
