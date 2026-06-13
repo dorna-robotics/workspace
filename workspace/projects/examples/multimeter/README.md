@@ -1,4 +1,4 @@
-# multimeter_test
+# multimeter
 
 A minimal BT-framework project that demonstrates the
 `multi_meter_bk879b` component end-to-end. The robot stays idle; the
@@ -47,7 +47,7 @@ for the meter's FTDI / CP210x chip.
 ## Running
 
 ```bash
-sudo python3 projects/multimeter_test/main.py
+sudo python3 projects/examples/multimeter/main.py
 ```
 
 Then open the orchestrator at `http://localhost:5010`. Hit Launch,

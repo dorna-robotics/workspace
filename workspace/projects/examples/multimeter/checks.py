@@ -1,4 +1,4 @@
-"""multimeter_test sensor/vision checks.
+"""multimeter sensor/vision checks.
 
 No checks for this project — the multimeter reads are unconditional.
 The framework still loads this module by name from ``launch.yaml``;

@@ -1,4 +1,4 @@
-"""multimeter_test protocol.
+"""multimeter protocol.
 
 Three-action pattern, fully PDDL-planned:
 

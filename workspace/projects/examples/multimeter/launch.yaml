@@ -1,6 +1,6 @@
-# multimeter_test/launch.yaml — minimal demo for the multi_meter component.
+# multimeter/launch.yaml — minimal demo for the multi_meter component.
 
-project_name: multimeter_test    # appears in logs, tree node names, GUI
+project_name: multimeter    # appears in logs, tree node names, GUI
 port:         5010               # default operator-UI port (env var PORT overrides)
 scene:        [scene/base.j2]    # one Core + one BK 879B meter (sim by default)
 recipes:      recipes.j2         # exposes the meter as ``rcp["meter"]``
