@@ -35,7 +35,10 @@ from mergedeep import merge
 from dorna2 import Solid
 
 from workspace.components.factory import register
-from workspace.components.multi_meter.bk879b_station import BK879BStation
+from workspace.components.multi_meter.bk879b_station import (
+    BK879BStation,
+    SIM_CAPACITANCE, SIM_INDUCTANCE, SIM_RESISTANCE, SIM_IMPEDANCE,
+)
 from workspace.devices import AutoRecover, attach_device
 
 
@@ -179,17 +182,24 @@ class MultiMeterBk879b:
     def is_connected(self) -> bool:
         return self.meter.is_connected()
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000):
-        return self.meter.read_capacitance(mode=mode, frequency=frequency)
+    # ``sim_return`` (device-guide §17) — explicit sim injection, passed
+    # straight to the station. Its default IS the canned per-function
+    # ``Measurement``; pass your own to inject a different sim reading.
+    # Real mode ignores it.
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000):
-        return self.meter.read_inductance(mode=mode, frequency=frequency)
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         sim_return=SIM_CAPACITANCE):
+        return self.meter.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
 
-    def read_resistance(self, frequency: int = 1000):
-        return self.meter.read_resistance(frequency=frequency)
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        sim_return=SIM_INDUCTANCE):
+        return self.meter.read_inductance(mode=mode, frequency=frequency, sim_return=sim_return)
 
-    def read_impedance(self, frequency: int = 1000):
-        return self.meter.read_impedance(frequency=frequency)
+    def read_resistance(self, frequency: int = 1000, sim_return=SIM_RESISTANCE):
+        return self.meter.read_resistance(frequency=frequency, sim_return=sim_return)
+
+    def read_impedance(self, frequency: int = 1000, sim_return=SIM_IMPEDANCE):
+        return self.meter.read_impedance(frequency=frequency, sim_return=sim_return)
 
     # ── Operator-action contract (component-guide §8) ─────────────────
     # Operator-facing buttons in the Operator Controls panel. Wired

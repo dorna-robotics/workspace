@@ -1463,7 +1463,107 @@ already follow this shape — copy from either for new device kinds.
 
 ---
 
-## 17. Open follow-ups (not blocking new device authors)
+## 17. Sim data injection — `sim_return`
+
+§16 decides **whether** a method runs against fake or real hardware.
+This section decides **what the fake path returns** — and makes it
+explicit, per-call, and uniform across every device.
+
+### The rule (normative)
+
+Every sim-capable device read method takes one optional parameter,
+**`sim_return`**, and obeys three rules:
+
+1. **`sim_return` is exactly what the method returns.** Whatever type the
+   real call produces, that's what you pass in sim and that's what comes
+   back. A `Reading` for the scale's `weigh()`, a `float` for its
+   `weight()`, a `Measurement` for the meter's `read_*()`, a list for
+   vision's `detect()`. No wrapping, no unwrapping, no cross-type magic.
+
+2. **The default lives in the signature.** The canned sim value is the
+   parameter's default, written right in the method signature — shaped
+   like the real return. There is **no hidden `_sim_*()` helper**. Open
+   the method and you see the fake value:
+
+   ```python
+   def weigh(self, sim_return=Reading(status="stable", weight=12.345, unit="g", raw="sim")):
+       if self.simulation:
+           return sim_return          # explicit — default visible above
+       ... real read ...
+
+   def weight(self, stable=True, timeout=10.0, sim_return=12.345):
+       if self.simulation:
+           return sim_return
+       ... real read ...
+   ```
+
+3. **Real mode ignores it.** In real mode the method reads hardware and
+   never looks at `sim_return`. The same call site works on a bench with
+   no hardware (returns the injected value) and on a real device
+   (returns the live reading) — no branching in recipes or actions.
+
+### How you inject (from a recipe / action / test)
+
+Pass `sim_return` at the call site. It is the *only* way to inject — no
+scene-yaml field, no scenario file, no stored state on the device:
+
+```python
+# scale — inject a per-tube fake weight in a sim run
+grams = rcp["scale"].weight(sim_return=10.0 + tube)     # sim → that float; real → balance
+
+# multimeter — inject a specific Measurement
+rcp["meter"].read_capacitance(sim_return=Measurement(primary=4.7e-6, primary_unit="F", ...))
+
+# vision — inject detections so a sim run exercises real decision logic
+hits = rcp["inspector"].detect(sim_return=[{"label": "cap", "ok": True}])
+if hits: ...                                            # decision driven by injected data
+```
+
+Omit `sim_return` and you get the canned default — existing sim runs are
+unchanged.
+
+### Where the default literal lives, per layer
+
+The default is held at the **station** and **component** layers (the
+in-signature literal, shaped like the real return). The **recipe** layer
+— the outermost API that actions call — uses `sim_return=None` and only
+forwards it when set, so the recipe never has to import or restate the
+device's canned values:
+
+```python
+# recipe — None means "use the device's own canned default"
+def weight(self, stable=True, timeout=10.0, sim_return=None):
+    kw = {} if sim_return is None else {"sim_return": sim_return}
+    return self.component.weight(stable=stable, timeout=timeout, **kw)
+```
+
+For devices with **per-mode defaults** (the meter returns a different
+canned value per function), define the canned objects as module
+constants next to the station and use them as the per-method default
+(`SIM_CAPACITANCE`, `SIM_RESISTANCE`, …). Still no hidden helper — the
+constants are visible and named, and the method signature points at one.
+
+### Scope
+
+`sim_return` applies to device **read** methods — anything that returns a
+measurement / detection / reading. It does **not** apply to the robot's
+`SimulationAPI`, which is behavioural (it simulates motion and tracks
+joint state), not a single reading. Leave the robot sim as-is.
+
+### Naming convention (bundled with this contract)
+
+Driver files use the **`_driver` suffix** uniformly
+(`spx222_driver.py`, `bk879b_driver.py`, `cab_driver.py`,
+`keyto_driver.py`) — not `_wrapper`. The three-file stack is
+`<device>.py` (component) → `<device>_station.py` (station) →
+`<device>_driver.py` (raw driver).
+
+Scale, MultiMeter, and Vision all follow the `sim_return` contract today
+— copy from any of them for a new device kind.
+
+---
+
+## 18. Open follow-ups (not blocking new device authors)
 
 - **Local UI on each device server.** Each device service should also
   show its own health locally (the vision server's web GUI does this;

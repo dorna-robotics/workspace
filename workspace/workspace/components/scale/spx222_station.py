@@ -25,16 +25,10 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
-from workspace.components.scale.spx222_wrapper import SPX222, Reading
+from workspace.components.scale.spx222_driver import SPX222, Reading
 
 
 log = logging.getLogger(__name__)
-
-
-def _sim_reading() -> Reading:
-    """Canned stable Reading for sim mode — plausible non-zero grams so
-    recipes that pretty-print the value don't render ``0``."""
-    return Reading(status="stable", weight=12.345, unit="g", raw="sim,S,12.345,g")
 
 
 class SPX222Station:
@@ -147,19 +141,24 @@ class SPX222Station:
 
     # ── Unified weighing API ───────────────────────────────────────────
     # Real path delegates to the driver, transitioning state to "down"
-    # on read failure so the bus + AutoRecover learn about it. Sim path
-    # returns canned data.
+    # on read failure so the bus + AutoRecover learn about it.
+    #
+    # ``sim_return`` (device-guide §17) — explicit sim injection. Its
+    # default IS the canned sim value, written right in the signature and
+    # shaped exactly like the real return (a ``Reading`` for weigh /
+    # weigh_stable, a ``float`` for weight). In sim the method returns
+    # ``sim_return`` verbatim; real mode ignores it entirely.
 
     def is_connected(self) -> bool:
         if self.simulation:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def weigh(self) -> Optional[Reading]:
+    def weigh(self, sim_return: Reading = Reading(status="stable", weight=12.345, unit="g", raw="sim")) -> Optional[Reading]:
         """Instantaneous weight (MT-SICS SI). ``None`` when disconnected
-        and not in sim."""
+        and not in sim. In sim, returns ``sim_return`` (a ``Reading``)."""
         if self.simulation:
-            return _sim_reading()
+            return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
@@ -171,10 +170,12 @@ class SPX222Station:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
 
-    def weigh_stable(self, timeout: float = 10.0) -> Optional[Reading]:
-        """Block until the balance reports a stable weight (MT-SICS S)."""
+    def weigh_stable(self, timeout: float = 10.0,
+                     sim_return: Reading = Reading(status="stable", weight=12.345, unit="g", raw="sim")) -> Optional[Reading]:
+        """Block until the balance reports a stable weight (MT-SICS S).
+        In sim, returns ``sim_return`` (a ``Reading``)."""
         if self.simulation:
-            return _sim_reading()
+            return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
@@ -186,8 +187,12 @@ class SPX222Station:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
 
-    def weight(self, stable: bool = True, timeout: float = 10.0) -> Optional[float]:
+    def weight(self, stable: bool = True, timeout: float = 10.0,
+               sim_return: float = 12.345) -> Optional[float]:
         """Convenience: just the weight in grams (or None). ``stable``
-        waits for a settled reading."""
-        r = self.weigh_stable(timeout=timeout) if stable else self.weigh()
+        waits for a settled reading. In sim, returns ``sim_return`` (a
+        ``float`` in grams) verbatim."""
+        if self.simulation:
+            return sim_return
+        r = (self.weigh_stable(timeout=timeout) if stable else self.weigh())
         return None if r is None else r.weight

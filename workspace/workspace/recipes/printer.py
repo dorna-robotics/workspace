@@ -71,6 +71,6 @@ class Printer(Recipe):
             verify: If True, verify the print with the scanner.
         """
         if not self.component._simulation_mode:
-            from workspace.components.printer.cab_wrapper import CodeType
+            from workspace.components.printer.cab_driver import CodeType
             return self.component.device.print_one(CodeType(code_type), data, autorun=autorun, verify=verify)
         return True

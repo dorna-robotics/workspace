@@ -36,26 +36,25 @@ from workspace.components.multi_meter.bk879b_driver import (
 
 log = logging.getLogger(__name__)
 
-def _sim_measurement(function: str, frequency: int) -> Measurement:
-    """Canned ``Measurement`` for sim mode. Values are arbitrary but
-    plausible for each function so recipes that pretty-print them
-    don't render ``0``.
-    """
-    primary, primary_unit, secondary = {
-        "C": (1.5e-9, "F", 0.001),     # 1.5 nF
-        "L": (1.0e-3, "H", 0.001),     # 1 mH
-        "R": (1.0e3,  "Ω", 0.0),  # 1 kΩ
-        "Z": (1.0e3,  "Ω", 0.0),
-    }.get(function.upper(), (0.0, "", 0.0))
-    return Measurement(
-        primary=primary,
-        primary_unit=primary_unit,
-        secondary=secondary,
-        secondary_unit="",
-        function=function.upper(),
-        frequency=str(frequency),
-        raw=f"sim,{primary},{secondary}",
-    )
+
+# Canned per-function sim ``Measurement`` defaults — used as the
+# in-signature ``sim_return`` default for each read method (device-guide
+# §17). Arbitrary but plausible per function so recipes that pretty-print
+# them don't render ``0``. Visible here and in each signature; no hidden
+# helper. Pass your own ``Measurement`` to a read method to inject a
+# different sim value.
+SIM_CAPACITANCE = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001,
+                              secondary_unit="", function="C", frequency="1000",
+                              raw="sim,1.5e-9,0.001")            # 1.5 nF
+SIM_INDUCTANCE  = Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001,
+                              secondary_unit="", function="L", frequency="1000",
+                              raw="sim,1e-3,0.001")              # 1 mH
+SIM_RESISTANCE  = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0,
+                              secondary_unit="", function="R", frequency="1000",
+                              raw="sim,1e3,0.0")                 # 1 kΩ
+SIM_IMPEDANCE   = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0,
+                              secondary_unit="", function="Z", frequency="1000",
+                              raw="sim,1e3,0.0")                 # 1 kΩ
 
 
 class BK879BStation:
@@ -227,16 +226,23 @@ class BK879BStation:
     # ── Unified measurement API ────────────────────────────────────────
     # Real path delegates to the driver, catching exceptions and
     # transitioning the state to "down" on read failures so the bus +
-    # AutoRecover learn about it. Sim path returns canned data.
+    # AutoRecover learn about it.
+    #
+    # ``sim_return`` (device-guide §17) — explicit sim injection. Its
+    # default IS the canned per-function ``Measurement`` (above), written
+    # in each method's signature. In sim the method returns ``sim_return``
+    # verbatim; real mode ignores it. Pass your own ``Measurement`` to
+    # inject a different reading.
 
     def is_connected(self) -> bool:
         if self.simulation:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def _safe_read(self, fn_name: str, function: str, frequency: int, **kw) -> Optional[Measurement]:
+    def _safe_read(self, fn_name: str, frequency: int,
+                   sim_return: Measurement, **kw) -> Optional[Measurement]:
         if self.simulation:
-            return _sim_measurement(function, frequency)
+            return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
@@ -245,24 +251,28 @@ class BK879BStation:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Optional[Measurement]:
-        return self._safe_read("read_capacitance", "C", frequency, mode=mode)
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         sim_return: Measurement = SIM_CAPACITANCE) -> Optional[Measurement]:
+        return self._safe_read("read_capacitance", frequency, sim_return, mode=mode)
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000) -> Optional[Measurement]:
-        return self._safe_read("read_inductance", "L", frequency, mode=mode)
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        sim_return: Measurement = SIM_INDUCTANCE) -> Optional[Measurement]:
+        return self._safe_read("read_inductance", frequency, sim_return, mode=mode)
 
-    def read_resistance(self, frequency: int = 1000) -> Optional[Measurement]:
-        return self._safe_read("read_resistance", "R", frequency)
+    def read_resistance(self, frequency: int = 1000,
+                        sim_return: Measurement = SIM_RESISTANCE) -> Optional[Measurement]:
+        return self._safe_read("read_resistance", frequency, sim_return)
 
-    def read_impedance(self, frequency: int = 1000) -> Optional[Measurement]:
-        return self._safe_read("read_impedance", "Z", frequency)
+    def read_impedance(self, frequency: int = 1000,
+                       sim_return: Measurement = SIM_IMPEDANCE) -> Optional[Measurement]:
+        return self._safe_read("read_impedance", frequency, sim_return)
 
-    def read(self) -> Optional[Measurement]:
+    def read(self, sim_return: Measurement = SIM_CAPACITANCE) -> Optional[Measurement]:
         """Re-read at the current function + frequency. Convenience for
         operator-button 'Read once' style buttons that don't need to
-        change settings."""
+        change settings. In sim, returns ``sim_return``."""
         if self.simulation:
-            return _sim_measurement(self._driver_function(), 1000)
+            return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
@@ -270,8 +280,3 @@ class BK879BStation:
         except Exception as ex:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
-
-    def _driver_function(self) -> str:
-        if self._driver is None:
-            return "C"
-        return getattr(self._driver, "_function", "C")

@@ -40,6 +40,7 @@ from dorna2 import Solid
 
 from workspace.components.factory import register
 from workspace.components.scale.spx222_station import SPX222Station
+from workspace.components.scale.spx222_driver import Reading
 from workspace.devices import AutoRecover, attach_device
 
 
@@ -51,22 +52,23 @@ log = logging.getLogger(__name__)
 # measured off the CAD model.
 @register("scale_spx222")
 class ScaleSpx222:
+
     DEFAULTS = dict(
         anchors={
             "body": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "top":    [0, 0, 53.34, 0, 0, 0],          # placeholder — set from CAD
-                "place":  [0, 42.815, 53.34, 0, 0, 0],     # placeholder — set from CAD
-                "hole_0": [ 79.229,  89.138, 0, 0, 0, 0],  # placeholder
-                "hole_1": [-79.229,  89.138, 0, 0, 0, 0],  # placeholder
-                "hole_2": [-79.684, -89.651, 0, 0, 0, 0],  # placeholder
-                "hole_3": [ 79.684, -89.651, 0, 0, 0, 0],  # placeholder
+                "top":    [0, 0, 53.34+3.5, 0, 0, 0],     # placeholder — set from CAD
+                "place":  [42.815, 0, 53.34+3.5, 0, 0, 0],      # placeholder — set from CAD
+                "hole_0": [ 50,  75, 0, 0, 0, 0],   # placeholder
+                "hole_1": [-50,  75, 0, 0, 0, 0],   # placeholder
+                "hole_2": [-50, -75, 0, 0, 0, 0],   # placeholder
+                "hole_3": [ 50, -75, 0, 0, 0, 0],   # placeholder
             },
         },
         collision_box={
             "body": [
                 # placeholder — [x,y,z,a,b,c], [lx,ly,lz]; set from CAD
-                {"pose": [0.0, 0.678, 53.34 / 2, 0.0, 0.0, 0.0], "scale": [203.105, 223.067, 53.34]},
+                {"pose": [0.0, 0.678, (53.34+3.5)/2, 0.0, 0.0, 0.0], "scale": [233.789, 213.458, 53.34+3.5]},
             ],
         },
         # ── device link ──────────────────────────────────────────────
@@ -172,20 +174,25 @@ class ScaleSpx222:
     def is_connected(self) -> bool:
         return self.scale.is_connected()
 
-    def weigh(self):
+    # ``sim_return`` (device-guide §17) — explicit sim injection, passed
+    # straight to the station. Its default IS the canned sim value, in the
+    # signature, shaped like the real return: a ``Reading`` for weigh /
+    # weigh_stable, a ``float`` for weight. Real mode ignores it.
+
+    def weigh(self, sim_return=Reading(status="stable", weight=12.345, unit="g", raw="sim")):
         """Instantaneous reading (``Reading`` or None)."""
-        return self.scale.weigh()
+        return self.scale.weigh(sim_return=sim_return)
 
-    def weigh_stable(self, timeout: float = 10.0):
+    def weigh_stable(self, timeout: float = 10.0,
+                     sim_return=Reading(status="stable", weight=12.345, unit="g", raw="sim")):
         """Block for a settled reading (``Reading`` or None)."""
-        return self.scale.weigh_stable(timeout=timeout)
+        return self.scale.weigh_stable(timeout=timeout, sim_return=sim_return)
 
-    def weight(self, stable: bool = True, timeout: float = 10.0):
+    def weight(self, stable: bool = True, timeout: float = 10.0, sim_return: float = 12.345):
         """Weight in grams (float or None). ``stable=True`` waits for a
         settled reading (``weigh_stable``); ``stable=False`` takes an
-        instantaneous one (``weigh``)."""
-        r = self.weigh_stable(timeout=timeout) if stable else self.weigh()
-        return None if r is None else r.weight
+        instantaneous one (``weigh``). In sim, returns ``sim_return``."""
+        return self.scale.weight(stable=stable, timeout=timeout, sim_return=sim_return)
 
     # ── Operator actions (component-guide §8) ─────────────────────────
 

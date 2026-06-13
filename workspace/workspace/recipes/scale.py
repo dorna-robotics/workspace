@@ -25,11 +25,16 @@ class Scale(Recipe):
             **prm
         )
 
-    def weight(self, stable: bool = True, timeout: float = 10.0):
+    def weight(self, stable: bool = True, timeout: float = 10.0, sim_return=None):
         """Read the scale value (grams) via the component's device link.
 
         ``stable=True`` waits for a settled reading (MT-SICS S); the
-        component / station are sim-agnostic, so this returns canned
-        data in sim and the real balance reading otherwise. Returns
-        ``None`` when the scale is disconnected and not in sim."""
-        return self.component.weight(stable=stable, timeout=timeout)
+        component / station are sim-agnostic, so this returns the sim
+        value in sim and the real balance reading otherwise. Returns
+        ``None`` when the scale is disconnected and not in sim.
+
+        ``sim_return`` (device-guide §17) — pass a ``float`` (grams) to
+        inject the sim reading; omit it (None) to use the component's
+        canned default. Real mode ignores it."""
+        kw = {} if sim_return is None else {"sim_return": sim_return}
+        return self.component.weight(stable=stable, timeout=timeout, **kw)

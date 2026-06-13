@@ -21,7 +21,7 @@ class Inspection:
 
     Simulation:
         ``simulation=True`` → no VisionClient is opened, ``detect()`` returns
-        the supplied ``retval`` (default ``[]``). Use during dev / on a
+        the supplied ``sim_return`` (default ``[]``). Use during dev / on a
         machine that can't reach the vision server. Robot motions in the
         recipes are NOT gated on simulation — only the detection call is.
     """
@@ -122,20 +122,23 @@ class Inspection:
         """
         return self.vision.capture(name, data=data)
 
-    def detect(self, name: str, retval=[], use_last: bool = False, data=None, **kwargs):
+    def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame
         first and runs on it (raises ``CameraUnavailableError`` on
         capture failure). Pass ``use_last=True`` to skip capture and
         run on the previously cached frame. See VisionStation.detect.
+
+        ``sim_return`` (device-guide §17) — the detection result returned
+        in sim (default ``[]``); pass detections to inject them.
         """
-        return self.vision.detect(name, retval=retval, use_last=use_last, data=data, **kwargs)
+        return self.vision.detect(name, sim_return=sim_return, use_last=use_last, data=data, **kwargs)
 
     # ── Operator action (workspace.components.operator_actions) ────────
 
     def operator_detect(self):
         """No-arg ``detect`` for the Operator Actions UI — runs the
         default detection (the last one registered, or "default"). In
-        sim this returns the canned ``retval``; against a real vision
+        sim this returns the canned ``sim_return``; against a real vision
         server it returns the detection result. Inherited by every
         inspection component (module, horizontal, …)."""
         return self.detect(self._default_detection)

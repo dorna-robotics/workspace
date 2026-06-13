@@ -998,13 +998,16 @@ class Core:
         """
         return self.vision.capture(name, data=data)
 
-    def detect(self, name: str, retval=[], use_last: bool = False, data=None, **kwargs):
+    def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame
         first and runs on it (raises ``CameraUnavailableError`` on
         capture failure). Pass ``use_last=True`` to skip capture and
         run on the previously cached frame. See VisionStation.detect.
+
+        ``sim_return`` (device-guide §17) — the detection result returned
+        in sim (default ``[]``); pass detections to inject them.
         """
-        return self.vision.detect(name, retval=retval, use_last=use_last, data=data, **kwargs)
+        return self.vision.detect(name, sim_return=sim_return, use_last=use_last, data=data, **kwargs)
 
     # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
 

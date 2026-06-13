@@ -80,17 +80,17 @@ class FixedInspector(Recipe):
         """
         return self.component.capture(self.detection_name, data=data)
 
-    def detect(self, retval=True, **kwargs):
+    def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. By default, captures a fresh
         frame first and runs on it; raises ``CameraUnavailableError``
         on capture failure (so the recipe never operates on stale data).
 
-        Returns ``retval`` (default True) in simulation. Pass
-        ``use_last=True`` to skip capture and run on the previously-
-        cached frame; pass ``data=...`` (None / dict / server-local
-        path) to bypass the live camera for replay/testing.
+        Returns ``sim_return`` (default True) in simulation — device-guide
+        §17. Pass ``use_last=True`` to skip capture and run on the
+        previously-cached frame; pass ``data=...`` (None / dict /
+        server-local path) to bypass the live camera for replay/testing.
         """
-        return self.component.detect(self.detection_name, retval=retval, **kwargs)
+        return self.component.detect(self.detection_name, sim_return=sim_return, **kwargs)
 
     def rotate(self, rotation=90, **kwargs):
         """Rotate j5 — used to flip the camera angle."""
@@ -117,9 +117,9 @@ class MobileInspector:
         """Capture a fresh atomic snapshot. See FixedInspector.capture."""
         return self.core.capture(self.detection_name, data=data)
 
-    def detect(self, retval=True, **kwargs):
+    def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. Default: captures-then-runs on
         a fresh frame; raises ``CameraUnavailableError`` on capture
         failure. See FixedInspector.detect for the full contract.
         """
-        return self.core.detect(self.detection_name, retval=retval, **kwargs)
+        return self.core.detect(self.detection_name, sim_return=sim_return, **kwargs)

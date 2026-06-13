@@ -3,7 +3,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.printer.printer import Printer
-from workspace.components.printer.cab_wrapper import Cab
+from workspace.components.printer.cab_driver import Cab
 from dorna2 import pose as dorna_pose
 
 # set the sit -25 from the surface

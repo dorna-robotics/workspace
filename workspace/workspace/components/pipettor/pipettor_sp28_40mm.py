@@ -2,7 +2,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
-from workspace.components.pipettor.keyto_wrapper import Keyto
+from workspace.components.pipettor.keyto_driver import Keyto
 
 
 

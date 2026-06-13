@@ -47,17 +47,25 @@ class MultiMeter(Recipe):
     # Keeps the call sites symmetrical with other recipes
     # (``rcp["x"].method(...)``) without re-implementing anything.
 
+    # ``sim_return`` (device-guide §17) — explicit sim injection. Pass a
+    # ``Measurement`` to inject the sim reading; omit it (None) to use the
+    # component's canned per-function default. Real mode ignores it.
+
     def is_connected(self):
         return self.component.is_connected()
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000):
-        return self.component.read_capacitance(mode=mode, frequency=frequency)
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000, sim_return=None):
+        kw = {} if sim_return is None else {"sim_return": sim_return}
+        return self.component.read_capacitance(mode=mode, frequency=frequency, **kw)
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000):
-        return self.component.read_inductance(mode=mode, frequency=frequency)
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000, sim_return=None):
+        kw = {} if sim_return is None else {"sim_return": sim_return}
+        return self.component.read_inductance(mode=mode, frequency=frequency, **kw)
 
-    def read_resistance(self, frequency: int = 1000):
-        return self.component.read_resistance(frequency=frequency)
+    def read_resistance(self, frequency: int = 1000, sim_return=None):
+        kw = {} if sim_return is None else {"sim_return": sim_return}
+        return self.component.read_resistance(frequency=frequency, **kw)
 
-    def read_impedance(self, frequency: int = 1000):
-        return self.component.read_impedance(frequency=frequency)
+    def read_impedance(self, frequency: int = 1000, sim_return=None):
+        kw = {} if sim_return is None else {"sim_return": sim_return}
+        return self.component.read_impedance(frequency=frequency, **kw)

@@ -205,12 +205,19 @@ class VisionStation:
     def detect(
         self,
         name: str,
-        retval: Any = [],
+        sim_return: Any = [],
         use_last: bool = False,
         data: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Run the named detection. Returns ``retval`` in simulation.
+        """Run the named detection. Returns ``sim_return`` in simulation.
+
+        ``sim_return`` (device-guide §17) — explicit sim injection, shaped
+        exactly like a real detection result (a list). Its default ``[]``
+        is the canned sim value; pass detections to inject them. Real mode
+        ignores it for the sim path, but still falls back to it if the
+        detection call itself errors (so non-camera failures keep the
+        recipe contract).
 
         **Default behavior (capture → run-on-captured-frame).** When
         ``use_last`` is False, the call first issues a capture for
@@ -228,11 +235,11 @@ class VisionStation:
         accepted shapes). Ignored when ``use_last=True``.
         """
         if self.simulation or self._client is None:
-            return retval
+            return sim_return
 
         if not use_last:
             # capture → run pattern. Capture errors raise; detection
-            # errors fall through the legacy log-and-return-retval
+            # errors fall through the legacy log-and-return-sim_return
             # path so non-camera failures (bad model, missing key) keep
             # the existing recipe contract.
             snap = self.capture(name, data=data)
@@ -244,7 +251,7 @@ class VisionStation:
             return self._client.detection_run(name, use_last=use_last, **kwargs)
         except Exception as ex:
             print(f"[{self.label}] detect({name}) failed: {ex}")
-            return retval
+            return sim_return
 
     # ── Lifecycle ──────────────────────────────────────────────────────
 
