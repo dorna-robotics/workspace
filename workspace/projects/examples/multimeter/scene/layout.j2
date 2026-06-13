@@ -1,0 +1,19 @@
+# multimeter example — layout on the shared core_500 chassis.
+# One BK 879B multimeter mounted on fixture_plate_1.
+#
+# Meter runs against real hardware (simulation: false). To run fully in
+# sim on any machine, set ``simulation: true`` (or leave port: "" to
+# auto-detect the FTDI / CP210x USB port).
+
+multi_meter_1:
+  type: "multi_meter_bk879b"
+  simulation: false
+  port: "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+  critical: true
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "E10"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]

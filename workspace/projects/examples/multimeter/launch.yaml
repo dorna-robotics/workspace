@@ -2,7 +2,7 @@
 
 project_name: multimeter    # appears in logs, tree node names, GUI
 port:         5010               # default operator-UI port (env var PORT overrides)
-scene:        [scene/base.j2]    # one Core + one BK 879B meter (sim by default)
+scene:        [scene/core_500.j2, scene/layout.j2]  # core_500 chassis + BK 879B meter on plate 1
 recipes:      recipes.j2         # exposes the meter as ``rcp["meter"]``
 actions:      actions.py         # protocol: Start → ReadMeter(t)×batch → Park
 checks:       checks.py          # empty — no vision/sensor checks needed
