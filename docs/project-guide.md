@@ -540,6 +540,38 @@ return `False` otherwise. The reference implementation is
 `projects/examples/scale/actions.py` (`PlaceOnScale` / `Weigh` /
 `PickFromScale`).
 
+#### `resource` on a read-only action — it's the scheduling lock, not the device
+
+Tempting question: a read-only `Weigh` touches the *scale*, so shouldn't
+its `resource` be `"scale"`, not `"robot"`? **No — `resource` is the
+mutual-exclusion lock the scheduler uses to decide what may run
+concurrently, not "which device this action reads."** Pick it by asking:
+**during this action, is the robot free to do other work, or committed?**
+
+The scheduler interleaves actions on *different* resources and on
+*different* items freely — and it has **no model of "the robot stays put
+while the gripper is open at the pan."** So if `Weigh(tube N)` declared
+`resource="scale"`, the scheduler would consider the robot free during the
+read and could slot `PlaceOnScale(tube N+1)` into that window — sending the
+arm off while tube N sits ungripped on the pan, which `PickFromScale(tube
+N)` must still return to. Nothing validates that away; the schedule is
+"valid" by the scheduler's rules and physically wrong.
+
+In the weigh flow the robot is **committed** to the tube for the whole
+`PlaceOnScale → Weigh → PickFromScale` sequence (released on the pan, must
+re-grip the same tube), so `resource="robot"` is correct — it keeps that
+per-tube sequence serial against all other robot work. The only cost is a
+short idle block on the robot timeline during the read, which is honest:
+the arm genuinely is occupied.
+
+Use a **device resource** (e.g. `resource="shaker_1"`, cf. sample_prep's
+`ShakerOne`/`ShakerTwo`) **only when the robot is genuinely free during the
+operation** — load the item, leave, come back later (a shaker runs
+autonomously for minutes). That unlocks real parallelism: weigh/shake one
+item while the arm works another. A ~instant, hands-on read where the arm
+never leaves is *not* that case. Rule of thumb: **device-as-resource when
+the robot leaves; `"robot"` when the robot waits.**
+
 > **Why not `with_retry`?** `with_retry` re-runs the *same leaf* blindly N
 > times. The declarative approach replans from the real world, so it
 > naturally composes with pause/recover (it waits for the device to come

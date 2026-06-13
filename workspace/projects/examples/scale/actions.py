@@ -190,7 +190,17 @@ class Weigh(Action):
     module's docstring."""
     params   = ["tube"]
     duration = 3
-    resource = "robot"        # held inline with the arm; the read is ~instant
+    # resource is the SCHEDULING lock, not "which device this touches". The
+    # read touches the scale, but the *robot is committed* to this tube the
+    # whole place→weigh→pick sequence: gripper released on the pan, must
+    # return to re-grip the SAME tube. So "robot" is correct — it stops the
+    # scheduler interleaving another tube's motion into the weigh window and
+    # wandering the arm off while this tube sits ungripped on the pan (the
+    # scheduler has no "robot stays put" model; it only honours the lock).
+    # Use a device resource (cf. sample_prep ShakerOne/Two: resource=
+    # "shaker_1") ONLY when the robot is genuinely FREE during the op —
+    # load, leave, come back later. A ~instant hands-on weigh is not that.
+    resource = "robot"
 
     def pre(self, tube):
         return on_scale(tube) & ~weighed(tube)
