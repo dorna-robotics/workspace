@@ -57,7 +57,42 @@ class SPX222:
         except OSError:
             self.sock = None
             return False
+        # Drain any bytes the balance / serial-to-Ethernet bridge had
+        # queued from a previous session BEFORE our first command. In the
+        # field these are leftover ``ES`` (MT-SICS "not executable") echoes;
+        # if not flushed, the first ``I2`` read returns ``ES`` instead of
+        # the identity reply and the connect spuriously "fails" until a
+        # manual retry. Draining on connect makes the first handshake
+        # reliable. (Observed: ``b'ES\r\nES\r\n…'`` on a cold connect.)
+        self._drain()
         return True
+
+    def _drain(self, window: float = 0.4) -> bytes:
+        """Read and discard whatever is already queued on the socket, up
+        to ``window`` seconds of silence. Returns the drained bytes (for
+        logging/debug). Safe to call when nothing is queued — it just
+        times out quickly and returns ``b""``."""
+        if self.sock is None:
+            return b""
+        old = self.sock.gettimeout()
+        drained = b""
+        try:
+            self.sock.settimeout(window)
+            while True:
+                d = self.sock.recv(256)
+                if not d:
+                    break
+                drained += d
+                if len(drained) > 4096:    # safety cap — don't spin forever
+                    break
+        except (socket.timeout, OSError):
+            pass
+        finally:
+            try:
+                self.sock.settimeout(old)
+            except OSError:
+                pass
+        return drained
 
     def close(self) -> None:
         if self.sock is not None:
