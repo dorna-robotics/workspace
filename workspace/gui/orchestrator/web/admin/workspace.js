@@ -744,12 +744,17 @@ function renderDevicesPanel() {
       // coherence — blue-primary disabled button would clash with
       // the dot's "in progress, not a fault" semantics.
       control = `<span class="device-pill device-pill--recovering">Recovering…</span>`;
-    } else if (state !== "ok" && !isPublisherSim) {
-      // Recover applies to any real bus entry that's down — including
-      // ones this project happens to claim sim. The operator may still
-      // want to fix the underlying device for OTHER projects, and
-      // hiding the button would lock them out of that. Only suppress
-      // when the publisher itself flags sim (no real device exists).
+    } else if (state !== "ok") {
+      // Connect/recover is ORTHOGONAL to sim (device-guide §16). A device
+      // that's down gets a Recover button regardless of sim — sim is the
+      // operator's authored intent, recover acts on the real link. The
+      // only thing that gates Recover is bus reachability: if the
+      // publisher is online we can send it the recover cmd; if the
+      // publisher itself is offline there's nothing to send it to, so we
+      // show "offline" instead. (Used to also hide on publisher-sim,
+      // which wrongly conflated "authored sim" with "no hardware to
+      // recover" — e.g. a workspace scale with an ip set but
+      // simulation:true.)
       if (online) {
         control = `<button class="btn btn-sm btn-primary" data-device-act="recover">Recover</button>`;
       } else {
@@ -899,7 +904,9 @@ function _renderDeviceModalBody(d) {
     pill.className = "device-pill device-pill--recovering";
     pill.textContent = "Recovering…";
     foot.appendChild(pill);
-  } else if (state !== "ok" && !isPublisherSim) {
+  } else if (state !== "ok") {
+    // Recover is orthogonal to sim — shown for any down device whose
+    // publisher is online, regardless of sim. Mirrors the inline row.
     if (online) {
       const btn = document.createElement("button");
       btn.className = "btn btn-primary";
