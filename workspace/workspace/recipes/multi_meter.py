@@ -21,6 +21,7 @@ Recipes never branch on simulation. See
 
 from __future__ import annotations
 
+from workspace.components.multi_meter.bk879b_driver import Measurement
 from workspace.recipes.recipe import Recipe
 
 
@@ -47,25 +48,27 @@ class MultiMeter(Recipe):
     # Keeps the call sites symmetrical with other recipes
     # (``rcp["x"].method(...)``) without re-implementing anything.
 
-    # ``sim_return`` (device-guide §17) — explicit sim injection. Pass a
-    # ``Measurement`` to inject the sim reading; omit it (None) to use the
-    # component's canned per-function default. Real mode ignores it.
+    # ``sim_return`` (device-guide §17) — explicit sim injection. Its
+    # default IS the canned per-function ``Measurement``, written inline in
+    # the signature (the real read_* return a ``Measurement``, so
+    # sim_return is one too). Pass your own to inject a different reading;
+    # real mode ignores it.
 
     def is_connected(self):
         return self.component.is_connected()
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000, sim_return=None):
-        kw = {} if sim_return is None else {"sim_return": sim_return}
-        return self.component.read_capacitance(mode=mode, frequency=frequency, **kw)
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")):  # 1.5 nF
+        return self.component.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000, sim_return=None):
-        kw = {} if sim_return is None else {"sim_return": sim_return}
-        return self.component.read_inductance(mode=mode, frequency=frequency, **kw)
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        sim_return=Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")):  # 1 mH
+        return self.component.read_inductance(mode=mode, frequency=frequency, sim_return=sim_return)
 
-    def read_resistance(self, frequency: int = 1000, sim_return=None):
-        kw = {} if sim_return is None else {"sim_return": sim_return}
-        return self.component.read_resistance(frequency=frequency, **kw)
+    def read_resistance(self, frequency: int = 1000,
+                        sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
+        return self.component.read_resistance(frequency=frequency, sim_return=sim_return)
 
-    def read_impedance(self, frequency: int = 1000, sim_return=None):
-        kw = {} if sim_return is None else {"sim_return": sim_return}
-        return self.component.read_impedance(frequency=frequency, **kw)
+    def read_impedance(self, frequency: int = 1000,
+                       sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
+        return self.component.read_impedance(frequency=frequency, sim_return=sim_return)

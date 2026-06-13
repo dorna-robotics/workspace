@@ -37,26 +37,6 @@ from workspace.components.multi_meter.bk879b_driver import (
 log = logging.getLogger(__name__)
 
 
-# Canned per-function sim ``Measurement`` defaults — used as the
-# in-signature ``sim_return`` default for each read method (device-guide
-# §17). Arbitrary but plausible per function so recipes that pretty-print
-# them don't render ``0``. Visible here and in each signature; no hidden
-# helper. Pass your own ``Measurement`` to a read method to inject a
-# different sim value.
-SIM_CAPACITANCE = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001,
-                              secondary_unit="", function="C", frequency="1000",
-                              raw="sim,1.5e-9,0.001")            # 1.5 nF
-SIM_INDUCTANCE  = Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001,
-                              secondary_unit="", function="L", frequency="1000",
-                              raw="sim,1e-3,0.001")              # 1 mH
-SIM_RESISTANCE  = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0,
-                              secondary_unit="", function="R", frequency="1000",
-                              raw="sim,1e3,0.0")                 # 1 kΩ
-SIM_IMPEDANCE   = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0,
-                              secondary_unit="", function="Z", frequency="1000",
-                              raw="sim,1e3,0.0")                 # 1 kΩ
-
-
 class BK879BStation:
     """Wraps the BK 879B serial driver in a Device-bus-shaped object.
 
@@ -229,8 +209,9 @@ class BK879BStation:
     # AutoRecover learn about it.
     #
     # ``sim_return`` (device-guide §17) — explicit sim injection. Its
-    # default IS the canned per-function ``Measurement`` (above), written
-    # in each method's signature. In sim the method returns ``sim_return``
+    # default IS the canned per-function ``Measurement``, written inline in
+    # each method's signature (the real read_* return a ``Measurement``, so
+    # sim_return is one too). In sim the method returns ``sim_return``
     # verbatim; real mode ignores it. Pass your own ``Measurement`` to
     # inject a different reading.
 
@@ -252,22 +233,22 @@ class BK879BStation:
             return None
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return: Measurement = SIM_CAPACITANCE) -> Optional[Measurement]:
+                         sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:  # 1.5 nF
         return self._safe_read("read_capacitance", frequency, sim_return, mode=mode)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
-                        sim_return: Measurement = SIM_INDUCTANCE) -> Optional[Measurement]:
+                        sim_return: Measurement = Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")) -> Optional[Measurement]:  # 1 mH
         return self._safe_read("read_inductance", frequency, sim_return, mode=mode)
 
     def read_resistance(self, frequency: int = 1000,
-                        sim_return: Measurement = SIM_RESISTANCE) -> Optional[Measurement]:
+                        sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
         return self._safe_read("read_resistance", frequency, sim_return)
 
     def read_impedance(self, frequency: int = 1000,
-                       sim_return: Measurement = SIM_IMPEDANCE) -> Optional[Measurement]:
+                       sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
         return self._safe_read("read_impedance", frequency, sim_return)
 
-    def read(self, sim_return: Measurement = SIM_CAPACITANCE) -> Optional[Measurement]:
+    def read(self, sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:
         """Re-read at the current function + frequency. Convenience for
         operator-button 'Read once' style buttons that don't need to
         change settings. In sim, returns ``sim_return``."""

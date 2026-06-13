@@ -35,10 +35,8 @@ from mergedeep import merge
 from dorna2 import Solid
 
 from workspace.components.factory import register
-from workspace.components.multi_meter.bk879b_station import (
-    BK879BStation,
-    SIM_CAPACITANCE, SIM_INDUCTANCE, SIM_RESISTANCE, SIM_IMPEDANCE,
-)
+from workspace.components.multi_meter.bk879b_station import BK879BStation
+from workspace.components.multi_meter.bk879b_driver import Measurement
 from workspace.devices import AutoRecover, attach_device
 
 
@@ -184,21 +182,24 @@ class MultiMeterBk879b:
 
     # ``sim_return`` (device-guide §17) — explicit sim injection, passed
     # straight to the station. Its default IS the canned per-function
-    # ``Measurement``; pass your own to inject a different sim reading.
-    # Real mode ignores it.
+    # ``Measurement``, written inline in the signature (the real read_*
+    # return a ``Measurement``, so sim_return is one too). Pass your own
+    # to inject a different sim reading. Real mode ignores it.
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return=SIM_CAPACITANCE):
+                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")):  # 1.5 nF
         return self.meter.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
-                        sim_return=SIM_INDUCTANCE):
+                        sim_return=Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")):  # 1 mH
         return self.meter.read_inductance(mode=mode, frequency=frequency, sim_return=sim_return)
 
-    def read_resistance(self, frequency: int = 1000, sim_return=SIM_RESISTANCE):
+    def read_resistance(self, frequency: int = 1000,
+                        sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
         return self.meter.read_resistance(frequency=frequency, sim_return=sim_return)
 
-    def read_impedance(self, frequency: int = 1000, sim_return=SIM_IMPEDANCE):
+    def read_impedance(self, frequency: int = 1000,
+                       sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
         return self.meter.read_impedance(frequency=frequency, sim_return=sim_return)
 
     # ── Operator-action contract (component-guide §8) ─────────────────

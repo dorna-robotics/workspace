@@ -1522,26 +1522,39 @@ if hits: ...                                            # decision driven by inj
 Omit `sim_return` and you get the canned default — existing sim runs are
 unchanged.
 
-### Where the default literal lives, per layer
+### The default literal is inline, at every layer
 
-The default is held at the **station** and **component** layers (the
-in-signature literal, shaped like the real return). The **recipe** layer
-— the outermost API that actions call — uses `sim_return=None` and only
-forwards it when set, so the recipe never has to import or restate the
-device's canned values:
+The default `sim_return` is written **inline in the signature** — at the
+station, the component, AND the recipe. No `None`, no "if None look up
+the real default", no module constants, no helper. Open the method at any
+layer and the canned value is right there. The default is shaped like the
+real return: a bare literal when the real method returns a scalar
+(`sim_return=12.345` for the scale's `weight()`), a full object literal
+when it returns an object:
 
 ```python
-# recipe — None means "use the device's own canned default"
-def weight(self, stable=True, timeout=10.0, sim_return=None):
-    kw = {} if sim_return is None else {"sim_return": sim_return}
-    return self.component.weight(stable=stable, timeout=timeout, **kw)
+# scale weight() returns a float → default is a float, at every layer
+def weight(self, stable=True, timeout=10.0, sim_return=12.345):
+    if self.simulation:
+        return sim_return
+    ... real read ...
+
+# meter read_resistance() returns a Measurement → default is a
+# Measurement literal, inline, at every layer (no SIM_* constant)
+def read_resistance(self, frequency=1000,
+                    sim_return=Measurement(primary=1.0e3, primary_unit="Ω",
+                        secondary=0.0, secondary_unit="", function="R",
+                        frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
+    if self.simulation:
+        return sim_return
+    ... real read ...
 ```
 
-For devices with **per-mode defaults** (the meter returns a different
-canned value per function), define the canned objects as module
-constants next to the station and use them as the per-method default
-(`SIM_CAPACITANCE`, `SIM_RESISTANCE`, …). Still no hidden helper — the
-constants are visible and named, and the method signature points at one.
+Yes, an object default repeats across the three layers. That repetition
+is deliberate: the value is explicit and visible everywhere it can be
+called, with nothing to chase. Don't replace it with a `None` sentinel or
+a shared constant to "DRY it up" — that re-introduces the indirection this
+contract exists to remove.
 
 ### Scope
 
