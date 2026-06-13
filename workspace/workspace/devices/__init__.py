@@ -50,6 +50,7 @@ from dorna_devices import (
     detect_publisher_conflict,
     make_publisher_id,
     AutoRecover,
+    LivenessProbe,
 )
 
 __all__ = [
@@ -57,6 +58,7 @@ __all__ = [
     "DeviceEntry",
     "MQTTDeviceAdapter",
     "AutoRecover",
+    "LivenessProbe",
     "DeviceComponent",
     "component_device_ids",
     "component_device_claim",

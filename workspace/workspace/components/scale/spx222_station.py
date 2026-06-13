@@ -150,9 +150,23 @@ class SPX222Station:
     # ``sim_return`` verbatim; real mode ignores it entirely.
 
     def is_connected(self) -> bool:
+        """Cheap, NON-round-tripping check — just "is the socket object
+        present?". A stale socket after a cable pull still passes this
+        (pyserial/sockets don't know the peer vanished). For real liveness
+        use :meth:`ping`."""
         if self.simulation:
             return True
         return self._driver is not None and self._driver.is_connected()
+
+    def ping(self) -> bool:
+        """Real reachability check — actually round-trips to the balance
+        (MT-SICS ``I2`` with the driver's short socket timeout) and returns
+        ``True`` only if it answered. Used by the liveness watchdog; unlike
+        :meth:`is_connected` this catches a dead-but-open socket. Sim is
+        always reachable."""
+        if self.simulation:
+            return True
+        return self._driver is not None and self._driver.check_connection()
 
     def weigh(self, sim_return: Reading = Reading(status="stable", weight=12.345, unit="g", raw="sim")) -> Optional[Reading]:
         """Instantaneous weight (MT-SICS SI). ``None`` when disconnected

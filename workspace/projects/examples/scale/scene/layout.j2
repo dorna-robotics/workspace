@@ -72,9 +72,9 @@ tube_autosampler_2ml_{{ r }}{{ c }}:
 # For the real balance: set ip to its address and simulation: false.
 scale_spx222_1:
   type: "scale_spx222"
-  ip: ""
+  ip: "10.0.0.50"
   port: 9761
-  simulation: true
+  simulation: false
   critical: true
   attach:
     parent_name: "fixture_plate_6"

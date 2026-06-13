@@ -373,6 +373,54 @@ recover.stop()
   trying" — by design. Add one in your service if your hardware genuinely
   needs it (e.g. consumables that wear out).
 
+### The watchdog AutoRecover is not — `LivenessProbe`
+
+AutoRecover is reactive: it brings a device *back*, but something else
+must first notice it *left*. For a USB device that something is the
+hotplug event. For an **IP device** (TCP scale, networked printer,
+robot) there is no hotplug — so without a watchdog, a mid-run cable pull
+is only noticed on the **next blocking read**, which can hang for the
+whole read timeout (e.g. a ~10 s stable-weigh) while the bus dot stays
+green. "Green but dead" for ten seconds.
+
+`LivenessProbe` (in `dorna_devices`, the companion to `AutoRecover`) is
+the reusable form of §5's "ping on a timer." It runs one daemon thread
+that calls a cheap `probe_fn` every `interval` seconds; on the
+**reachable → unreachable edge** it flips the device `down` (red dot in
+~1–2 s) and `trigger()`s AutoRecover to reconnect. It is edge-triggered
+(fires once per drop, not every failed ping — no bus spam) and never
+sets `ok` itself: recovery owns the way back up.
+
+The `probe_fn` MUST be a **real round-trip** with its own short timeout,
+not a socket-present flag. A TCP socket stays "open" after the peer
+vanishes (the kernel/pyserial don't know), so an `is_connected`-style
+check passes on a dead link. Use the device's identity query
+(`check_connection` / `*IDN?` / MT-SICS `I2`) — see the scale's
+`SPX222Station.ping` vs its non-round-tripping `is_connected`.
+
+```python
+from workspace.devices import LivenessProbe
+
+# real, bus-attached device only — sim has nothing to watch
+self._liveness = LivenessProbe(
+    probe_fn=self.station.ping,                       # real round-trip, short timeout
+    on_down=lambda msg: self.station._set_state("down", msg),
+    recover=self._attachment.recover,                 # the AutoRecover for this device
+    is_ok_fn=lambda: self.station.state == "ok",      # re-arm the edge after recovery
+    interval=1.0,
+    log_label=self.station.id,
+)
+self._liveness.start()
+```
+
+Suspend it exactly like recovery: **don't run it in sim** (start it only
+when `not simulation`), `stop()` it in `simulation(True)`, and
+**re-create** it in `simulation(False)` so it binds to the fresh
+AutoRecover the attachment just re-armed (the old `recover` reference is
+stale after a sim flip). `stop()` it in `close()`. See
+`components/scale/scale_spx222.py` for the full wiring — copy it for any
+IP device that needs fast disconnect detection.
+
 ---
 
 ## 6. Data freshness — for read-only devices

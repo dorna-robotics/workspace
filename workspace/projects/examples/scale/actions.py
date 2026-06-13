@@ -149,7 +149,7 @@ class Weigh(Action):
         # sim weight explicitly — here a distinct fake gram value per tube
         # so a sim run exercises per-tube logic. On the real balance the
         # argument is ignored and the actual weight is read.
-        grams = rcp["scale"].weight(stable=True, sim_return=10.0 + tube)
+        grams = rcp["scale"].weight(sim_return=10.0 + tube)
         rt.step(f"tube {tube + 1}: weight = {grams} g" if grams is not None
                 else f"tube {tube + 1}: weight unavailable (scale offline)")
         # Re-grip the tube and lift it back off the pan.
