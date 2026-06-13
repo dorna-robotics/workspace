@@ -1,0 +1,235 @@
+"""OHAUS Scout SPX222 balance — device component.
+
+Stationary bench instrument: a 3D/kinematic body PLUS a device-bus
+attachment to the real balance over TCP. The component owns the
+device link (a :class:`SPX222Station`) and exposes a sim-agnostic
+weighing API; recipes / actions / the operator UI call the same
+methods regardless of sim or real.
+
+Same shape as ``MultiMeterBk879b`` (the canonical workspace-owned
+device). The difference is the SPX222 talks over TCP, so the bus
+identity is keyed on ``ip`` (like Core) rather than a serial port.
+
+Wire it up in a scene layout like any other component, plus the
+device fields:
+
+    scale_spx222_1:
+      type: "scale_spx222"
+      ip: "192.168.254.132"   # balance address; "" → no bus claim
+      port: 9761              # MT-SICS TCP port
+      simulation: false
+      critical: false
+      attach:
+        parent_name: "fixture_plate_1"
+        ...
+
+The type "scale_spx222" maps to static/CAD/scale_spx222.glb.
+
+See ``docs/device-guide.md`` for the device contract and
+``docs/component-guide.md`` §7 (atomic ops on the component, not the
+recipe) / §8 (operator actions).
+"""
+
+from __future__ import annotations
+
+import logging
+from copy import deepcopy
+
+from mergedeep import merge
+from dorna2 import Solid
+
+from workspace.components.factory import register
+from workspace.components.scale.spx222_station import SPX222Station
+from workspace.devices import AutoRecover, attach_device
+
+
+log = logging.getLogger(__name__)
+
+
+# NOTE: the anchors and collision_box below are PLACEHOLDERS copied from the
+# generic ``scale`` component. Replace them with the real SPX222 values
+# measured off the CAD model.
+@register("scale_spx222")
+class ScaleSpx222:
+    DEFAULTS = dict(
+        anchors={
+            "body": {
+                "center": [0, 0, 0, 0, 0, 0],
+                "top":    [0, 0, 53.34, 0, 0, 0],          # placeholder — set from CAD
+                "place":  [0, 42.815, 53.34, 0, 0, 0],     # placeholder — set from CAD
+                "hole_0": [ 79.229,  89.138, 0, 0, 0, 0],  # placeholder
+                "hole_1": [-79.229,  89.138, 0, 0, 0, 0],  # placeholder
+                "hole_2": [-79.684, -89.651, 0, 0, 0, 0],  # placeholder
+                "hole_3": [ 79.684, -89.651, 0, 0, 0, 0],  # placeholder
+            },
+        },
+        collision_box={
+            "body": [
+                # placeholder — [x,y,z,a,b,c], [lx,ly,lz]; set from CAD
+                {"pose": [0.0, 0.678, 53.34 / 2, 0.0, 0.0, 0.0], "scale": [203.105, 223.067, 53.34]},
+            ],
+        },
+        # ── device link ──────────────────────────────────────────────
+        ip="",            # balance IP; empty → no bus claim (component still works)
+        port=9761,        # MT-SICS TCP port
+        simulation=True,
+        # ``critical`` controls whether a non-sim, unreachable transition
+        # pauses the runtime. A scale we can't read is often advisory, so
+        # default False (set ``critical: true`` where a weight is mandatory).
+        critical=False,
+    )
+
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        prm = deepcopy(self.DEFAULTS)
+        merge(prm, cfg)
+        merge(prm, kwargs)
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
+
+        self.name = name
+        self.workspace = workspace
+        self.type = prm["type"]
+
+        # ── Kinematic assembly (3D viewer + collision) ──
+        self.assembly = {
+            k: Solid(
+                type=self.type,
+                anchors=prm["anchors"][k],
+                component=self.name,
+                **({"collision_box": cb[k]} if (cb := prm.get("collision_box")) and k in cb else {}),
+            )
+            for k in prm["anchors"]
+        }
+
+        # slot — you place items on the pan
+        self.slot = {"body": ["place"]}
+
+        # ── Device link ──
+        # Authored sim intent — failures must NOT flip it (same rule as
+        # Core / the meter). An unreachable real balance is a fault we
+        # surface, not a reason to silently switch to sim.
+        self._simulation_mode = bool(prm["simulation"])
+        self._ip = prm["ip"] or ""
+        self._port = int(prm["port"])
+        self._critical = bool(prm["critical"])
+
+        # The one sim/real branch — the station hides it from recipes.
+        self.scale = SPX222Station(
+            ip=self._ip,
+            port=self._port,
+            simulation=self._simulation_mode,
+            label=self.name,
+        )
+
+        # Always attempt the initial real connect, regardless of sim
+        # (device-guide §16). Failure does NOT raise.
+        if self._ip:
+            self.scale.recover()
+
+        # Bus attachment — gated on ``ip`` (mirrors Core). Empty ip →
+        # no device claimed, no panel row; the component still works.
+        self._attachment = None
+        if self._ip:
+            def _make_recover() -> AutoRecover:
+                return AutoRecover(
+                    recover_fn=self.scale.recover,
+                    set_status=self.scale._set_state,
+                    log_label=self.scale.id,
+                )
+
+            try:
+                self._attachment = attach_device(
+                    self.scale,
+                    kind=SPX222Station.KIND,
+                    sim=self._simulation_mode,
+                    critical=self._critical,
+                    meta={"ip": self._ip, "port": self._port},
+                    recover_factory=_make_recover,
+                )
+            except Exception:
+                log.exception("ScaleSpx222[%s]: attach_device failed", self.name)
+
+    # ── DeviceComponent contract ──────────────────────────────────────
+
+    @property
+    def device_ids(self) -> list[str]:
+        """Device ids this component claims. Empty when ``ip`` is unset
+        (no bus presence). Mirrors Core's ip behaviour."""
+        return [self.scale.id] if self._ip else []
+
+    def device_claim(self, device_id: str) -> str:
+        """Project-level sim/real claim for ``device_id`` — drives the
+        panel's SIM pill from one consistent source."""
+        if device_id == self.scale.id:
+            return "sim" if self._simulation_mode else "real"
+        return "real"
+
+    # ── Atomic weighing API (component-level — recipes call these) ─────
+    # Sim-agnostic by construction. Returns ``Reading`` / float on
+    # success, ``None`` when disconnected and not in sim. Never raises on
+    # transient failures — the station transitions state to ``down`` so
+    # AutoRecover takes over.
+
+    def is_connected(self) -> bool:
+        return self.scale.is_connected()
+
+    def weigh(self):
+        """Instantaneous reading (``Reading`` or None)."""
+        return self.scale.weigh()
+
+    def weigh_stable(self, timeout: float = 10.0):
+        """Block for a settled reading (``Reading`` or None)."""
+        return self.scale.weigh_stable(timeout=timeout)
+
+    def weight(self, stable: bool = True, timeout: float = 10.0):
+        """Just the weight in grams (float or None)."""
+        return self.scale.weight(stable=stable, timeout=timeout)
+
+    # ── Operator actions (component-guide §8) ─────────────────────────
+
+    def weigh_once(self):
+        """Operator button — one settled weigh; returns a printable str."""
+        r = self.scale.weigh_stable()
+        return None if r is None else str(r)
+
+    def reconnect(self):
+        """Re-run the connection sequence (AutoRecover's path)."""
+        return self.scale.recover()
+
+    def release_scale(self):
+        """Close the socket + mark the scale down (clean unplug)."""
+        self.scale.release()
+
+    def simulation(self, on: bool = True):
+        """Live sim/real flip — mirrors ``Core.simulation`` /
+        ``MultiMeterBk879b.simulation`` (device-guide §16 parity rule).
+        Flips the authored intent, republishes ``info.sim``, and
+        suspends/re-arms AutoRecover. The TCP connection stays open."""
+        new_sim = bool(on)
+        if new_sim == self._simulation_mode:
+            return
+        self._simulation_mode = new_sim
+        self.scale.set_simulation(new_sim)
+        if self._attachment is not None:
+            self._attachment.set_sim(new_sim)
+        print(f"{'🔵' if new_sim else '🟡'} {self.name} simulation "
+              f"{'enabled' if new_sim else 'disabled'}")
+
+    def operator_actions(self) -> list[dict]:
+        return [
+            {"label": "Weigh",     "method": "weigh_once"},
+            {"label": "Reconnect", "method": "reconnect"},
+            {"label": "Release",   "method": "release_scale"},
+        ]
+
+    # ── Teardown ──────────────────────────────────────────────────────
+
+    def close(self):
+        """Release the bus attachment + close the socket. Idempotent."""
+        try:
+            if self._attachment is not None:
+                self._attachment.close()
+        except Exception:
+            log.exception("ScaleSpx222[%s]: attachment close raised", self.name)
+        finally:
+            self._attachment = None
+            self.scale.release()

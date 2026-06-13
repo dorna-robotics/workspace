@@ -1,4 +1,3 @@
-import time
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
@@ -26,7 +25,11 @@ class Scale(Recipe):
             **prm
         )
 
-    def weight(self):
-        """Read the scale value. Placeholder (blocks 1s, returns 0) pending device integration."""
-        time.sleep(1)
-        return 0
+    def weight(self, stable: bool = True, timeout: float = 10.0):
+        """Read the scale value (grams) via the component's device link.
+
+        ``stable=True`` waits for a settled reading (MT-SICS S); the
+        component / station are sim-agnostic, so this returns canned
+        data in sim and the real balance reading otherwise. Returns
+        ``None`` when the scale is disconnected and not in sim."""
+        return self.component.weight(stable=stable, timeout=timeout)
