@@ -4,7 +4,7 @@
 # Contents:
 #   - tool rack + 4-finger gripper (to pick/place tubes)
 #   - SBS tube rack on plate 4, loaded with 48 plain 2 ml tubes
-#   - OHAUS SPX222 balance on plate 1 (same placement as sample_prep:
+#   - OHAUS SPX222 balance on plate 6 (same placement as sample_prep:
 #     child hole_0, offset 90). It runs in sim by default — canned
 #     weight (~12.345 g). For the real balance set ip + simulation:false.
 
@@ -77,7 +77,7 @@ scale_spx222_1:
   simulation: true
   critical: true
   attach:
-    parent_name: "fixture_plate_1"
+    parent_name: "fixture_plate_6"
     parent_solid: "body"
     parent_anchor: "C13"
     child_solid: "body"
