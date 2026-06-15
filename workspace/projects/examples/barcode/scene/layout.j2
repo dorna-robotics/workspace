@@ -1,0 +1,87 @@
+# barcode example — layout on the shared core_500 chassis.
+# Devices attach to the fixture plates from scene/core_500.j2.
+#
+# Contents:
+#   - tool rack + 4-finger gripper (to pick/present tubes)
+#   - Zebra DS457 barcode reader (vertical), fixed on a plate — the
+#     robot presents each tube to its "place" anchor and scans
+#   - SBS tube rack on plate 4, loaded with 48 plain 2 ml tubes
+#
+# The reader runs in sim by default (port "" → no bus claim, scan()
+# returns the canned "SIM-..."). For the real DS457: set port to its
+# serial path (ls /dev/ttyACM*) and simulation: false.
+
+# ── Tooling ─────────────────────────────────────────────────────────
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+gripper_4_finger_1:
+  type: "gripper_4_finger"
+  has_tool_changer: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Barcode reader (Zebra DS457, vertical) ──────────────────────────
+# Fixed station on a plate (printer-like). Sim by default; for the real
+# scanner set port + simulation:false.
+barcode_reader_1:
+  type: "barcode_reader_zebra_vertical_144mm"
+  port: ""
+  baud: 9600
+  simulation: true
+  critical: false
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "H18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── SBS tube rack on plate 4, loaded with plain 2 ml tubes ───────────
+sbs_adapter_0:
+  type: "adapter_plate_sbs"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D6"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+rack_autosampler_2ml_1:
+  type: "rack_autosampler_2ml"
+  attach:
+    parent_name: "sbs_adapter_0"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# 48 tubes (6×8), one per slot.
+{% for r in "ABCDEF" %}
+{% for c in range(1, 8+1) %}
+tube_autosampler_2ml_{{ r }}{{ c }}:
+  type: "tube_autosampler_2ml"
+  attach:
+    parent_name: "rack_autosampler_2ml_1"
+    parent_solid: "body"
+    parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+{% endfor %}

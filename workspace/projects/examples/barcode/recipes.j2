@@ -1,0 +1,18 @@
+{%- set sf = 20 -%}
+
+# 4-finger gripper, parked in the tool rack.
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Tube rack — Rack over the SBS adapter; resolves to rack_autosampler_2ml_1.
+tube_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# Barcode reader — present() faces the held tube at the reader's "place"
+# anchor; scan()/code() read sim-agnostically (canned in sim, real DS457
+# otherwise). Same shape as FixedInspector.
+barcode_reader:
+  class: workspace.recipes.barcode_reader.BarcodeReader
+  kwargs: {component: barcode_reader_1, base_distance: 200, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}

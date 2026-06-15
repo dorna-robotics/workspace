@@ -1,0 +1,30 @@
+# barcode example — launch config.
+#
+# For each of batch_size tubes: pick it from the SBS rack (on plate 4),
+# present it to the Zebra DS457 barcode reader, scan the barcode, and
+# return it to its slot. The reader runs in sim by default (canned scan
+# "SIM-..."); set port + simulation:false on barcode_reader_1 in the
+# layout for a real DS457.
+#
+# Pick → Present → Scan → Place ×N → Park. The Scan is a read-only action
+# with declarative retry (project-guide §8): a failed scan re-selects
+# itself after recover, no motion repeated.
+
+project_name: barcode
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+kwargs:
+  batch_size:
+    type: int
+    default: 4
+    label: Batch size
+    hint: How many tubes to scan (pick → present to reader → scan → return).
+    min: 1
+    max: 48
