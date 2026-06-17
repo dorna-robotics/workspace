@@ -41,15 +41,19 @@ class DS457Station:
         port:        serial port (the device's bus identity), e.g.
                      ``/dev/ttyACM0`` or a ``/dev/serial/by-id/...`` path.
         baud:        serial baud (default 9600).
+        beep:        scanner beeps on a good read (set once at connect).
         simulation:  True → no real driver is opened; ``scan`` returns
                      canned data; recover / release are no-ops that
                      always succeed.
         label:       human-friendly tag for logs / state messages.
 
     Lifecycle mirrors SPX222Station:
-        recover() (re)opens the port + verifies it's still present, sets
+        recover() (re)opens the port + SSI-handshakes the scanner, sets
         state to the real outcome. release() closes the port. Bus state
         always reflects real reachability, regardless of the sim flag.
+
+    Scanning is host-triggered (on demand): the scanner stays quiet until
+    ``scan()`` is called, which enables + triggers + waits + auto-disables.
     """
 
     KIND = "barcode_reader"
@@ -58,11 +62,13 @@ class DS457Station:
         self,
         port: str = "",
         baud: int = 9600,
+        beep: bool = False,
         simulation: bool = True,
         label: str = "",
     ):
         self.port = port or ""
         self.baud = int(baud)
+        self.beep = bool(beep)
         self.simulation = bool(simulation)
         self.label = label or "barcode_reader"
 
@@ -101,12 +107,15 @@ class DS457Station:
                 log.exception("DS457Station[%s]: listener raised", self.label)
 
     def recover(self) -> bool:
-        """(Re)open the serial port. ALWAYS attempts the real connect —
-        sim does not change this (device-guide §16). Rebuilds the driver
-        fresh (a stale ``serial.Serial`` after a USB unplug can still look
-        open), opens it, and verifies the port is actually present. Fires
-        a ``recovering → result`` transition so the bus/UI always see an
-        event. Matches SPX222Station.recover / BK879BStation.recover."""
+        """(Re)open the serial port + SSI-handshake the scanner. ALWAYS
+        attempts the real connect — sim does not change this (device-guide
+        §16). Rebuilds the driver fresh (a stale ``serial.Serial`` after a
+        USB unplug can still look open). The driver's ``connect()`` opens
+        the port AND round-trips an SSI revision request, so a successful
+        connect means the scanner is really answering — no separate
+        presence check needed. Fires a ``recovering → result`` transition
+        so the bus/UI always see an event. Matches SPX222Station.recover /
+        BK879BStation.recover."""
         self._set_state("recovering", "reconnecting")
         try:
             # Rebuild from scratch — pyserial doesn't know the kernel ripped
@@ -117,13 +126,11 @@ class DS457Station:
                 except Exception:
                     pass
                 self._driver = None
-            self._driver = DS457(port=self.port, baud=self.baud)
+            self._driver = DS457(port=self.port, baud=self.baud, beep=self.beep)
             if not self._driver.connect():
+                # connect() opens the port AND SSI-handshakes; failure means
+                # the port won't open or the scanner doesn't answer over SSI.
                 self._set_state("down", "connect failed")
-                return False
-            # Plain USB-CDC has no query command — presence is the check.
-            if not self._driver.check_connection():
-                self._set_state("down", "port not present")
                 return False
             self._set_state("ok", "")
             return True
@@ -160,17 +167,20 @@ class DS457Station:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def scan(self, timeout: float = 3.0,
+    def scan(self, timeout: float = 10.0,
              sim_return: Scan = Scan(status="ok", data="SIM-0000000000")) -> Optional[Scan]:
-        """Block until one barcode arrives and return it (a ``Scan``).
-        ``None`` when disconnected and not in sim. ``timeout`` caps the
-        wait. In sim, returns ``sim_return`` (a ``Scan``)."""
+        """Host-triggered, on-demand scan: tell the scanner to scan NOW,
+        wait up to ``timeout`` seconds for one decode, then auto-disable.
+        The scanner stays quiet until this is called — it does not stream
+        on its own. Returns a ``Scan`` (status ok/timeout/nak), or ``None``
+        when disconnected and not in sim. In sim, returns ``sim_return``
+        (a ``Scan``)."""
         if self.simulation:
             return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
-            r = self._driver.scan(timeout=timeout)
+            r = self._driver.scan_enable(timeout=timeout)
             if not r.connected:
                 self._set_state("down", "scanner disconnected")
             return r

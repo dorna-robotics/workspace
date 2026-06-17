@@ -10,6 +10,12 @@ vision-daemon camera. So it has two faces:
   (``ScaleSpx222``) and multimeter — the component owns the device link
   (a :class:`DS457Station`) and exposes a sim-agnostic scanning API.
 
+Scanning is **host-triggered (on demand)**: the scanner stays quiet until
+``scan()`` is called over SSI — it does not stream decodes on its own.
+The scanner's host interface must be set to "SSI over USB CDC" with
+Host trigger mode (123Scan); the driver enables + triggers + auto-disables
+per call.
+
 Mirrors ``ScaleSpx222`` in device shape; the difference is the DS457 is
 serial, so the bus identity is keyed on ``port`` (like the multimeter)
 rather than ``ip``.
@@ -21,6 +27,7 @@ fields:
       type: "barcode_reader_zebra_vertical_144mm"
       port: "/dev/ttyACM0"    # scanner serial port; "" → no bus claim
       baud: 9600
+      beep: false             # beep on a good read
       simulation: false
       critical: false
       attach:
@@ -76,6 +83,7 @@ class BarcodeReaderZebraVertical144mm:
         # ── device link ──────────────────────────────────────────────
         port="",          # scanner serial port; empty → no bus claim
         baud=9600,
+        beep=False,       # scanner beeps on a good read (set once at connect)
         simulation=True,
         # ``critical`` controls whether a non-sim, unreachable transition
         # pauses the runtime. A barcode read is usually advisory (you can
@@ -115,12 +123,14 @@ class BarcodeReaderZebraVertical144mm:
         self._simulation_mode = bool(prm["simulation"])
         self._port = prm["port"] or ""
         self._baud = int(prm["baud"])
+        self._beep = bool(prm["beep"])
         self._critical = bool(prm["critical"])
 
         # The one sim/real branch — the station hides it from recipes.
         self.reader = DS457Station(
             port=self._port,
             baud=self._baud,
+            beep=self._beep,
             simulation=self._simulation_mode,
             label=self.name,
         )
@@ -183,16 +193,18 @@ class BarcodeReaderZebraVertical144mm:
     # signature, shaped like the real return (a ``Scan``). Real mode
     # ignores it.
 
-    def scan(self, timeout: float = 3.0,
+    def scan(self, timeout: float = 10.0,
              sim_return=Scan(status="ok", data="SIM-0000000000")):
-        """Read one barcode (``Scan`` or None). In sim, returns
+        """Trigger one on-demand scan and return it (``Scan`` or None).
+        The scanner stays quiet until this is called. In sim, returns
         ``sim_return``."""
         return self.reader.scan(timeout=timeout, sim_return=sim_return)
 
-    def code(self, timeout: float = 3.0, sim_return: str = "SIM-0000000000"):
-        """Convenience: just the decoded barcode string (or None).
-        In sim, returns ``sim_return`` verbatim — matches this method's
-        return type, so no ``Scan`` needed when you only want the text."""
+    def code(self, timeout: float = 10.0, sim_return: str = "SIM-0000000000"):
+        """Convenience: trigger a scan and return just the decoded barcode
+        string (or None on timeout/nak/disconnect). In sim, returns
+        ``sim_return`` verbatim — matches this method's return type, so no
+        ``Scan`` needed when you only want the text."""
         if self._simulation_mode:
             return sim_return
         r = self.scan(timeout=timeout)

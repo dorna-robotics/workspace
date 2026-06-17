@@ -56,18 +56,20 @@ class BarcodeReader(Recipe):
             **kwargs,
         )
 
-    def scan(self, timeout: float = 3.0, sim_return=None):
-        """Read one barcode via the component's device link — returns a
-        ``Scan`` (status + data), or ``None`` when disconnected and not in
-        sim. ``sim_return`` (device-guide §17): pass a ``Scan`` to inject
-        the sim reading; omit it to use the component's canned default."""
+    def scan(self, timeout: float = 10.0, sim_return=None):
+        """Trigger one on-demand scan via the component's device link —
+        returns a ``Scan`` (status + data), or ``None`` when disconnected
+        and not in sim. The scanner stays quiet until this is called.
+        ``sim_return`` (device-guide §17): pass a ``Scan`` to inject the
+        sim reading; omit it to use the component's canned default."""
         kw = {} if sim_return is None else {"sim_return": sim_return}
         return self.component.scan(timeout=timeout, **kw)
 
-    def code(self, timeout: float = 3.0, sim_return=None):
-        """Convenience: just the decoded barcode string (or None).
-        ``sim_return`` (device-guide §17): pass a ``str`` to inject the
-        sim barcode; omit it to use the component's canned default."""
+    def code(self, timeout: float = 10.0, sim_return=None):
+        """Convenience: trigger a scan and return just the decoded barcode
+        string (or None). ``sim_return`` (device-guide §17): pass a ``str``
+        to inject the sim barcode; omit it to use the component's canned
+        default."""
         kw = {} if sim_return is None else {"sim_return": sim_return}
         return self.component.code(timeout=timeout, **kw)
 
