@@ -566,54 +566,36 @@ camera_main:abc         ← underscore in kind
 
 ### Finding the stable path for a USB-serial device
 
-`/dev/ttyUSB0` is **not** stable — Linux assigns it in enumeration
-order, so it can change on reboot, on replug, or when another
-USB-serial device is added. Use the udev-managed symlinks under
-`/dev/serial/` instead. Works for **any** USB-serial device — FTDI,
-CP210x, Silicon Labs, ACM-class CDC, etc.
+The raw `/dev/ttyUSB0` / `/dev/ttyACM0` numbers are **not** stable — Linux
+assigns them in enumeration order, so they change on reboot, replug, or
+when another device is added. For the scene yaml's `port`, use the
+udev-managed `by-id` symlink instead. **One command lists every
+USB-serial device, ready to paste:**
 
 ```bash
-# Lists every stable USB-serial path on the system, one per line,
-# full path included — ready to paste straight into a scene yaml.
 ls -d /dev/serial/by-id/*
 ```
 
-Example output:
+This is the single command for **all** USB-serial devices, whatever the
+class — FTDI / CP210x adapters (which appear as `ttyUSB*`) and ACM-class
+CDC devices like the Zebra DS457 scanner (which appear as `ttyACM*`) all
+show up here:
 
 ```
 $ ls -d /dev/serial/by-id/*
 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AB0KCDEF-if00-port0
+/dev/serial/by-id/usb-Symbol_Technologies__Inc__2008_Symbol_Bar_Code_Scanner_...-if00
 ```
 
-Paste the full path into the scene yaml's identifier field (`port`
-for the multimeter, similar for any USB-serial device). The path
-survives reboots and replugs; the underlying `/dev/ttyUSB*` resolves
-automatically.
+Paste the full path into `port` (multimeter, barcode reader, any
+USB-serial device). The symlink survives reboots and replugs and always
+resolves to that specific device no matter which USB port it lands on, so
+you never chase a `ttyUSB*` / `ttyACM*` number again.
 
-Why this glob form: the shell expands `*` to the matched paths
-*before* `ls` runs, so each line is the full path. Bare
-`ls /dev/serial/by-id/` (no glob) prints just basenames, which you'd
-have to prefix manually.
-
-For a sanity-check that also shows what each `by-id` symlink resolves
-to right now:
-
-```bash
-ls -l /dev/serial/by-id/*
-```
-
-**Caveat — generic serials.** Some chips (Silicon Labs CP2102 ships
-many devices with serial `0001`) don't have a unique serial out of
-the box. If you have two devices with the same chip and the same
-default serial, the `by-id` symlink will collide and udev will
-arbitrarily pick one. In that case use `/dev/serial/by-path/` instead
-(stable per physical USB port — always plug the same device into the
-same port):
-
-```bash
-ls -d /dev/serial/by-path/*
-```
+**Caveat — generic serials.** Some chips (the CP2102 ships many devices
+with serial `0001`) lack a unique serial, so two of the same chip collide
+on the same `by-id` name. Then use `/dev/serial/by-path/*` instead (stable
+per physical USB port — always plug that device into the same port).
 
 ---
 
