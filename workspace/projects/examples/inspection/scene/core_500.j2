@@ -1,3 +1,6 @@
+{# How far the four surrounding safety collision walls sit from the bench
+   edges, in mm. One knob moves all four walls in/out together. #}
+{%- set wall_offset = 50 -%}
 core:
   type: "core"
   simulation: true
@@ -85,7 +88,7 @@ collision_box_back:
     parent_anchor: "back"
     child_solid: "body"
     child_anchor: "front"
-    offset: [-100, 0, 0, 0, 0, 0]
+    offset: [-{{ wall_offset }}, 0, 0, 0, 0, 0]
 
 collision_box_front:
   type: "collision_box"
@@ -96,7 +99,7 @@ collision_box_front:
     parent_anchor: "front"
     child_solid: "body"
     child_anchor: "back"
-    offset: [100, 0, 0, 0, 0, 0]
+    offset: [{{ wall_offset }}, 0, 0, 0, 0, 0]
 
 collision_box_left:
   type: "collision_box"
@@ -107,7 +110,7 @@ collision_box_left:
     parent_anchor: "corner_0"
     child_solid: "body"
     child_anchor: "corner_3"
-    offset: [0, 100, 0, 0, 0, 0]
+    offset: [0, {{ wall_offset }}, 0, 0, 0, 0]
 
 collision_box_right:
   type: "collision_box"
@@ -118,4 +121,4 @@ collision_box_right:
     parent_anchor: "corner_3"
     child_solid: "body"
     child_anchor: "corner_0"
-    offset: [0, -100, 0, 0, 0, 0]
+    offset: [0, -{{ wall_offset }}, 0, 0, 0, 0]
