@@ -65,8 +65,8 @@ class BarcodeReaderZebraVertical144mm:
         anchors={
             "body": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "camera": [75.115, 0, 166.969, 0, 0, 0],
-                "place":  [75.115 + 20, 0, 166.969, 0, 0, 0],
+                "camera": [75.115, 0, 166.969, -69.28203230275508, 69.28203230275508, -69.2820323027551],
+                "place":  [75.115 + 75, 0, 166.969, 0, 0, 0],
                 "top":    [0, 0, 185, 0, 0, 0],
                 "hole_0": [ 25,  25, 0, 0, 0, 0],
                 "hole_1": [-25,  25, 0, 0, 0, 0],
@@ -89,7 +89,7 @@ class BarcodeReaderZebraVertical144mm:
         # pauses the runtime. A barcode read is usually advisory (you can
         # rescan), so default False; set ``critical: true`` where a scan
         # is mandatory to proceed.
-        critical=False,
+        critical=True,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
