@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 9834
+      "count": 9828
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3325,
+      "count": 3324,
       "max": [
         1.4501097202301025,
         11,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3325
+      "count": 3324
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4207
+      "byteLength": 4297
     },
     {
       "buffer": 0,
-      "byteOffset": 4207,
-      "byteLength": 7426
+      "byteOffset": 4297,
+      "byteLength": 7487
     }
   ],
   "buffers": [
     {
       "uri": "rotating_cylinder_mkb1630_housing.glb.bin",
-      "byteLength": 11633
+      "byteLength": 11784
     }
   ],
   "materials": [

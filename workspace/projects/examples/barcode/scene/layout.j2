@@ -38,10 +38,9 @@ gripper_4_finger_1:
 # scanner set port + simulation:false.
 barcode_reader_1:
   type: "barcode_reader_zebra_vertical_144mm"
-  port: ""
-  baud: 9600
-  simulation: true
-  critical: false
+  port: "/dev/serial/by-id/usb-Symbol_Technologies__Inc__2008_Symbol_Bar_Code_Scanner_S_N:Symbol_Bar_Code_Scanner_____-if00"
+  simulation: False
+  critical: true
   attach:
     parent_name: "fixture_plate_1"
     parent_solid: "body"
