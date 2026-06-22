@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
-from workspace.components.barcode_reader.ds457_driver import DS457, Scan
+from workspace.components.barcode_reader.ds457_driver import DS457, Scan, ALL_SYMBOLOGIES
 
 
 log = logging.getLogger(__name__)
@@ -167,20 +167,24 @@ class DS457Station:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def scan(self, timeout: float = 10.0,
-             sim_return: Scan = Scan(status="ok", data="SIM-0000000000")) -> Optional[Scan]:
-        """Host-triggered, on-demand scan: tell the scanner to scan NOW,
-        wait up to ``timeout`` seconds for one decode, then auto-disable.
-        The scanner stays quiet until this is called — it does not stream
-        on its own. Returns a ``Scan`` (status ok/timeout/nak), or ``None``
-        when disconnected and not in sim. In sim, returns ``sim_return``
-        (a ``Scan``)."""
+    def detect(self, allowed: Iterable[str] = ALL_SYMBOLOGIES, timeout: float = 10.0,
+               sim_return: Scan = Scan(status="ok", data="SIM-0000000000", symbology="code128")) -> Optional[Scan]:
+        """Host-triggered, on-demand detect: tell the scanner to scan NOW,
+        wait up to ``timeout`` seconds for one decode of an ``allowed``
+        symbology, then auto-disable. The scanner stays quiet until this is
+        called — it does not stream on its own.
+
+        ``allowed`` defaults to every symbology (no restriction); pass a
+        subset (e.g. ``["code39", "qrcode"]``) to ignore other types.
+        Returns a ``Scan`` (status ok/timeout/nak, with ``symbology``), or
+        ``None`` when disconnected and not in sim. In sim, returns
+        ``sim_return`` (a ``Scan``)."""
         if self.simulation:
             return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
-            r = self._driver.scan_enable(timeout=timeout)
+            r = self._driver.detect(allowed=allowed, timeout=timeout)
             if not r.connected:
                 self._set_state("down", "scanner disconnected")
             return r

@@ -197,21 +197,25 @@ class Scan(Action):
         return {"scanned": (+scanned(tube),)}
 
     def execute(self, tube):
+        from workspace.components.barcode_reader.ds457_driver import Scan
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         rt.step(_progress_pct(self), level="progress")
-        # Read the barcode. ``sim_return`` (device-guide §17) injects the
-        # sim barcode explicitly — a distinct fake code per tube so a sim
-        # run exercises per-tube logic. On the real reader the argument is
-        # ignored and the actual barcode is read.
-        code = rcp["barcode_reader"].code(sim_return=f"TUBE-{tube + 1:04d}")
-        if code is None:
-            # Read failed (reader offline). Do NOT assert scanned(tube):
-            # FAIL the leaf so the engine replans and re-selects Scan once
-            # the device is back. The tube stays presented so no motion is
-            # repeated — only the read is retried.
+        # Read the barcode via detect() — returns a Scan (status + data +
+        # symbology). ``sim_return`` (device-guide §17) injects a full fake
+        # Scan per tube so a sim run exercises per-tube logic; on the real
+        # reader the argument is ignored and the actual barcode is read.
+        # Pass ``allowed=[...]`` to restrict which symbologies count
+        # (default: any). e.g. rcp["barcode_reader"].detect(allowed=["code128"]).
+        scan = rcp["barcode_reader"].detect(
+            sim_return=Scan(status="ok", data=f"TUBE-{tube + 1:04d}", symbology="code128"))
+        if scan is None or not scan.ok:
+            # Read failed (reader offline / timeout / nak). Do NOT assert
+            # scanned(tube): FAIL the leaf so the engine replans and
+            # re-selects Scan once the device is back. The tube stays
+            # presented so no motion is repeated — only the read is retried.
             rt.step(f"tube {tube + 1}: barcode unavailable — will retry after recover")
             return False
-        rt.step(f"tube {tube + 1}: barcode = {code}")
+        rt.step(f"tube {tube + 1}: barcode = {scan.data} ({scan.symbology})")
         return "scanned"
 
 

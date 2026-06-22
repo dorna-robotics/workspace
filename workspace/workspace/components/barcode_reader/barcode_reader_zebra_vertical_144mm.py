@@ -52,7 +52,7 @@ from dorna2 import Solid
 
 from workspace.components.factory import register
 from workspace.components.barcode_reader.ds457_station import DS457Station
-from workspace.components.barcode_reader.ds457_driver import Scan
+from workspace.components.barcode_reader.ds457_driver import Scan, ALL_SYMBOLOGIES
 from workspace.devices import AutoRecover, attach_device
 
 
@@ -193,28 +193,31 @@ class BarcodeReaderZebraVertical144mm:
     # signature, shaped like the real return (a ``Scan``). Real mode
     # ignores it.
 
-    def scan(self, timeout: float = 10.0,
-             sim_return=Scan(status="ok", data="SIM-0000000000")):
-        """Trigger one on-demand scan and return it (``Scan`` or None).
-        The scanner stays quiet until this is called. In sim, returns
-        ``sim_return``."""
-        return self.reader.scan(timeout=timeout, sim_return=sim_return)
+    def detect(self, allowed=ALL_SYMBOLOGIES, timeout: float = 10.0,
+               sim_return=Scan(status="ok", data="SIM-0000000000", symbology="code128")):
+        """Trigger one on-demand detect and return it (``Scan`` or None).
+        The scanner stays quiet until this is called. ``allowed`` defaults
+        to every symbology; pass a subset (e.g. ``["code39", "qrcode"]``)
+        to ignore other types. In sim, returns ``sim_return``."""
+        return self.reader.detect(allowed=allowed, timeout=timeout, sim_return=sim_return)
 
-    def code(self, timeout: float = 10.0, sim_return: str = "SIM-0000000000"):
-        """Convenience: trigger a scan and return just the decoded barcode
-        string (or None on timeout/nak/disconnect). In sim, returns
-        ``sim_return`` verbatim — matches this method's return type, so no
-        ``Scan`` needed when you only want the text."""
+    def code(self, allowed=ALL_SYMBOLOGIES, timeout: float = 10.0,
+             sim_return: str = "SIM-0000000000"):
+        """Convenience: trigger a detect and return just the decoded
+        barcode string (or None on timeout/nak/disconnect). In sim,
+        returns ``sim_return`` verbatim — matches this method's return
+        type, so no ``Scan`` needed when you only want the text."""
         if self._simulation_mode:
             return sim_return
-        r = self.scan(timeout=timeout)
+        r = self.detect(allowed=allowed, timeout=timeout)
         return r.data if (r is not None and r.ok) else None
 
     # ── Operator actions (component-guide §8) ─────────────────────────
 
-    def scan_once(self):
-        """Operator button — one scan; returns a printable str."""
-        r = self.reader.scan()
+    def detect_once(self):
+        """Operator button — one detect; returns a printable str
+        (``symbology: 'data'``)."""
+        r = self.reader.detect()
         return None if r is None else str(r)
 
     def reconnect(self):
@@ -242,7 +245,7 @@ class BarcodeReaderZebraVertical144mm:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Scan",      "method": "scan_once"},
+            {"label": "Detect",    "method": "detect_once"},
             {"label": "Reconnect", "method": "reconnect"},
             {"label": "Release",   "method": "release_reader"},
         ]
