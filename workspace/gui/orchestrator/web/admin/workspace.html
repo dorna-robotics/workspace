@@ -175,6 +175,18 @@
     .op-action-buttons {
       display: flex; flex-wrap: wrap; gap: 4px;
     }
+    /* Accent fill so operator buttons read as tappable actions, not the
+       gray secondary look they inherit from .btn. Uses the theme accent
+       vars so it adapts to dark/light (matches .btn-primary). */
+    .op-action-btn {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      border-color: transparent;
+    }
+    .op-action-btn:hover:not(:disabled) {
+      background: var(--accent-h);
+    }
     .op-action-btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
