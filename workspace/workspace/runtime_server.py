@@ -327,22 +327,21 @@ def _broadcast_steps(steps: list, progress: int = -1):
 
 
 def _log_operator_result(rt, component_name: str, method_name: str, result) -> None:
-    """Push an operator action's return value into the step timeline so the
-    operator can see what it produced (e.g. the barcode a Detect read, the
-    grams a Weigh measured). One place for every operator action — the
+    """Print an operator action's return value to stdout so it lands in the
+    operator's LOGS panel (which tails the project's stdout), letting the
+    operator see what the action produced — e.g. the barcode a Detect read,
+    the grams a Weigh measured. One place for every operator action — the
     return is otherwise only echoed as a transient toast.
 
-    Logged at ``info`` for a real result, ``warning`` when the action ran
-    but returned nothing usable (None / empty). Never raises — logging a
-    result must not break the action that already succeeded."""
-    if rt is None:
-        return
+    Goes to Logs, NOT the Steps timeline: an operator action is out-of-band
+    (not a workflow step), so it belongs in the raw log stream, not the
+    rt.step workflow timeline. Never raises — logging a result must not
+    break the action that already succeeded. (``rt`` is unused; kept in the
+    signature so callers don't change.)"""
     try:
         label = f"{component_name}.{method_name}"
-        if result is None or result == "" or result == []:
-            rt.step(f"{label}: (no result)", level="warning")
-        else:
-            rt.step(f"{label}: {result}", level="info")
+        suffix = "(no result)" if (result is None or result == "" or result == []) else result
+        print(f"[OPERATOR] {label}: {suffix}", flush=True)
     except Exception:
         pass
 
