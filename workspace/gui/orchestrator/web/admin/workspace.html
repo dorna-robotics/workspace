@@ -176,15 +176,19 @@
       display: flex; flex-wrap: wrap; gap: 4px;
     }
     /* Accent fill so operator buttons read as tappable actions, not the
-       gray secondary look they inherit from .btn. Uses the theme accent
-       vars so it adapts to dark/light (matches .btn-primary). */
-    .op-action-btn {
+       gray secondary look they inherit from .btn. Theme-scoped to (0,2,0)
+       specificity so it beats base.css's `[data-theme="light"] .btn`
+       (which otherwise keeps them gray in light mode). Uses the accent
+       vars so it matches .btn-primary in both themes. */
+    [data-theme="dark"]  .op-action-btn,
+    [data-theme="light"] .op-action-btn {
       background: var(--accent);
       color: #fff;
       font-weight: 600;
       border-color: transparent;
     }
-    .op-action-btn:hover:not(:disabled) {
+    [data-theme="dark"]  .op-action-btn:hover:not(:disabled),
+    [data-theme="light"] .op-action-btn:hover:not(:disabled) {
       background: var(--accent-h);
     }
     .op-action-btn:disabled {
