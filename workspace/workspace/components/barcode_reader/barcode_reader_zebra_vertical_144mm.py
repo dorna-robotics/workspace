@@ -214,11 +214,6 @@ class BarcodeReaderZebraVertical144mm:
 
     # ── Operator actions (component-guide §8) ─────────────────────────
 
-    def detect_once(self):
-        """Operator button — one detect; returns a printable str
-        (``symbology: 'data'``)."""
-        r = self.reader.detect()
-        return None if r is None else str(r)
 
     def simulation(self, on: bool = True):
         """Live sim/real flip — mirrors ``Core.simulation`` /
@@ -236,8 +231,10 @@ class BarcodeReaderZebraVertical144mm:
               f"{'enabled' if new_sim else 'disabled'}")
 
     def operator_actions(self) -> list[dict]:
+        # detect returns a Scan; the runtime stringifies the result
+        # centrally (no per-method *_once str wrapper needed).
         return [
-            {"label": "Detect", "method": "detect_once"},
+            {"label": "Detect", "method": "detect"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

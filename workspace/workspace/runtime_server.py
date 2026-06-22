@@ -326,22 +326,43 @@ def _broadcast_steps(steps: list, progress: int = -1):
     _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
+def _presentable_result(result):
+    """Coerce ANY operator-action return into something the UI can show —
+    centrally, so components return their native object (a ``Scan``, a
+    ``Reading``, a float, …) and never need a hand-written ``str()``
+    wrapper or a ``*_once`` method.
+
+    * JSON-native (str/int/float/bool/list/dict/None) → returned as-is.
+    * "Empty" (None / "" / []) → ``None`` (caller treats as "no result").
+    * Anything else (a dataclass, an object) → its ``str()``.
+
+    Returns ``None`` when there's nothing meaningful to present."""
+    if result is None or result == "" or result == []:
+        return None
+    if isinstance(result, (str, int, float, bool, list, dict)):
+        return result
+    try:
+        return str(result)
+    except Exception:
+        return None
+
+
 def _log_operator_result(rt, component_name: str, method_name: str, result) -> None:
     """Print an operator action's return value to stdout so it lands in the
     operator's LOGS panel (which tails the project's stdout), letting the
     operator see what the action produced — e.g. the barcode a Detect read,
-    the grams a Weigh measured. One place for every operator action — the
-    return is otherwise only echoed as a transient toast.
+    the grams a Weigh measured. One place for every operator action.
 
     Goes to Logs, NOT the Steps timeline: an operator action is out-of-band
-    (not a workflow step), so it belongs in the raw log stream, not the
-    rt.step workflow timeline. Never raises — logging a result must not
-    break the action that already succeeded. (``rt`` is unused; kept in the
-    signature so callers don't change.)"""
+    (not a workflow step), so it belongs in the raw log stream. The result
+    is coerced centrally via ``_presentable_result`` — components return
+    their native object, no per-method ``str()`` wrapper. Unpresentable /
+    empty → a trivial "(no result)" line. Never raises. (``rt`` is unused;
+    kept in the signature so callers don't change.)"""
     try:
         label = f"{component_name}.{method_name}"
-        suffix = "(no result)" if (result is None or result == "" or result == []) else result
-        print(f"[OPERATOR] {label}: {suffix}", flush=True)
+        shown = _presentable_result(result)
+        print(f"[OPERATOR] {label}: {'(no result)' if shown is None else shown}", flush=True)
     except Exception:
         pass
 
@@ -1098,8 +1119,10 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             }
             if msg:
                 p["msg"] = msg
-            if ok and isinstance(result, (str, int, float, bool, list, dict, type(None))):
-                p["result"] = result
+            if ok:
+                shown = _presentable_result(result)
+                if shown is not None:
+                    p["result"] = shown
             self._send("invoke_result", p)
 
         components = getattr(self.workspace, "components", {}) or {}
