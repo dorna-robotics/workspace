@@ -220,14 +220,6 @@ class BarcodeReaderZebraVertical144mm:
         r = self.reader.detect()
         return None if r is None else str(r)
 
-    def reconnect(self):
-        """Re-run the connection sequence (AutoRecover's path)."""
-        return self.reader.recover()
-
-    def release_reader(self):
-        """Close the port + mark the reader down (clean unplug)."""
-        self.reader.release()
-
     def simulation(self, on: bool = True):
         """Live sim/real flip — mirrors ``Core.simulation`` /
         ``ScaleSpx222.simulation`` (device-guide §16 parity rule). Flips
@@ -245,9 +237,7 @@ class BarcodeReaderZebraVertical144mm:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Detect",    "method": "detect_once"},
-            {"label": "Reconnect", "method": "reconnect"},
-            {"label": "Release",   "method": "release_reader"},
+            {"label": "Detect", "method": "detect_once"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────
