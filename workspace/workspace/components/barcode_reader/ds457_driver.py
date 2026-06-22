@@ -233,6 +233,10 @@ class DS457:
         self._set_param(P_POWER_MODE, 0)
         self._set_param(P_DECODE_PACKET_FMT, 1)
         self._set_param(P_BEEP_GOOD_DECODE, 1 if self.beep else 0)
+        self._set_param(586, 2)   # Inverse 1D (all linear codes) -> automatic (regular + inverse)
+        self._set_param(587, 2)   # QR Inverse                    -> automatic
+        self._set_param(588, 2)   # Data Matrix Inverse           -> automatic
+        self._set_param(589, 2)   # Aztec Inverse                 -> automatic
         self._disable_handshaking()
         time.sleep(0.1)
         self._resync()
@@ -455,9 +459,20 @@ class DS457:
         pkt = self._read_packet(_SSI_TIMEOUT)
         return pkt is not None and pkt[0] == OP_CMD_ACK
 
+    @staticmethod
+    def _param_bytes(param: int) -> bytes:
+        """A parameter number in SSI wire form: one byte for 0–255, else an
+        F-prefixed two-byte form, one 'page' per 256 (256–511 → F0h, 512–767 →
+        F1h, 768–1023 → F2h, ...). e.g. 588 → F1h 4Ch."""
+        if param <= 0xFF:
+            return bytes([param])
+        return bytes([0xF0 + (param >> 8) - 1, param & 0xFF])
+
     def _set_param(self, param: int, value: int) -> bool:
-        """Set a single-byte parameter (temporary). Internal — used by connect()."""
-        return self._command(OP_PARAM_SEND, bytes([0xFF, param & 0xFF, value & 0xFF]))
+        """Set an SSI parameter (temporary). Works for any parameter number."""
+        return self._command(
+            OP_PARAM_SEND, bytes([0xFF]) + self._param_bytes(param) + bytes([value & 0xFF])
+        )
 
     def read_params(self, *params: int) -> dict:
         """Query current device values of single-byte parameters → {param: value}.
