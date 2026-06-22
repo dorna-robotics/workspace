@@ -326,6 +326,27 @@ def _broadcast_steps(steps: list, progress: int = -1):
     _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
+def _log_operator_result(rt, component_name: str, method_name: str, result) -> None:
+    """Push an operator action's return value into the step timeline so the
+    operator can see what it produced (e.g. the barcode a Detect read, the
+    grams a Weigh measured). One place for every operator action — the
+    return is otherwise only echoed as a transient toast.
+
+    Logged at ``info`` for a real result, ``warning`` when the action ran
+    but returned nothing usable (None / empty). Never raises — logging a
+    result must not break the action that already succeeded."""
+    if rt is None:
+        return
+    try:
+        label = f"{component_name}.{method_name}"
+        if result is None or result == "" or result == []:
+            rt.step(f"{label}: (no result)", level="warning")
+        else:
+            rt.step(f"{label}: {result}", level="info")
+    except Exception:
+        pass
+
+
 # --------------------------------------------------
 # Status WebSocket — push runtime state changes in real time
 # --------------------------------------------------
@@ -891,6 +912,7 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
             _op_actions_inflight.discard(key)
 
         reply(True, result=result)
+        _log_operator_result(rt, component_name, method_name, result)
 
 
 class DeviceWebSocket(tornado.websocket.WebSocketHandler):
@@ -1115,6 +1137,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             _op_actions_inflight.discard(key)
 
         reply(True, result=result)
+        _log_operator_result(rt, component_name, method_name, result)
 
 
 def _broadcast_scene_changed(workspace):
