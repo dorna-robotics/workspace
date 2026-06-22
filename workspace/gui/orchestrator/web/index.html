@@ -243,7 +243,9 @@
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100000);
       camera.up.set(0, 0, 1);
-      camera.position.set(2400, 900, 1200);
+      // True isometric: equal (1,1,1) direction → equal angles on all three
+      // axes. ~2771 from origin (matches the old framing distance).
+      camera.position.set(1600, 1600, 1600);
 
       // Pixel ratio capped at 1.5 — on Retina/4K this cuts fragment-shader
       // work ~40% with essentially invisible visual cost (vs the default
@@ -443,7 +445,7 @@
         applyRenderState();
       });
 
-      const HOME_POS    = new THREE.Vector3(2400, 900, 1200);
+      const HOME_POS    = new THREE.Vector3(1600, 1600, 1600);   // true isometric
       const HOME_TARGET = new THREE.Vector3(0, 0, 0);
       const HOME_UP     = new THREE.Vector3(0, 0, 1);
       document.getElementById("btnHome").addEventListener("click", () => {
