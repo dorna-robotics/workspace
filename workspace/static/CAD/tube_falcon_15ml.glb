@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1101
+      "byteLength": 1097
     }
   ],
   "buffers": [
     {
       "uri": "tube_falcon_15ml.glb.bin",
-      "byteLength": 1101
+      "byteLength": 1097
     }
   ],
   "materials": [

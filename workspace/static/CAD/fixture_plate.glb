@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 41412
+      "count": 41268
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12932,
+      "count": 12884,
       "max": [
         25,
         12.50152587890625,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12932
+      "count": 12884
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 28338
+      "byteLength": 28364
     }
   ],
   "buffers": [
     {
       "uri": "fixture_plate.glb.bin",
-      "byteLength": 28338
+      "byteLength": 28364
     }
   ],
   "materials": [

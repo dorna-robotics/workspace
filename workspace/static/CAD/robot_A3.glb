@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5742
+      "count": 5736
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2178,
+      "count": 2177,
       "max": [
         2.9996933937072754,
         7.300599575042725,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2178
+      "count": 2177
     },
     {
       "type": "SCALAR",
@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6154
+      "byteLength": 6097
     },
     {
       "buffer": 0,
-      "byteOffset": 6154,
-      "byteLength": 784
+      "byteOffset": 6097,
+      "byteLength": 797
     }
   ],
   "buffers": [
     {
       "uri": "robot_A3.glb.bin",
-      "byteLength": 6938
+      "byteLength": 6894
     }
   ],
   "materials": [

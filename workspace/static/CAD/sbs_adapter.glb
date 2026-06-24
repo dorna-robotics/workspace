@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 10572
+      "count": 10560
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3600,
+      "count": 3596,
       "max": [
         7.489999771118164,
         4.990265846252441,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3600
+      "count": 3596
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10972
+      "byteLength": 11099
     }
   ],
   "buffers": [
     {
       "uri": "sbs_adapter.glb.bin",
-      "byteLength": 10972
+      "byteLength": 11099
     }
   ],
   "materials": [

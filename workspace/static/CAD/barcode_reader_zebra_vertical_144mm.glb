@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1614
+      "count": 1518
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 616,
+      "count": 595,
       "max": [
         8.111499786376953,
-        18.5,
-        2.9306559562683105
+        18.500089645385742,
+        2.930542469024658
       ],
       "min": [
         2.071873903274536,
@@ -27,21 +27,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 616
+      "count": 595
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 7998
+      "count": 7641
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2013,
+      "count": 1942,
       "max": [
         8.111499786376953,
-        18.5,
-        2.9306559562683105
+        18.499919891357422,
+        2.930675983428955
       ],
       "min": [
         2.0114998817443848,
@@ -52,20 +52,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2013
+      "count": 1942
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 9510
+      "count": 9444
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2003,
+      "count": 1992,
       "max": [
-        2.311500072479248,
-        17.1299991607666,
+        2.3114771842956543,
+        17.13003921508789,
         1.5386749505996704
       ],
       "min": [
@@ -77,21 +77,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2003
+      "count": 1992
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 127704
+      "count": 120282
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 39487,
+      "count": 37944,
       "max": [
-        8,
+        8.000106811523438,
         15.5,
-        3.25
+        3.249725341796875
       ],
       "min": [
         -3.25,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 39487
+      "count": 37944
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2500
+      "byteLength": 2420
     },
     {
       "buffer": 0,
-      "byteOffset": 2500,
-      "byteLength": 9698
+      "byteOffset": 2420,
+      "byteLength": 9430
     },
     {
       "buffer": 0,
-      "byteOffset": 12198,
-      "byteLength": 8104
+      "byteOffset": 11850,
+      "byteLength": 7780
     },
     {
       "buffer": 0,
-      "byteOffset": 20302,
-      "byteLength": 111836
+      "byteOffset": 19630,
+      "byteLength": 107034
     }
   ],
   "buffers": [
     {
       "uri": "barcode_reader_zebra_vertical_144mm.glb.bin",
-      "byteLength": 132138
+      "byteLength": 126664
     }
   ],
   "materials": [

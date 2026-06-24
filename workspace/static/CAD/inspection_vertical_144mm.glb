@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 14364
+      "count": 14358
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4711,
+      "count": 4710,
       "max": [
         3.9001708030700684,
         3.249725341796875,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4711
+      "count": 4710
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11572
+      "byteLength": 11629
     }
   ],
   "buffers": [
     {
       "uri": "inspection_vertical_144mm.glb.bin",
-      "byteLength": 11572
+      "byteLength": 11629
     }
   ],
   "materials": [

@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 36852
+      "count": 36576
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12172,
+      "count": 12080,
       "max": [
         50.003662109375,
         75.006591796875,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12172
+      "count": 12080
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 37370
+      "byteLength": 37373
     }
   ],
   "buffers": [
     {
       "uri": "hotel_sbs_52h_4lvl.glb.bin",
-      "byteLength": 37370
+      "byteLength": 37373
     }
   ],
   "materials": [
