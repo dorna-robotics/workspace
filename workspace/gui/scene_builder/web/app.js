@@ -83,8 +83,8 @@
         100000
       );
       camera.up.set(0,0,1);
-      // True isometric, rotated 90° CCW about Z from (1,1,1) → (-1,1,1).
-      camera.position.set(-1600, 1600, 1600);
+      // True isometric: equal (1,1,1) direction → equal angles on all axes.
+      camera.position.set(1600, 1600, 1600);
 
       // Pixel ratio capped at 1.5 for FPS on Retina/4K. Antialias stays
       // on for clean edges. See orchestrator/index.html.
@@ -6745,7 +6745,7 @@ ensureBuilderBar();
 })();
 
       // --- Home position / snap-to-view ---
-      const HOME_POS    = new THREE.Vector3(-1600, 1600, 1600);   // iso, 90° CCW about Z
+      const HOME_POS    = new THREE.Vector3(1600, 1600, 1600);   // true isometric
       const HOME_TARGET = new THREE.Vector3(0, 0, 0);
       const HOME_UP     = new THREE.Vector3(0, 0, 1);
       let snapTarget = null;
