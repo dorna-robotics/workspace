@@ -85,6 +85,17 @@ cathode_1:
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 
+# ── Inspection (horizontal vision station) ──────────────────────────
+inspection_horizontal_1:
+  type: "inspection_horizontal"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "A11"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
 # ── Disc adapters on plate 4 ────────────────────────────────────────
 # Each disc holder is an adapter_disc_holder mounted on a plate hole,
 # with a stack_holder on the adapter's "place" anchor. 2 IN + 3 OUT.
