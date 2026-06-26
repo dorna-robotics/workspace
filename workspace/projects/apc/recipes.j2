@@ -1,17 +1,33 @@
 {%- set sf = 20 -%}
 
-# Generic robot-motion recipe (park / joint moves). No tool rack in this
-# cell — the suction gripper is mounted directly on the robot — so there
-# is no tool recipe; Start/Park just move the robot via rcp["robot"].park().
-robot:
-  class: workspace.recipes.robot.Robot
-  kwargs: {speed_factor: {{ sf }}}
-
-# ── Project-specific recipes go below ────────────────────────────────
-# Add aliases for racks, holders, pipetting sites, and any custom
-# recipes from this project's ``recipes/`` folder. Reference local
-# recipes with the ``recipes.<module>.<Class>`` import path:
+# Disc in/out holders. Each Rack recipe targets the adapter_disc_holder
+# and the resolver walks down to the stack_holder sitting on it (at the
+# adapter's "place" anchor). Mirrors the runtime example's disc recipes.
 #
-#   my_thing:
-#     class: recipes.my_recipe.MyRecipe
-#     kwargs: {component: my_component_1, speed_factor: {{ sf }}}
+# NOTE: no tool-rack / gripper recipe here — the suction gripper is
+# mounted directly on the robot (no rack to pick/return it from). Robot
+# parking (Start/Park) is scaffold-only for now; wire a park motion when
+# the workflow is built.
+
+# --- IN sources ---
+disc_in_1:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_in_1, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+disc_in_2:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_in_2, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+# --- OUT good ---
+disc_out_good_1:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_out_good_1, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+disc_out_good_2:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_out_good_2, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+# --- OUT bad (rejected) ---
+disc_out_bad_1:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_disc_out_bad_1, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
