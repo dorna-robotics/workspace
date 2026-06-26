@@ -1,3 +1,6 @@
+{# How far the four surrounding safety collision walls sit from the bench
+   edges, in mm. One knob moves all four walls in/out together. #}
+{%- set wall_offset = 50 -%}
 core:
   type: "core"
   simulation: true
@@ -5,19 +8,6 @@ core:
   has_rail: true
   rail_cfg:
     type: "rail_hd_500mm"
-    axis: 6
-    offset: 0
-    usem: 1
-    pprm: 4000
-    tprm: 75
-    usee: 1
-    ppre: 4000
-    tpre: 75
-    p: 0.01
-    i: 0.0001
-    d: 0
-    duration: 100
-    threshold: 100
   has_tool_changer: true
   has_motion_plan: true
   has_camera: false
@@ -89,6 +79,16 @@ fixture_plate_6:
     child_anchor: "back"
     offset: [0, 0, 0, 0, 0, 0]
 
+table:
+  type: "table_48x30"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "front"
+    child_solid: "body"
+    child_anchor: "place"
+    offset: [0, 0, -7, 0, 0, 0]
+
 collision_box_back:
   type: "collision_box"
   size: [10, 750, 600]
@@ -98,7 +98,7 @@ collision_box_back:
     parent_anchor: "back"
     child_solid: "body"
     child_anchor: "front"
-    offset: [-100, 0, 0, 0, 0, 0]
+    offset: [-{{ wall_offset }}, 0, 0, 0, 0, 0]
 
 collision_box_front:
   type: "collision_box"
@@ -109,7 +109,7 @@ collision_box_front:
     parent_anchor: "front"
     child_solid: "body"
     child_anchor: "back"
-    offset: [100, 0, 0, 0, 0, 0]
+    offset: [{{ wall_offset }}, 0, 0, 0, 0, 0]
 
 collision_box_left:
   type: "collision_box"
@@ -120,7 +120,7 @@ collision_box_left:
     parent_anchor: "corner_0"
     child_solid: "body"
     child_anchor: "corner_3"
-    offset: [0, 100, 0, 0, 0, 0]
+    offset: [0, {{ wall_offset }}, 0, 0, 0, 0]
 
 collision_box_right:
   type: "collision_box"
@@ -131,4 +131,4 @@ collision_box_right:
     parent_anchor: "corner_3"
     child_solid: "body"
     child_anchor: "corner_0"
-    offset: [0, -100, 0, 0, 0, 0]
+    offset: [0, -{{ wall_offset }}, 0, 0, 0, 0]
