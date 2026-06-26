@@ -31,3 +31,21 @@ disc_out_good_2:
 disc_out_bad_1:
   class: workspace.recipes.rack.Rack
   kwargs: {component: adapter_disc_out_bad_1, left_approach: true, base_distance: 150, rail_step: 5, rail_span: 20, speed_factor: {{ sf }}}
+
+# ── Stations ────────────────────────────────────────────────────────
+# Inspection — present the held disc to the camera + run detect().
+inspector:
+  class: workspace.recipes.inspector.FixedInspector
+  kwargs: {component: inspection_horizontal_1, base_distance: 200, rail_step: 5, rail_span: 5, detection_preset: {}, speed_factor: {{ sf }}}
+
+# Anode — place/pick the disc on the anode's "place" anchor (Scale recipe
+# = base Recipe with target_anchor="place"; gives pick/place over a fixed
+# station, same as placing on the scale pan).
+anode:
+  class: workspace.recipes.scale.Scale
+  kwargs: {component: anode_1, base_distance: 150, rail_step: 5, rail_span: 5, speed_factor: {{ sf }}}
+
+# Multimeter — read the disc's capacitance while it's clamped anode↔cathode.
+meter:
+  class: workspace.recipes.multi_meter.MultiMeter
+  kwargs: {component: multi_meter_1}

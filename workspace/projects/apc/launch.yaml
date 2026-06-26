@@ -1,4 +1,11 @@
 # apc — launch config.
+#
+# Per disc: create (in_1→in_2) → pick → inspect → place on anode →
+# cathode down → read C → cathode up → pick → sort to out good/bad by the
+# measured capacitance window (C_MIN..C_MAX in actions.py). Ordered drop:
+# good fills out_good_1 then _2, bad fills out_bad_1; slots A1→A7, z steps
+# by Z_STEP per disc, max MAX_PER_SLOT per slot. All those are variables
+# at the top of actions.py.
 
 project_name: apc
 port:         5010
@@ -10,7 +17,11 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
-# Project starts with no per-item actions — Start runs, robot parks,
-# Park ends the workflow. Add per-item actions + their kwargs as the
-# protocol grows.
-kwargs: {}
+kwargs:
+  batch_size:
+    type: int
+    default: 100
+    label: Batch size
+    hint: How many discs to run (create → measure → sort).
+    min: 1
+    max: 3510

@@ -1,6 +1,10 @@
 {# How far the four surrounding safety collision walls sit from the bench
-   edges, in mm. One knob moves all four walls in/out together. #}
-{%- set wall_offset = 50 -%}
+   edges, in mm. One knob moves all four walls in/out together.
+   apc uses 100 (not the shared 50): the disc holders sit near the bench
+   perimeter on plate 4, and at 50 a wall blocked the suction gripper's
+   pick approach (RRTConnect couldn't reach the goal). 60 already clears;
+   100 gives comfortable margin across all holders. #}
+{%- set wall_offset = 100 -%}
 core:
   type: "core"
   simulation: true
