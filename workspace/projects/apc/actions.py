@@ -56,6 +56,16 @@ off_anode    = predicate("off_anode")    # disc re-gripped off the anode
 sorted_      = predicate("sorted")       # disc dropped into an out holder
 parked       = predicate("parked")
 
+# ── Single-occupancy resources (capacity-1, no args) ──────────────────
+# The gripper holds ONE disc and the anode/cathode station processes ONE
+# disc at a time. Without these the planner interleaves discs on the
+# SHARED stations — two discs on the anode, picking while the cathode is
+# down, etc. Each is consumed (-fact) when the slot fills and restored
+# (+fact) when it empties, forcing strictly one-disc-at-a-time through the
+# hand and the anode. See project-guide §8 "Single-occupancy resources".
+hand_empty  = predicate("hand_empty")    # gripper holds no disc
+anode_free  = predicate("anode_free")    # anode/cathode station is idle
+
 
 # ── Exposed, tweakable parameters ─────────────────────────────────────
 IN_HOLDERS  = [1, 2]                            # draw from in_1, then in_2
@@ -175,7 +185,8 @@ class Start(Action):
         return ~started()
 
     def eff(self):
-        return {"started": (+started(),)}
+        # Seed the single-occupancy resources: hand + anode both start free.
+        return {"started": (+started(), +hand_empty(), +anode_free())}
 
     def execute(self):
         rt = self.ctx.runtime
@@ -226,10 +237,11 @@ class Pick(Action):
     resource = "robot"
 
     def pre(self, disc):
-        return created(disc) & ~picked(disc)
+        # hand_empty gates one-disc-at-a-time in the gripper.
+        return created(disc) & hand_empty() & ~picked(disc)
 
     def eff(self, disc):
-        return {"picked": (+picked(disc),)}
+        return {"picked": (+picked(disc), -hand_empty())}   # hand now full
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -268,10 +280,12 @@ class PlaceAnode(Action):
     resource = "robot"
 
     def pre(self, disc):
-        return inspected(disc) & ~on_anode(disc)
+        # anode_free gates one-disc-at-a-time on the shared anode/cathode.
+        return inspected(disc) & anode_free() & ~on_anode(disc)
 
     def eff(self, disc):
-        return {"on_anode": (+on_anode(disc),)}
+        # Disc leaves the hand onto the anode: hand frees, anode occupied.
+        return {"on_anode": (+on_anode(disc), +hand_empty(), -anode_free())}
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -354,10 +368,12 @@ class PickAnode(Action):
     resource = "robot"
 
     def pre(self, disc):
-        return cathode_up(disc) & ~off_anode(disc)
+        # hand_empty required to re-grip; frees the anode for the next disc.
+        return cathode_up(disc) & hand_empty() & ~off_anode(disc)
 
     def eff(self, disc):
-        return {"off_anode": (+off_anode(disc),)}
+        # Disc back into the hand off the anode: hand fills, anode frees.
+        return {"off_anode": (+off_anode(disc), -hand_empty(), +anode_free())}
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
@@ -378,7 +394,8 @@ class Sort(Action):
         return off_anode(disc) & ~sorted_(disc)
 
     def eff(self, disc):
-        return {"sorted": (+sorted_(disc),)}
+        # Disc dropped into the out holder: hand frees.
+        return {"sorted": (+sorted_(disc), +hand_empty())}
 
     def execute(self, disc):
         rt, rcp, ws = self.ctx.runtime, self.ctx.recipes, self.ctx.workspace
