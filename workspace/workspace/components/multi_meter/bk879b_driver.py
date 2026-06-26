@@ -19,6 +19,14 @@ class Measurement:
     frequency: str
     raw: str
 
+    def __str__(self) -> str:
+        """Readable one-liner for the operator panel / log, e.g.
+        ``C @ 1khz: 1.5e-09 F``. (Without this, str() would dump the whole
+        dataclass repr.)"""
+        val = f"{self.primary:g} {self.primary_unit}".strip()
+        sec = f" / {self.secondary:g} {self.secondary_unit}".rstrip() if self.secondary_unit else ""
+        return f"{self.function} @ {self.frequency}: {val}{sec}"
+
 
 _FREQ_MAP = {100: "100hz", 120: "120hz", 1000: "1khz", 10000: "10khz"}
 _FREQ_DISPLAY = {"100hz": "100 Hz", "120hz": "120 Hz", "1khz": "1 kHz", "10khz": "10 kHz"}

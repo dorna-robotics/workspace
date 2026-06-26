@@ -205,19 +205,10 @@ class MultiMeterBk879b:
     # ── Operator-action contract (component-guide §8) ─────────────────
     # Operator-facing buttons in the Operator Controls panel. Wired
     # so the operator can sanity-check a meter mid-pause without
-    # touching the workflow.
-
-    def read_once_capacitance(self):
-        m = self.read_capacitance()
-        return None if m is None else m.raw
-
-    def read_once_inductance(self):
-        m = self.read_inductance()
-        return None if m is None else m.raw
-
-    def read_once_resistance(self):
-        m = self.read_resistance()
-        return None if m is None else m.raw
+    # touching the workflow. The read_* methods are exposed DIRECTLY —
+    # they take no required args (frequency defaults) and return a
+    # Measurement, which the runtime stringifies centrally for the panel
+    # + log (no per-method *_once wrapper needed; device-guide §17).
 
     def reconnect(self):
         """Re-run the connection sequence (same code path AutoRecover
@@ -255,12 +246,13 @@ class MultiMeterBk879b:
         )
 
     def operator_actions(self) -> list[dict]:
+        # read_* exposed directly; the runtime stringifies the Measurement.
         return [
-            {"label": "Read C (once)",  "method": "read_once_capacitance"},
-            {"label": "Read L (once)",  "method": "read_once_inductance"},
-            {"label": "Read R (once)",  "method": "read_once_resistance"},
-            {"label": "Reconnect",      "method": "reconnect"},
-            {"label": "Release",        "method": "release_meter"},
+            {"label": "Read C",    "method": "read_capacitance"},
+            {"label": "Read L",    "method": "read_inductance"},
+            {"label": "Read R",    "method": "read_resistance"},
+            {"label": "Reconnect", "method": "reconnect"},
+            {"label": "Release",   "method": "release_meter"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────
