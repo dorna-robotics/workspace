@@ -116,18 +116,25 @@ def _disc(disc: int) -> str:
     return f"disc_{disc}"
 
 
-def _in_holder(disc: int) -> int:
-    """Which IN holder this disc comes from — in_1 until 'empty', then
-    in_2. Modeled simply: split the batch in half (first half from in_1,
-    rest from in_2). On-demand create, so this only decides where to
-    spawn it. Adjust to a real magazine-count check when stacks are
-    finite."""
-    half = (len(IN_HOLDERS) and 1) or 1   # placeholder split point
-    # Spawn from in_1 for even-ish first portion; here: alternate by a
-    # simple rule that prefers in_1 — kept trivial since create is on
-    # demand. Real "in_1 until empty" needs a magazine count; wire that
-    # when the in stacks are finite.
-    return IN_HOLDERS[0]
+def _in_slot(disc: int) -> tuple[int, str]:
+    """Where this disc is created + picked: (in_holder, slot).
+
+    Each disc gets its OWN (holder, slot) so co-existing discs never pile
+    on the same anchor — stacking several discs at one center/z=0 point
+    makes the pick's load-walk ambiguous and ``pick_setting`` raises
+    IndexError (empty load_list). We lay them out one-per-slot: fill in_1's
+    A1..A7, then in_2's A1..A7, then wrap. With hand_empty serializing the
+    actual picks, at most a handful co-exist, so a wrap rarely collides;
+    Create defensively clears its own name first either way.
+
+    "in_1 until empty, then in_2" in spirit — a real finite-magazine count
+    would replace the wrap; on-demand create makes the layout the only
+    thing that matters here."""
+    per_holder = len(SLOTS)
+    idx = disc % (len(IN_HOLDERS) * per_holder)
+    holder = IN_HOLDERS[idx // per_holder]
+    slot = SLOTS[idx % per_holder]
+    return holder, slot
 
 
 def _progress_pct(action):
@@ -212,8 +219,7 @@ class Create(Action):
         # Idempotent retry — clear a leftover from a failed prior attempt.
         if name in ws.components:
             ws.remove_component(name)
-        in_h = _in_holder(disc)
-        slot = SLOTS[0]   # spawn at A1 of the in stack (on-demand source)
+        in_h, slot = _in_slot(disc)   # this disc's OWN in-slot (no piling)
         rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}]")
         rt.step(_progress_pct(self), level="progress")
         ws.add_component(name, {
@@ -245,10 +251,10 @@ class Pick(Action):
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        in_h = _in_holder(disc)
-        rt.step(f"disc {disc + 1}: pick from in_{in_h}[{SLOTS[0]}]")
+        in_h, slot = _in_slot(disc)   # same slot the disc was created in
+        rt.step(f"disc {disc + 1}: pick from in_{in_h}[{slot}]")
         rt.step(_progress_pct(self), level="progress")
-        rcp[f"disc_in_{in_h}"].pick(SLOTS[0], tool_tcp_z_offset=PICK_TCP_Z)
+        rcp[f"disc_in_{in_h}"].pick(slot, tool_tcp_z_offset=PICK_TCP_Z)
         return "picked"
 
 
