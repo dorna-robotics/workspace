@@ -49,7 +49,7 @@ class Start(Action):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
         rt.motor(1)
-        rcp["gripper"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+        rcp["robot"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
         return "started"
 
 
@@ -67,7 +67,12 @@ class Park(Action):
     params      = []
     duration    = 5
     resource    = "robot"
-    tool        = None
+    # NOTE: `tool` is deliberately UNSET (not `None`). The suction gripper is
+    # mounted directly on the robot — there is no tool rack to return it to.
+    # `tool = None` would tell the swap engine to RETURN the held tool to its
+    # rack (call rcp[tool].place()); unset means "leave the tool alone, no
+    # swap" — correct here. (Most examples use tool=None on Park because they
+    # DO have a tool rack; this cell does not.)
     PARK_JOINTS = [0, 185, -94, 0, 0, 0, 100]
 
     def pre(self):
@@ -79,7 +84,7 @@ class Park(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
-        rcp["gripper"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 

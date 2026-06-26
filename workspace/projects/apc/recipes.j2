@@ -1,8 +1,11 @@
 {%- set sf = 20 -%}
 
-gripper:
-  class: workspace.recipes.tool_rack.ToolRack
-  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+# Generic robot-motion recipe (park / joint moves). No tool rack in this
+# cell — the suction gripper is mounted directly on the robot — so there
+# is no tool recipe; Start/Park just move the robot via rcp["robot"].park().
+robot:
+  class: workspace.recipes.robot.Robot
+  kwargs: {speed_factor: {{ sf }}}
 
 # ── Project-specific recipes go below ────────────────────────────────
 # Add aliases for racks, holders, pipetting sites, and any custom
