@@ -280,7 +280,7 @@ class Pick(Action):
         in_h, slot = _in_slot(disc)   # same slot the disc was created in
         rt.step(f"disc {disc + 1}: pick from in_{in_h}[{slot}]")
         rt.step(_progress_pct(self), level="progress")
-        rcp[f"disc_in_{in_h}"].pick(slot, tool_tcp_z_offset=PICK_TCP_Z)
+        rcp[f"disc_in_{in_h}"].pick(slot, tool_tcp_z_offset=PICK_TCP_Z, soft_approach=True)
         return "picked"
 
 
@@ -411,7 +411,7 @@ class PickAnode(Action):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         rt.step(f"disc {disc + 1}: pick off anode")
         rt.step(_progress_pct(self), level="progress")
-        rcp["anode"].pick("place", tool_tcp_z_offset=PICK_TCP_Z)
+        rcp["anode"].pick("place", tool_tcp_z_offset=PICK_TCP_Z, soft_approach=True)
         return "off_anode"
 
 
