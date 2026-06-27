@@ -96,37 +96,40 @@ _STEPS = 9                                     # per-disc steps for progress
 
 
 # ── Scene-derived ordered-drop helper ─────────────────────────────────
-# A placed disc persists as a scene component named "<holder>__<slot>__<n>"
-# (n = 0-based depth in the slot). Counting those components per holder
-# tells us the next free (holder, slot, z) — no counter, replan-safe.
+# We keep ONE disc per slot in the scene, named "<holder>__<slot>". Its
+# height in the stack lives in the SCENE itself — the framework records a
+# placed solid's attach offset on solid.parent["offset"] — so we read the
+# current top z straight off it. No name-encoded depth, no per-disc
+# markers, no side counter: the scene is the source of truth (dynamic +
+# replan-safe). Other stacking projects can reuse this verbatim.
 
-def _placed_name(holder: str, slot: str, depth: int) -> str:
-    return f"{holder}__{slot}__{depth}"
+def _placed_name(holder: str, slot: str) -> str:
+    return f"{holder}__{slot}"
 
 
-def _slot_top_depth(ws, holder, slot):
-    """Depth of the topmost disc currently in (holder, slot), or -1 if the
-    slot is empty. Only the TOP disc is kept in the scene (buried ones are
-    removed for perf — see Sort), and its marker name encodes its depth, so
-    the count survives even though the lower discs are gone."""
-    prefix = f"{holder}__{slot}__"
-    depths = [int(n[len(prefix):]) for n in ws.components if n.startswith(prefix)]
-    return max(depths) if depths else -1
+def _slot_top_z(ws, holder, slot):
+    """Current top z of the disc kept in (holder, slot), or None if empty.
+    Read from the placed component's attach offset in the scene tree."""
+    comp = ws.components.get(_placed_name(holder, slot))
+    if comp is None:
+        return None
+    off = comp.assembly["body"].parent.get("offset")
+    return off[2] if off else 0.0
 
 
 def _next_drop(ws, holders):
-    """Find the next free (holder_alias, slot, z, depth) across an ordered
-    list of OUT holder aliases, filling slot A1→A7 and stacking z by Z_STEP
-    up to MAX_PER_SLOT, holder by holder. Returns None if all are full.
-
-    Occupancy is read from the topmost surviving marker per slot (depth in
-    its name), so it works whether or not the buried discs were removed."""
+    """Next free (holder_alias, slot, z) across an ordered list of OUT
+    holders, filling slot A1→A7 and stacking z by Z_STEP up to
+    MAX_PER_SLOT, holder by holder. Returns None if all are full. Occupancy
+    is read from the scene (the kept top disc's z), so it's correct whether
+    or not the buried discs were removed."""
+    span = (MAX_PER_SLOT - 1) * Z_STEP
     for holder in holders:
         for slot in SLOTS:
-            top = _slot_top_depth(ws, holder, slot)
-            if top + 1 < MAX_PER_SLOT:
-                depth = top + 1
-                return holder, slot, round(depth * Z_STEP, 3), depth
+            top = _slot_top_z(ws, holder, slot)
+            z = 0.0 if top is None else round(top + Z_STEP, 3)
+            if z <= span + 1e-9:
+                return holder, slot, z
     return None
 
 
@@ -207,6 +210,7 @@ class Start(Action):
     params   = []
     duration = 5
     resource = "robot"
+    START_JOINTS = [0, 45, -90, 0, -45, 0, 100]
 
     def pre(self):
         return ~started()
@@ -216,8 +220,12 @@ class Start(Action):
         return {"started": (+started(), +feed_free(), +hand_empty(), +anode_free())}
 
     def execute(self):
-        rt = self.ctx.runtime
+        rt  = self.ctx.runtime
+        rcp = self.ctx.recipes
         rt.motor(1)
+        # Move to a known ready pose so the run starts from a defined
+        # configuration (Recipe.park is a base move-to-joint; any recipe).
+        rcp["inspector"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 
 
@@ -435,7 +443,7 @@ class Sort(Action):
         if nxt is None:
             rt.step(f"disc {disc + 1}: all {'good' if good else 'bad'} holders FULL")
             return False
-        holder, slot, z, depth = nxt
+        holder, slot, z = nxt
         rt.step(f"disc {disc + 1}: {'GOOD' if good else 'BAD'} → {holder}[{slot}] z={z}")
         rt.step(_progress_pct(self), level="progress")
 
@@ -443,19 +451,19 @@ class Sort(Action):
         rcp[holder].place(slot, offset=[0, 0, z, 0, 0, 0], gravity_offset=PLACE_GRAV)
 
         # The robot's held disc (disc_<i>) is consumed. We keep only the
-        # TOP disc per slot in the scene: remove the previous top (depth-1)
-        # before adding this one. At ~3500 discs, keeping every buried disc
-        # would be thousands of meshes/edge-overlays/pickables dragging the
-        # viewer; the buried ones are invisible inside the stack anyway. The
-        # surviving top marker's name still encodes its depth, so occupancy
-        # (next free slot) stays scene-derived and replan-safe.
+        # TOP disc per slot in the scene: re-add the single per-slot marker
+        # at the new z (replacing the buried one). At ~3500 discs, keeping
+        # every buried disc would be thousands of meshes / edge-overlays /
+        # pickables dragging the viewer; the buried ones are invisible
+        # inside the stack anyway. The kept disc's z lives in the scene, so
+        # occupancy (next free slot) stays scene-derived and replan-safe.
         held = _disc(disc)
         if held in ws.components:
             ws.remove_component(held)
-        prev = _placed_name(holder, slot, depth - 1)
-        if depth > 0 and prev in ws.components:
-            ws.remove_component(prev)
-        ws.add_component(_placed_name(holder, slot, depth), {
+        marker = _placed_name(holder, slot)
+        if marker in ws.components:
+            ws.remove_component(marker)
+        ws.add_component(marker, {
             "type": "disc_22mm",
             "attach": {
                 "parent_name":   rcp[holder].component.name,
@@ -487,9 +495,15 @@ class Park(Action):
         return {"parked": (+parked(),)}
 
     def execute(self):
-        rt = self.ctx.runtime
-        # TODO: move to PARK_JOINTS once a park/motion recipe is wired
-        # (no tool recipe — gripper is mounted on the robot).
+        rt  = self.ctx.runtime
+        rcp = self.ctx.recipes
+        # Move to the park pose, then cut motor. Recipe.park is a BASE method
+        # — it only drives the robot to a joint pose (core + collision-aware
+        # planning), independent of what the recipe targets — so any recipe
+        # works. apc has no gripper/tool recipe (suction is mounted on the
+        # robot), so we borrow "inspector". checkpoint inside park keeps
+        # Pause/Resume live on the way there.
+        rcp["inspector"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 
