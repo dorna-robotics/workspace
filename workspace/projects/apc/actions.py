@@ -57,12 +57,18 @@ sorted_      = predicate("sorted")       # disc dropped into an out holder
 parked       = predicate("parked")
 
 # ── Single-occupancy resources (capacity-1, no args) ──────────────────
-# The gripper holds ONE disc and the anode/cathode station processes ONE
-# disc at a time. Without these the planner interleaves discs on the
-# SHARED stations — two discs on the anode, picking while the cathode is
-# down, etc. Each is consumed (-fact) when the slot fills and restored
-# (+fact) when it empties, forcing strictly one-disc-at-a-time through the
-# hand and the anode. See project-guide §8 "Single-occupancy resources".
+# Three shared slots, each holding ONE disc at a time. Without these the
+# planner runs actions in parallel across discs — creating several discs
+# up front (they pile on the feed), or two discs on the anode, or picking
+# while the cathode is down. Each fact is consumed (-fact) when its slot
+# fills and restored (+fact) when it empties, forcing strictly
+# one-disc-at-a-time:
+#   feed_free  — only one un-picked disc may exist (create → pick → create
+#                → pick…, never a batch of Creates ahead of the picks).
+#   hand_empty — the gripper holds one disc.
+#   anode_free — the anode/cathode station processes one disc.
+# See project-guide §8 "Single-occupancy resources".
+feed_free   = predicate("feed_free")     # in-feed has no un-picked disc
 hand_empty  = predicate("hand_empty")    # gripper holds no disc
 anode_free  = predicate("anode_free")    # anode/cathode station is idle
 
@@ -192,8 +198,8 @@ class Start(Action):
         return ~started()
 
     def eff(self):
-        # Seed the single-occupancy resources: hand + anode both start free.
-        return {"started": (+started(), +hand_empty(), +anode_free())}
+        # Seed the single-occupancy resources: feed, hand, anode all free.
+        return {"started": (+started(), +feed_free(), +hand_empty(), +anode_free())}
 
     def execute(self):
         rt = self.ctx.runtime
@@ -208,10 +214,11 @@ class Create(Action):
     resource = "robot"
 
     def pre(self, disc):
-        return started() & ~created(disc)
+        # feed_free gates one un-picked disc at a time (no batch of Creates).
+        return started() & feed_free() & ~created(disc)
 
     def eff(self, disc):
-        return {"created": (+created(disc),)}
+        return {"created": (+created(disc), -feed_free())}   # feed now occupied
 
     def execute(self, disc):
         rt, ws = self.ctx.runtime, self.ctx.workspace
@@ -247,7 +254,8 @@ class Pick(Action):
         return created(disc) & hand_empty() & ~picked(disc)
 
     def eff(self, disc):
-        return {"picked": (+picked(disc), -hand_empty())}   # hand now full
+        # Disc leaves the feed into the hand: feed frees, hand fills.
+        return {"picked": (+picked(disc), +feed_free(), -hand_empty())}
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
