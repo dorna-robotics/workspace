@@ -1334,6 +1334,7 @@ function renderControls(state, launched, running) {
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
       // deviceFaultGate in api.js.
+      const isFreshStart = (cmd === "start" && s !== "PAUSED");
       if (cmd === "start") {
         const action = (s === "PAUSED") ? "Resume" : "Start";
         const ok = await deviceFaultGate(wsName, action);
@@ -1341,6 +1342,8 @@ function renderControls(state, launched, running) {
       }
       b.disabled = true;
       try {
+        // Fresh run → fresh logs (skip on Resume; keep them mid-run).
+        if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
         const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
         await sendCmd(cmd, kwargs);
         toast(`${cmd} sent`, "ok");
@@ -1742,12 +1745,18 @@ $("btnToggleLogs").addEventListener("click", () => {
 // Clear logs — stop propagation so it doesn't also toggle collapse.
 // No confirm modal: clearing logs is cheap and reversible enough
 // (buffered output stays in memory), so just do it on click.
+// Clear both the server-side log buffer and the panel. Shared by the
+// Clear-logs button and the Start command (fresh run → fresh logs).
+async function clearLogs() {
+  await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
+  lastLogs = "";
+  logPre.innerHTML = "";
+}
+
 $("btnClearLogs").addEventListener("click", async (e) => {
   e.stopPropagation();
   try {
-    await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
-    lastLogs = "";
-    logPre.innerHTML = "";
+    await clearLogs();
   } catch (e) {
     toast("Failed to clear logs", "bad");
   }
@@ -2051,6 +2060,7 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button. Pendant pressed sound/haptics
     // come AFTER the gate so a canceled prompt doesn't beep falsely.
+    const isFreshStart = (cmd === "start" && (_lastState || "").toUpperCase() !== "PAUSED");
     if (cmd === "start") {
       const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
       const ok = await deviceFaultGate(wsName, action);
@@ -2062,6 +2072,8 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     pendantVibrate(40);
     setTimeout(() => btn.classList.remove("pendant-pressed"), 400);
     try {
+      // Fresh run → fresh logs (skip on Resume; keep them mid-run).
+      if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
       const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
       await sendCmd(cmd, kwargs);
       pendantSuccessSound();
