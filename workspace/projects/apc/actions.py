@@ -104,15 +104,29 @@ def _placed_name(holder: str, slot: str, depth: int) -> str:
     return f"{holder}__{slot}__{depth}"
 
 
+def _slot_top_depth(ws, holder, slot):
+    """Depth of the topmost disc currently in (holder, slot), or -1 if the
+    slot is empty. Only the TOP disc is kept in the scene (buried ones are
+    removed for perf — see Sort), and its marker name encodes its depth, so
+    the count survives even though the lower discs are gone."""
+    prefix = f"{holder}__{slot}__"
+    depths = [int(n[len(prefix):]) for n in ws.components if n.startswith(prefix)]
+    return max(depths) if depths else -1
+
+
 def _next_drop(ws, holders):
     """Find the next free (holder_alias, slot, z, depth) across an ordered
     list of OUT holder aliases, filling slot A1→A7 and stacking z by Z_STEP
-    up to MAX_PER_SLOT, holder by holder. Returns None if all are full."""
+    up to MAX_PER_SLOT, holder by holder. Returns None if all are full.
+
+    Occupancy is read from the topmost surviving marker per slot (depth in
+    its name), so it works whether or not the buried discs were removed."""
     for holder in holders:
         for slot in SLOTS:
-            for depth in range(MAX_PER_SLOT):
-                if _placed_name(holder, slot, depth) not in ws.components:
-                    return holder, slot, round(depth * Z_STEP, 3), depth
+            top = _slot_top_depth(ws, holder, slot)
+            if top + 1 < MAX_PER_SLOT:
+                depth = top + 1
+                return holder, slot, round(depth * Z_STEP, 3), depth
     return None
 
 
@@ -428,12 +442,19 @@ class Sort(Action):
         # Place the held disc into the ordered slot with the stacked z lift.
         rcp[holder].place(slot, offset=[0, 0, z, 0, 0, 0], gravity_offset=PLACE_GRAV)
 
-        # The placed disc persists in the scene as a named marker so the
-        # next _next_drop sees this slot/depth as occupied (replan-safe
-        # occupancy). The robot's held disc (disc_<i>) is consumed.
+        # The robot's held disc (disc_<i>) is consumed. We keep only the
+        # TOP disc per slot in the scene: remove the previous top (depth-1)
+        # before adding this one. At ~3500 discs, keeping every buried disc
+        # would be thousands of meshes/edge-overlays/pickables dragging the
+        # viewer; the buried ones are invisible inside the stack anyway. The
+        # surviving top marker's name still encodes its depth, so occupancy
+        # (next free slot) stays scene-derived and replan-safe.
         held = _disc(disc)
         if held in ws.components:
             ws.remove_component(held)
+        prev = _placed_name(holder, slot, depth - 1)
+        if depth > 0 and prev in ws.components:
+            ws.remove_component(prev)
         ws.add_component(_placed_name(holder, slot, depth), {
             "type": "disc_22mm",
             "attach": {
