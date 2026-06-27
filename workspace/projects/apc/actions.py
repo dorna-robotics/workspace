@@ -436,7 +436,6 @@ class Sort(Action):
         holders = GOOD_HOLDERS if good else BAD_HOLDERS
 
         filled = self.ctx.meta.setdefault("filled", {})   # holder → n dropped
-        top    = self.ctx.meta.setdefault("top", {})       # (holder,slot) → disc name
         nxt = _next_drop(filled, holders)
         if nxt is None:
             rt.step(f"disc {disc + 1}: all {'good' if good else 'bad'} holders FULL")
@@ -445,22 +444,17 @@ class Sort(Action):
         rt.step(f"disc {disc + 1}: {'GOOD' if good else 'BAD'} → {holder}[{slot}] z={z}")
         rt.step(_progress_pct(self), level="progress")
 
-        # KEEP-TOP: remove the disc currently sitting in this slot BEFORE
-        # placing the new one. At ~3500 discs, keeping every buried disc
-        # would be thousands of meshes / edge-overlays / pickables dragging
-        # the viewer; the buried ones are invisible inside the stack anyway.
-        prev = top.get((holder, slot))
-        if prev and prev in ws.components:
-            ws.remove_component(prev)
-
-        # Place the held disc into the ordered slot with the stacked z lift.
-        # place() detaches disc_<i> from the gripper and re-attaches it into
-        # the slot — so disc_<i> BECOMES the placed disc (we add no marker).
+        # Place the held disc into the ordered slot, then DELETE it. Sorted
+        # discs are terminal — we don't keep any in the scene, so nothing
+        # accumulates (no meshes/pickables piling up over ~3500 discs). The
+        # fill counter, not the scene, tracks where the next disc goes.
+        # place() re-attaches the held disc_<i> into the slot; remove it.
         rcp[holder].place(slot, offset=[0, 0, z, 0, 0, 0], gravity_offset=PLACE_GRAV)
+        name = _disc(disc)
+        if name in ws.components:
+            ws.remove_component(name)
 
-        # Advance the counter + remember this disc as the slot's new top.
         filled[holder] = count + 1
-        top[(holder, slot)] = _disc(disc)
         return "sorted"
 
 
