@@ -98,45 +98,29 @@ PLACE_GRAV   = -5                              # suction presses on release
 _STEPS = 9                                     # per-disc steps for progress
 
 
-# ── Scene-derived ordered-drop helper ─────────────────────────────────
-# The framework does the placement for us: rcp[holder].place(slot) detaches
-# the held disc from the gripper and RE-ATTACHES it into the stack_holder's
-# slot anchor (the placed disc IS the held disc_<i>, now living in the
-# slot). So we never add our own marker — we ask the scene what disc is
-# sitting in a slot, via the recipe's solid_attached_to_anchor walk, and
-# read its z from the attach offset. No marker components, no name scheme,
-# no counter: the real placed disc is the source of truth (dynamic +
-# replan-safe). Reusable by any stacking project.
+# ── Ordered-drop position — a simple counter ──────────────────────────
+# Where the next disc goes is tracked by a per-holder fill COUNT in
+# ctx.meta["filled"] = {holder_alias: n_dropped}. From the count we derive
+# (slot, z) deterministically: slot = SLOTS[count // MAX_PER_SLOT], z =
+# (count % MAX_PER_SLOT) * Z_STEP; roll to the next holder when the current
+# is full. This is runtime state (lives in execute, never in planner
+# facts), so it's BT-legal — same place the random spawn z lives. It does
+# NOT survive a restart mid-batch (the count resets while the racks stay
+# full); fine here because a batch is run start-to-finish and sorted discs
+# are terminal. ctx.meta["top"] = {(holder, slot): disc_name} remembers the
+# current top disc per slot so keep-top can remove it before the next drop.
 
-def _slot_disc(rcp_holder, slot):
-    """The disc solid currently sitting in (this holder, slot), or None.
-    Walks the scene tree from the stack_holder on this adapter."""
-    component, solid_name = rcp_holder._resolve_attached_component()  # the stack_holder
-    return rcp_holder.solid_attached_to_anchor(component.assembly[solid_name], slot)
-
-
-def _slot_top_z(rcp_holder, slot):
-    """Top z of the disc in (holder, slot), or None if empty — from the
-    placed disc's own attach offset in the scene."""
-    sol = _slot_disc(rcp_holder, slot)
-    if sol is None:
-        return None
-    off = sol.parent.get("offset")
-    return off[2] if off else 0.0
-
-
-def _next_drop(recipes, holders):
-    """Next free (holder_alias, slot, z) across an ordered list of OUT
-    holders, filling slot A1→A7 and stacking z by Z_STEP up to
-    MAX_PER_SLOT, holder by holder. Returns None if all are full. Occupancy
-    is read from the real placed disc in each slot (scene-derived)."""
-    span = (MAX_PER_SLOT - 1) * Z_STEP
+def _next_drop(filled, holders):
+    """Next (holder_alias, slot, z, count) from the per-holder fill counts.
+    Fills slot A1→A7, stacking z by Z_STEP up to MAX_PER_SLOT, holder by
+    holder. Returns None when every holder is full."""
+    cap = len(SLOTS) * MAX_PER_SLOT
     for holder in holders:
-        for slot in SLOTS:
-            top = _slot_top_z(recipes[holder], slot)
-            z = 0.0 if top is None else round(top + Z_STEP, 3)
-            if z <= span + 1e-9:
-                return holder, slot, z
+        count = filled.get(holder, 0)
+        if count < cap:
+            slot = SLOTS[count // MAX_PER_SLOT]
+            z = round((count % MAX_PER_SLOT) * Z_STEP, 3)
+            return holder, slot, z, count
     return None
 
 
@@ -451,30 +435,32 @@ class Sort(Action):
         good = (c is not None) and (C_MIN <= c <= C_MAX)
         holders = GOOD_HOLDERS if good else BAD_HOLDERS
 
-        nxt = _next_drop(rcp, holders)
+        filled = self.ctx.meta.setdefault("filled", {})   # holder → n dropped
+        top    = self.ctx.meta.setdefault("top", {})       # (holder,slot) → disc name
+        nxt = _next_drop(filled, holders)
         if nxt is None:
             rt.step(f"disc {disc + 1}: all {'good' if good else 'bad'} holders FULL")
             return False
-        holder, slot, z = nxt
+        holder, slot, z, count = nxt
         rt.step(f"disc {disc + 1}: {'GOOD' if good else 'BAD'} → {holder}[{slot}] z={z}")
         rt.step(_progress_pct(self), level="progress")
 
-        # KEEP-TOP: drop the disc currently sitting in this slot BEFORE
+        # KEEP-TOP: remove the disc currently sitting in this slot BEFORE
         # placing the new one. At ~3500 discs, keeping every buried disc
         # would be thousands of meshes / edge-overlays / pickables dragging
         # the viewer; the buried ones are invisible inside the stack anyway.
-        # We removed the disc, not a marker — the framework's place() below
-        # re-attaches the held disc_<i> into the slot, so the new top z
-        # lives in the scene and occupancy stays scene-derived.
-        prev = _slot_disc(rcp[holder], slot)
-        if prev is not None:
-            ws.remove_component(prev.component)
+        prev = top.get((holder, slot))
+        if prev and prev in ws.components:
+            ws.remove_component(prev)
 
         # Place the held disc into the ordered slot with the stacked z lift.
-        # This detaches disc_<i> from the gripper and re-attaches it into the
-        # slot — so disc_<i> BECOMES the placed disc. We do NOT remove it and
-        # do NOT add any marker (that was a duplicate at the wrong anchor).
+        # place() detaches disc_<i> from the gripper and re-attaches it into
+        # the slot — so disc_<i> BECOMES the placed disc (we add no marker).
         rcp[holder].place(slot, offset=[0, 0, z, 0, 0, 0], gravity_offset=PLACE_GRAV)
+
+        # Advance the counter + remember this disc as the slot's new top.
+        filled[holder] = count + 1
+        top[(holder, slot)] = _disc(disc)
         return "sorted"
 
 
