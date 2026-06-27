@@ -40,6 +40,8 @@ NOTE: no tool swapping — the suction gripper is mounted on the robot
 
 from __future__ import annotations
 
+import random
+
 from workspace.bt import Action, predicate
 
 
@@ -76,8 +78,9 @@ anode_free  = predicate("anode_free")    # anode/cathode station is idle
 # ── Exposed, tweakable parameters ─────────────────────────────────────
 IN_HOLDERS  = [1, 2]                            # draw from in_1, then in_2
 SLOTS       = [f"A{c}" for c in range(1, 7 + 1)]  # A1 .. A7, in order
-Z_STEP      = 0.254                            # per-disc stack lift (mm)
+Z_STEP      = 0.254                            # per-disc out-stack lift (mm)
 MAX_PER_SLOT = 225                             # discs per slot before next slot
+IN_Z_MAX    = 57.15                            # max random spawn lift (mm) at in slot
 
 # Good/bad capacitance window (Farads). Defaulted WIDE so everything
 # currently lands in "good" — set the real spec later.
@@ -230,7 +233,9 @@ class Start(Action):
 
 
 class Create(Action):
-    """Spawn a disc on demand at the current IN holder (z=0)."""
+    """Spawn a disc on demand at the current IN holder, lifted a random z
+    (like the runtime example — the disc could sit anywhere in the
+    magazine)."""
     params   = ["disc"]
     duration = 2
     resource = "robot"
@@ -249,7 +254,10 @@ class Create(Action):
         if name in ws.components:
             ws.remove_component(name)
         in_h, slot = _in_slot(disc)   # this disc's OWN in-slot (no piling)
-        rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}]")
+        # Random spawn height — runtime only, the plan never depends on it.
+        # The pick walks the tree, so the lift is honoured automatically.
+        z = round(random.uniform(0, IN_Z_MAX), 2)
+        rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}]+{z}")
         rt.step(_progress_pct(self), level="progress")
         ws.add_component(name, {
             "type": "disc_22mm",
@@ -259,7 +267,7 @@ class Create(Action):
                 "parent_anchor": slot,
                 "child_solid":   "body",
                 "child_anchor":  "center",
-                "offset":        [0, 0, 0, 0, 0, 0],
+                "offset":        [0, 0, z, 0, 0, 0],
             },
         })
         return "created"
