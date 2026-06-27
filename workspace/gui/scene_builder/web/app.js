@@ -169,6 +169,7 @@
 
       // grid: 6000 × 6000, theme-aware
       let _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, DARK_GRID.minor, DARK_GRID.major);
+      _sbGridMesh.visible = false;   // grid off by default
       scene.add(_sbGridMesh);
 
       let _sbCurrentTheme = localStorage.getItem(THEME_KEY) || "dark";
@@ -181,10 +182,11 @@
         _sbGridMesh.material.dispose();
         const gc = isLight ? LIGHT_GRID : DARK_GRID;
         _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, gc.minor, gc.major);
+        _sbGridMesh.visible = _sbShowGrid;   // preserve toggle state across theme rebuild
         scene.add(_sbGridMesh);
         markDirty();
       }
-      let _sbShowGrid = true;
+      let _sbShowGrid = false;   // grid off by default
       sbApplyTheme(_sbCurrentTheme);
       window.addEventListener("storage", (e) => {
         if (e.key === THEME_KEY) sbApplyTheme(e.newValue || "dark");
@@ -197,9 +199,9 @@
         const btn = document.getElementById("btnGrid");
         if (btn) btn.classList.toggle("active", _sbShowGrid);
       };
-      // Grid starts active
+      // Reflect the (default-off) grid state on the button
       const _initGridBtn = document.getElementById("btnGrid");
-      if (_initGridBtn) _initGridBtn.classList.add("active");
+      if (_initGridBtn) _initGridBtn.classList.toggle("active", _sbShowGrid);
 
       // Per-object edge outlines (the black lines around each component).
       // On by default; addEdgeOverlay seeds new objects from this flag.
