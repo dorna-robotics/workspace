@@ -697,6 +697,7 @@ class Recipe:
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
         soft_approach=False,
+        compliant=True,
         **kwargs,
     ):
         """Compute the motion-parameter dict that ``pick`` (and friends) feed to ``touch``.
@@ -723,6 +724,19 @@ class Recipe:
             tool_tip_z_offset: Shift tool tip (tip-to-TCP length) by this Z (mm).
             soft_approach: If True, insert a second approach waypoint just above
                 the load for a vertical final descent (recommended for racks).
+            compliant: How the grabbed item seats on the tool, which decides
+                whether ``tool_tcp_z_offset`` shifts the item's *attach*
+                position:
+                  * True (default) — compliant tool (suction cup, soft
+                    gripper): the item seats on the tool face regardless of
+                    how far the tool over-drove, so the attach offset is just
+                    ``height_load`` and ``tool_tcp_z_offset`` only affects the
+                    motion (the over-travel is absorbed, not transferred).
+                  * False — rigid grab (pin, chuck that bottoms out): the
+                    over-drive really moves the item, so it's folded into the
+                    attach offset (``height_load + tool_tcp_z_offset``).
+                ``tool_tcp_z_offset`` drives the motion identically either
+                way; this flag only changes where the item ends up attached.
             **kwargs: Any attribute on ``self`` named here is overwritten (e.g.
                 ``speed_factor``, ``motion_type``).
 
@@ -796,13 +810,19 @@ class Recipe:
             "offset": [0, 0, tool_tcp_z_offset, 0, 180, 0],
         }
         if attachment:
+            # A compliant tool (suction/soft) seats the item on its face no
+            # matter how far it over-drove, so the over-travel does NOT shift
+            # the item's attach position — drop tool_tcp_z_offset from the
+            # offset. A rigid grab folds it in (the over-drive really moves
+            # the item). The motion itself used tool_tcp_z_offset either way.
+            attach_z = height_load + (0 if compliant else tool_tcp_z_offset)
             attach = [
                 load_list[0],
                 {
                     "parent": tool_body,
                     "parent_anchor": "tcp",
                     "child_anchor": "center",
-                    "offset": [0, 0, height_load + tool_tcp_z_offset, 0, 180, 0],
+                    "offset": [0, 0, attach_z, 0, 180, 0],
                     "offset_frame": "parent",
                 },
             ]
@@ -849,6 +869,7 @@ class Recipe:
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
         soft_approach=False,
+        compliant=True,
         **kwargs,
     ):
         """Pick the item at ``anchor``: approach, close gripper, attach, exit.
@@ -872,6 +893,12 @@ class Recipe:
         dense racks — the straight-down move avoids hitting
         neighbouring slots.
 
+        ``compliant`` (default True) controls whether ``tool_tcp_z_offset``
+        shifts where the item attaches: True for suction/soft tools (the
+        item seats on the tool face, over-drive ignored); False for rigid
+        grabs (over-drive folded into the attach offset). See
+        ``pick_setting`` for the full explanation.
+
         Raises:
             RecipeError: If no tool is attached
                 (``"no tool attached to the robot"``).
@@ -892,7 +919,7 @@ class Recipe:
             exit=exit, attachment=attachment, trigger_io=trigger_io,
             padding=padding, gap=gap,
             tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
-            soft_approach=soft_approach, **kwargs,
+            soft_approach=soft_approach, compliant=compliant, **kwargs,
         )
         if not pick_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
