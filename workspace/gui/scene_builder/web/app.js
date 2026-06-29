@@ -169,7 +169,7 @@
 
       // grid: 6000 × 6000, theme-aware
       let _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, DARK_GRID.minor, DARK_GRID.major);
-      _sbGridMesh.visible = false;   // grid off by default
+      _sbGridMesh.visible = true;   // grid on by default
       scene.add(_sbGridMesh);
 
       let _sbCurrentTheme = localStorage.getItem(THEME_KEY) || "dark";
@@ -186,7 +186,7 @@
         scene.add(_sbGridMesh);
         markDirty();
       }
-      let _sbShowGrid = false;   // grid off by default
+      let _sbShowGrid = true;   // grid on by default
       sbApplyTheme(_sbCurrentTheme);
       window.addEventListener("storage", (e) => {
         if (e.key === THEME_KEY) sbApplyTheme(e.newValue || "dark");
@@ -199,7 +199,7 @@
         const btn = document.getElementById("btnGrid");
         if (btn) btn.classList.toggle("active", _sbShowGrid);
       };
-      // Reflect the (default-off) grid state on the button
+      // Reflect the grid state on the button (on by default)
       const _initGridBtn = document.getElementById("btnGrid");
       if (_initGridBtn) _initGridBtn.classList.toggle("active", _sbShowGrid);
 

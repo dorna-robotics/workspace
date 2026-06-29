@@ -123,11 +123,9 @@ LANDING_HTML = """<!DOCTYPE html>
     /* Per-card accent colors */
     .card-orchestrator .card-icon { background: rgba(10,132,255,0.12); color: var(--accent); }
     .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
-    .card-lab .card-icon { background: rgba(255,159,10,0.12); color: var(--amber); }
     .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
     [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
     [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
-    [data-theme="light"] .card-lab .card-icon { background: rgba(199,124,10,0.08); }
     [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
 
     @media (max-width: 520px) {
@@ -178,10 +176,6 @@ LANDING_HTML = """<!DOCTYPE html>
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
           <div class="card-text"><div class="card-label">Scene Builder</div><div class="card-hint">Design workspace layout</div></div>
         </a>
-        <a class="card card-lab" id="cardLab">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M12 12v6"/><path d="M8 22h8"/><path d="M7 8H3"/><path d="M21 8h-4"/><path d="M12 4V2"/></svg></div>
-          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot control panel</div></div>
-        </a>
         <a class="card card-jupyter" id="cardJupyter">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
           <div class="card-text"><div class="card-label">Jupyter</div><div class="card-hint">Notebooks &amp; development</div></div>
@@ -189,7 +183,6 @@ LANDING_HTML = """<!DOCTYPE html>
       </div>
       <script>
         var h = window.location.hostname;
-        document.getElementById("cardLab").href = "http://" + h + "/";
         document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
       </script>
     </div>
