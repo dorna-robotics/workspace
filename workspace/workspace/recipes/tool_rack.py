@@ -9,7 +9,6 @@ class ToolRack(Recipe):
         lmove_vaj=[150, 350, 1500],
         # calibration
         calibrate_abc=True,
-        calibration_target_offset=[0, 0, 20, 0, 0, 0],
     )
 
     def __init__(self, workspace, core, component, **kwargs):
