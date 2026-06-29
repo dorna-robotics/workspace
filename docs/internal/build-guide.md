@@ -14,6 +14,53 @@ sudo pip3 install --break-system-packages cython
 
 ---
 
+## Quick reference — provisioning a NEW Pi
+
+The whole "I have a fresh Pi, get it running licensed" flow, split by where
+each step runs. Detailed versions are sections 1–3 below.
+
+**A) On the SOURCE / admin Pi — build the release** (skip if the
+`workspace-release` repo is already current for this version):
+
+```bash
+cd /home/dorna/Downloads/workspace
+git pull                                   # latest private source
+bash scripts/build_release.sh              # compile protected.txt → .so, strip secrets
+cd /home/dorna/Downloads/workspace-release
+git add -A && git commit -m "Release vX.Y.Z" && git push
+```
+
+**B) On the NEW Pi — install the release** (after flashing Raspberry Pi OS,
+booting, and enabling SSH + network):
+
+```bash
+cd /home/dorna/Downloads
+git clone https://github.com/dorna/workspace-release.git workspace-release
+cd workspace-release/workspace
+sudo pip3 install --break-system-packages -e .
+```
+
+**C) Back on the SOURCE / admin Pi — license the new Pi** (the hardware-key
+step; the secret key never leaves this machine):
+
+```bash
+cd /home/dorna/Downloads/workspace
+bash scripts/license_remote.sh <new-pi-ip> [tier]   # reads serial over SSH, signs locally,
+                                                    # writes /etc/dorna/.license on the Pi
+```
+
+**D) On the NEW Pi — verify:**
+
+```bash
+sudo python3 -m workspace.license verify            # → "License OK. Tier: default"
+```
+
+That's it — the Pi is licensed to its own hardware serial and runs only
+compiled `.so` for protected files. Repeat C+D for every additional Pi
+(the release build in A is shared across all of them).
+
+---
+
 ## 1. Build a release
 
 From the private repo:
