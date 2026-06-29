@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 15570
+      "count": 15552
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5628,
+      "count": 5622,
       "max": [
         8.077349662780762,
         5.577014446258545,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5628
+      "count": 5622
     },
     {
       "type": "SCALAR",
@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 16394
+      "byteLength": 16488
     },
     {
       "buffer": 0,
-      "byteOffset": 16394,
-      "byteLength": 17756
+      "byteOffset": 16488,
+      "byteLength": 17821
     }
   ],
   "buffers": [
     {
       "uri": "rack_falcon_15ml.glb.bin",
-      "byteLength": 34150
+      "byteLength": 34309
     }
   ],
   "materials": [

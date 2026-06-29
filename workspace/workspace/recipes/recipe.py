@@ -4,6 +4,7 @@ from copy import deepcopy
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from dorna2 import Pose
+from workspace.components.probe_calibration import ProbeCalibration
 
 
 class RecipeError(Exception):
@@ -32,11 +33,7 @@ class Recipe:
         calibration_name=None,
         calibration=True,
         calibrate_abc=False,
-        calibration_targets=None,  # auto-discovers clb_ anchors if None
-        calibration_target_offset=[0, 0, 8, 0, 0, 0],
-        calibration_tool_solid_name="body",
-        calibration_tool_anchor="tcp",
-        calibration_tool_offset=[0, 0, 0, 0, 0, 0],
+        calibration_targets=None,   # None auto-detects every clb_ anchor
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -95,17 +92,7 @@ class Recipe:
             self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
         else:
             self.calibration_name = prm["calibration_name"]
-        if prm["calibration_targets"] is None:
-            self.calibration_targets = {
-                k: [a for a in component.assembly[k].anchors if a.startswith("clb_")]
-                for k in component.assembly
-            }
-        else:
-            self.calibration_targets = prm["calibration_targets"]
-        self.calibration_target_offset = prm["calibration_target_offset"]
-        self.calibration_tool_solid_name = prm["calibration_tool_solid_name"]
-        self.calibration_tool_anchor = prm["calibration_tool_anchor"]
-        self.calibration_tool_offset = prm["calibration_tool_offset"]
+        self.calibration_targets = prm["calibration_targets"]
 
         # find the reference joints used later for every IK
         J, C = self.core.IK(
@@ -1547,76 +1534,40 @@ class Recipe:
 
     # ── Calibration ─────────────────────────────────────────────────────────
 
-    def calibrate_anchor(self, target_solid, target_anchor, target_offset, tool_solid, tool_anchor, tool_offset):
-        """Guided single-point calibration for one anchor. Interactive — prompts operator.
+    def _resolve_calibration_targets(self, calibration_targets):
+        """Resolve the calibration target spec to a flat list of clb anchors.
 
-        Flow:
-            1. Moves the robot to the computed pose (IK-solved).
-            2. Prompts operator to nudge the robot onto the real calibration point.
-            3. Records the corrected joint values and stores the offset in
-               ``core.calibration`` under ``self.calibration_name``.
-
-        Normally called by ``calibrate()`` rather than directly.
+        None -> auto-detect every ``clb_`` anchor on the component body.
+        str  -> that single anchor.
+        list -> that list, used as-is.
         """
-        rt = self.rt
+        if calibration_targets is None:
+            body = self.component.assembly["body"]
+            return [a for a in body.anchors if a.startswith("clb_")]
+        if isinstance(calibration_targets, str):
+            return [calibration_targets]
+        return list(calibration_targets)
 
-        J, C = self.core.IK(
-            target_solid=target_solid,
-            target_anchor=target_anchor,
-            target_offset=target_offset,
-            tool_solid=tool_solid,
-            tool_anchor=tool_anchor,
-            tool_offset=tool_offset,
-            base_distance=self.base_distance,
-            rail_step=self.rail_step,
-            rail_span=self.rail_span,
-            left_approach=self.left_approach,
-            ref_joints=self.ref_joints,
+    def calibrate(self, calibration_targets=None):
+        """Probe-calibrate this recipe.
+
+        The correct probe tool must already be mounted.
+        Resolves the clb anchors to calibrate, then hands each to
+        ProbeCalibration, which does the full approach + in-pocket probing +
+        math and stores one raw/corrected point per anchor under this recipe's
+        calibration_name.
+        """
+        if self.core.current_tool() is None:
+            raise RecipeError("no probe tool attached to the robot")
+
+        targets = self._resolve_calibration_targets(
+            calibration_targets if calibration_targets is not None else self.calibration_targets
         )
-        if C == 2:
-            rt.checkpoint()
-            rt.jmove(
-                joint=J,
-                vel=self.jmove_vaj[0] * self.speed_factor,
-                accel=self.jmove_vaj[1] * self.speed_factor,
-                jerk=self.jmove_vaj[2] * self.speed_factor,
-            )
-        else:
-            raise RecipeError("could not find a valid approach to the calibration point")
 
-        rt.checkpoint()
-        input("2- 🎯 take the robot to the calibration point...")
-
-        corrected_joint_values = rt.joint()
-        corrected_xyz_values = tool_solid.pose(anchor=tool_anchor, offset=tool_offset)
-        raw_xyz_values = target_solid.pose(anchor=target_anchor, offset=[0, 0, 0, 0, 0, 0])
-
-        rt.checkpoint()
-        input("3- ⬆️ take the robot out of the calibration point...")
-
-        self.core.calibration.add_point(raw_xyz_values, corrected_xyz_values, threshold=1e-3, dict_name=self.calibration_name)
+        pc = ProbeCalibration(self)
+        for anchor in targets:
+            # ProbeCalibration owns the whole approach: its gross staging move
+            # uses the probe tool's tcp-anchor orientation, unlike above()
+            # which is hardcoded tool-down and wrong for a sideways rod.
+            pc.calibrate_clb_anchor(anchor)
         return True
-
-    def calibrate(self, calibration_targets={}):
-        """Run guided calibration on every anchor in ``calibration_targets``.
-
-        ``calibration_targets`` is ``{solid_name: [anchor_name, ...]}``. If not
-        provided, ``self.calibration_targets`` is used (usually auto-discovered
-        from ``clb_*`` anchors on the component). Each anchor triggers a
-        ``calibrate_anchor`` prompt — interactive.
-        """
-        tool = self.core.current_tool()
-        tool_solid = tool.assembly[self.calibration_tool_solid_name]
-
-        _calibration_targets = calibration_targets or self.calibration_targets
-        for solid in _calibration_targets:
-            calibration_target_solid = self.component.assembly[solid]
-            for anchor in _calibration_targets[solid]:
-                self.calibrate_anchor(
-                    target_solid=calibration_target_solid,
-                    target_anchor=anchor,
-                    target_offset=self.calibration_target_offset,
-                    tool_solid=tool_solid,
-                    tool_anchor=self.calibration_tool_anchor,
-                    tool_offset=self.calibration_tool_offset,
-                )

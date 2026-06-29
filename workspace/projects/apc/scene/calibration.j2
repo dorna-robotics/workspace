@@ -1,0 +1,194 @@
+# apc — CALIBRATION layout on the shared core_500 chassis.
+#
+# This is scene/layout.j2 with ONE change: the robot carries the probe rod
+# (probe_vertical_100) on the tool changer instead of the working suction
+# gripper. Everything else — anode, disc adapters, plates — is identical so
+# every recipe's IK (and therefore its calibration_name) matches production
+# exactly. Load it as [scene/core_500.j2, scene/calibration.j2].
+#
+# Keep in sync with layout.j2 if the production layout moves a station.
+
+# ── Probe tool (calibration only) ───────────────────────────────────
+# probe_vertical_100 — the 100 mm vertical rod. Calibration solves IK to its
+# "tcp" anchor; this is the only tool mounted for calibration.
+probe_vertical_100_1:
+  type: "probe_vertical_100"
+  has_tool_changer: true
+  attach:
+    parent_name: "core"
+    parent_solid: "tool_changer_robot_side"
+    parent_anchor: "tool_changer_connection"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_changer_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Multimeter (BK 879B) ────────────────────────────────────────────
+# Sim by default; for the real meter set port + simulation:false (see
+# device-guide §9: ls -d /dev/serial/by-id/* for the stable path).
+multi_meter_1:
+  type: "multi_meter_bk879b"
+  port: ""
+  simulation: true
+  critical: true
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "E10"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Anode ───────────────────────────────────────────────────────────
+anode_1:
+  type: "anode"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D19"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── Rotating cylinder + cathode (cathode rides the plunger) ─────────
+rotating_cylinder_mkb1630_1:
+  type: "rotating_cylinder_mkb1630"
+  output_enable: [[0, 1, 0]]
+  output_disable: [[0, 0, 0]]
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "F16"
+    child_solid: "housing"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+cathode_1:
+  type: "cathode"
+  attach:
+    parent_name: "rotating_cylinder_mkb1630_1"
+    parent_solid: "plunger"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Inspection (horizontal vision station) ──────────────────────────
+inspection_horizontal_1:
+  type: "inspection_horizontal"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "A2"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Disc adapters on plate 4 ────────────────────────────────────────
+# Each disc holder is an adapter_disc_holder mounted on a plate hole,
+# with a stack_holder on the adapter's "place" anchor. 2 IN + 3 OUT.
+# The adapters carry the clb_ anchors we probe.
+
+# --- IN source 1 ---
+adapter_disc_in_1:
+  type: "adapter_disc_holder"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "J5"
+    child_solid: "body"
+    child_anchor: "hole_1"
+    offset: [0, 0, 0, 0, 0, 0]
+
+stack_holder_disc_in_1:
+  type: "stack_holder_disc_in"
+  attach:
+    parent_name: "adapter_disc_in_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# --- IN source 2 ---
+adapter_disc_in_2:
+  type: "adapter_disc_holder"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "H5"
+    child_solid: "body"
+    child_anchor: "hole_1"
+    offset: [0, 0, 0, 0, 0, 0]
+
+stack_holder_disc_in_2:
+  type: "stack_holder_disc_in"
+  attach:
+    parent_name: "adapter_disc_in_2"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# --- OUT good 1 ---
+adapter_disc_out_good_1:
+  type: "adapter_disc_holder"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "F5"
+    child_solid: "body"
+    child_anchor: "hole_1"
+    offset: [0, 0, 0, 0, 0, 0]
+
+stack_holder_disc_out_good_1:
+  type: "stack_holder_disc_out"
+  attach:
+    parent_name: "adapter_disc_out_good_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# --- OUT good 2 ---
+adapter_disc_out_good_2:
+  type: "adapter_disc_holder"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D5"
+    child_solid: "body"
+    child_anchor: "hole_1"
+    offset: [0, 0, 0, 0, 0, 0]
+
+stack_holder_disc_out_good_2:
+  type: "stack_holder_disc_out"
+  attach:
+    parent_name: "adapter_disc_out_good_2"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# --- OUT bad 1 (rejected discs) ---
+adapter_disc_out_bad_1:
+  type: "adapter_disc_holder"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "B5"
+    child_solid: "body"
+    child_anchor: "hole_1"
+    offset: [0, 0, 0, 0, 0, 0]
+
+stack_holder_disc_out_bad_1:
+  type: "stack_holder_disc_out"
+  attach:
+    parent_name: "adapter_disc_out_bad_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
