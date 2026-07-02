@@ -142,8 +142,15 @@ class Start(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
+        core = self.ctx.core          # the Core component
+
         rt.motor(1)
-        rcp["gripper"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+        # set axis + go home via the generic "robot" recipe — robot-level
+        # calls (axis homing, park) live on one stable handle, not a
+        # borrowed station recipe.
+        rcp["robot"].set_axis_with_stop(core.rail_cfg)
+        rcp["robot"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+
         return "started"
 
 
@@ -306,7 +313,7 @@ class Park(Action):
 
     def execute(self):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        rcp["gripper"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 
