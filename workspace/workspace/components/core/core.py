@@ -1915,7 +1915,10 @@ class SimulationAPI:
         return 2
 
     def home_with_stop(self, **kwargs):
-        return 2
+        return True
 
     def home_with_encoder_index(self, **kwargs):
-        return 2
+        return True
+    
+    def is_homed(self, index=6):
+        return True

@@ -140,12 +140,14 @@ class Recipe:
             p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
             duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
         )
-        rt.delay(1)
-        return api.home_with_stop(
-            index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
-        )
 
-    def set_axis_with_encoder(self, axis_cfg):
+        if not rt.is_homed(index=axis_cfg["axis"]):
+            rt.delay(1)
+            return api.home_with_stop(
+                index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
+            )
+
+    def set_axis_with_encoder(self, axis_cfg, dir=-1):
         """Init an axis and home it against an encoder index (feeder-style)."""
         api = self.core.robot_api
         rt = self.rt
@@ -161,10 +163,12 @@ class Recipe:
             p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
             duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
         )
-        rt.delay(1)
-        return api.home_with_encoder_index(
-            index=axis_cfg["axis"], val=axis_cfg["offset"],
-        )
+        if not rt.is_homed(index=axis_cfg["axis"]):
+            rt.delay(1)
+            return api.home_with_encoder_index(
+                index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir
+            )
+
 
     # ── Solid / tool queries ────────────────────────────────────────────────
 
