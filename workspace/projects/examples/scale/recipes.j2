@@ -1,13 +1,5 @@
 {%- set sf = 20 -%}
 
-# Robot (generic): base Recipe bound to the robot itself (core's tool
-# changer flange). The stable handle for ROBOT-level calls Start/Park make
-# — park(joint=...), motor, axis homing (set_axis_with_stop) — so those
-# read the same across projects instead of borrowing a station recipe.
-robot:
-  class: workspace.recipes.recipe.Recipe
-  kwargs: {component: core, target_solid_name: tool_changer_robot_side, target_anchor: tool_changer_connection, speed_factor: {{ sf }}}
-
 # 4-finger gripper, parked in the tool rack.
 gripper:
   class: workspace.recipes.tool_rack.ToolRack

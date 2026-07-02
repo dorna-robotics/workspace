@@ -214,10 +214,9 @@ class Start(Action):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
         rt.motor(1)
-        # Move to a known ready pose. The generic "robot" recipe is the
-        # stable handle for robot-level calls (park/motor/axis homing) —
-        # same across projects, no borrowing a station recipe.
-        rcp["robot"].park(joint=self.START_JOINTS, has_motion_plan=True)
+        # Move to a known ready pose (Recipe.park is a base move-to-joint;
+        # apc has no gripper/tool recipe, so we borrow "inspector").
+        rcp["inspector"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 
 
@@ -479,11 +478,10 @@ class Park(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
-        # Move to the park pose, then cut motor via the generic "robot"
-        # recipe. park is a BASE Recipe method (drives the robot to a joint
-        # pose with collision-aware planning + a checkpoint so Pause/Resume
-        # stays live) — the "robot" alias is the stable handle for it.
-        rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        # Move to the park pose, then cut motor. Recipe.park is a base
+        # move-to-joint (collision-aware + a checkpoint so Pause/Resume stays
+        # live); apc has no gripper/tool recipe, so we borrow "inspector".
+        rcp["inspector"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 
