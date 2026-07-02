@@ -128,9 +128,10 @@ def setup(**kwargs):
 
 
 class Start(Action):
-    params   = []
-    duration = 5
-    resource = "robot"
+    params      = []
+    duration    = 5
+    resource    = "robot"
+    HOME_JOINTS = [0, 45, -90, 0, -45, 0, 100]
 
     def pre(self):
         return ~started()
@@ -148,7 +149,7 @@ class Start(Action):
         # set axis
         rcp["gripper"].set_axis_with_stop(core.rail_cfg)
         # go to home
-        rcp["gripper"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+        rcp["gripper"].park(joint=self.HOME_JOINTS, has_motion_plan=True)
 
         return "started"
 
