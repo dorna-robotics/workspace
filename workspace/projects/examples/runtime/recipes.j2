@@ -1,5 +1,12 @@
 {%- set sf = 20 -%}
 
+# Robot (generic): base Recipe with NO component. Owns no station, does no
+# boot-time IK — the stable handle for robot-level Start/Park calls
+# (park(joint=...), motor). Same across every project.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
 # Suction tool, parked in the tool rack. Actions that move discs set
 # ``tool = "gripper"`` so the framework swaps to it.
 gripper:

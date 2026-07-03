@@ -1,5 +1,12 @@
 {%- set sf = 20 -%}
 
+# Robot (generic): base Recipe with NO component. Owns no station, does no
+# boot-time IK — the stable handle for robot-level Start/Park calls
+# (park(joint=...), motor). Same across every project.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
 # Disc in/out holders. Each Rack recipe targets the adapter_disc_holder
 # and the resolver walks down to the stack_holder sitting on it (at the
 # adapter's "place" anchor). Mirrors the runtime example's disc recipes.

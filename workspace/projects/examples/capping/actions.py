@@ -104,7 +104,7 @@ class Start(Action):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
         rt.motor(1)
-        rcp["gripper"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
+        rcp["robot"].park(joint=[0, 45, -90, 0, -45, 0, 100], has_motion_plan=True)
         return "started"
 
 
@@ -203,7 +203,7 @@ class Park(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
-        rcp["gripper"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 
