@@ -1,9 +1,7 @@
 """capping example — Start → Cap(t) × N → Decap(t) × N → Park.
 
 Demonstrates the full cap + decap roundtrip with the decapper
-component and the 4-finger gripper. Same pattern as
-``projects_old/printer/workflow.py`` and
-``projects_old/syringe/main.ipynb``, split into two BT actions so
+component and the 4-finger gripper, split into two BT actions so
 the planner schedules them independently:
 
   Cap(t):   tube_rack → decapper, pick cap, screw on, return to rack

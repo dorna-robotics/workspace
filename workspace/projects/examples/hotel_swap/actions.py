@@ -85,7 +85,6 @@ class Swap(Action):
     """Swap the plate pair at ``level`` between hotel_a and hotel_b.
 
     Uses both holders as temporary stash slots. 8 motions total.
-    Same pattern as projects_old/syringe/main.ipynb's plate handling.
     """
 
     params    = ["level"]

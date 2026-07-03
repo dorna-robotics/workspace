@@ -70,8 +70,7 @@ class Start(Action):
 class FeedCap(Action):
     """Transfer one cap from the feeder to the cap holder.
 
-    Same pattern as ``sample_prep/actions.py:CapFed`` and
-    ``projects_old/syringe/main.ipynb``:
+    Same pattern as ``sample_prep/actions.py:CapFed``:
     above → present_cap → pick → place.
     """
 

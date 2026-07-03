@@ -110,9 +110,5 @@ related actions for the full pattern.
 
 - [`feeder/`](../feeder/) — feeder + cap holder + suction tool (the
   other example in this folder, same fixture footprint)
-- [`projects_old/printer/workflow.py`](../../../../workspace/projects_old/printer/workflow.py:110) —
-  the source pattern this example is split from
-- [`projects_old/syringe/main.ipynb`](../../../../workspace/projects_old/syringe/main.ipynb) —
-  the dispense + cap variant
 - [`recipe-guide.md`](../../../../docs/recipe-guide.md) — §8 Catalog
   entry for `Decapper`

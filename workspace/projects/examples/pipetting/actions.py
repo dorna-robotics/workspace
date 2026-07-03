@@ -92,11 +92,7 @@ class Start(Action):
 
 
 class Transfer(Action):
-    """One pipette transfer: pick tip → aspirate from source → dispense in dest → eject tip.
-
-    Same pattern as the pipetting block in
-    ``projects_old/printer/workflow.py``.
-    """
+    """One pipette transfer: pick tip → aspirate from source → dispense in dest → eject tip."""
 
     params    = ["transfer"]
     duration  = 25

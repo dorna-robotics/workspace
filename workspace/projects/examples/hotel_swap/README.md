@@ -81,5 +81,4 @@ rule 6.
 
 - [`feeder/`](../feeder/) — cap feeder + suction tool → cap holder
 - [`capping/`](../capping/) — full cap + decap roundtrip
-- [`projects_old/syringe/main.ipynb`](../../../../workspace/projects_old/syringe/main.ipynb) — the source pattern this example is extracted from (hotel + sbs_adapter + plate handling)
 - [`recipe-guide.md`](../../../../docs/recipe-guide.md) — §8 catalog entries for `Hotel` and `Adapter`

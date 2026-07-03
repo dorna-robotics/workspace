@@ -6,9 +6,8 @@ is fixed (A1); destinations walk A2 → A3 → A4 → A5. Each transfer
 uses a fresh tip from the tip rack and ejects the used tip into a
 waste bin.
 
-Lifted from the pipetting block in
-`projects_old/printer/workflow.py`, with the falcon rack changed
-from partially-loaded to fully-loaded (20 tubes).
+A standalone pipette-transfer workflow with the falcon rack
+fully loaded (20 tubes).
 
 ## What this teaches
 
@@ -83,6 +82,5 @@ rule 6.
 
 ## See also
 
-- [`projects_old/printer/workflow.py`](../../../../workspace/projects_old/printer/workflow.py) — source pattern, including the printer steps this example strips out
 - [`feeder/`](../feeder/), [`capping/`](../capping/), [`hotel_swap/`](../hotel_swap/) — other examples on the same fixture footprint
 - [`recipe-guide.md`](../../../../docs/recipe-guide.md) — §8 catalog entry for `PipettingSite`
