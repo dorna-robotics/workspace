@@ -33,9 +33,11 @@ The DROP is ORDERED by a fill counter (ctx.meta["filled"]):
   * within a slot: z starts at 0 and steps by Z_STEP per disc, up to
     MAX_PER_SLOT discs.
 Every sorted disc is DELETED right after place() — sorted discs are
-terminal, so nothing accumulates in the scene. Start additionally sweeps
-any disc_* component left over from a previous run that was killed or
-stopped mid-cycle, so the out racks can never show stale discs.
+terminal, so nothing accumulates in the scene. Discs are created with
+``transient=True``, so the framework's reset_scene (run before every
+Start) sweeps any disc a killed run left behind; Sort additionally
+self-heals mid-run strands (a disc whose sorted-fact is true must not
+exist in the scene).
 
 BT philosophy: actions are small; pre/eff carry the per-disc state machine
 forward. Suction pick/place follow the runtime example (tool_tcp_z_offset
@@ -235,14 +237,9 @@ class Start(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
-        ws  = self.ctx.workspace
-        # Clean slate: sweep any disc_* component left over from a previous
-        # run that was killed / stopped mid-cycle. Such a disc (stranded in
-        # an out rack, on the anode, or on the gripper) stays in the scene
-        # forever otherwise — this is how stale discs pile up in the out
-        # racks across runs.
-        for name in [c for c in list(ws.components) if c.startswith("disc_")]:
-            ws.remove_component(name)
+        # (Stale discs from a killed previous run are swept by the
+        # framework: discs are added transient=True and reset_scene —
+        # run by the launcher before every Start — removes leftovers.)
         rt.motor(1)
         # Move to a known ready pose (Recipe.park is a base move-to-joint
         # on the generic component-less "robot" recipe).
@@ -273,6 +270,9 @@ class Create(Action):
         in_h, slot, z = INVENTORY[disc]   # configured stack position
         rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}] z={z}")
         rt.step(_progress_pct(self), level="progress")
+        # transient=True: a per-run virtual object — the framework's
+        # reset_scene (run before every Start) sweeps any disc a killed
+        # run left behind, so stale discs can't leak into the next run.
         ws.add_component(name, {
             "type": "disc_22mm",
             "attach": {
@@ -283,7 +283,7 @@ class Create(Action):
                 "child_anchor":  "center",
                 "offset":        [0, 0, z, 0, 0, 0],
             },
-        })
+        }, transient=True)
         return "created"
 
 

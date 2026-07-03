@@ -522,6 +522,7 @@ explicit APIs for this:
 
 ```python
 workspace.add_component(name, cfg)         # cfg = same dict shape as the yaml entry
+workspace.add_component(name, cfg, transient=True)   # per-run object, swept at next Start
 workspace.remove_component(name)
 ```
 
@@ -530,6 +531,18 @@ workspace.remove_component(name)
 `cfg` is the **same dict** a `scene/*.j2` yaml entry parses to —
 must include `type`, may include `attach`, plus whatever per-type
 config the component class accepts. Returns the new instance.
+
+**`transient=True`** declares the component a *per-run* scene object —
+a spawned disc, a virtual sample — as opposed to the model of a
+persistent physical thing. A run killed (or errored, or operator-
+skipped) between creating the object and its balancing
+`remove_component` strands it in the scene; `reset_scene`, which the
+launcher runs before every workflow start, removes any transient
+component still present so it cannot leak into the next run. The flag
+is explicit opt-in: the framework never guesses which components are
+transient, because a stranded **real** object must stay in the model
+(it's still on the bench). See `projects/examples/runtime/actions.py`
+for the canonical usage.
 
 Almost every real add will also need a corresponding PDDL fact, so
 the canonical pattern is two calls:
