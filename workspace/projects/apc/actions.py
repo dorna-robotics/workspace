@@ -458,6 +458,22 @@ class Sort(Action):
 
     def execute(self, disc):
         rt, rcp, ws = self.ctx.runtime, self.ctx.recipes, self.ctx.workspace
+
+        # Self-heal: a disc whose sorted-fact is TRUE must not exist in the
+        # scene (it was deleted the moment it was placed). One can survive
+        # when a kill / error / operator-skip lands between place() and the
+        # delete — it then floats at its old stack height while newer discs
+        # stack through it. Sweep any such stragglers now.
+        facts = (getattr(self.ctx, "state", None) or {}).get("facts") or set()
+        for comp in [c for c in list(ws.components) if c.startswith("disc_")]:
+            try:
+                j = int(comp.split("_", 1)[1])
+            except ValueError:
+                ws.remove_component(comp)          # stray non-pipeline junk
+                continue
+            if j != disc and (sorted_.name, j) in facts:
+                ws.remove_component(comp)
+
         c = self.ctx.meta.get("disc_c", {}).get(disc)
         good = (c is not None) and (C_MIN <= c <= C_MAX)
         holders = GOOD_HOLDERS if good else BAD_HOLDERS
