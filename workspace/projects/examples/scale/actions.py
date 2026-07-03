@@ -147,9 +147,9 @@ class Start(Action):
 
         rt.motor(1)
         # set axis
-        rcp["gripper"].set_axis_with_stop(core.rail_cfg)
+        rcp["robot"].set_axis_with_stop(core.rail_cfg)
         # go to home
-        rcp["gripper"].park(joint=self.HOME_JOINTS, has_motion_plan=True)
+        rcp["robot"].park(joint=self.HOME_JOINTS, has_motion_plan=True)
 
         return "started"
 
@@ -313,7 +313,7 @@ class Park(Action):
 
     def execute(self):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        rcp["gripper"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
+        rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
         rt.motor(0)
         return "parked"
 

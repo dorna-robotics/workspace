@@ -36,7 +36,7 @@ class Recipe:
         calibration_targets=None,   # None auto-detects every clb_ anchor
     )
 
-    def __init__(self, workspace, core, component, **kwargs):
+    def __init__(self, workspace, core, component=None, **kwargs):
         """Construct the recipe + IK-validate the scene at boot.
 
         Merges ``self.DEFAULTS`` with ``kwargs`` (caller wins), wires
@@ -88,26 +88,27 @@ class Recipe:
         # calibration
         self.calibration = prm["calibration"]
         self.calibrate_abc = prm["calibrate_abc"]
-        if prm["calibration_name"] is None:
+        if prm["calibration_name"] is None and component is not None:
             self.calibration_name = f"{self.component.name}_{self.left_approach}_{self.base_distance}_{self.rail_step}_{self.rail_span}"
         else:
             self.calibration_name = prm["calibration_name"]
         self.calibration_targets = prm["calibration_targets"]
 
-        # find the reference joints used later for every IK
-        J, C = self.core.IK(
-            target_solid=self.component.assembly[prm["target_solid_name"]],
-            target_anchor=prm["target_anchor"],
-            target_offset=prm["target_offset"],
-            base_distance=self.base_distance,
-            rail_step=self.rail_step,
-            rail_span=self.rail_span,
-            ref_joints=prm["initial_joints"],
-            left_approach=self.left_approach,
-        )
-        if C != 2:
-            raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
-        self.ref_joints = J
+        if component is not None:
+            # find the reference joints used later for every IK
+            J, C = self.core.IK(
+                target_solid=self.component.assembly[prm["target_solid_name"]],
+                target_anchor=prm["target_anchor"],
+                target_offset=prm["target_offset"],
+                base_distance=self.base_distance,
+                rail_step=self.rail_step,
+                rail_span=self.rail_span,
+                ref_joints=prm["initial_joints"],
+                left_approach=self.left_approach,
+            )
+            if C != 2:
+                raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
+            self.ref_joints = J
 
     @property
     def rt(self):
