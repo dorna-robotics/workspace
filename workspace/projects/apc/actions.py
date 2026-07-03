@@ -159,16 +159,27 @@ def _progress_pct(action):
 
 def setup(**kwargs):
     def _counts(key, default):
+        """Parse an inventory spec into exactly len(SLOTS) ints — lenient
+        by design, since the GUI params form may deliver the list as a
+        string like "1,1,1,1,1,1,1" or "[2, 1]":
+          * list/tuple of numbers → used as-is
+          * string → brackets/spaces stripped, split on commas
+          * scalar → treated as [scalar]
+        A shorter list fills the leading anchors (rest 0); a longer one is
+        truncated to A1..A7. Values clamp to 0..MAX_PER_SLOT."""
         raw = kwargs.get(key, default)
-        if not isinstance(raw, (list, tuple)) or len(raw) != len(SLOTS):
-            raise ValueError(
-                f"{key} must be a list of {len(SLOTS)} ints "
-                f"(discs per anchor A1..A{len(SLOTS)}), got {raw!r}"
-            )
-        counts = [int(n) for n in raw]
-        bad = [n for n in counts if n < 0 or n > MAX_PER_SLOT]
-        if bad:
-            raise ValueError(f"{key} entries must be 0..{MAX_PER_SLOT}, got {counts}")
+        if isinstance(raw, str):
+            raw = [p for p in raw.strip().strip("[]").replace(" ", "").split(",") if p]
+        elif isinstance(raw, (int, float)):
+            raw = [raw]
+        counts = []
+        for n in list(raw)[:len(SLOTS)]:
+            try:
+                v = int(float(n))
+            except (TypeError, ValueError):
+                v = 0
+            counts.append(max(0, min(MAX_PER_SLOT, v)))
+        counts += [0] * (len(SLOTS) - len(counts))
         return counts
 
     in_1 = _counts("in_1", [1] * len(SLOTS))
