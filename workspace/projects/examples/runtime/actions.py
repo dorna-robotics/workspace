@@ -148,10 +148,6 @@ class Cycle(Action):
 
         # 1. CREATE — spawn the disc at the random in slot, lifted z1.
         #    cfg is the same dict shape a scene yaml entry parses to.
-        #    transient=True marks it a per-run virtual object: if the run
-        #    is killed mid-cycle, the framework's reset_scene (run before
-        #    every Start) sweeps the leftover so it can't leak into the
-        #    next run.
         ws.add_component(name, {
             "type": "disc_22mm",
             "attach": {
@@ -162,7 +158,7 @@ class Cycle(Action):
                 "child_anchor":  "center",
                 "offset":        [0, 0, z1, 0, 0, 0],
             },
-        }, transient=True)
+        })
 
         # 2. TRANSFER — pick it (suction drives deeper), place at the
         #    random out slot lifted z2 (suction presses on release). The

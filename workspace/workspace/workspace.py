@@ -47,17 +47,6 @@ class Workspace:
         # to the planner and BT in one place.
         self._active_ctx = None
 
-        # Names of runtime-added components declared ``transient=True`` in
-        # ``add_component``. Transient components are per-run scene objects
-        # (a spawned disc, a virtual sample): ``reset_scene`` — which the
-        # launcher runs before every workflow start — REMOVES any still
-        # present, so a run killed between a physical effect and its
-        # compensating ``remove_component`` can never leak objects into the
-        # next run. Explicit opt-in only: the framework never guesses which
-        # components are transient (a stranded REAL object must stay in the
-        # model, because it stays on the bench).
-        self._transient_names: set = set()
-
         # 1) build components
         self.components = {}
         for name, ccfg in comp_cfgs.items():
@@ -180,21 +169,13 @@ class Workspace:
     # mutates one is responsible for mutating the other. The framework
     # never infers.
 
-    def add_component(self, name: str, cfg: dict, transient: bool = False):
+    def add_component(self, name: str, cfg: dict):
         """Add a component to the workspace at runtime.
 
         ``cfg`` is the same dict shape as a scene yaml entry — must
         include ``type`` (the registered component type) and any
         component-specific config. If ``cfg["attach"]`` is present, the
         kinematic attachment is applied immediately.
-
-        ``transient=True`` declares the component a per-run scene object
-        (a spawned disc, a virtual sample). ``reset_scene`` — run by the
-        launcher before every workflow start — removes any transient
-        component still present, so a run that died between creating the
-        object and its balancing ``remove_component`` can never leak it
-        into the next run. Leave False (default) for anything that models
-        a persistent physical object.
 
         Refuses during a run for:
           * device-backed components (MQTT lifecycle isn't safe mid-run)
@@ -221,8 +202,6 @@ class Workspace:
                     "launch the workspace with it from the start"
                 )
             self.components[name] = comp
-            if transient:
-                self._transient_names.add(name)
             if cfg.get("attach"):
                 self._initial_attachments.append((name, cfg["attach"]))
                 self._apply_one_attachment(name, cfg["attach"])
@@ -269,7 +248,6 @@ class Workspace:
             self._initial_attachments = [
                 (n, a) for n, a in self._initial_attachments if n != name
             ]
-            self._transient_names.discard(name)
             del self.components[name]
         self._notify_scene_changed()
 
@@ -380,27 +358,12 @@ class Workspace:
     def reset_scene(self):
         """Reset the scene to its launch-time layout.
 
-        First REMOVES every component added with ``transient=True`` that
-        is still present — a run killed between a physical effect and its
-        balancing ``remove_component`` strands such objects, and they must
-        not leak into the next run. Then re-runs every ``attach:`` clause
-        from the loaded config, which snaps every tube, cap, and tool back
-        to where the .j2 scene files put it at startup. Intended for
-        between-run resets so the operator can click Start again on a
-        workspace that has already finished one workflow — without needing
-        to Kill+Launch first.
+        Re-runs every ``attach:`` clause from the loaded config, which
+        snaps every tube, cap, and tool back to where the .j2 scene
+        files put it at startup. Intended for between-run resets so the
+        operator can click Start again on a workspace that has already
+        finished one workflow — without needing to Kill+Launch first.
         """
-        with self._scene_lock:
-            stranded = [n for n in self._transient_names if n in self.components]
-        for name in stranded:
-            try:
-                self.remove_component(name)
-                print(f"reset_scene: swept stranded transient '{name}'")
-            except Exception:
-                logging.getLogger(__name__).exception(
-                    "reset_scene: could not sweep transient %r", name
-                )
-        self._transient_names.clear()
         self._apply_initial_attachments()
 
     def compute_collision_boxes(self, padding=0.0):
