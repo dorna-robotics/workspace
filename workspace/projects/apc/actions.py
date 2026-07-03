@@ -1,10 +1,18 @@
-"""apc protocol — Start → [per-disc pipeline] ×batch_size → Park.
+"""apc protocol — Start → [per-disc pipeline] ×(inventory total) → Park.
+
+IN inventory comes from launch.yaml: two lists of 7 (``in_1``, ``in_2``),
+where index i = number of discs stacked at anchor A<i+1> of that holder.
+Discs are consumed TOP-of-stack first, A1→A7, in_1 until empty, then
+in_2. Each disc appears in the scene the moment it's about to be picked
+(create-on-demand, one at a time via feed_free) at its stack position
+(z = depth × Z_STEP) — the racks hold at most one transient disc while
+the counts still come from the configured inventory.
 
 Each disc goes through a SPLIT chain of small BT actions, threaded by
 facts (the BT moves action→action as each eff is asserted). Per disc i:
 
-  1. Create       spawn a disc at the current IN holder (in_1 until empty,
-                  then in_2) — on demand, like the runtime example.
+  1. Create       spawn the disc at its inventory position (top of the
+                  remaining stack at its in-holder anchor).
   2. Pick         suction-pick it off the IN stack.
   3. Inspect      present to the inspection station + detect() (generic).
   4. PlaceAnode   place the disc on the anode's "place" anchor.
@@ -19,16 +27,15 @@ facts (the BT moves action→action as each eff is asserted). Per disc i:
 
 Then Park once every disc is sorted.
 
-Pick is ON DEMAND (create + pick, not ordered). The DROP is ORDERED:
+The DROP is ORDERED by a fill counter (ctx.meta["filled"]):
   * good fills out_good_1 completely, then out_good_2; bad fills out_bad_1.
   * within a holder: slots A1 → A7 in order.
   * within a slot: z starts at 0 and steps by Z_STEP per disc, up to
     MAX_PER_SLOT discs.
-The next (holder, slot, z) is DERIVED FROM THE SCENE — we count the discs
-already placed in each OUT holder — NOT a hidden counter. This is the
-modular, replan-safe way: the out holders ARE the state, so a retry /
-restart self-corrects (no bookkeeping fact to desync). See project-guide
-§8.
+Every sorted disc is DELETED right after place() — sorted discs are
+terminal, so nothing accumulates in the scene. Start additionally sweeps
+any disc_* component left over from a previous run that was killed or
+stopped mid-cycle, so the out racks can never show stale discs.
 
 BT philosophy: actions are small; pre/eff carry the per-disc state machine
 forward. Suction pick/place follow the runtime example (tool_tcp_z_offset
@@ -39,8 +46,6 @@ NOTE: no tool swapping — the suction gripper is mounted on the robot
 """
 
 from __future__ import annotations
-
-import random
 
 from workspace.bt import Action, predicate
 
@@ -76,11 +81,9 @@ anode_free  = predicate("anode_free")    # anode/cathode station is idle
 
 
 # ── Exposed, tweakable parameters ─────────────────────────────────────
-IN_HOLDERS  = [1, 2]                            # draw from in_1, then in_2
 SLOTS       = [f"A{c}" for c in range(1, 7 + 1)]  # A1 .. A7, in order
-Z_STEP      = 0.254                            # per-disc out-stack lift (mm)
+Z_STEP      = 0.254                            # per-disc stack lift (mm), in + out
 MAX_PER_SLOT = 225                             # discs per slot before next slot
-IN_Z_MAX    = 57.15                            # max random spawn lift (mm) at in slot
 
 # Good/bad capacitance window (Farads). Defaulted WIDE so everything
 # currently lands in "good" — set the real spec later.
@@ -104,11 +107,9 @@ _STEPS = 9                                     # per-disc steps for progress
 # (slot, z) deterministically: slot = SLOTS[count // MAX_PER_SLOT], z =
 # (count % MAX_PER_SLOT) * Z_STEP; roll to the next holder when the current
 # is full. This is runtime state (lives in execute, never in planner
-# facts), so it's BT-legal — same place the random spawn z lives. It does
-# NOT survive a restart mid-batch (the count resets while the racks stay
-# full); fine here because a batch is run start-to-finish and sorted discs
-# are terminal. ctx.meta["top"] = {(holder, slot): disc_name} remembers the
-# current top disc per slot so keep-top can remove it before the next drop.
+# facts), so it's BT-legal. It does NOT survive a restart mid-batch (the
+# count resets); fine here because a batch is run start-to-finish and
+# sorted discs are terminal — every one is DELETED right after place().
 
 def _next_drop(filled, holders):
     """Next (holder_alias, slot, z, count) from the per-holder fill counts.
@@ -130,25 +131,14 @@ def _disc(disc: int) -> str:
     return f"disc_{disc}"
 
 
-def _in_slot(disc: int) -> tuple[int, str]:
-    """Where this disc is created + picked: (in_holder, slot).
-
-    Each disc gets its OWN (holder, slot) so co-existing discs never pile
-    on the same anchor — stacking several discs at one center/z=0 point
-    makes the pick's load-walk ambiguous and ``pick_setting`` raises
-    IndexError (empty load_list). We lay them out one-per-slot: fill in_1's
-    A1..A7, then in_2's A1..A7, then wrap. With hand_empty serializing the
-    actual picks, at most a handful co-exist, so a wrap rarely collides;
-    Create defensively clears its own name first either way.
-
-    "in_1 until empty, then in_2" in spirit — a real finite-magazine count
-    would replace the wrap; on-demand create makes the layout the only
-    thing that matters here."""
-    per_holder = len(SLOTS)
-    idx = disc % (len(IN_HOLDERS) * per_holder)
-    holder = IN_HOLDERS[idx // per_holder]
-    slot = SLOTS[idx % per_holder]
-    return holder, slot
+# ── IN inventory ──────────────────────────────────────────────────────
+# Filled by setup() from the launch.yaml in_1 / in_2 lists (each 7 ints,
+# index i = discs stacked at anchor A<i+1>). INVENTORY[disc] = (holder,
+# slot, z): stacks are consumed TOP-first (depth n-1 → 0, z = depth ×
+# Z_STEP), slots A1→A7, in_1 until empty, then in_2. Module-level so the
+# per-disc actions (Create / Pick) can read their position; rebuilt on
+# every setup() call, so a replan stays consistent with the same kwargs.
+INVENTORY: list = []   # disc index → (in_holder, slot, z)
 
 
 def _progress_pct(action):
@@ -168,8 +158,29 @@ def _progress_pct(action):
 # ── setup ─────────────────────────────────────────────────────────────
 
 def setup(**kwargs):
-    batch_size = int(kwargs.get("batch_size", 100))
-    discs = list(range(batch_size))
+    def _counts(key, default):
+        raw = kwargs.get(key, default)
+        if not isinstance(raw, (list, tuple)) or len(raw) != len(SLOTS):
+            raise ValueError(
+                f"{key} must be a list of {len(SLOTS)} ints "
+                f"(discs per anchor A1..A{len(SLOTS)}), got {raw!r}"
+            )
+        counts = [int(n) for n in raw]
+        bad = [n for n in counts if n < 0 or n > MAX_PER_SLOT]
+        if bad:
+            raise ValueError(f"{key} entries must be 0..{MAX_PER_SLOT}, got {counts}")
+        return counts
+
+    in_1 = _counts("in_1", [1] * len(SLOTS))
+    in_2 = _counts("in_2", [0] * len(SLOTS))
+
+    INVENTORY.clear()
+    for holder, counts in ((1, in_1), (2, in_2)):
+        for s, n in enumerate(counts):
+            for depth in range(n - 1, -1, -1):        # top of the stack first
+                INVENTORY.append((holder, SLOTS[s], round(depth * Z_STEP, 3)))
+
+    discs = list(range(len(INVENTORY)))
 
     def item_done(state, disc):
         return (sorted_.name, disc) in state
@@ -213,17 +224,24 @@ class Start(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
+        ws  = self.ctx.workspace
+        # Clean slate: sweep any disc_* component left over from a previous
+        # run that was killed / stopped mid-cycle. Such a disc (stranded in
+        # an out rack, on the anode, or on the gripper) stays in the scene
+        # forever otherwise — this is how stale discs pile up in the out
+        # racks across runs.
+        for name in [c for c in list(ws.components) if c.startswith("disc_")]:
+            ws.remove_component(name)
         rt.motor(1)
-        # Move to a known ready pose (Recipe.park is a base move-to-joint;
-        # apc has no gripper/tool recipe, so we borrow "inspector").
+        # Move to a known ready pose (Recipe.park is a base move-to-joint
+        # on the generic component-less "robot" recipe).
         rcp["robot"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 
 
 class Create(Action):
-    """Spawn a disc on demand at the current IN holder, lifted a random z
-    (like the runtime example — the disc could sit anywhere in the
-    magazine)."""
+    """Spawn the disc at its configured inventory position — the top of
+    the remaining stack at its in-holder anchor (z = depth × Z_STEP)."""
     params   = ["disc"]
     duration = 2
     resource = "robot"
@@ -241,11 +259,8 @@ class Create(Action):
         # Idempotent retry — clear a leftover from a failed prior attempt.
         if name in ws.components:
             ws.remove_component(name)
-        in_h, slot = _in_slot(disc)   # this disc's OWN in-slot (no piling)
-        # Random spawn height — runtime only, the plan never depends on it.
-        # The pick walks the tree, so the lift is honoured automatically.
-        z = round(random.uniform(0, IN_Z_MAX), 2)
-        rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}]+{z}")
+        in_h, slot, z = INVENTORY[disc]   # configured stack position
+        rt.step(f"disc {disc + 1}: create at in_{in_h}[{slot}] z={z}")
         rt.step(_progress_pct(self), level="progress")
         ws.add_component(name, {
             "type": "disc_22mm",
@@ -277,7 +292,7 @@ class Pick(Action):
 
     def execute(self, disc):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        in_h, slot = _in_slot(disc)   # same slot the disc was created in
+        in_h, slot, _z = INVENTORY[disc]   # same position the disc was created at
         rt.step(f"disc {disc + 1}: pick from in_{in_h}[{slot}]")
         rt.step(_progress_pct(self), level="progress")
         rcp[f"disc_in_{in_h}"].pick(slot, tool_tcp_z_offset=PICK_TCP_Z, soft_approach=True)
@@ -417,7 +432,8 @@ class PickAnode(Action):
 
 class Sort(Action):
     """Drop the disc into an OUT holder by its measured capacitance, into
-    the next free ordered slot (scene-derived)."""
+    the next ordered slot (fill counter), then delete it — sorted discs
+    are terminal and never linger in the scene."""
     params   = ["disc"]
     duration = 10
     resource = "robot"
