@@ -87,11 +87,16 @@ class Display:
         SAME payload (a separate emit could be dropped by the
         inflight-replace path)."""
         try:
-            prev_keys = set(self._last_sent.keys())
             snap = self._build_snapshot()
+            # _last_sent doubles as the delete-diff base and is also
+            # written by the 60fps frame thread — read+clear atomically so
+            # a concurrent frame can neither tear the diff nor erase the
+            # knowledge that a now-removed object was ever on screen.
+            with self._state_lock:
+                prev_keys = set(self._last_sent.keys())
+                self._last_sent.clear()
             for k in prev_keys - set(snap.keys()):
                 snap[k] = {"delete": True}
-            self._last_sent.clear()
             self._emit_update(snap)
         except Exception as e:
             print("[Display] error in send_snapshot:", e)
@@ -142,7 +147,9 @@ class Display:
 
         batch = {}
         try:
-            for comp_name, comp in getattr(self.workspace, "components", {}).items():
+            # list(): see _build_pose_frame — the workflow thread mutates
+            # components concurrently.
+            for comp_name, comp in list(getattr(self.workspace, "components", {}).items()):
                 assembly = getattr(comp, "assembly", {}) or {}
                 for solid_name, solid in assembly.items():
                     key = f"{comp_name}_{solid_name}"
@@ -185,7 +192,10 @@ class Display:
 
         out = {}
         total = 0
-        for comp_name, comp in getattr(self.workspace, "components", {}).items():
+        # list(): the workflow thread adds/removes components concurrently;
+        # iterating the live dict raises "changed size during iteration"
+        # and silently drops the whole frame.
+        for comp_name, comp in list(getattr(self.workspace, "components", {}).items()):
             assembly = getattr(comp, "assembly", {}) or {}
             for solid_name, _solid in assembly.items():
                 key = f"{comp_name}_{solid_name}"
@@ -196,14 +206,16 @@ class Display:
                 cw = world_boxes_by_solid.get(key_boxes, [])
                 cf = flange_boxes_by_solid.get(key_boxes, [])
 
-                # Delta check: skip if pose and collision unchanged
+                # Delta check: skip if pose and collision unchanged.
+                # Locked — send_snapshot (workflow thread) reads + clears
+                # this cache as its delete-diff base.
                 pose_t = tuple(p) if isinstance(p, list) else p
                 col_sig = (len(cw), len(cf))
-                prev = self._last_sent.get(key)
-                if prev is not None and prev[0] == pose_t and prev[1] == col_sig:
-                    continue  # unchanged — skip
-
-                self._last_sent[key] = (pose_t, col_sig)
+                with self._state_lock:
+                    prev = self._last_sent.get(key)
+                    if prev is not None and prev[0] == pose_t and prev[1] == col_sig:
+                        continue  # unchanged — skip
+                    self._last_sent[key] = (pose_t, col_sig)
                 out[key] = {
                     "pose": p,
                     "visible": True,
@@ -265,8 +277,18 @@ class Display:
 
         with self._state_lock:
             if self._inflight:
-                # Replace any previous pending update
-                self._pending = payload
+                # MERGE into the pending payload (key-wise, newest spec per
+                # key wins) instead of replacing it. Replacing dropped the
+                # one-shot ``{delete: true}`` markers whenever two scene
+                # changes landed inside one ack window — the viewer never
+                # heard about the removal and kept the stale mesh forever
+                # (the "ghost disc in the rack" bug).
+                if self._pending is not None:
+                    merged = dict(self._pending)
+                    merged.update(payload)
+                    self._pending = merged
+                else:
+                    self._pending = payload
                 return
             self._inflight = True
 

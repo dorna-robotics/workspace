@@ -73,6 +73,13 @@ def merge_into_state(state, payload):
     incoming update doesn't include them.
     """
     for name, spec in payload.items():
+        # A delete tombstone removes the entry outright. Merging it kept
+        # dead objects in the cache forever AND poisoned re-used names:
+        # the stale ``delete`` flag survived the merge, so a viewer that
+        # connected later would drop the freshly re-added object.
+        if isinstance(spec, dict) and spec.get("delete"):
+            state.pop(name, None)
+            continue
         prev = state.get(name, {})
 
         if "meshUrl" in prev and "meshUrl" not in spec:
