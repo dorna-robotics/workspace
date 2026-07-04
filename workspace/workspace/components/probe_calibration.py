@@ -26,7 +26,7 @@ Every IK uses the recipe's frozen `ref_joints` and IK params, so the wrist
 branch we calibrate is the one production reaches at pick/place time.
 
 Simulation is owned by the robot controller and the probe-tool component
-(`ProbeBase.probe`); the only sim awareness here is reading
+(`Probe.probe`); the only sim awareness here is reading
 `core._simulation_mode` to pick the animated (no-IO) path.
 """
 
@@ -254,7 +254,7 @@ class ProbeCalibration:
 
         Real: pre-IK the destination so the lmove endpoint pins the wrist
         branch + rail, then delegate the contact move + IO + halt to the
-        probe-tool component (ProbeBase.probe). Sim: no IO, so we
+        probe-tool component (Probe.probe). Sim: no IO, so we
         animate toward `expected_trigger` (capped at `distance`) with the
         same relative-move primitive and report it as the touch."""
         tool = self._tool()

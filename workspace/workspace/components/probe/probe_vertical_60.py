@@ -4,16 +4,16 @@ from workspace.components.factory import register
 from workspace.components.probe.probe import Probe
 
 
-@register("probe_vertical")
-class ProbeVertical(Probe):
-    # tcp abc = Rx(180): the rod meets the pocket straight down (tool +Z into
-    # pocket -Z). Orientation lives in the anchor, so calibration solves IK
-    # straight to tcp with no extra rotation.
+@register("probe_vertical_60")
+class ProbeVertical60(Probe):
+    # Straight-down calibration rod. Anchors / collision box are carried over
+    # from probe_vertical_100 for now — update them to the 60 mm rod's real
+    # values. Same Rx(180) tcp orientation; the length lives in the tcp position.
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [-15, 0, 28.5, 180, 0, 0], "tip": [-15, 0, 28.5, 180, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [-15, 0, 128.5-40, 180, 0, 0], "tip": [-15, 0, 128.5-40, 180, 0, 0]}},
         collision_box=
             {"body": [
-                {"pose": [0, 0.0, (28.5/2), 0.0, 0.0, 0.0], "scale": [43, 43, 28.5]},
+                {"pose": [0, 0.0, ((128.5-40)/2), 0.0, 0.0, 0.0], "scale": [43, 43.0, 128.5-40]},
             ]},
         has_tool_changer=True,
         output_enable=[[None, None, 0]],

@@ -1,11 +1,11 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.probe.probe import ProbeBase
+from workspace.components.probe.probe import Probe
 
 
 @register("probe_vertical_100")
-class ProbeVertical100(ProbeBase):
+class ProbeVertical100(Probe):
     # Same straight-down rod as probe_vertical, 100 mm longer — same Rx(180)
     # tcp orientation; the length lives in the tcp position.
     DEFAULTS = dict(
@@ -21,7 +21,7 @@ class ProbeVertical100(ProbeBase):
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(ProbeBase.DEFAULTS)  # default
+        prm = deepcopy(Probe.DEFAULTS)  # default
         merge(prm, self.DEFAULTS)  # self
         merge(prm, cfg)  # cfg
         merge(prm, kwargs)  # kwargs

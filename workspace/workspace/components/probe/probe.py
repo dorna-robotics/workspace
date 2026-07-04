@@ -1,7 +1,7 @@
 from workspace.components.gripper.gripper import Gripper
 
 
-class ProbeBase(Gripper):
+class Probe(Gripper):
     """Shared base for the calibration probe tools (probe_vertical,
     probe_vertical_100, probe_horizontal).
 

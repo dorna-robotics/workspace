@@ -1,11 +1,11 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.probe.probe import ProbeBase
+from workspace.components.probe.probe import Probe
 
 
 @register("probe_horizontal")
-class ProbeHorizontal(ProbeBase):
+class ProbeHorizontal(Probe):
     # tcp abc = 120 deg about [1,1,1] (tool +X -> pocket +Z): the sideways rod
     # meets a pocket that opens horizontally. Orientation lives in the anchor.
     DEFAULTS = dict(
@@ -21,7 +21,7 @@ class ProbeHorizontal(ProbeBase):
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
         # prm
-        prm = deepcopy(ProbeBase.DEFAULTS)  # default
+        prm = deepcopy(Probe.DEFAULTS)  # default
         merge(prm, self.DEFAULTS)  # self
         merge(prm, cfg)  # cfg
         merge(prm, kwargs)  # kwargs
