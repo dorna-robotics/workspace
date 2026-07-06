@@ -158,7 +158,7 @@ class Recipe:
             if not rt.is_homed(index=axis_cfg["axis"]):
                 rt.delay(1)
                 return api.home_with_stop(
-                    index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
+                    index=axis_cfg["axis"], val=0, dir=dir,
                 )
 
     def set_axis_with_encoder(self, axis_cfg, dir=-1):
