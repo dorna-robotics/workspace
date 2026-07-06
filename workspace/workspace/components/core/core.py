@@ -1119,11 +1119,20 @@ class Core:
         start = start_full[:len(goal)]
 
         start_time = time.perf_counter()
-        
+
         res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
+
+        # The planner returns numpy waypoints. Convert to plain Python
+        # floats at the boundary — motion_plan's contract is a list of
+        # joint lists. Leaking ndarrays downstream breaks the real SDK:
+        # dorna2's play() does ``_msg[key] == None`` on the command dict,
+        # which is an ambiguous elementwise comparison on an array (and
+        # the command must be JSON-serializable anyway).
+        if res is not None and len(res):
+            res = [[float(v) for v in p] for p in res]
 
         return res
 
