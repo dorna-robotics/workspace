@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 from dorna2 import Dorna
@@ -117,6 +118,15 @@ class RobotStation:
         # equivalent intent.
         self._on_connection_lost_listeners: list[Callable[[], None]] = []
 
+        # Expected-alarm window depth (see ``expect_alarms``). While > 0
+        # the wrapper suppresses fault handling: hard-stop homing WORKS
+        # by stalling the motor into the stop, so the resulting alarm —
+        # and any transient comms hiccup while the controller is in the
+        # fault — is part of the procedure, not a device failure. Firing
+        # AutoRecover mid-homing closes + reconnects the client and
+        # kills the homing routine.
+        self._expected_alarm_depth = 0
+
         # Initial connect — non-fatal: a flaky network must not crash
         # workspace startup. ALWAYS attempted regardless of sim
         # (device-guide §16: bus state reflects hardware reachability,
@@ -156,6 +166,43 @@ class RobotStation:
         callback signature: ``callback() -> None``."""
         with self._listeners_lock:
             self._on_connection_lost_listeners.append(callback)
+
+    @contextmanager
+    def expect_alarms(self, reason: str = ""):
+        """Suppress fault interception for a procedure whose alarms are
+        EXPECTED — hard-stop homing being the canonical case: the axis
+        homes by stalling the motor into a hard stop, the stall trips a
+        robot alarm, and the controller may hiccup comms while in the
+        fault. Without this window the wrapper flags the device down /
+        fires connection-lost, AutoRecover closes + reconnects the client
+        mid-procedure, and the homing never finishes.
+
+        Inside the window: negative returns and comms exceptions still
+        propagate to the caller unchanged, but the device state is NOT
+        flipped and AutoRecover is NOT triggered. On exit the station
+        re-syncs with reality: reachable + no alarm → ok; reachable +
+        alarm → down (normal semantics resume); unreachable → down +
+        connection-lost fires, so a genuine mid-window drop is recovered
+        AFTER the procedure instead of during it. Nestable.
+        """
+        with self._listeners_lock:
+            self._expected_alarm_depth += 1
+        try:
+            yield self
+        finally:
+            with self._listeners_lock:
+                self._expected_alarm_depth -= 1
+                inner = self._expected_alarm_depth > 0
+            if not inner:
+                alarm_code = self._read_alarm_state()
+                if alarm_code is None:
+                    # Unreachable (or get_alarm gone): deferred recovery.
+                    self._set_state("down", f"connection lost after {reason or 'expected-alarm window'}")
+                    self._fire_connection_lost()
+                elif alarm_code:
+                    self._set_state("down", f"robot alarm (code {alarm_code})")
+                else:
+                    self._set_state("ok", "")
 
     def recover(self) -> bool:
         """Attempt to bring the robot back to a usable state. Called by
@@ -333,8 +380,13 @@ class RobotStation:
             try:
                 result = fn(*args, **kwargs)
             except (ConnectionError, OSError) as ex:
-                station._set_state("down", f"connection lost: {ex}")
-                station._fire_connection_lost()
+                # Inside an expect_alarms window (hard-stop homing), a
+                # comms hiccup is part of the fault the procedure causes:
+                # propagate to the caller but defer state + AutoRecover
+                # to the window's exit re-sync.
+                if station._expected_alarm_depth <= 0:
+                    station._set_state("down", f"connection lost: {ex}")
+                    station._fire_connection_lost()
                 raise
 
             # A negative numeric return doesn't always mean "device
@@ -354,9 +406,13 @@ class RobotStation:
                 and not isinstance(result, bool)
                 and result < 0
             ):
-                alarm_code = station._read_alarm_state()
-                if alarm_code:
-                    station._set_state("down", f"robot alarm (code {alarm_code})")
+                # Expected-alarm window: the alarm IS the procedure's
+                # signal (stall-homing) — don't flip device state; the
+                # window's exit re-sync settles the true state.
+                if station._expected_alarm_depth <= 0:
+                    alarm_code = station._read_alarm_state()
+                    if alarm_code:
+                        station._set_state("down", f"robot alarm (code {alarm_code})")
                 # else: motion failed but robot is healthy — don't flip
                 # device state.
             elif (
