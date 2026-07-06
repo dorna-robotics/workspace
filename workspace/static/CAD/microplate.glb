@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 43950
+      "count": 43902
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12705,
+      "count": 12695,
       "max": [
         6.355000019073486,
         4.254796028137207,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12705
+      "count": 12695
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 28930
+      "byteLength": 28846
     }
   ],
   "buffers": [
     {
       "uri": "microplate.glb.bin",
-      "byteLength": 28930
+      "byteLength": 28846
     }
   ],
   "materials": [

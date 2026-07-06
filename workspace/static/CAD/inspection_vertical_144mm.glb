@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11669
+      "byteLength": 11600
     }
   ],
   "buffers": [
     {
       "uri": "inspection_vertical_144mm.glb.bin",
-      "byteLength": 11669
+      "byteLength": 11600
     }
   ],
   "materials": [

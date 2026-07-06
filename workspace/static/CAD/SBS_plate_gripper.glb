@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 38490
+      "count": 38472
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12596,
+      "count": 12593,
       "max": [
         6.599999904632568,
         5.600398063659668,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12596
+      "count": 12593
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 37584
+      "byteLength": 37546
     }
   ],
   "buffers": [
     {
       "uri": "SBS_plate_gripper.glb.bin",
-      "byteLength": 37584
+      "byteLength": 37546
     }
   ],
   "materials": [

@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1512
+      "count": 1488
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 594,
+      "count": 590,
       "max": [
         8.111499786376953,
         18.500089645385742,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 594
+      "count": 590
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 7464
+      "count": 7359
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1907,
+      "count": 1884,
       "max": [
         8.111499786376953,
         18.499919891357422,
@@ -52,17 +52,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1907
+      "count": 1884
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 9414
+      "count": 9402
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1986,
+      "count": 1984,
       "max": [
         2.3114771842956543,
         17.13003921508789,
@@ -77,17 +77,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1986
+      "count": 1984
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 117834
+      "count": 116790
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 37463,
+      "count": 37256,
       "max": [
         8.000106811523438,
         15.5,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 37463
+      "count": 37256
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2435
+      "byteLength": 2400
     },
     {
       "buffer": 0,
-      "byteOffset": 2435,
-      "byteLength": 9260
+      "byteOffset": 2400,
+      "byteLength": 9103
     },
     {
       "buffer": 0,
-      "byteOffset": 11695,
-      "byteLength": 8047
+      "byteOffset": 11503,
+      "byteLength": 8043
     },
     {
       "buffer": 0,
-      "byteOffset": 19742,
-      "byteLength": 105218
+      "byteOffset": 19546,
+      "byteLength": 104645
     }
   ],
   "buffers": [
     {
       "uri": "barcode_reader_zebra_vertical_144mm.glb.bin",
-      "byteLength": 124960
+      "byteLength": 124191
     }
   ],
   "materials": [

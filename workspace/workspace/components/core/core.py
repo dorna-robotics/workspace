@@ -158,8 +158,8 @@ class Core:
         # I/O signals fired on attach/detach. Each list-of-lists is a
         # sequence of [output_port, value, delay_s] rows played in order.
         tool_changer_cfg = {
-            "output_attach": [[0, 0, 0], [1, 1, 0], [7, 0, 0.25]],
-            "output_detach": [[0, 0, 0], [1, 1, 0], [7, 1, 0.25]],
+            "output_attach": [[1, 0, 0], [0, 1, 0], [2, 0, 0.25]],
+            "output_detach": [[1, 0, 0], [0, 1, 0], [2, 1, 0.25]],
         },
         has_motion_plan = False, # enable or disable path planing
     )
@@ -1469,12 +1469,16 @@ class SimulationAPI:
     def smove(self, points, vel=100, accel=1000, jerk=4000):
         """
         Move along a cubic spline path defined by a list of joint vectors.
-        The first point should equal the current joint position.
+        The current joint position is prepended as the first waypoint, so
+        callers pass only the points to move THROUGH (the recipe strips the
+        planner's leading current-pose point).
         Returns:
             -1 : error
             2 : success
         """
-
+        # Prepend the current joints as ONE waypoint (a flat concat would
+        # mix scalars with waypoint lists and blow up SplinePath).
+        points = [list(self.joint())] + [list(p) for p in points]
         if len(points) < 2:
             print("given points: ", points)
             return 2   # nothing to do

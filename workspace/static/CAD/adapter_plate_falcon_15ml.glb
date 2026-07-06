@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4404
+      "count": 4392
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1548,
+      "count": 1544,
       "max": [
         7.749999523162842,
         5.250284194946289,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1548
+      "count": 1544
     }
   ],
   "bufferViews": [

@@ -11,8 +11,8 @@ class StackHolderDiscOut(StackHolder):
             {"body":[
                 {"pose":[0, 0, 34, 0, 0, 0], "scale":[237, 42, 68]}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[83.139, 0, 8],            # A1: x (3*pitch so col 4 lands on 0), y, slot z
-        pitch=[-27.713, 0],               # x step per col, y step per row
+        offset=[-83.139, 0, 8],            # A1: x (3*pitch so col 4 lands on 0), y, slot z
+        pitch=[27.713, 0],               # x step per col, y step per row
         rvec_safe=[0, 0, 0],
         rows=[chr(c) for c in range(ord("A"), ord("A") + 1)], # A — single row (1 deep in Y)
         cols= [i for i in range(1, 7 + 1)],                   # 1-7 columns along X → A1..A7

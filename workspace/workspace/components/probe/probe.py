@@ -3,7 +3,7 @@ from workspace.components.gripper.gripper import Gripper
 
 class Probe(Gripper):
     """Shared base for the calibration probe tools (probe_vertical,
-    probe_vertical_100, probe_horizontal).
+    probe_vertical_70, probe_horizontal).
 
     The tool->pocket orientation is intrinsic too: it lives in each
     concrete probe's ``tcp`` anchor (its abc), so the calibrator solves IK

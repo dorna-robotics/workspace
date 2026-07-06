@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 14820
+      "byteLength": 14854
     }
   ],
   "buffers": [
     {
       "uri": "capholder_autosampler_2ml.glb.bin",
-      "byteLength": 14820
+      "byteLength": 14854
     }
   ],
   "materials": [

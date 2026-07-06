@@ -278,7 +278,7 @@ class Recipe:
             if len(points) == 0:
                 raise RecipeError("no proper path was found")
             rt.smove(
-                points,
+                points[1:],
                 vel=vaj_map["jmove"][0] * self.speed_factor,
                 accel=vaj_map["jmove"][1] * self.speed_factor,
                 jerk=vaj_map["jmove"][2] * self.speed_factor,

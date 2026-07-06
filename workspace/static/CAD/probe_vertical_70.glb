@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6810
+      "count": 6690
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2016,
+      "count": 1994,
       "max": [
-        2.1500000953674316,
-        12.850000381469727,
-        2.1500000953674316
+        2.1500182151794434,
+        9.846993446350098,
+        2.1500182151794434
       ],
       "min": [
         -2.1500000953674316,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2016
+      "count": 1994
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6201
+      "byteLength": 6267
     }
   ],
   "buffers": [
     {
-      "uri": "probe_vertical_100.glb.bin",
-      "byteLength": 6201
+      "uri": "probe_vertical_70.glb.bin",
+      "byteLength": 6267
     }
   ],
   "materials": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "Probe 100mm Standoffs",
+      "name": "Probe 70mm Standoffs",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "Probe 100mm Standoffs",
+      "name": "Probe 70mm Standoffs",
       "rotation": [
         0.7071068286895752,
         0,

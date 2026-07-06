@@ -142,7 +142,9 @@ class ProbeCalibration:
         entry_dir = -np.array(dorna_pose.abc_to_rmat(center_w[3:6]))[:, 2]
         clearance = self._part_clearance() + self.GROSS_PADDING
         gross_pt = np.array(center_w[:3]) - clearance * entry_dir
-        return self._jmove_to(gross_pt, clb_anchor, vel=self.VEL_FAST)
+        # establish=True: this one move solves the rail (recipe base_distance),
+        # placing it where production would. Every move after pins to it.
+        return self._jmove_to(gross_pt, clb_anchor, vel=self.VEL_FAST, establish=True)
 
     def _frames(self, clb_anchor, pocket):
         """Return (center_w, place_w, entry_dir, wall_1, wall_2) for a
@@ -161,11 +163,17 @@ class ProbeCalibration:
         return center_w, place_w, -R[:, 2], R[:, 0], R[:, 1]
 
     # ── IK + jmoves ────────────────────────────────────────────────────
-    def _ik_to_world(self, world_xyz, clb_anchor):
-        """IK so the tool's TOOL_ANCHOR lands at `world_xyz` with the rod
-        oriented into the pocket. Always seeds with the recipe's frozen
-        ref_joints, so every motion (approach, descend, probe, backoff,
-        retract) lands on the same wrist branch — matching production."""
+    def _ik_to_world(self, world_xyz, clb_anchor, establish=False):
+        """IK so the tool's TOOL_ANCHOR lands at `world_xyz`. Always seeds with
+        the recipe's frozen ref_joints — ref is NEVER modified here.
+
+        establish=True  -> pass the recipe's base_distance so IK solves the rail
+                           for this target. Used ONCE, on the gross approach, to
+                           place the rail where the recipe/production would.
+        establish=False -> base_distance=None, which pins the rail to its CURRENT
+                           value (core.IK uses R=[r_cur]). Every in-pocket fine
+                           move uses this, so the rail can't be re-solved and
+                           jump branches mid-probe (the 195 mm / 331° snap)."""
         tool = self._tool()
         if tool is None:
             return None, 0
@@ -187,18 +195,22 @@ class ProbeCalibration:
             tool_solid    = tool_solid,
             tool_anchor   = self.TOOL_ANCHOR,
             tool_offset   = [0, 0, 0, 0, 0, 0],   # no J5 rotation, ever
-            base_distance = self.base_distance,
+            # establish -> recipe base_distance (solve the rail); else None
+            # pins the rail to r_cur so it can't jump mid-pocket. ref untouched.
+            base_distance = self.base_distance if establish else None,
             rail_step     = self.rail_step,
             rail_span     = self.rail_span,
             ref_joints    = self.ref_joints,
             left_approach = self.left_approach,
         )
 
-    def _jmove_to(self, world_xyz, clb_anchor, vel=None):
-        """IK + jmove to a world XYZ via the runtime (pause/stop aware)."""
+    def _jmove_to(self, world_xyz, clb_anchor, vel=None, establish=False):
+        """IK + jmove to a world XYZ via the runtime (pause/stop aware).
+        establish=True only for the gross approach (solves the rail); every
+        other move leaves it False so the rail stays pinned."""
         if vel is None:
             vel = self.VEL_APPROACH
-        J, C = self._ik_to_world(world_xyz, clb_anchor)
+        J, C = self._ik_to_world(world_xyz, clb_anchor, establish=establish)
         if C != 2 or J is None:
             print(f"    IK failed (C={C}) for jmove to {[round(v, 3) for v in world_xyz]}")
             return False
@@ -320,11 +332,13 @@ class ProbeCalibration:
         return tp2
 
     def _probe_wall(self, wall_probe_pt, direction_unit, clb_anchor):
-        """Wall probe: expected hit is the pocket wall at the pocket radius
-        along `direction_unit`; run the two-step probe."""
+        """Wall probe: single probe out to the pocket wall (~radius away).
+        Single-step (not two-step): the big-pocket walls only give a rough XY
+        that place3 refines, so the fine re-probe pass isn't worth the time."""
         radius = self.POCKET_DIAMETER / 2.0
         expected = np.array(wall_probe_pt) + radius * np.array(direction_unit)
-        return self._probe_two_step(direction_unit, clb_anchor, expected_trigger=expected)
+        return self._probe_step(direction_unit, self.SEARCH_STEP_1, self.PROBE_VEL,
+                                clb_anchor, expected_trigger=expected, step_label="wall")
 
     # ── math ───────────────────────────────────────────────────────────
     @staticmethod
@@ -392,7 +406,9 @@ class ProbeCalibration:
         if self._sim_mode:
             floor_pt = np.array(place_xyz)
         else:
-            floor_pt = self._probe_two_step(entry_dir, clb_anchor)
+            # single step: this only sets the wall-probe depth, not final data
+            floor_pt = self._probe_step(entry_dir, self.SEARCH_STEP_1, self.PROBE_VEL,
+                                        clb_anchor, step_label="floor_find")
         assert floor_pt is not None, "initial floor find failed"
 
         wall_probe_pt   = np.array(floor_pt) - self.WALL_PROBE_DEPTH * entry_dir
@@ -419,11 +435,15 @@ class ProbeCalibration:
 
         M1 = _pair(wall_probe_pt, wall_1, "wall_1")
         M2 = _pair(M1,            wall_2, "wall_2")
-        diag_1 = math.cos(math.radians( 45.0)) * wall_1 + math.sin(math.radians( 45.0)) * wall_2
-        diag_2 = math.cos(math.radians(-45.0)) * wall_1 + math.sin(math.radians(-45.0)) * wall_2
-        M3 = _pair(M2, diag_1, "diag_1")
-        M4 = _pair(M3, diag_2, "diag_2")
-        combined_xy = (M2 + M4) / 2.0
+        # Diagonal wall pairs disabled for now — final precise XY comes from the
+        # place3 centre hole, so the big pockets don't need this extra accuracy.
+        # Uncomment these + restore `combined_xy = (M2 + M4) / 2.0` to bring them back.
+        # diag_1 = math.cos(math.radians( 45.0)) * wall_1 + math.sin(math.radians( 45.0)) * wall_2
+        # diag_2 = math.cos(math.radians(-45.0)) * wall_1 + math.sin(math.radians(-45.0)) * wall_2
+        # M3 = _pair(M2, diag_1, "diag_1")
+        # M4 = _pair(M3, diag_2, "diag_2")
+        # combined_xy = (M2 + M4) / 2.0
+        combined_xy = M2
 
         # A/B/Z floor pattern
         angles = np.linspace(0.0, 2 * math.pi, self.NUM_FLOOR_PROBES, endpoint=False)
@@ -468,7 +488,8 @@ class ProbeCalibration:
     # ── small centre pocket (place3) refinement ────────────────────────
     def _calibrate_small_pocket(self, clb_anchor, rough_place3,
                                 search_dist=5.0, retract_dist=1.5,
-                                mid_hole_offset=3.0, pre_descent_clearance=5.0):
+                                mid_hole_offset=3.0, pre_descent_clearance=5.0,
+                                recentre_settle=1.0):
         """4-touch refinement of the tight centre hole, using the rough
         place3 estimate (fused from the two side pockets) so the rod
         descends into the hole instead of onto the surface. Returns the
@@ -508,20 +529,32 @@ class ProbeCalibration:
                     f"is off by more than the hole clearance."
                 )
 
-        touches = []
-        for label, direction in [
-            ("+wall_1", wall_1), ("-wall_1", -wall_1),
-            ("+wall_2", wall_2), ("-wall_2", -wall_2),
-        ]:
+        def _centre_touch(direction, start_pt, label):
             d = np.asarray(direction, dtype=float)
-            expected_wall = entry_pt + d * 2.0   # hole radius = 2 mm
+            expected_wall = np.asarray(start_pt, dtype=float) + d * 2.0   # hole radius = 2 mm
             tp = self._probe_step(d, search_dist, self.PROBE_VEL, clb_anchor,
                                   expected_trigger=expected_wall, step_label=f"centre_{label}")
             assert tp is not None, f"{label} probe failed"
-            touches.append(np.array(tp, dtype=float))
             self._relative_move(-d * retract_dist, clb_anchor, vel=self.PROBE_VEL)
+            return np.array(tp, dtype=float)
 
-        center_xyz = ((touches[0] + touches[1]) / 2.0 + (touches[2] + touches[3]) / 2.0) / 2.0
+        # pair 1 — wall_1 (X), probed from the rough centre
+        x_pos = _centre_touch( wall_1, entry_pt, "+wall_1")
+        x_neg = _centre_touch(-wall_1, entry_pt, "-wall_1")
+        x_mid = (x_pos + x_neg) / 2.0
+
+        # recentre on the measured X before the wall_2 pair, so the Y probes run
+        # through the true centre instead of an X-offset chord (which biases the
+        # naive 4-touch average).
+        assert self._jmove_to(x_mid, clb_anchor, vel=self.PROBE_VEL), "centre recentre failed"
+        time.sleep(recentre_settle)   # let the rod settle at the recentred point before probing Y
+
+        # pair 2 — wall_2 (Y), probed from the X-centred point. Because it runs
+        # through x_mid, its midpoint is the true centre in both axes.
+        y_pos = _centre_touch( wall_2, x_mid, "+wall_2")
+        y_neg = _centre_touch(-wall_2, x_mid, "-wall_2")
+        center_xyz = (y_pos + y_neg) / 2.0
+
         self._jmove_to(approach_pt, clb_anchor, vel=self.VEL_FAST)
         print(f"     centre XY: {[round(v, 4) for v in center_xyz.tolist()]}")
         return dict(pocket="place3", measured_xyz=center_xyz.tolist())
