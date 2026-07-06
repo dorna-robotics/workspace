@@ -290,9 +290,6 @@ class Recipe:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if len(points) == 0:
                 raise RecipeError("no proper path was found")
-            print("start: ", points[0])
-            print("points: ", points[1:])
-            print("#############")
             rt.smove(
                 points[1:],
                 vel=vaj_map["jmove"][0] * self.speed_factor,
