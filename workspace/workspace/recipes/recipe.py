@@ -142,23 +142,23 @@ class Recipe:
         guard = getattr(api, "expect_alarms", None)
         window = guard("rail homing (stall)") if callable(guard) else nullcontext()
         with window:
-            api.set_axis(
-                index=axis_cfg["axis"],
-                usem=axis_cfg["usem"], usee=axis_cfg["usee"],
-                pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
-                ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
-            )
-            rt.delay(1)
-            api.set_pid(
-                index=axis_cfg["axis"],
-                p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
-                duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
-            )
-
             if not rt.is_homed(index=axis_cfg["axis"]):
+                api.set_axis(
+                    index=axis_cfg["axis"],
+                    usem=axis_cfg["usem"], usee=axis_cfg["usee"],
+                    pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
+                    ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
+                )
+                rt.delay(1)
+                api.set_pid(
+                    index=axis_cfg["axis"],
+                    p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
+                    duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
+                )
+
                 rt.delay(1)
                 return api.home_with_stop(
-                    index=axis_cfg["axis"], val=0, dir=dir,
+                    index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
                 )
 
     def set_axis_with_encoder(self, axis_cfg, dir=-1):
