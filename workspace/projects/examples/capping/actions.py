@@ -199,10 +199,8 @@ class Park(Action):
         return {"parked": (+parked(),)}
 
     def execute(self):
-        rt  = self.ctx.runtime
         rcp = self.ctx.recipes
         rcp["robot"].park(joint=self.PARK_JOINTS, has_motion_plan=True)
-        rt.motor(0)
         return "parked"
 
 

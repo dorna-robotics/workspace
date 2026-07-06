@@ -168,6 +168,5 @@ class Park(Action):
 
     def execute(self):
         rt = self.ctx.runtime
-        rt.motor(0)
         rt.step("workspace parked", level="success")
         return "parked"
