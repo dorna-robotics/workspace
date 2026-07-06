@@ -9,7 +9,7 @@ class RackAmber40ml2x4(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 2, 0, 0, 0], "top": [0, 0, 30, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 15.0, 0.0, 0.0, 0.0], "scale":[165.0, 85.0, 30.0]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 15.0, 0.0, 0.0, 0.0], "scale":[165.0, 85.0, 30.0], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-40*(4-1)/2, -40*(2-1)/2, 2],
         pitch=[40, 40, 0],

@@ -11,8 +11,8 @@ class SuctionGripper(Arm):
                     "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0]}},
             collision_box = 
                 {"body":[
-                    {"pose":[0, 0, (65+6.5)/2, 0.0, 0.0, 0.0], "scale":[65, 65, 65+6.5]}, 
-                    {"pose":[0, 35.0-(15/2), 120/2, 0.0, 0.0, 0.0], "scale":[13.5, 134-13.5, 120]}
+                    {"pose":[0, 0, (65+6.5)/2, 0.0, 0.0, 0.0], "scale":[65, 65, 65+6.5], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
+                    {"pose":[0, 35.0-(15/2), 120/2, 0.0, 0.0, 0.0], "scale":[13.5, 134-13.5, 120], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
             ]},
             # cfg
             output_enable = [[None, None, 0.1]], # [[pin, index, time]]

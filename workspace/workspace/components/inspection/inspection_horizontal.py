@@ -10,8 +10,8 @@ class InspectionHorizontal(Inspection):
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [-9, 0, 27-3.7, 0, 0, 0], "place": [-9, 0, 27-3.7+75, 0, 0, 0], "top": [0, 0, 27-3.7+70, 0, 0, 0],
                 "hole_0": [0, 31.25, 0, 0, 0, 0], "hole_1": [0, 56.25, 0, 0, 0, 0]}},
         collision_box = {"body":[
-                {"pose":[0, 22.5, 27/2, 0, 0, 0], "scale":[46.5, 91.5, 27]},
-                {"pose":[-38, 0, 20/2, 0, 0, 0], "scale":[38, 24, 20]},
+                {"pose":[0, 22.5, 27/2, 0, 0, 0], "scale":[46.5, 91.5, 27], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
+                {"pose":[-38, 0, 20/2, 0, 0, 0], "scale":[38, 24, 20], "padding_enabled": True},
         ]},
     )
 

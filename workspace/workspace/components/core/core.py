@@ -1044,7 +1044,7 @@ class Core:
             return "sim" if self.vision.simulation else "real"
         return "real"
 
-    def motion_plan(self, joint, seed=1234, padding=0, gravity_vec=None, gravity_thr=5.0):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0):
 
         """
         Collision-aware joint move:

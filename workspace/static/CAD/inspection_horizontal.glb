@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4988
+      "byteLength": 5068
     }
   ],
   "buffers": [
     {
       "uri": "inspection_horizontal.glb.bin",
-      "byteLength": 4988
+      "byteLength": 5068
     }
   ],
   "materials": [

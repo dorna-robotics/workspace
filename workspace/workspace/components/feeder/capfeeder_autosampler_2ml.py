@@ -12,8 +12,8 @@ class FeederCap2ml(Feeder):
                 "clb_0": [0, 21.15, 134.89, -45, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, -11.5, 55, 0.0, 0.0, 0.0], "scale":[115, 131.5, 110.0]},
-                {"pose":[0.0, 63.0, 122.0, -45.0, 0.0, 0.0], "scale":[207.0, 207.0, 70.0]}
+                {"pose":[0.0, -11.5, 55, 0.0, 0.0, 0.0], "scale":[115, 131.5, 110.0], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 63.0, 122.0, -45.0, 0.0, 0.0], "scale":[207.0, 207.0, 70.0], "padding_enabled": True}
         ]},
         # cfg
         num_slots = 16,

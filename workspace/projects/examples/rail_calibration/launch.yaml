@@ -1,0 +1,18 @@
+# rail_calibration example — launch config.
+#
+# Deliberately minimal: the scene is the core_500 chassis plus a single
+# probe_rail_calibration stand on fixture_plate_2/G1. The protocol does
+# nothing — Start (motor on + home) → Park (park + motor off). Use it as
+# the bench for probe/rail calibration work.
+
+project_name: rail_calibration
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+kwargs: {}

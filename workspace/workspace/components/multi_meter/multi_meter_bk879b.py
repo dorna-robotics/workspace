@@ -51,7 +51,7 @@ class MultiMeterBk879b:
             "top":    [0, 0, 42, 0, 0, 0],
         }},
         collision_box={"body": [
-            {"pose": [7.5, 0, 25, 0, 0, 0], "scale": [105, 190, 50]},
+            {"pose": [7.5, 0, 25, 0, 0, 0], "scale": [105, 190, 50], "padding_enabled": True},
         ]},
         port=None,
         simulation=True,

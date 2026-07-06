@@ -9,7 +9,7 @@ class RackFalcon15ml(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 4.4, 0, 0, 0], "top": [0, 0, 78, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0, 0, 39, 0, 0, 0], "scale":[164, 117, 78]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 39, 0, 0, 0], "scale":[164, 117, 78], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-28*(5-1)/2, -28*(4-1)/2, 4.4],
         pitch=[28, 28, 0],

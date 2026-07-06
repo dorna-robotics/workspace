@@ -1,0 +1,15 @@
+# rail_calibration example — layout on top of the shared core_500 chassis.
+#
+# Deliberately minimal: a single probe_rail_calibration stand on
+# fixture_plate_2. Nothing else — the protocol is a Start → Park
+# scaffold; the scene is the point (probe/rail calibration bench).
+
+probe_rail_calibration_1:
+  type: "probe_rail_calibration"
+  attach:
+    parent_name: "fixture_plate_2"
+    parent_solid: "body"
+    parent_anchor: "G3"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]

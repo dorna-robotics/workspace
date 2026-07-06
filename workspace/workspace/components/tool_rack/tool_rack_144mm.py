@@ -13,7 +13,7 @@ class ToolRack144mm(ToolRack):
             "clb_0": [0, 46, 148, 0, 0, -45]}},
         collision_box = 
             {"body":[
-                {"pose":[0, 13.75, 158/2, 0.0, 0.0, 0.0], "scale":[65, 92.5, 158]}
+                {"pose":[0, 13.75, 158/2, 0.0, 0.0, 0.0], "scale":[65, 92.5, 158], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]}
     )
 

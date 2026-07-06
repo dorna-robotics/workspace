@@ -9,7 +9,7 @@ class RackAutosampler2ml(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 5, 0, 0, 0], "top": [0, 0, 23, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 27/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 27]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 27/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 27], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-14*(8-1)/2, -14*(6-1)/2, 5],
         pitch=[14, 14, 0],

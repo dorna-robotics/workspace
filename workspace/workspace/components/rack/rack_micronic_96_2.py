@@ -9,7 +9,7 @@ class RackMicronic962(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 3, 0, 0, 0], "top": [0, 0, 19, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0, 0, 15, 0, 0, 0], "scale":[129,87,30]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 15, 0, 0, 0], "scale":[129,87,30], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-9*(12-1)/2, -9*(8-1)/2, 3],
         pitch=[9, 9, 0],

@@ -77,7 +77,7 @@ class BarcodeReaderZebraVertical144mm:
         collision_box={
             "body": [
                 # [x,y,z,a,b,c], [lx,ly,lz]
-                {"pose": [4 + (81.115 / 4), 0, 185 / 2, 0, 0, 0], "scale": [113.615, 65, 185]},
+                {"pose": [4 + (81.115 / 4), 0, 185 / 2, 0, 0, 0], "scale": [113.615, 65, 185], "padding_enabled": True},
             ],
         },
         # ── device link ──────────────────────────────────────────────

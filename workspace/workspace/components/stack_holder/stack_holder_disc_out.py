@@ -9,7 +9,7 @@ class StackHolderDiscOut(StackHolder):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 8, 0, 0, 0], "top": [0, 0, 68, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0, 0, 34, 0, 0, 0], "scale":[237, 42, 68]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 34, 0, 0, 0], "scale":[237, 42, 68], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-83.139, 0, 8],            # A1: x (3*pitch so col 4 lands on 0), y, slot z
         pitch=[27.713, 0],               # x step per col, y step per row

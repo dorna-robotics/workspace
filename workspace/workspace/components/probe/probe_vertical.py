@@ -13,7 +13,7 @@ class ProbeVertical(Probe):
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [-15, 0, 28.5, 180, 0, 0], "tip": [-15, 0, 28.5, 180, 0, 0]}},
         collision_box=
             {"body": [
-                {"pose": [0, 0.0, (28.5/2), 0.0, 0.0, 0.0], "scale": [43, 43, 28.5]},
+                {"pose": [0, 0.0, (28.5/2), 0.0, 0.0, 0.0], "scale": [43, 43, 28.5], "padding_enabled": True},  # [xyzabc] , [lx,ly,lz]
             ]},
         has_tool_changer=True,
         output_enable=[[None, None, 0]],

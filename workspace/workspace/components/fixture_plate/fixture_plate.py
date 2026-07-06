@@ -22,7 +22,7 @@ class FixturePlate:
         }},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 3.5, 0.0, 0.0, 0.0], "scale":[500.0, 250.0, 7.0]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 3.5, 0.0, 0.0, 0.0], "scale":[500.0, 250.0, 7.0], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         rows = [chr(c) for c in range(ord("A"), ord("J") + 1)],  # A..J
         cols = range(1, 21),  # 1..20

@@ -33,10 +33,10 @@ class RotatingCylinderMKB1630:
         },
         collision_box={
             "housing": [
-                {"pose": [0, 0, (65 + 6.5) / 2, 0.0, 0.0, 0.0], "scale": [65, 65, 65 + 6.5]},
+                {"pose": [0, 0, (65 + 6.5) / 2, 0.0, 0.0, 0.0], "scale": [65, 65, 65 + 6.5], "padding_enabled": True},
             ],
             "plunger": [
-                {"pose": [0, 0, 86.5/2, 0.0, 0.0, 0.0], "scale": [14, 14, 86.5]},
+                {"pose": [0, 0, 86.5/2, 0.0, 0.0, 0.0], "scale": [14, 14, 86.5], "padding_enabled": True},
             ],
         },
         # limit — [start, end] plunger poses; each pose is [rotation (deg about

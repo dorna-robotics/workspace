@@ -461,7 +461,18 @@ class Workspace:
                 cur = _parent_solid(cur)
             return False
 
-        def pad(scale):
+        def pad(box):
+            """Inflate a box's scale by the padding — OPT-IN per box.
+
+            Padding applies only to boxes that explicitly carry
+            ``"padding_enabled": True`` in their collision_box entry;
+            absent (the norm) or False means the box stays exact. Lets a
+            bench pad the boxes that matter for safety margin without
+            inflating ones the robot must approach closely.
+            """
+            scale = box["scale"]
+            if not box.get("padding_enabled"):
+                return list(scale)
             return [scale[0] + padding*2.0, scale[1] + padding*2.0, scale[2] + padding*2.0]
         
         # ======================================================================
@@ -549,7 +560,7 @@ class Workspace:
                         pose_out = T_to_xyzabc(T_box_flange)
                         collision_flange.append({
                             "pose": pose_out,
-                            "scale": pad(box["scale"]),
+                            "scale": pad(box),
                             "componentName": comp_name,
                             "solidName": solid_name,
                             "frame": "flange",
@@ -559,7 +570,7 @@ class Workspace:
                         pose_out = T_to_xyzabc(T_box_world)
                         entry = {
                             "pose": pose_out,
-                            "scale": pad(box["scale"]),
+                            "scale": pad(box),
                             "componentName": comp_name,
                             "solidName": solid_name,
                             "frame": "world",

@@ -68,7 +68,7 @@ class ScaleSpx222:
         collision_box={
             "body": [
                 # placeholder — [x,y,z,a,b,c], [lx,ly,lz]; set from CAD
-                {"pose": [0.0, 0.678, (53.34+3.5)/2, 0.0, 0.0, 0.0], "scale": [233.789, 213.458, 53.34+3.5]},
+                {"pose": [0.0, 0.678, (53.34+3.5)/2, 0.0, 0.0, 0.0], "scale": [233.789, 213.458, 53.34+3.5], "padding_enabled": True},
             ],
         },
         # ── device link ──────────────────────────────────────────────

@@ -9,7 +9,7 @@ class RackAxygen180ul(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 7, 0, 0, 0], "top": [0, 0, 46, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0.0, 0.0, 47/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 47]}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 47/2, 0.0, 0.0, 0.0], "scale":[127.76, 85.48, 47], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-9*(12-1)/2, -9*(8-1)/2, 7],
         pitch=[9, 9, 0],
