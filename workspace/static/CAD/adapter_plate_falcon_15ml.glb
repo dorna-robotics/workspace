@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4787
+      "byteLength": 4844
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_falcon_15ml.glb.bin",
-      "byteLength": 4787
+      "byteLength": 4844
     }
   ],
   "materials": [

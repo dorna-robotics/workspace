@@ -494,10 +494,28 @@ class Runtime:
     # Pause gate + utilities (exits on kill)
     # ---------------------------------------------------------------------
 
+    def _is_workflow_thread(self) -> bool:
+        """Whether the calling thread is the workflow's worker thread.
+
+        The pause/kill gate holds the WORKFLOW only. Operator-initiated
+        calls (device-panel actions, the Park button, pendant pokes) arrive
+        on server threads — pausing exists precisely so the operator can
+        intervene, so those threads must pass the gate instead of hanging
+        until Resume. When no workflow thread exists (direct / offline
+        runs), every caller counts as the workflow — the old behavior.
+        """
+        wt = getattr(self, "_workflow_thread", None)
+        return wt is None or threading.current_thread() is wt
+
     def checkpoint(self) -> None:
         # End is honored only between states (see ORRunner.run), not mid-state,
         # so partially-completed atomic operations (e.g. tool swaps) can finish.
-        # Kill and Pause are still observed here.
+        # Kill and Pause are still observed here — but only for the
+        # WORKFLOW thread. Operator-initiated calls on server threads pass
+        # straight through (see _is_workflow_thread): holding them made
+        # every rt.*-touching operator action hang while PAUSED.
+        if not self._is_workflow_thread():
+            return
         with self._lock:
             while True:
                 if self._killed:
@@ -515,6 +533,12 @@ class Runtime:
             result = fn(*a, **k)
             # Motion commands return int status: >=1 ok, <0 alarm/error
             if not isinstance(result, (int, float)) or result >= 0:
+                return result
+            # Operator-thread call hit an alarm: surface the failure to the
+            # caller (the panel shows it) instead of the workflow's
+            # pause-and-wait dance — a non-workflow thread must not spin or
+            # block here.
+            if not self._is_workflow_thread():
                 return result
             # Alarm — pause and wait for user to clear and resume.
             # Logged at ``info`` (timeline only, no banner / no audio /

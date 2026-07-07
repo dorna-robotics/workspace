@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6726
+      "count": 6696
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1965,
+      "count": 1960,
       "max": [
         2.1500000953674316,
         2.8498687744140625,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1965
+      "count": 1960
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6447
+      "byteLength": 6416
     }
   ],
   "buffers": [
     {
       "uri": "probe_vertical.glb.bin",
-      "byteLength": 6447
+      "byteLength": 6416
     }
   ],
   "materials": [

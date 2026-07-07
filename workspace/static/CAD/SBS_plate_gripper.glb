@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 37556
+      "byteLength": 37601
     }
   ],
   "buffers": [
     {
       "uri": "SBS_plate_gripper.glb.bin",
-      "byteLength": 37556
+      "byteLength": 37601
     }
   ],
   "materials": [

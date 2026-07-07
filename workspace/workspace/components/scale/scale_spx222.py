@@ -57,18 +57,18 @@ class ScaleSpx222:
         anchors={
             "body": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "top":    [0, 0, 53.34+3.5, 0, 0, 0],     # placeholder — set from CAD
-                "place":  [42.815, 0, 53.34+3.5, 0, 0, 0],      # placeholder — set from CAD
-                "hole_0": [ 50,  75, 0, 0, 0, 0],   # placeholder
-                "hole_1": [-50,  75, 0, 0, 0, 0],   # placeholder
-                "hole_2": [-50, -75, 0, 0, 0, 0],   # placeholder
-                "hole_3": [ 50, -75, 0, 0, 0, 0],   # placeholder
+                "top":    [0, 0, 53.34+3.5-6.5, 0, 0, 0],     # placeholder — set from CAD
+                "place":  [42.815, 0, 53.34+3.5-6-6.5, 0, 0, 0],      # placeholder — set from CAD
+                "hole_0": [ 37.5,  75, 0, 0, 0, 0],   # placeholder
+                "hole_1": [-37.5,  75, 0, 0, 0, 0],   # placeholder
+                "hole_2": [-37.5, -75, 0, 0, 0, 0],   # placeholder
+                "hole_3": [ 37.5, -75, 0, 0, 0, 0],   # placeholder
             },
         },
         collision_box={
             "body": [
                 # placeholder — [x,y,z,a,b,c], [lx,ly,lz]; set from CAD
-                {"pose": [0.0, 0.678, (53.34+3.5)/2, 0.0, 0.0, 0.0], "scale": [233.789, 213.458, 53.34+3.5], "padding_enabled": True},
+                {"pose": [0.0, 0.678, (53.34+3.5)/2, 0.0, 0.0, 0.0], "scale": [233.789, 213.458, 53.34+3.5-6.5], "padding_enabled": True},
             ],
         },
         # ── device link ──────────────────────────────────────────────

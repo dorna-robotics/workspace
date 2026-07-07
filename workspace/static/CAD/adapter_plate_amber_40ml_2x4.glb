@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2677
+      "byteLength": 2664
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_amber_40ml_2x4.glb.bin",
-      "byteLength": 2677
+      "byteLength": 2664
     }
   ],
   "materials": [

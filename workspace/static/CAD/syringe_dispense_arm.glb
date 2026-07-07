@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 8100
+      "count": 8094
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2692,
+      "count": 2691,
       "max": [
         2.0001988410949707,
         2.0001988410949707,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2692
+      "count": 2691
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 19368
+      "count": 19254
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5393,
+      "count": 5377,
       "max": [
         8.149999618530273,
         3.2498717308044434,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5393
+      "count": 5377
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 9189
+      "byteLength": 9194
     },
     {
       "buffer": 0,
-      "byteOffset": 9189,
-      "byteLength": 20182
+      "byteOffset": 9194,
+      "byteLength": 20101
     }
   ],
   "buffers": [
     {
       "uri": "syringe_dispense_arm.glb.bin",
-      "byteLength": 29371
+      "byteLength": 29295
     }
   ],
   "materials": [

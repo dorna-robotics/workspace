@@ -1,0 +1,84 @@
+# 2_params/params.yaml
+# Parameters and position mappings for the PACE protocol.
+# Edit this file to change tube counts, rack positions, or run parameters.
+#
+# Recipe aliases used here (source_rack, working_rack, decapper_1, shaker_1, etc.)
+# are defined in 2_params/recipes.yaml.
+# Component names they map to (adapter_plate_amber_40ml_4x7_1, etc.)
+# are defined in 1_scene/base.j2.
+
+# ── Run parameters ────────────────────────────────────────────────────────────
+num_tubes: 4
+shake_duration: 120
+speed_factor: 10
+inspection_frq: 4
+inspection_rot: 90
+immerse_40ml_dist: 90
+retract_40ml_dist: 10
+immerse_2ml_dist: 25
+retract_2ml_dist: 10
+
+# ── Position mappings ─────────────────────────────────────────────────────────
+# Each list entry corresponds to tube_i at index i.
+
+source:
+  - [source_rack, A1]
+  - [source_rack, A2]
+  - [source_rack, A3]
+  - [source_rack, A4]
+
+working:
+  - [working_rack, B1]
+  - [working_rack, B2]
+  - [working_rack, B3]
+  - [working_rack, B4]
+
+cap_holder:
+  - decapper_1
+  - decapper_2
+  - decapper_3
+  - decapper_4
+
+shaker_slots:
+  - [shaker_1, A1]
+  - [shaker_1, A2]
+  - [shaker_2, A1]
+  - [shaker_2, A2]
+
+cap_feeder:
+  - [cap_holder, A1]
+  - [cap_holder, A2]
+  - [cap_holder, A3]
+  - [cap_holder, A4]
+
+dosing_40ml:
+  - [doser_40ml, B1]
+  - [doser_40ml, B2]
+  - [doser_40ml, B3]
+  - [doser_40ml, B4]
+
+dosing_clean:
+  - [doser_40ml, A1]
+  - [doser_40ml, A2]
+  - [doser_40ml, A3]
+
+dosing_waste:
+  - [doser_40ml, A4]
+
+dosing_2ml_end:
+  - [doser_2ml_end, A1]
+  - [doser_2ml_end, A2]
+  - [doser_2ml_end, A3]
+  - [doser_2ml_end, A4]
+
+dosing_2ml_middle:
+  - [doser_2ml_middle, A1]
+  - [doser_2ml_middle, A2]
+  - [doser_2ml_middle, A3]
+  - [doser_2ml_middle, A4]
+
+rack_2ml_end:
+  - [rack_2ml_end, A1]
+  - [rack_2ml_end, A2]
+  - [rack_2ml_end, A3]
+  - [rack_2ml_end, A4]

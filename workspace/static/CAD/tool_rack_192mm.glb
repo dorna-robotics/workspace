@@ -59,12 +59,12 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2979
+      "byteLength": 2967
     },
     {
       "buffer": 0,
-      "byteOffset": 2979,
-      "byteLength": 176
+      "byteOffset": 2967,
+      "byteLength": 188
     }
   ],
   "buffers": [

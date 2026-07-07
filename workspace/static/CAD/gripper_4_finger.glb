@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 36478
+      "byteLength": 36472
     }
   ],
   "buffers": [
     {
       "uri": "gripper_4_finger.glb.bin",
-      "byteLength": 36478
+      "byteLength": 36472
     }
   ],
   "materials": [

@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11047
+      "byteLength": 11144
     }
   ],
   "buffers": [
     {
       "uri": "sbs_adapter.glb.bin",
-      "byteLength": 11047
+      "byteLength": 11144
     }
   ],
   "materials": [

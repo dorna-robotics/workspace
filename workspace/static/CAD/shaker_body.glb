@@ -64,13 +64,13 @@
     {
       "buffer": 0,
       "byteOffset": 9936,
-      "byteLength": 7643
+      "byteLength": 7566
     }
   ],
   "buffers": [
     {
       "uri": "shaker_body.glb.bin",
-      "byteLength": 17579
+      "byteLength": 17502
     }
   ],
   "materials": [

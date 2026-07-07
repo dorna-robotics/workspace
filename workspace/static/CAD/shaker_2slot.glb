@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 46974
+      "count": 46920
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 15750,
+      "count": 15739,
       "max": [
         7.000244140625,
         10.8999605178833,
@@ -52,7 +52,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 15750
+      "count": 15739
     }
   ],
   "bufferViews": [
@@ -64,13 +64,13 @@
     {
       "buffer": 0,
       "byteOffset": 9936,
-      "byteLength": 40103
+      "byteLength": 39954
     }
   ],
   "buffers": [
     {
       "uri": "shaker_2slot.glb.bin",
-      "byteLength": 50039
+      "byteLength": 49890
     }
   ],
   "materials": [

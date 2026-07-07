@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 22290
+      "count": 22272
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 6503,
+      "count": 6500,
       "max": [
         2.150017261505127,
         2.150017261505127,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 6503
+      "count": 6500
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 21557
+      "byteLength": 21498
     }
   ],
   "buffers": [
     {
       "uri": "gripper_needle.glb.bin",
-      "byteLength": 21557
+      "byteLength": 21498
     }
   ],
   "materials": [
