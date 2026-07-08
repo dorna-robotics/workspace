@@ -1257,7 +1257,7 @@ if (node) {
 
       // ---- Add edge overlay to all meshes (updated: uses userData) ----
       function addEdgeOverlay(node, edgeColor) {
-        const _edgeColor = edgeColor || 0x000000;
+        const _edgeColor = edgeColor || 0x555555;
         node.traverse(obj => {
           if (!obj.isMesh) return;
 
