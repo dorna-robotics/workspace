@@ -56,8 +56,14 @@ from gui.orchestrator.workspace_info import (
 _status_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="orch-status")
 _cmd_pool    = ThreadPoolExecutor(max_workers=4, thread_name_prefix="orch-cmd")
 
-# Workspace registry persistence.
-REG_PATH = os.environ.get("ORCH_REG_PATH", "/tmp/orchestrator_registry.json")
+# Workspace registry persistence. Lives next to this package — NOT /tmp:
+# tmpfs is wiped on reboot, which silently emptied the dashboard (all
+# cards gone) after every power cycle. The repo dir is writable by both
+# the sudo-run server and plain dev runs, so both share one file.
+REG_PATH = os.environ.get(
+    "ORCH_REG_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json"),
+)
 
 # Auth token. ``""`` (default) disables auth entirely. When set, every
 # write endpoint requires an ``X-Orch-Token`` header that matches.

@@ -221,3 +221,6 @@ status/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Orchestrator workspace registry — machine-local state, not source
+workspace/gui/orchestrator/registry.json
