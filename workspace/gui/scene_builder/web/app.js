@@ -5142,7 +5142,17 @@ async function openCreatePanel(typeName) {
   const dstWorldPos = targetObj.localToWorld(dstPL_root.clone());
   const targetWorldQ = new THREE.Quaternion();
   targetObj.getWorldQuaternion(targetWorldQ);
-  const dstWorldQ = targetWorldQ.clone().multiply(dstQL_root);
+  let dstWorldQ = targetWorldQ.clone().multiply(dstQL_root);
+
+  // Moving to a new anchor must NOT wipe a user-set rotation: carry the
+  // previous attach's rotation offset (offset[3..5], anchor-frame Rodrigues
+  // degrees) into the new attach. Fresh items have no prior attach → [0,0,0].
+  const __prevOff = (__prevMeta && __prevMeta.attach && Array.isArray(__prevMeta.attach.offset))
+    ? __prevMeta.attach.offset : null;
+  const __keepRot = [__prevOff?.[3] || 0, __prevOff?.[4] || 0, __prevOff?.[5] || 0];
+  if (__keepRot[0] || __keepRot[1] || __keepRot[2]) {
+    dstWorldQ = dstWorldQ.multiply(rodriguesDegToQuaternion(__keepRot[0], __keepRot[1], __keepRot[2]));
+  }
 
   const newChildQ = dstWorldQ.clone().multiply(srcQL_root.clone().invert());
   childObj.quaternion.copy(newChildQ);
@@ -5163,7 +5173,7 @@ async function openCreatePanel(typeName) {
 	    parent_anchor: anchorName,
 	    child_solid: __resolveSolidKey(childObj, window.builderState.pending.childSolid) || childObj.userData?.solidName || null,
 	    child_anchor: window.builderState.pending.sourceAnchor,
-	    offset: [0,0,0,0,0,0]
+	    offset: [0, 0, 0, __keepRot[0], __keepRot[1], __keepRot[2]]
 	  };
 
   // Preserve existing metadata (especially type/options) when creating an attach.
