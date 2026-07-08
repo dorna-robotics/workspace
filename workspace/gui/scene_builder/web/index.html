@@ -130,6 +130,12 @@
         <!-- Files list: each row is a file. The selected one is the
              active target — new components get written there. -->
         <div id="sbFilesList" class="sb-files-list"></div>
+        <!-- Preview scope: the merged config of every file, or only the
+             selected file's items. -->
+        <div class="sb-scope-toggle">
+          <button id="sbScopeAll" class="active" title="Show the merged config from every file">all files</button>
+          <button id="sbScopeFile" title="Show only the selected file's items">selected file</button>
+        </div>
         <pre id="sbConfigPre" class="sb-config-pre"># No components yet</pre>
       </div>
 

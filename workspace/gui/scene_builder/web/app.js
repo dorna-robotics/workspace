@@ -6661,7 +6661,9 @@ ensureBuilderBar();
 
       row.addEventListener("click", () => {
         bs.activeFile = fname;
-        renderFilesList();
+        // Full preview refresh (not just the list): in "selected file"
+        // scope the text must follow the newly-selected file instantly.
+        updateConfigPreview();
       });
       filesListEl.appendChild(row);
     }
@@ -6691,13 +6693,36 @@ ensureBuilderBar();
   }
   window.__renderFilesList = renderFilesList;
 
+  // ── Preview scope: the merged config of every file, or only the
+  //    selected (active) file's items. Save/download is unaffected —
+  //    this only filters what the preview text shows. ──
+  let __previewScope = "all";   // "all" | "file"
+  const __scopeAllBtn  = document.getElementById("sbScopeAll");
+  const __scopeFileBtn = document.getElementById("sbScopeFile");
+  function __syncScopeButtons() {
+    if (!__scopeAllBtn || !__scopeFileBtn) return;
+    __scopeAllBtn.classList.toggle("active", __previewScope === "all");
+    __scopeFileBtn.classList.toggle("active", __previewScope === "file");
+    // Label the file button with the actual selection so it reads as
+    // "show scene.j2", not an abstract mode.
+    __scopeFileBtn.textContent = window.builderState.activeFile || "selected file";
+  }
+  __scopeAllBtn?.addEventListener("click", () => { __previewScope = "all"; updateConfigPreview(); });
+  __scopeFileBtn?.addEventListener("click", () => { __previewScope = "file"; updateConfigPreview(); });
+
   function updateConfigPreview() {
     try {
       renderFilesList();
-      const cfg = buildConfigObject();
+      __syncScopeButtons();
+      const bs = window.builderState;
+      const cfg = (__previewScope === "file")
+        ? (buildConfigByFile()[bs.activeFile] || {})
+        : buildConfigObject();
       const keys = Object.keys(cfg);
       if (!keys.length) {
-        pre.textContent = "# No components yet";
+        pre.textContent = (__previewScope === "file")
+          ? "# No components in " + (bs.activeFile || "this file")
+          : "# No components yet";
         return;
       }
       // Syntax highlight YAML
