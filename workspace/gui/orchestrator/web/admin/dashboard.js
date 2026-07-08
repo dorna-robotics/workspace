@@ -58,9 +58,28 @@ async function loadWorkspaces() {
   });
 }
 
+// ---- List reconcile ----
+// The card list is fetched once at page load; statuses arrive continuously
+// (poll or WS) keyed by the SERVER's registry names. If that key set drifts
+// from the rendered list — a workspace added/removed from another client,
+// or a server restart with a different registry — refetch the list so every
+// open tab converges on the server's truth instead of keeping ghost cards.
+// (Server unreachable is NOT a drift: the fetch fails before we get here,
+// cards stay visible and just go OFFLINE.)
+let _reconciling = false;
+async function reconcileList(names) {
+  if (_reconciling) return;
+  const have = new Set(workspaces.map(w => w.name));
+  const want = new Set(names);
+  if (have.size === want.size && [...want].every(n => have.has(n))) return;
+  _reconciling = true;
+  try { await loadWorkspaces(); } catch {} finally { _reconciling = false; }
+}
+
 async function refreshStatuses() {
   try {
     const j = await apiFetch("/workspaces/status");
+    await reconcileList(Object.keys(j.statuses || {}));
     workspaces.forEach(ws => {
       ws.lastStatus = j.statuses?.[ws.name] || { state: "OFFLINE" };
     });
@@ -525,7 +544,8 @@ function schedulePoll() {
 }
 
 // ---- WebSocket live updates ----
-function applyWsStatuses(statuses) {
+async function applyWsStatuses(statuses) {
+  await reconcileList(Object.keys(statuses || {}));
   workspaces.forEach(ws => {
     ws.lastStatus = statuses[ws.name] || { state: "OFFLINE" };
   });
