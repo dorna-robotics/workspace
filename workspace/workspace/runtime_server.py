@@ -374,6 +374,16 @@ def _log_operator_result(rt, component_name: str, method_name: str, result) -> N
         pass
 
 
+def _run_operator_action(rt, fn):
+    """Run an operator action under the runtime's operator marking, so its
+    rt.*-touching calls pass the pause gate instead of hanging until Resume
+    (see ``Runtime.operator_call``). Runs on an executor thread."""
+    if rt is None:
+        return fn()
+    with rt.operator_call():
+        return fn()
+
+
 # --------------------------------------------------
 # Status WebSocket — push runtime state changes in real time
 # --------------------------------------------------
@@ -931,7 +941,7 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
         _op_actions_inflight.add(key)
         try:
             loop = tornado.ioloop.IOLoop.current()
-            result = await loop.run_in_executor(None, getattr(comp, method_name))
+            result = await loop.run_in_executor(None, _run_operator_action, rt, getattr(comp, method_name))
         except Exception as ex:
             reply(False, f"{type(ex).__name__}: {ex}")
             return
@@ -1158,7 +1168,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
         _op_actions_inflight.add(key)
         try:
             loop = tornado.ioloop.IOLoop.current()
-            result = await loop.run_in_executor(None, getattr(comp, method_name))
+            result = await loop.run_in_executor(None, _run_operator_action, rt, getattr(comp, method_name))
         except Exception as ex:
             reply(False, f"{type(ex).__name__}: {ex}")
             return

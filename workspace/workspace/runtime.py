@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional, TypeVar
@@ -73,6 +74,9 @@ class Runtime:
 
         # internal workflow thread
         self._workflow_thread: Optional[threading.Thread] = None
+
+        # thread-local operator marker — see operator_call() / _is_workflow_thread()
+        self._op_tl = threading.local()
 
         self.on_state_change: Optional[Callable[[RTState, RTState], None]] = None
         # Fired on every state transition with the complete RTStatus
@@ -495,25 +499,44 @@ class Runtime:
     # ---------------------------------------------------------------------
 
     def _is_workflow_thread(self) -> bool:
-        """Whether the calling thread is the workflow's worker thread.
+        """Whether the calling thread is on the workflow side of the pause gate.
 
-        The pause/kill gate holds the WORKFLOW only. Operator-initiated
-        calls (device-panel actions, the Park button, pendant pokes) arrive
-        on server threads — pausing exists precisely so the operator can
-        intervene, so those threads must pass the gate instead of hanging
-        until Resume. When no workflow thread exists (direct / offline
-        runs), every caller counts as the workflow — the old behavior.
+        The pause/kill gate holds the WORKFLOW only. But the workflow is a
+        FAMILY of threads — the gate loop plus every ``bt-action-*`` worker
+        the BT engine spawns — so membership can't be a thread-identity
+        check against one thread. Instead the few operator entry points
+        (device-panel actions arriving on server executor threads) mark
+        themselves with ``operator_call()``; every unmarked thread — gate
+        loop, BT workers, recipe helpers, direct/offline runs — counts as
+        workflow and blocks while PAUSED. Pausing exists precisely so the
+        operator can intervene, so marked threads pass the gate instead of
+        hanging until Resume.
         """
-        wt = getattr(self, "_workflow_thread", None)
-        return wt is None or threading.current_thread() is wt
+        return not getattr(self._op_tl, "operator", False)
+
+    @contextmanager
+    def operator_call(self):
+        """Context manager marking the current thread as an operator call.
+
+        Inside the context, ``checkpoint()`` passes straight through while
+        PAUSED, and a robot alarm inside ``call()`` returns its code to the
+        caller (the panel shows it) instead of entering the workflow's
+        pause-and-wait dance.
+        """
+        prev = getattr(self._op_tl, "operator", False)
+        self._op_tl.operator = True
+        try:
+            yield
+        finally:
+            self._op_tl.operator = prev
 
     def checkpoint(self) -> None:
         # End is honored only between states (see ORRunner.run), not mid-state,
         # so partially-completed atomic operations (e.g. tool swaps) can finish.
         # Kill and Pause are still observed here — but only for the
-        # WORKFLOW thread. Operator-initiated calls on server threads pass
-        # straight through (see _is_workflow_thread): holding them made
-        # every rt.*-touching operator action hang while PAUSED.
+        # WORKFLOW side. Operator calls (marked via operator_call()) pass
+        # straight through: holding them made every rt.*-touching operator
+        # action hang while PAUSED.
         if not self._is_workflow_thread():
             return
         with self._lock:
