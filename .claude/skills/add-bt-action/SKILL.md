@@ -10,9 +10,9 @@ description: "Use when adding an Action class to a BT project. Covers predicate 
 The user says any of:
 - "Add an action to weigh / decap / shake / measure each [item]"
 - "Write a Start / Park / Inspect action"
-- "Extend the sample_prep / multimeter_test protocol"
+- "Extend an existing project's protocol"
 
-If the user is starting a **new BT project** from scratch (not just adding one action), see also [`write-recipe`](../write-recipe/SKILL.md) for the recipe layer + look at `workspace/projects/sample_prep/` or `workspace/projects/multimeter_test/` as templates.
+If the user is starting a **new BT project** from scratch (not just adding one action), see also [`write-recipe`](../write-recipe/SKILL.md) for the recipe layer + look at the gold exemplars under `examples/` (`examples/feeder/` simple, `examples/capping/` multi-action) as templates.
 
 ## What an action is
 
@@ -42,7 +42,7 @@ The framework auto-registers every Action subclass — no domain.py.
 
     Only **three** things vary per project: the tool recipe alias (`gripper` vs `cap_tool` vs your own), the per-item predicate name (`vial_2ml_capped` vs `cap_fed` vs `read_done`), and the object key for `_ctx_all_objects` (`"tube"` vs `"cap"` vs `"sample"`). Everything else stays.
 
-    Canonical reference: `sample_prep/actions.py:Start/Park/OperatorPark`. Examples that follow: `multimeter_test/actions.py`, `examples/feeder/actions.py`.
+    Canonical reference: `examples/feeder/actions.py:Start/Park/OperatorPark` — every example follows the same shape.
 7. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
 
 ## Canonical doc references
@@ -60,8 +60,9 @@ The framework auto-registers every Action subclass — no domain.py.
 
 ## Canonical reference implementations
 
-- **sample_prep actions**: `workspace/projects/sample_prep/actions.py` — full sample-preparation protocol (Start, Inspected, LoadedShaker, Dosed40ml, Shaken, Dosed2ml, Park)
-- **multimeter_test actions**: `workspace/projects/multimeter_test/actions.py` — minimal three-action template (Start → ReadMeter × N → Park)
+- **feeder actions**: `examples/feeder/actions.py` — minimal per-item template (Start → per-item action → Park)
+- **capping actions**: `examples/capping/actions.py` — multi-action protocol with progress reporting
+- **runtime actions**: `examples/runtime/actions.py` — full reference incl. runtime scene mutation
 
 ## Common pitfalls
 

@@ -74,7 +74,7 @@ walks down to the stack holder underneath.
 ## Run it
 
 ```bash
-cd workspace/projects/examples/runtime
+cd examples/runtime
 sudo python3 main.py
 ```
 

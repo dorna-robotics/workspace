@@ -10,8 +10,8 @@ Each is its own BT action, gated by facts so they run in order per tube;
 the planner sequences tubes (windowed by plan_window). Tubes are the
 single objects dim → slicing auto-engages.
 
-Pattern reference: projects/examples/capping/actions.py (per-item
-multi-action) + projects/examples/feeder/actions.py (slots from the
+Pattern reference: examples/capping/actions.py (per-item
+multi-action) + examples/feeder/actions.py (slots from the
 component). Inspector API: workspace/recipes/inspector.py.
 """
 

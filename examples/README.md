@@ -13,7 +13,7 @@ shape as `multimeter_test` or `sample_prep`. You launch it the same
 way:
 
 ```bash
-cd workspace/projects/examples/<name>
+cd examples/<name>
 sudo python3 main.py
 ```
 

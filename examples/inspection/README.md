@@ -44,7 +44,7 @@ Built on the shared `core_500.j2` chassis (self-contained local copy).
 ## Run it
 
 ```bash
-cd workspace/projects/examples/inspection
+cd examples/inspection
 sudo python3 main.py
 ```
 

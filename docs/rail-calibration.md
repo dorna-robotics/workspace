@@ -6,7 +6,7 @@ in the scene yaml — it makes `home_with_stop` land the carriage at the
 true zero of the bench after every homing run.
 
 The bench for this procedure is the `rail_calibration` example
-(`workspace/projects/examples/rail_calibration/`): a bare core_500
+(`examples/rail_calibration/`): a bare core_500
 chassis with one `probe_rail_calibration` stand mounted at
 **fixture_plate_2 / G3** (`hole_0` on the plate hole).
 

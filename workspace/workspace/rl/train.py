@@ -17,7 +17,9 @@ from sb3_contrib.common.wrappers import ActionMasker
 
 from workspace.rl.base_env import BaseLabEnv
 
-_PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
+# Example projects live at the repo root (…/workspace/examples); real
+# projects are standalone repos outside this one — pass those by path.
+_PROJECTS_DIR = Path(__file__).parents[3] / "examples"
 
 
 def _make_env(project: str, batch_size: int, max_items: int = None) -> BaseLabEnv:
@@ -173,7 +175,7 @@ def train(project: str, batch_size: int, total_steps: int, out: Path,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True,
-                        help="Project folder name under workspace/projects/")
+                        help="Project folder name under examples/ (repo root)")
     parser.add_argument("--count", type=int,  default=4,
                         help="Default item count (also min when --max_count is set)")
     parser.add_argument("--max_count", type=int, default=None,

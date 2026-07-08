@@ -46,7 +46,7 @@ End state: every tube + cap back in its original slot, decapped.
 ## Run it
 
 ```bash
-cd workspace/projects/examples/capping
+cd examples/capping
 sudo python3 main.py
 ```
 

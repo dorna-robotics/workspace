@@ -41,7 +41,7 @@ The scale runs in sim by default → ``weight()`` returns the canned
 reading. Point scale_spx222_1 at a real balance (ip + simulation:false in
 the layout) for live readings and the real pause/recover/retry path.
 
-Pattern reference: projects/examples/inspection/actions.py (per-item
+Pattern reference: examples/inspection/actions.py (per-item
 multi-action). Scale API: workspace/recipes/scale.py — pick/place onto
 the pan ("place" anchor) + weight(stable=True).
 """

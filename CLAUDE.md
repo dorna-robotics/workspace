@@ -21,21 +21,23 @@ enabling sim mode, operator recovery flows, debugging the device bus.
 
 ## Gold exemplars — READ the matching one BEFORE writing code
 
-The projects under `workspace/projects/` (especially
-`workspace/projects/examples/`) are **curated, working, canonical
-reference code**. They are the source of truth for "how we do it here" —
+The example projects under `examples/` (top level, next to `docs/`) are
+**curated, working, canonical reference code**; `projects_old/` keeps
+retired real-bench projects for archaeology. Real production projects
+live OUTSIDE this repo as standalone repos (e.g. `~/Downloads/projects/`
+on the bench Pi). The examples are the source of truth for "how we do it here" —
 match their structure, naming, and conventions exactly. Before writing
 any of the following, OPEN and study the listed exemplar(s) first; do
 not author from memory or first principles.
 
 | Writing a… | Read first (gold) |
 |---|---|
-| **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park) | `projects/examples/runtime/actions.py`, plus `projects/examples/feeder/actions.py` (simple) or `projects/examples/capping/actions.py` (multi-action + progress) |
-| **Device read with declarative retry** (read is its own action; assert the success fact only on a valid reading, `return False` otherwise; planner re-selects it after recover — no `with_retry`/loop) | `projects/examples/scale/actions.py` (`PlaceOnScale`/`Weigh`/`PickFromScale`); the why is `docs/project-guide.md` §8 "Device reads + declarative retry" |
-| **Runtime scene mutation** (`add_component`/`remove_component` paired with facts, the explicit-mutation rule) | `projects/examples/runtime/` (whole project — the reference for this) |
-| **Recipe wiring** (`recipes.j2`) | `projects/examples/feeder/recipes.j2`, `projects/examples/capping/recipes.j2` |
-| **Scene yaml** (chassis + layout, attach hierarchy) | `projects/examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
-| **Custom component** | `projects/apc/components/*.py`; library components under `workspace/components/` |
+| **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park) | `examples/runtime/actions.py`, plus `examples/feeder/actions.py` (simple) or `examples/capping/actions.py` (multi-action + progress) |
+| **Device read with declarative retry** (read is its own action; assert the success fact only on a valid reading, `return False` otherwise; planner re-selects it after recover — no `with_retry`/loop) | `examples/scale/actions.py` (`PlaceOnScale`/`Weigh`/`PickFromScale`); the why is `docs/project-guide.md` §8 "Device reads + declarative retry" |
+| **Runtime scene mutation** (`add_component`/`remove_component` paired with facts, the explicit-mutation rule) | `examples/runtime/` (whole project — the reference for this) |
+| **Recipe wiring** (`recipes.j2`) | `examples/feeder/recipes.j2`, `examples/capping/recipes.j2` |
+| **Scene yaml** (chassis + layout, attach hierarchy) | `examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
+| **Custom component** | the apc repo's `components/*.py` (standalone repo, `~/Downloads/projects/apc` on the bench Pi); library components under `workspace/components/` |
 | **Project entry point** (`main.py`, `launch.yaml`, `checks.py`) | any example — `main.py` is byte-identical across all projects (copy verbatim); `launch.yaml` + `checks.py` follow the example shape |
 
 Convention these encode (don't re-derive): `main.py` is canonical and
@@ -95,6 +97,8 @@ These are platform-wide; every skill assumes them. Don't re-derive.
 ```
 docs/                    canonical reference (read second, after skills)
 .claude/skills/          task-focused playbook (read first)
+examples/                gold exemplar BT projects (feeder, capping, runtime, …)
+projects_old/            retired real-bench projects, kept for reference
 workspace/               the platform itself
   workspace/             Python package (SDK)
     components/          device + physical component classes
@@ -104,6 +108,8 @@ workspace/               the platform itself
     runtime.py           Runtime — pause/resume, rt.* API
     runtime_server.py    Tornado server — admin REST + WS + multiplexer
   gui/                   web UIs (admin dashboard, pendant, viewer)
-  projects/              BT projects (sample_prep, multimeter_test, …)
   static/CAD/            3D models (GLB) for components
 ```
+
+Real production projects (apc, bd, bna, …) are standalone git repos
+outside this one — on the bench Pi they live under `~/Downloads/projects/`.

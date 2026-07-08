@@ -47,7 +47,7 @@ for the meter's FTDI / CP210x chip.
 ## Running
 
 ```bash
-sudo python3 projects/examples/multimeter/main.py
+sudo python3 examples/multimeter/main.py
 ```
 
 Then open the orchestrator at `http://localhost:5010`. Hit Launch,

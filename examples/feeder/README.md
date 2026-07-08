@@ -33,7 +33,7 @@ rule 6.
 ## Run it
 
 ```bash
-cd workspace/projects/examples/feeder
+cd examples/feeder
 sudo python3 main.py
 ```
 

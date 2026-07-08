@@ -537,7 +537,7 @@ The tube stayed on the pan the whole time (`on_scale` held), so **only the
 read was retried — no motion repeated.** This same shape works for *any*
 device read: keep it its own action, assert the fact only on success,
 return `False` otherwise. The reference implementation is
-`projects/examples/scale/actions.py` (`PlaceOnScale` / `Weigh` /
+`examples/scale/actions.py` (`PlaceOnScale` / `Weigh` /
 `PickFromScale`).
 
 #### `resource` on a read-only action — it's the scheduling lock, not the device
@@ -624,7 +624,7 @@ the resource's initial state in `Start.eff`.
 Rule: **for every physical slot that holds at most one item — the gripper,
 a pan, a nest, a single-tube fixture — add a no-arg `_empty` fact,
 consume it on fill, restore it on empty.** The reference implementation is
-`projects/examples/scale/actions.py` (`hand_empty` + `pan_empty`). Without
+`examples/scale/actions.py` (`hand_empty` + `pan_empty`). Without
 it, single-item protocols look fine in small batches by luck and produce
 impossible schedules as soon as the planner finds the reordering.
 

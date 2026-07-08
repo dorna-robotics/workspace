@@ -21,7 +21,7 @@ In a project's `launch.yaml`, reference the template by relative path
 and add the project's own layout after it:
 
 ```yaml
-scene: [../../scenes/core/core_500.j2, scene/layout.j2]
+scene: [../../workspace/scenes/core/core_500.j2, scene/layout.j2]
 ```
 
 The path is relative to the **project directory** (main.py resolves
@@ -29,8 +29,9 @@ scene paths against it). Count `../` by how deep the project is nested:
 
 | Project location | path to shared scenes |
 |---|---|
-| `projects/<name>/`            | `../../scenes/core/core_500.j2` |
-| `projects/examples/<name>/`   | `../../../scenes/core/core_500.j2` |
+| `examples/<name>/` (in-repo)     | `../../workspace/scenes/core/core_500.j2` |
+| `projects_old/<name>/` (in-repo) | `../../workspace/scenes/core/core_500.j2` |
+| standalone project repo          | keep a local copy at `scene/core_500.j2` (the apc/bd pattern) |
 
 - `core_500.j2` provides the robot + rail + 6-plate fixture chain.
 - `scene/layout.j2` (in the project) places that project's tool racks,

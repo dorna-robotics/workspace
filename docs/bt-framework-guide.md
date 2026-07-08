@@ -57,10 +57,11 @@ Authors never write duplicated declarations. One action = one block.
 
 ### Pace_bt — the worked example
 
-The `pace_bt/` project is the framework's canonical example. Every
-concept in this guide is illustrated by code there; if a section
-feels abstract, open [pace_bt/actions.py](../workspace/projects/pace_bt/actions.py)
-and read the parallel implementation.
+`pace_bt` is the narrative worked example used throughout this guide
+(it now lives on as the standalone `bna` repo outside this codebase).
+For live in-repo code that illustrates the same concepts, open
+[examples/runtime/actions.py](../examples/runtime/actions.py) — or any
+project under `examples/` — and read the parallel implementation.
 
 ---
 
@@ -1738,8 +1739,8 @@ the planner schedules periodically).
 
 If you have a pace_or-style linear project and want to convert it:
 
-1. Copy `pace_bt/` to `your_project_bt/`.
-2. Replace `pace_bt/actions.py` predicates + `setup(**kwargs)` +
+1. Copy an example project (e.g. `examples/feeder/`) to `your_project_bt/`.
+2. Replace its `actions.py` predicates + `setup(**kwargs)` +
    `Action` subclasses with yours. **The vocabulary mostly matches**
    `protocol.yaml`: `tool`, `duration`, `pre_check`, `post_check`,
    `tool_swap_duration`, `trigger`, `schedule`. Differences from

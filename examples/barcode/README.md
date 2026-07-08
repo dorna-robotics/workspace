@@ -53,7 +53,7 @@ Built on the shared `core_500.j2` chassis (self-contained local copy).
 ## Run it
 
 ```bash
-cd workspace/projects/examples/barcode
+cd examples/barcode
 sudo python3 main.py
 ```
 

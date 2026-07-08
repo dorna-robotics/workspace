@@ -31,8 +31,8 @@ The reader runs in sim by default → ``code()`` returns the canned scan.
 Point barcode_reader_1 at a real DS457 (port + simulation:false in the
 layout) for live barcodes and the real pause/recover/retry path.
 
-Pattern reference: projects/examples/inspection/actions.py (per-item
-multi-action) + projects/examples/scale/actions.py (read-only +
+Pattern reference: examples/inspection/actions.py (per-item
+multi-action) + examples/scale/actions.py (read-only +
 declarative retry). Barcode API: workspace/recipes/barcode_reader.py —
 present() + scan()/code().
 """

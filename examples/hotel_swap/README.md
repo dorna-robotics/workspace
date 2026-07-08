@@ -34,7 +34,7 @@ End state: every plate is in the OTHER hotel from where it started.
 ## Run it
 
 ```bash
-cd workspace/projects/examples/hotel_swap
+cd examples/hotel_swap
 sudo python3 main.py
 ```
 

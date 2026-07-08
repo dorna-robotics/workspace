@@ -35,7 +35,7 @@ waste_bin.eject_tip()                  # drop the used tip
 ## Run it
 
 ```bash
-cd workspace/projects/examples/pipetting
+cd examples/pipetting
 sudo python3 main.py
 ```
 
