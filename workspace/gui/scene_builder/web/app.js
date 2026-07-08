@@ -1276,7 +1276,7 @@ if (node) {
           }
 
           // add new edge overlay
-          const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 30);
+          const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 45);
           const edgesMat = new THREE.LineBasicMaterial({
             color: _edgeColor,
             toneMapped: false
@@ -4170,7 +4170,7 @@ function _prepareThumbModel(glbScene) {
   for (const m of meshes) {
     m.material = new THREE.MeshPhongMaterial({ color: new THREE.Color("#e8e8e8"), specular: new THREE.Color("#ffffff"), shininess: 15 });
     try {
-      const edges = new THREE.EdgesGeometry(m.geometry, 30);
+      const edges = new THREE.EdgesGeometry(m.geometry, 45);
       const lineSegs = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x333333, linewidth: 1 }));
       lineSegs.name = "__edge";
       lineSegs.raycast = () => {};
