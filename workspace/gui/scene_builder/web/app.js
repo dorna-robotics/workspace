@@ -1156,7 +1156,16 @@ if (node) {
           const dstWorldPos = parentObj.localToWorld(dstPL.clone());
           const parentWorldQ = new THREE.Quaternion();
           parentObj.getWorldQuaternion(parentWorldQ);
-          const dstWorldQ = parentWorldQ.clone().multiply(dstQL);
+          let dstWorldQ = parentWorldQ.clone().multiply(dstQL);
+          // Mirror handleAnchorPick: a re-anchored item keeps its previous
+          // rotation offset (offset[3..5]) — the ghost must preview it too,
+          // or the translucent copy shows the unrotated pose.
+          const __meta = window.builderState.components?.[childName];
+          const __off = (__meta && __meta.attach && Array.isArray(__meta.attach.offset))
+            ? __meta.attach.offset : null;
+          if (__off && (__off[3] || __off[4] || __off[5])) {
+            dstWorldQ = dstWorldQ.multiply(rodriguesDegToQuaternion(__off[3] || 0, __off[4] || 0, __off[5] || 0));
+          }
           const newChildQ = dstWorldQ.clone().multiply(srcQL.clone().invert());
 
           ghost.quaternion.copy(newChildQ);
@@ -6703,9 +6712,9 @@ ensureBuilderBar();
     if (!__scopeAllBtn || !__scopeFileBtn) return;
     __scopeAllBtn.classList.toggle("active", __previewScope === "all");
     __scopeFileBtn.classList.toggle("active", __previewScope === "file");
-    // Label the file button with the actual selection so it reads as
-    // "show scene.j2", not an abstract mode.
-    __scopeFileBtn.textContent = window.builderState.activeFile || "selected file";
+    // Static tags ("all files" / "selected file"); the file list above
+    // already shows which file is selected.
+    __scopeFileBtn.title = "Show only " + (window.builderState.activeFile || "the selected file");
   }
   __scopeAllBtn?.addEventListener("click", () => { __previewScope = "all"; updateConfigPreview(); });
   __scopeFileBtn?.addEventListener("click", () => { __previewScope = "file"; updateConfigPreview(); });
