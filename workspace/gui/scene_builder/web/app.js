@@ -6299,7 +6299,40 @@ ensureBuilderBar();
   }
 
   // --- Load button + file input ---
+  // Minimal Jinja preprocessing so .j2 scene files load as-authored:
+  //  - {# ... #} comments stripped (multi-line)
+  //  - {%- set name = value -%} assignments collected, their lines removed
+  //  - {{ expr }} substituted with the collected vars; pure-numeric
+  //    expressions (e.g. "-wall_offset", "0+0.8") are evaluated
+  // Loops/conditionals ({% for %}, {% if %}) are NOT expanded — those
+  // scenes need the server-side render; here they degrade as before.
+  function __preprocessJinja(text) {
+    let src = String(text);
+    src = src.replace(/\{#[\s\S]*?#\}/g, "");
+    const vars = {};
+    src = src.replace(/^[ \t]*\{%-?\s*set\s+([A-Za-z_]\w*)\s*=\s*(.+?)\s*-?%\}[ \t]*\r?\n?/gm, (_, name, val) => {
+      const num = Number(val);
+      vars[name] = Number.isFinite(num) ? num : val.replace(/^["']|["']$/g, "");
+      return "";
+    });
+    src = src.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
+      let e = expr;
+      for (const [k, v] of Object.entries(vars)) {
+        e = e.replace(new RegExp("\\b" + k + "\\b", "g"), String(v));
+      }
+      if (/^[-+*/(). \d]+$/.test(e)) {
+        try {
+          const v = Function('"use strict";return (' + e + ")")();
+          if (Number.isFinite(v)) return String(v);
+        } catch (_) {}
+      }
+      return e;
+    });
+    return src;
+  }
+
   function __parseSimpleYaml(text) {
+    text = __preprocessJinja(text);
     const result = {};
     const lines = text.split("\n");
     let currentTop = null;
