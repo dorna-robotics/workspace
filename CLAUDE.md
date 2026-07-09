@@ -99,6 +99,7 @@ docs/                    canonical reference (read second, after skills)
 .claude/skills/          task-focused playbook (read first)
 examples/                gold exemplar BT projects (feeder, capping, runtime, …)
 projects_old/            retired real-bench projects, kept for reference
+scenes/                  shared chassis templates (core_500/1000/2000)
 workspace/               the platform itself
   workspace/             Python package (SDK)
     components/          device + physical component classes
