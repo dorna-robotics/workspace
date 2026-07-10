@@ -36,7 +36,7 @@ class Start(Action):
     params      = []
     duration    = 5
     resource    = "robot"
-    HOME_JOINTS = [0, 45, -90, 0, -45, 0, 100]
+    START_JOINTS = [0, 45, -90, 0, -45, 0, 100]
 
     def pre(self):
         return ~started()
@@ -47,8 +47,18 @@ class Start(Action):
     def execute(self):
         rt  = self.ctx.runtime
         rcp = self.ctx.recipes
+        ws  = self.ctx.workspace
+        core = ws.components["core"]
         rt.motor(1)
-        rcp["robot"].park(joint=self.HOME_JOINTS, has_motion_plan=True)
+        # Home the rail before any move that assumes a homed axis:
+        # set_axis_with_stop configures the axis + PID and homes against
+        # the hard stop, but only if the rail isn't already homed
+        # (is_homed gate), so calling it every Start is cheap. No-op in
+        # simulation (the SDK stubs return success).
+        if core.has_rail:
+            rt.step("homing rail")
+            rcp["robot"].set_axis_with_stop(core.rail_cfg, dir=-1)
+        rcp["robot"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 
 
