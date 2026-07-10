@@ -278,9 +278,9 @@ def run_protocol(
          the caller supplied.
       3. Pulls PDDL templates, scheduler meta, and a leaf factory
          from the auto-populated :class:`ActionRegistry`.
-      4. Wraps every leaf in ``with_retry(max_attempts=2)`` and the
-         body in ``replan_on_failure(...)``. (Override by using your
-         own tree builder; this is just the default.)
+      4. Wraps the body in ``replan_on_failure(...)``. Leaves are NOT
+         retried implicitly (``max_attempts=1``) — a failure replans;
+         retry only where a project explicitly opts in.
       5. Runs the BT engine.
 
     Args:
@@ -679,7 +679,10 @@ def run_protocol(
                 log.exception("Failed to publish schedule event — continuing")
 
         def _wrapped(action_name, item_index):
-            return with_retry(leaf_factory(action_name, item_index), max_attempts=2)
+            # max_attempts=1 = NO implicit retry — a failed action goes
+            # straight to replan. Retry only where a project explicitly
+            # opts in with its own with_retry wrapper.
+            return with_retry(leaf_factory(action_name, item_index), max_attempts=1)
         body = from_schedule(
             actions_list, _wrapped,
             swaps=swaps_list,
