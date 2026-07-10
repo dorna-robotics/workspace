@@ -15,8 +15,8 @@
       "count": 878,
       "max": [
         3.999774932861328,
-        0.6000000238418579,
-        0.25
+        0.6002010107040405,
+        0.250002384185791
       ],
       "min": [
         -3.999774932861328,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2840
+      "byteLength": 2806
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_amber_40ml_1x6.glb.bin",
-      "byteLength": 2840
+      "byteLength": 2806
     }
   ],
   "materials": [

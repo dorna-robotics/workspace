@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6006
+      "count": 5706
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1847,
+      "count": 1797,
       "max": [
         4.150000095367432,
-        7,
-        4.1383957862854
+        7.000006198883057,
+        4.138299465179443
       ],
       "min": [
         -4.150000095367432,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1847
+      "count": 1797
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4985
+      "byteLength": 5098
     }
   ],
   "buffers": [
     {
       "uri": "scale_top_falcon_15ml.glb.bin",
-      "byteLength": 4985
+      "byteLength": 5098
     }
   ],
   "materials": [

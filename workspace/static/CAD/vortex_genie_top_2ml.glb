@@ -14,8 +14,8 @@
       "componentType": 5126,
       "count": 368,
       "max": [
-        1.5,
-        1.899999976158142,
+        1.500175952911377,
+        1.899888038635254,
         3.922110080718994
       ],
       "min": [
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1266
+      "byteLength": 1271
     }
   ],
   "buffers": [
     {
       "uri": "vortex_genie_top_2ml.glb.bin",
-      "byteLength": 1266
+      "byteLength": 1271
     }
   ],
   "materials": [

@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10484
+      "byteLength": 10537
     }
   ],
   "buffers": [
     {
       "uri": "capholder_falcon_15ml.glb.bin",
-      "byteLength": 10484
+      "byteLength": 10537
     }
   ],
   "materials": [

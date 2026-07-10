@@ -15,8 +15,8 @@
       "count": 1328,
       "max": [
         12.25,
-        3,
-        2.25
+        2.9998779296875,
+        2.24981689453125
       ],
       "min": [
         -12.25,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3857
+      "byteLength": 3888
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_1x6.glb.bin",
-      "byteLength": 3857
+      "byteLength": 3888
     }
   ],
   "materials": [

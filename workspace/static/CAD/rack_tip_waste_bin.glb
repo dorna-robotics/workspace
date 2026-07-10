@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 953
+      "byteLength": 960
     }
   ],
   "buffers": [
     {
       "uri": "rack_tip_waste_bin.glb.bin",
-      "byteLength": 953
+      "byteLength": 960
     }
   ],
   "materials": [

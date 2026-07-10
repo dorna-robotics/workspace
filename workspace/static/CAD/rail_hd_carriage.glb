@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 19302
+      "count": 19278
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7688,
+      "count": 7683,
       "max": [
         5.800320625305176,
         -0.00015783309936523438,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7688
+      "count": 7683
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 19808
+      "byteLength": 19918
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_carriage.glb.bin",
-      "byteLength": 19808
+      "byteLength": 19918
     }
   ],
   "materials": [

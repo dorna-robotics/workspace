@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5527
+      "byteLength": 5471
     },
     {
       "buffer": 0,
-      "byteOffset": 5527,
-      "byteLength": 740
+      "byteOffset": 5471,
+      "byteLength": 748
     }
   ],
   "buffers": [
     {
       "uri": "robot_A4.glb.bin",
-      "byteLength": 6267
+      "byteLength": 6219
     }
   ],
   "materials": [

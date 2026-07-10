@@ -6,46 +6,136 @@
   "accessors": [
     {
       "type": "SCALAR",
-      "componentType": 5123,
-      "count": 39246
+      "componentType": 5125,
+      "count": 569598
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13354,
+      "count": 175651,
       "max": [
-        7,
-        5.799792289733887,
-        2.250030517578125
+        7.349999904632568,
+        4.480000019073486,
+        0
       ],
       "min": [
-        -7,
-        0,
-        -2.25
+        -7.349999904632568,
+        -2.25,
+        -4.5
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13354
+      "count": 175651
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 14460
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 4621,
+      "max": [
+        7.940000057220459,
+        0.7900000214576721,
+        -1.0958549976348877
+      ],
+      "min": [
+        -7.940000057220459,
+        0.09000000357627869,
+        -3.9041450023651123
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 4621
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 7998
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 2538,
+      "max": [
+        8.520000457763672,
+        0.7300000190734863,
+        -0.47999998927116394
+      ],
+      "min": [
+        -8.520000457763672,
+        0.15000000596046448,
+        -4.519999980926514
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 2538
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 9144
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 1803,
+      "max": [
+        8.503494262695312,
+        0.7141479849815369,
+        -0.23999999463558197
+      ],
+      "min": [
+        -8.502646446228027,
+        0.16500000655651093,
+        -4.760000228881836
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 1803
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 31855
+      "byteLength": 549561
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 549561,
+      "byteLength": 14356
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 563917,
+      "byteLength": 8260
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 572177,
+      "byteLength": 8234
     }
   ],
   "buffers": [
     {
       "uri": "shaker_rotating.glb.bin",
-      "byteLength": 31855
+      "byteLength": 580411
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.002",
+      "name": "Steel_-_Satin.008",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -61,11 +151,65 @@
           "specularFactor": 0
         }
       }
+    },
+    {
+      "name": "Opaque(255,245,227).001",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          1,
+          0.9607840180397034,
+          0.8901960253715515,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Opaque(50,150,255).001",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19607800245285034,
+          0.5882350206375122,
+          1,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Opaque(255,130,0).001",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          1,
+          0.5098040103912354,
+          0,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
     }
   ],
   "meshes": [
     {
-      "name": "shaker_rotating",
+      "name": "rotsh",
       "primitives": [
         {
           "attributes": {
@@ -84,13 +228,73 @@
               }
             }
           }
+        },
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5
+          },
+          "mode": 4,
+          "material": 1,
+          "indices": 3,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 1,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
+        },
+        {
+          "attributes": {
+            "POSITION": 7,
+            "NORMAL": 8
+          },
+          "mode": 4,
+          "material": 2,
+          "indices": 6,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 2,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
+        },
+        {
+          "attributes": {
+            "POSITION": 10,
+            "NORMAL": 11
+          },
+          "mode": 4,
+          "material": 3,
+          "indices": 9,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 3,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
         }
       ]
     }
   ],
   "nodes": [
     {
-      "name": "shaker_rotating",
+      "name": "rotsh",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,
