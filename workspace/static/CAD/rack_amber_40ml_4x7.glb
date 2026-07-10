@@ -7,40 +7,40 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 15906
+      "count": 14388
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5257,
+      "count": 4689,
       "max": [
         14.25,
-        8.25018310546875,
-        3.000823974609375
+        3,
+        8.25
       ],
       "min": [
         -14.25,
-        -8.25,
-        0
+        0,
+        -8.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5257
+      "count": 4689
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 12564
+      "byteLength": 11134
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_4x7.glb.bin",
-      "byteLength": 12564
+      "byteLength": 11134
     }
   ],
   "materials": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "plate_amber_40ml_4X7",
+      "name": "rack_amber_40ml_4x7",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "plate_amber_40ml_4X7",
+      "name": "rack_amber_40ml_4x7",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 25926
+      "count": 24402
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8561,
+      "count": 8192,
       "max": [
-        7.999594211578369,
-        0.4000000059604645,
-        5.5
+        7.9995951652526855,
+        0.3998129665851593,
+        5.499782085418701
       ],
       "min": [
         -7.999594211578369,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8561
+      "count": 8192
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 23781
+      "byteLength": 22884
     }
   ],
   "buffers": [
     {
       "uri": "adapter_capholder_falcon_15ml.glb.bin",
-      "byteLength": 23781
+      "byteLength": 22884
     }
   ],
   "materials": [

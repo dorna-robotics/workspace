@@ -15,8 +15,8 @@
       "count": 4536,
       "max": [
         8.25,
-        0.4000000059604645,
-        5.75
+        0.3998351991176605,
+        5.749542236328125
       ],
       "min": [
         -8.25,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10525
+      "byteLength": 10484
     }
   ],
   "buffers": [
     {
       "uri": "capholder_falcon_15ml.glb.bin",
-      "byteLength": 10525
+      "byteLength": 10484
     }
   ],
   "materials": [

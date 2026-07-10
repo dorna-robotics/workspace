@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1016
+      "byteLength": 1081
     }
   ],
   "buffers": [
     {
       "uri": "cap_amber_40ml.glb.bin",
-      "byteLength": 1016
+      "byteLength": 1081
     }
   ],
   "materials": [

@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 27306
+      "count": 29442
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8922,
+      "count": 9327,
       "max": [
         11.850000381469727,
-        6.800567626953125,
-        2.0995421409606934
+        7.800000190734863,
+        2.0999999046325684
       ],
       "min": [
         -11.850000381469727,
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8922
+      "count": 9327
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 18093
+      "byteLength": 18960
     }
   ],
   "buffers": [
     {
       "uri": "stack_holder_disc_in.glb.bin",
-      "byteLength": 18093
+      "byteLength": 18960
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.005",
+      "name": "Steel_-_Satin.002",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [

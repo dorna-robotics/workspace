@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 28817
+      "byteLength": 28784
     }
   ],
   "buffers": [
     {
       "uri": "rack_micronic_96_2.glb.bin",
-      "byteLength": 28817
+      "byteLength": 28784
     }
   ],
   "materials": [

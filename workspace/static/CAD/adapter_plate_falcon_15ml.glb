@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4386
+      "count": 4380
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1542,
+      "count": 1540,
       "max": [
         7.749999523162842,
         5.250284194946289,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1542
+      "count": 1540
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4844
+      "byteLength": 4764
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_falcon_15ml.glb.bin",
-      "byteLength": 4844
+      "byteLength": 4764
     }
   ],
   "materials": [

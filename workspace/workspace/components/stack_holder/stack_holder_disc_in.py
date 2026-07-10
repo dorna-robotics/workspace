@@ -6,10 +6,10 @@ from workspace.components.stack_holder.stack_holder import StackHolder
 @register("stack_holder_disc_in")
 class StackHolderDiscIn(StackHolder):
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 8, 0, 0, 0], "top": [0, 0, 68, 0, 0, 0]}},
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 8, 0, 0, 0], "top": [0, 0, 78, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0, 0, 34, 0, 0, 0], "scale":[237, 42, 68], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 39, 0, 0, 0], "scale":[237, 42, 78], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
         offset=[-77.943, 0, 8],            # A1: x (3*pitch so col 4 lands on 0), y, slot z
         pitch=[25.981, 0],               # x step per col, y step per row

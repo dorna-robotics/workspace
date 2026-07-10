@@ -1566,23 +1566,20 @@ class Recipe:
             return [calibration_targets]
         return list(calibration_targets)
 
-    def calibrate(self, calibration_targets=None):
-        """Probe-calibrate this recipe.
-
-        The correct probe tool must already be mounted.
-        Resolves the clb anchors to calibrate, then hands each to
-        ProbeCalibration, which does the full approach + in-pocket probing +
-        math and stores one raw/corrected point per anchor under this recipe's
-        calibration_name.
-        """
+    def calibrate(self, calibration_targets, tool_anchor, mode):
         if self.core.current_tool() is None:
             raise RecipeError("no probe tool attached to the robot")
+        if calibration_targets is None:
+            raise RecipeError(
+                "calibrate() requires explicit calibration_targets "
+                "(a clb anchor name or list) — auto-detect is disabled"
+            )
+        if mode not in ("precise", "simple"):
+            raise RecipeError(f"calibrate() mode must be 'precise' or 'simple', got {mode!r}")
 
-        targets = self._resolve_calibration_targets(
-            calibration_targets if calibration_targets is not None else self.calibration_targets
-        )
+        targets = self._resolve_calibration_targets(calibration_targets)
 
-        pc = ProbeCalibration(self)
+        pc = ProbeCalibration(self, tool_anchor=tool_anchor, mode=mode)
         for anchor in targets:
             # ProbeCalibration owns the whole approach: its gross staging move
             # uses the probe tool's tcp-anchor orientation, unlike above()

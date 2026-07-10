@@ -7,54 +7,77 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6522
+      "count": 55728
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1963,
+      "count": 17464,
       "max": [
-        2.1499075889587402,
-        9.846993446350098,
-        2.1499075889587402
+        6,
+        15.600000381469727,
+        9.473801612854004
       ],
       "min": [
-        -2.1500000953674316,
+        -6,
         0,
-        -2.1500000953674316
+        -8.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1963
+      "count": 17464
+    },
+    {
+      "type": "VEC2",
+      "componentType": 5126,
+      "count": 17464
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6035
+      "byteLength": 60465
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9728,
+      "minFilter": 9728,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "textures": [
+    {
+      "source": 0,
+      "sampler": 0
+    }
+  ],
+  "images": [
+    {
+      "name": "PaletteBaseColor",
+      "mimeType": "image/png",
+      "uri": "PaletteBaseColor.png"
     }
   ],
   "buffers": [
     {
-      "uri": "probe_vertical_70.glb.bin",
-      "byteLength": 6035
+      "uri": "vortex_genie_2.glb.bin",
+      "byteLength": 60465
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin",
+      "name": "PaletteMaterial001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
-        "baseColorFactor": [
-          0.6274510025978088,
-          0.6274510025978088,
-          0.6274510025978088,
-          1
-        ],
-        "metallicFactor": 0
+        "metallicFactor": 0,
+        "baseColorTexture": {
+          "index": 0
+        }
       },
       "extensions": {
         "KHR_materials_specular": {
@@ -65,12 +88,13 @@
   ],
   "meshes": [
     {
-      "name": "Probe 70mm Standoffs",
+      "name": "Vortexer Genie",
       "primitives": [
         {
           "attributes": {
             "POSITION": 1,
-            "NORMAL": 2
+            "NORMAL": 2,
+            "TEXCOORD_0": 3
           },
           "mode": 4,
           "material": 0,
@@ -80,7 +104,8 @@
               "bufferView": 0,
               "attributes": {
                 "POSITION": 0,
-                "NORMAL": 1
+                "NORMAL": 1,
+                "TEXCOORD_0": 2
               }
             }
           }
@@ -90,7 +115,7 @@
   ],
   "nodes": [
     {
-      "name": "Probe 70mm Standoffs",
+      "name": "Vortexer Genie",
       "rotation": [
         0.7071068286895752,
         0,

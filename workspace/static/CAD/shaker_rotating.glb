@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 39264
+      "count": 39246
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13357,
+      "count": 13354,
       "max": [
         7,
         5.799792289733887,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13357
+      "count": 13354
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 32438
+      "byteLength": 31855
     }
   ],
   "buffers": [
     {
       "uri": "shaker_rotating.glb.bin",
-      "byteLength": 32438
+      "byteLength": 31855
     }
   ],
   "materials": [

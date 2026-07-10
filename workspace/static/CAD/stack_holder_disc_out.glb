@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 27102
+      "count": 29436
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8883,
+      "count": 9335,
       "max": [
         11.850000381469727,
-        6.800567626953125,
-        2.0995421409606934
+        7.800000190734863,
+        2.0999999046325684
       ],
       "min": [
         -11.850000381469727,
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8883
+      "count": 9335
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 18201
+      "byteLength": 19293
     }
   ],
   "buffers": [
     {
       "uri": "stack_holder_disc_out.glb.bin",
-      "byteLength": 18201
+      "byteLength": 19293
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.004",
+      "name": "Steel_-_Satin.001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "disc_holder_output_assembly",
+      "name": "disc_holder_output_assembly (~recovered)",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "disc_holder_output_assembly",
+      "name": "disc_holder_output_assembly (~recovered)",
       "rotation": [
         0.7071068286895752,
         0,
