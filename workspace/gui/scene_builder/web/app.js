@@ -124,7 +124,7 @@
         envMesh.rotation.x = Math.PI / 2;
         envScene.add(envMesh);
         scene.environment = pmrem.fromScene(envScene).texture;
-        scene.environmentIntensity = 0.6;
+        scene.environmentIntensity = 0.7;
       });
 
       // --- Helpers (grid/axes) ---
@@ -243,10 +243,10 @@
                          new THREE.Vector3(0,0,500), 0x0000ff));
       */
       // --- Lights ---
-      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x080c18, 0.5));
-      const dir = new THREE.DirectionalLight(0xfff4e0, 1.6);
+      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x39414f, 0.6));
+      const dir = new THREE.DirectionalLight(0xfff4e0, 1.1);
       dir.position.set(1200, 900, 1500); scene.add(dir);
-      const fill = new THREE.DirectionalLight(0xb0ccff, 0.4);
+      const fill = new THREE.DirectionalLight(0xb0ccff, 0.55);
       fill.position.set(-800, -600, 600); scene.add(fill);
 
       // --- GLTF + object management ---
