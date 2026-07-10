@@ -133,14 +133,15 @@ class Start(Action):
         # Home the rail before any move that assumes a homed axis:
         # set_axis_with_stop configures the axis + PID and homes against
         # the hard stop — already-homed axes (and sim) short-circuit to
-        # True, so calling it every Start is cheap. If homing fails, do
-        # NOT run anything else: return False so the planner retries /
-        # replans instead of moving on an unhomed rail.
+        # True, so calling it every Start is cheap. A homing failure is
+        # FATAL: return the reserved "killed" outcome — the runtime is
+        # killed on the spot, nothing else runs, no motion ever happens
+        # on the unhomed rail. The operator must Reset / re-Launch.
         if core.has_rail:
             rt.step("homing rail")
             if not rcp["robot"].set_axis_with_stop(core.rail_cfg):
                 rt.step("homing failed")
-                return False
+                return "killed"
         rcp["robot"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 

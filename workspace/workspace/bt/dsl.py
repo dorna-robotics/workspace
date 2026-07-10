@@ -1410,13 +1410,27 @@ class _DSLActionLeaf(RecipeAction):
         #   * str          — name of the chosen eff branch (the
         #                    common case, including deterministic
         #                    actions which return their only key)
-        #   * False        — action failed (no effects applied)
+        #   * "killed"     — RESERVED: fatal, no-motion abort. The
+        #                    runtime is killed (engine exits before its
+        #                    next tick, run ends INVALID / KILLED) and
+        #                    the leaf fails. Never declare "killed" as
+        #                    an eff branch — it is an exit, not an
+        #                    effect. Any action may return it.
+        #   * False        — action failed (no effects applied);
+        #                    planner replans from observed state
         #
         # Anything else (None, True, ints, ...) is rejected as a
         # programmer error — keeps the contract consistent with
         # eff()'s "always a dict" rule: one way to pick a branch.
         if rv is False:
             log.warning("BT leaf FAIL : %s (execute returned False)", self.name)
+            return False
+        if rv == "killed":
+            log.warning('BT leaf KILL : %s (execute returned "killed")', self.name)
+            rt = getattr(self.ctx, "runtime", None)
+            kill = getattr(rt, "kill", None)
+            if callable(kill):
+                kill()
             return False
         if not isinstance(rv, str):
             effs = self._call_eff()
