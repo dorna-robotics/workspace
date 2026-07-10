@@ -1,0 +1,27 @@
+{%- set sf = 20 -%}
+
+# Robot (generic): base Recipe with NO component. Owns no station, does no
+# boot-time IK — the stable handle for robot-level Start/Park calls
+# (park(joint=...), motor). Same across every project.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
+# Large tube gripper, parked in the 144 mm tool rack.
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Amber 40 ml rack — Rack over the adapter (resolver walks down to
+# rack_amber_40ml_2x4_1). pick/place by slot name (A1..B4).
+tube_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: adapter_plate_amber_40ml_2x4_1, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# Shaker — place/pick tubes on its A1/A2 slots; shake(duration=...)
+# toggles the mechanism and blocks until back at start position.
+# The slots live on the "rotating" solid, so the boot IK targets that
+# solid's "place" anchor (the body has no place anchor).
+shaker:
+  class: workspace.recipes.shaker.Shaker
+  kwargs: {component: shaker_2slot_1, target_solid_name: rotating, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}

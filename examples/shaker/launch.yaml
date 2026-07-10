@@ -1,0 +1,22 @@
+# shaker example — launch config.
+
+project_name: shaker_example
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+# Window = shaker capacity: each slice loads both slots, shakes once,
+# unloads both. Tube t uses slot t % 2, so slices never collide.
+plan_window:  2
+scheduler:    cpsat
+
+kwargs:
+  batch_size:
+    type: int
+    default: 2
+    label: Batch size
+    hint: Number of 40 ml tubes to load onto the shaker, shake, and return.
+    min: 1
+    max: 8
