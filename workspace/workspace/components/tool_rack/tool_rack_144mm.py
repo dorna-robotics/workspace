@@ -10,7 +10,7 @@ class ToolRack144mm(ToolRack):
     DEFAULTS = dict(
         anchors = {"body": {"center": [0,0,0,0,0,0], "place": [0, 46, 153, 127.27922061357856, -127.27922061357854, 0],
             "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
-            "clb_0": [0, 46, 148, 0, 0, -45]}},
+            "clb_0": [0, 15, 154, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0, 13.75, 158/2, 0.0, 0.0, 0.0], "scale":[65, 92.5, 158], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
