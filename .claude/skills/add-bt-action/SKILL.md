@@ -69,7 +69,7 @@ The framework auto-registers every Action subclass — no domain.py.
 - **`pre()` returns a Python `bool`** (`return True if x else False`) — breaks the precedence graph. Always return an `Expr` built from predicates.
 - **Eff seeds wrong objects** — using current-slice `objects` instead of `_ctx_all_objects()` for full-batch seeding leaves later slices without the facts. bt-framework-guide.md §12.
 - **Heavy work in `pre()` or `eff()`** — they're called by the planner repeatedly; keep them pure / O(1). Real I/O goes in `execute()`.
-- **`execute()` returns nothing** — the framework reads the return value as the branch name. Always return a string matching one of `eff()`'s keys.
+- **`execute()` returns nothing** — the framework reads the return value as the branch name. Always return a string matching one of `eff()`'s keys, `False` for a recoverable failure (planner replans), or the reserved `"killed"` for a fatal no-motion abort of the whole run. Never name an `eff()` branch `"killed"`. bt-framework-guide.md §3.3 "Fatal abort".
 - **Branching on `self.ctx.runtime.state`** in `execute()` to detect pause — wrong layer. `rt.sleep` / `rt.<robot>` calls are pause-aware automatically. project-guide.md §8.
 - **Adding a fact-mutation call (`workspace.add_fact()`) inside `execute()`** when an `eff()` branch would do — `eff` is declarative and auditable; ad-hoc mutation isn't. Reserve `workspace.add_fact()` for genuinely state-aware sensing actions. bt-framework-guide.md §8-9.
 

@@ -442,8 +442,55 @@ rule as `eff()` being a dict.
 | **Runtime — execute() returns first key** | That branch applies. No replan. |
 | **Runtime — execute() returns non-first key** | That branch applies. The framework raises `ReplanRequested` so downstream actions re-evaluate. |
 | **Runtime — execute() returns unknown key** | Warning + fall back to the default (first) key. |
-| **Runtime — execute() returns False** | Action failed; no effects applied. |
+| **Runtime — execute() returns False** | Action failed; no effects applied. The planner replans from observed state (no implicit retry). |
+| **Runtime — execute() returns `"killed"`** | **RESERVED — fatal abort.** The framework kills the runtime: the engine exits before its next tick, the run ends `INVALID` / `RTState.KILLED`, no further action runs, no motion happens. See below. |
 | **Runtime — execute() returns anything else (None / int / etc.)** | Programmer error — warning + treated as failure. |
+
+#### Fatal abort — the reserved `"killed"` outcome
+
+Any action can end the **whole run** by returning the reserved string
+`"killed"` from `execute()`. It is part of the action vocabulary —
+the same spelling as branch names — so no imperative runtime call is
+needed in the action body:
+
+```python
+def execute(self):
+    ...
+    if core.has_rail:
+        rt.step("homing rail")
+        if not rcp["robot"].set_axis_with_stop(core.rail_cfg):
+            rt.step("homing failed")
+            return "killed"      # fatal: abort the run, zero motion
+    ...
+```
+
+Semantics — identical to the operator pressing **Kill**:
+
+* the runtime is killed on the spot (`rt.kill()` under the hood, a
+  `BT leaf KILL` line in the log);
+* the engine exits before its next tick — **no replan, no retry, no
+  further action, no motion**;
+* the run ends `Status.INVALID` with `RTState.KILLED`; the server,
+  viewer and device bus stay up;
+* the operator must **Reset / re-Launch** to run again.
+
+Rules:
+
+* **Never declare `"killed"` as an `eff()` branch.** It is an exit,
+  not an effect on world state — the leaf intercepts the string
+  before branch lookup, so an eff branch by that name would be
+  unreachable.
+* Use it only for conditions where *continuing at all* is unsafe
+  (unhomed axis, safety interlock, unrecoverable hardware state).
+  For a recoverable failure, `return False` — the planner replans
+  and the run stays alive.
+
+The two failure returns side by side:
+
+| Return | Meaning | What happens next |
+|---|---|---|
+| `False` | *this attempt* failed | replan from observed state; run continues |
+| `"killed"` | *the run* must stop | runtime killed; run over; operator intervenes |
 
 #### When to use multiple branches
 
