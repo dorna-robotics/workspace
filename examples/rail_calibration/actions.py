@@ -52,12 +52,15 @@ class Start(Action):
         rt.motor(1)
         # Home the rail before any move that assumes a homed axis:
         # set_axis_with_stop configures the axis + PID and homes against
-        # the hard stop, but only if the rail isn't already homed
-        # (is_homed gate), so calling it every Start is cheap. No-op in
-        # simulation (the SDK stubs return success).
+        # the hard stop — already-homed axes (and sim) short-circuit to
+        # True, so calling it every Start is cheap. If homing fails, do
+        # NOT run anything else: return False so the planner retries /
+        # replans instead of moving on an unhomed rail.
         if core.has_rail:
             rt.step("homing rail")
-            rcp["robot"].set_axis_with_stop(core.rail_cfg, dir=-1)
+            if not rcp["robot"].set_axis_with_stop(core.rail_cfg):
+                rt.step("homing failed")
+                return False
         rcp["robot"].park(joint=self.START_JOINTS, has_motion_plan=True)
         return "started"
 

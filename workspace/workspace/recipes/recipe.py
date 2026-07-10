@@ -129,6 +129,12 @@ class Recipe:
     def set_axis_with_stop(self, axis_cfg, dir=-1):
         """Init an axis and home it against a hard stop (rail-style).
 
+        Returns True iff the axis reports homed afterwards — the caller
+        must gate any motion that assumes a homed axis on this (return
+        False from the action so the planner retries/replans instead of
+        moving on an unhomed rail). Already-homed axes short-circuit to
+        True, so calling this every Start is cheap.
+
         The whole sequence runs inside the station's ``expect_alarms``
         window: hard-stop homing works by stalling the motor into the
         stop, so the resulting alarm (and any comms hiccup while the
@@ -142,24 +148,28 @@ class Recipe:
         guard = getattr(api, "expect_alarms", None)
         window = guard("rail homing (stall)") if callable(guard) else nullcontext()
         with window:
-            if not rt.is_homed(index=axis_cfg["axis"]):
-                api.set_axis(
-                    index=axis_cfg["axis"],
-                    usem=axis_cfg["usem"], usee=axis_cfg["usee"],
-                    pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
-                    ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
-                )
-                rt.delay(1)
-                api.set_pid(
-                    index=axis_cfg["axis"],
-                    p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
-                    duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
-                )
+            if rt.is_homed(index=axis_cfg["axis"]):
+                return True
+            api.set_axis(
+                index=axis_cfg["axis"],
+                usem=axis_cfg["usem"], usee=axis_cfg["usee"],
+                pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
+                ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
+            )
+            rt.delay(1)
+            api.set_pid(
+                index=axis_cfg["axis"],
+                p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
+                duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
+            )
 
-                rt.delay(1)
-                return api.home_with_stop(
-                    index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
-                )
+            rt.delay(1)
+            api.home_with_stop(
+                index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
+            )
+            # Success = the controller actually reports the axis homed —
+            # ask the hardware, don't trust the command status.
+            return bool(rt.is_homed(index=axis_cfg["axis"]))
 
     def set_axis_with_encoder(self, axis_cfg, dir=-1):
         """Init an axis and home it against an encoder index (feeder-style)."""
