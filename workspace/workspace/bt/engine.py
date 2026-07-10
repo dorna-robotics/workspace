@@ -271,6 +271,10 @@ class BTEngine:
     def _runtime_stopped(self) -> bool:
         if self._runtime is None:
             return False
+        # Killed runtime = hard abort: exit before the next tick instead
+        # of burning replans on actions that die at their first checkpoint.
+        if getattr(self._runtime, "killed", False):
+            return True
         s = getattr(self._runtime, "stopped", None)
         return bool(s() if callable(s) else s)
 

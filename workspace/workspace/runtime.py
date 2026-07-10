@@ -326,6 +326,10 @@ class Runtime:
     def parking(self) -> bool:
         return self._parking
 
+    @property
+    def killed(self) -> bool:
+        return self._killed
+
     def kill(self) -> None:
         """Kill runtime and join workflow thread."""
         with self._lock:
