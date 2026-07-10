@@ -212,7 +212,6 @@
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
-    import { RGBELoader }    from "three/addons/loaders/RGBELoader.js";
     import { DRACOLoader }   from "three/addons/loaders/DRACOLoader.js";
     import io from "/vendor/socket.io.esm.min.js";
 
@@ -264,20 +263,36 @@
       controls.minDistance = 5;
       controls.maxDistance = 50000;
 
-      // ── Environment (HDR) ─────────────────────────────────────────────────
+      // ── Environment — procedural, longitude-symmetric gradient ───────────
+      // Replaces light.hdr: the studio HDR had a measured 14x luminance
+      // swing across compass directions, so identical materials rendered
+      // visibly darker on one side of the bench than the other. A vertical
+      // gradient (bright zenith → mid horizon → dim floor) gives the same
+      // soft image-based light with ZERO left/right bias. The sphere is
+      // rotated so the gradient's zenith aligns with world +Z (Z-up scene).
       const pmrem = new THREE.PMREMGenerator(renderer);
-      pmrem.compileEquirectangularShader();
-      new RGBELoader().load(versioned("light.hdr"), (texture) => {
+      {
+        const envCanvas = document.createElement("canvas");
+        envCanvas.width = 64; envCanvas.height = 256;
+        const g = envCanvas.getContext("2d");
+        const grad = g.createLinearGradient(0, 0, 0, envCanvas.height);
+        grad.addColorStop(0.0, "#ffffff");   // zenith
+        grad.addColorStop(0.5, "#b9bfc9");   // horizon
+        grad.addColorStop(1.0, "#6d737b");   // floor bounce
+        g.fillStyle = grad;
+        g.fillRect(0, 0, envCanvas.width, envCanvas.height);
+        const envTex = new THREE.CanvasTexture(envCanvas);
+        envTex.colorSpace = THREE.SRGBColorSpace;
         const envScene = new THREE.Scene();
         const envMesh  = new THREE.Mesh(
           new THREE.SphereGeometry(100, 64, 64),
-          new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide })
+          new THREE.MeshBasicMaterial({ map: envTex, side: THREE.BackSide })
         );
         envMesh.rotation.x = Math.PI / 2;
         envScene.add(envMesh);
         scene.environment = pmrem.fromScene(envScene).texture;
         scene.environmentIntensity = 0.9;
-      });
+      }
 
       // ── Grid ──────────────────────────────────────────────────────────────
       function makeRectGrid(size, step, major, colorMinor, colorMajor) {
