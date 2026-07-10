@@ -276,7 +276,7 @@
         envMesh.rotation.x = Math.PI / 2;
         envScene.add(envMesh);
         scene.environment = pmrem.fromScene(envScene).texture;
-        scene.environmentIntensity = 0.7;
+        scene.environmentIntensity = 0.9;
       });
 
       // ── Grid ──────────────────────────────────────────────────────────────
@@ -305,19 +305,22 @@
       scene.add(gridMesh);
 
       // ── Lights ────────────────────────────────────────────────────────────
-      // Soft studio rig: ~2:1 key-to-fill keeps form without harsh sides —
-      // a hotter key blows out the lit side while the far side goes black.
-      // Ground bounce is a mid grey-blue (not near-black) so downward and
-      // away-facing surfaces stay readable.
-      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x39414f, 0.6));
+      // Mostly-ambient CAD rig. The CAD albedos are extreme (white powder
+      // coat 0.96, black 0.098), so any strong directional light clips the
+      // lit side to featureless white while the far side crushes — and the
+      // scene reads completely differently from opposite camera angles.
+      // Keep ~⅔ of the energy in non-directional sources (hemisphere +
+      // environment, which light every face equally) and a mild 1.6:1
+      // key/fill pair on top, just enough to read form.
+      scene.add(new THREE.HemisphereLight(0xdde8ff, 0x39414f, 0.85));
 
       // Key light (warm)
-      const dir = new THREE.DirectionalLight(0xfff4e0, 1.1);
+      const dir = new THREE.DirectionalLight(0xfff4e0, 0.65);
       dir.position.set(1200, 900, 1500);
       scene.add(dir);
 
       // Fill light (cool, from opposite side — keeps shadows from going fully black)
-      const fill = new THREE.DirectionalLight(0xb0ccff, 0.55);
+      const fill = new THREE.DirectionalLight(0xb0ccff, 0.4);
       fill.position.set(-800, -600, 600);
       scene.add(fill);
 
