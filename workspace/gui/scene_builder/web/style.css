@@ -496,28 +496,34 @@ select.input { cursor: pointer; }
 }
 .sb-file-add:hover { border-color: var(--accent, #4f9cf9); }
 
-/* Preview-scope radios: all configs vs the selected config. */
+/* Preview-scope segmented toggle: all files vs the selected file. */
 .sb-scope-toggle {
   display: flex;
-  gap: 14px;
+  gap: 4px;
   margin-bottom: 6px;
+}
+.sb-scope-toggle button {
+  flex: 1 1 0;
+  min-width: 0;
   font-family: var(--mono);
   font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--bg);
   color: var(--text-dim, #888);
-}
-.sb-scope-toggle label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sb-scope-toggle input[type="radio"] {
-  accent-color: var(--accent, #4f9cf9);
-  margin: 0;
-  cursor: pointer;
+.sb-scope-toggle button:hover { background: var(--surface2); }
+.sb-scope-toggle button.active {
+  border-color: var(--accent, #4f9cf9);
+  background: color-mix(in srgb, var(--accent, #4f9cf9) 12%, transparent);
+  color: var(--text);
 }
-.sb-scope-toggle label:has(input:checked) { color: var(--text); }
 
 /* ============================================================
    Viewer area
