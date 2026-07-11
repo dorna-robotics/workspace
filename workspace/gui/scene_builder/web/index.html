@@ -134,8 +134,12 @@
         <!-- Preview scope: the merged config of every file, or only the
              selected file's items. -->
         <div class="sb-scope-toggle">
-          <button id="sbScopeAll" class="active" title="Show the merged config from every file">all configs</button>
-          <button id="sbScopeFile" title="Show only the selected file's items">selected config</button>
+          <label title="Show the merged config from every file">
+            <input type="radio" name="sbScope" id="sbScopeAll" checked> all configs
+          </label>
+          <label title="Show only the selected file's items">
+            <input type="radio" name="sbScope" id="sbScopeFile"> selected config
+          </label>
         </div>
         <pre id="sbConfigPre" class="sb-config-pre"># No components yet</pre>
       </div>

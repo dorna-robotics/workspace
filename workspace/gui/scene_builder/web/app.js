@@ -6912,18 +6912,17 @@ ensureBuilderBar();
   //    selected (active) file's items. Save/download is unaffected —
   //    this only filters what the preview text shows. ──
   let __previewScope = "all";   // "all" | "file"
-  const __scopeAllBtn  = document.getElementById("sbScopeAll");
+  const __scopeAllBtn  = document.getElementById("sbScopeAll");   // radio inputs
   const __scopeFileBtn = document.getElementById("sbScopeFile");
   function __syncScopeButtons() {
     if (!__scopeAllBtn || !__scopeFileBtn) return;
-    __scopeAllBtn.classList.toggle("active", __previewScope === "all");
-    __scopeFileBtn.classList.toggle("active", __previewScope === "file");
-    // Static tags ("all files" / "selected file"); the file list above
-    // already shows which file is selected.
-    __scopeFileBtn.title = "Show only " + (window.builderState.activeFile || "the selected file");
+    __scopeAllBtn.checked  = __previewScope === "all";
+    __scopeFileBtn.checked = __previewScope === "file";
+    const lbl = __scopeFileBtn.closest("label");
+    if (lbl) lbl.title = "Show only " + (window.builderState.activeFile || "the selected file");
   }
-  __scopeAllBtn?.addEventListener("click", () => { __previewScope = "all"; updateConfigPreview(); });
-  __scopeFileBtn?.addEventListener("click", () => { __previewScope = "file"; updateConfigPreview(); });
+  __scopeAllBtn?.addEventListener("change", () => { if (__scopeAllBtn.checked) { __previewScope = "all"; updateConfigPreview(); } });
+  __scopeFileBtn?.addEventListener("change", () => { if (__scopeFileBtn.checked) { __previewScope = "file"; updateConfigPreview(); } });
 
   function updateConfigPreview() {
     try {
