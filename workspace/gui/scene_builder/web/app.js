@@ -2283,7 +2283,7 @@ function ensureBuilderBar() {
 
   // Row 2: Flip X / Y / Z on one line
   const flipRow = document.createElement("div");
-  flipRow.style.cssText = "display:flex;gap:4px;margin-top:2px";
+  flipRow.style.cssText = "display:flex;gap:4px;margin-top:2px;max-width:240px";
   for (const b of [btnFlipX, btnFlipY, btnFlipZ]) {
     b.style.flex = "1";
     flipRow.appendChild(b);
@@ -2295,7 +2295,7 @@ function ensureBuilderBar() {
   // place, these step the attach anchor across the parent's grid.
   const nudgeBtns = [];
   const nudgeRow = document.createElement("div");
-  nudgeRow.style.cssText = "display:flex;gap:4px;margin-top:2px";
+  nudgeRow.style.cssText = "display:flex;gap:4px;margin-top:2px;max-width:240px";
   for (const [label, axis, sign] of [
     ["X−", "x", -1], ["X+", "x", 1],
     ["Y−", "y", -1], ["Y+", "y", 1],
