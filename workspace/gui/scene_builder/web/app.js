@@ -8734,3 +8734,46 @@ function startRectPattern() {
 
 
   
+
+// ── Sidebar resize: drag the right edge; width persists per browser ──────
+// Long component names in the Objects list truncate on the default 264 px —
+// widen to taste. The viewer canvas only re-measures on window resize, so
+// dispatch one while dragging.
+(function () {
+  const sidebar = document.querySelector(".sidebar");
+  const handle = document.getElementById("sbResizeHandle");
+  if (!sidebar || !handle) return;
+  const KEY = "sb_sidebar_w";
+
+  function applyW(w) {
+    w = Math.max(220, Math.min(560, Math.round(w)));
+    sidebar.style.width = w + "px";
+    window.dispatchEvent(new Event("resize"));
+    return w;
+  }
+
+  const saved = parseInt(localStorage.getItem(KEY) || "", 10);
+  if (Number.isFinite(saved)) applyW(saved);
+
+  let dragging = false, startX = 0, startW = 0;
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebar.getBoundingClientRect().width;
+    handle.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    applyW(startW + (e.clientX - startX));
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    localStorage.setItem(KEY, String(Math.round(sidebar.getBoundingClientRect().width)));
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+})();

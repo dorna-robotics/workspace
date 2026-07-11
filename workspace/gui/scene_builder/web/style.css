@@ -159,12 +159,32 @@ select.input { cursor: pointer; }
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 .sidebar {
   width: 264px;
-  min-width: 264px;
+  min-width: 220px;
+  max-width: 560px;
   border-right: 1px solid var(--border2);
   background: var(--surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* Drag handle on the sidebar's right edge — resize to taste (persisted).
+   Long component names in the Objects list stop truncating on wider
+   panels. */
+.sb-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 30;
+  touch-action: none;
+}
+.sb-resize-handle:hover,
+.sb-resize-handle.dragging {
+  background: color-mix(in srgb, var(--accent, #4f9cf9) 35%, transparent);
 }
 [data-theme="light"] .sidebar { background: #fff; }
 .sidebar-scroll {
