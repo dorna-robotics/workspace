@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 20878
+      "byteLength": 20978
     }
   ],
   "buffers": [
     {
       "uri": "gripper_tube_large.glb.bin",
-      "byteLength": 20878
+      "byteLength": 20978
     }
   ],
   "materials": [

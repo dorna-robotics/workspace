@@ -7,13 +7,13 @@ from workspace.components.feeder.feeder import Feeder
 @register("capfeeder_autosampler_2ml")
 class FeederCap2ml(Feeder):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -20.569 , 171.66, -48, 0, 0], "top": [0, 87.972 , 147.972, -48, 0, 0], "plate_center": [0, 48.02, 108.02, -45, 0, 0],
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, -32.237, 188.277, -48, 0, 0], "top": [0, 102.114, 162.114, -48, 0, 0], "plate_center": [0, 48.02, 108.02, -45, 0, 0],
                 "hole_0":[50, 12.5, 0, 0, 0, 0], "hole_1": [-50, 12.5, 0, 0, 0, 0], "hole_2": [-50, -12.5, 0, 0, 0, 0], "hole_3": [50, -12.5, 0, 0, 0, 0],
-                "clb_0": [0, 21.15, 134.89, -45, 0, 0]}},
-        collision_box = 
+                "clb_0": [0, 7.008, 149.032, -45, 0, 0]}},
+        collision_box =
             {"body":[
                 {"pose":[0.0, -11.5, 55, 0.0, 0.0, 0.0], "scale":[115, 131.5, 110.0], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 63.0, 122.0, -45.0, 0.0, 0.0], "scale":[207.0, 207.0, 70.0], "padding_enabled": True}
+                {"pose":[0.0, 70.294, 130.294, -45.0, 0.0, 0.0], "scale":[247.0, 247.0, 90.0], "padding_enabled": True}
         ]},
         # cfg
         num_slots = 16,

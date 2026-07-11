@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1271
+      "byteLength": 1268
     }
   ],
   "buffers": [
     {
       "uri": "vortex_genie_top_2ml.glb.bin",
-      "byteLength": 1271
+      "byteLength": 1268
     }
   ],
   "materials": [

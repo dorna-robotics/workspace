@@ -7,75 +7,75 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 25782
+      "count": 29532
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8734,
+      "count": 9376,
       "max": [
-        1.1974118947982788,
-        5.003480434417725,
-        11.003479957580566
+        1.1973379850387573,
+        11.003479957580566,
+        -2.0290160179138184
       ],
       "min": [
         -1.1973379850387573,
-        2.0290160179138184,
-        8.02901554107666
+        8.02901554107666,
+        -5.003479957580566
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8734
+      "count": 9376
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 142122
+      "count": 182544
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 46922,
+      "count": 58036,
       "max": [
-        10.34347152709961,
-        16.1106014251709,
-        22.110794067382812
+        12.341363906860352,
+        24.938039779663086,
+        7.480000019073486
       ],
       "min": [
-        -10.342761993408203,
-        -7.480000019073486,
-        -0.6000000238418579
+        -12.341363906860352,
+        0,
+        -18.938039779663086
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 46922
+      "count": 58036
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 30901
+      "byteLength": 34593
     },
     {
       "buffer": 0,
-      "byteOffset": 30901,
-      "byteLength": 156051
+      "byteOffset": 34593,
+      "byteLength": 191755
     }
   ],
   "buffers": [
     {
       "uri": "capfeeder_autosampler_2ml.glb.bin",
-      "byteLength": 186952
+      "byteLength": 226348
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.006",
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -93,7 +93,7 @@
       }
     },
     {
-      "name": "Opaque(247,251,255).001",
+      "name": "Opaque(247,251,255)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -113,7 +113,7 @@
   ],
   "meshes": [
     {
-      "name": "capfeeder_autosampler_2ml",
+      "name": "capfeeder",
       "primitives": [
         {
           "attributes": {
@@ -156,7 +156,13 @@
   ],
   "nodes": [
     {
-      "name": "capfeeder_autosampler_2ml",
+      "name": "capfeeder",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,
