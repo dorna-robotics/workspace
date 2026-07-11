@@ -1142,29 +1142,42 @@ if (node) {
           const childAnchor = pending.sourceAnchor;
           const parentSolid = parentSolidKey || window.builderState.pending?.parentSolid || null;
 
-          const __getAnchorsLocal = (obj, preferredSolid) => {
+          // Anchor lookup that survives multi-solid components: prefer the
+          // requested solid, then flat anchors, then EVERY solid — some
+          // items (tools, core, shakers) keep their anchors on sub-solids,
+          // and missing them here is why the ghost never appeared for them.
+          const __anchorFromAnySolid = (obj, want, preferredSolid) => {
             const ud = obj?.userData || {};
             const ab = (ud.anchorsBySolid && typeof ud.anchorsBySolid === "object") ? ud.anchorsBySolid : null;
-            if (preferredSolid && ab && ab[preferredSolid]) return ab[preferredSolid];
-            if (ud.anchors && typeof ud.anchors === "object" && Object.keys(ud.anchors).length) return ud.anchors;
-            if (!ab) return {};
-            const solid = (ud.solidName && ab[ud.solidName]) ? ud.solidName : Object.keys(ab)[0];
-            return (solid && ab[solid]) ? ab[solid] : {};
+            if (preferredSolid && ab && ab[preferredSolid] && ab[preferredSolid][want])
+              return { arr: ab[preferredSolid][want], solidKey: preferredSolid };
+            if (ud.anchors && ud.anchors[want]) return { arr: ud.anchors[want], solidKey: null };
+            if (ab) {
+              for (const [sk, d] of Object.entries(ab)) {
+                if (d && d[want]) return { arr: d[want], solidKey: sk };
+              }
+            }
+            return null;
+          };
+          // Solid-local anchor → component-root local frame (same math as
+          // handleAnchorPick's __solidAnchorToRoot).
+          const __toRoot = (obj, res) => {
+            const p = new THREE.Vector3(res.arr[0], res.arr[1], res.arr[2]);
+            const q = rodriguesDegToQuaternion(res.arr[3] || 0, res.arr[4] || 0, res.arr[5] || 0);
+            const holder = res.solidKey && obj.getObjectByName ? obj.getObjectByName(String(res.solidKey)) : null;
+            if (!holder || holder === obj) return { p, q };
+            const pRoot = obj.worldToLocal(holder.localToWorld(p.clone()));
+            const hW = new THREE.Quaternion(); holder.getWorldQuaternion(hW);
+            const oW = new THREE.Quaternion(); obj.getWorldQuaternion(oW);
+            return { p: pRoot, q: oW.clone().invert().multiply(hW.multiply(q)) };
           };
 
-          const childAnchors = __getAnchorsLocal(childObj, childSolid);
-          const parentAnchors = __getAnchorsLocal(parentObj, parentSolid);
+          const srcRes = __anchorFromAnySolid(childObj, childAnchor, childSolid);
+          const dstRes = __anchorFromAnySolid(parentObj, parentAnchorName, parentSolid);
+          if (!srcRes || !dstRes || srcRes.arr.length < 6 || dstRes.arr.length < 6) { __clearGhost(); return; }
 
-          // Find anchor arrays
-          const srcArr = childAnchors[childAnchor] || Object.values(childAnchors).find((v, i) => Object.keys(childAnchors)[i] === childAnchor);
-          const dstArr = parentAnchors[parentAnchorName] || Object.values(parentAnchors).find((v, i) => Object.keys(parentAnchors)[i] === parentAnchorName);
-
-          if (!srcArr || !dstArr || srcArr.length < 6 || dstArr.length < 6) { __clearGhost(); return; }
-
-          const srcPL = new THREE.Vector3(srcArr[0], srcArr[1], srcArr[2]);
-          const srcQL = rodriguesDegToQuaternion(srcArr[3], srcArr[4], srcArr[5]);
-          const dstPL = new THREE.Vector3(dstArr[0], dstArr[1], dstArr[2]);
-          const dstQL = rodriguesDegToQuaternion(dstArr[3], dstArr[4], dstArr[5]);
+          const { p: srcPL, q: srcQL } = __toRoot(childObj, srcRes);
+          const { p: dstPL, q: dstQL } = __toRoot(parentObj, dstRes);
 
           const dstWorldPos = parentObj.localToWorld(dstPL.clone());
           const parentWorldQ = new THREE.Quaternion();
@@ -2247,10 +2260,30 @@ function ensureBuilderBar() {
   }
   actions.appendChild(flipRow);
 
+  // Row 3: Move to the adjacent parent anchor ("next hole") — X± / Y± / Z±
+  // in the parent's local frame. Complements the flips: flips rotate in
+  // place, these step the attach anchor across the parent's grid.
+  const nudgeBtns = [];
+  const nudgeRow = document.createElement("div");
+  nudgeRow.style.cssText = "display:flex;gap:4px;margin-top:2px";
+  for (const [label, axis, sign] of [
+    ["X−", "x", -1], ["X+", "x", 1],
+    ["Y−", "y", -1], ["Y+", "y", 1],
+    ["Z−", "z", -1], ["Z+", "z", 1],
+  ]) {
+    const b = mkAction(label, () => nudgeSelectedAnchor(axis, sign),
+                       `Move to the next parent anchor ${label}`);
+    b.style.flex = "1";
+    b.style.minWidth = "0";
+    nudgeBtns.push(b);
+    nudgeRow.appendChild(b);
+  }
+  actions.appendChild(nudgeRow);
+
   window.__builderSetActionsEnabled = (enabled) => {
     const sec = document.getElementById("sbPropsSection");
     if (sec) sec.style.display = enabled ? "" : "none";
-    for (const b of [btnRemove, btnEdit, btnFlipX, btnFlipY, btnFlipZ]) {
+    for (const b of [btnRemove, btnEdit, btnFlipX, btnFlipY, btnFlipZ, ...nudgeBtns]) {
       b.disabled = !enabled;
       b.style.opacity = enabled ? "1" : "0.4";
     }
@@ -4128,6 +4161,103 @@ function flipSelectedAxis(axis) {
 
   __applyUndoSnapshot();
   showToast("Flipped " + name + " (" + axis.toUpperCase() + " 90°)");
+}
+
+
+// ── Nudge: re-anchor the selected item to the NEXT parent anchor in a
+//    parent-local direction (X±/Y±/Z±) — "move to the next hole". Works
+//    on any anchor grid: fixture plates (A1..), adapters (hole_0..),
+//    hotels (vertical levels via Z±). The candidate set is filtered to
+//    anchors named like the current one (A9 → letter+number only,
+//    hole_1 → hole_* only) so plate edges/corners are never picked. ──
+function nudgeSelectedAnchor(axis, sign) {
+  const name = window.builderState.selectedName;
+  if (!name) return;
+  const obj = objectsByName.get(name);
+  const meta = window.builderState.components[name];
+  if (!obj || !meta) return;
+  if (!meta.attach || !meta.attach.parent_name || !meta.attach.parent_anchor) {
+    showToast("Move: only anchored items can step between holes");
+    return;
+  }
+  const parentObj = objectsByName.get(meta.attach.parent_name);
+  if (!parentObj) { showToast("Move: parent object not found"); return; }
+
+  // Parent anchors — prefer the attach's solid, else flat, else first solid.
+  const ud = parentObj.userData || {};
+  const ab = (ud.anchorsBySolid && typeof ud.anchorsBySolid === "object") ? ud.anchorsBySolid : null;
+  let anchors = null;
+  const solidKey = meta.attach.parent_solid;
+  if (ab && solidKey && ab[solidKey]) anchors = ab[solidKey];
+  else if (ud.anchors && Object.keys(ud.anchors).length) anchors = ud.anchors;
+  else if (ab) anchors = Object.values(ab)[0];
+  if (!anchors) { showToast("Move: parent has no anchors"); return; }
+
+  const curName = meta.attach.parent_anchor;
+  const cur = anchors[curName];
+  if (!cur) { showToast(`Move: anchor ${curName} not found on parent`); return; }
+
+  // Only consider anchors named like the current one — keeps the walk on
+  // the same grid family (A9 stays on letter+number, hole_1 on hole_*).
+  const pat = /^[A-Za-z]+\d+$/.test(curName) && !/^hole/i.test(curName) ? /^[A-Za-z]+\d+$/
+            : /^hole[_-]?\d+$/i.test(curName) ? /^hole[_-]?\d+$/i
+            : null;
+
+  const ai = axis === "x" ? 0 : axis === "y" ? 1 : 2;
+  let bestScore = null, bestKey = null;
+  for (const [k, arr] of Object.entries(anchors)) {
+    if (k === curName || !Array.isArray(arr) || arr.length < 3) continue;
+    if (pat && !pat.test(k)) continue;
+    const d = [arr[0] - cur[0], arr[1] - cur[1], arr[2] - cur[2]];
+    const along = d[ai] * sign;
+    if (along < 1e-6) continue;                                   // wrong side
+    const lateral = Math.hypot(d[(ai + 1) % 3], d[(ai + 2) % 3]);
+    if (lateral > along * 0.35 + 1e-6) continue;                  // off-row
+    const score = along + lateral * 4;                            // nearest in-line
+    if (bestScore === null || score < bestScore) { bestScore = score; bestKey = k; }
+  }
+  if (!bestKey) {
+    showToast(`Move: no anchor ${axis.toUpperCase()}${sign > 0 ? "+" : "−"} of ${curName}`);
+    return;
+  }
+
+  // Undo capture (same shape as flipSelectedAxis).
+  const __prevMeta = __deepClone(meta || null);
+  const __prevPose = (function () {
+    try {
+      const r = window.quaternionToRodriguesDeg ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+      return [obj.position.x, obj.position.y, obj.position.z, r[0] || 0, r[1] || 0, r[2] || 0];
+    } catch (e) { return null; }
+  })();
+
+  meta.attach.parent_anchor = bestKey;
+  try {
+    __snapChildToParentAnchor(
+      name,
+      meta.attach.parent_name,
+      bestKey,
+      meta.attach.child_solid,
+      meta.attach.child_anchor,
+      meta.attach.offset,
+      meta.attach.parent_solid
+    );
+  } catch (e) {
+    console.warn("nudge: resnap failed", e);
+    showToast("Move failed (see console)");
+    try { window.builderState.components[name] = __prevMeta; } catch (_) {}
+    return;
+  }
+  try { __propagateAnchoredSubtree(name); } catch (e) {}
+
+  try {
+    const __nextMeta = __deepClone(window.builderState.components[name] || null);
+    const r2 = window.quaternionToRodriguesDeg ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+    const __nextPose = [obj.position.x, obj.position.y, obj.position.z, r2[0] || 0, r2[1] || 0, r2[2] || 0];
+    __pushUndo({ kind: "transform", name, prevMeta: __prevMeta, prevPose: __prevPose, nextMeta: __nextMeta, nextPose: __nextPose });
+  } catch (e) {}
+
+  try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch (e) {}
+  showToast(`${name}: ${curName} → ${bestKey}`);
 }
 
 
