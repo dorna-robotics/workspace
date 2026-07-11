@@ -1122,21 +1122,6 @@ if (node) {
         if (!childObj || !parentObj) return;
 
         try {
-          // Clone the child as a ghost
-          const ghost = childObj.clone(true);
-          ghost.traverse(c => {
-            if (c.isMesh && c.material) {
-              c.material = c.material.clone();
-              c.material.transparent = true;
-              c.material.opacity = 0.3;
-              c.material.depthWrite = false;
-              c.material.color?.setHex(0x0a84ff);
-            }
-          });
-          ghost.renderOrder = 900;
-          scene.add(ghost);
-          __ghostObj = ghost;
-
           // Compute snap position using the same math as __snapChildToParentAnchor
           const childSolid = pending.childSolid || null;
           const childAnchor = pending.sourceAnchor;
@@ -1193,10 +1178,55 @@ if (node) {
             dstWorldQ = dstWorldQ.multiply(rodriguesDegToQuaternion(__off[3] || 0, __off[4] || 0, __off[5] || 0));
           }
           const newChildQ = dstWorldQ.clone().multiply(srcQL.clone().invert());
-
-          ghost.quaternion.copy(newChildQ);
           const srcWorldOffset = srcPL.clone().applyQuaternion(newChildQ);
-          ghost.position.copy(dstWorldPos.clone().sub(srcWorldOffset));
+          const newChildPos = dstWorldPos.clone().sub(srcWorldOffset);
+
+          // Ghost the WHOLE attached subtree, not just the moved item:
+          // children (racks on adapters, tubes in racks, caps on tubes)
+          // are separate scene objects positioned by attach metadata, so
+          // apply the item's old→new delta transform to a clone of each.
+          childObj.updateMatrixWorld(true);
+          const newRoot = new THREE.Matrix4().compose(
+            newChildPos, newChildQ, new THREE.Vector3(1, 1, 1));
+          const delta = newRoot.clone().multiply(childObj.matrixWorld.clone().invert());
+
+          const comps = window.builderState?.components || {};
+          const subtree = [childName];
+          const seen = new Set(subtree);
+          for (let i = 0; i < subtree.length; i++) {
+            for (const [n, m] of Object.entries(comps)) {
+              if (!seen.has(n) && m?.attach?.parent_name === subtree[i]) {
+                seen.add(n);
+                subtree.push(n);
+              }
+            }
+          }
+
+          const group = new THREE.Group();
+          for (const n of subtree) {
+            const src = objectsByName.get(n);
+            if (!src) continue;
+            const g = src.clone(true);
+            const drop = [];
+            g.traverse(c => {
+              if (c.isLine) { drop.push(c); return; }   // skip edge overlays
+              if (c.isMesh && c.material) {
+                c.material = c.material.clone();
+                c.material.transparent = true;
+                c.material.opacity = 0.3;
+                c.material.depthWrite = false;
+                c.material.color?.setHex(0x0a84ff);
+              }
+            });
+            drop.forEach(c => c.parent && c.parent.remove(c));
+            src.updateMatrixWorld(true);
+            const m = delta.clone().multiply(src.matrixWorld);
+            m.decompose(g.position, g.quaternion, g.scale);
+            group.add(g);
+          }
+          group.renderOrder = 900;
+          scene.add(group);
+          __ghostObj = group;
 
         } catch (e) {
           __clearGhost();
