@@ -3792,7 +3792,14 @@ function __rebuildColBoxViz(name) {
   const sz = Array.isArray(meta.size) ? meta.size : [100, 100, 100];
   const old = obj.getObjectByName("__colBoxViz__");
   const parent = old ? old.parent : obj;
-  if (old) parent.remove(old);
+  if (old) {
+    // Free GPU buffers — a drag rebuilds this many times per second.
+    old.traverse(o => {
+      try { if (o.geometry) o.geometry.dispose(); } catch (e) {}
+      try { if (o.material) o.material.dispose(); } catch (e) {}
+    });
+    parent.remove(old);
+  }
   const boxMesh = new THREE.Mesh(
     new THREE.BoxGeometry(sz[0] || 1, sz[1] || 1, sz[2] || 1),
     new THREE.MeshBasicMaterial({
