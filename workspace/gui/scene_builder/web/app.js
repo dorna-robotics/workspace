@@ -3704,7 +3704,7 @@ function updateObjectList() {
     }
   }
   const comps = window.builderState?.components || {};
-  const names = Object.keys(comps).sort().filter(n => !filter || n.toLowerCase().includes(filter) || (comps[n]?.type || "").toLowerCase().includes(filter));
+  const names = Object.keys(comps).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).filter(n => !filter || n.toLowerCase().includes(filter) || (comps[n]?.type || "").toLowerCase().includes(filter));
   if (!names.length) {
     list.innerHTML = '<div class="sb-empty">' + (filter ? "No matches" : "No components yet") + '</div>';
     return;
