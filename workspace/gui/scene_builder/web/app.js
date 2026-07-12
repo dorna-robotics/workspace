@@ -1027,12 +1027,20 @@ if (hit.object.userData && hit.object.userData.__isAnchorPick) {
             if (!node || !compName) { showToast("Select a valid object."); downInfo=null; return; }
 if (node) {
               if (window.builderState.mode === "PICK_TARGET_OBJECT" && window.builderState.pending) {
-  window.builderState.targetName = compName;
-  window.builderState.mode = "PICK_TARGET_ANCHOR";
-  // Show searchable list of anchors for the chosen target (pattern-style).
-  try { openTargetAnchorMenu(compName); } catch(e) { console.warn(e); }
-  showToast("Pick a target anchor (click in 3D or use the list).");
-}
+                // Route through the attach modal: highlights the pick in its
+                // Parent-object list and reveals the anchor section — the
+                // modal's callback owns targetName/mode. Fallback keeps the
+                // 3D-only flow working if no modal is open.
+                const cb = window.builderState._targetObjectCallback;
+                if (cb) {
+                  try { cb(compName); } catch (e) { console.warn(e); }
+                } else {
+                  window.builderState.targetName = compName;
+                  window.builderState.mode = "PICK_TARGET_ANCHOR";
+                  try { buildAnchorsFor(node); } catch (e) {}
+                }
+                showToast("Pick a target anchor (click in 3D or use the list).");
+              }
 
               if (window.builderState.mode === "COLLISIONBOX_PICK_TARGET" && window.builderState._colBoxPanelSetTarget) {
                 window.builderState._colBoxPanelSetTarget(compName);
@@ -2969,6 +2977,12 @@ function closeAttachModal() {
   if (ap) ap.remove();
   const tp = document.getElementById("targetObjectPickPanel");
   if (tp) tp.remove();
+  // drop the 3D-click → modal routes
+  try {
+    delete window.builderState._targetObjectCallback;
+    delete window.builderState._childAnchorCallback;
+    delete window.builderState._childAnchorSetSolid;
+  } catch (_) {}
 }
 
 function openAttachModal(childName, anchorsBySolid, opts = {}) {
@@ -3267,6 +3281,15 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
       body.insertBefore(objListWrap, anchorSection || null);
     }
     rebuildObjList(null);
+
+    // 3D-click route: clicking an object in the viewport selects it HERE —
+    // highlights it in this list and reveals its anchor section — instead
+    // of dead-ending (the old path called a menu that no longer exists).
+    window.builderState._targetObjectCallback = (name) => {
+      if (blocked.has(name)) { showToast("Can't attach to itself or its own children"); return; }
+      if (!candidates.includes(name)) { showToast("Not a valid parent: " + name); return; }
+      onObjSelect(name);
+    };
 
     // ── Anchor section (shown after object selected) ────────────────────────
     function buildAnchorSection(name) {
