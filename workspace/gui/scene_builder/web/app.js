@@ -667,6 +667,9 @@
         activeAnchors = { obj, items };
         updateAnchorsNow(); // position immediately once
       }
+      // Exposed so the sidebar Objects list can mirror a viewport click
+      // (selection + anchors + info bar) — see updateObjectList().
+      window.__buildAnchorsFor = buildAnchorsFor;
 
       // ---- UPDATE ANCHORS (updated: no 3D comp/solid labels anymore) ----
       function updateAnchorsNow() {
@@ -3493,6 +3496,12 @@ function updateObjectList() {
     item.appendChild(eyeBtn);
     item.addEventListener("click", () => {
       try { setSelected(name); } catch(e) {}
+      // Mirror a viewport click: show the object's anchors + info bar,
+      // so picking from the list behaves like clicking the 3D object.
+      try {
+        const node = objectsByName.get(name);
+        if (node && window.__buildAnchorsFor) window.__buildAnchorsFor(node);
+      } catch(e) {}
     });
     list.appendChild(item);
   }
