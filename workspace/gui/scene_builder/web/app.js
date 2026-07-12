@@ -1367,6 +1367,9 @@ if (node) {
         });
       }
 
+      // Exposed for out-of-scope rebuilds (collision-box size edits).
+      window.__addEdgeOverlay = addEdgeOverlay;
+
       // --- upsert pipeline ---
       function upsertObject(name, spec) {
         if (spec.delete) {
@@ -1864,6 +1867,12 @@ function __undo() {
     if (meta && meta.attach) spec.builder = { attach: __deepClone(meta.attach) };
     else spec.builder = { attach: null };
     __applyUpsert(name, spec);
+
+    // Collision boxes render a procedural wireframe sized from meta.size —
+    // rebuild it so undo/redo of a size edit shows the right box.
+    if (meta && meta.type === "collision_box") {
+      try { __rebuildColBoxViz(name); } catch (e) {}
+    }
   }
 
   // Move (re-attach) should revert, not delete.
@@ -2320,6 +2329,67 @@ function ensureBuilderBar() {
     nudgeRow.appendChild(b);
   }
   actions.appendChild(nudgeRow);
+
+  // Row 4 (collision boxes only): X/Y/Z size in mm — live-updates the
+  // wireframe and the config. Hidden for every other component type.
+  const sizeRow = document.createElement("div");
+  sizeRow.style.cssText = "display:none;gap:4px;margin-top:2px;align-items:center;max-width:240px";
+  const sizeLbl = document.createElement("span");
+  sizeLbl.textContent = "Size";
+  sizeLbl.style.cssText = "font-size:11px;opacity:0.6;flex:0 0 auto;padding-right:2px";
+  sizeRow.appendChild(sizeLbl);
+  const sizeInputs = {};
+  for (const ax of ["x", "y", "z"]) {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.min = "1";
+    inp.step = "1";
+    inp.title = `Collision box ${ax.toUpperCase()} length (mm)`;
+    _sbStyleInput(inp);
+    inp.style.flex = "1";
+    inp.style.minWidth = "0";
+    inp.style.padding = "4px 6px";
+    inp.style.fontSize = "12px";
+    inp.addEventListener("change", __commitColBoxSize);
+    sizeInputs[ax] = inp;
+    sizeRow.appendChild(inp);
+  }
+  actions.appendChild(sizeRow);
+
+  function __commitColBoxSize() {
+    const name = window.builderState?.selectedName;
+    const meta = name && window.builderState.components[name];
+    const obj = name && objectsByName.get(name);
+    if (!meta || meta.type !== "collision_box") return;
+    const prevMeta = __deepClone(meta);
+    const cur = Array.isArray(meta.size) ? meta.size : [100, 100, 100];
+    const sz = ["x", "y", "z"].map((ax, i) => {
+      const v = parseFloat(sizeInputs[ax].value);
+      return Number.isFinite(v) && v > 0 ? v : (cur[i] || 100);
+    });
+    meta.size = sz;
+    ["x", "y", "z"].forEach((ax, i) => { sizeInputs[ax].value = sz[i]; });
+    try { __rebuildColBoxViz(name); } catch (e) { console.warn(e); }
+    try {
+      const r = window.quaternionToRodriguesDeg && obj ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+      const pose = obj ? [obj.position.x, obj.position.y, obj.position.z, r[0] || 0, r[1] || 0, r[2] || 0] : null;
+      __pushUndo({ kind: "transform", name, prevMeta, prevPose: pose, nextMeta: __deepClone(meta), nextPose: pose });
+    } catch (e) {}
+    try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch (e) {}
+    showToast(`${name}: size ${sz.join(" × ")} mm`);
+  }
+
+  window.__builderUpdateSizeRow = (name) => {
+    const meta = name && window.builderState?.components?.[name];
+    const isBox = !!(meta && meta.type === "collision_box");
+    sizeRow.style.display = isBox ? "flex" : "none";
+    if (isBox) {
+      const sz = Array.isArray(meta.size) ? meta.size : [100, 100, 100];
+      sizeInputs.x.value = sz[0];
+      sizeInputs.y.value = sz[1];
+      sizeInputs.z.value = sz[2];
+    }
+  };
 
   window.__builderSetActionsEnabled = (enabled) => {
     const sec = document.getElementById("sbPropsSection");
@@ -3564,6 +3634,35 @@ function updateSidebarProps(name) {
   }
 }
 
+// ── Collision-box viz rebuild ──────────────────────────────────────────────
+// The builder renders a collision_box as a small GLB handle plus a
+// procedural transparent box sized from meta.size. After a size edit
+// (or undo of one), swap that box for one with the new dimensions.
+function __rebuildColBoxViz(name) {
+  const obj = objectsByName.get(name);
+  const meta = window.builderState?.components?.[name];
+  if (!obj || !meta || meta.type !== "collision_box") return;
+  const sz = Array.isArray(meta.size) ? meta.size : [100, 100, 100];
+  const old = obj.getObjectByName("__colBoxViz__");
+  const parent = old ? old.parent : obj;
+  if (old) parent.remove(old);
+  const boxMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(sz[0] || 1, sz[1] || 1, sz[2] || 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xaaaaaa, transparent: true, opacity: 0.06,
+      depthWrite: false, side: THREE.DoubleSide,
+    })
+  );
+  boxMesh.position.set(0, 0, (sz[2] || 1) / 2);
+  const vizGroup = new THREE.Group();
+  vizGroup.name = "__colBoxViz__";
+  vizGroup.userData.__colBoxViz = true;
+  vizGroup.add(boxMesh);
+  try { if (window.__addEdgeOverlay) window.__addEdgeOverlay(vizGroup); } catch (e) {}
+  parent.add(vizGroup);
+  try { markDirty(); } catch (e) {}
+}
+
 // ── Rename a component everywhere ──────────────────────────────────────────
 // One rename touches every trace: the components map (insertion order kept —
 // it is the config output order), all attach/capParent/patternParent
@@ -3679,6 +3778,7 @@ function setSelected(name) {
   updateObjectList();
   updateSidebarProps(name);
   try { if (window.__builderUpdateHideBtn) window.__builderUpdateHideBtn(); } catch(e) {}
+  try { if (window.__builderUpdateSizeRow) window.__builderUpdateSizeRow(name); } catch(e) {}
 
   const enabled = !!(name && (meta || sceneObj));
   if (window.__builderSetActionsEnabled) window.__builderSetActionsEnabled(enabled);
