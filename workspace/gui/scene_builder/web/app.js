@@ -3444,6 +3444,8 @@ function __showAllHidden() {
   }
 }
 
+let __lastScrolledSel = null;
+
 function updateObjectList() {
   const list = document.getElementById("sbObjectList");
   if (!list) return;
@@ -3505,6 +3507,15 @@ function updateObjectList() {
     });
     list.appendChild(item);
   }
+
+  // When the selection came from a viewport click, bring its row into
+  // view — only on selection CHANGE, so routine re-renders never yank
+  // the scroll position around.
+  if (selected && selected !== __lastScrolledSel) {
+    __lastScrolledSel = selected;
+    const act = list.querySelector(".sb-object-item.active");
+    if (act) act.scrollIntoView({ block: "nearest" });
+  }
 }
 window.updateObjectList = updateObjectList;
 
@@ -3529,6 +3540,109 @@ function updateSidebarProps(name) {
     typeEl.textContent = meta?.type || "—";
   }
 }
+
+// ── Rename a component everywhere ──────────────────────────────────────────
+// One rename touches every trace: the components map (insertion order kept —
+// it is the config output order), all attach/capParent/patternParent
+// references, specs, the scene object + name maps, hidden set, selection,
+// and the server-side cache (tombstone the old key, re-upsert the new).
+// Undo/redo stacks reference names by string, so they are cleared rather
+// than left pointing at a name that no longer exists.
+function renameComponent(oldName, newName) {
+  const bs = window.builderState;
+  newName = (newName || "").trim();
+  if (!newName || newName === oldName) return false;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(newName)) {
+    showToast("Invalid name — letters/digits/underscore, no leading digit");
+    return false;
+  }
+  if (bs.components[newName] || objectsByName.has(newName)) {
+    showToast("Name already in use: " + newName);
+    return false;
+  }
+  if (!bs.components[oldName]) return false;
+
+  // components map, order preserved
+  const rebuilt = {};
+  for (const [k, v] of Object.entries(bs.components)) rebuilt[k === oldName ? newName : k] = v;
+  bs.components = rebuilt;
+
+  // every reference
+  for (const meta of Object.values(bs.components)) {
+    if (!meta) continue;
+    if (meta.attach?.parent_name === oldName) meta.attach.parent_name = newName;
+    if (meta.capParent === oldName) meta.capParent = newName;
+    if (meta.patternParent === oldName) meta.patternParent = newName;
+  }
+
+  // specs cache
+  if (bs.specs && bs.specs[oldName]) { bs.specs[newName] = bs.specs[oldName]; delete bs.specs[oldName]; }
+
+  // scene object + name maps
+  const obj = objectsByName.get(oldName);
+  if (obj) {
+    objectsByName.delete(oldName);
+    objectsByName.set(newName, obj);
+    obj.name = newName;
+    obj.traverse(o => {
+      if (o.userData && o.userData.componentName === oldName) o.userData.componentName = newName;
+    });
+  }
+
+  // hidden set + live selection state
+  if (__hiddenObjects.has(oldName)) { __hiddenObjects.delete(oldName); __hiddenObjects.add(newName); }
+  if (bs.selectedName === oldName) bs.selectedName = newName;
+  if (bs.targetName === oldName) bs.targetName = newName;
+  if (bs.pending?.name === oldName) bs.pending.name = newName;
+
+  // undo entries hold the old name — drop them instead of corrupting
+  bs.undoStack.length = 0;
+  bs.redoStack.length = 0;
+
+  // server cache: old key becomes a tombstone, new key re-upserted
+  try {
+    if (window.socket && socket?.emit) {
+      const payload = { [oldName]: { delete: true } };
+      if (obj) {
+        const rod = window.quaternionToRodriguesDeg ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+        const upsert = { pose: [obj.position.x, obj.position.y, obj.position.z, rod[0] || 0, rod[1] || 0, rod[2] || 0] };
+        if (bs.components[newName]?.attach) upsert.builder = { attach: bs.components[newName].attach };
+        payload[newName] = upsert;
+      }
+      socket.emit("upstream_update", payload);
+    }
+  } catch (e) {}
+
+  updateObjectList();
+  updateSidebarProps(newName);
+  try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch (e) {}
+  showToast(`Renamed ${oldName} → ${newName}`);
+  return true;
+}
+
+// Rename affordance: double-click the Name value in the Selection panel.
+(function __wireRename() {
+  const el = document.getElementById("sbPropName");
+  if (!el) { setTimeout(__wireRename, 200); return; }
+  if (el.__renameWired) return;
+  el.__renameWired = true;
+  el.style.cursor = "pointer";
+  el.title = "Double-click to rename";
+  el.addEventListener("dblclick", async () => {
+    const oldName = window.builderState?.selectedName;
+    if (!oldName) return;
+    const next = await __sbTextModal({
+      title: "Rename component",
+      label: "Component name",
+      value: oldName,
+      placeholder: oldName,
+      okLabel: "Rename",
+      hint: "All references (attaches, caps, patterns) follow the new name.",
+    });
+    if (next === null) return;
+    renameComponent(oldName, next);
+  });
+})();
 
 function setSelected(name) {
   window.builderState.selectedName = name;
