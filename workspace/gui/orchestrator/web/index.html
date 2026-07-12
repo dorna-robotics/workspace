@@ -1024,7 +1024,12 @@
           root = new THREE.Group(); root.name = name;
           scene.add(root); objectsByName.set(name, root);
         }
-        if (spec.meshUrl && root.userData.meshUrl !== spec.meshUrl) {
+        // collision_box components are scene-builder affordances (the red
+        // handle cube). The orchestrator communicates them via the red
+        // collision AREAS on the collision toggle instead — skip the GLB.
+        const isCollisionBoxComp = spec.type === "collision_box" ||
+              (spec.meshUrl && /\/collision_box\.glb$/.test(spec.meshUrl));
+        if (spec.meshUrl && !isCollisionBoxComp && root.userData.meshUrl !== spec.meshUrl) {
           root.userData.meshUrl = spec.meshUrl;
           while (root.children.length) {
             root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
