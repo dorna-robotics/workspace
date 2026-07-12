@@ -1114,6 +1114,143 @@ if (node) {
         return null;
       }
 
+      // ── Collision-box resize handles ──────────────────────────────────────
+      // Three draggable spheres on the selected box's +X / +Y / +Z faces
+      // (colored to match the Size inputs: X red, Y green, Z blue). Dragging
+      // resizes that dimension live — X/Y grow symmetrically about the box
+      // center, Z from its base — and lands in meta.size like a typed edit.
+      const __CBH_COLORS = { x: 0xe5534b, y: 0x34c759, z: 0x4f9cf9 };
+      const __cbh = { name: null, group: null, handles: [], dragging: null };
+
+      function __cbhHide() {
+        if (__cbh.group) scene.remove(__cbh.group);
+        __cbh.group = null; __cbh.handles = []; __cbh.name = null; __cbh.dragging = null;
+      }
+
+      function __cbhShow(name) {
+        if (__cbh.dragging) return;                        // never rebuild mid-drag
+        if (__cbh.name === name && __cbh.group) { __cbhUpdate(); return; }
+        __cbhHide();
+        const obj = objectsByName.get(name);
+        const meta = window.builderState?.components?.[name];
+        if (!obj || !meta || meta.type !== "collision_box") return;
+        __cbh.name = name;
+        const group = new THREE.Group();
+        for (const ax of ["x", "y", "z"]) {
+          const h = new THREE.Mesh(
+            new THREE.SphereGeometry(9, 16, 16),
+            new THREE.MeshBasicMaterial({
+              color: __CBH_COLORS[ax], depthTest: false,
+              transparent: true, opacity: 0.9,
+            })
+          );
+          h.renderOrder = 995;
+          h.userData.__cbhAxis = ax;
+          group.add(h);
+          __cbh.handles.push(h);
+        }
+        scene.add(group);
+        __cbh.group = group;
+        __cbhUpdate();
+      }
+
+      function __cbhFrame(obj) {
+        const viz = obj.getObjectByName("__colBoxViz__");
+        return viz ? viz.parent : obj;
+      }
+
+      function __cbhUpdate() {
+        if (!__cbh.group || !__cbh.name) return;
+        const obj = objectsByName.get(__cbh.name);
+        const meta = window.builderState?.components?.[__cbh.name];
+        if (!obj || !meta) { __cbhHide(); return; }
+        const sz = Array.isArray(meta.size) ? meta.size : [100, 100, 100];
+        const frame = __cbhFrame(obj);
+        frame.updateMatrixWorld(true);
+        const local = {
+          x: new THREE.Vector3(sz[0] / 2, 0, sz[2] / 2),
+          y: new THREE.Vector3(0, sz[1] / 2, sz[2] / 2),
+          z: new THREE.Vector3(0, 0, sz[2]),
+        };
+        for (const h of __cbh.handles) {
+          h.position.copy(frame.localToWorld(local[h.userData.__cbhAxis].clone()));
+        }
+      }
+
+      // Param t on the axis line (origin + t·dir) closest to the pointer ray.
+      function __cbhAxisT(origin, dir, ray) {
+        const w0 = origin.clone().sub(ray.origin);
+        const a = dir.dot(dir), b = dir.dot(ray.direction), c = ray.direction.dot(ray.direction);
+        const d = dir.dot(w0), e2 = ray.direction.dot(w0);
+        const denom = a * c - b * b;
+        if (Math.abs(denom) < 1e-9) return 0;
+        return (b * e2 - c * d) / denom;
+      }
+
+      renderer.domElement.addEventListener("pointerdown", (e) => {
+        if (!__cbh.group || e.button !== 0) return;
+        setPointerFromEvent(e);
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(__cbh.handles, false);
+        if (!hits.length) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        controls.enabled = false;
+        __cbh.dragging = {
+          axis: hits[0].object.userData.__cbhAxis,
+          prevMeta: __deepClone(window.builderState.components[__cbh.name]),
+        };
+      }, true);
+
+      renderer.domElement.addEventListener("pointermove", (e) => {
+        if (!__cbh.dragging) return;
+        e.stopImmediatePropagation();
+        setPointerFromEvent(e);
+        raycaster.setFromCamera(pointer, camera);
+        const obj = objectsByName.get(__cbh.name);
+        const meta = window.builderState?.components?.[__cbh.name];
+        if (!obj || !meta) return;
+        const frame = __cbhFrame(obj);
+        frame.updateMatrixWorld(true);
+        const ax = __cbh.dragging.axis;
+        const dirLocal = ax === "x" ? new THREE.Vector3(1, 0, 0)
+                       : ax === "y" ? new THREE.Vector3(0, 1, 0)
+                       : new THREE.Vector3(0, 0, 1);
+        const origin = frame.getWorldPosition(new THREE.Vector3());
+        const dirWorld = dirLocal.transformDirection(frame.matrixWorld).normalize();
+        const t = __cbhAxisT(origin, dirWorld, raycaster.ray);
+        const sz = (Array.isArray(meta.size) ? meta.size : [100, 100, 100]).slice();
+        if (ax === "x") sz[0] = Math.max(1, Math.round(Math.abs(t) * 2));
+        else if (ax === "y") sz[1] = Math.max(1, Math.round(Math.abs(t) * 2));
+        else sz[2] = Math.max(1, Math.round(t));
+        meta.size = sz;
+        try { __rebuildColBoxViz(__cbh.name); } catch (err) {}
+        __cbhUpdate();
+        try { if (window.__builderUpdateSizeRow) window.__builderUpdateSizeRow(__cbh.name); } catch (err) {}
+      }, true);
+
+      const __cbhEnd = (e) => {
+        if (!__cbh.dragging) return;
+        e.stopImmediatePropagation();
+        controls.enabled = true;
+        const prevMeta = __cbh.dragging.prevMeta;
+        __cbh.dragging = null;
+        try {
+          const name = __cbh.name;
+          const obj = objectsByName.get(name);
+          const r = window.quaternionToRodriguesDeg && obj ? window.quaternionToRodriguesDeg(obj.quaternion) : [0, 0, 0];
+          const pose = obj ? [obj.position.x, obj.position.y, obj.position.z, r[0] || 0, r[1] || 0, r[2] || 0] : null;
+          __pushUndo({ kind: "transform", name, prevMeta, prevPose: pose, nextMeta: __deepClone(window.builderState.components[name]), nextPose: pose });
+        } catch (err) {}
+        try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch (err) {}
+      };
+      renderer.domElement.addEventListener("pointerup", __cbhEnd, true);
+      renderer.domElement.addEventListener("pointercancel", __cbhEnd, true);
+
+      window.__colBoxHandlesShow = __cbhShow;
+      window.__colBoxHandlesHide = __cbhHide;
+      window.__colBoxHandlesUpdate = __cbhUpdate;
+
       // ── Ghost preview for anchor attachment ──────────────────────────────
       let __ghostObj = null;
 
@@ -2333,26 +2470,31 @@ function ensureBuilderBar() {
   // Row 4 (collision boxes only): X/Y/Z size in mm — live-updates the
   // wireframe and the config. Hidden for every other component type.
   const sizeRow = document.createElement("div");
-  sizeRow.style.cssText = "display:none;gap:4px;margin-top:2px;align-items:center;max-width:240px";
-  const sizeLbl = document.createElement("span");
-  sizeLbl.textContent = "Size";
-  sizeLbl.style.cssText = "font-size:11px;opacity:0.6;flex:0 0 auto;padding-right:2px";
-  sizeRow.appendChild(sizeLbl);
+  sizeRow.style.cssText = "display:none;gap:6px;margin-top:2px;align-items:center;max-width:240px";
+  const AXIS_COLORS = { x: "#e5534b", y: "#34c759", z: "#4f9cf9" };
   const sizeInputs = {};
   for (const ax of ["x", "y", "z"]) {
+    const cell = document.createElement("label");
+    cell.style.cssText = "display:flex;align-items:center;gap:4px;flex:1;min-width:0";
+    const tag = document.createElement("span");
+    tag.textContent = ax.toUpperCase();
+    tag.style.cssText = `font-size:11px;font-weight:700;color:${AXIS_COLORS[ax]};flex:0 0 auto`;
     const inp = document.createElement("input");
     inp.type = "number";
     inp.min = "1";
     inp.step = "1";
-    inp.title = `Collision box ${ax.toUpperCase()} length (mm)`;
+    inp.title = `Collision box ${ax.toUpperCase()} length (mm) — or drag the ${ax.toUpperCase()} handle in 3D`;
     _sbStyleInput(inp);
     inp.style.flex = "1";
     inp.style.minWidth = "0";
+    inp.style.width = "100%";
     inp.style.padding = "4px 6px";
     inp.style.fontSize = "12px";
     inp.addEventListener("change", __commitColBoxSize);
     sizeInputs[ax] = inp;
-    sizeRow.appendChild(inp);
+    cell.appendChild(tag);
+    cell.appendChild(inp);
+    sizeRow.appendChild(cell);
   }
   actions.appendChild(sizeRow);
 
@@ -2388,6 +2530,11 @@ function ensureBuilderBar() {
       sizeInputs.x.value = sz[0];
       sizeInputs.y.value = sz[1];
       sizeInputs.z.value = sz[2];
+      // 3D drag handles follow the panel: shown while a box is selected
+      // (idempotent — __cbhShow no-ops for the same box and mid-drag).
+      try { if (window.__colBoxHandlesShow) window.__colBoxHandlesShow(name); } catch (e) {}
+    } else {
+      try { if (window.__colBoxHandlesHide) window.__colBoxHandlesHide(); } catch (e) {}
     }
   };
 
@@ -3660,6 +3807,7 @@ function __rebuildColBoxViz(name) {
   vizGroup.add(boxMesh);
   try { if (window.__addEdgeOverlay) window.__addEdgeOverlay(vizGroup); } catch (e) {}
   parent.add(vizGroup);
+  try { if (window.__colBoxHandlesUpdate) window.__colBoxHandlesUpdate(); } catch (e) {}
   try { markDirty(); } catch (e) {}
 }
 
@@ -5867,6 +6015,9 @@ function __snapChildToParentAnchor(childName, parentName, parentAnchor, childSol
   } catch (e) {
     console.warn("snap: upstream_update failed", e);
   }
+
+  // Collision-box resize handles are world-anchored — refresh after a snap.
+  try { if (window.__colBoxHandlesUpdate) window.__colBoxHandlesUpdate(); } catch (e) {}
 
   return attach;
 }
