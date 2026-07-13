@@ -27,7 +27,7 @@ class Inspection:
     """
 
     DEFAULTS = dict(
-        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "camera": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
+        anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "lens": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
         # All camera-related config under one dict (mirrors core.py).
         # ``serial_number`` / ``host`` / ``port`` identify the vision
