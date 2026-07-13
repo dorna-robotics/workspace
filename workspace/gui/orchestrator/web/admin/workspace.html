@@ -54,7 +54,11 @@
     }
 
     /* ---- Controls ---- */
-    #controls { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    #controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    /* Field-friendly touch targets: Start/Pause/Park/Kill get hit with
+       thumbs (and gloves) on site tablets — 46 px minimum height, roomy
+       padding, readable label. Overrides the .btn-sm they're built with. */
+    #controls .btn { font-size: 14px; padding: 10px 20px; min-height: 46px; }
     .ctrl-starting {
       font-size: var(--text-sm); font-weight: 600; color: var(--muted);
       display: flex; align-items: center; gap: var(--space-2);
@@ -173,7 +177,15 @@
       letter-spacing: 0.04em;
     }
     .op-action-buttons {
-      display: flex; flex-wrap: wrap; gap: 4px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    /* Same field-friendly sizing as the main controls: operator actions
+       are pressed mid-recovery, often on a tablet — make them easy to
+       hit and hard to fat-finger. */
+    .op-action-btn {
+      min-height: 44px;
+      padding: 10px 18px;
+      font-size: 14px;
     }
     /* Accent fill so operator buttons read as tappable actions, not the
        gray secondary look they inherit from .btn. Theme-scoped to (0,2,0)
@@ -426,7 +438,7 @@
       .viewer-area { flex: none; height: 60vh; }
 
       #controls { gap: 6px; }
-      #controls .btn { font-size: 12px; padding: 8px 12px; min-height: 36px; }
+      #controls .btn { font-size: 13px; padding: 10px 16px; min-height: 44px; }
 
       #logPre { height: 200px; font-size: 10px; overflow-y: auto; }
     }
