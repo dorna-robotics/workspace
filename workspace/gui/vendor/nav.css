@@ -147,12 +147,15 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
    cover the entire viewport including the nav. */
 .app-nav ~ .modal-overlay,
 .app-nav ~ .confirm-overlay,
+.app-nav ~ .pendant-overlay,
 .app-nav.expanded ~ .modal-overlay,
-.app-nav.expanded ~ .confirm-overlay {
+.app-nav.expanded ~ .confirm-overlay,
+.app-nav.expanded ~ .pendant-overlay {
   margin-left: 0;
 }
 html.nav-expanded .app-nav ~ .modal-overlay,
-html.nav-expanded .app-nav ~ .confirm-overlay {
+html.nav-expanded .app-nav ~ .confirm-overlay,
+html.nav-expanded .app-nav ~ .pendant-overlay {
   margin-left: 0;
 }
 
