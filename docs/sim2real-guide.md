@@ -306,6 +306,13 @@ Unknown class names anywhere are validation errors, not new folders.
 - **Runtime check design** — `conf` gate, multi-frame consensus,
   expected-class assertion from actions, `Detection(cmd="cls")` wiring,
   fail-safe halt semantics. The j2 gains runtime keys when this lands.
+  Agreed convention to implement with it: dorna_vision's `frame`
+  parameter (today: frame-in-lens, inversion-prone) is DELETED and
+  replaced by a single `base_in_world` — the root of the camera's
+  transform chain expressed in the world (robot-mounted: robot base in
+  world; fixed camera: lens in world). Old `frame` configs then fail
+  loudly instead of silently inverting; detections come out
+  world-frame, matching the workspace.
 - **`source: real` capture mode** — same `snapshot()` API grabbing real
   D405 frames (labeled via `cls=`, since reality can't be mutated) to build
   eval sets on the bench. The API seat is reserved.
