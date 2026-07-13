@@ -56,9 +56,19 @@
     /* ---- Controls ---- */
     #controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     /* Field-friendly touch targets: Start/Pause/Park/Kill get hit with
-       thumbs (and gloves) on site tablets — 46 px minimum height, roomy
-       padding, readable label. Overrides the .btn-sm they're built with. */
-    #controls .btn { font-size: 14px; padding: 10px 20px; min-height: 46px; }
+       thumbs (and gloves) on site tablets — 46 px minimum height, and
+       the buttons SHARE the row width (flex) so they stay on one line
+       in the sidebar instead of wrapping. Overrides their .btn-sm. */
+    #controls .btn {
+      flex: 1 1 0;
+      min-width: 0;
+      font-size: 14px;
+      padding: 10px 8px;
+      min-height: 46px;
+    }
+    /* Equal-width buttons already fill the row — the flex spacer that
+       used to push Kill right would force a wrap; collapse it here. */
+    #controls .spacer { display: none; }
     .ctrl-starting {
       font-size: var(--text-sm); font-weight: 600; color: var(--muted);
       display: flex; align-items: center; gap: var(--space-2);
@@ -438,7 +448,7 @@
       .viewer-area { flex: none; height: 60vh; }
 
       #controls { gap: 6px; }
-      #controls .btn { font-size: 13px; padding: 10px 16px; min-height: 44px; }
+      #controls .btn { font-size: 13px; padding: 10px 6px; min-height: 44px; }
 
       #logPre { height: 200px; font-size: 10px; overflow-y: auto; }
     }
