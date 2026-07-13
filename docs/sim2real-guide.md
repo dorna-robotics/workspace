@@ -131,7 +131,8 @@ authored the same way scene layouts are.
 
 ```yaml
 decap_check:
-  cmd: cls                    # dataset family — dorna_vision's detection cmd
+  cmd: cls                    # LABEL family — dorna_vision's detection cmd
+  modality: depth             # IMAGE channel — selects renderer + encoding
   out: dataset/decap_check    # images land in out/<cls>/…
   n_per_class: 10             # per class per snapshot() call
   max_per_class: 1000         # folder cap across runs; further calls no-op
@@ -183,11 +184,22 @@ decap_check:
     noise: d405
 ```
 
-Family rule: `cmd` selects the payload schema and the writer. `cmd: cls` →
-class folders (ImageFolder). A future `cmd: od` carries an objects payload
-and emits box annotations — auto-labeled from PyRender's per-object masks.
-Unknown `cmd`, or a family missing its payload, fails at **load**, not
-mid-generation.
+Two orthogonal axes describe every entry, declared separately because
+they combine freely (a `cls` model could someday train on RGB; an `od`
+model on depth):
+
+- **`cmd` — the label family / writer.** `cls` → class folders
+  (ImageFolder). A future `cmd: od` carries an objects payload and emits
+  box annotations — auto-labeled from PyRender's per-object masks.
+- **`modality` — the image channel / renderer + encoder.** `depth` (the
+  only supported value today) binds the entry to the frozen encoding
+  contract (§3), the z-buffer renderer (§4) and the `d405` noise stack
+  (§5). A future `rgb` would carry its own renderer (PBR — a different
+  beast) and its own contract without touching the label machinery;
+  `mask` / `ir` / `pointcloud` likewise.
+
+Unknown `cmd` or `modality`, or a family missing its payload, fails at
+**load**, not mid-generation.
 
 ## 7. The API
 
@@ -344,5 +356,6 @@ Unknown class names anywhere are validation errors, not new folders.
 | `cls` map = taxonomy + counterfactuals; key order = class index order | Validation (typos are errors), stable softmax order, completeness accounting for `max_per_class`. |
 | `{placeholders}` filled from call kwargs; call > j2 for every key | One uniform override mechanism; slot-dependent names/poses bound by the action that knows them. |
 | `cmd: cls` family tag in each entry | Future `od`/`kp` datasets reuse the engine with different payloads/writers; mirrors `Detection(cmd=…)`. |
+| `modality: depth` tag in each entry | Orthogonal to `cmd`: the image channel (renderer + encoding contract). Reserves the seat for `rgb`/`mask`/`ir` without entangling label families. |
 | `n_per_class`/`max_per_class`/`out` in j2, call-overridable | Defaults live with the dataset; `max_per_class` makes over-collection structurally impossible. |
 | Init via `launch.yaml datasets:` + `collect` kwarg gate | Platform idiom (declare → launcher wires → operator toggles); snapshot calls permanent in code, no-op when off; sim-only guard. |
