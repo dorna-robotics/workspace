@@ -8,9 +8,15 @@ pendant Controls modal.
 
 The contract is intentionally lightweight:
 
-* Method returns ``list[dict]`` with two string fields per entry:
+* Method returns ``list[dict]`` with two string fields per entry
+  (plus one optional):
     ``label``   — display name for the button
     ``method``  — name of a no-arg callable on the component
+    ``icon``    — OPTIONAL name from the UI's named icon set
+                  (power, power-off, zap, zap-off, link, link-off,
+                  eye, forward, backward, rotate, activity). Unknown
+                  or missing names render the button text-only —
+                  icons are progressive enhancement, never required.
 
 * Buttons are gated by workflow state on the orchestrator side
   (disabled while RUNNING); the component never enforces that.
@@ -53,5 +59,9 @@ def component_operator_actions(component) -> list[dict]:
             continue
         if not callable(getattr(component, method, None)):
             continue
-        out.append({"label": label, "method": method})
+        item = {"label": label, "method": method}
+        icon = str(entry.get("icon", "") or "").strip()
+        if icon:
+            item["icon"] = icon
+        out.append(item)
     return out

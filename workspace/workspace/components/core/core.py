@@ -671,18 +671,18 @@ class Core:
 
     def operator_actions(self) -> list[dict]:
         actions = [
-            {"label": "Enable Motors",  "method": "motor_enable"},
-            {"label": "Disable Motors", "method": "motor_disable"},
-            {"label": "Enable Tool",    "method": "tool_enable"},
-            {"label": "Disable Tool",   "method": "tool_disable"},
+            {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power"},
+            {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off"},
+            {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap"},
+            {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off"},
         ]
         if self.has_tool_changer:
             actions += [
-                {"label": "Attach Tool", "method": "tool_attach"},
-                {"label": "Detach Tool", "method": "tool_detach"},
+                {"label": "Attach Tool", "method": "tool_attach", "icon": "link"},
+                {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off"},
             ]
         if self.has_camera:
-            actions += [{"label": "Detect", "method": "operator_detect"}]
+            actions += [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]
         return actions
 
     def simulation(self, on: bool = True):

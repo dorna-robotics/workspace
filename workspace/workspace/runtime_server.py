@@ -837,11 +837,14 @@ def _operator_actions_snapshot(workspace) -> list[dict]:
     for name in sorted(components):
         comp = components[name]
         for action in component_operator_actions(comp):
-            out.append({
+            entry = {
                 "component": name,
                 "label":     action["label"],
                 "method":    action["method"],
-            })
+            }
+            if action.get("icon"):
+                entry["icon"] = action["icon"]
+            out.append(entry)
     return out
 
 

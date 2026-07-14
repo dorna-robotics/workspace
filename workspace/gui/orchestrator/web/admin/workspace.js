@@ -1021,6 +1021,25 @@ function _opActionsHtml(disabled) {
     if (!groups.has(a.component)) groups.set(a.component, []);
     groups.get(a.component).push(a);
   }
+  // Named icon set for operator buttons — components pick by name in
+  // their operator_actions() declaration ({icon: "power"}). Unknown or
+  // missing names render text-only; icons are enhancement, not contract.
+  const OP_ICONS = {
+    "power":     '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
+    "power-off": '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/><line x1="3" y1="3" x2="21" y2="21"/>',
+    "zap":       '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+    "zap-off":   '<polyline points="12.41 6.75 13 2 10.57 4.92"/><polyline points="18.57 12.91 21 10 15.66 10"/><polyline points="8 8 3 14 12 14 11 22 16.3 15.7"/><line x1="1" y1="1" x2="23" y2="23"/>',
+    "link":      '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    "link-off":  '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="3" y1="3" x2="21" y2="21"/>',
+    "eye":       '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+    "forward":   '<polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>',
+    "backward":  '<polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/>',
+    "rotate":    '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
+    "activity":  '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  };
+  const opIcon = (name) => (name && OP_ICONS[name])
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`
+    : "";
   if (!groups.size) return `<div class="step-empty">No operator actions declared</div>`;
   const rows = [];
   for (const [component, actions] of groups) {
@@ -1028,7 +1047,7 @@ function _opActionsHtml(disabled) {
       <button class="btn btn-sm op-action-btn"
               data-component="${escHtml(component)}"
               data-method="${escHtml(a.method)}"
-              ${disabled ? "disabled" : ""}>${escHtml(a.label)}</button>
+              ${disabled ? "disabled" : ""}>${opIcon(a.icon)}${escHtml(a.label)}</button>
     `).join("");
     rows.push(`
       <div class="op-action-group">

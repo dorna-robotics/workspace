@@ -234,7 +234,7 @@ class BarcodeReaderZebraVertical144mm:
         # detect returns a Scan; the runtime stringifies the result
         # centrally (no per-method *_once str wrapper needed).
         return [
-            {"label": "Detect", "method": "detect"},
+            {"label": "Detect", "method": "detect", "icon": "eye"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

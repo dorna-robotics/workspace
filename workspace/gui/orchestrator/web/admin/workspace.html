@@ -200,7 +200,12 @@
       min-height: 44px;
       padding: 10px 18px;
       font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
     }
+    .op-action-btn svg { flex-shrink: 0; }
     /* Accent fill so operator buttons read as tappable actions, not the
        gray secondary look they inherit from .btn. Theme-scoped to (0,2,0)
        specificity so it beats base.css's `[data-theme="light"] .btn`
