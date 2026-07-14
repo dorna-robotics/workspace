@@ -1,0 +1,50 @@
+/* Shared mock styling — mirrors workspace/gui/vendor/base.css light theme */
+:root {
+  --bg:#f2f2f7; --surface:#ffffff; --surface2:#e9e9ee; --text:#1d1d1f;
+  --muted:#86868b; --accent:#007aff; --green:#248a3d; --red:#d70015;
+  --amber:#c77c0a; --border:rgba(0,0,0,0.08);
+  --r-sm:10px; --r-md:12px; --r-lg:16px; --r-xl:22px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { height:100%; }
+body {
+  font-family:var(--font); background:linear-gradient(180deg,#dff0e2 0%,#f2f2f7 45%);
+  color:var(--text); display:flex; flex-direction:column; align-items:center;
+}
+.topbar {
+  width:100%; background:var(--surface); border-bottom:3px solid var(--green);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 22px; box-shadow:0 1px 6px rgba(0,0,0,0.06);
+}
+.pill { background:#e7f6ea; color:var(--green); font-weight:700; font-size:14px;
+  border-radius:999px; padding:8px 18px; letter-spacing:0.04em; }
+.pill .dot { display:inline-block; width:9px; height:9px; border-radius:50%;
+  background:var(--green); margin-right:8px; }
+.clock { font-family:var(--mono); font-size:20px; font-weight:700;
+  background:var(--surface2); border-radius:var(--r-sm); padding:6px 16px; }
+.stage { width:min(880px,94vw); flex:1; display:flex; flex-direction:column;
+  gap:18px; padding:26px 0 30px; }
+.card { background:var(--surface); border-radius:var(--r-lg);
+  box-shadow:0 4px 22px rgba(0,0,0,0.07); }
+/* control row — the 4 buttons on ONE line */
+.controls { display:flex; gap:12px; }
+.cbtn { flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:8px; padding:22px 8px; border:none; cursor:pointer;
+  border-radius:var(--r-xl); background:var(--surface); color:var(--text);
+  font-family:var(--font); font-size:16px; font-weight:700; text-transform:uppercase;
+  letter-spacing:0.05em; box-shadow:0 3px 14px rgba(0,0,0,0.08); }
+.cbtn svg { width:26px; height:26px; }
+.cbtn.disabled { background:var(--surface2); color:#b6b6bb; box-shadow:none; cursor:not-allowed; }
+.cbtn.pause  { color:var(--amber); }
+.cbtn.park   { color:#c05621; }
+.cbtn.kill   { color:var(--red); }
+.secrow { display:flex; gap:12px; justify-content:center; }
+.sbtn { display:inline-flex; align-items:center; gap:8px; min-height:52px;
+  padding:12px 30px; border:none; border-radius:var(--r-md); background:var(--surface);
+  color:var(--muted); font-family:var(--font); font-size:15px; font-weight:600;
+  cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.07); }
+.sbtn.kill { color:var(--red); }
+.footer-note { text-align:center; color:var(--muted); font-size:12px; padding-bottom:14px; }
+.footer-note a { color:var(--accent); text-decoration:none; font-weight:600; }

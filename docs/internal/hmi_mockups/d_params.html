@@ -1,0 +1,76 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>D — Parameters as HMI</title><link rel="stylesheet" href="mock.css"/>
+<style>
+.panel { padding:30px 34px; display:flex; flex-direction:column; gap:24px; }
+h2 { font-size:24px; font-weight:800; letter-spacing:-0.3px; }
+.sec-l { color:var(--muted); font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:0.06em; }
+.presets { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.preset { border:2.5px solid transparent; background:var(--bg); border-radius:var(--r-lg);
+  padding:18px 20px; cursor:pointer; }
+.preset.sel { border-color:var(--accent); background:rgba(0,122,255,0.06); }
+.preset .t { font-weight:800; font-size:17px; }
+.preset .d { color:var(--muted); font-size:13.5px; margin-top:4px; line-height:1.45; }
+.rows { display:flex; flex-direction:column; gap:16px; }
+.row { display:flex; align-items:center; justify-content:space-between; gap:16px;
+  background:var(--bg); border-radius:var(--r-md); padding:14px 18px; }
+.row .lbl { font-weight:700; font-size:16px; }
+.row .hint { color:var(--muted); font-size:13px; margin-top:2px; }
+.stepper { display:flex; align-items:center; gap:0; }
+.stepper button { width:54px; height:54px; border:none; background:var(--surface);
+  box-shadow:0 2px 8px rgba(0,0,0,0.08); font-size:26px; font-weight:800; color:var(--accent);
+  cursor:pointer; }
+.stepper button:first-child { border-radius:12px 0 0 12px; }
+.stepper button:last-child  { border-radius:0 12px 12px 0; }
+.stepper .val { width:76px; height:54px; display:flex; align-items:center; justify-content:center;
+  background:var(--surface); font-size:24px; font-weight:800; font-family:var(--mono);
+  border-left:1px solid var(--border); border-right:1px solid var(--border); }
+.seg { display:flex; background:var(--surface); border-radius:12px; overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+.seg button { border:none; background:transparent; padding:14px 22px; font-weight:700;
+  font-size:15px; color:var(--muted); cursor:pointer; }
+.seg button.on { background:var(--accent); color:#fff; }
+.toggle { width:64px; height:38px; border-radius:999px; background:var(--green); position:relative; }
+.toggle::after { content:""; position:absolute; top:3px; right:3px; width:32px; height:32px;
+  border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.25); }
+.gobar { display:flex; gap:12px; }
+.gobar .go { flex:1; border:none; border-radius:var(--r-lg); background:var(--accent); color:#fff;
+  font-size:19px; font-weight:800; padding:20px; letter-spacing:0.04em; cursor:pointer; }
+.gobar .cancel { border:none; border-radius:var(--r-lg); background:var(--surface2);
+  color:var(--muted); font-size:16px; font-weight:700; padding:20px 30px; cursor:pointer; }
+</style></head><body>
+<div class="topbar"><span class="pill" style="background:#e8f0fe;color:var(--accent)"><span class="dot" style="background:var(--accent)"></span>READY</span><span class="clock">0:00</span><span style="width:110px"></span></div>
+<div class="stage">
+  <div class="card panel">
+    <h2>Run setup — pipetting</h2>
+    <div>
+      <div class="sec-l" style="margin-bottom:10px">Preset</div>
+      <div class="presets">
+        <div class="preset sel"><div class="t">Standard run</div><div class="d">8 transfers · fresh tip each · 400 µL</div></div>
+        <div class="preset"><div class="t">QC run</div><div class="d">2 transfers · fresh tip each · 400 µL</div></div>
+        <div class="preset"><div class="t">Custom…</div><div class="d">Start from the last run’s values</div></div>
+      </div>
+    </div>
+    <div class="rows">
+      <div class="sec-l">Adjust</div>
+      <div class="row">
+        <div><div class="lbl">Transfer count</div><div class="hint">Source is the rack’s first slot</div></div>
+        <div class="stepper"><button>−</button><div class="val">8</div><button>+</button></div>
+      </div>
+      <div class="row">
+        <div><div class="lbl">Volume</div><div class="hint">Per transfer</div></div>
+        <div class="seg"><button>200 µL</button><button class="on">400 µL</button><button>800 µL</button></div>
+      </div>
+      <div class="row">
+        <div><div class="lbl">Fresh tip each transfer</div><div class="hint">Recommended</div></div>
+        <div class="toggle"></div>
+      </div>
+    </div>
+    <div class="gobar">
+      <button class="cancel">Cancel</button>
+      <button class="go">Start run ▸</button>
+    </div>
+  </div>
+  <div class="footer-note"><a href="index.html">← all mockups</a></div>
+</div>
+</body></html>

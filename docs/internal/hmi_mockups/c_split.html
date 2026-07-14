@@ -1,0 +1,61 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>C — Split dashboard HMI</title><link rel="stylesheet" href="mock.css"/>
+<style>
+.grid { display:grid; grid-template-columns:1.25fr 1fr; gap:18px; }
+.panel { padding:28px 30px; display:flex; flex-direction:column; gap:18px; }
+.ring-wrap { display:flex; align-items:center; gap:26px; }
+.ring { width:170px; height:170px; }
+.state-big { font-size:32px; font-weight:800; letter-spacing:-0.4px; line-height:1.15; }
+.state-sub { color:var(--muted); font-size:16px; font-weight:600; margin-top:6px; }
+.alert { display:flex; align-items:center; gap:12px; background:rgba(255,159,10,0.12);
+  color:var(--amber); font-weight:700; border-radius:var(--r-md); padding:14px 18px; font-size:15px; }
+.stats { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.stat { background:var(--bg); border-radius:var(--r-md); padding:16px 18px; }
+.stat .v { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; }
+.stat .v small { font-size:15px; color:var(--muted); margin-left:3px; }
+.stat .l { color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:0.05em; }
+@media (max-width:760px){ .grid{grid-template-columns:1fr;} }
+</style></head><body>
+<div class="topbar"><span class="pill" style="background:#fdf1e0;color:var(--amber)"><span class="dot" style="background:var(--amber)"></span>PAUSED</span><span class="clock">7:15</span><span style="width:110px"></span></div>
+<div class="stage">
+  <div class="grid">
+    <div class="card panel">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#e9e9ee" stroke-width="12"/>
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#007aff" stroke-width="12"
+                  stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="147"
+                  transform="rotate(-90 60 60)"/>
+          <text x="60" y="66" text-anchor="middle" font-size="26" font-weight="800" fill="#1d1d1f">55%</text>
+        </svg>
+        <div>
+          <div class="state-big">Paused —<br/>waiting for operator</div>
+          <div class="state-sub">Was: capping tube 5</div>
+        </div>
+      </div>
+      <div class="alert">⚠ Scale reconnected — press Resume to continue</div>
+    </div>
+    <div class="card panel">
+      <div class="stats">
+        <div class="stat"><div class="v">4 / 8</div><div class="l">Tubes done</div></div>
+        <div class="stat"><div class="v">12.4<small>g</small></div><div class="l">Last weight</div></div>
+        <div class="stat"><div class="v">~6<small>min</small></div><div class="l">Remaining</div></div>
+        <div class="stat"><div class="v" style="color:var(--amber)">1</div><div class="l">Attention</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="cbtn" style="color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>Resume</button>
+    <button class="cbtn disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</button>
+    <button class="cbtn disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Launch</button>
+    <button class="cbtn park"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>Park</button>
+  </div>
+  <div class="secrow">
+    <button class="sbtn">⚙ Parameters</button>
+    <button class="sbtn">▦ Controls</button>
+    <button class="sbtn kill">✕ Kill</button>
+  </div>
+  <div class="footer-note"><a href="index.html">← all mockups</a></div>
+</div>
+</body></html>

@@ -1,0 +1,125 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>F — Bench map (subway style)</title><link rel="stylesheet" href="mock.css"/>
+<style>
+.hmi { padding:28px 34px; display:flex; flex-direction:column; gap:18px; }
+.staterow { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.state-big { font-size:34px; font-weight:800; letter-spacing:-0.4px; }
+.state-sub { color:var(--muted); font-weight:600; font-size:14px; }
+
+/* ── subway map: uniform station cards, spatially arranged ── */
+.map { background:#fafafc; border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:20px 22px 16px; display:flex; flex-direction:column; gap:16px; }
+.railrow { display:flex; flex-direction:column; gap:5px; }
+.rail { height:14px; border-radius:999px; background:#e7e7ec; position:relative; }
+.carriage { position:absolute; top:-6px; left:47%; width:56px; height:26px; border-radius:8px;
+  background:#3a3a3f; }
+.raillbl { text-align:center; color:#9a9aa0; font-size:10.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.07em; }
+.stations { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.station { position:relative; background:var(--surface); border:1.5px solid #e3e3e8;
+  border-radius:14px; min-height:108px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:12px; padding:14px 10px 10px; }
+.station .lbl { position:absolute; bottom:8px; font-size:10.5px; font-weight:700;
+  color:#9a9aa0; text-transform:uppercase; letter-spacing:0.07em; }
+.station.active { border-color:var(--accent); border-width:2.5px; background:#f2f8ff; }
+.station.active .lbl { color:var(--accent); }
+.dots { display:grid; gap:9px; }
+.dot { width:22px; height:22px; border-radius:50%; }
+.dot.done   { background:#cfe3d4; }
+.dot.wait   { background:none; border:2px solid #d4d4da; }
+.dot.active { background:var(--accent); position:relative; }
+.dot.active::after { content:""; position:absolute; inset:-6px; border-radius:50%;
+  border:3px solid rgba(0,122,255,0.35); animation:breathe 1.8s infinite; }
+.dot.error  { background:var(--red); }
+.dot.occ    { background:#b9b9c0; }
+@keyframes breathe { 50% { opacity:0.25; } }
+.legend { display:flex; gap:22px; justify-content:center; color:var(--muted);
+  font-size:13px; font-weight:600; }
+.legend i { display:inline-block; width:12px; height:12px; border-radius:50%;
+  margin-right:7px; vertical-align:-1px; }
+.statrow { display:flex; gap:12px; }
+.stat { flex:1; background:var(--bg); border-radius:var(--r-md); padding:13px 16px; }
+.stat .v { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+.stat .v small { font-size:14px; color:var(--muted); margin-left:2px; }
+.stat .l { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; }
+</style></head><body>
+<div class="topbar"><span class="pill"><span class="dot" style="width:9px;height:9px;background:var(--green);border-radius:50%"></span>RUNNING</span><span class="clock">3:42</span><span style="width:110px"></span></div>
+<div class="stage" style="width:min(940px,96vw)">
+  <div class="card hmi">
+    <div class="staterow">
+      <div class="state-big">Shaking pair 2</div>
+      <div class="state-sub">subway map — stations from the scene, states from facts</div>
+    </div>
+
+    <div class="map">
+      <div class="railrow">
+        <div class="rail"><div class="carriage"></div></div>
+        <div class="raillbl">rail · robot at shaker</div>
+      </div>
+
+      <div class="stations">
+        <!-- back row -->
+        <div class="station">
+          <div class="dots"><div class="dot wait"></div></div>
+          <div class="lbl">scale · empty</div>
+        </div>
+        <div class="station active">
+          <div class="dots" style="grid-template-columns:repeat(2,1fr)">
+            <div class="dot active"></div><div class="dot active"></div>
+          </div>
+          <div class="lbl">shaker · active</div>
+        </div>
+        <div class="station">
+          <div class="dots" style="grid-template-columns:repeat(2,1fr)">
+            <div class="dot occ"></div><div class="dot wait"></div>
+          </div>
+          <div class="lbl">tools · gripper out</div>
+        </div>
+        <!-- front row -->
+        <div class="station">
+          <div class="dots" style="grid-template-columns:repeat(4,1fr)">
+            <div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div>
+            <div class="dot done"></div><div class="dot error"></div><div class="dot wait"></div><div class="dot wait"></div>
+          </div>
+          <div class="lbl">amber rack</div>
+        </div>
+        <div class="station">
+          <div class="dots"><div class="dot wait"></div></div>
+          <div class="lbl">vortex · empty</div>
+        </div>
+        <div class="station">
+          <div class="lbl" style="position:static">camera</div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><i style="background:#cfe3d4"></i>Done</span>
+        <span><i style="background:var(--accent)"></i>Active</span>
+        <span><i style="border:2px solid #d4d4da;width:9px;height:9px;background:none"></i>Empty / waiting</span>
+        <span><i style="background:#b9b9c0"></i>Occupied</span>
+        <span><i style="background:var(--red)"></i>Attention</span>
+      </div>
+    </div>
+
+    <div class="statrow">
+      <div class="stat"><div class="v">6 / 8</div><div class="l">Tubes done</div></div>
+      <div class="stat"><div class="v">12.4<small>g</small></div><div class="l">Last weight</div></div>
+      <div class="stat"><div class="v">~4<small>min</small></div><div class="l">Remaining</div></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="cbtn disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>Resume</button>
+    <button class="cbtn pause"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</button>
+    <button class="cbtn disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Launch</button>
+    <button class="cbtn park"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>Park</button>
+  </div>
+  <div class="secrow">
+    <button class="sbtn">⚙ Parameters</button>
+    <button class="sbtn">▦ Controls</button>
+    <button class="sbtn kill">✕ Kill</button>
+  </div>
+  <div class="footer-note"><a href="index.html">← all mockups</a></div>
+</div>
+</body></html>

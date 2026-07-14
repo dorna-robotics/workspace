@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>G — Guided recovery</title><link rel="stylesheet" href="mock.css"/>
+<style>
+body { background:linear-gradient(180deg,#f6ead8 0%,#f2f2f7 45%); }
+.hmi { padding:40px 44px; display:flex; flex-direction:column; gap:26px; align-items:center; text-align:center; }
+.badge { display:inline-flex; align-items:center; gap:10px; background:rgba(255,159,10,0.14);
+  color:var(--amber); font-weight:800; border-radius:999px; padding:10px 22px; font-size:15px;
+  letter-spacing:0.04em; text-transform:uppercase; }
+.headline { font-size:40px; font-weight:800; letter-spacing:-0.5px; line-height:1.15; }
+.why { color:var(--muted); font-size:17px; font-weight:600; max-width:560px; line-height:1.5; }
+.fix { display:flex; flex-direction:column; gap:12px; width:min(460px,100%); }
+.fixbtn { display:flex; align-items:center; justify-content:center; gap:12px; border:none;
+  border-radius:var(--r-lg); background:var(--accent); color:#fff; font-size:20px; font-weight:800;
+  padding:22px; cursor:pointer; letter-spacing:0.02em; box-shadow:0 6px 22px rgba(0,122,255,0.35); }
+.fixbtn svg { width:24px; height:24px; }
+.fix .then { color:var(--muted); font-size:13.5px; font-weight:600; }
+.resume { display:flex; align-items:center; justify-content:center; gap:10px; border:none;
+  border-radius:var(--r-lg); background:var(--surface2); color:#a9a9ae; font-size:17px;
+  font-weight:800; padding:18px; cursor:not-allowed; }
+.ctx { display:flex; gap:26px; color:var(--muted); font-size:14px; font-weight:600; }
+.ctx b { color:var(--text); font-variant-numeric:tabular-nums; }
+.quiet { color:var(--muted); font-size:13px; }
+.quiet span { border-bottom:1px dashed var(--muted); cursor:pointer; }
+</style></head><body>
+<div class="topbar"><span class="pill" style="background:#fdf1e0;color:var(--amber)"><span class="dot" style="background:var(--amber)"></span>PAUSED — NEEDS YOU</span><span class="clock">7:15</span><span style="width:110px"></span></div>
+<div class="stage">
+  <div class="card hmi">
+    <div class="badge">⚠ One thing needs attention</div>
+    <div class="headline">Scale is not responding</div>
+    <div class="why">The run paused safely after capping tube 5. Nothing was lost.
+      Fix the scale below — the run continues where it stopped.</div>
+    <div class="fix">
+      <button class="fixbtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Reconnect Scale
+      </button>
+      <div class="then">then</div>
+      <button class="resume">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Resume run — unlocks when the scale is back
+      </button>
+    </div>
+    <div class="ctx">
+      <span>Done <b>4 / 8</b></span><span>Paused at <b>tube 5 · capping</b></span><span>Waiting <b>1:42</b></span>
+    </div>
+    <div class="quiet">everything else is healthy · <span>details</span> · <span>call a supervisor</span></div>
+  </div>
+  <div class="secrow">
+    <button class="sbtn">⚙ Parameters</button>
+    <button class="sbtn">▦ Controls</button>
+    <button class="sbtn kill">✕ Kill</button>
+  </div>
+  <div class="footer-note"><a href="index.html">← all mockups</a></div>
+</div>
+</body></html>

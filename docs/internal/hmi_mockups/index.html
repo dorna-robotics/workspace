@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pendant HMI mockups</title><link rel="stylesheet" href="mock.css"/>
+<style>
+.menu { display:flex; flex-direction:column; gap:14px; padding:34px 38px; }
+h1 { font-size:26px; font-weight:800; }
+p  { color:var(--muted); line-height:1.5; }
+a.item { display:block; background:var(--bg); border-radius:var(--r-md); padding:18px 22px;
+  text-decoration:none; color:var(--text); }
+a.item:hover { background:var(--surface2); }
+a.item .t { font-weight:800; font-size:17px; }
+a.item .d { color:var(--muted); font-size:14px; margin-top:3px; }
+</style></head><body>
+<div class="topbar"><span class="pill"><span class="dot"></span>MOCKUPS</span><span class="clock">HMI</span><span style="width:110px"></span></div>
+<div class="stage">
+  <div class="card menu">
+    <h1>Pendant HMI — sample templates</h1>
+    <p>Static mockups with fake data, styled on the platform's design tokens.
+       All monitoring content shown would be <b>declared per project</b> in <code>hmi.j2</code>
+       (widgets bound to facts / rt.op values) and rendered by the platform.
+       All variants share: 4 control tiles on ONE line, operator language, no debug text.</p>
+    <a class="item" href="a_headline.html"><div class="t">A — Headline</div><div class="d">Big state line + progress bar + stat tiles. The minimal, universal layout.</div></a>
+    <a class="item" href="b_rack.html"><div class="t">B — Rack-centric</div><div class="d">The rack map is the hero: per-slot state colored from facts. Most "lab HMI" of the three.</div></a>
+    <a class="item" href="c_split.html"><div class="t">C — Split dashboard</div><div class="d">Progress ring + state left, stat grid right, alert banner. Shown in PAUSED state.</div></a>
+    <a class="item" href="f_benchmap.html"><div class="t">F — Bench map (auto-generated)</div><div class="d">SUBWAY MAP: uniform station cards spatially arranged from the scene, slot dots colored by facts, rail bar with live carriage. Schematic for state; the 3D view keeps realism.</div></a>
+    <a class="item" href="g_recovery.html"><div class="t">G — Guided recovery</div><div class="d">Something's wrong: one sentence, one fix button (bound to an operator action), Resume unlocks after. Attention screen, not a dashboard.</div></a>
+    <a class="item" href="e_widgets.html"><div class="t">E — Widget gallery</div><div class="d">The full expandable catalog: state, stat, timer, progress, ring, gauge, rack, alert, devices, checklist, trend, camera, scan, queue, keyval.</div></a>
+    <a class="item" href="d_params.html"><div class="t">D — Parameters as run setup</div><div class="d">Preset cards + touch stepper / segmented / toggle instead of the tiny form.</div></a>
+  </div>
+</div>
+</body></html>
