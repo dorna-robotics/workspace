@@ -72,6 +72,6 @@ class Feeder:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Advance", "method": "advance", "icon": "forward"},
-            {"label": "Reverse", "method": "reverse", "icon": "backward"},
+            {"label": "Advance", "method": "advance", "icon": "forward",  "group": "feed"},
+            {"label": "Reverse", "method": "reverse", "icon": "backward", "group": "feed"},
         ]

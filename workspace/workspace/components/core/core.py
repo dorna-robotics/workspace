@@ -671,15 +671,15 @@ class Core:
 
     def operator_actions(self) -> list[dict]:
         actions = [
-            {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power"},
-            {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off"},
-            {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap"},
-            {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off"},
+            {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "motors"},
+            {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off", "group": "motors"},
+            {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap",       "group": "tool"},
+            {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off",   "group": "tool"},
         ]
         if self.has_tool_changer:
             actions += [
-                {"label": "Attach Tool", "method": "tool_attach", "icon": "link"},
-                {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off"},
+                {"label": "Attach Tool", "method": "tool_attach", "icon": "link",     "group": "tool_changer"},
+                {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "tool_changer"},
             ]
         if self.has_camera:
             actions += [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]

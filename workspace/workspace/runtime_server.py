@@ -844,6 +844,8 @@ def _operator_actions_snapshot(workspace) -> list[dict]:
             }
             if action.get("icon"):
                 entry["icon"] = action["icon"]
+            if action.get("group"):
+                entry["group"] = action["group"]
             out.append(entry)
     return out
 

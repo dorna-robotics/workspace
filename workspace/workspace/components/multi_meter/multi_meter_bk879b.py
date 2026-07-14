@@ -248,11 +248,11 @@ class MultiMeterBk879b:
     def operator_actions(self) -> list[dict]:
         # read_* exposed directly; the runtime stringifies the Measurement.
         return [
-            {"label": "Read C",    "method": "read_capacitance", "icon": "activity"},
-            {"label": "Read L",    "method": "read_inductance",  "icon": "activity"},
-            {"label": "Read R",    "method": "read_resistance",  "icon": "activity"},
-            {"label": "Reconnect", "method": "reconnect",        "icon": "rotate"},
-            {"label": "Release",   "method": "release_meter",    "icon": "link-off"},
+            {"label": "Read C",    "method": "read_capacitance", "icon": "activity", "group": "read"},
+            {"label": "Read L",    "method": "read_inductance",  "icon": "activity", "group": "read"},
+            {"label": "Read R",    "method": "read_resistance",  "icon": "activity", "group": "read"},
+            {"label": "Reconnect", "method": "reconnect",        "icon": "rotate",   "group": "conn"},
+            {"label": "Release",   "method": "release_meter",    "icon": "link-off", "group": "conn"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

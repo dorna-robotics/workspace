@@ -17,6 +17,11 @@ The contract is intentionally lightweight:
                   eye, forward, backward, rotate, activity). Unknown
                   or missing names render the button text-only —
                   icons are progressive enhancement, never required.
+    ``group``   — OPTIONAL row key. Consecutive actions sharing a
+                  group render as ONE row of equal-width buttons
+                  (Enable|Disable pairs, Advance|Reverse, …);
+                  ungrouped actions each get their own full-width
+                  row. Pure layout hint — no behavior attached.
 
 * Buttons are gated by workflow state on the orchestrator side
   (disabled while RUNNING); the component never enforces that.
@@ -63,5 +68,8 @@ def component_operator_actions(component) -> list[dict]:
         icon = str(entry.get("icon", "") or "").strip()
         if icon:
             item["icon"] = icon
+        group = str(entry.get("group", "") or "").strip()
+        if group:
+            item["group"] = group
         out.append(item)
     return out

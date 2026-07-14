@@ -190,8 +190,15 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .op-action-buttons {
-      display: flex; flex-wrap: wrap; gap: 8px;
+    .op-action-rows {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .op-action-row {
+      display: flex; gap: 8px;
+    }
+    .op-action-row .op-action-btn {
+      flex: 1 1 0;
+      min-width: 0;
     }
     /* Same field-friendly sizing as the main controls: operator actions
        are pressed mid-recovery, often on a tablet — make them easy to

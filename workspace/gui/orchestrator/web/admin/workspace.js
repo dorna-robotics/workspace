@@ -1050,16 +1050,28 @@ function _opActionsHtml(disabled) {
   if (!groups.size) return `<div class="step-empty">No operator actions declared</div>`;
   const rows = [];
   for (const [component, actions] of groups) {
-    const buttons = actions.map(a => `
+    // Partition into rows: consecutive actions sharing a declared
+    // ``group`` sit on ONE row of equal-width buttons; ungrouped
+    // actions each take a full-width row. Declaration order rules.
+    const runs = [];
+    for (const a of actions) {
+      const last = runs[runs.length - 1];
+      if (a.group && last && last.key === a.group) last.items.push(a);
+      else runs.push({ key: a.group || null, items: [a] });
+    }
+    const btn = (a) => `
       <button class="btn btn-sm op-action-btn"
               data-component="${escHtml(component)}"
               data-method="${escHtml(a.method)}"
               ${disabled ? "disabled" : ""}>${opIcon(a.icon)}${escHtml(a.label)}</button>
-    `).join("");
+    `;
+    const body = runs.map(r =>
+      `<div class="op-action-row">${r.items.map(btn).join("")}</div>`
+    ).join("");
     rows.push(`
       <div class="op-action-group">
         <div class="op-action-component">${escHtml(component)}</div>
-        <div class="op-action-buttons">${buttons}</div>
+        <div class="op-action-rows">${body}</div>
       </div>
     `);
   }

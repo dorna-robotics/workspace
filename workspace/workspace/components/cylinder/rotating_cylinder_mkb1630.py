@@ -139,8 +139,8 @@ class RotatingCylinderMKB1630:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Enable",  "method": "enable",  "icon": "power"},
-            {"label": "Disable", "method": "disable", "icon": "power-off"},
+            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "power"},
+            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "power"},
         ]
 
     def update_pose(self):
