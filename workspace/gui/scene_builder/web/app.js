@@ -3206,7 +3206,10 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
   const th = _sbPanelTheme();
   closeAttachModal();
 
-  const SIDEBAR_W = 264;
+  const SIDEBAR_W = (() => {
+    try { return Math.round(document.querySelector(".sidebar").getBoundingClientRect().width); }
+    catch (e) { return 340; }
+  })();
   const HEADER_H  = 52;
   const MODAL_W   = 380;
   const DIM       = "var(--panel-dim)";
