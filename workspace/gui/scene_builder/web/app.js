@@ -7256,24 +7256,56 @@ ensureBuilderBar();
         renderFilesList();
       });
 
-      // Delete (only if more than one file remains).
+      // Delete (only if more than one file remains). Removing a file
+      // DELETES its components from the scene — the old behavior silently
+      // moved them to the first file, which read as "nothing happened".
+      // The whole batch lands in ONE undo entry, so ctrl-Z restores the
+      // components (the file row itself is re-added via rename/add).
       if (bs.files.length > 1) {
         const del = document.createElement("span");
         del.className = "sb-file-del";
         del.textContent = "×";
-        del.title = "Remove file (its items move to the first file)";
+        del.title = "Remove file and delete its items from the scene";
         del.addEventListener("click", (e) => {
           e.stopPropagation();
           const idx = bs.files.indexOf(fname);
           if (idx < 0) return;
-          bs.files.splice(idx, 1);
-          const fallback = bs.files[0];
-          // Reassign orphaned components to the first remaining file.
-          for (const meta of Object.values(bs.components)) {
-            if (meta && meta.__file === fname) meta.__file = fallback;
+
+          __assignUntaggedToActive();
+          const doomed = Object.entries(bs.components)
+            .filter(([, m]) => m && m.__file === fname)
+            .map(([n]) => n);
+
+          // One combined undo entry for the whole batch.
+          if (doomed.length) {
+            try {
+              const specs = {}, metas = {};
+              for (const n of doomed) {
+                specs[n] = __deepClone(bs.specs?.[n] || null);
+                metas[n] = __deepClone(bs.components?.[n] || null);
+              }
+              __pushUndo({ kind: "delete", names: [...doomed], specs, metas });
+            } catch (_) {}
           }
-          if (bs.activeFile === fname) bs.activeFile = fallback;
+
+          // Delete with per-item undo suppressed — the batch entry above
+          // is the single history record.
+          bs.suspendUndo = true;
+          try {
+            for (const n of doomed) {
+              try { __deleteComponentByName(n); } catch (_) {}
+            }
+          } finally {
+            bs.suspendUndo = false;
+          }
+
+          bs.files.splice(idx, 1);
+          if (bs.activeFile === fname) bs.activeFile = bs.files[0];
           renderFilesList();
+          try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch (_) {}
+          showToast(doomed.length
+            ? `Removed ${fname} — deleted ${doomed.length} component(s)`
+            : `Removed ${fname}`);
         });
         row.appendChild(del);
       }
