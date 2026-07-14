@@ -7,15 +7,15 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1092
+      "count": 1392
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 368,
+      "count": 464,
       "max": [
-        1.500175952911377,
-        1.899888038635254,
+        1.5,
+        2.4000000953674316,
         3.922110080718994
       ],
       "min": [
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 368
+      "count": 464
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1268
+      "byteLength": 1485
     }
   ],
   "buffers": [
     {
       "uri": "vortex_genie_top_2ml.glb.bin",
-      "byteLength": 1268
+      "byteLength": 1485
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.006",
+      "name": "Steel_-_Satin.003",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "Vortex_Genie_top",
+      "name": "Untitled2ml",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "Vortex_Genie_top",
+      "name": "Untitled2ml",
       "rotation": [
         0.7071068286895752,
         0,

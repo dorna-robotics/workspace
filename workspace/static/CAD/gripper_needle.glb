@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 21508
+      "byteLength": 21530
     }
   ],
   "buffers": [
     {
       "uri": "gripper_needle.glb.bin",
-      "byteLength": 21508
+      "byteLength": 21530
     }
   ],
   "materials": [

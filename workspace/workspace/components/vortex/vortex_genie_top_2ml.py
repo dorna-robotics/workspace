@@ -17,11 +17,11 @@ class VortexGenieTop2ml:
         anchors={"body": {
             "center": [0, 0, 0, 0, 0, 0],
             "place":  [0, 0, 4, 0, 0, 0],    # bore floor — tube bottoms out here
-            "top":    [0, 0, 19, 0, 0, 0],   # socket rim
+            "top":    [0, 0, 24, 0, 0, 0],   # socket rim
         }},
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 19.0/2, 0.0, 0.0, 0.0], "scale":[30.0, 78.442, 19.0], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 24/2, 0.0, 0.0, 0.0], "scale":[30.0, 78.442, 24], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
     )
 

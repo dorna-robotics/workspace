@@ -8,7 +8,7 @@ from workspace.components.adapter.adapter import Adapter
 class AdapterPlateAmber40ml4x7(Adapter):
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0],
-                "hole_0": [100, 50, 0, 0, 0, 0], "hole_1": [-100, 50, 0, 0, 0, 0], "hole_2": [-100, -50, 0, 0, 0, 0], "hole_3": [100, -50, 0, 0, 0, 0],
+                "hole_0": [100, 0, 0, 0, 0, 0], "hole_1": [-100, 0, 0, 0, 0, 0],
                 "clb_0": [120, 40, 30, 0, 0, 0], "clb_1": [-120, 40, 30, 0, 0, 0], "clb_2": [-120, -40, 30, 0, 0, 0], "clb_3": [120, -40, 30, 0, 0, 0]}},
     )
 

@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 16444
+      "byteLength": 16449
     },
     {
       "buffer": 0,
-      "byteOffset": 16444,
-      "byteLength": 17755
+      "byteOffset": 16449,
+      "byteLength": 17814
     }
   ],
   "buffers": [
     {
       "uri": "rack_falcon_15ml.glb.bin",
-      "byteLength": 34199
+      "byteLength": 34263
     }
   ],
   "materials": [

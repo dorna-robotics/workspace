@@ -7,45 +7,45 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4020
+      "count": 25596
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1420,
+      "count": 8527,
       "max": [
-        10.25,
-        5.2496337890625,
-        1.0004088878631592
+        11.800000190734863,
+        0.75,
+        3.549999952316284
       ],
       "min": [
-        -10.25,
-        -5.25,
-        -0.6000000238418579
+        -11.800000190734863,
+        0,
+        -3.549999952316284
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1420
+      "count": 8527
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4447
+      "byteLength": 17737
     }
   ],
   "buffers": [
     {
-      "uri": "adapter_plate_amber_40ml_4x7.glb.bin",
-      "byteLength": 4447
+      "uri": "capholder_autosampler_2ml_4x14.glb.bin",
+      "byteLength": 17737
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin",
+      "name": "Steel_-_Satin.001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "adapter_amber_40ml_4X7",
+      "name": "capholder",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "adapter_amber_40ml_4X7",
+      "name": "capholder",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

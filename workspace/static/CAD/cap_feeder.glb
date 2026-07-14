@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 112812
+      "count": 112788
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 37893,
+      "count": 37888,
       "max": [
         7.344864368438721,
         11.73617172241211,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 37893
+      "count": 37888
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11864
+      "byteLength": 11890
     },
     {
       "buffer": 0,
-      "byteOffset": 11864,
-      "byteLength": 124115
+      "byteOffset": 11890,
+      "byteLength": 124246
     }
   ],
   "buffers": [
     {
       "uri": "cap_feeder.glb.bin",
-      "byteLength": 135979
+      "byteLength": 136136
     }
   ],
   "materials": [
