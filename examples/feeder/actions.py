@@ -129,7 +129,7 @@ class Park(Action):
     duration    = 5
     resource    = "robot"
     tool        = None
-    PARK_JOINTS = [0, 185, -94, 0, 0, 0, 100]
+    PARK_JOINTS = [0, 90, 0, 0, 0, 0, 100]
 
     def pre(self):
         caps = self._ctx_all_objects().get("cap", [])
