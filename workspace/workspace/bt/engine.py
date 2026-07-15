@@ -65,10 +65,14 @@ class EngineConfig:
             convention and is plenty for lab work where actions take
             seconds-to-minutes; the planning algorithms are 100-1000x
             faster than any hardware action.
-        max_replans: Safety cap — refuse to rebuild more than this many
-            times in one run. Without a cap, a faulty leaf could trigger
-            an infinite replan loop. Default 50; lab batches rarely need
-            more than a handful.
+        max_replans: Runaway backstop — abort after this many
+            *consecutive replans with zero forward progress* (fact state
+            unchanged between replans, observed via ``progress_probe``).
+            Any action succeeding resets the count, so operator-recovered
+            failures and window-completion replans never accumulate
+            toward an abort over a long run; only a loop that is failing
+            and going nowhere hits the cap. Without a probe wired the
+            count is total replans per run. Default 50.
         idle_quiescence_s: If the tree stays SUCCESS/FAILURE for this
             many ticks, exit. Default 0 (exit immediately on SUCCESS or
             top-level FAILURE).
@@ -100,6 +104,12 @@ class BTEngine:
             ``paused`` / ``stopped`` / ``parking`` flags between ticks
             and pauses / exits / runs cleanup accordingly. Optional —
             for tests, pass ``None``.
+        progress_probe: Zero-arg callable returning a hashable snapshot
+            of the world fact state (the launcher passes the live facts
+            as a frozenset). Compared between consecutive replans: a
+            change means some action's effects applied — forward
+            progress — and the replan counter resets. ``None`` disables
+            the reset (counter counts total replans per run).
         config: Tick rate, replan cap, etc.
 
     Lifecycle returned values from ``run()``:
@@ -116,14 +126,17 @@ class BTEngine:
             Callable[[], Optional[py_trees.behaviour.Behaviour]]
         ] = None,
         runtime: Optional[object] = None,
+        progress_probe: Optional[Callable[[], object]] = None,
         config: Optional[EngineConfig] = None,
     ):
         self._root = root
         self._rebuild = rebuild
         self._build_park_tree = build_park_tree
         self._runtime = runtime
+        self._progress_probe = progress_probe
         self._cfg = config or EngineConfig()
         self._replans = 0
+        self._last_replan_facts: Optional[object] = None
         # Set once we've handed control over to the trigger="park" subtree
         # so we don't loop back into rebuild/replan logic.
         self._in_cleanup = False
@@ -348,6 +361,22 @@ class BTEngine:
         if self._rebuild is None:
             log.warning("BTEngine: ReplanRequested but no rebuild fn — aborting")
             return False
+        # Forward progress resets the cap. The cap is a runaway detector
+        # ("N consecutive replans going nowhere"), not a per-run quota:
+        # an operator-recovered device failure or a completed plan window
+        # must never accumulate toward an abort hours later. Facts change
+        # only when an action's effects apply, so a fact-state change
+        # between replans == at least one action succeeded in between.
+        if self._progress_probe is not None:
+            try:
+                snap = self._progress_probe()
+            except Exception:
+                log.exception("BTEngine: progress_probe raised — skipping reset check")
+                snap = None
+            if snap is not None:
+                if self._last_replan_facts is not None and snap != self._last_replan_facts:
+                    self._replans = 0
+                self._last_replan_facts = snap
         if self._replans >= self._cfg.max_replans:
             log.error(
                 "BTEngine: replan cap (%d) hit — aborting. Last reason: %s",

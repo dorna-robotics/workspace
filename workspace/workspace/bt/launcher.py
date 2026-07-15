@@ -741,19 +741,18 @@ def run_protocol(
         return sequence(f"{project_name}/park", *leaves)
 
     root = replanner.rebuild()
-    # Slicing turns every window-completion into a replan, so the cap
-    # has to clear ceil(N/plan_window) plus headroom for real
-    # world-drift replans. Add 50 to cover the latter.
-    replan_cap = (
-        max(50, (len(all_items) + int(plan_window) - 1) // int(plan_window) + 50)
-        if slicing_active else 50
-    )
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,
         build_park_tree=build_park_tree,
         runtime=ctx.runtime,
-        config=EngineConfig(tick_hz=float(tick_hz), max_replans=replan_cap),
+        # The cap counts consecutive zero-progress replans: the probe
+        # resets it whenever the fact state moved between replans, so
+        # window-completion replans (slicing) and operator-recovered
+        # failures never accumulate toward it. Flat 50 suffices for any
+        # batch size.
+        progress_probe=lambda: frozenset(ctx.state.get("facts", frozenset())),
+        config=EngineConfig(tick_hz=float(tick_hz), max_replans=50),
     )
     log.info(
         "%s: starting BT engine — %d action(s) in plan",

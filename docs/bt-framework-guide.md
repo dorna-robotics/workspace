@@ -1476,8 +1476,13 @@ The launcher then:
    raise `ReplanRequested` so the framework picks the next window.
 4. Re-derives `goal_facts` (heuristic hint) lazily per slice so the
    GBFS heuristic matches the active window.
-5. Bumps the engine's replan cap to `ceil(N / plan_window) + 50` so
-   many-slice runs don't trip the safety limit.
+5. Window-completion replans don't erode the safety cap: the engine's
+   replan cap (50) counts *consecutive replans with zero forward
+   progress* — any fact-state change between replans (i.e. any action
+   succeeding, including a completed window) resets it. Only a run
+   that is failing and going nowhere hits the cap; operator-recovered
+   device failures (pause → fix → Resume, see project-guide §8) never
+   accumulate toward an abort over a long batch.
 
 #### Choosing `plan_window`
 
