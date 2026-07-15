@@ -1,0 +1,21 @@
+# base_1000 example — launch config.
+#
+# The base seed on the core_1000 chassis: same canonical bookend
+# protocol — Start (motor on + home the rail, fatal "killed" if homing
+# fails) → Park — but with a populated sample-prep layout (shaker,
+# decappers, cap feeder, tool racks + four grippers, scale, inspection,
+# barcode reader, vortex) to exercise the 1000 mm rail bench. No
+# per-item actions; use it as a scene/reach testbed or copy it to start
+# a project on this bench.
+
+project_name: base_1000
+port:         5010
+scene:        [scene/core_1000.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+kwargs: {}
