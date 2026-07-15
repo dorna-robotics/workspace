@@ -6882,10 +6882,11 @@ ensureBuilderBar();
   // Minimal Jinja preprocessing so .j2 scene files load as-authored:
   //  - {# ... #} comments stripped (multi-line)
   //  - {%- set name = value -%} assignments collected, their lines removed
+  //  - {% for v in "ABCD" / range(1, 14+1) / [a, b] %} ... {% endfor %}
+  //    unrolled (nested loops included) — loop-authored rack fills render
   //  - {{ expr }} substituted with the collected vars; pure-numeric
   //    expressions (e.g. "-wall_offset", "0+0.8") are evaluated
-  // Loops/conditionals ({% for %}, {% if %}) are NOT expanded — those
-  // scenes need the server-side render; here they degrade as before.
+  // {% if %} is NOT handled — those scenes degrade as before.
   function __preprocessJinja(text) {
     let src = String(text);
     src = src.replace(/\{#[\s\S]*?#\}/g, "");
@@ -6895,6 +6896,72 @@ ensureBuilderBar();
       vars[name] = Number.isFinite(num) ? num : val.replace(/^["']|["']$/g, "");
       return "";
     });
+    // {% for %} unrolling. Each pass expands the first complete
+    // outermost loop (matching endfor found by depth counting), then
+    // rescans — inner loops materialize on later passes. The loop
+    // variable is substituted only inside {{ }} expressions of the
+    // body; the final {{ }} pass below resolves what remains.
+    function __evalNum(expr) {
+      let e = expr;
+      for (const [k, v] of Object.entries(vars)) {
+        e = e.replace(new RegExp("\\b" + k + "\\b", "g"), String(v));
+      }
+      if (/^[-+*/(). \d]+$/.test(e)) {
+        try {
+          const v = Function('"use strict";return (' + e + ")")();
+          if (Number.isFinite(v)) return v;
+        } catch (_) {}
+      }
+      return null;
+    }
+    function __loopValues(iter) {
+      iter = iter.trim();
+      let m = iter.match(/^["'](.*)["']$/);
+      if (m) return m[1].split("");
+      m = iter.match(/^range\((.*)\)$/);
+      if (m) {
+        const args = m[1].split(",").map((a) => __evalNum(a));
+        if (!args.length || args.some((a) => a === null)) return null;
+        const [start, stop, step] =
+          args.length === 1 ? [0, args[0], 1] :
+          args.length === 2 ? [args[0], args[1], 1] : args;
+        const out = [];
+        if (!step) return null;
+        for (let i = start; step > 0 ? i < stop : i > stop; i += step) out.push(i);
+        return out;
+      }
+      m = iter.match(/^\[(.*)\]$/);
+      if (m) return m[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
+      return null;
+    }
+    const TAG = /\{%-?\s*(?:(for)\s+([A-Za-z_]\w*)\s+in\s+(.+?)|(endfor))\s*-?%\}[ \t]*\r?\n?/g;
+    for (let guard = 0; guard < 512; guard++) {
+      TAG.lastIndex = 0;
+      let m, open = null, varName = null, iterExpr = null, depth = 0, expandedOne = false;
+      while ((m = TAG.exec(src)) !== null) {
+        if (m[1] === "for") {
+          if (depth === 0) { open = m; varName = m[2]; iterExpr = m[3]; }
+          depth++;
+        } else if (depth > 0) {
+          depth--;
+          if (depth === 0 && open) {
+            const body = src.slice(open.index + open[0].length, m.index);
+            const values = __loopValues(iterExpr);
+            let out = "";
+            if (values) {
+              for (const v of values) {
+                out += body.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (mm, expr) =>
+                  "{{ " + expr.replace(new RegExp("\\b" + varName + "\\b", "g"), String(v)) + " }}");
+              }
+            }
+            src = src.slice(0, open.index) + out + src.slice(m.index + m[0].length);
+            expandedOne = true;
+            break;
+          }
+        }
+      }
+      if (!expandedOne) break;
+    }
     src = src.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
       let e = expr;
       for (const [k, v] of Object.entries(vars)) {
