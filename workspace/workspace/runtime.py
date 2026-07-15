@@ -122,6 +122,16 @@ class Runtime:
         with self._lock:
             return self._status.state
 
+    @property
+    def paused(self) -> bool:
+        """True while the operator has the run paused. The BT engine
+        polls this to hold its tick/replan loop — without it, an action
+        failing before its first checkpoint would burn replans (and hit
+        the abort cap) during a pause. PARKING is not paused: park needs
+        the engine ticking to run the cleanup subtree."""
+        with self._lock:
+            return self._status.state == RTState.PAUSED
+
     def _set_state(self, new_state: RTState, *, err: Optional[str] = None) -> None:
         old = self._status.state
         if old == new_state and err is None:
