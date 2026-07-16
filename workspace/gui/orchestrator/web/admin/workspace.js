@@ -1922,6 +1922,16 @@ function togglePendant(on) {
   applyPendantRenderState();
   updatePendantPreviewBtn();
 
+  // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
+  // history entries added, back button untouched) so kiosk tablets can
+  // bookmark pendant mode directly and a refresh stays in it.
+  try {
+    const u = new URL(window.location);
+    if (_pendantMode) u.searchParams.set("pendant", "1");
+    else u.searchParams.delete("pendant");
+    history.replaceState(null, "", u);
+  } catch (_) {}
+
   if (_pendantMode) {
     // Resume audio context (required after user gesture)
     if (_audioCtx.state === "suspended") _audioCtx.resume();
@@ -2162,6 +2172,14 @@ document.querySelectorAll(".js-schedule-open").forEach(b => {
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
 $("pendantBtnPreview")?.addEventListener("click", togglePendantPreview);
+
+// Enter pendant directly from the URL (kiosk mode):
+//   workspace.html?name=<ws>&pendant=1
+// The audio context stays suspended until the first touch (browser
+// gesture policy) — beeps simply start working from then on.
+if (["1", "true"].includes((params.get("pendant") || "").toLowerCase())) {
+  togglePendant(true);
+}
 
 
 
