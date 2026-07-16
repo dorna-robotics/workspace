@@ -24,6 +24,10 @@ class Workspace:
         else:
             raise TypeError("config_path must be a str, Path, or list of them")
 
+        # Retained so components can locate the project folder (e.g. the
+        # core IK cache writes core_ik.json next to the scene dir).
+        self.config_paths = [str(Path(p)) for p in paths]
+
         comp_cfgs = {}
 
         # --- load + merge configs in order ---

@@ -1,7 +1,10 @@
 # workspace/components/core.py
 from copy import deepcopy
 from mergedeep import merge
+import json
 import math
+import os
+from pathlib import Path
 import numpy as np
 
 from dorna2 import Solid, Dorna
@@ -135,7 +138,7 @@ class Core:
         simulation = True,
         ip = "",
         has_rail = True,
-        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75, "p":0.01, "i":0.0001, "d":0, "duration":100 , "threshold":100},
+        rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75, "p":0.01, "i":0.0001, "d":0, "duration":10000 , "threshold":200},
         has_camera = False,
         camera_cfg = {
             "serial_number": "",
@@ -329,6 +332,14 @@ class Core:
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
+
+        # --------- IK solution cache (core_ik.json in the project folder)
+        # Lazy-loaded on the first IK() call; see _ik_cache_init. Every
+        # failure mode (no project folder, missing/corrupt file,
+        # read-only filesystem) degrades to in-memory-only or straight
+        # solving — the cache must never take down a run.
+        self._ik_cache = None          # {key: {"arm": [j0..j5], "rail": r|None}}
+        self._ik_cache_path = None
 
         # --------- rail carriage (shared across all rail sizes)
         rail_hd_carriage_anchors = {
@@ -725,6 +736,107 @@ class Core:
 
 
 
+    # ── IK solution cache ───────────────────────────────────────────────
+    # core_ik.json lives DIRECTLY in the project folder (no subfolder),
+    # like core.json. Rows are keyed by the full rounded numeric inputs
+    # of a solve — target pose in world, tool pose in flange, robot/rail
+    # base pose in world, sweep params, ref_joints — so moving a
+    # component, recalibrating, or changing recipe params changes the
+    # key and simply misses (stale rows can never match; no invalidation
+    # logic exists or is needed). On a hit the stored solution is
+    # re-validated against the LIVE collision scene before use; if the
+    # world changed and it now collides, we fall through to a full solve
+    # and the row is overwritten.
+
+    def _ik_cache_init(self):
+        """Resolve the cache path and load it. Never raises."""
+        self._ik_cache = {}
+        try:
+            paths = getattr(self.workspace, "config_paths", None) or []
+            if paths:
+                d = Path(paths[0]).resolve().parent
+                if d.name == "scene":
+                    d = d.parent
+                if d.is_dir():
+                    self._ik_cache_path = d / "core_ik.json"
+        except Exception:
+            self._ik_cache_path = None
+        try:
+            if self._ik_cache_path is not None and self._ik_cache_path.is_file():
+                data = json.loads(self._ik_cache_path.read_text())
+                if isinstance(data, dict):
+                    self._ik_cache = {
+                        k: v for k, v in data.items()
+                        if isinstance(v, dict) and isinstance(v.get("arm"), list)
+                        and len(v["arm"]) == 6
+                    }
+        except Exception:
+            self._ik_cache = {}  # corrupt file → start empty, rewrite on next put
+
+    def _ik_key(self, target_solid, target_anchor, target_offset, tool_solid,
+                tool_anchor, tool_offset, base_distance, rail_step, rail_span,
+                ref_joints, left_approach):
+        """Rounded numeric key for one solve, or None (= don't cache).
+        Only ref_joints-seeded solves are cacheable — without a fixed
+        reference the answer depends on live joints."""
+        if ref_joints is None:
+            return None
+        try:
+            obj_w = target_solid.pose(anchor=target_anchor, offset=target_offset)
+            tool_w = [0, 0, 0, 0, 0, 0]
+            if tool_solid and tool_anchor:
+                tool_w = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
+            base_w = (self.rail_base.pose(anchor="carriage") if self.has_rail
+                      else self.robot_A0.pose())
+            parts = (
+                [round(float(v), 3) for v in obj_w]
+                + [round(float(v), 3) for v in tool_w]
+                + [round(float(v), 3) for v in base_w]
+                + [round(float(v), 3) for v in list(ref_joints)[:6]]
+                + [None if base_distance is None else round(float(base_distance), 3),
+                   round(float(rail_step), 3), int(rail_span),
+                   bool(left_approach), bool(self.has_rail)]
+            )
+            return json.dumps(parts, separators=(",", ":"))
+        except Exception:
+            return None
+
+    def _ik_cache_get(self, key, cur, aux):
+        """Return a full joint list for a validated hit, else None.
+        The cached row stores arm (j0..j5) + rail only; all passthrough
+        joints come from the LIVE ``cur`` — identical to what a fresh
+        solve does. Validation re-checks collision against the live
+        scene (stricter than the solver's own last-pushed-scene check)."""
+        entry = self._ik_cache.get(key) if self._ik_cache else None
+        if not entry:
+            return None
+        try:
+            J = list(cur)
+            for i in range(6):
+                J[i] = float(entry["arm"][i])
+            if entry.get("rail") is not None:
+                J[aux] = float(entry["rail"])
+            if len(self.check_collision([float(v) for v in J[:6]])) > 0:
+                return None  # world changed — fall through to a full solve
+            return J
+        except Exception:
+            return None
+
+    def _ik_cache_put(self, key, J, aux, with_rail):
+        """Store a solved row and persist atomically. Never raises."""
+        try:
+            self._ik_cache[key] = {
+                "arm": [float(J[i]) for i in range(6)],
+                "rail": float(J[aux]) if with_rail else None,
+            }
+            if self._ik_cache_path is None:
+                return  # no resolvable project folder — in-memory only
+            tmp = self._ik_cache_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(self._ik_cache, indent=0))
+            os.replace(tmp, self._ik_cache_path)
+        except Exception:
+            pass  # read-only fs / race — keep the in-memory row, move on
+
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
          rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
 
@@ -765,6 +877,20 @@ class Core:
         cur = list(self.robot_api.joint())   # expect length 8
         aux = self.rail_cfg["axis"]
         r_cur = cur[aux]
+
+        # Cache lookup — see _ik_cache_init above. Key is None (never
+        # cached) when ref_joints wasn't given, since that solve depends
+        # on live joints.
+        if self._ik_cache is None:
+            self._ik_cache_init()
+        _ck = self._ik_key(target_solid, target_anchor, target_offset,
+                           tool_solid, tool_anchor, tool_offset,
+                           base_distance, rail_step, rail_span,
+                           ref_joints, left_approach)
+        if _ck is not None:
+            _hit = self._ik_cache_get(_ck, cur, aux)
+            if _hit is not None:
+                return (_hit, 2)
 
         if ref_joints is None:
             ref_joints = list(cur)
@@ -834,8 +960,10 @@ class Core:
                 if (best is None) or (jd < best[0]):
                     best = (jd, joint_sol)
             if best:
+                if _ck is not None:
+                    self._ik_cache_put(_ck, best[1], aux, with_rail=False)
                 return (best[1], 2)
-        
+
             else:
                 return (None, -2)
 
@@ -943,9 +1071,10 @@ class Core:
                         best = (jd, joint_sol)
 
             if best:
-
+                if _ck is not None:
+                    self._ik_cache_put(_ck, best[1], aux, with_rail=True)
                 return (best[1], 2)
-            
+
             else:
                 return(None, -2)
 
