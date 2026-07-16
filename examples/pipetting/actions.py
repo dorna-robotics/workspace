@@ -136,21 +136,38 @@ class Transfer(Action):
         rt.step(f"transfer {transfer + 1}: tip {tip_anchor}, {source_anchor} → {dest_anchor}")
         rt.step(_progress_pct(self), level="progress")
 
-        # 1. Pick a fresh tip onto the pipettor.
-        rcp["tip_rack"].pick_tip(tip_anchor)
+        # Pump ops follow declarative retry (project-guide §8): each
+        # returns False when the pump refused or is unreachable — we
+        # return False, no effects apply, and the planner re-selects
+        # this transfer. The pipettor device's bus state (critical)
+        # pauses the run for the operator meanwhile. The needle ALWAYS
+        # retracts before a failure returns — never leave it immersed.
+
+        # 1. Pick a fresh tip onto the pipettor (verified by the tip sensor).
+        if not rcp["tip_rack"].pick_tip(tip_anchor):
+            rt.step(f"transfer {transfer + 1}: no tip detected — check the pipettor, then Resume")
+            return False
 
         # 2. Aspirate from the source tube.
         rcp["falcon_pipette"].immerse(anchor=source_anchor, depth=IMMERSE_DEPTH)
-        rcp["falcon_pipette"].aspirate(vol=VOL_UL)
+        ok = rcp["falcon_pipette"].aspirate(vol=VOL_UL)
         rcp["falcon_pipette"].retract(anchor=source_anchor)
+        if not ok:
+            rt.step(f"transfer {transfer + 1}: pump unavailable — reconnect it, then Resume")
+            return False
 
         # 3. Dispense into the destination tube.
         rcp["falcon_pipette"].immerse(anchor=dest_anchor, depth=IMMERSE_DEPTH)
-        rcp["falcon_pipette"].dispense(vol=VOL_UL)
+        ok = rcp["falcon_pipette"].dispense(vol=VOL_UL)
         rcp["falcon_pipette"].retract(anchor=dest_anchor)
+        if not ok:
+            rt.step(f"transfer {transfer + 1}: pump unavailable — reconnect it, then Resume")
+            return False
 
-        # 4. Drop the used tip into the waste bin.
-        rcp["waste_bin"].eject_tip()
+        # 4. Drop the used tip into the waste bin (verified tip-gone).
+        if not rcp["waste_bin"].eject_tip():
+            rt.step(f"transfer {transfer + 1}: tip still on — check the pipettor, then Resume")
+            return False
 
         return "transferred"
 
