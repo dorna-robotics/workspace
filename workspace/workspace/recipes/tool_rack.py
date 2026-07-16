@@ -89,7 +89,7 @@ class ToolRack(Recipe):
         return self.touch(**motion_prm)
 
 
-    def place(self, anchor="place", solid_name="body", padding=80, gap=2, **kwargs):
+    def place(self, anchor="place", solid_name="body", padding=80, gap=2, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
         """Put the currently-held tool back into the rack slot at ``anchor``.
 
         Inverse of ``pick``. Verifies that the rack slot is free and that the
@@ -158,4 +158,4 @@ class ToolRack(Recipe):
         }
 
         # motion
-        return self.touch(**motion_prm)
+        return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)

@@ -411,10 +411,22 @@ class Recipe:
         return J
 
     def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}):
-        """Execute a single motion — with optional motion planning for collision avoidance."""
+        """Execute a single motion — with optional motion planning for collision avoidance.
+
+        Forgiving constraints: when ``motion_plan_kwargs`` carries
+        planner constraints (gravity_vec, …) and the constrained
+        problem has no solution, the hop is re-planned WITHOUT them —
+        the default planner, still fully collision-checked — and the
+        concession is announced via ``rt.step`` (never silent). Only an
+        unconstrained failure raises: that is a genuine reachability /
+        collision problem, not a constraint one.
+        """
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
-            if len(points) == 0:
+            if not points and motion_plan_kwargs:
+                rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
+                points = self.core.motion_plan(joint=J)
+            if not points:
                 raise RecipeError("no proper path was found")
             rt.smove(
                 points[1:],
