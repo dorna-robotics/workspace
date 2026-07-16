@@ -142,7 +142,7 @@ class Core:
         has_camera = False,
         camera_cfg = {
             "serial_number": "",
-            "host": "127.0.0.1",
+            "ip": "127.0.0.1",
             "port": 80,
             "stream": {"width":1280, "height":720, "fps":30},
             "K": [[645.6025, 0, 629.7725],
@@ -315,10 +315,10 @@ class Core:
         # Robot-mounted camera. Like Inspection, the actual Camera lives on
         # the vision server; we just hold a VisionClient to it via the
         # shared VisionStation helper. has_camera=False keeps it in
-        # simulation regardless of host/serial.
+        # simulation regardless of ip/serial.
         from workspace.components.inspection.vision_station import VisionStation
         self.vision = VisionStation(
-            host=self.camera_cfg.get("host", "127.0.0.1"),
+            ip=self.camera_cfg.get("ip", "127.0.0.1"),
             port=int(self.camera_cfg.get("port", 80)),
             serial_number=self.camera_cfg.get("serial_number", ""),
             camera_cfg=self.camera_cfg,

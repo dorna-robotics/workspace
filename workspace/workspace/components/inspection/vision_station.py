@@ -77,7 +77,7 @@ class VisionStation:
         port: Vision server port.
         serial_number: USB serial of the camera the server should manage.
         camera_cfg: Dict forwarded to ``camera_add`` (stream, K, D, mode, ...).
-        simulation: Authored simulation intent. When True (or when host/
+        simulation: Authored simulation intent. When True (or when ip/
             serial are empty so there's nothing real to talk to), no
             client is opened, ``detect()`` returns canned values, and
             the camera is stubbed onto the device bus with a SIM badge.
@@ -88,30 +88,30 @@ class VisionStation:
         VisionClientImportError: ``simulation=False`` but the
             ``dorna_vision_client`` package is not importable.
         VisionServerUnreachableError: ``simulation=False`` but the
-            vision server's host/port refuses connections or the camera
+            vision server's ip/port refuses connections or the camera
             can't be registered.
     """
 
     def __init__(
         self,
         *,
-        host: str,
+        ip: str,
         port: int,
         serial_number: str,
         camera_cfg: Optional[dict] = None,
         simulation: bool = True,
         label: str = "vision",
     ):
-        self.host = host
+        self.ip = ip
         self.port = int(port)
         self.serial_number = serial_number
         self.camera_cfg = dict(camera_cfg or {})
         self.label = label
 
         # Simulation gate. True when explicitly authored OR when there's
-        # nothing to connect to (no host/serial). Real-mode failures must
+        # nothing to connect to (no ip/serial). Real-mode failures must
         # NOT flip this to True — that's the silent-demote bug we removed.
-        self.simulation = bool(simulation) or not host or not serial_number
+        self.simulation = bool(simulation) or not ip or not serial_number
         self._client = None
 
         if self.simulation:
@@ -136,13 +136,13 @@ class VisionStation:
 
         try:
             self._client = VisionClient()
-            self._client.connect(host=self.host, port=self.port)
+            self._client.connect(host=self.ip, port=self.port)
             self._client.camera_add(
                 serial_number=self.serial_number,
                 **self.camera_cfg,
             )
             print(
-                f"✅ {self.label} connected @ {self.host}:{self.port} "
+                f"✅ {self.label} connected @ {self.ip}:{self.port} "
                 f"(camera {self.serial_number})"
             )
         except Exception as ex:
@@ -150,7 +150,7 @@ class VisionStation:
             self._client = None
             raise VisionServerUnreachableError(
                 f"{self.label}: vision server unreachable @ "
-                f"{self.host}:{self.port}: {type(ex).__name__}: {ex}. "
+                f"{self.ip}:{self.port}: {type(ex).__name__}: {ex}. "
                 f"The camera will appear red on the device bus when the "
                 f"server is running."
             ) from ex

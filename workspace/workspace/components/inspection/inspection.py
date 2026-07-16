@@ -30,12 +30,12 @@ class Inspection:
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "lens": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
         # All camera-related config under one dict (mirrors core.py).
-        # ``serial_number`` / ``host`` / ``port`` identify the vision
+        # ``serial_number`` / ``ip`` / ``port`` identify the vision
         # server and the camera it should manage; the rest is forwarded
         # to ``camera_add`` on the server.
         camera_cfg={
             "serial_number": "",
-            "host": "127.0.0.1",
+            "ip": "127.0.0.1",
             "port": 80,
             "stream": {"width":1280, "height":720, "fps":30},
             "K": [[645.6025, 0, 629.7725],
@@ -75,7 +75,7 @@ class Inspection:
         # connect, and the add_detection / detect / close surface.
         cam_cfg = prm["camera_cfg"]
         self.vision = VisionStation(
-            host=cam_cfg.get("host", "127.0.0.1"),
+            ip=cam_cfg.get("ip", "127.0.0.1"),
             port=int(cam_cfg.get("port", 80)),
             serial_number=cam_cfg.get("serial_number", ""),
             camera_cfg=cam_cfg,

@@ -609,7 +609,7 @@ is how I'm using each of them."
 The contract has two members. Only `device_ids` is required. Two
 canonical skeletons depending on where the bus publisher lives —
 both gate visibility on the same kind of explicit identifier
-(`serial_number`, `ip`, `port`, `host`, …).
+(`serial_number`, `ip`, `port`, …).
 
 ### A. Workspace-owned publisher (robot, multimeter, in-process pump)
 
@@ -670,7 +670,7 @@ class CameraComponent:
     DEFAULTS = dict(
         camera_cfg={
             "serial_number": "",       # the explicit identifier
-            "host": "127.0.0.1",
+            "ip": "127.0.0.1",
             "port": 80,
             # ... stream / K / D / etc.
         },
@@ -685,7 +685,7 @@ class CameraComponent:
         # opened). The workspace never calls attach_device; the vision
         # server owns the publisher on the camera's Pi.
         self.vision = VisionStation(
-            host=cam["host"], port=cam["port"],
+            ip=cam["ip"], port=cam["port"],
             serial_number=cam["serial_number"],
             simulation=prm["simulation"],
             label=self.name,
@@ -785,7 +785,7 @@ Four rules — same for every device kind, no exceptions:
    [`VisionStation`](../workspace/workspace/components/inspection/vision_station.py)
    for cameras). New kinds get their own helper modeled on
    VisionStation. They don't share a base class; they share a *pattern*
-   (constructor takes host/port/serial/simulation, exposes operations,
+   (constructor takes ip/port/serial/simulation, exposes operations,
    plus `close()`). The helper does NOT publish to the bus when there's
    a separate daemon for the same device id — let the daemon own the
    topic (rule 1 of §1).
@@ -907,8 +907,8 @@ class DualInspection:
     """Inspection station with both a top-down and side camera."""
 
     def __init__(self, ...):
-        self.top  = VisionStation(host=..., serial_number="cam:top",  label="top")
-        self.side = VisionStation(host=..., serial_number="cam:side", label="side")
+        self.top  = VisionStation(ip=..., serial_number="cam:top",  label="top")
+        self.side = VisionStation(ip=..., serial_number="cam:side", label="side")
 
     @property
     def device_ids(self):
