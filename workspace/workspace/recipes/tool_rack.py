@@ -69,6 +69,7 @@ class ToolRack(Recipe):
             "output_approach": output_approach,
             "approach_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
             "approach_path": [
+                                [-padding, 0, -padding-height_offset, 0, 0, 0],
                                 [0, 0, -padding-height_offset, 0, 0, 0],
                                 [0, 0, -12-gap-height_offset, 0, 0, 0]
                             ],
@@ -151,6 +152,7 @@ class ToolRack(Recipe):
             "exit_path": [
                             [0, 0, -12-gap-height_offset, 0, 0, 0],
                             [0, 0, -padding-height_offset, 0, 0, 0],
+                            [-padding, 0, -padding-height_offset, 0, 0, 0],
                         ],
             "output_exit": output_exit
         }
