@@ -57,7 +57,7 @@ class CollisionBox:
 
         # collision box centered with bottom face at origin
         collision_box = {"body": [
-            {"pose": [0.0, 0.0, sz / 2, 0.0, 0.0, 0.0], "scale": [float(sx), float(sy), float(sz)]}
+            {"pose": [0.0, 0.0, sz / 2, 0.0, 0.0, 0.0], "scale": [float(sx), float(sy), float(sz)], "padding_enabled": True}
         ]}
 
         # assembly
