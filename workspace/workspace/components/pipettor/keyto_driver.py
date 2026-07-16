@@ -116,8 +116,17 @@ class Keyto:
     # Public device API
     # ==================================================
 
-    def has_tip(self) -> bool:
+    def has_tip(self) -> Optional[bool]:
+        """Tip-presence register read.
+
+        Returns True/False only from a VALID response; None when the
+        pump gave no / unparseable response. A silent False on a dead
+        serial line would be indistinguishable from a real "no tip" —
+        None lets callers say "pipettor unavailable" instead of lying.
+        """
         resp = self._send("1>Rr3")
+        if not resp or "12:" not in resp:
+            return None
         return "12:1" in resp
 
 
