@@ -1320,10 +1320,13 @@ class Core:
 
 class SimulationAPI:
     def __init__(self, joints=[0,0,0,0,0,0,0,0]):
-        self.joints = joints 
+        self.joints = joints
         self.FREQ = 100000
         self.INTERP_FREQ=120
         self.dorna = Dorna()
+        # Digital output states — recorded so the approach-IO barrier's
+        # pin verification runs identically in sim and real.
+        self._outputs = [0] * 16
 
     def joint(self):
         return self.joints[:]
@@ -2035,13 +2038,31 @@ class SimulationAPI:
         time.sleep(val)
         return 2
 
-    # output
+    # output — records pin states and honours the sequencing sleeps,
+    # mirroring the real controller chain played by dorna2.output(config=).
     def output(self, index=None, val=None, config=None):
         if config is not None:
             for c in config:
+                if len(c) > 1 and c[0] is not None and 0 <= c[0] < 16:
+                    self._outputs[int(c[0])] = int(c[1])
                 if len(c) > 2 and c[2] > 0:
                     self.sleep(c[2])
+            return True
+        if index is not None and val is not None:
+            if 0 <= int(index) < 16:
+                self._outputs[int(index)] = int(val)
+            return True
+        return self._outputs[:]
+
+    def raw_output(self, index, val):
+        """Sim twin of RobotStation.raw_output — record only, no sleep
+        (the caller's IO thread owns the sequencing delays)."""
+        if index is not None and 0 <= int(index) < 16:
+            self._outputs[int(index)] = int(val)
         return True
+
+    def get_all_output(self, **kwargs):
+        return self._outputs[:]
 
     # motor
     def motor(self, val=None):

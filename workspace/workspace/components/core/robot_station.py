@@ -39,6 +39,7 @@ local math, not network calls.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from contextlib import contextmanager
@@ -352,6 +353,31 @@ class RobotStation:
                 cb()
             except Exception:
                 log.exception("RobotStation[%s]: down-listener raised", self.label)
+
+    def raw_output(self, index, val):
+        """Track-free, fire-and-forget single digital output.
+
+        Safe to call from a side thread while the main thread blocks in
+        a tracked motion: this bypasses ``play()`` (and therefore the
+        client's single ``_track`` slot) entirely — the message goes
+        straight to the client's event loop, and ``write()`` is
+        cross-thread safe by construction (``run_coroutine_threadsafe``
+        onto one loop; each message buffered whole before any await).
+        The controller executes digital outputs on its IO thread,
+        concurrently with an in-flight motion.
+
+        Fire-and-forget means NO completion/error feedback — callers
+        must verify the physical outcome afterwards (see the recipe
+        layer's approach-IO barrier, which asserts pin states before
+        any contact motion)."""
+        msg = {
+            "cmd": "output",
+            f"out{int(index)}": int(val),
+            "id": self._client.rand_id(100, 1000000),
+            "queue": 0,
+        }
+        self._client.write(json.dumps(msg))
+        return True
 
     def __getattr__(self, name: str):
         """Delegate everything not on RobotStation to the wrapped Dorna.

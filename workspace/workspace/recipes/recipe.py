@@ -2,6 +2,8 @@
 
 from contextlib import nullcontext
 from copy import deepcopy
+import threading
+import time as _time
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from dorna2 import Pose
@@ -240,19 +242,109 @@ class Recipe:
     # ── Shared helpers ──────────────────────────────────────────────────────
 
     def _apply_output_config(self, rt, output_list):
-        """Apply an IO output list: [[config, get_call, set_call], ...]."""
+        """Apply an IO output list: [[config, get_call, set_call], ...].
+
+        MEMORY-LESS by design: the full sequence fires every time, even
+        when the tracked ``output_state`` says the actuator is already
+        there. The tracked state is software memory, not a hardware
+        read — a gripper parked in the tool rack can be closed by hand
+        (or an air glitch) without the memory noticing, and skipping
+        the open sequence on that belief means descending onto the item
+        with closed fingers. Re-asserting pins that are already in
+        state is physically idempotent; trusting memory is not.
+        ``set_call`` still runs so the tracked state stays observable.
+        """
         _output_config = []
         for _config, get_call, set_call in output_list:
+            _output_config += _config
             if set_call is not None:
-                current_state = get_call[0](*get_call[1])
-                new_state = set_call[1][0]
-                if current_state != new_state:
-                    _output_config += _config
-                    set_call[0](*set_call[1])
-            else:
-                _output_config += _config
+                set_call[0](*set_call[1])
         rt.checkpoint()
         rt.output(config=_output_config)
+
+    # ── Overlapped approach IO ──────────────────────────────────────────
+    # The approach-side IO chain (e.g. opening the gripper: pins with
+    # ~1.35s of pneumatic sequencing) can run WHILE the robot travels
+    # to the point above the target: digital outputs execute on the
+    # controller's IO thread concurrently with motion, so the host
+    # fires them track-free (RobotStation.raw_output — never play(),
+    # never the shared _track slot) from a short-lived side thread that
+    # owns the inter-pin delays. Before the descent segment a HARD
+    # barrier joins the thread AND verifies the physical pin states —
+    # the contact motion cannot start on an unfinished or failed chain.
+
+    def _output_async(self, output_list):
+        """Fire an IO chain in a side thread. Returns a handle for
+        ``_output_join``. Memory-less like _apply_output_config."""
+        api = self.core.robot_api
+        seq = []        # flattened [(pin, val, delay), ...]
+        expected = {}   # pin -> final commanded value
+        setters = []
+        for _config, get_call, set_call in output_list:
+            for c in _config:
+                if len(c) < 2 or c[0] is None:
+                    continue
+                pin, val = int(c[0]), int(c[1])
+                delay = float(c[2]) if len(c) > 2 and c[2] else 0.0
+                seq.append((pin, val, delay))
+                expected[pin] = val
+            if set_call is not None:
+                setters.append(set_call)
+        state = {"exc": None}
+
+        def _run():
+            try:
+                for pin, val, delay in seq:
+                    api.raw_output(pin, val)
+                    if delay > 0:
+                        _time.sleep(delay)
+                for set_call in setters:
+                    set_call[0](*set_call[1])
+            except Exception as ex:  # surfaced at the join barrier
+                state["exc"] = ex
+
+        t = threading.Thread(target=_run, daemon=True, name="approach-io")
+        t.start()
+        return {
+            "thread": t,
+            "expected": expected,
+            "state": state,
+            "duration": sum(d for _, _, d in seq),
+        }
+
+    def _output_join(self, handle):
+        """The barrier: block until the chain finished, surface its
+        errors, and verify the physical pin states. Raises RecipeError
+        before any contact motion can run on a bad chain."""
+        if handle is None:
+            return
+        handle["thread"].join(timeout=handle["duration"] + 5.0)
+        if handle["thread"].is_alive():
+            raise RecipeError("approach IO chain did not finish in time")
+        if handle["state"]["exc"] is not None:
+            raise RecipeError(f"approach IO chain failed: {handle['state']['exc']}")
+        self.rt.checkpoint()
+        if not handle["expected"]:
+            return
+        states = None
+        try:
+            states = self.core.robot_api.get_all_output()
+        except Exception:
+            states = None
+        if isinstance(states, dict):  # tolerate {"out3": 1, ...} form
+            states = [states.get(f"out{i}") for i in range(16)]
+        if not isinstance(states, (list, tuple)):
+            raise RecipeError(
+                "approach IO verification impossible — could not read "
+                f"output states (got {type(states).__name__})"
+            )
+        bad = {
+            pin: {"expected": val, "actual": states[pin]}
+            for pin, val in handle["expected"].items()
+            if pin < len(states) and states[pin] != val
+        }
+        if bad:
+            raise RecipeError(f"approach IO verification failed: {bad}")
 
     def _calibrate_offset(self, target_solid, target_anchor, offset):
         """Apply calibration correction to a single offset, return corrected offset."""
@@ -649,24 +741,52 @@ class Recipe:
             "lmove": self.lmove_vaj,
         }
 
-        # output approach
-        self._apply_output_config(rt, output_approach)
-
-        # approach path
-        if target_offset is None:
-            path = approach_path[:]
+        # output approach — overlapped with the travel legs when they
+        # exist: the chain fires on the controller's IO thread while the
+        # robot flies to the point ABOVE the target, and a hard barrier
+        # (join + physical pin verification, see _output_join) sits
+        # before the descent segment, so contact can never start on an
+        # unfinished or failed chain. Without travel legs
+        # (approach=False) there is nothing to hide under — the chain
+        # completes serially BEFORE any motion, exactly as before.
+        travel = approach_path[:]
+        descent = [] if target_offset is None else [target_offset]
+        if output_approach and travel:
+            io_handle = self._output_async(output_approach)
+            self._move_along_path(
+                rt, travel, target_solid, target_anchor,
+                tool_dict=approach_tool,
+                j5_override=approach_j5,
+                vaj_map=vaj_map,
+                has_motion_plan=has_motion_plan,
+                first_approach=True,
+                motion_plan_kwargs=motion_plan_kwargs,
+            )
+            # The barrier. If the travel raised above, the daemon chain
+            # (bounded by its own delays, ~a second) dies on its own —
+            # same end state as today's fire-everything-then-move.
+            self._output_join(io_handle)
+            if descent:
+                self._move_along_path(
+                    rt, descent, target_solid, target_anchor,
+                    tool_dict=approach_tool,
+                    j5_override=approach_j5,
+                    vaj_map=vaj_map,
+                    has_motion_plan=has_motion_plan,
+                    first_approach=False,
+                    motion_plan_kwargs=motion_plan_kwargs,
+                )
         else:
-            path = approach_path[:] + [target_offset]
-
-        self._move_along_path(
-            rt, path, target_solid, target_anchor,
-            tool_dict=approach_tool,
-            j5_override=approach_j5,
-            vaj_map=vaj_map,
-            has_motion_plan=has_motion_plan,
-            first_approach=bool(approach_path),
-            motion_plan_kwargs=motion_plan_kwargs,
-        )
+            self._apply_output_config(rt, output_approach)
+            self._move_along_path(
+                rt, travel + descent, target_solid, target_anchor,
+                tool_dict=approach_tool,
+                j5_override=approach_j5,
+                vaj_map=vaj_map,
+                has_motion_plan=has_motion_plan,
+                first_approach=bool(approach_path),
+                motion_plan_kwargs=motion_plan_kwargs,
+            )
 
         # output touch
         self._apply_output_config(rt, output_touch)
