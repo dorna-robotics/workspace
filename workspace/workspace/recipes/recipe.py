@@ -244,18 +244,30 @@ class Recipe:
     def _apply_output_config(self, rt, output_list):
         """Apply an IO output list: [[config, get_call, set_call], ...].
 
-        MEMORY-LESS by design: the full sequence fires every time, even
+        MEMORY-LESS by default: the full sequence fires every time, even
         when the tracked ``output_state`` says the actuator is already
         there. The tracked state is software memory, not a hardware
         read — a gripper parked in the tool rack can be closed by hand
         (or an air glitch) without the memory noticing, and skipping
         the open sequence on that belief means descending onto the item
-        with closed fingers. Re-asserting pins that are already in
-        state is physically idempotent; trusting memory is not.
-        ``set_call`` still runs so the tracked state stays observable.
+        with closed fingers.
+
+        THE ONE EXCEPTION — entries marked ``"skip_if_state"`` (the
+        hold-side tool_enable during a place approach): a chain is a
+        SEQUENCE, and refiring one that is not idempotent from its own
+        end state (e.g. the tube gripper's open chain pulses a pin) can
+        transiently disengage a HELD item mid-carry. There, memory says
+        engaged → don't refire; the async barrier still verifies the
+        hold pins physically before any contact motion. If memory says
+        disengaged, it fires (a re-grip attempt loses nothing).
         """
         _output_config = []
-        for _config, get_call, set_call in output_list:
+        for entry in output_list:
+            _config, get_call, set_call = entry[0], entry[1], entry[2]
+            if (len(entry) > 3 and entry[3] == "skip_if_state"
+                    and get_call is not None and set_call is not None
+                    and get_call[0](*get_call[1]) == set_call[1][0]):
+                continue
             _output_config += _config
             if set_call is not None:
                 set_call[0](*set_call[1])
@@ -280,15 +292,27 @@ class Recipe:
         seq = []        # flattened [(pin, val, delay), ...]
         expected = {}   # pin -> final commanded value
         setters = []
-        for _config, get_call, set_call in output_list:
+        for entry in output_list:
+            _config, get_call, set_call = entry[0], entry[1], entry[2]
+            # "skip_if_state" (hold-side chains): don't refire an
+            # engaged actuator — a non-idempotent sequence could
+            # transiently drop the held item — but DO record its pins
+            # as expected, so the barrier still physically verifies the
+            # hold before the descent.
+            skip_fire = (
+                len(entry) > 3 and entry[3] == "skip_if_state"
+                and get_call is not None and set_call is not None
+                and get_call[0](*get_call[1]) == set_call[1][0]
+            )
             for c in _config:
                 if len(c) < 2 or c[0] is None:
                     continue
                 pin, val = int(c[0]), int(c[1])
                 delay = float(c[2]) if len(c) > 2 and c[2] else 0.0
-                seq.append((pin, val, delay))
+                if not skip_fire:
+                    seq.append((pin, val, delay))
                 expected[pin] = val
-            if set_call is not None:
+            if set_call is not None and not skip_fire:
                 setters.append(set_call)
         state = {"exc": None}
 
@@ -1182,7 +1206,13 @@ class Recipe:
         output_exit = []
         if trigger_io:
             tool_enable, tool_disable, component_enable, component_disable = self._build_io_config(tool, component, trigger_io)
-            output_approach = component_disable + tool_enable
+            # Hold-side chain: while CARRYING, never refire an
+            # already-engaged tool — a non-idempotent enable sequence
+            # could transiently disengage the held item mid-travel. The
+            # barrier verifies the hold pins physically instead (see
+            # _apply_output_config / _output_async).
+            tool_enable_hold = [t + ["skip_if_state"] for t in tool_enable]
+            output_approach = component_disable + tool_enable_hold
             output_touch = component_enable + tool_disable
 
         # attachment
