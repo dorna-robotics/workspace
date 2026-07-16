@@ -748,8 +748,22 @@ class Core:
     # world changed and it now collides, we fall through to a full solve
     # and the row is overwritten.
 
+    @staticmethod
+    def _ik_row_valid(v):
+        return (isinstance(v, dict) and isinstance(v.get("arm"), list)
+                and len(v["arm"]) == 6)
+
     def _ik_cache_init(self):
-        """Resolve the cache path and load it. Never raises."""
+        """Resolve the cache path and load it. Never raises.
+
+        On-disk format is JSONL — one ``{"k": key, "v": row}`` per
+        line, APPENDED per solve. A full-file rewrite per miss would be
+        O(N²) bytes to the SD card while a big cache builds (and ~0.3s
+        per miss at tens of thousands of rows); an append is a few
+        hundred bytes flat. Duplicate keys are last-wins at load; a
+        torn tail line (power cut mid-append) is dropped. Legacy
+        whole-dict files migrate transparently, and the file compacts
+        at load when overwritten rows pile up."""
         self._ik_cache = {}
         try:
             paths = getattr(self.workspace, "config_paths", None) or []
@@ -761,17 +775,58 @@ class Core:
                     self._ik_cache_path = d / "core_ik.json"
         except Exception:
             self._ik_cache_path = None
+        if self._ik_cache_path is None or not self._ik_cache_path.is_file():
+            return
         try:
-            if self._ik_cache_path is not None and self._ik_cache_path.is_file():
-                data = json.loads(self._ik_cache_path.read_text())
-                if isinstance(data, dict):
-                    self._ik_cache = {
-                        k: v for k, v in data.items()
-                        if isinstance(v, dict) and isinstance(v.get("arm"), list)
-                        and len(v["arm"]) == 6
-                    }
+            text = self._ik_cache_path.read_text()
+            # Format detection must be parse-based — JSONL lines also
+            # start with "{". If the WHOLE text parses as one dict it's
+            # either a single JSONL record ({"k":..,"v":..}) or the
+            # legacy whole-dict format (migrate it); otherwise parse
+            # line-by-line as JSONL.
+            try:
+                whole = json.loads(text)
+            except Exception:
+                whole = None
+            if isinstance(whole, dict):
+                if set(whole.keys()) == {"k", "v"}:
+                    if self._ik_row_valid(whole.get("v")):
+                        self._ik_cache[whole["k"]] = whole["v"]
+                    return
+                self._ik_cache = {
+                    k: v for k, v in whole.items() if self._ik_row_valid(v)
+                }
+                self._ik_cache_rewrite()  # migrate legacy → JSONL
+                return
+            lines = 0
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                lines += 1
+                try:
+                    rec = json.loads(line)
+                    if self._ik_row_valid(rec.get("v")):
+                        self._ik_cache[rec["k"]] = rec["v"]
+                except Exception:
+                    continue  # torn/corrupt line — drop it
+            # Compact when overwritten/dropped rows dominate the file.
+            if lines > 100 and lines > 2 * len(self._ik_cache):
+                self._ik_cache_rewrite()
         except Exception:
-            self._ik_cache = {}  # corrupt file → start empty, rewrite on next put
+            self._ik_cache = {}  # unreadable file → start empty
+
+    def _ik_cache_rewrite(self):
+        """Atomically rewrite the whole file as compact JSONL."""
+        try:
+            tmp = self._ik_cache_path.with_suffix(".json.tmp")
+            tmp.write_text("".join(
+                json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
+                for k, v in self._ik_cache.items()
+            ))
+            os.replace(tmp, self._ik_cache_path)
+        except Exception:
+            pass
 
     def _ik_key(self, target_solid, target_anchor, target_offset, tool_solid,
                 tool_anchor, tool_offset, base_distance, rail_step, rail_span,
@@ -788,13 +843,18 @@ class Core:
                 tool_w = tool_solid.pose(anchor=tool_anchor, in_frame=self.robot_flange, offset=tool_offset)
             base_w = (self.rail_base.pose(anchor="carriage") if self.has_rail
                       else self.robot_A0.pose())
+            def r3(v):
+                # +0.0 collapses -0.0 → 0.0; without it, json renders
+                # "-0.0" vs "0.0" and physically identical poses mint
+                # duplicate rows.
+                return round(float(v), 3) + 0.0
             parts = (
-                [round(float(v), 3) for v in obj_w]
-                + [round(float(v), 3) for v in tool_w]
-                + [round(float(v), 3) for v in base_w]
-                + [round(float(v), 3) for v in list(ref_joints)[:6]]
-                + [None if base_distance is None else round(float(base_distance), 3),
-                   round(float(rail_step), 3), int(rail_span),
+                [r3(v) for v in obj_w]
+                + [r3(v) for v in tool_w]
+                + [r3(v) for v in base_w]
+                + [r3(v) for v in list(ref_joints)[:6]]
+                + [None if base_distance is None else r3(base_distance),
+                   r3(rail_step), int(rail_span),
                    bool(left_approach), bool(self.has_rail)]
             )
             return json.dumps(parts, separators=(",", ":"))
@@ -823,17 +883,22 @@ class Core:
             return None
 
     def _ik_cache_put(self, key, J, aux, with_rail):
-        """Store a solved row and persist atomically. Never raises."""
+        """Store a solved row and append it to disk. Never raises.
+
+        One JSONL line per solve — constant cost regardless of cache
+        size, and the row is on disk the moment it solved (a kill
+        loses nothing). A torn line from a power cut is dropped at the
+        next load."""
         try:
-            self._ik_cache[key] = {
+            row = {
                 "arm": [float(J[i]) for i in range(6)],
                 "rail": float(J[aux]) if with_rail else None,
             }
+            self._ik_cache[key] = row
             if self._ik_cache_path is None:
                 return  # no resolvable project folder — in-memory only
-            tmp = self._ik_cache_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(self._ik_cache, indent=0))
-            os.replace(tmp, self._ik_cache_path)
+            with open(self._ik_cache_path, "a") as f:
+                f.write(json.dumps({"k": key, "v": row}, separators=(",", ":")) + "\n")
         except Exception:
             pass  # read-only fs / race — keep the in-memory row, move on
 
