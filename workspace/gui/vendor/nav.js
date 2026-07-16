@@ -10,19 +10,6 @@
 
   if (!nav) return;
 
-  // External bench tools (Dorna Lab, vision server) live on fixed
-  // last-octet IPs of the bench subnet. Links marked with
-  // data-ext-octet="N" get their href derived from the page's own
-  // host — same subnet, last octet swapped — so the nav works on any
-  // bench with zero configuration. When the page isn't served from an
-  // IPv4 address (localhost, mDNS name) the subnet can't be derived
-  // and the links hide instead of pointing somewhere broken.
-  var ipm = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(location.hostname);
-  nav.querySelectorAll("[data-ext-octet]").forEach(function (a) {
-    if (ipm) a.href = "http://" + ipm[1] + "." + a.getAttribute("data-ext-octet") + "/";
-    else a.style.display = "none";
-  });
-
   // Restore saved state (desktop only) — collapsed by default, expanded if saved
   if (window.innerWidth > 768 && localStorage.getItem(KEY) === "1") {
     nav.classList.add("expanded");

@@ -87,15 +87,18 @@ LANDING_HTML = """<!DOCTYPE html>
     body { min-height: 100vh; display: flex; flex-direction: column; }
 
     .main {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 40px 24px;
+      /* Anchored at a fixed height (not vertically centered) so
+         expanding the Developer section only grows DOWNWARD — the
+         cards above never move. */
+      flex: 1; display: flex; align-items: flex-start; justify-content: center;
+      padding: 16vh 24px 40px;
     }
     .container { text-align: center; max-width: 640px; }
     h1 { font-size: 32px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.8px; }
     .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
     .cards {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: 1fr;
       gap: 12px;
       text-align: left;
     }
@@ -119,18 +122,30 @@ LANDING_HTML = """<!DOCTYPE html>
     .card-text { min-width: 0; }
     .card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
     .card-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cards-label {
+      display: flex; align-items: center; gap: 5px;
+      text-align: left; font-size: 11px; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px;
+      margin: 24px 0 10px 4px;
+      cursor: pointer; user-select: none;
+    }
+    .cards-label:hover { color: var(--text); }
+    .cards[hidden] { display: none; }
+    .cards-label svg { transition: transform 0.15s; }
+    .cards-label.open svg { transform: rotate(90deg); }
 
     /* Per-card accent colors */
     .card-orchestrator .card-icon { background: rgba(10,132,255,0.12); color: var(--accent); }
     .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
     .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
+    .card-lab .card-icon { background: rgba(191,90,242,0.12); color: #bf5af2; }
+    .card-vision .card-icon { background: rgba(255,159,10,0.12); color: #ff9f0a; }
     [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
     [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
     [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
+    [data-theme="light"] .card-lab .card-icon { background: rgba(175,82,222,0.08); color: #af52de; }
+    [data-theme="light"] .card-vision .card-icon { background: rgba(255,149,0,0.08); color: #c93400; }
 
-    @media (max-width: 520px) {
-      .cards { grid-template-columns: 1fr; }
-    }
   </style>
 </head>
 <body>
@@ -139,18 +154,14 @@ LANDING_HTML = """<!DOCTYPE html>
       <button class="app-nav-collapse" title="Toggle sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
     </div>
     <div class="app-nav-links">
-      <a href="/" class="app-nav-link active">
+      <a href="/" class="app-nav-link active" title="Home">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span>Home</span>
       </a>
-      <a href="/orchestrator/" class="app-nav-link" data-orch-link>
+      <a href="/orchestrator/" class="app-nav-link" title="Orchestrator" data-orch-link>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         <span>Orchestrator</span>
         <span class="app-nav-badge" id="navOrchCount" hidden></span>
-      </a>
-      <a href="/scene-builder/" class="app-nav-link">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span>Scene Builder</span>
       </a>
     </div>
   </nav>
@@ -172,18 +183,59 @@ LANDING_HTML = """<!DOCTYPE html>
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
           <div class="card-text"><div class="card-label">Orchestrator</div><div class="card-hint">Manage workspaces</div></div>
         </a>
+        <a class="card card-lab" id="cardDornaLab" target="_blank" rel="noopener">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="11" rx="2"/><line x1="12" y1="9" x2="12" y2="5"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="9.5" cy="13.5" r="0.75" fill="currentColor"/><circle cx="14.5" cy="13.5" r="0.75" fill="currentColor"/><line x1="9" y1="17" x2="15" y2="17"/><line x1="2" y1="13" x2="5" y2="13"/><line x1="19" y1="13" x2="22" y2="13"/></svg></div>
+          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot monitoring</div></div>
+        </a>
+      </div>
+      <div class="cards-label" id="devToggle" title="Show developer tools">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        Developer
+      </div>
+      <div class="cards" id="devCards" hidden>
+        <a class="card card-jupyter" id="cardJupyter">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+          <div class="card-text"><div class="card-label">Jupyter</div><div class="card-hint">Notebooks &amp; development</div></div>
+        </a>
         <a class="card card-scene" href="/scene-builder/">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
           <div class="card-text"><div class="card-label">Scene Builder</div><div class="card-hint">Design workspace layout</div></div>
         </a>
-        <a class="card card-jupyter" id="cardJupyter">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
-          <div class="card-text"><div class="card-label">Jupyter</div><div class="card-hint">Notebooks &amp; development</div></div>
+        <a class="card card-vision" id="cardVision" target="_blank" rel="noopener">
+          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+          <div class="card-text"><div class="card-label">Vision</div><div class="card-hint">Vision server</div></div>
         </a>
       </div>
       <script>
         var h = window.location.hostname;
         document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
+        // Dorna Lab / vision server live on fixed last-octet IPs of the
+        // bench subnet — derive from the page's own host. Hidden when
+        // the page isn't served from an IPv4 address (no subnet to derive).
+        var m = /^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}$/.exec(h);
+        var lab = document.getElementById("cardDornaLab");
+        var vis = document.getElementById("cardVision");
+        if (m) {
+          lab.href = "http://" + m[1] + ".10/";
+          vis.href = "http://" + m[1] + ".40/";
+        } else {
+          lab.style.display = "none";
+          vis.style.display = "none";
+        }
+
+        // Developer section — collapsible, collapsed by default,
+        // choice persisted per browser.
+        var devToggle = document.getElementById("devToggle");
+        var devCards = document.getElementById("devCards");
+        function devApply(open) {
+          devCards.hidden = !open;
+          devToggle.classList.toggle("open", open);
+          devToggle.title = open ? "Hide developer tools" : "Show developer tools";
+        }
+        devApply(false);  // always collapsed on load
+        devToggle.addEventListener("click", function () {
+          devApply(devCards.hidden);
+        });
       </script>
     </div>
   </main>
