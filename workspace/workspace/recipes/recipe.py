@@ -410,8 +410,35 @@ class Recipe:
 
         return J
 
-    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}):
+    @staticmethod
+    def _motion_plan_mode(flag):
+        """Normalize a ``has_motion_plan`` value to ``(plan, unplanned)``.
+
+        Backwards compatible on purpose (old scenes/calls keep working):
+            True            → (True,  "jmove")   plan + smove, as always
+            False           → (False, "jmove")   direct jmove, as always
+            [False, "lmove"] → (False, "lmove")  planning off, hop as lmove
+            [False, "jmove"] → (False, "jmove")  explicit spelling of False
+            [True, ...]      → (True,  "jmove")  the motion name is moot —
+                                                 a planned hop is always smove
+        """
+        if isinstance(flag, (list, tuple)):
+            plan = bool(flag[0]) if len(flag) else False
+            unplanned = flag[1] if len(flag) > 1 else "jmove"
+            if unplanned not in ("jmove", "lmove"):
+                raise RecipeError(
+                    f"has_motion_plan motion must be 'jmove' or 'lmove', got {unplanned!r}"
+                )
+            return plan, unplanned
+        return bool(flag), "jmove"
+
+    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None):
         """Execute a single motion — with optional motion planning for collision avoidance.
+
+        ``use_planning`` accepts the full ``has_motion_plan`` grammar —
+        see :meth:`_motion_plan_mode`. When planning is off, the hop
+        runs as the named motion type (default jmove; lmove uses
+        ``tool_dict`` for the tool pose when provided).
 
         Forgiving constraints: when ``motion_plan_kwargs`` carries
         planner constraints (gravity_vec, …) and the constrained
@@ -421,6 +448,7 @@ class Recipe:
         unconstrained failure raises: that is a genuine reachability /
         collision problem, not a constraint one.
         """
+        use_planning, unplanned = self._motion_plan_mode(use_planning)
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -435,11 +463,11 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
         else:
-            rt.jmove(
-                joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
+            self._do_motion(
+                rt, J,
+                tool_dict if tool_dict is not None else {"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
+                vaj_map,
+                motion_type=unplanned,
             )
 
     def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}):
@@ -453,13 +481,15 @@ class Recipe:
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
             if i == 0 and first_approach:
-                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs)
+                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs, tool_dict=tool_dict)
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
-    def _do_motion(self, rt, J, tool_dict, vaj_map):
-        """Dispatch a single motion step based on self.motion_type."""
-        if self.motion_type == "lmove":
+    def _do_motion(self, rt, J, tool_dict, vaj_map, motion_type=None):
+        """Dispatch a single motion step based on ``motion_type`` (or
+        the recipe's ``self.motion_type`` when not given)."""
+        motion_type = motion_type or self.motion_type
+        if motion_type == "lmove":
             tool_pose = [0, 0, 0, 0, 0, 0]
             if tool_dict["solid"] and tool_dict["anchor"]:
                 tool_pose = tool_dict["solid"].pose(
@@ -474,7 +504,7 @@ class Recipe:
                 jerk=vaj_map["lmove"][2] * self.speed_factor,
                 tool_pose=tool_pose,
             )
-        elif self.motion_type == "jmove":
+        elif motion_type == "jmove":
             rt.jmove(
                 joint=J,
                 vel=vaj_map["jmove"][0] * self.speed_factor,
@@ -482,7 +512,7 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
         else:
-            getattr(rt, self.motion_type)(
+            getattr(rt, motion_type)(
                 joint=J,
                 vel=vaj_map["jmove"][0] * self.speed_factor,
                 accel=vaj_map["jmove"][1] * self.speed_factor,

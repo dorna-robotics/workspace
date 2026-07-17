@@ -1687,9 +1687,13 @@ class SimulationAPI:
         # Prepend the current joints as ONE waypoint (a flat concat would
         # mix scalars with waypoint lists and blow up SplinePath).
         points = [list(self.joint())] + [list(p) for p in points]
+        # Drop consecutive duplicates — a plan to (or through) the
+        # current pose yields zero-length segments that divide by zero
+        # inside SplinePath.
+        points = [p for i, p in enumerate(points)
+                  if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, points[i - 1]))]
         if len(points) < 2:
-            print("given points: ", points)
-            return 2   # nothing to do
+            return 2   # already there — nothing to do
 
         # Build the spline path
         path = SplinePath(points)
