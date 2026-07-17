@@ -29,6 +29,10 @@ class Recipe:
         rail_span=0,  # number of tries around that point positive and negative directions
         # motion
         motion_type="lmove",
+        # Per-recipe has_motion_plan override (full grammar: True /
+        # False / [False, "jmove"|"lmove"]). None → defer to the
+        # scene's core.has_motion_plan. Per-call args still win.
+        has_motion_plan=None,
         speed_factor=0.5,
         jmove_vaj=[200, 500, 3000],  # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
@@ -84,6 +88,7 @@ class Recipe:
 
         # motion
         self.motion_type = prm["motion_type"]
+        self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
@@ -801,7 +806,9 @@ class Recipe:
             True on success.
         """
         rt = self.rt
-        has_motion_plan = self.core.has_motion_plan if has_motion_plan is None else has_motion_plan
+        if has_motion_plan is None:
+            has_motion_plan = (self.has_motion_plan if self.has_motion_plan is not None
+                               else self.core.has_motion_plan)
         vaj_map = {
             "jmove": self.jmove_vaj,
             "lmove": self.lmove_vaj,
@@ -1627,7 +1634,9 @@ class Recipe:
         """
         rt = self.rt
 
-        has_motion_plan = self.core.has_motion_plan if has_motion_plan is None else has_motion_plan
+        if has_motion_plan is None:
+            has_motion_plan = (self.has_motion_plan if self.has_motion_plan is not None
+                               else self.core.has_motion_plan)
 
         # Overlay the caller's target onto the live joints so a partial
         # vector (e.g. just the 6 robot joints) leaves the auxiliary
