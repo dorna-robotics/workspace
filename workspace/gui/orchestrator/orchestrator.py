@@ -218,6 +218,13 @@ class Orchestrator:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"  # belt-and-suspenders for transitive children
+        # Bytecode caches live in tmpfs, NOT on the SD card. A power cut
+        # mid-write used to leave corrupt .pyc files ("bad marshal
+        # data") that blocked every subsequent launch; with the prefix
+        # set, Python bypasses in-tree __pycache__ entirely (corrupt or
+        # not), caches evaporate on reboot, and the SD sees no bytecode
+        # writes at all. Cost: one recompile per module per boot.
+        env.setdefault("PYTHONPYCACHEPREFIX", "/tmp/pycache")
 
         # Make sure <project_dir>/status/ exists before opening the log.
         ws.ensure_status_dir()

@@ -12,6 +12,16 @@ Usage:
 
 import os
 import sys
+
+# Bytecode caches in tmpfs, not on the SD card (see orchestrator.py's
+# launch env for the full why). sys.pycache_prefix is the runtime
+# knob (the env var only takes effect at interpreter startup, so it
+# wouldn't cover THIS process); set both, before the heavy imports,
+# so the orchestrator's own modules follow the same rule and any
+# non-orchestrator children inherit it too.
+sys.pycache_prefix = "/tmp/pycache"
+os.environ.setdefault("PYTHONPYCACHEPREFIX", "/tmp/pycache")
+
 import asyncio
 
 import tornado.web
