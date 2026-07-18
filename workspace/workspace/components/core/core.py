@@ -1316,7 +1316,16 @@ class Core:
 
         start_time = time.perf_counter()
 
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec)
+        # Only pass the planner-selection kwargs when non-default so
+        # benches running a path_planning WITHOUT the selection feature
+        # (it is not on that repo's main yet) keep working — defaults
+        # reproduce the old behavior exactly.
+        _kw = {}
+        if planner != "rrtconnect":
+            _kw["planner"] = planner
+        if time_limit_sec != 2.0:
+            _kw["time_limit_sec"] = time_limit_sec
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, **_kw)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
