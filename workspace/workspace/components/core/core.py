@@ -1240,7 +1240,7 @@ class Core:
             return "sim" if self.vision.simulation else "real"
         return "real"
 
-    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="rrtconnect", time_limit_sec=2.0):
 
         """
         Collision-aware joint move:
@@ -1316,7 +1316,7 @@ class Core:
 
         start_time = time.perf_counter()
 
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr)
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
