@@ -1240,7 +1240,7 @@ class Core:
             return "sim" if self.vision.simulation else "real"
         return "real"
 
-    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="rrtconnect", time_limit_sec=2.0):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0):
 
         """
         Collision-aware joint move:
@@ -1316,16 +1316,10 @@ class Core:
 
         start_time = time.perf_counter()
 
-        # Only pass the planner-selection kwargs when non-default so
-        # benches running a path_planning WITHOUT the selection feature
-        # (it is not on that repo's main yet) keep working — defaults
-        # reproduce the old behavior exactly.
-        _kw = {}
-        if planner != "rrtconnect":
-            _kw["planner"] = planner
-        if time_limit_sec != 2.0:
-            _kw["time_limit_sec"] = time_limit_sec
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, **_kw)
+        # pp branch: AIT* @ 10s is the platform default for every planned
+        # hop (requires the pp path_planning build — planner selection +
+        # honored time budget + GIL release).
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
