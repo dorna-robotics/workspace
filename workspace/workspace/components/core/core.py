@@ -1332,8 +1332,44 @@ class Core:
         # the command must be JSON-serializable anyway).
         if res is not None and len(res):
             res = [[float(v) for v in p] for p in res]
+            self._motion_plan_log(start, goal, res, planner, time_limit_sec, execution_time)
+        else:
+            print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
+                  f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")
 
         return res
+
+    def _motion_plan_log(self, start, goal, path, planner, time_limit_sec, execution_time):
+        """One pasteable [plan] line per planned hop.
+
+        detour  — joint-space path length / straight start→goal distance
+                  (x1.00 = the direct segment; big = the hop went around
+                  something or the planner left slack in the path).
+        overshoot — joints that leave the [start, goal] interval and come
+                  back (deg/mm beyond the envelope). A planner-detour
+                  signature: the visible "swing" mid-carry.
+        """
+        try:
+            dof = len(goal)
+
+            def dist(a, b):
+                return math.sqrt(sum((x - y) ** 2 for x, y in zip(a[:dof], b[:dof])))
+
+            direct = dist(start, goal)
+            length = sum(dist(path[i], path[i + 1]) for i in range(len(path) - 1))
+            detour = (length / direct) if direct > 1e-6 else 1.0
+            over = []
+            for j in range(dof):
+                lo, hi = min(start[j], goal[j]), max(start[j], goal[j])
+                exc = max(max(p[j] - hi, lo - p[j]) for p in path)
+                if exc > 2.0:
+                    over.append(f"j{j}+{exc:.1f}")
+            print(f"[plan] {planner}@{time_limit_sec:g}s: {len(path)} wps in {execution_time:.1f}s, "
+                  f"detour x{detour:.2f}"
+                  + (f", overshoot {' '.join(over)}" if over else "")
+                  + f", dJ={[round(g - s, 1) for s, g in zip(start, goal)]}")
+        except Exception:
+            pass
 
 
 
