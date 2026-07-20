@@ -858,7 +858,7 @@ class Recipe:
         output_approach=[],
         approach_tool={"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
         approach_path=[],
-        soft_approach=False,
+        soft_approach=True,
         approach_j5=None,
         output_touch=[],
         actions=[],
@@ -1016,7 +1016,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        soft_approach=True,
         compliant=True,
         **kwargs,
     ):
@@ -1190,7 +1190,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        soft_approach=True,
         compliant=True,
         **kwargs,
     ):
@@ -1262,7 +1262,7 @@ class Recipe:
         gap=2,
         load_anchor="center",
         gravity_offset=1,
-        soft_approach=False,
+        soft_approach=True,
         **kwargs,
     ):
         """Compute the motion-parameter dict for ``place`` / friends.
@@ -1443,7 +1443,7 @@ class Recipe:
         gap=2,
         load_anchor="center",
         gravity_offset=1,
-        soft_approach=False,
+        soft_approach=True,
         **kwargs,
     ):
         """Place the held item at ``anchor``: approach, release, detach, exit.
