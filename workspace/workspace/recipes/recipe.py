@@ -467,6 +467,9 @@ class Recipe:
         collision problem, not a constraint one.
         """
         use_planning, unplanned = self._motion_plan_mode(use_planning)
+        # ``blend`` is a fold-level knob (corner fillets between fused
+        # segments) — a single hop has no corners; strip it.
+        motion_plan_kwargs = {k: v for k, v in (motion_plan_kwargs or {}).items() if k != "blend"}
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -510,12 +513,18 @@ class Recipe:
             plan_on, _ = self._motion_plan_mode(
                 has_motion_plan if has_motion_plan is not None else False)
         if plan_on and len(path) > 1:
+            # ``blend`` rides in motion_plan_kwargs (planned motion
+            # only) but is consumed HERE, not by the planner: corner
+            # fillet radius (mm) at every travel/segment junction.
+            mpk = dict(motion_plan_kwargs or {})
+            blend = mpk.pop("blend", 20.0)
+
             _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
             _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
-            points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
-            if not points and motion_plan_kwargs:
+            points = self.core.motion_plan(joint=J0, **mpk)
+            if not points and mpk:
                 rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
                 points = self.core.motion_plan(joint=J0)
             if not points:
@@ -530,6 +539,7 @@ class Recipe:
                     offset=tool_dict["offset"],
                 )
             _t0 = _time.perf_counter()
+            junctions = [len(points) - 1]
             prev = points[-1]
             rest = []
             folded = True
@@ -540,7 +550,9 @@ class Recipe:
                     folded = False
                     break
                 rest.extend(seg)
+                junctions.append(len(points) + len(rest) - 1)
                 prev = J
+            junctions.pop()  # the final waypoint is the motion end, not a corner
             _t_fold = _time.perf_counter() - _t0
             # Attribute pre-motion latency: IK rail sweeps + fold
             # sampling. The planner's own time is on the [plan] line.
@@ -548,6 +560,16 @@ class Recipe:
                 print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
             if folded:
                 points.extend(rest)
+                # Corner blending: G1 Bezier fillets at the junctions,
+                # executed ONLY if the blended polyline revalidates
+                # against the collision envelope — else the sharp
+                # (already-validated) path runs as-is.
+                if blend and blend > 0 and junctions:
+                    blended = self.core.blend_points(points, junctions, blend, tool_pose=tool_pose)
+                    if blended is not None and self.core.check_points(blended):
+                        points = blended
+                    else:
+                        print("[touch] blend rejected — sharp corners kept")
                 rt.smove(
                     points[1:],
                     vel=vaj_map["jmove"][0] * self.speed_factor,

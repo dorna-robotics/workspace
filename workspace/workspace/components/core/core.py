@@ -1492,6 +1492,46 @@ class Core:
         except Exception:
             return None
 
+    def blend_points(self, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
+        """Quadratic-Bezier corner fillets on a fused waypoint path —
+        see blend_path_points. None on failure (keep the sharp path).
+        The result MUST pass check_points before executing."""
+        try:
+            return blend_path_points(self.dorna.kinematic, points, junctions, radius, tool_pose, step)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _boxes_to_cubes(boxes):
+        out = []
+        for box in boxes:
+            try:
+                pose = box["pose"]
+                scale = box["scale"]
+                out.append(
+                    Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
+                )
+            except Exception:
+                # If a malformed box slips through, skip it rather than failing the whole move
+                continue
+        return out
+
+    def check_points(self, points):
+        """Validate an assembled waypoint polyline against the CHECK
+        envelope (plan padding − hysteresis margin) — the gate for
+        recipe-side geometry like blended corners. False on any doubt."""
+        try:
+            check_pad = max(0.0, 10.0 - self.PATH_CHECK_PADDING_MARGIN)
+            cw, ct = self.workspace.compute_collision_boxes(check_pad)
+            self.planner.update(
+                scene=self._boxes_to_cubes(cw),
+                gripper=self._boxes_to_cubes(ct),
+                base_in_world=list(self.rail_base.pose(anchor="carriage")),
+            )
+            return bool(self.planner.check([[float(v) for v in p] for p in points]))
+        except Exception:
+            return False
+
     def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
 
         """
@@ -1515,25 +1555,11 @@ class Core:
         # Build collision scene
         # -------------------------
 
-        def _cubes(boxes):
-            out = []
-            for box in boxes:
-                try:
-                    pose = box["pose"]
-                    scale = box["scale"]
-                    out.append(
-                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
-                    )
-                except Exception:
-                    # If a malformed box slips through, skip it rather than failing the whole move
-                    continue
-            return out
-
         scene, tool, tool_boxes = [], [], []
         if hasattr(self.workspace, "compute_collision_boxes"):
             world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
-            scene = _cubes(world_boxes)
-            tool = _cubes(tool_boxes)
+            scene = self._boxes_to_cubes(world_boxes)
+            tool = self._boxes_to_cubes(tool_boxes)
 
         # -------------------------
         # Planner update args
@@ -1601,7 +1627,7 @@ class Core:
                     try:
                         check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
                         cw, ct = self.workspace.compute_collision_boxes(check_pad)
-                        self.planner.update(scene=_cubes(cw), gripper=_cubes(ct), base_in_world=list(base_in_world))
+                        self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
                         if self.planner.check(sparse, gravity=gravity,
                                               gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
                                               gravity_thr=gravity_thr, rail_weight=rail_weight):
@@ -1992,6 +2018,87 @@ def lmove_path_points(kinematic, joint_from, joint_to, tool_pose=[0, 0, 0, 0, 0,
         points.append(J)
         prev = J
     return points
+
+
+def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
+    """Round the corners of a fused waypoint path with quadratic-Bezier
+    fillets, G1-continuous by construction.
+
+    At each junction index C: walk back ``r`` mm along the incoming
+    polyline to A, forward ``r`` along the outgoing to B (r clamped to
+    half the available run on each side, so blends never overlap or
+    swallow a segment), and replace the in-between waypoints with
+    samples of Q(t) = (1-t)^2 A + 2t(1-t) C + t^2 B — tangent to the
+    incoming line at A and the outgoing line at B. Geometry lives in
+    the lmove engine's xyzj space (TCP xyz + wrist + rail); every
+    sample is IK-solved via _xyzj_to_joints chained for branch
+    continuity. Returns the blended list, or None on any IK failure
+    (caller keeps the sharp path). The caller MUST re-validate the
+    result against the collision envelope before executing it.
+    """
+    if radius <= 0 or not junctions or len(points) < 3:
+        return None
+
+    kinematic.set_tcp_xyzabc(tool_pose)
+    pts = [[float(v) for v in p] for p in points]
+
+    def to_xyzj(J):
+        f = kinematic.fw(J[:6])
+        return [f[0], f[1], f[2], J[3], J[4], J[5], J[6], J[7]]
+
+    def xyz_dist(a, b):
+        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a[:3], b[:3])))
+
+    X = [to_xyzj(p) for p in pts]
+    js = sorted({int(j) for j in junctions if 0 < int(j) < len(pts) - 1})
+
+    def locate(lengths, r):
+        # index + fraction along a run of segment lengths at arc r
+        acc = 0.0
+        for n, L in enumerate(lengths):
+            if L > 0 and acc + L >= r:
+                return n, (r - acc) / L
+            acc += L
+        return len(lengths) - 1, 1.0
+
+    # Descending order: each splice touches only indices at/after its
+    # own clamped window, so earlier junction indices stay valid.
+    for k in range(len(js) - 1, -1, -1):
+        j = js[k]
+        lo = js[k - 1] if k > 0 else 0            # nearest boundary behind
+        hi = js[k + 1] if k + 1 < len(js) else len(pts) - 1  # ahead
+        hi = min(hi, len(pts) - 1)
+        Lin = [xyz_dist(X[i], X[i - 1]) for i in range(j, lo, -1)]
+        Lout = [xyz_dist(X[i], X[i + 1]) for i in range(j, hi)]
+        r_eff = min(float(radius), sum(Lin) / 2.0, sum(Lout) / 2.0)
+        if r_eff < step:
+            continue  # too tight to blend — keep the sharp corner
+
+        na, ta = locate(Lin, r_eff)   # A between X[j-na] and X[j-na-1]
+        nb, tb = locate(Lout, r_eff)  # B between X[j+nb] and X[j+nb+1]
+        ia, ib = j - na, j + nb
+        A = [u + (v - u) * ta for u, v in zip(X[ia], X[ia - 1])]
+        B = [u + (v - u) * tb for u, v in zip(X[ib], X[ib + 1])]
+        C = X[j]
+
+        n = max(2, math.ceil((xyz_dist(A, C) + xyz_dist(C, B)) / step))
+        prev = pts[ia - 1]
+        blend_pts = []
+        for s in range(n + 1):
+            t = s / n
+            Q = [(1 - t) ** 2 * a + 2 * t * (1 - t) * c + t ** 2 * b
+                 for a, c, b in zip(A, C, B)]
+            J = _xyzj_to_joints(Q, prev, tool_pose, kinematic)
+            if J is None:
+                return None  # no clean fillet here — caller keeps sharp
+            J = [float(v) for v in J]
+            blend_pts.append(J)
+            prev = J
+
+        pts = pts[:ia] + blend_pts + pts[ib + 1:]
+        X = [to_xyzj(p) for p in pts]
+
+    return pts
 
 
 class SimulationAPI:
