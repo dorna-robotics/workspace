@@ -341,6 +341,12 @@ class Core:
         self._ik_cache = None          # {key: {"arm": [j0..j5], "rail": r|None}}
         self._ik_cache_path = None
 
+        # --------- planned-path cache (core_path.json in the project folder)
+        # Same lifecycle as core_ik: lazy on the first motion_plan(),
+        # every failure mode degrades to planning from scratch.
+        self._path_cache = None        # {key: [[j0..jN], ...]}
+        self._path_cache_path = None
+
         # --------- rail carriage (shared across all rail sizes)
         rail_hd_carriage_anchors = {
             "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -902,6 +908,117 @@ class Core:
         except Exception:
             pass  # read-only fs / race — keep the in-memory row, move on
 
+    # ── Planned-path cache ──────────────────────────────────────────────
+    # core_path.json, next to core_ik.json. Rows are keyed on rounded
+    # start+goal joints + planner + gravity params + the tool box
+    # signature. The SCENE is deliberately NOT in the key: every hit is
+    # revalidated against the LIVE scene (planner.check — the same C++
+    # validity checker a fresh solve uses) before it is returned, so a
+    # hit can never collide with a world that changed since it was
+    # stored; a failed revalidation falls through to a full solve and
+    # the row is overwritten. Only slow solves (>= PATH_CACHE_MIN_SEC)
+    # are stored — direct-shortcut hops replan faster than a lookup.
+
+    PATH_CACHE_MIN_SEC = 1.0
+
+    @staticmethod
+    def _path_row_valid(v):
+        return (isinstance(v, list) and len(v) >= 2
+                and all(isinstance(p, list) for p in v))
+
+    def _path_cache_init(self):
+        """Resolve + load core_path.json (JSONL, last-wins). Never raises."""
+        self._path_cache = {}
+        try:
+            paths = getattr(self.workspace, "config_paths", None) or []
+            if paths:
+                d = Path(paths[0]).resolve().parent
+                if d.name == "scene":
+                    d = d.parent
+                if d.is_dir():
+                    self._path_cache_path = d / "core_path.json"
+        except Exception:
+            self._path_cache_path = None
+        if self._path_cache_path is None or not self._path_cache_path.is_file():
+            return
+        try:
+            lines = 0
+            for line in self._path_cache_path.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                lines += 1
+                try:
+                    rec = json.loads(line)
+                    if self._path_row_valid(rec.get("v")):
+                        self._path_cache[rec["k"]] = rec["v"]
+                except Exception:
+                    continue  # torn/corrupt line — drop it
+            # Compact when overwritten rows dominate the file.
+            if lines > 50 and lines > 2 * len(self._path_cache):
+                tmp = self._path_cache_path.with_suffix(".json.tmp")
+                tmp.write_text("".join(
+                    json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
+                    for k, v in self._path_cache.items()
+                ))
+                os.replace(tmp, self._path_cache_path)
+        except Exception:
+            self._path_cache = {}  # unreadable file → start empty
+
+    def _path_key(self, start, goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes):
+        """Rounded numeric key for one planned hop, or None (= don't
+        cache). Start joints quantize to 0.5° so real-encoder flutter
+        still hits (the first waypoint snaps the <0.5° gap, same
+        magnitude the executor already tolerates); goals are IK output
+        and deterministic, so they round fine at 0.01°."""
+        try:
+            def r2(v):
+                return round(float(v), 2) + 0.0
+            def q5(v):
+                return round(float(v) * 2) / 2 + 0.0
+            sig = [
+                [r2(v) for v in list(box["pose"])] + [r2(v) for v in list(box["scale"])]
+                for box in tool_boxes
+            ]
+            parts = [
+                [q5(v) for v in start],
+                [r2(v) for v in goal],
+                str(planner),
+                bool(gravity),
+                [r2(v) for v in (gravity_vec if gravity_vec is not None else [0, 0, 1])],
+                r2(gravity_thr),
+                sig,
+            ]
+            return json.dumps(parts, separators=(",", ":"))
+        except Exception:
+            return None
+
+    def _path_cache_get(self, key, gravity, gravity_vec, gravity_thr):
+        """Return a revalidated cached path, else None."""
+        cached = self._path_cache.get(key) if self._path_cache else None
+        if cached is None:
+            return None
+        try:
+            if self.planner.check(cached, gravity=gravity,
+                                  gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
+                                  gravity_thr=gravity_thr):
+                return [[float(v) for v in p] for p in cached]
+        except Exception:
+            pass
+        return None  # world changed / checker unavailable — full solve
+
+    def _path_cache_put(self, key, path):
+        """Store a solved hop and append it to disk. Never raises."""
+        try:
+            row = [[round(float(v), 3) for v in p] for p in path]
+            self._path_cache[key] = row
+            if self._path_cache_path is None:
+                return  # no resolvable project folder — in-memory only
+            with open(self._path_cache_path, "a") as f:
+                f.write(json.dumps({"k": key, "v": row}, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
          rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
 
@@ -1265,8 +1382,9 @@ class Core:
 
         scene = []
         tool = []
+        tool_boxes = []
         if hasattr(self.workspace, "compute_collision_boxes"):
-            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding) 
+            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
             for box in world_boxes:
                 try:
                     pose = box["pose"]
@@ -1314,6 +1432,20 @@ class Core:
         # planner.plan(start, goal): start should match goal dimensionality
         start = start_full[:len(goal)]
 
+        # -------------------------
+        # Path cache (core_path.json) — hit = revalidate + return
+        # -------------------------
+        if self._path_cache is None:
+            self._path_cache_init()
+        cache_key = self._path_key(start, goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes)
+        if cache_key is not None:
+            t0 = time.perf_counter()
+            cached = self._path_cache_get(cache_key, gravity, gravity_vec, gravity_thr)
+            if cached is not None:
+                print(f"[plan] cache hit: {len(cached)} wps revalidated in "
+                      f"{time.perf_counter() - t0:.2f}s")
+                return cached
+
         start_time = time.perf_counter()
 
         # pp branch: AIT* @ 10s is the platform default for every planned
@@ -1333,6 +1465,8 @@ class Core:
         if res is not None and len(res):
             res = [[float(v) for v in p] for p in res]
             self._motion_plan_log(start, goal, res, planner, time_limit_sec, execution_time)
+            if cache_key is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
+                self._path_cache_put(cache_key, res)
         else:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
                   f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")

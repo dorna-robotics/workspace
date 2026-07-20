@@ -226,3 +226,4 @@ __marimo__/
 workspace/gui/orchestrator/registry.json
 core.json
 core_ik.json
+core_path.json
