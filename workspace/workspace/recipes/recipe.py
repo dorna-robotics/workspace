@@ -510,7 +510,9 @@ class Recipe:
             plan_on, _ = self._motion_plan_mode(
                 has_motion_plan if has_motion_plan is not None else False)
         if plan_on and len(path) > 1:
+            _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+            _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
             points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -527,6 +529,7 @@ class Recipe:
                     in_frame=self.core.robot_flange,
                     offset=tool_dict["offset"],
                 )
+            _t0 = _time.perf_counter()
             prev = points[-1]
             rest = []
             folded = True
@@ -538,6 +541,11 @@ class Recipe:
                     break
                 rest.extend(seg)
                 prev = J
+            _t_fold = _time.perf_counter() - _t0
+            # Attribute pre-motion latency: IK rail sweeps + fold
+            # sampling. The planner's own time is on the [plan] line.
+            if _t_ik + _t_fold > 0.05:
+                print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
             if folded:
                 points.extend(rest)
                 rt.smove(
@@ -915,7 +923,9 @@ class Recipe:
         travel = approach_path[:]
         descent = [] if target_offset is None else [target_offset]
         if output_approach:
+            _t0 = _time.perf_counter()
             self._output_join(self._output_async(output_approach))
+            print(f"[touch] approach io {_time.perf_counter() - _t0:.2f}s")
         if soft_approach and travel:
             fused, tail = travel, descent
         else:
