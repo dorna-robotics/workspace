@@ -520,27 +520,7 @@ class Recipe:
             blend = mpk.pop("blend", 20.0)
 
             _t0 = _time.perf_counter()
-            # Entry-point auto-lift: the corridor entry is the planner's
-            # GOAL and must sit outside the plan-padded collision
-            # envelope — station boxes set a hard floor no recipe
-            # padding guess can know (and pick/place floors differ,
-            # because their reference heights differ). Raise along the
-            # approach axis until the goal is valid; padding remains
-            # the desired margin, the boxes enforce the floor.
-            path = [list(p) for p in path]
-            lift = 0.0
-            while True:
-                J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
-                if self.core.check_points([J0, J0], pad=10.0):
-                    break
-                if lift >= 150.0:
-                    raise RecipeError(
-                        "approach entry is inside the collision envelope and "
-                        "could not be lifted clear — check the station's boxes")
-                path[0][2] += 10.0
-                lift += 10.0
-            if lift:
-                print(f"[touch] entry lifted +{lift:.0f}mm to clear the collision envelope")
+            J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
             _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
             points = self.core.motion_plan(joint=J0, **mpk)
@@ -1006,24 +986,12 @@ class Recipe:
         if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
-        # exit path — its terminal pose is the NEXT hop's start, and a
-        # planner refuses to start inside the plan-padded envelope. So
-        # exits get the same auto-lift as entries: raise the final exit
-        # waypoint until its pose is planner-valid — every touch ENDS in
-        # valid space, so every planned hop STARTS from valid space.
-        exit_path = [list(p) for p in exit_path]
-        if exit_path:
-            lift = 0.0
-            while lift < 150.0:
-                Jx = self._solve_ik(target_solid, target_anchor, exit_path[-1], exit_tool, exit_j5)
-                if self.core.check_points([Jx, Jx], pad=10.0):
-                    break
-                exit_path[-1][2] += 10.0
-                lift += 10.0
-            if lift:
-                print(f"[touch] exit lifted +{lift:.0f}mm to clear the collision envelope")
+        # exit path — its terminal pose is the NEXT hop's start: the
+        # recipe padding must park it OUTSIDE the plan-padded station
+        # box, or the next planner start is invalid (the [plan] START
+        # diagnostic names this when a padding is set too low).
         self._move_along_path(
-            rt, exit_path, target_solid, target_anchor,
+            rt, list(exit_path), target_solid, target_anchor,
             tool_dict=exit_tool,
             j5_override=exit_j5,
             vaj_map=vaj_map,

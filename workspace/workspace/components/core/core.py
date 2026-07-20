@@ -1517,30 +1517,6 @@ class Core:
                 continue
         return out
 
-    def check_points(self, points, pad=None):
-        """Validate waypoint polyline(s) against the collision envelope
-        at box padding ``pad`` (default: check envelope = plan padding −
-        hysteresis margin). ``points`` is one polyline or a list of
-        polylines (checked under a single scene push). False on any
-        doubt."""
-        try:
-            if pad is None:
-                pad = max(0.0, 10.0 - self.PATH_CHECK_PADDING_MARGIN)
-            cw, ct = self.workspace.compute_collision_boxes(pad)
-            self.planner.update(
-                scene=self._boxes_to_cubes(cw),
-                gripper=self._boxes_to_cubes(ct),
-                base_in_world=list(self.rail_base.pose(anchor="carriage")),
-            )
-            # normalize: single polyline (list of joint lists) vs list of polylines
-            paths = [points] if points and isinstance(points[0][0], (int, float)) else points
-            for p in paths:
-                if not self.planner.check([[float(v) for v in w] for w in p]):
-                    return False
-            return True
-        except Exception:
-            return False
-
     def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
 
         """
