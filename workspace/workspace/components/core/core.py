@@ -2022,19 +2022,20 @@ def lmove_path_points(kinematic, joint_from, joint_to, tool_pose=[0, 0, 0, 0, 0,
 
 def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
     """Round the corners of a fused waypoint path with quadratic-Bezier
-    fillets, G1-continuous by construction.
+    fillets, blended directly in JOINT space.
 
-    At each junction index C: walk back ``r`` mm along the incoming
-    polyline to A, forward ``r`` along the outgoing to B (r clamped to
-    half the available run on each side, so blends never overlap or
-    swallow a segment), and replace the in-between waypoints with
-    samples of Q(t) = (1-t)^2 A + 2t(1-t) C + t^2 B — tangent to the
-    incoming line at A and the outgoing line at B. Geometry lives in
-    the lmove engine's xyzj space (TCP xyz + wrist + rail); every
-    sample is IK-solved via _xyzj_to_joints chained for branch
-    continuity. Returns the blended list, or None on any IK failure
-    (caller keeps the sharp path). The caller MUST re-validate the
-    result against the collision envelope before executing it.
+    At each junction index C: walk back ``r`` mm (Cartesian arc length,
+    measured by FK — the radius is spatial) along the incoming polyline
+    to A, forward ``r`` to B (r clamped to half the available run per
+    side, so blends never overlap or swallow a segment), and replace
+    the in-between waypoints with samples of
+    Q(t) = (1-t)^2 A + 2t(1-t) C + t^2 B over the JOINT vectors.
+    FK is smooth, so joint-space G1 is Cartesian-smooth too; over a
+    ~20 mm fillet the deviation from the ideal Cartesian arc is
+    second-order. No IK anywhere — joint interpolation cannot branch-
+    flip and has no failure mode. The caller MUST still re-validate
+    the result against the collision envelope before executing it
+    (the fillet is new, unchecked geometry).
     """
     if radius <= 0 or not junctions or len(points) < 3:
         return None
@@ -2042,14 +2043,14 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     kinematic.set_tcp_xyzabc(tool_pose)
     pts = [[float(v) for v in p] for p in points]
 
-    def to_xyzj(J):
+    def fk_xyz(J):
         f = kinematic.fw(J[:6])
-        return [f[0], f[1], f[2], J[3], J[4], J[5], J[6], J[7]]
+        return [f[0], f[1], f[2]]
 
     def xyz_dist(a, b):
-        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a[:3], b[:3])))
+        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 
-    X = [to_xyzj(p) for p in pts]
+    X = [fk_xyz(p) for p in pts]
     js = sorted({int(j) for j in junctions if 0 < int(j) < len(pts) - 1})
 
     def locate(lengths, r):
@@ -2074,29 +2075,24 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
         if r_eff < step:
             continue  # too tight to blend — keep the sharp corner
 
-        na, ta = locate(Lin, r_eff)   # A between X[j-na] and X[j-na-1]
-        nb, tb = locate(Lout, r_eff)  # B between X[j+nb] and X[j+nb+1]
+        na, ta = locate(Lin, r_eff)   # A between pts[j-na] and pts[j-na-1]
+        nb, tb = locate(Lout, r_eff)  # B between pts[j+nb] and pts[j+nb+1]
         ia, ib = j - na, j + nb
-        A = [u + (v - u) * ta for u, v in zip(X[ia], X[ia - 1])]
-        B = [u + (v - u) * tb for u, v in zip(X[ib], X[ib + 1])]
-        C = X[j]
+        A = [u + (v - u) * ta for u, v in zip(pts[ia], pts[ia - 1])]
+        B = [u + (v - u) * tb for u, v in zip(pts[ib], pts[ib + 1])]
+        C = pts[j]
 
-        n = max(2, math.ceil((xyz_dist(A, C) + xyz_dist(C, B)) / step))
-        prev = pts[ia - 1]
+        n = max(2, math.ceil(2.0 * r_eff / step))
         blend_pts = []
         for s in range(n + 1):
             t = s / n
-            Q = [(1 - t) ** 2 * a + 2 * t * (1 - t) * c + t ** 2 * b
-                 for a, c, b in zip(A, C, B)]
-            J = _xyzj_to_joints(Q, prev, tool_pose, kinematic)
-            if J is None:
-                return None  # no clean fillet here — caller keeps sharp
-            J = [float(v) for v in J]
-            blend_pts.append(J)
-            prev = J
+            blend_pts.append([
+                (1 - t) ** 2 * a + 2 * t * (1 - t) * c + t ** 2 * b
+                for a, c, b in zip(A, C, B)
+            ])
 
         pts = pts[:ia] + blend_pts + pts[ib + 1:]
-        X = [to_xyzj(p) for p in pts]
+        X = [fk_xyz(p) for p in pts]
 
     return pts
 
