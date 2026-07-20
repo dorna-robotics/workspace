@@ -909,22 +909,37 @@ class Core:
             pass  # read-only fs / race — keep the in-memory row, move on
 
     # ── Planned-path cache ──────────────────────────────────────────────
-    # core_path.json, next to core_ik.json. Rows are keyed on rounded
-    # start+goal joints + planner + gravity params + the tool box
-    # signature. The SCENE is deliberately NOT in the key: every hit is
-    # revalidated against the LIVE scene (planner.check — the same C++
-    # validity checker a fresh solve uses) before it is returned, so a
-    # hit can never collide with a world that changed since it was
-    # stored; a failed revalidation falls through to a full solve and
-    # the row is overwritten. Only slow solves (>= PATH_CACHE_MIN_SEC)
-    # are stored — direct-shortcut hops replan faster than a lookup.
+    # core_path.json, next to core_ik.json. The key holds only the
+    # DETERMINISTIC inputs of a hop — goal joints (IK output), planner,
+    # gravity params, tool box signature. The start is NOT keyed: real
+    # encoders flutter (~0.2°), and any quantization has bucket edges a
+    # fluttering joint flaps across, minting fresh keys every run.
+    # Instead each row stores its own start and lookup matches by
+    # distance (max per-joint diff <= PATH_CACHE_START_TOL) — flutter-
+    # proof, no edges. Different true starts to the same goal coexist
+    # as variants under one key.
+    # The SCENE is also NOT keyed: every hit is revalidated against the
+    # LIVE scene (planner.check — the same C++ validity checker a fresh
+    # solve uses) before it is returned, so a hit can never collide
+    # with a world that changed since it was stored; a failed
+    # revalidation falls through to a full solve. Only slow solves
+    # (>= PATH_CACHE_MIN_SEC) are stored — direct-shortcut hops replan
+    # faster than a lookup.
 
     PATH_CACHE_MIN_SEC = 1.0
+    PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
+    PATH_CACHE_MAX_VARIANTS = 16  # starts kept per goal-key (oldest dropped)
 
     @staticmethod
     def _path_row_valid(v):
-        return (isinstance(v, list) and len(v) >= 2
-                and all(isinstance(p, list) for p in v))
+        return (isinstance(v, dict) and isinstance(v.get("s"), list)
+                and isinstance(v.get("p"), list) and len(v["p"]) >= 2
+                and all(isinstance(p, list) for p in v["p"]))
+
+    @staticmethod
+    def _path_start_match(a, b, tol):
+        return (len(a) == len(b)
+                and all(abs(float(x) - float(y)) <= tol for x, y in zip(a, b)))
 
     def _path_cache_init(self):
         """Resolve + load core_path.json (JSONL, last-wins). Never raises."""
@@ -951,37 +966,48 @@ class Core:
                 try:
                     rec = json.loads(line)
                     if self._path_row_valid(rec.get("v")):
-                        self._path_cache[rec["k"]] = rec["v"]
+                        self._path_variant_add(rec["k"], rec["v"])
                 except Exception:
                     continue  # torn/corrupt line — drop it
-            # Compact when overwritten rows dominate the file.
-            if lines > 50 and lines > 2 * len(self._path_cache):
+            # Compact when replaced/dropped rows dominate the file.
+            total = sum(len(v) for v in self._path_cache.values())
+            if lines > 50 and lines > 2 * total:
                 tmp = self._path_cache_path.with_suffix(".json.tmp")
                 tmp.write_text("".join(
-                    json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
-                    for k, v in self._path_cache.items()
+                    json.dumps({"k": k, "v": row}, separators=(",", ":")) + "\n"
+                    for k, rows in self._path_cache.items()
+                    for row in rows
                 ))
                 os.replace(tmp, self._path_cache_path)
         except Exception:
             self._path_cache = {}  # unreadable file → start empty
 
-    def _path_key(self, start, goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes):
+    def _path_variant_add(self, key, row):
+        """Insert a row into the in-memory cache: replace the variant
+        whose start it matches (within tolerance), else append. Bounded
+        per key — oldest variant drops first."""
+        rows = self._path_cache.setdefault(key, [])
+        for i, r in enumerate(rows):
+            if self._path_start_match(r["s"], row["s"], self.PATH_CACHE_START_TOL):
+                rows[i] = row
+                return
+        rows.append(row)
+        if len(rows) > self.PATH_CACHE_MAX_VARIANTS:
+            rows.pop(0)
+
+    def _path_key(self, goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes):
         """Rounded numeric key for one planned hop, or None (= don't
-        cache). Start joints quantize to 0.5° so real-encoder flutter
-        still hits (the first waypoint snaps the <0.5° gap, same
-        magnitude the executor already tolerates); goals are IK output
-        and deterministic, so they round fine at 0.01°."""
+        cache). Only deterministic inputs — goals are IK output, so
+        they round fine at 0.01°. The (fluttering) start is matched by
+        distance at lookup, never keyed."""
         try:
             def r2(v):
                 return round(float(v), 2) + 0.0
-            def q5(v):
-                return round(float(v) * 2) / 2 + 0.0
             sig = [
                 [r2(v) for v in list(box["pose"])] + [r2(v) for v in list(box["scale"])]
                 for box in tool_boxes
             ]
             parts = [
-                [q5(v) for v in start],
                 [r2(v) for v in goal],
                 str(planner),
                 bool(gravity),
@@ -993,25 +1019,32 @@ class Core:
         except Exception:
             return None
 
-    def _path_cache_get(self, key, gravity, gravity_vec, gravity_thr):
-        """Return a revalidated cached path, else None."""
-        cached = self._path_cache.get(key) if self._path_cache else None
-        if cached is None:
+    def _path_cache_get(self, key, start, gravity, gravity_vec, gravity_thr):
+        """Return a revalidated cached path whose stored start is within
+        tolerance of the live one, else None."""
+        rows = self._path_cache.get(key) if self._path_cache else None
+        if not rows:
             return None
-        try:
-            if self.planner.check(cached, gravity=gravity,
-                                  gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
-                                  gravity_thr=gravity_thr):
-                return [[float(v) for v in p] for p in cached]
-        except Exception:
-            pass
-        return None  # world changed / checker unavailable — full solve
+        for row in rows:
+            try:
+                if not self._path_start_match(row["s"], start, self.PATH_CACHE_START_TOL):
+                    continue
+                if self.planner.check(row["p"], gravity=gravity,
+                                      gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
+                                      gravity_thr=gravity_thr):
+                    return [[float(v) for v in p] for p in row["p"]]
+            except Exception:
+                continue
+        return None  # no variant in reach / world changed — full solve
 
-    def _path_cache_put(self, key, path):
+    def _path_cache_put(self, key, start, path):
         """Store a solved hop and append it to disk. Never raises."""
         try:
-            row = [[round(float(v), 3) for v in p] for p in path]
-            self._path_cache[key] = row
+            row = {
+                "s": [round(float(v), 3) for v in start],
+                "p": [[round(float(v), 3) for v in p] for p in path],
+            }
+            self._path_variant_add(key, row)
             if self._path_cache_path is None:
                 return  # no resolvable project folder — in-memory only
             with open(self._path_cache_path, "a") as f:
@@ -1437,10 +1470,10 @@ class Core:
         # -------------------------
         if self._path_cache is None:
             self._path_cache_init()
-        cache_key = self._path_key(start, goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes)
+        cache_key = self._path_key(goal, planner, gravity, gravity_vec, gravity_thr, tool_boxes)
         if cache_key is not None:
             t0 = time.perf_counter()
-            cached = self._path_cache_get(cache_key, gravity, gravity_vec, gravity_thr)
+            cached = self._path_cache_get(cache_key, start, gravity, gravity_vec, gravity_thr)
             if cached is not None:
                 print(f"[plan] cache hit: {len(cached)} wps revalidated in "
                       f"{time.perf_counter() - t0:.2f}s")
@@ -1466,7 +1499,7 @@ class Core:
             res = [[float(v) for v in p] for p in res]
             self._motion_plan_log(start, goal, res, planner, time_limit_sec, execution_time)
             if cache_key is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
-                self._path_cache_put(cache_key, res)
+                self._path_cache_put(cache_key, start, res)
         else:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
                   f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")
