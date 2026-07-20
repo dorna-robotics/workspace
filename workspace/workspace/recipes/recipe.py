@@ -475,6 +475,20 @@ class Recipe:
                 motion_type=unplanned,
             )
 
+    @staticmethod
+    def _sample_offsets(a, b, step=10.0):
+        """Linear samples along the offset segment a→b (excluding a,
+        including b), one every ``step`` mm of translation. Pins the
+        smove spline to the straight Cartesian line when the segment is
+        folded into a planned motion — a joint-space spline between the
+        two endpoints alone would bow sideways mid-segment."""
+        dist = math.sqrt(sum((y - x) ** 2 for x, y in zip(a[:3], b[:3])))
+        n = max(1, math.ceil(dist / step))
+        return [
+            [x + (y - x) * k / n for x, y in zip(a, b)]
+            for k in range(1, n + 1)
+        ]
+
     def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}):
         """Execute a sequence of IK-solved motions along path offsets.
 
@@ -486,11 +500,10 @@ class Recipe:
         soft-approach pre-contact drop), they are folded into the SAME
         smove instead of running as separate lmoves — one continuous
         motion to the last pre-contact point. The folded segments are
-        sampled with ``core.lmove_points`` (the tested lmove
-        interpolation: straight TCP line, nearest-branch IK, every
-        5 mm), so the spline stays pinned down tight corridors (dense
-        racks). The contact descent is never part of ``path`` here —
-        touch() keeps it as its own slow lmove.
+        sampled every ~10 mm and IK-solved point by point, so the
+        spline stays pinned down tight corridors (dense racks). The
+        contact descent is never part of ``path`` here — touch() keeps
+        it as its own slow lmove.
         """
         plan_on = False
         if first_approach:
@@ -506,46 +519,15 @@ class Recipe:
             if not points:
                 raise RecipeError("no proper path was found")
             points = [list(p) for p in points]
-
-            tool_pose = [0, 0, 0, 0, 0, 0]
-            if tool_dict["solid"] and tool_dict["anchor"]:
-                tool_pose = tool_dict["solid"].pose(
-                    anchor=tool_dict["anchor"],
-                    in_frame=self.core.robot_flange,
-                    offset=tool_dict["offset"],
-                )
-            prev = points[-1]
-            rest = []
-            folded = True
-            for offset in path[1:]:
-                J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
-                if seg is None:
-                    folded = False
-                    break
-                rest.extend(seg)
-                prev = J
-            if folded:
-                points.extend(rest)
-                rt.smove(
-                    points[1:],
-                    vel=vaj_map["jmove"][0] * self.speed_factor,
-                    accel=vaj_map["jmove"][1] * self.speed_factor,
-                    jerk=vaj_map["jmove"][2] * self.speed_factor,
-                )
-                return
-            # Sampling failed mid-way — execute the planned travel,
-            # then the remaining offsets as classic separate lmoves.
+            for a, b in zip(path, path[1:]):
+                for off in self._sample_offsets(a, b):
+                    points.append(self._solve_ik(target_solid, target_anchor, off, tool_dict, j5_override))
             rt.smove(
                 points[1:],
                 vel=vaj_map["jmove"][0] * self.speed_factor,
                 accel=vaj_map["jmove"][1] * self.speed_factor,
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
-            for offset in path[1:]:
-                J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                rt.checkpoint()
-                self._do_motion(rt, J, tool_dict, vaj_map)
             return
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
