@@ -475,13 +475,60 @@ class Recipe:
                 motion_type=unplanned,
             )
 
+    @staticmethod
+    def _sample_offsets(a, b, step=10.0):
+        """Linear samples along the offset segment a→b (excluding a,
+        including b), one every ``step`` mm of translation. Pins the
+        smove spline to the straight Cartesian line when the segment is
+        folded into a planned motion — a joint-space spline between the
+        two endpoints alone would bow sideways mid-segment."""
+        dist = math.sqrt(sum((y - x) ** 2 for x, y in zip(a[:3], b[:3])))
+        n = max(1, math.ceil(dist / step))
+        return [
+            [x + (y - x) * k / n for x, y in zip(a, b)]
+            for k in range(1, n + 1)
+        ]
+
     def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}):
         """Execute a sequence of IK-solved motions along path offsets.
 
         has_motion_plan / first_approach: only the first step of an approach
         may use path planning.
         motion_plan_kwargs: extra args passed to core.motion_plan() (padding, gravity_vec, etc.)
+
+        When the first step is planned and more offsets follow (the
+        soft-approach pre-contact drop), they are folded into the SAME
+        smove instead of running as separate lmoves — one continuous
+        motion to the last pre-contact point. The folded segments are
+        sampled every ~10 mm and IK-solved point by point, so the
+        spline stays pinned down tight corridors (dense racks). The
+        contact descent is never part of ``path`` here — touch() keeps
+        it as its own slow lmove.
         """
+        plan_on = False
+        if first_approach:
+            plan_on, _ = self._motion_plan_mode(
+                has_motion_plan if has_motion_plan is not None else False)
+        if plan_on and len(path) > 1:
+            J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+            rt.checkpoint()
+            points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
+            if not points and motion_plan_kwargs:
+                rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
+                points = self.core.motion_plan(joint=J0)
+            if not points:
+                raise RecipeError("no proper path was found")
+            points = [list(p) for p in points]
+            for a, b in zip(path, path[1:]):
+                for off in self._sample_offsets(a, b):
+                    points.append(self._solve_ik(target_solid, target_anchor, off, tool_dict, j5_override))
+            rt.smove(
+                points[1:],
+                vel=vaj_map["jmove"][0] * self.speed_factor,
+                accel=vaj_map["jmove"][1] * self.speed_factor,
+                jerk=vaj_map["jmove"][2] * self.speed_factor,
+            )
+            return
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
@@ -851,15 +898,30 @@ class Recipe:
                 )
         else:
             self._apply_output_config(rt, output_approach)
-            self._move_along_path(
-                rt, travel + descent, target_solid, target_anchor,
-                tool_dict=approach_tool,
-                j5_override=approach_j5,
-                vaj_map=vaj_map,
-                has_motion_plan=has_motion_plan,
-                first_approach=bool(approach_path),
-                motion_plan_kwargs=motion_plan_kwargs,
-            )
+            # Travel and descent stay separate motions even without an
+            # IO barrier: travel may merge its pre-contact waypoints
+            # into one continuous smove (see _move_along_path); the
+            # contact descent always runs as its own slow lmove.
+            if travel:
+                self._move_along_path(
+                    rt, travel, target_solid, target_anchor,
+                    tool_dict=approach_tool,
+                    j5_override=approach_j5,
+                    vaj_map=vaj_map,
+                    has_motion_plan=has_motion_plan,
+                    first_approach=True,
+                    motion_plan_kwargs=motion_plan_kwargs,
+                )
+            if descent:
+                self._move_along_path(
+                    rt, descent, target_solid, target_anchor,
+                    tool_dict=approach_tool,
+                    j5_override=approach_j5,
+                    vaj_map=vaj_map,
+                    has_motion_plan=has_motion_plan,
+                    first_approach=False,
+                    motion_plan_kwargs=motion_plan_kwargs,
+                )
 
         # output touch
         self._apply_output_config(rt, output_touch)
