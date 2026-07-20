@@ -559,7 +559,7 @@ class Recipe:
                     offset=tool_dict["offset"],
                 )
             _t0 = _time.perf_counter()
-            junctions = [len(points) - 1]
+            travel_end = len(points) - 1
             prev = points[-1]
             rest = []
             folded = True
@@ -570,9 +570,7 @@ class Recipe:
                     folded = False
                     break
                 rest.extend(seg)
-                junctions.append(len(points) + len(rest) - 1)
                 prev = J
-            junctions.pop()  # the final waypoint is the motion end, not a corner
             _t_fold = _time.perf_counter() - _t0
             # Attribute pre-motion latency: IK rail sweeps + fold
             # sampling. The planner's own time is on the [plan] line.
@@ -580,13 +578,15 @@ class Recipe:
                 print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
             if folded:
                 points.extend(rest)
-                # Corner blending: G1 Bezier fillets at the junctions.
-                # No re-check: the fillet cuts inside a turn whose
-                # corner the entry auto-lift already keeps clear of the
-                # station envelope — the fixed collision boxes are the
-                # project's contract.
-                if blend and blend > 0 and junctions:
-                    blended = self.core.blend_points(points, junctions, blend, tool_pose=tool_pose)
+                # Corner blending: G1 Bezier fillets on EVERY sharp
+                # corner from the planner's endpoint on — auto-detected
+                # by geometry, so any motion appended after the planned
+                # travel is covered without bookkeeping. No re-check:
+                # the fillet cuts inside a turn whose corner the entry
+                # auto-lift keeps clear of the station envelope — the
+                # fixed collision boxes are the project's contract.
+                if blend and blend > 0:
+                    blended = self.core.blend_points(points, blend, tool_pose=tool_pose, from_idx=max(1, travel_end))
                     if blended is not None:
                         points = blended
                 rt.smove(

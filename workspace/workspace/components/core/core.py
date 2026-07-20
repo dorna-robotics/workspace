@@ -1492,12 +1492,13 @@ class Core:
         except Exception:
             return None
 
-    def blend_points(self, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
-        """Quadratic-Bezier corner fillets on a fused waypoint path —
-        see blend_path_points. Returns the blended list, or None on
-        failure (keep the sharp path)."""
+    def blend_points(self, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], from_idx=1, step=5.0):
+        """Fillet EVERY sharp corner from ``from_idx`` on, auto-detected
+        by TCP direction change — see blend_sharp_corners. Returns the
+        blended list (unchanged when no corners), or None on failure
+        (keep the sharp path)."""
         try:
-            return blend_path_points(self.dorna.kinematic, points, junctions, radius, tool_pose, step)
+            return blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx)
         except Exception:
             return None
 
@@ -2104,6 +2105,46 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
         X = [fk_xyz(p) for p in pts]
 
     return pts
+
+
+def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0, from_idx=1, angle_deg=30.0):
+    """Auto-detect sharp corners and fillet them all — dumb on purpose.
+
+    A corner is any waypoint (index >= from_idx) where the TCP
+    direction changes by more than ``angle_deg`` between the incoming
+    and outgoing segments. Whatever motions get appended after the
+    planned travel, their corners are found by GEOMETRY, not by
+    bookkeeping — new motion types are covered automatically. The
+    planner's own portion (< from_idx) is left alone: its interior
+    corners are the planner's route, not artifacts.
+
+    Returns the blended list (unchanged when nothing qualifies), or
+    None on failure (caller keeps the sharp path)."""
+    if radius <= 0 or len(points) < 3:
+        return None
+
+    kinematic.set_tcp_xyzabc(tool_pose)
+
+    def fk_xyz(J):
+        f = kinematic.fw(J[:6])
+        return [f[0], f[1], f[2]]
+
+    X = [fk_xyz(p) for p in points]
+    thr = math.cos(math.radians(angle_deg))
+    corners = []
+    for i in range(max(1, int(from_idx)), len(points) - 1):
+        v1 = [b - a for a, b in zip(X[i - 1], X[i])]
+        v2 = [b - a for a, b in zip(X[i], X[i + 1])]
+        n1 = math.sqrt(sum(v * v for v in v1))
+        n2 = math.sqrt(sum(v * v for v in v2))
+        if n1 < 1.0 or n2 < 1.0:
+            continue  # degenerate/tiny segments — nothing to blend
+        cosang = sum(a * b for a, b in zip(v1, v2)) / (n1 * n2)
+        if cosang < thr:
+            corners.append(i)
+    if not corners:
+        return [list(map(float, p)) for p in points]
+    return blend_path_points(kinematic, points, corners, radius, tool_pose, step)
 
 
 class SimulationAPI:
