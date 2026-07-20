@@ -816,6 +816,7 @@ class Recipe:
         target_anchor,
         target_offset=[0, 0, 0, 0, 0, 0],
         output_approach=[],
+        hold_approach=False,
         approach_tool={"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
         approach_path=[],
         approach_j5=None,
@@ -889,7 +890,25 @@ class Recipe:
         # completes serially BEFORE any motion, exactly as before.
         travel = approach_path[:]
         descent = [] if target_offset is None else [target_offset]
-        if output_approach and travel:
+        if output_approach and travel and hold_approach:
+            # Hold-side approach (place-type): the chain only re-asserts
+            # an already-engaged hold, so it is fired AND pin-verified
+            # BEFORE any motion (the same _output_async/_output_join
+            # machinery, joined immediately). With no mid-flight barrier
+            # left, travel and descent fly as ONE continuous smove —
+            # nothing fires IO mid-motion, so the verified state cannot
+            # change in software before touchdown.
+            self._output_join(self._output_async(output_approach))
+            self._move_along_path(
+                rt, travel + descent, target_solid, target_anchor,
+                tool_dict=approach_tool,
+                j5_override=approach_j5,
+                vaj_map=vaj_map,
+                has_motion_plan=has_motion_plan,
+                first_approach=True,
+                motion_plan_kwargs=motion_plan_kwargs,
+            )
+        elif output_approach and travel:
             io_handle = self._output_async(output_approach)
             self._move_along_path(
                 rt, travel, target_solid, target_anchor,
@@ -1376,6 +1395,11 @@ class Recipe:
             "target_anchor": anchor,
             "target_offset": target_offset,
             "output_approach": output_approach,
+            # Hold-side approach: the chain only re-asserts an engaged
+            # hold, so touch() verifies it BEFORE the motion and flies
+            # travel + descent as one continuous smove (no mid-flight
+            # barrier needed — see touch()).
+            "hold_approach": True,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset": [0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
             "output_touch": output_touch,
