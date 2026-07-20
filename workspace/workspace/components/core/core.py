@@ -985,6 +985,7 @@ class Core:
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
     PATH_CACHE_MAX_ROWS = 500    # oldest evicted first
     PATH_DECIMATE_EPS = 2.0      # deg/mm max deviation for waypoint decimation
+    PATH_CHECK_PADDING_MARGIN = 2.0  # mm — check envelope hysteresis vs the plan envelope
 
     @staticmethod
     def _decimate_path(path, eps):
@@ -1110,7 +1111,10 @@ class Core:
 
     def _path_cache_get(self, start, goal, gravity, gravity_vec, gravity_thr, rail_weight, sig):
         """Return a revalidated cached path (endpoints snapped to the
-        live start / requested goal), else None. Newest rows win."""
+        live start / requested goal), else None. Newest rows win.
+        Rows that matched geometry but failed revalidation are logged —
+        a silent check failure looks like an inexplicable re-solve."""
+        failed = 0
         for row in reversed(self._path_cache or []):
             try:
                 if not self._path_row_match(row, start, goal, sig):
@@ -1122,8 +1126,11 @@ class Core:
                                       gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
                                       gravity_thr=gravity_thr, rail_weight=rail_weight):
                     return p
+                failed += 1
             except Exception:
-                continue
+                failed += 1
+        if failed:
+            print(f"[plan] cache: {failed} matching row(s) failed revalidation — re-solving")
         return None  # nothing in reach / world changed — full solve
 
     def _path_cache_put(self, start, goal, sig, path):
@@ -1504,32 +1511,39 @@ class Core:
         # Build collision scene
         # -------------------------
 
-        scene = []
-        tool = []
-        tool_boxes = []
+        def _cubes(boxes):
+            out = []
+            for box in boxes:
+                try:
+                    pose = box["pose"]
+                    scale = box["scale"]
+                    out.append(
+                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
+                    )
+                except Exception:
+                    # If a malformed box slips through, skip it rather than failing the whole move
+                    continue
+            return out
+
+        # Two envelopes with hysteresis: PLAN against the full padding,
+        # CHECK (cache revalidation + decimation gate) against a
+        # slightly slimmer one. OMPL validates sampled points along
+        # segments, then interpolate() materializes waypoints at spots
+        # the sampler never touched — a path grazing the padded box
+        # within one resolution step passes the solve but fails an
+        # exact re-check at those points. The margin absorbs exactly
+        # that: sub-margin grazes inside the planning envelope pass,
+        # anything deeper fails honestly.
+        scene, tool, tool_boxes = [], [], []
+        check_scene, check_tool = [], []
         if hasattr(self.workspace, "compute_collision_boxes"):
             world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
-            for box in world_boxes:
-                try:
-                    pose = box["pose"]
-                    scale = box["scale"]
-                    scene.append(
-                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
-                    )
-                except Exception:
-                    # If a malformed box slips through, skip it rather than failing the whole move
-                    continue
-
-            for box in tool_boxes:
-                try:
-                    pose = box["pose"]
-                    scale = box["scale"]
-                    tool.append(
-                        Planner.create_cube(list(pose), [scale[0], scale[1], scale[2]])
-                    )
-                except Exception:
-                    # If a malformed box slips through, skip it rather than failing the whole move
-                    continue
+            scene = _cubes(world_boxes)
+            tool = _cubes(tool_boxes)
+            check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
+            cw, ct = self.workspace.compute_collision_boxes(check_pad)
+            check_scene = _cubes(cw)
+            check_tool = _cubes(ct)
 
         # -------------------------
         # Planner update args
@@ -1540,9 +1554,11 @@ class Core:
 
         base_in_world = list( self.rail_base.pose(anchor="carriage"))
 
+        # The CHECK envelope is pushed for the cache lookup below; the
+        # solve pushes the full PLAN envelope right before planning.
         self.planner.update(
-            scene=scene,
-            gripper=tool,
+            scene=check_scene,
+            gripper=check_tool,
             base_in_world=list(base_in_world)
         )
 
@@ -1577,7 +1593,9 @@ class Core:
         # honored time budget + GIL release). rail_weight=0.004 makes
         # rail travel ~2.5x cheaper than stock in the path-length metric
         # so paths slide the bench instead of contorting the arm.
+        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
         res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
+        self.planner.update(scene=check_scene, gripper=check_tool, base_in_world=list(base_in_world))
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
