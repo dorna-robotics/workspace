@@ -10,14 +10,6 @@ core:
     type: "rail_hd_1000mm"
   has_tool_changer: true
   has_motion_plan: true
-  # Motion-planner defaults for every planned hop; per-call
-  # motion_plan_kwargs always win.
-  motion_plan:
-    planner: "aitstar"
-    time_limit_sec: 10.0
-    rail_weight: 0.004
-    padding: 10
-    gravity_thr: 5.0
   has_camera: false
   camera_cfg:
     serial_number: ""
