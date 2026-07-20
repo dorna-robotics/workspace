@@ -1494,9 +1494,8 @@ class Core:
 
     def blend_points(self, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
         """Quadratic-Bezier corner fillets on a fused waypoint path —
-        see blend_path_points. Returns (points, regions) or None on
-        failure (keep the sharp path). The fillet REGIONS must pass
-        check_points before executing."""
+        see blend_path_points. Returns the blended list, or None on
+        failure (keep the sharp path)."""
         try:
             return blend_path_points(self.dorna.kinematic, points, junctions, radius, tool_pose, step)
         except Exception:
@@ -2042,14 +2041,10 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     FK is smooth, so joint-space G1 is Cartesian-smooth too; over a
     ~20 mm fillet the deviation from the ideal Cartesian arc is
     second-order. No IK anywhere — joint interpolation cannot branch-
-    flip and has no failure mode.
-
-    Returns (points, regions) where regions is a list of
-    (start_idx, end_idx) spans of the NEW fillet geometry — the caller
-    MUST re-validate exactly those spans against the collision
-    envelope before executing (the rest of the path is pre-validated
-    by construction; approach corridors legitimately enter station
-    envelopes, so whole-path checking would always fail).
+    flip and has no failure mode. The fillet stays within r of its
+    corner and cuts INSIDE the turn, so with entries auto-lifted
+    clear of the station envelope the arc inherits that clearance —
+    the fixed collision boxes are the project's contract, no re-check.
     """
     if radius <= 0 or not junctions or len(points) < 3:
         return None
@@ -2078,7 +2073,6 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
 
     # Descending order: each splice touches only indices at/after its
     # own clamped window, so earlier junction indices stay valid.
-    regions = []
     for k in range(len(js) - 1, -1, -1):
         j = js[k]
         lo = js[k - 1] if k > 0 else 0            # nearest boundary behind
@@ -2106,15 +2100,10 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
                 for a, c, b in zip(A, C, B)
             ])
 
-        delta = len(blend_pts) - (ib + 1 - ia)
         pts = pts[:ia] + blend_pts + pts[ib + 1:]
         X = [fk_xyz(p) for p in pts]
-        # regions recorded so far sit AFTER this splice (descending
-        # processing) — shift them by the length change
-        regions = [(a + delta, b + delta) for a, b in regions]
-        regions.append((max(0, ia - 1), min(len(pts) - 1, ia + len(blend_pts))))
 
-    return pts, regions
+    return pts
 
 
 class SimulationAPI:

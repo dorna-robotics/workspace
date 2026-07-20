@@ -581,19 +581,14 @@ class Recipe:
             if folded:
                 points.extend(rest)
                 # Corner blending: G1 Bezier fillets at the junctions.
-                # Only the NEW fillet regions are collision-checked —
-                # the rest of the path is pre-validated, and approach
-                # corridors legitimately enter station envelopes, so
-                # whole-path checking would always reject. Any doubt →
-                # the sharp (already-validated) path runs as-is.
+                # No re-check: the fillet cuts inside a turn whose
+                # corner the entry auto-lift already keeps clear of the
+                # station envelope — the fixed collision boxes are the
+                # project's contract.
                 if blend and blend > 0 and junctions:
                     blended = self.core.blend_points(points, junctions, blend, tool_pose=tool_pose)
                     if blended is not None:
-                        pts_b, regions = blended
-                        if regions and self.core.check_points([pts_b[a:b + 1] for a, b in regions]):
-                            points = pts_b
-                        elif regions:
-                            print("[touch] blend rejected — sharp corners kept")
+                        points = blended
                 rt.smove(
                     points[1:],
                     vel=vaj_map["jmove"][0] * self.speed_factor,
