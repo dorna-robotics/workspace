@@ -34,7 +34,7 @@ class Gripper:
         self.has_tool_changer = prm["has_tool_changer"]
         if self.has_tool_changer:
             tool_changer_collision_box = {"tool_changer_tool_side": [
-                {"pose": [0.0, 0.0, (-17.5/2)+4.5, 0.0, 0.0, 0.0], "scale": [48, 48, 17.5]}
+                {"pose": [0.0, 0.0, (-17.5/2)+4.5, 0.0, 0.0, 0.0], "scale": [48, 48, 17.5], "padding_enabled": True}
             ]}
             self.assembly["tool_changer_tool_side"] = Solid(type="tool_changer_tool_side",
                                                     anchors= {
