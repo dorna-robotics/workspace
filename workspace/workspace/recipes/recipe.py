@@ -818,6 +818,7 @@ class Recipe:
         output_approach=[],
         approach_tool={"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
         approach_path=[],
+        soft_approach=False,
         approach_j5=None,
         output_touch=[],
         actions=[],
@@ -880,31 +881,50 @@ class Recipe:
         }
 
         # ── The stop rule ───────────────────────────────────────────────
-        # A touch stops ONLY where physics demands it: at contact
-        # (output_touch / attach / sleep). All required state — fingers
-        # open, hold engaged, clamp set — is established and PHYSICALLY
-        # PIN-VERIFIED before the motion starts (the same fire + join +
-        # verify machinery, run serially): state chains are position-
-        # independent, so "fingers open before descending" is satisfied
-        # a fortiori by "fingers open before moving at all". With no
-        # mid-flight barrier, travel + descent fly as ONE continuous
-        # motion (planned mode folds everything into a single smove —
-        # see _move_along_path; unplanned mode keeps per-segment
-        # motions). Nothing fires IO mid-motion, so the verified state
+        # A touch stops ONLY where physics demands it: at contact — and,
+        # for soft approaches, at the gap point, because the deliberate
+        # slow insertion IS the feature being asked for. All required
+        # state — fingers open, hold engaged, clamp set — is established
+        # and PHYSICALLY PIN-VERIFIED before the motion starts (the same
+        # fire + join + verify machinery, run serially): state chains
+        # are position-independent, so "fingers open before descending"
+        # is satisfied a fortiori by "fingers open before moving at
+        # all". Nothing fires IO mid-motion, so the verified state
         # cannot change in software before touchdown.
+        #
+        #   soft_approach=True  → one fused smove to the gap point,
+        #                         then the contact leg as its own slow
+        #                         lmove (its speed class is the point).
+        #   soft_approach=False → one fused motion all the way to touch
+        #                         (the S-curve decelerates to zero
+        #                         there anyway).
+        #   approach=False      → contact leg only, as before.
         travel = approach_path[:]
         descent = [] if target_offset is None else [target_offset]
         if output_approach:
             self._output_join(self._output_async(output_approach))
-        path_all = travel + descent
-        if path_all:
+        if soft_approach and travel:
+            fused, tail = travel, descent
+        else:
+            fused, tail = travel + descent, []
+        if fused:
             self._move_along_path(
-                rt, path_all, target_solid, target_anchor,
+                rt, fused, target_solid, target_anchor,
                 tool_dict=approach_tool,
                 j5_override=approach_j5,
                 vaj_map=vaj_map,
                 has_motion_plan=has_motion_plan,
                 first_approach=bool(travel),
+                motion_plan_kwargs=motion_plan_kwargs,
+            )
+        if tail:
+            self._move_along_path(
+                rt, tail, target_solid, target_anchor,
+                tool_dict=approach_tool,
+                j5_override=approach_j5,
+                vaj_map=vaj_map,
+                has_motion_plan=has_motion_plan,
+                first_approach=False,
                 motion_plan_kwargs=motion_plan_kwargs,
             )
 
@@ -1094,6 +1114,7 @@ class Recipe:
                 "offset": [0, 0, tool_tcp_z_offset, 0, 180, 0],
             },
             "approach_path": approach_path,
+            "soft_approach": soft_approach,
             "output_touch": output_touch,
             "actions": actions,
             "sleep": 0,
@@ -1345,6 +1366,7 @@ class Recipe:
             "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset": [0, 0, 0, 0, 0, 0]},
             "approach_path": approach_path,
+            "soft_approach": soft_approach,
             "output_touch": output_touch,
             "actions": actions,
             "sleep": 0,
