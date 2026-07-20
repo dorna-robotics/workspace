@@ -520,7 +520,27 @@ class Recipe:
             blend = mpk.pop("blend", 20.0)
 
             _t0 = _time.perf_counter()
-            J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+            # Entry-point auto-lift: the corridor entry is the planner's
+            # GOAL and must sit outside the plan-padded collision
+            # envelope — station boxes set a hard floor no recipe
+            # padding guess can know (and pick/place floors differ,
+            # because their reference heights differ). Raise along the
+            # approach axis until the goal is valid; padding remains
+            # the desired margin, the boxes enforce the floor.
+            path = [list(p) for p in path]
+            lift = 0.0
+            while True:
+                J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+                if self.core.check_points([J0, J0], pad=10.0):
+                    break
+                if lift >= 150.0:
+                    raise RecipeError(
+                        "approach entry is inside the collision envelope and "
+                        "could not be lifted clear — check the station's boxes")
+                path[0][2] += 10.0
+                lift += 10.0
+            if lift:
+                print(f"[touch] entry lifted +{lift:.0f}mm to clear the collision envelope")
             _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
             points = self.core.motion_plan(joint=J0, **mpk)
@@ -560,16 +580,20 @@ class Recipe:
                 print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
             if folded:
                 points.extend(rest)
-                # Corner blending: G1 Bezier fillets at the junctions,
-                # executed ONLY if the blended polyline revalidates
-                # against the collision envelope — else the sharp
-                # (already-validated) path runs as-is.
+                # Corner blending: G1 Bezier fillets at the junctions.
+                # Only the NEW fillet regions are collision-checked —
+                # the rest of the path is pre-validated, and approach
+                # corridors legitimately enter station envelopes, so
+                # whole-path checking would always reject. Any doubt →
+                # the sharp (already-validated) path runs as-is.
                 if blend and blend > 0 and junctions:
                     blended = self.core.blend_points(points, junctions, blend, tool_pose=tool_pose)
-                    if blended is not None and self.core.check_points(blended):
-                        points = blended
-                    else:
-                        print("[touch] blend rejected — sharp corners kept")
+                    if blended is not None:
+                        pts_b, regions = blended
+                        if regions and self.core.check_points([pts_b[a:b + 1] for a, b in regions]):
+                            points = pts_b
+                        elif regions:
+                            print("[touch] blend rejected — sharp corners kept")
                 rt.smove(
                     points[1:],
                     vel=vaj_map["jmove"][0] * self.speed_factor,

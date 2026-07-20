@@ -1494,8 +1494,9 @@ class Core:
 
     def blend_points(self, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
         """Quadratic-Bezier corner fillets on a fused waypoint path —
-        see blend_path_points. None on failure (keep the sharp path).
-        The result MUST pass check_points before executing."""
+        see blend_path_points. Returns (points, regions) or None on
+        failure (keep the sharp path). The fillet REGIONS must pass
+        check_points before executing."""
         try:
             return blend_path_points(self.dorna.kinematic, points, junctions, radius, tool_pose, step)
         except Exception:
@@ -1516,19 +1517,27 @@ class Core:
                 continue
         return out
 
-    def check_points(self, points):
-        """Validate an assembled waypoint polyline against the CHECK
-        envelope (plan padding − hysteresis margin) — the gate for
-        recipe-side geometry like blended corners. False on any doubt."""
+    def check_points(self, points, pad=None):
+        """Validate waypoint polyline(s) against the collision envelope
+        at box padding ``pad`` (default: check envelope = plan padding −
+        hysteresis margin). ``points`` is one polyline or a list of
+        polylines (checked under a single scene push). False on any
+        doubt."""
         try:
-            check_pad = max(0.0, 10.0 - self.PATH_CHECK_PADDING_MARGIN)
-            cw, ct = self.workspace.compute_collision_boxes(check_pad)
+            if pad is None:
+                pad = max(0.0, 10.0 - self.PATH_CHECK_PADDING_MARGIN)
+            cw, ct = self.workspace.compute_collision_boxes(pad)
             self.planner.update(
                 scene=self._boxes_to_cubes(cw),
                 gripper=self._boxes_to_cubes(ct),
                 base_in_world=list(self.rail_base.pose(anchor="carriage")),
             )
-            return bool(self.planner.check([[float(v) for v in p] for p in points]))
+            # normalize: single polyline (list of joint lists) vs list of polylines
+            paths = [points] if points and isinstance(points[0][0], (int, float)) else points
+            for p in paths:
+                if not self.planner.check([[float(v) for v in w] for w in p]):
+                    return False
+            return True
         except Exception:
             return False
 
@@ -2033,9 +2042,14 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     FK is smooth, so joint-space G1 is Cartesian-smooth too; over a
     ~20 mm fillet the deviation from the ideal Cartesian arc is
     second-order. No IK anywhere — joint interpolation cannot branch-
-    flip and has no failure mode. The caller MUST still re-validate
-    the result against the collision envelope before executing it
-    (the fillet is new, unchecked geometry).
+    flip and has no failure mode.
+
+    Returns (points, regions) where regions is a list of
+    (start_idx, end_idx) spans of the NEW fillet geometry — the caller
+    MUST re-validate exactly those spans against the collision
+    envelope before executing (the rest of the path is pre-validated
+    by construction; approach corridors legitimately enter station
+    envelopes, so whole-path checking would always fail).
     """
     if radius <= 0 or not junctions or len(points) < 3:
         return None
@@ -2064,6 +2078,7 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
 
     # Descending order: each splice touches only indices at/after its
     # own clamped window, so earlier junction indices stay valid.
+    regions = []
     for k in range(len(js) - 1, -1, -1):
         j = js[k]
         lo = js[k - 1] if k > 0 else 0            # nearest boundary behind
@@ -2091,10 +2106,15 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
                 for a, c, b in zip(A, C, B)
             ])
 
+        delta = len(blend_pts) - (ib + 1 - ia)
         pts = pts[:ia] + blend_pts + pts[ib + 1:]
         X = [fk_xyz(p) for p in pts]
+        # regions recorded so far sit AFTER this splice (descending
+        # processing) — shift them by the length change
+        regions = [(a + delta, b + delta) for a, b in regions]
+        regions.append((max(0, ia - 1), min(len(pts) - 1, ia + len(blend_pts))))
 
-    return pts
+    return pts, regions
 
 
 class SimulationAPI:
