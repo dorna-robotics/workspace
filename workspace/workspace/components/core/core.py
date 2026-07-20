@@ -2045,7 +2045,7 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     # zero-length segments and no corners).
     def fk_xyz(J):
         f = kinematic.fw(J[:6])
-        return [f[0], f[1], f[2], float(J[6]), float(J[7])]
+        return [f[0], f[1], f[2]] + [float(v) for v in J[6:]]
 
     def xyz_dist(a, b):
         return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
@@ -2119,7 +2119,7 @@ def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0],
     # blind to rail-carried motion.
     def fk_xyz(J):
         f = kinematic.fw(J[:6])
-        return [f[0], f[1], f[2], float(J[6]), float(J[7])]
+        return [f[0], f[1], f[2]] + [float(v) for v in J[6:]]
 
     X = [fk_xyz(p) for p in points]
     thr = math.cos(math.radians(angle_deg))
