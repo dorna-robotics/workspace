@@ -941,14 +941,25 @@ class Recipe:
         #   approach=False      → contact leg only, as before.
         travel = approach_path[:]
         descent = [] if target_offset is None else [target_offset]
-        if output_approach:
-            _t0 = _time.perf_counter()
-            self._output_join(self._output_async(output_approach))
-            print(f"[touch] approach io {_time.perf_counter() - _t0:.2f}s")
         if soft_approach and travel:
             fused, tail = travel, descent
         else:
             fused, tail = travel + descent, []
+        # Approach chain: overlapped UNDER the fused travel when a
+        # natural stop exists to verify at — soft touches stop at the
+        # gap point before the contact leg, and the join + physical
+        # pin verification sits exactly there. Without such a stop
+        # (non-soft: fused straight to contact) the chain completes
+        # and pin-verifies BEFORE any motion. Either way, contact
+        # never starts on an unverified chain.
+        io_handle = None
+        if output_approach:
+            if fused and tail:
+                io_handle = self._output_async(output_approach)
+            else:
+                _t0 = _time.perf_counter()
+                self._output_join(self._output_async(output_approach))
+                print(f"[touch] approach io {_time.perf_counter() - _t0:.2f}s")
         if fused:
             self._move_along_path(
                 rt, fused, target_solid, target_anchor,
@@ -959,6 +970,12 @@ class Recipe:
                 first_approach=bool(travel),
                 motion_plan_kwargs=motion_plan_kwargs,
             )
+        if io_handle is not None:
+            _t0 = _time.perf_counter()
+            self._output_join(io_handle)
+            _dt = _time.perf_counter() - _t0
+            if _dt > 0.05:
+                print(f"[touch] approach io join {_dt:.2f}s (not hidden by travel)")
         if tail:
             self._move_along_path(
                 rt, tail, target_solid, target_anchor,
