@@ -457,7 +457,9 @@
       trailLine.renderOrder = 5;       trailDots.renderOrder = 6;
       trailLine.visible = false;       trailDots.visible = false;
       scene.add(trailLine); scene.add(trailDots);
-      const TRAIL_ACCENT = new THREE.Color("#2dd9f2");
+      // Amber — nothing else in the scene is orange (boxes are red/blue,
+      // bench is gray/blue), so the trace reads instantly in both themes.
+      const TRAIL_ACCENT = new THREE.Color("#ffb020");
       const _trailV = new THREE.Vector3();
       const _trailBg = new THREE.Color();
 
