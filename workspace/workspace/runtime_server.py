@@ -582,7 +582,12 @@ def project_device_claim_resolver(workspace):
     bus event without explicit invalidation.
     """
     def _resolve(device_id: str) -> str:
-        return _project_device_claims(workspace).get(device_id, "real")
+        # "foreign" = not declared by ANY component of this project —
+        # e.g. stale retained bus topics from dead sessions, or another
+        # project's devices on a shared broker. The auto-pause gate
+        # ignores foreign devices: "critical" means critical TO THIS
+        # PROJECT, and a foreign corpse must never pause a launch.
+        return _project_device_claims(workspace).get(device_id, "foreign")
     return _resolve
 
 

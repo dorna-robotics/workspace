@@ -332,19 +332,25 @@ class MQTTOrchestrator:
         #     this project doesn't care because it uses canned values.)
         is_initial_down = is_first_state and new_state == "down"
         is_transition_to_down = (not is_first_state) and new_state == "down" and old_state != "down"
-        project_claims_sim = False
+        claim = None
         if self.claim_resolver is not None:
             try:
-                project_claims_sim = self.claim_resolver(device_id) == "sim"
+                claim = self.claim_resolver(device_id)
             except Exception:
                 log.exception("MQTTOrchestrator: claim_resolver raised for %s",
                               device_id)
-                project_claims_sim = False
+                claim = None
+        project_claims_sim = claim == "sim"
+        # "foreign" — the project doesn't declare this device at all
+        # (stale retained topics from dead sessions, other projects on
+        # a shared broker). Never pause for someone else's corpse.
+        is_foreign = claim == "foreign"
         if (
             self.runtime is not None
             and critical
             and not sim
             and not project_claims_sim
+            and not is_foreign
             and (is_initial_down or is_transition_to_down)
         ):
             try:
