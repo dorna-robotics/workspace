@@ -271,21 +271,31 @@ class Runtime:
 
             st = self._status.state
             if st == RTState.PAUSED:
-                self._status.job_resumes += 1
-                # Park is a sticky flag: if the user parked, then paused
-                # mid-park, then resumed, we go back to PARKING (not
-                # RUNNING) so the park-cleanup pipeline keeps draining.
-                self._set_state(RTState.PARKING if self._parking else RTState.RUNNING)
-                # No token bump here — the state transition itself wakes
-                # everyone via cv.notify_all. ``wait_for_start`` accepts
-                # state==RUNNING as an exit condition (so a thread that
-                # hasn't yet consumed a start token still wakes), and
-                # ``checkpoint`` exits on state!=PAUSED. Bumping the
-                # token would queue a phantom restart that fires after
-                # the current workflow completes — replaying the full
-                # protocol unintendedly.
-                self._cv.notify_all()
-                return
+                pre = getattr(self, "_pre_pause_state", None) or RTState.RUNNING
+                self._pre_pause_state = None
+                if self._parking or pre != RTState.IDLE:
+                    self._status.job_resumes += 1
+                    # Park is a sticky flag: if the user parked, then paused
+                    # mid-park, then resumed, we go back to PARKING (not
+                    # RUNNING) so the park-cleanup pipeline keeps draining.
+                    self._set_state(RTState.PARKING if self._parking else RTState.RUNNING)
+                    # No token bump here — the state transition itself wakes
+                    # everyone via cv.notify_all. ``wait_for_start`` accepts
+                    # state==RUNNING as an exit condition (so a thread that
+                    # hasn't yet consumed a start token still wakes), and
+                    # ``checkpoint`` exits on state!=PAUSED. Bumping the
+                    # token would queue a phantom restart that fires after
+                    # the current workflow completes — replaying the full
+                    # protocol unintendedly.
+                    self._cv.notify_all()
+                    return
+                # Paused-from-IDLE + Start: there is no run to resume —
+                # this is a REAL start. Drop back to IDLE and fall
+                # through to the token bump so the run begins with
+                # proper stamping (claiming RUNNING here would make the
+                # gate skip the run_started_at stamp: uptime/started
+                # would read null for the whole run).
+                self._set_state(RTState.IDLE)
 
             if st in (RTState.RUNNING, RTState.PARKING):
                 return
@@ -305,6 +315,7 @@ class Runtime:
             # ParkRequested, and the operator must be able to halt it
             # mid-stride (e.g. to clear a robot alarm before cleanup).
             if self._status.state in (RTState.RUNNING, RTState.IDLE, RTState.PARKING):
+                self._pre_pause_state = self._status.state
                 self._status.job_pauses += 1
                 self._set_state(RTState.PAUSED)
                 self._cv.notify_all()
@@ -315,9 +326,21 @@ class Runtime:
                 return
             if self._status.state == RTState.PAUSED:
                 self._status.job_resumes += 1
-                # If the park flag is set, resume to PARKING (not RUNNING)
-                # so the park-cleanup pipeline keeps draining.
-                self._set_state(RTState.PARKING if self._parking else RTState.RUNNING)
+                # Restore the PRE-PAUSE state — resuming an idle pause
+                # must return to IDLE, not claim RUNNING: the workflow
+                # gate would then start the real run with the state
+                # already RUNNING, skipping the run_started_at stamp
+                # (uptime/started read null in the GUI forever after).
+                # A park flag still wins: resume to PARKING so the
+                # cleanup pipeline keeps draining.
+                pre = getattr(self, "_pre_pause_state", None) or RTState.RUNNING
+                if self._parking:
+                    self._set_state(RTState.PARKING)
+                elif pre == RTState.IDLE:
+                    self._set_state(RTState.IDLE)
+                else:
+                    self._set_state(RTState.RUNNING)
+                self._pre_pause_state = None
                 self._cv.notify_all()
 
     def park(self) -> None:
