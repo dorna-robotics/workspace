@@ -181,6 +181,12 @@
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
       </svg>
     </button>
+    <button class="ctrl-btn" id="btnTrail" title="Toggle motion trail">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/>
+        <path d="M17.5 6.5c-4.5 4.5-1.5 7-6 9.5-2.2 1.2-3.7 1.9-5 2.5"/>
+      </svg>
+    </button>
     <button class="ctrl-btn active" id="btnEdges" title="Toggle edge outlines">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="8.5" x2="22" y2="8.5"/><line x1="2" y1="15.5" x2="22" y2="15.5"/>
@@ -407,6 +413,97 @@
 
       const collisionMeshesByKey = new Map();
 
+      // ── Motion trail (flange path trace) ──────────────────────────────────
+      // Fixed-TIME sampling, so dot spacing IS speed: dense dots = slow,
+      // sparse = fast — decel ramps into contact are visible directly.
+      // Age fades toward the background color (theme-proof). Diagnostics
+      // for blends, corners, approach corridors.
+      const TRAIL_MAX = 4000;          // samples kept (~2 min of motion)
+      const TRAIL_DT = 33;             // ms between samples
+      const TRAIL_MIN_STEP = 0.6;      // mm — don't record idling
+      let showTrail = false;
+      let trailCount = 0;
+      let trailLastT = 0;
+      const trailPos = new Float32Array(TRAIL_MAX * 3);
+      const trailCol = new Float32Array(TRAIL_MAX * 3);
+      const trailAttrPos = new THREE.BufferAttribute(trailPos, 3);
+      const trailAttrCol = new THREE.BufferAttribute(trailCol, 3);
+      const trailGeomL = new THREE.BufferGeometry();
+      trailGeomL.setAttribute("position", trailAttrPos);
+      trailGeomL.setAttribute("color", trailAttrCol);
+      const trailGeomP = new THREE.BufferGeometry();
+      trailGeomP.setAttribute("position", trailAttrPos);
+      trailGeomP.setAttribute("color", trailAttrCol);
+      const trailSprite = (() => {
+        const c = document.createElement("canvas"); c.width = c.height = 32;
+        const g = c.getContext("2d");
+        const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+        grd.addColorStop(0.0, "rgba(255,255,255,1)");
+        grd.addColorStop(0.45, "rgba(255,255,255,0.8)");
+        grd.addColorStop(1.0, "rgba(255,255,255,0)");
+        g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      })();
+      const trailLine = new THREE.Line(trailGeomL, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false,
+      }));
+      const trailDots = new THREE.Points(trailGeomP, new THREE.PointsMaterial({
+        map: trailSprite, size: 7, sizeAttenuation: false, vertexColors: true,
+        transparent: true, opacity: 0.95, depthWrite: false,
+      }));
+      trailLine.frustumCulled = false; trailDots.frustumCulled = false;
+      trailLine.renderOrder = 5;       trailDots.renderOrder = 6;
+      trailLine.visible = false;       trailDots.visible = false;
+      scene.add(trailLine); scene.add(trailDots);
+      const TRAIL_ACCENT = new THREE.Color("#2dd9f2");
+      const _trailV = new THREE.Vector3();
+      const _trailBg = new THREE.Color();
+
+      function clearTrail() {
+        trailCount = 0;
+        trailGeomL.setDrawRange(0, 0);
+        trailGeomP.setDrawRange(0, 0);
+      }
+
+      function updateTrail(now) {
+        if (!showTrail) return;
+        const fr = findFlangeRoot();
+        if (fr && now - trailLastT >= TRAIL_DT) {
+          fr.getWorldPosition(_trailV);
+          const i = (trailCount - 1) * 3;
+          const moved = trailCount === 0 || Math.hypot(
+            _trailV.x - trailPos[i], _trailV.y - trailPos[i + 1], _trailV.z - trailPos[i + 2]
+          ) >= TRAIL_MIN_STEP;
+          if (moved) {
+            trailLastT = now;
+            if (trailCount >= TRAIL_MAX) {          // drop the oldest half
+              const keep = TRAIL_MAX >> 1;
+              trailPos.copyWithin(0, keep * 3);
+              trailCount = TRAIL_MAX - keep;
+            }
+            const j = trailCount * 3;
+            trailPos[j] = _trailV.x; trailPos[j + 1] = _trailV.y; trailPos[j + 2] = _trailV.z;
+            trailCount++;
+          }
+        }
+        // Age fade: newest = accent, oldest melts into the background.
+        _trailBg.copy(scene.background && scene.background.isColor ? scene.background : DARK_BG);
+        for (let k = 0; k < trailCount; k++) {
+          const a = trailCount < 2 ? 1 : k / (trailCount - 1);   // 0 = oldest
+          const f = a * a;                                       // long soft tail
+          const j = k * 3;
+          trailCol[j]     = _trailBg.r + (TRAIL_ACCENT.r - _trailBg.r) * f;
+          trailCol[j + 1] = _trailBg.g + (TRAIL_ACCENT.g - _trailBg.g) * f;
+          trailCol[j + 2] = _trailBg.b + (TRAIL_ACCENT.b - _trailBg.b) * f;
+        }
+        trailAttrPos.needsUpdate = true;
+        trailAttrCol.needsUpdate = true;
+        trailGeomL.setDrawRange(0, trailCount);
+        trailGeomP.setDrawRange(0, trailCount);
+      }
+
       // ── UI button handlers ────────────────────────────────────────────────
       let showCollisionBoxes = false;
       // Per-object edge outlines (the black lines around each component).
@@ -424,6 +521,14 @@
         collisionWorldGroup.visible  = showCollisionBoxes;
         collisionFlangeGroup.visible = showCollisionBoxes;
         document.getElementById("btnCollision").classList.toggle("active", showCollisionBoxes);
+      });
+
+      document.getElementById("btnTrail").addEventListener("click", () => {
+        showTrail = !showTrail;
+        trailLine.visible = showTrail;
+        trailDots.visible = showTrail;
+        if (showTrail) clearTrail();   // fresh trace each time it's enabled
+        document.getElementById("btnTrail").classList.toggle("active", showTrail);
       });
 
       document.getElementById("btnEdges").addEventListener("click", () => {
@@ -1143,6 +1248,7 @@
           controls.update();
           updateAnchorsNow();
           ensureFlangeGroupAttached();
+          updateTrail(performance.now());
           renderer.render(scene, camera);
 
           // ViewCube: sync group orientation (inverse of main camera)
