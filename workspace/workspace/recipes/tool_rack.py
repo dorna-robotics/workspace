@@ -73,6 +73,9 @@ class ToolRack(Recipe):
                                 [0, 0, -padding-height_offset, 0, 0, 0],
                                 [0, 0, -12-gap-height_offset, 0, 0, 0]
                             ],
+            # Mating the changer plates is a deliberate contact leg —
+            # fused smove to the near point, slow lmove to engage.
+            "soft_approach": True,
             "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
@@ -144,6 +147,9 @@ class ToolRack(Recipe):
                                 [-padding,0,-gap-height_offset,0,0,0],
                                 [0, 0, -gap-height_offset, 0, 0, 0],
                         ],
+            # Seating the tool into the rack slot is a deliberate
+            # contact leg — fused smove to the near point, slow lmove in.
+            "soft_approach": True,
             "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
