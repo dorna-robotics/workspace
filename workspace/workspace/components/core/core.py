@@ -2039,9 +2039,13 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     kinematic.set_tcp_xyzabc(tool_pose)
     pts = [[float(v) for v in p] for p in points]
 
+    # Geometry lives in arm-FK xyz PLUS the rail dims (mm) — the same
+    # metric the lmove engine samples in. fw(arm) alone is blind to
+    # rail-carried motion (a rail-dominant approach reads as
+    # zero-length segments and no corners).
     def fk_xyz(J):
         f = kinematic.fw(J[:6])
-        return [f[0], f[1], f[2]]
+        return [f[0], f[1], f[2], float(J[6]), float(J[7])]
 
     def xyz_dist(a, b):
         return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
@@ -2111,9 +2115,11 @@ def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0],
 
     kinematic.set_tcp_xyzabc(tool_pose)
 
+    # arm-FK xyz + rail dims — see blend_path_points: fw(arm) alone is
+    # blind to rail-carried motion.
     def fk_xyz(J):
         f = kinematic.fw(J[:6])
-        return [f[0], f[1], f[2]]
+        return [f[0], f[1], f[2], float(J[6]), float(J[7])]
 
     X = [fk_xyz(p) for p in points]
     thr = math.cos(math.radians(angle_deg))
