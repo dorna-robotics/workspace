@@ -32,6 +32,10 @@ class Recipe:
         # Per-recipe approach padding override (mm). None → each
         # method's own default. Per-call args still win.
         padding=None,
+        # Corner-blend radius (mm) for fused approach motions — a
+        # motion-SHAPING knob, independent of path planning (unplanned
+        # touches fuse and blend too). 0 → classic discrete motions.
+        blend=75.0,
         # Per-recipe has_motion_plan override (full grammar: True /
         # False / [False, "jmove"|"lmove"]). None → defer to the
         # scene's core.has_motion_plan. Per-call args still win.
@@ -92,6 +96,7 @@ class Recipe:
         # motion
         self.motion_type = prm["motion_type"]
         self.padding = prm["padding"]
+        self.blend = prm["blend"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -467,9 +472,6 @@ class Recipe:
         collision problem, not a constraint one.
         """
         use_planning, unplanned = self._motion_plan_mode(use_planning)
-        # ``blend`` is a fold-level knob (corner fillets between fused
-        # segments) — a single hop has no corners; strip it.
-        motion_plan_kwargs = {k: v for k, v in (motion_plan_kwargs or {}).items() if k != "blend"}
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -491,46 +493,33 @@ class Recipe:
                 motion_type=unplanned,
             )
 
-    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}):
+    def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}, blend=0.0):
         """Execute a sequence of IK-solved motions along path offsets.
 
         has_motion_plan / first_approach: only the first step of an approach
         may use path planning.
         motion_plan_kwargs: extra args passed to core.motion_plan() (padding, gravity_vec, etc.)
-
-        When the first step is planned and more offsets follow (the
-        soft-approach pre-contact drop), they are folded into the SAME
-        smove instead of running as separate lmoves — one continuous
-        motion to the last pre-contact point. The folded segments are
-        sampled with ``core.lmove_points`` (the tested lmove
-        interpolation: straight TCP line, nearest-branch IK, every
-        5 mm), so the spline stays pinned down tight corridors (dense
-        racks). The contact descent is never part of ``path`` here —
-        touch() keeps it as its own slow lmove.
+        blend: corner-fillet radius (mm) — a motion-SHAPING knob,
+        independent of planning. When > 0 and more offsets follow the
+        first, the WHOLE approach fuses into one smove: the first hop
+        comes from the planner when planning is on, else it is the same
+        segment the discrete jmove/lmove would have driven; the rest is
+        sampled with ``core.lmove_points`` (the tested lmove line,
+        every 5 mm) and every sharp corner gets a G1 Bezier fillet.
+        blend: 0 → classic discrete motions, exactly as before. The
+        contact descent is never part of ``path`` here — touch() keeps
+        it as its own slow lmove.
         """
-        plan_on = False
+        plan_on, unplanned = False, "jmove"
         if first_approach:
-            plan_on, _ = self._motion_plan_mode(
+            plan_on, unplanned = self._motion_plan_mode(
                 has_motion_plan if has_motion_plan is not None else False)
-        # ``blend`` rides in motion_plan_kwargs (planned motion only)
-        # but is consumed HERE, not by the planner: corner fillet
-        # radius (mm), default 75. blend: 0 opts OUT of the fused
-        # one-piece motion entirely — planned first hop, then classic
-        # discrete lmoves per waypoint, as before.
-        mpk = dict(motion_plan_kwargs or {})
-        blend = mpk.pop("blend", 75.0)
-        if plan_on and len(path) > 1 and blend and blend > 0:
+
+        if first_approach and len(path) > 1 and blend and blend > 0:
             _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
             _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
-            points = self.core.motion_plan(joint=J0, **mpk)
-            if not points and mpk:
-                rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
-                points = self.core.motion_plan(joint=J0)
-            if not points:
-                raise RecipeError("no proper path was found")
-            points = [list(p) for p in points]
 
             tool_pose = [0, 0, 0, 0, 0, 0]
             if tool_dict["solid"] and tool_dict["anchor"]:
@@ -539,31 +528,51 @@ class Recipe:
                     in_frame=self.core.robot_flange,
                     offset=tool_dict["offset"],
                 )
+
+            # First hop → smove waypoints, planned or not.
+            if plan_on:
+                points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
+                if not points and motion_plan_kwargs:
+                    rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
+                    points = self.core.motion_plan(joint=J0)
+                if not points:
+                    raise RecipeError("no proper path was found")
+                points = [list(p) for p in points]
+            else:
+                cur = [float(v) for v in rt.joint()]
+                if unplanned == "lmove":
+                    seg0 = self.core.lmove_points(cur, J0, tool_pose=tool_pose, step=5.0)
+                    points = ([cur] + seg0) if seg0 is not None else None
+                else:  # jmove — a straight joint segment IS its smove form
+                    points = [cur, [float(v) for v in J0]]
+
             _t0 = _time.perf_counter()
-            travel_end = len(points) - 1
-            prev = points[-1]
+            folded = points is not None
+            travel_end = len(points) - 1 if folded else 0
             rest = []
-            folded = True
-            for offset in path[1:]:
-                J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
-                if seg is None:
-                    folded = False
-                    break
-                rest.extend(seg)
-                prev = J
+            if folded:
+                prev = points[-1]
+                for offset in path[1:]:
+                    J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
+                    seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
+                    if seg is None:
+                        folded = False
+                        break
+                    rest.extend(seg)
+                    prev = J
             _t_fold = _time.perf_counter() - _t0
             # Attribute pre-motion latency: IK rail sweeps + fold
             # sampling. The planner's own time is on the [plan] line.
             if _t_ik + _t_fold > 0.05:
                 print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
+
             if folded:
                 points.extend(rest)
                 # Corner blending: G1 Bezier fillets on EVERY sharp
-                # corner from the planner's endpoint on — auto-detected
-                # by geometry, so any motion appended after the planned
-                # travel is covered without bookkeeping. No re-check:
-                # the fixed collision boxes are the project's contract.
+                # corner from the first hop's endpoint on — detected by
+                # geometry, so any appended motion is covered without
+                # bookkeeping. No re-check: the fixed collision boxes
+                # are the project's contract.
                 blended = self.core.blend_points(points, blend, tool_pose=tool_pose, from_idx=max(1, travel_end))
                 if blended is not None:
                     points = blended
@@ -574,19 +583,23 @@ class Recipe:
                     jerk=vaj_map["jmove"][2] * self.speed_factor,
                 )
                 return
-            # Sampling failed mid-way — execute the planned travel,
-            # then the remaining offsets as classic separate lmoves.
-            rt.smove(
-                points[1:],
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
-            )
-            for offset in path[1:]:
-                J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                rt.checkpoint()
-                self._do_motion(rt, J, tool_dict, vaj_map)
-            return
+            if plan_on and points:
+                # Fold sampling failed mid-way — execute the planned
+                # travel, then the remaining offsets as classic lmoves.
+                rt.smove(
+                    points[1:],
+                    vel=vaj_map["jmove"][0] * self.speed_factor,
+                    accel=vaj_map["jmove"][1] * self.speed_factor,
+                    jerk=vaj_map["jmove"][2] * self.speed_factor,
+                )
+                for offset in path[1:]:
+                    J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
+                    rt.checkpoint()
+                    self._do_motion(rt, J, tool_dict, vaj_map)
+                return
+            # Unplanned first-hop sampling failed — nothing executed
+            # yet; fall through to the fully classic sequence.
+
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
@@ -879,6 +892,7 @@ class Recipe:
         output_exit=[],
         has_motion_plan=None,
         motion_plan_kwargs={},
+        blend=None,
         **kwargs,
     ):
         """Universal motion primitive used by pick/place/above/stand/immerse/retract.
@@ -906,6 +920,10 @@ class Recipe:
                 Defaults to ``self.core.has_motion_plan``.
             motion_plan_kwargs: Dict forwarded to ``core.motion_plan``
                 (e.g. padding, gravity_vec) when planning is on.
+            blend: Corner-fillet radius (mm) for the fused approach —
+                independent of planning. None → the recipe's ``blend``
+                (recipes.j2 kwargs, default 75). 0 → classic discrete
+                motions.
             **kwargs: Absorbs unused keys from pick_setting/place_setting output dicts.
 
         Returns:
@@ -915,6 +933,8 @@ class Recipe:
         if has_motion_plan is None:
             has_motion_plan = (self.has_motion_plan if self.has_motion_plan is not None
                                else self.core.has_motion_plan)
+        if blend is None:
+            blend = self.blend
         vaj_map = {
             "jmove": self.jmove_vaj,
             "lmove": self.lmove_vaj,
@@ -969,6 +989,7 @@ class Recipe:
                 has_motion_plan=has_motion_plan,
                 first_approach=bool(travel),
                 motion_plan_kwargs=motion_plan_kwargs,
+                blend=blend,
             )
         if io_handle is not None:
             _t0 = _time.perf_counter()
