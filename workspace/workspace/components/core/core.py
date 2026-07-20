@@ -968,16 +968,17 @@ class Core:
     # any quantization has bucket edges a wobbling value flaps across,
     # minting fresh entries forever. Rows hold GEOMETRY only — start,
     # goal, attached boxes, waypoints — matched by DISTANCE with
-    # per-element tolerances, newest row first. Planner style, gravity,
-    # rail weight are deliberately NOT stored: on a match the endpoints
-    # are snapped to the live start / requested goal and the path is
-    # revalidated under the QUERY's constraints against the LIVE scene
-    # (planner.check — the same C++ validity checker a fresh solve
-    # uses), so a row violating them fails and falls through to a full
-    # solve. The row format is simple on purpose — hand-authored rows
-    # (teach a hop its waypoints) are first-class. Only slow solves
-    # (>= PATH_CACHE_MIN_SEC) are stored — direct-shortcut hops replan
-    # faster than a lookup.
+    # per-element tolerances, newest row first. A hit REPLAYS verbatim
+    # (endpoints snapped to the live start / requested goal) with no
+    # re-check: the scene's fixed collision boxes are the project's
+    # contract — a path validated once at creation stays truthful as
+    # long as the boxes do. Changed the boxes (or the bench)? Delete
+    # core/path.json. Validation happens ONCE, at creation: the solve
+    # itself, plus the decimation gate on the sparse polyline. The row
+    # format is simple on purpose — hand-authored rows (teach a hop its
+    # waypoints) are first-class, but note they replay unvalidated.
+    # Only slow solves (>= PATH_CACHE_MIN_SEC) are stored — direct-
+    # shortcut hops replan faster than a lookup.
 
     PATH_CACHE_MIN_SEC = 1.0
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
@@ -1109,12 +1110,10 @@ class Core:
         except Exception:
             self._path_cache = []  # unreadable file → start empty
 
-    def _path_cache_get(self, start, goal, gravity, gravity_vec, gravity_thr, rail_weight, sig):
-        """Return a revalidated cached path (endpoints snapped to the
-        live start / requested goal), else None. Newest rows win.
-        Rows that matched geometry but failed revalidation are logged —
-        a silent check failure looks like an inexplicable re-solve."""
-        failed = 0
+    def _path_cache_get(self, start, goal, sig):
+        """Return a cached path (endpoints snapped to the live start /
+        requested goal), else None. Newest rows win. No re-check — see
+        the block comment: validation is a creation-time event."""
         for row in reversed(self._path_cache or []):
             try:
                 if not self._path_row_match(row, start, goal, sig):
@@ -1122,16 +1121,10 @@ class Core:
                 p = [[float(v) for v in w] for w in row["p"]]
                 p[0] = [float(v) for v in start]
                 p[-1] = [float(v) for v in goal]
-                if self.planner.check(p, gravity=gravity,
-                                      gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
-                                      gravity_thr=gravity_thr, rail_weight=rail_weight):
-                    return p
-                failed += 1
+                return p
             except Exception:
-                failed += 1
-        if failed:
-            print(f"[plan] cache: {failed} matching row(s) failed revalidation — re-solving")
-        return None  # nothing in reach / world changed — full solve
+                continue
+        return None
 
     def _path_cache_put(self, start, goal, sig, path):
         """Store a solved hop and append it to disk. Never raises."""
@@ -1525,25 +1518,11 @@ class Core:
                     continue
             return out
 
-        # Two envelopes with hysteresis: PLAN against the full padding,
-        # CHECK (cache revalidation + decimation gate) against a
-        # slightly slimmer one. OMPL validates sampled points along
-        # segments, then interpolate() materializes waypoints at spots
-        # the sampler never touched — a path grazing the padded box
-        # within one resolution step passes the solve but fails an
-        # exact re-check at those points. The margin absorbs exactly
-        # that: sub-margin grazes inside the planning envelope pass,
-        # anything deeper fails honestly.
         scene, tool, tool_boxes = [], [], []
-        check_scene, check_tool = [], []
         if hasattr(self.workspace, "compute_collision_boxes"):
             world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
             scene = _cubes(world_boxes)
             tool = _cubes(tool_boxes)
-            check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
-            cw, ct = self.workspace.compute_collision_boxes(check_pad)
-            check_scene = _cubes(cw)
-            check_tool = _cubes(ct)
 
         # -------------------------
         # Planner update args
@@ -1553,14 +1532,6 @@ class Core:
         base_solid = self.rail_base
 
         base_in_world = list( self.rail_base.pose(anchor="carriage"))
-
-        # The CHECK envelope is pushed for the cache lookup below; the
-        # solve pushes the full PLAN envelope right before planning.
-        self.planner.update(
-            scene=check_scene,
-            gripper=check_tool,
-            base_in_world=list(base_in_world)
-        )
 
 
         # -------------------------
@@ -1579,11 +1550,9 @@ class Core:
             self._path_cache_init()
         path_sig = self._path_tool_sig(tool_boxes)
         if path_sig is not None:
-            t0 = time.perf_counter()
-            cached = self._path_cache_get(start, goal, gravity, gravity_vec, gravity_thr, rail_weight, path_sig)
+            cached = self._path_cache_get(start, goal, path_sig)
             if cached is not None:
-                print(f"[plan] cache hit: {len(cached)} wps revalidated in "
-                      f"{time.perf_counter() - t0:.2f}s")
+                print(f"[plan] cache hit: {len(cached)} wps")
                 return cached
 
         start_time = time.perf_counter()
@@ -1595,7 +1564,6 @@ class Core:
         # so paths slide the bench instead of contorting the arm.
         self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
         res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
-        self.planner.update(scene=check_scene, gripper=check_tool, base_in_world=list(base_in_world))
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
@@ -1610,11 +1578,19 @@ class Core:
             res = [[float(v) for v in p] for p in res]
             # Sparse execution: decimate to the essential corners so the
             # smove spline flows instead of hugging the dense polyline.
-            # Only executed if the decimated polyline re-checks valid.
+            # The gate checks against a slightly slimmer envelope
+            # (padding - margin): OMPL validates sampled points along
+            # segments, so the solved path may graze the full envelope
+            # within one resolution step — the margin absorbs that;
+            # anything deeper keeps the dense path. This is the ONE
+            # validation a stored row ever gets (creation-time).
             if len(res) > 2:
                 sparse = self._decimate_path(res, self.PATH_DECIMATE_EPS)
                 if len(sparse) < len(res):
                     try:
+                        check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
+                        cw, ct = self.workspace.compute_collision_boxes(check_pad)
+                        self.planner.update(scene=_cubes(cw), gripper=_cubes(ct), base_in_world=list(base_in_world))
                         if self.planner.check(sparse, gravity=gravity,
                                               gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
                                               gravity_thr=gravity_thr, rail_weight=rail_weight):
