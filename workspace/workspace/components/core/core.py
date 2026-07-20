@@ -168,6 +168,15 @@ class Core:
             "output_detach": [[1, 0, 0], [0, 1, 0], [2, 1, 0.25]],
         },
         has_motion_plan = False, # enable or disable path planing
+        # Motion-planner defaults, settable once in the core's scene
+        # yaml. Per-call kwargs (motion_plan_kwargs) always win.
+        motion_plan = {
+            "planner": "aitstar",     # rrtconnect|rrtstar|prmstar|bitstar|aitstar|abitstar
+            "time_limit_sec": 10.0,   # anytime budget — quality scales with it
+            "rail_weight": 0.004,     # rail cost in the metric; 0.01 = stock, smaller = more rail travel
+            "padding": 10,            # collision-box padding (mm)
+            "gravity_thr": 5.0,       # default tilt tolerance when gravity_vec is passed
+        },
     )
 
 
@@ -337,6 +346,7 @@ class Core:
         
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
+        self.motion_plan_cfg = prm["motion_plan"]
 
         # --------- IK solution cache (core_ik.json in the project folder)
         # Lazy-loaded on the first IK() call; see _ik_cache_init. Every
@@ -1460,7 +1470,7 @@ class Core:
             return "sim" if self.vision.simulation else "real"
         return "real"
 
-    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
+    def motion_plan(self, joint, seed=1234, padding=None, gravity_vec=None, gravity_thr=None, planner=None, time_limit_sec=None, rail_weight=None):
 
         """
         Collision-aware joint move:
@@ -1474,6 +1484,15 @@ class Core:
             -1 planning failure / empty path
             otherwise: whatever robot_api.jmove returns if it fails
         """
+
+        # Resolve unset knobs from the core's scene config (motion_plan
+        # block); per-call kwargs always win.
+        cfg = self.motion_plan_cfg or {}
+        padding = cfg.get("padding", 10) if padding is None else padding
+        gravity_thr = cfg.get("gravity_thr", 5.0) if gravity_thr is None else gravity_thr
+        planner = cfg.get("planner", "aitstar") if planner is None else planner
+        time_limit_sec = cfg.get("time_limit_sec", 10.0) if time_limit_sec is None else time_limit_sec
+        rail_weight = cfg.get("rail_weight", 0.004) if rail_weight is None else rail_weight
 
         gravity = False
         if gravity_vec is not None:
