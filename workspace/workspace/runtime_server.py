@@ -573,24 +573,6 @@ def _project_device_claims(workspace) -> dict[str, str]:
     return out
 
 
-def project_device_claim_resolver(workspace):
-    """Build a ``Callable[[str], str]`` that returns the live claim mode.
-
-    Wires the orchestrator's auto-pause logic into the workspace's
-    aggregated claim map. Always reads fresh from components, so a
-    runtime ``core.simulation(True)`` toggle takes effect on the next
-    bus event without explicit invalidation.
-    """
-    def _resolve(device_id: str) -> str:
-        # "foreign" = not declared by ANY component of this project —
-        # e.g. stale retained bus topics from dead sessions, or another
-        # project's devices on a shared broker. The auto-pause gate
-        # ignores foreign devices: "critical" means critical TO THIS
-        # PROJECT, and a foreign corpse must never pause a launch.
-        return _project_device_claims(workspace).get(device_id, "foreign")
-    return _resolve
-
-
 def _compute_devices_summary(workspace) -> Optional[dict]:
     """Aggregated device-health view for this project. Used by the
     dashboard pill and the Start/Resume confirmation gate.

@@ -78,7 +78,13 @@ class Workspace:
                 if claim == "real":
                     return "real"
                 net = claim
-            return net or "real"
+            # "foreign" — no component of this project declares this id:
+            # stale retained bus topics from dead sessions, or another
+            # project's devices on a shared broker. The auto-pause gate
+            # skips foreign devices ("critical" means critical TO THIS
+            # PROJECT); defaulting to "real" here paused every launch
+            # whenever the broker held a critical/down corpse.
+            return net or "foreign"
 
         try:
             self.devices = MQTTOrchestrator(
