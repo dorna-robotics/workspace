@@ -2019,12 +2019,17 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
     """Round the corners of a fused waypoint path with quadratic-Bezier
     fillets, blended directly in JOINT space.
 
-    At each junction index C: walk back ``r`` mm (Cartesian arc length,
-    measured by FK — the radius is spatial) along the incoming polyline
-    to A, forward ``r`` to B (r clamped to half the available run per
-    side, so blends never overlap or swallow a segment), and replace
-    the in-between waypoints with samples of
+    At each junction index C: walk back ``r_in`` mm (Cartesian arc
+    length, measured by FK — the radius is spatial) along the incoming
+    polyline to A, forward ``r_out`` to B, and replace the in-between
+    waypoints with samples of
     Q(t) = (1-t)^2 A + 2t(1-t) C + t^2 B over the JOINT vectors.
+    The arms are ASYMMETRIC and greedy: each side takes up to the full
+    available run (to the neighbouring junction or path end, minus one
+    step) — a 100/60 corner sweeps 75/55 instead of 30/30. When two
+    corners share a leg their claims scale down proportionally, so
+    blends never overlap and endpoints always survive. The Bezier is
+    tangent at A and B regardless of arm lengths (G1 either way).
     FK is smooth, so joint-space G1 is Cartesian-smooth too; over a
     ~20 mm fillet the deviation from the ideal Cartesian arc is
     second-order. No IK anywhere — joint interpolation cannot branch-
@@ -2062,27 +2067,50 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
             acc += L
         return len(lengths) - 1, 1.0
 
-    # Descending order: each splice touches only indices at/after its
-    # own clamped window, so earlier junction indices stay valid.
+    # Pass 1 — greedy per-side radii: the full run to the neighbouring
+    # junction / path end, minus one step (endpoints + neighbours are
+    # never consumed).
+    r_in, r_out = {}, {}
+    for k, j in enumerate(js):
+        lo = js[k - 1] if k > 0 else 0
+        hi = js[k + 1] if k + 1 < len(js) else len(pts) - 1
+        avail_in = sum(xyz_dist(X[i], X[i - 1]) for i in range(j, lo, -1)) - step
+        avail_out = sum(xyz_dist(X[i], X[i + 1]) for i in range(j, hi)) - step
+        r_in[j] = min(float(radius), max(0.0, avail_in))
+        r_out[j] = min(float(radius), max(0.0, avail_out))
+
+    # Pass 2 — shared-leg conflicts: two corners claiming one leg scale
+    # down proportionally instead of everyone paying a half-tax.
+    for k in range(len(js) - 1):
+        a, b = js[k], js[k + 1]
+        leg = sum(xyz_dist(X[i], X[i + 1]) for i in range(a, b))
+        want = r_out[a] + r_in[b]
+        if want > leg - step and want > 0:
+            f = max(0.0, (leg - step)) / want
+            r_out[a] *= f
+            r_in[b] *= f
+
+    # Pass 3 — splice, descending: each splice touches only indices
+    # at/after its own window, so earlier junction indices stay valid.
     for k in range(len(js) - 1, -1, -1):
         j = js[k]
-        lo = js[k - 1] if k > 0 else 0            # nearest boundary behind
-        hi = js[k + 1] if k + 1 < len(js) else len(pts) - 1  # ahead
-        hi = min(hi, len(pts) - 1)
-        Lin = [xyz_dist(X[i], X[i - 1]) for i in range(j, lo, -1)]
-        Lout = [xyz_dist(X[i], X[i + 1]) for i in range(j, hi)]
-        r_eff = min(float(radius), sum(Lin) / 2.0, sum(Lout) / 2.0)
-        if r_eff < step:
+        lo = js[k - 1] if k > 0 else 0
+        hi = js[k + 1] if k + 1 < len(js) else len(pts) - 1
+        hi = min(hi, len(pts) - 1)   # a higher splice may have shrunk pts
+        ri, ro = r_in[j], r_out[j]
+        if ri < step or ro < step:
             continue  # too tight to blend — keep the sharp corner
 
-        na, ta = locate(Lin, r_eff)   # A between pts[j-na] and pts[j-na-1]
-        nb, tb = locate(Lout, r_eff)  # B between pts[j+nb] and pts[j+nb+1]
+        Lin = [xyz_dist(X[i], X[i - 1]) for i in range(j, lo, -1)]
+        Lout = [xyz_dist(X[i], X[i + 1]) for i in range(j, hi)]
+        na, ta = locate(Lin, ri)   # A between pts[j-na] and pts[j-na-1]
+        nb, tb = locate(Lout, ro)  # B between pts[j+nb] and pts[j+nb+1]
         ia, ib = j - na, j + nb
         A = [u + (v - u) * ta for u, v in zip(pts[ia], pts[ia - 1])]
         B = [u + (v - u) * tb for u, v in zip(pts[ib], pts[ib + 1])]
         C = pts[j]
 
-        n = max(2, math.ceil(2.0 * r_eff / step))
+        n = max(2, math.ceil((ri + ro) / step))
         blend_pts = []
         for s in range(n + 1):
             t = s / n
