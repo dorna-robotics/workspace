@@ -990,6 +990,7 @@ class Core:
                 and isinstance(v.get("t"), list)
                 and isinstance(v.get("gr"), list) and len(v["gr"]) == 3
                 and isinstance(v.get("pl"), str)
+                and isinstance(v.get("rw"), (int, float))
                 and isinstance(v.get("p"), list) and len(v["p"]) >= 2
                 and all(isinstance(p, list) for p in v["p"]))
 
@@ -1010,9 +1011,11 @@ class Core:
         except Exception:
             return None
 
-    def _path_row_match(self, row, start, goal, planner, gravity, gravity_vec, gravity_thr, sig):
+    def _path_row_match(self, row, start, goal, planner, gravity, gravity_vec, gravity_thr, rail_weight, sig):
         try:
             if row["pl"] != str(planner):
+                return False
+            if abs(float(row["rw"]) - float(rail_weight)) > 1e-9:
                 return False
             gr = row["gr"]
             vec = gravity_vec if gravity_vec is not None else [0, 0, 1]
@@ -1035,7 +1038,8 @@ class Core:
         rows = self._path_cache
         for i, r in enumerate(rows):
             if self._path_row_match(r, row["s"], row["g"], row["pl"],
-                                    row["gr"][0], row["gr"][1], row["gr"][2], row["t"]):
+                                    row["gr"][0], row["gr"][1], row["gr"][2],
+                                    row["rw"], row["t"]):
                 rows[i] = row
                 return
         rows.append(row)
@@ -1077,26 +1081,26 @@ class Core:
         except Exception:
             self._path_cache = []  # unreadable file → start empty
 
-    def _path_cache_get(self, start, goal, planner, gravity, gravity_vec, gravity_thr, sig):
+    def _path_cache_get(self, start, goal, planner, gravity, gravity_vec, gravity_thr, rail_weight, sig):
         """Return a revalidated cached path (endpoints snapped to the
         live start / requested goal), else None. Newest rows win."""
         for row in reversed(self._path_cache or []):
             try:
                 if not self._path_row_match(row, start, goal, planner,
-                                            gravity, gravity_vec, gravity_thr, sig):
+                                            gravity, gravity_vec, gravity_thr, rail_weight, sig):
                     continue
                 p = [[float(v) for v in w] for w in row["p"]]
                 p[0] = [float(v) for v in start]
                 p[-1] = [float(v) for v in goal]
                 if self.planner.check(p, gravity=gravity,
                                       gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
-                                      gravity_thr=gravity_thr):
+                                      gravity_thr=gravity_thr, rail_weight=rail_weight):
                     return p
             except Exception:
                 continue
         return None  # nothing in reach / world changed — full solve
 
-    def _path_cache_put(self, start, goal, planner, gravity, gravity_vec, gravity_thr, sig, path):
+    def _path_cache_put(self, start, goal, planner, gravity, gravity_vec, gravity_thr, rail_weight, sig, path):
         """Store a solved hop and append it to disk. Never raises."""
         try:
             row = {
@@ -1106,6 +1110,7 @@ class Core:
                 "gr": [bool(gravity),
                        [float(v) for v in (gravity_vec if gravity_vec is not None else [0, 0, 1])],
                        float(gravity_thr)],
+                "rw": float(rail_weight),
                 "t": [[round(float(v), 3) for v in b] for b in sig],
                 "p": [[round(float(v), 3) for v in p] for p in path],
             }
@@ -1455,7 +1460,7 @@ class Core:
             return "sim" if self.vision.simulation else "real"
         return "real"
 
-    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
 
         """
         Collision-aware joint move:
@@ -1538,7 +1543,7 @@ class Core:
         path_sig = self._path_tool_sig(tool_boxes)
         if path_sig is not None:
             t0 = time.perf_counter()
-            cached = self._path_cache_get(start, goal, planner, gravity, gravity_vec, gravity_thr, path_sig)
+            cached = self._path_cache_get(start, goal, planner, gravity, gravity_vec, gravity_thr, rail_weight, path_sig)
             if cached is not None:
                 print(f"[plan] cache hit: {len(cached)} wps revalidated in "
                       f"{time.perf_counter() - t0:.2f}s")
@@ -1548,8 +1553,10 @@ class Core:
 
         # pp branch: AIT* @ 10s is the platform default for every planned
         # hop (requires the pp path_planning build — planner selection +
-        # honored time budget + GIL release).
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec)
+        # honored time budget + GIL release). rail_weight=0.004 makes
+        # rail travel ~2.5x cheaper than stock in the path-length metric
+        # so paths slide the bench instead of contorting the arm.
+        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
@@ -1564,7 +1571,7 @@ class Core:
             res = [[float(v) for v in p] for p in res]
             self._motion_plan_log(start, goal, res, planner, time_limit_sec, execution_time)
             if path_sig is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
-                self._path_cache_put(start, goal, planner, gravity, gravity_vec, gravity_thr, path_sig, res)
+                self._path_cache_put(start, goal, planner, gravity, gravity_vec, gravity_thr, rail_weight, path_sig, res)
         else:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
                   f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")
