@@ -136,7 +136,7 @@ class Decapper(Recipe):
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, -gap - height_cap-20, 0, 0, 0],
+                target_offset=[0, 0, -10 -gap - height_cap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
@@ -159,6 +159,12 @@ class Decapper(Recipe):
                 accel=self.lmove_vaj[1] * self.speed_factor,
                 jerk=self.lmove_vaj[2] * self.speed_factor,
             )
+
+            # unwind the screw turns: normalize j5 into ±180 (same tool
+            # pose mod 360 — the free cap just spins in place) so the
+            # outgoing carry plans from a centered wrist and the next
+            # screw op has full winding room.
+            self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
 
         # attach
         solid_cap.attach_to(
@@ -308,6 +314,11 @@ class Decapper(Recipe):
                 accel=self.lmove_vaj[1] * self.speed_factor,
                 jerk=self.lmove_vaj[2] * self.speed_factor,
             )
+
+            # unwind the screw turns: normalize j5 into ±180 (same tool
+            # pose mod 360 — the gripper is already empty here) so the
+            # outgoing carry plans from a centered wrist.
+            self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
 
         # attach cap to body
         solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")
