@@ -514,11 +514,11 @@ class Recipe:
                 has_motion_plan if has_motion_plan is not None else False)
         # ``blend`` rides in motion_plan_kwargs (planned motion only)
         # but is consumed HERE, not by the planner: corner fillet
-        # radius (mm), default 20. blend: 0 opts OUT of the fused
+        # radius (mm), default 40. blend: 0 opts OUT of the fused
         # one-piece motion entirely — planned first hop, then classic
         # discrete lmoves per waypoint, as before.
         mpk = dict(motion_plan_kwargs or {})
-        blend = mpk.pop("blend", 20.0)
+        blend = mpk.pop("blend", 40.0)
         if plan_on and len(path) > 1 and blend and blend > 0:
             _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
