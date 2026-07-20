@@ -597,44 +597,6 @@ class Recipe:
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
-    def _run_fused(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, motion_plan_kwargs):
-        """Fuse a LOCAL waypoint path (no planning — starts from the
-        live joints) into one smove: legs sampled on the tested lmove
-        line, corners auto-filleted like the approach fold. Returns
-        False when sampling fails — the caller runs the classic
-        per-leg motions instead."""
-        if not path:
-            return True
-        blend = dict(motion_plan_kwargs or {}).get("blend", 20.0)
-        tool_pose = [0, 0, 0, 0, 0, 0]
-        if tool_dict["solid"] and tool_dict["anchor"]:
-            tool_pose = tool_dict["solid"].pose(
-                anchor=tool_dict["anchor"],
-                in_frame=self.core.robot_flange,
-                offset=tool_dict["offset"],
-            )
-        prev = [float(v) for v in rt.joint()]
-        pts = [prev]
-        for offset in path:
-            J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-            seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
-            if seg is None:
-                return False
-            pts.extend(seg)
-            prev = J
-        if blend and blend > 0 and len(pts) > 2:
-            blended = self.core.blend_points(pts, blend, tool_pose=tool_pose, from_idx=1)
-            if blended is not None:
-                pts = blended
-        rt.checkpoint()
-        rt.smove(
-            pts[1:],
-            vel=vaj_map["jmove"][0] * self.speed_factor,
-            accel=vaj_map["jmove"][1] * self.speed_factor,
-            jerk=vaj_map["jmove"][2] * self.speed_factor,
-        )
-        return True
-
     def _do_motion(self, rt, J, tool_dict, vaj_map, motion_type=None):
         """Dispatch a single motion step based on ``motion_type`` (or
         the recipe's ``self.motion_type`` when not given)."""
@@ -1024,32 +986,16 @@ class Recipe:
         if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
-        # exit path — fused mirror of the approach. Soft touches leave
-        # contact on their own deliberate slow leg first; the remaining
-        # exit legs fly as ONE blended smove (planned mode only —
-        # unplanned benches keep classic per-leg lmoves). The exit's
-        # terminal pose is the NEXT hop's start: the recipe padding
-        # must park it OUTSIDE the plan-padded station box, or the next
-        # planner start is invalid (the [plan] START diagnostic names
-        # this when a padding is set too low).
-        exit_path = [list(p) for p in exit_path]
-        plan_mode, _ = self._motion_plan_mode(has_motion_plan if has_motion_plan is not None else False)
-        head, exit_rest = [], exit_path
-        if soft_approach and exit_path:
-            head, exit_rest = exit_path[:1], exit_path[1:]
-        if head:
-            self._move_along_path(
-                rt, head, target_solid, target_anchor,
-                tool_dict=exit_tool, j5_override=exit_j5, vaj_map=vaj_map,
-            )
-        if exit_rest:
-            if not (plan_mode and self._run_fused(
-                    rt, exit_rest, target_solid, target_anchor,
-                    exit_tool, exit_j5, vaj_map, motion_plan_kwargs)):
-                self._move_along_path(
-                    rt, exit_rest, target_solid, target_anchor,
-                    tool_dict=exit_tool, j5_override=exit_j5, vaj_map=vaj_map,
-                )
+        # exit path — its terminal pose is the NEXT hop's start: the
+        # recipe padding must park it OUTSIDE the plan-padded station
+        # box, or the next planner start is invalid (the [plan] START
+        # diagnostic names this when a padding is set too low).
+        self._move_along_path(
+            rt, list(exit_path), target_solid, target_anchor,
+            tool_dict=exit_tool,
+            j5_override=exit_j5,
+            vaj_map=vaj_map,
+        )
 
         # output exit
         self._apply_output_config(rt, output_exit)
