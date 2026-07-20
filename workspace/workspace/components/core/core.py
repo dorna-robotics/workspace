@@ -984,6 +984,40 @@ class Core:
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
     PATH_CACHE_MAX_ROWS = 500    # oldest evicted first
+    PATH_DECIMATE_EPS = 2.0      # deg/mm max deviation for waypoint decimation
+
+    @staticmethod
+    def _decimate_path(path, eps):
+        """Corner-aware decimation (Ramer-Douglas-Peucker in joint
+        space): drop waypoints where the path runs straight, keep them
+        where it bends. smove's spline then flows through sparse points
+        in free space while staying pinned exactly where the path
+        hugs obstacles — the bends are where the kept points cluster.
+        The caller re-checks the decimated polyline before executing."""
+        if len(path) <= 2:
+            return path
+        pts = np.array(path, dtype=float)
+        keep = np.zeros(len(pts), dtype=bool)
+        keep[0] = keep[-1] = True
+        stack = [(0, len(pts) - 1)]
+        while stack:
+            a, b = stack.pop()
+            if b - a < 2:
+                continue
+            seg = pts[b] - pts[a]
+            L2 = float(seg @ seg)
+            best_d, best_i = -1.0, -1
+            for i in range(a + 1, b):
+                v = pts[i] - pts[a]
+                t = max(0.0, min(1.0, (float(v @ seg) / L2) if L2 > 0 else 0.0))
+                d = float(np.linalg.norm(v - t * seg))
+                if d > best_d:
+                    best_d, best_i = d, i
+            if best_d > eps:
+                keep[best_i] = True
+                stack.append((a, best_i))
+                stack.append((best_i, b))
+        return [[float(v) for v in p] for p in pts[keep]]
 
     @staticmethod
     def _path_row_valid(v):
@@ -1556,6 +1590,19 @@ class Core:
         # the command must be JSON-serializable anyway).
         if res is not None and len(res):
             res = [[float(v) for v in p] for p in res]
+            # Sparse execution: decimate to the essential corners so the
+            # smove spline flows instead of hugging the dense polyline.
+            # Only executed if the decimated polyline re-checks valid.
+            if len(res) > 2:
+                sparse = self._decimate_path(res, self.PATH_DECIMATE_EPS)
+                if len(sparse) < len(res):
+                    try:
+                        if self.planner.check(sparse, gravity=gravity,
+                                              gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
+                                              gravity_thr=gravity_thr, rail_weight=rail_weight):
+                            res = sparse
+                    except Exception:
+                        pass  # keep the dense path
             self._motion_plan_log(start, goal, res, planner, time_limit_sec, execution_time)
             if path_sig is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
                 self._path_cache_put(start, goal, path_sig, res)
