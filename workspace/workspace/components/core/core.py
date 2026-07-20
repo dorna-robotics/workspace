@@ -2130,6 +2130,7 @@ def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0],
             corners.append(i)
     if not corners:
         return [list(map(float, p)) for p in points]
+    print(f"[touch] blending {len(corners)} corner(s), r={radius:g}mm")
     return blend_path_points(kinematic, points, corners, radius, tool_pose, step)
 
 
