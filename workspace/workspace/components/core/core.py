@@ -1609,6 +1609,16 @@ class Core:
         # rail travel ~2.5x cheaper than stock in the path-length metric
         # so paths slide the bench instead of contorting the arm.
         self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
+        # Loud diagnosis for a doomed solve: a start inside the padded
+        # envelope means the PREVIOUS motion ended inside a box (its
+        # exit should have auto-lifted) — the planner would silently
+        # burn its whole budget and report NO PATH.
+        try:
+            if not self.planner.check([list(start), list(start)], rail_weight=rail_weight):
+                print("[plan] START is inside the collision envelope — the previous "
+                      "motion ended inside a box (exit not lifted?)")
+        except Exception:
+            pass
         res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
 
         end_time = time.perf_counter()

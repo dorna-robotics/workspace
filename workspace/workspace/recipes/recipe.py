@@ -1006,9 +1006,24 @@ class Recipe:
         if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
-        # exit path
+        # exit path — its terminal pose is the NEXT hop's start, and a
+        # planner refuses to start inside the plan-padded envelope. So
+        # exits get the same auto-lift as entries: raise the final exit
+        # waypoint until its pose is planner-valid — every touch ENDS in
+        # valid space, so every planned hop STARTS from valid space.
+        exit_path = [list(p) for p in exit_path]
+        if exit_path:
+            lift = 0.0
+            while lift < 150.0:
+                Jx = self._solve_ik(target_solid, target_anchor, exit_path[-1], exit_tool, exit_j5)
+                if self.core.check_points([Jx, Jx], pad=10.0):
+                    break
+                exit_path[-1][2] += 10.0
+                lift += 10.0
+            if lift:
+                print(f"[touch] exit lifted +{lift:.0f}mm to clear the collision envelope")
         self._move_along_path(
-            rt, list(exit_path), target_solid, target_anchor,
+            rt, exit_path, target_solid, target_anchor,
             tool_dict=exit_tool,
             j5_override=exit_j5,
             vaj_map=vaj_map,
