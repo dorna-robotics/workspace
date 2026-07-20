@@ -29,6 +29,9 @@ class Recipe:
         rail_span=0,  # number of tries around that point positive and negative directions
         # motion
         motion_type="lmove",
+        # Per-recipe approach padding override (mm). None → each
+        # method's own default. Per-call args still win.
+        padding=None,
         # Per-recipe has_motion_plan override (full grammar: True /
         # False / [False, "jmove"|"lmove"]). None → defer to the
         # scene's core.has_motion_plan. Per-call args still win.
@@ -88,6 +91,7 @@ class Recipe:
 
         # motion
         self.motion_type = prm["motion_type"]
+        self.padding = prm["padding"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -414,6 +418,15 @@ class Recipe:
             raise RecipeError("could not find a valid pose")
 
         return J
+
+    def _padding(self, padding, default=50):
+        """Resolve an approach padding: per-call > recipe (recipes.j2
+        kwargs) > the calling method's own default."""
+        if padding is not None:
+            return padding
+        if self.padding is not None:
+            return self.padding
+        return default
 
     @staticmethod
     def _motion_plan_mode(flag):
@@ -967,7 +980,7 @@ class Recipe:
         exit=True,
         attachment=True,
         trigger_io=True,
-        padding=50,
+        padding=None,
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
@@ -1025,6 +1038,7 @@ class Recipe:
             if hasattr(self, k):
                 setattr(self, k, v)
 
+        padding = self._padding(padding)
         component = component or self.component
 
         if self.ref_joints is None:
@@ -1140,7 +1154,7 @@ class Recipe:
         exit=True,
         attachment=True,
         trigger_io=True,
-        padding=50,
+        padding=None,
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
@@ -1212,7 +1226,7 @@ class Recipe:
         exit=True,
         attachment=True,
         trigger_io=True,
-        padding=50,
+        padding=None,
         gap=2,
         load_anchor="center",
         gravity_offset=1,
@@ -1256,6 +1270,7 @@ class Recipe:
             if hasattr(self, k):
                 setattr(self, k, v)
 
+        padding = self._padding(padding)
         component = component or self.component
 
         if self.ref_joints is None:
@@ -1392,7 +1407,7 @@ class Recipe:
         exit=True,
         attachment=True,
         trigger_io=True,
-        padding=50,
+        padding=None,
         gap=2,
         load_anchor="center",
         gravity_offset=1,

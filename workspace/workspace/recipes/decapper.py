@@ -22,7 +22,7 @@ class Decapper(Recipe):
             **prm,
         )
 
-    def place(self, approach=True, exit=True, padding=50, **kwargs):
+    def place(self, approach=True, exit=True, padding=None, **kwargs):
         """Place a tube into the decapper's ``place`` anchor.
 
         Thin override of ``Recipe.place`` with ``gravity_offset=0`` (the
@@ -31,7 +31,7 @@ class Decapper(Recipe):
         """
         return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
 
-    def pick(self, approach=True, exit=True, padding=50, compliant=False, **kwargs):
+    def pick(self, approach=True, exit=True, padding=None, compliant=False, **kwargs):
         """Pick a tube from the decapper's ``place`` anchor. Padding defaults to 30 mm.
 
         ``compliant`` defaults to False here: the decapper is a rigid jaw
@@ -47,7 +47,7 @@ class Decapper(Recipe):
         solid_name="body",
         approach=True,
         exit=True,
-        padding=50,
+        padding=None,
         gap=2,
         lmove_vaj=[1000, 3000, 15000],
         jmove_vaj=[500, 3000, 15000],
@@ -183,7 +183,7 @@ class Decapper(Recipe):
         solid_name="body",
         approach=True,
         exit=True,
-        padding=50,
+        padding=None,
         gap=2,
         lmove_vaj=[1000, 3000, 15000],
         jmove_vaj=[500, 3000, 15000],
