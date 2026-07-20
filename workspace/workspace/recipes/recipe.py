@@ -512,13 +512,14 @@ class Recipe:
         if first_approach:
             plan_on, _ = self._motion_plan_mode(
                 has_motion_plan if has_motion_plan is not None else False)
-        if plan_on and len(path) > 1:
-            # ``blend`` rides in motion_plan_kwargs (planned motion
-            # only) but is consumed HERE, not by the planner: corner
-            # fillet radius (mm) at every travel/segment junction.
-            mpk = dict(motion_plan_kwargs or {})
-            blend = mpk.pop("blend", 20.0)
-
+        # ``blend`` rides in motion_plan_kwargs (planned motion only)
+        # but is consumed HERE, not by the planner: corner fillet
+        # radius (mm), default 20. blend: 0 opts OUT of the fused
+        # one-piece motion entirely — planned first hop, then classic
+        # discrete lmoves per waypoint, as before.
+        mpk = dict(motion_plan_kwargs or {})
+        blend = mpk.pop("blend", 20.0)
+        if plan_on and len(path) > 1 and blend and blend > 0:
             _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
             _t_ik = _time.perf_counter() - _t0
@@ -562,13 +563,10 @@ class Recipe:
                 # corner from the planner's endpoint on — auto-detected
                 # by geometry, so any motion appended after the planned
                 # travel is covered without bookkeeping. No re-check:
-                # the fillet cuts inside a turn whose corner the entry
-                # auto-lift keeps clear of the station envelope — the
-                # fixed collision boxes are the project's contract.
-                if blend and blend > 0:
-                    blended = self.core.blend_points(points, blend, tool_pose=tool_pose, from_idx=max(1, travel_end))
-                    if blended is not None:
-                        points = blended
+                # the fixed collision boxes are the project's contract.
+                blended = self.core.blend_points(points, blend, tool_pose=tool_pose, from_idx=max(1, travel_end))
+                if blended is not None:
+                    points = blended
                 rt.smove(
                     points[1:],
                     vel=vaj_map["jmove"][0] * self.speed_factor,
