@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import numpy as np
+import yaml
 
 from dorna2 import Solid, Dorna
 import dorna2.pose
@@ -210,7 +211,11 @@ class Core:
         self.robot_ip = prm["ip"]
 
         # -------- calibration
-        self.calibration = Calibration(self.name)
+        core_dir = self._core_dir()
+        self.calibration = Calibration(
+            self.name,
+            file_path=(core_dir / "calibrate.json") if core_dir else None,
+        )
 
         # -------- tool_changer
         self.has_tool_changer = prm["has_tool_changer"]
@@ -341,8 +346,8 @@ class Core:
         self._ik_cache = None          # {key: {"arm": [j0..j5], "rail": r|None}}
         self._ik_cache_path = None
 
-        # --------- planned-path cache (core_path.json in the project folder)
-        # Same lifecycle as core_ik: lazy on the first motion_plan(),
+        # --------- planned-path cache (core/path.json in the project folder)
+        # Same lifecycle as the IK cache: lazy on the first motion_plan(),
         # every failure mode degrades to planning from scratch.
         self._path_cache = None        # {key: [[j0..jN], ...]}
         self._path_cache_path = None
@@ -742,9 +747,60 @@ class Core:
 
 
 
+    # ── Per-station core folder ─────────────────────────────────────────
+    # ALL station-local state lives in one folder: <project>/core/ by
+    # default, overridable per project with ``core_dir:`` in launch.yaml
+    # (absolute, or relative to the project folder). Files:
+    #   calibrate.json  — station calibration (Calibration)
+    #   ik.json         — IK solution cache
+    #   path.json       — planned-path cache
+    # Legacy root-level core.json / core_ik.json / core_path.json are
+    # MOVED in the first time the folder resolves (one-time migration).
+    # The folder is per-station truth — gitignored, never synced.
+
+    _CORE_DIR_LEGACY = {
+        "core.json": "calibrate.json",
+        "core_ik.json": "ik.json",
+        "core_path.json": "path.json",
+    }
+
+    def _core_dir(self):
+        """Resolve (and create) the station's core folder. None when no
+        project folder is resolvable (bare harness). Never raises."""
+        if hasattr(self, "_core_dir_cache"):
+            return self._core_dir_cache
+        d = None
+        try:
+            paths = getattr(self.workspace, "config_paths", None) or []
+            if paths:
+                proj = Path(paths[0]).resolve().parent
+                if proj.name == "scene":
+                    proj = proj.parent
+                if proj.is_dir():
+                    d = proj / "core"
+                    try:
+                        launch = proj / "launch.yaml"
+                        if launch.is_file():
+                            override = (yaml.safe_load(launch.read_text()) or {}).get("core_dir")
+                            if override:
+                                d = Path(override)
+                                if not d.is_absolute():
+                                    d = proj / d
+                    except Exception:
+                        pass  # unreadable launch.yaml → default location
+                    d.mkdir(parents=True, exist_ok=True)
+                    for old, new in self._CORE_DIR_LEGACY.items():
+                        src, dst = proj / old, d / new
+                        if src.is_file() and not dst.exists():
+                            os.replace(src, dst)
+        except Exception:
+            d = None
+        self._core_dir_cache = d
+        return d
+
     # ── IK solution cache ───────────────────────────────────────────────
-    # core_ik.json lives DIRECTLY in the project folder (no subfolder),
-    # like core.json. Rows are keyed by the full rounded numeric inputs
+    # core/ik.json (see the core-folder block above).
+    # Rows are keyed by the full rounded numeric inputs
     # of a solve — target pose in world, tool pose in flange, robot/rail
     # base pose in world, sweep params, ref_joints — so moving a
     # component, recalibrating, or changing recipe params changes the
@@ -772,13 +828,9 @@ class Core:
         at load when overwritten rows pile up."""
         self._ik_cache = {}
         try:
-            paths = getattr(self.workspace, "config_paths", None) or []
-            if paths:
-                d = Path(paths[0]).resolve().parent
-                if d.name == "scene":
-                    d = d.parent
-                if d.is_dir():
-                    self._ik_cache_path = d / "core_ik.json"
+            d = self._core_dir()
+            if d is not None:
+                self._ik_cache_path = d / "ik.json"
         except Exception:
             self._ik_cache_path = None
         if self._ik_cache_path is None or not self._ik_cache_path.is_file():
@@ -909,7 +961,7 @@ class Core:
             pass  # read-only fs / race — keep the in-memory row, move on
 
     # ── Planned-path cache ──────────────────────────────────────────────
-    # core_path.json, next to core_ik.json. The key holds only the
+    # core/path.json (see the core-folder block above). The key holds only the
     # DETERMINISTIC inputs of a hop — goal joints (IK output), planner,
     # gravity params, tool box signature. The start is NOT keyed: real
     # encoders flutter (~0.2°), and any quantization has bucket edges a
@@ -942,16 +994,12 @@ class Core:
                 and all(abs(float(x) - float(y)) <= tol for x, y in zip(a, b)))
 
     def _path_cache_init(self):
-        """Resolve + load core_path.json (JSONL, last-wins). Never raises."""
+        """Resolve + load core/path.json (JSONL, last-wins). Never raises."""
         self._path_cache = {}
         try:
-            paths = getattr(self.workspace, "config_paths", None) or []
-            if paths:
-                d = Path(paths[0]).resolve().parent
-                if d.name == "scene":
-                    d = d.parent
-                if d.is_dir():
-                    self._path_cache_path = d / "core_path.json"
+            d = self._core_dir()
+            if d is not None:
+                self._path_cache_path = d / "path.json"
         except Exception:
             self._path_cache_path = None
         if self._path_cache_path is None or not self._path_cache_path.is_file():

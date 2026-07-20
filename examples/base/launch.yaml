@@ -13,6 +13,11 @@ recipes:      recipes.j2
 actions:      actions.py
 checks:       checks.py
 
+# Station-local state folder (calibrate.json, ik.json, path.json).
+# Absolute, or relative to the project folder. Gitignored — per-station
+# truth, never synced.
+core_dir:     core
+
 plan_window:  4
 scheduler:    cpsat
 

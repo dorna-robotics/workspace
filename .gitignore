@@ -224,6 +224,8 @@ __marimo__/
 
 # Orchestrator workspace registry — machine-local state, not source
 workspace/gui/orchestrator/registry.json
+# Per-station core folder (calibrate/ik/path.json) + legacy root files
+examples/*/core/
 core.json
 core_ik.json
 core_path.json

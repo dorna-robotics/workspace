@@ -5,9 +5,11 @@ import dorna2.pose as pose
 
 
 class Calibration:
-    def __init__(self, name: str):
+    def __init__(self, name: str, file_path=None):
         """
-        name: calibration file name will be <name>.json in Path.cwd()
+        name: label for this calibration set.
+        file_path: storage file. When None (bare harness, no project
+        folder), falls back to <name>.json in Path.cwd().
 
         File format:
           {
@@ -23,7 +25,7 @@ class Calibration:
           [x, y, z, a, b, c] where [a,b,c] is rotation vector in degrees (axis * angle_deg)
         """
         self.name = str(name)
-        self.file_path = Path.cwd() / f"{self.name}.json"
+        self.file_path = Path(file_path) if file_path else (Path.cwd() / f"{self.name}.json")
 
         if self.file_path.exists():
             with open(self.file_path, "r") as f:
