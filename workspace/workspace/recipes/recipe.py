@@ -36,10 +36,11 @@ class Recipe:
         # motion-SHAPING knob, independent of path planning (unplanned
         # touches fuse and blend too). 0 → classic discrete motions.
         blend=100.0,
-        # Per-recipe has_motion_plan override (full grammar: True /
-        # [True, "smove"|"tmove"] / False / [False, "jmove"|"lmove"]).
-        # None → defer to the scene's core.has_motion_plan. Per-call
-        # args still win.
+        # Per-recipe has_motion_plan override. Full grammar:
+        #   True / [True, "smove"|"tmove"|"cjmove"|"clmove"|"jmove"|"lmove"]
+        #   False / [False, "jmove"|"lmove"|"cjmove"|"clmove"]
+        # (see _motion_plan_mode). None → defer to the scene's
+        # core.has_motion_plan. Per-call args still win.
         has_motion_plan=None,
         speed_factor=0.5,
         # Corner blend radius for cont-jmove chains (mm/deg in the
@@ -440,43 +441,59 @@ class Recipe:
             return self.padding
         return default
 
+    PLANNED_MOTIONS = ("smove", "tmove", "cjmove", "clmove", "jmove", "lmove")
+    UNPLANNED_MOTIONS = ("jmove", "lmove", "cjmove", "clmove")
+
     @staticmethod
     def _motion_plan_mode(flag):
         """Normalize a ``has_motion_plan`` value to
         ``(plan, unplanned, planned)``.
 
         One grammar owns both decisions — whether to plan, and which
-        primitive executes the hop:
-            True             → (True,  "jmove", "smove")  plan, spline
-            [True, "smove"]  → (True,  "jmove", "smove")  explicit spelling
-            [True, "tmove"]  → (True,  "jmove", "tmove")  plan, PVT
-                               trajectory (TOPP-RA timing; needs tmove
-                               support — sim now, firmware later)
-            [True, "jmove"]  → (True,  "jmove", "jmove")  plan, cont-jmove
-                               chain: one jmove per waypoint section,
-                               per-section vel from the TOPP-RA profile,
-                               cont=1 blending — runs on EXISTING
-                               firmware (sim executes it stop-start)
-            False            → (False, "jmove", "smove")  direct jmove
-            [False, "jmove"] → (False, "jmove", "smove")  explicit spelling
-            [False, "lmove"] → (False, "lmove", "smove")  planning off,
-                                                          hop as lmove
+        primitive executes. Planned side (travel through the planner's
+        waypoints):
+
+            True / [True,"smove"] → spline through the fold (sampled
+                                    approach legs + validated fillets)
+            [True, "tmove"]       → PVT trajectory (TOPP-RA timing;
+                                    needs tmove support — sim now,
+                                    firmware later)
+            [True, "cjmove"]      → cont-jmove chain: BARE knots, one
+                                    continuous motion, firmware corner
+                                    blends (midpoints never touched)
+            [True, "clmove"]      → cont-lmove chain: bare knots,
+                                    straight TCP lines between them
+            [True, "jmove"]       → DISCRETE: one jmove per knot,
+                                    full stop at every waypoint
+            [True, "lmove"]       → discrete: one lmove per knot
+
+        Unplanned side (no planning, no midpoints — one direct hop):
+
+            False / [False,"jmove"] → direct jmove
+            [False, "lmove"]        → direct lmove
+            [False, "cjmove"]       → ≡ [False, "jmove"]: a chain of
+                                      ONE target is a discrete move by
+                                      construction (the last chain
+                                      section always runs cont=0)
+            [False, "clmove"]       → ≡ [False, "lmove"]
         """
         if isinstance(flag, (list, tuple)):
             plan = bool(flag[0]) if len(flag) else False
             motion = flag[1] if len(flag) > 1 else None
             if plan:
                 planned = motion if motion is not None else "smove"
-                if planned not in ("smove", "tmove", "jmove"):
+                if planned not in Recipe.PLANNED_MOTIONS:
                     raise RecipeError(
-                        f"has_motion_plan planned motion must be 'smove', 'tmove' or 'jmove', got {planned!r}"
+                        f"has_motion_plan planned motion must be one of {Recipe.PLANNED_MOTIONS}, got {planned!r}"
                     )
                 return True, "jmove", planned
             unplanned = motion if motion is not None else "jmove"
-            if unplanned not in ("jmove", "lmove"):
+            if unplanned not in Recipe.UNPLANNED_MOTIONS:
                 raise RecipeError(
-                    f"has_motion_plan motion must be 'jmove' or 'lmove', got {unplanned!r}"
+                    f"has_motion_plan motion must be one of {Recipe.UNPLANNED_MOTIONS}, got {unplanned!r}"
                 )
+            # single-target chain ≡ discrete move — normalize
+            unplanned = {"cjmove": "jmove", "clmove": "lmove"}.get(unplanned, unplanned)
             return False, unplanned, "smove"
         return bool(flag), "jmove", "smove"
 
@@ -534,18 +551,23 @@ class Recipe:
             has_motion_plan if has_motion_plan is not None else False)
         plan_on = plan_on and first_approach
 
-        if not first_approach and len(path) > 1 and planned == "jmove":
-            # Group continuity under the cont-jmove primitive: a
-            # non-travel group (contact class, exits) executes as ONE
-            # chain over its bare knots — lmove speed class — instead
-            # of per-point stop-start lmoves. Other primitives keep
-            # the classic discrete execution for these groups.
+        if not first_approach and len(path) > 1 and planned in ("cjmove", "clmove"):
+            # Group continuity under the chain primitives: a non-travel
+            # group (contact class, exits) executes as ONE chain over
+            # its bare knots — lmove speed class — instead of per-point
+            # stop-start motions. All other primitives keep the classic
+            # discrete execution (each point via its motion type).
             pts = [[float(v) for v in rt.joint()]]
             for offset in path:
                 J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                 pts.append([float(v) for v in J])
             rt.checkpoint()
-            self._run_path_motion(rt, pts, vaj_map["lmove"], "jmove")
+            tp = None
+            if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+                tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
+                                             in_frame=self.core.robot_flange,
+                                             offset=tool_dict["offset"])
+            self._run_path_motion(rt, pts, vaj_map["lmove"], planned, tool_pose=tp)
             return
 
         if first_approach and len(path) > 1 and blend and blend > 0:
@@ -583,12 +605,12 @@ class Recipe:
                 prev = points[-1]
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                    if planned == "jmove":
-                        # cont-jmove chain: BARE knots — one section per
-                        # approach offset, straight in joint space. No
-                        # 5 mm sampling, no fillet arcs: the controller
-                        # blends section corners (cont=1), and section
-                        # count stays ~one per waypoint by design.
+                    if planned in ("cjmove", "clmove", "jmove", "lmove"):
+                        # Knot-driven primitives: BARE knots — one
+                        # target per approach offset, no 5 mm sampling,
+                        # no fillet arcs. Chains (c*) blend corners in
+                        # the controller; discrete jmove/lmove stop at
+                        # every knot by definition.
                         rest.append([float(v) for v in J])
                         prev = J
                         continue
@@ -600,7 +622,7 @@ class Recipe:
                     prev = J
             if folded:
                 points.extend(rest)
-                if planned != "jmove":
+                if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
                     # corner of the fused path — travel and approach
                     # alike, detected by geometry. Each fillet is
@@ -612,12 +634,12 @@ class Recipe:
                         padding=motion_plan_kwargs.get("padding", 10))
                     if blended is not None:
                         points = blended
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned)
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose)
                 return
             if plan_on and points:
                 # Fold sampling failed mid-way — execute the planned
                 # travel, then the remaining offsets as classic lmoves.
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned)
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose)
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                     rt.checkpoint()
@@ -668,29 +690,47 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
 
-    def _run_path_motion(self, rt, points, vaj, primitive="smove"):
-        """Execute a fused waypoint path (first point = current pose).
-        The ONE chokepoint for every planned/fused path a recipe sends.
-        ``primitive`` comes from the has_motion_plan grammar:
-        "tmove" → TOPP-RA-timed trajectory (curvature-aware speed under
-        per-joint vel/accel caps); "jmove" → cont-jmove chain (one
-        jmove per section with its own TOPP-RA-derived vel, queued
-        with timeout=0 so the controller blends them, last one blocks
-        to completion with cont=0); "smove" → classic spline (single
-        global S-curve, jerk cap included)."""
+    def _run_path_motion(self, rt, points, vaj, primitive="smove", tool_pose=None):
+        """Execute a planned/fused waypoint path (first point = current
+        pose) — the ONE chokepoint for every planned path a recipe
+        sends. ``primitive`` comes from the has_motion_plan grammar:
+
+            smove   → one spline through all points (single global
+                      S-curve, jerk cap included)
+            tmove   → TOPP-RA-timed PVT trajectory
+            cjmove  → cont-jmove chain, per-section (vel, accel) from
+                      the TOPP-RA profile, firmware corner blends
+            clmove  → cont-lmove chain (straight TCP lines), same
+                      per-section profile extraction
+            jmove   → discrete: one jmove per knot, stop at each
+            lmove   → discrete: one lmove per knot, stop at each
+        """
         vel = vaj[0] * self.speed_factor
         accel = vaj[1] * self.speed_factor
         jerk = vaj[2] * self.speed_factor
+        tp = tool_pose if tool_pose is not None else [0, 0, 0, 0, 0, 0]
         if primitive == "tmove":
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
-        if primitive == "jmove":
+        if primitive in ("cjmove", "clmove"):
             pts, vels, accels = self.core.section_vels(points, vel, accel)
             if len(pts) < 2:
                 return
             vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
             corners = [self.corner] * (len(pts) - 1)
-            rt.cjmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners)
+            targets = [list(p) for p in pts[1:]]
+            if primitive == "cjmove":
+                rt.cjmove(joints=targets, vajs=vajs, corners=corners)
+            else:
+                rt.clmove(joints=targets, vajs=vajs, corners=corners, tool_pose=tp)
+            return
+        if primitive in ("jmove", "lmove"):
+            for p in points[1:]:
+                rt.checkpoint()
+                if primitive == "jmove":
+                    rt.jmove(joint=list(p), vel=vel, accel=accel, jerk=jerk)
+                else:
+                    rt.lmove(joint=list(p), vel=vel, accel=accel, jerk=jerk, tool_pose=tp)
             return
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
 
