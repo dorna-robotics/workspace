@@ -36,16 +36,10 @@ class Recipe:
         # motion-SHAPING knob, independent of path planning (unplanned
         # touches fuse and blend too). 0 → classic discrete motions.
         blend=100.0,
-        # PVT trajectory execution: True → fused paths run as a
-        # TOPP-RA time-parameterized tmove (curvature-aware speed,
-        # per-joint vel/accel caps from jmove_vaj) instead of smove.
-        # Requires tmove support from the robot side (sim has it; the
-        # real controller needs the firmware tmove — until then the
-        # real robot fails loudly with pvt on).
-        pvt=False,
         # Per-recipe has_motion_plan override (full grammar: True /
-        # False / [False, "jmove"|"lmove"]). None → defer to the
-        # scene's core.has_motion_plan. Per-call args still win.
+        # [True, "smove"|"tmove"] / False / [False, "jmove"|"lmove"]).
+        # None → defer to the scene's core.has_motion_plan. Per-call
+        # args still win.
         has_motion_plan=None,
         speed_factor=0.5,
         jmove_vaj=[200, 500, 3000],  # [200, 1200, 6000],
@@ -104,7 +98,6 @@ class Recipe:
         self.motion_type = prm["motion_type"]
         self.padding = prm["padding"]
         self.blend = prm["blend"]
-        self.pvt = prm["pvt"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -443,25 +436,38 @@ class Recipe:
 
     @staticmethod
     def _motion_plan_mode(flag):
-        """Normalize a ``has_motion_plan`` value to ``(plan, unplanned)``.
+        """Normalize a ``has_motion_plan`` value to
+        ``(plan, unplanned, planned)``.
 
-        Backwards compatible on purpose (old scenes/calls keep working):
-            True            → (True,  "jmove")   plan + smove, as always
-            False           → (False, "jmove")   direct jmove, as always
-            [False, "lmove"] → (False, "lmove")  planning off, hop as lmove
-            [False, "jmove"] → (False, "jmove")  explicit spelling of False
-            [True, ...]      → (True,  "jmove")  the motion name is moot —
-                                                 a planned hop is always smove
+        One grammar owns both decisions — whether to plan, and which
+        primitive executes the hop:
+            True             → (True,  "jmove", "smove")  plan, spline
+            [True, "smove"]  → (True,  "jmove", "smove")  explicit spelling
+            [True, "tmove"]  → (True,  "jmove", "tmove")  plan, PVT
+                               trajectory (TOPP-RA timing; needs tmove
+                               support — sim now, firmware later)
+            False            → (False, "jmove", "smove")  direct jmove
+            [False, "jmove"] → (False, "jmove", "smove")  explicit spelling
+            [False, "lmove"] → (False, "lmove", "smove")  planning off,
+                                                          hop as lmove
         """
         if isinstance(flag, (list, tuple)):
             plan = bool(flag[0]) if len(flag) else False
-            unplanned = flag[1] if len(flag) > 1 else "jmove"
+            motion = flag[1] if len(flag) > 1 else None
+            if plan:
+                planned = motion if motion is not None else "smove"
+                if planned not in ("smove", "tmove"):
+                    raise RecipeError(
+                        f"has_motion_plan planned motion must be 'smove' or 'tmove', got {planned!r}"
+                    )
+                return True, "jmove", planned
+            unplanned = motion if motion is not None else "jmove"
             if unplanned not in ("jmove", "lmove"):
                 raise RecipeError(
                     f"has_motion_plan motion must be 'jmove' or 'lmove', got {unplanned!r}"
                 )
-            return plan, unplanned
-        return bool(flag), "jmove"
+            return False, unplanned, "smove"
+        return bool(flag), "jmove", "smove"
 
     def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None):
         """Execute a single motion — with optional motion planning for collision avoidance.
@@ -479,7 +485,7 @@ class Recipe:
         unconstrained failure raises: that is a genuine reachability /
         collision problem, not a constraint one.
         """
-        use_planning, unplanned = self._motion_plan_mode(use_planning)
+        use_planning, unplanned, planned = self._motion_plan_mode(use_planning)
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -487,7 +493,7 @@ class Recipe:
                 points = self.core.motion_plan(joint=J)
             if not points:
                 raise RecipeError("no proper path was found")
-            self._run_path_motion(rt, points, vaj_map["jmove"])
+            self._run_path_motion(rt, points, vaj_map["jmove"], planned)
         else:
             self._do_motion(
                 rt, J,
@@ -513,9 +519,9 @@ class Recipe:
         contact descent is never part of ``path`` here — touch() keeps
         it as its own slow lmove.
         """
-        plan_on, unplanned = False, "jmove"
+        plan_on, unplanned, planned = False, "jmove", "smove"
         if first_approach:
-            plan_on, unplanned = self._motion_plan_mode(
+            plan_on, unplanned, planned = self._motion_plan_mode(
                 has_motion_plan if has_motion_plan is not None else False)
 
         if first_approach and len(path) > 1 and blend and blend > 0:
@@ -572,12 +578,12 @@ class Recipe:
                     padding=motion_plan_kwargs.get("padding", 10))
                 if blended is not None:
                     points = blended
-                self._run_path_motion(rt, points, vaj_map["jmove"])
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned)
                 return
             if plan_on and points:
                 # Fold sampling failed mid-way — execute the planned
                 # travel, then the remaining offsets as classic lmoves.
-                self._run_path_motion(rt, points, vaj_map["jmove"])
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned)
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                     rt.checkpoint()
@@ -628,15 +634,16 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
 
-    def _run_path_motion(self, rt, points, vaj):
+    def _run_path_motion(self, rt, points, vaj, primitive="smove"):
         """Execute a fused waypoint path (first point = current pose).
-        The ONE chokepoint for every planned/fused path a recipe sends:
-        ``pvt`` on → TOPP-RA-timed tmove (curvature-aware speed under
-        per-joint vel/accel caps); off → classic smove (single global
-        S-curve, jerk cap included)."""
+        The ONE chokepoint for every planned/fused path a recipe sends.
+        ``primitive`` comes from the has_motion_plan grammar:
+        "tmove" → TOPP-RA-timed trajectory (curvature-aware speed under
+        per-joint vel/accel caps); "smove" → classic spline (single
+        global S-curve, jerk cap included)."""
         vel = vaj[0] * self.speed_factor
         accel = vaj[1] * self.speed_factor
-        if self.pvt:
+        if primitive == "tmove":
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
         rt.smove(points[1:], vel=vel, accel=accel, jerk=vaj[2] * self.speed_factor)
