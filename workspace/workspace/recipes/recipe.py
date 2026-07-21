@@ -521,7 +521,8 @@ class Recipe:
                 points = self.core.motion_plan(joint=J)
             if not points:
                 raise RecipeError("no proper path was found")
-            self._run_path_motion(rt, points, vaj_map["jmove"], planned)
+            self._run_path_motion(rt, points, vaj_map["jmove"], planned,
+                                  padding=motion_plan_kwargs.get("padding"))
         else:
             self._do_motion(
                 rt, J,
@@ -567,7 +568,8 @@ class Recipe:
                 tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
                                              in_frame=self.core.robot_flange,
                                              offset=tool_dict["offset"])
-            self._run_path_motion(rt, pts, vaj_map["lmove"], planned, tool_pose=tp)
+            self._run_path_motion(rt, pts, vaj_map["lmove"], planned, tool_pose=tp,
+                                  padding=motion_plan_kwargs.get("padding", 10))
             return
 
         if first_approach and len(path) > 1 and blend and blend > 0:
@@ -634,12 +636,14 @@ class Recipe:
                         padding=motion_plan_kwargs.get("padding", 10))
                     if blended is not None:
                         points = blended
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose)
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
+                                      padding=motion_plan_kwargs.get("padding", 10))
                 return
             if plan_on and points:
                 # Fold sampling failed mid-way — execute the planned
                 # travel, then the remaining offsets as classic lmoves.
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose)
+                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
+                                      padding=motion_plan_kwargs.get("padding", 10))
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                     rt.checkpoint()
@@ -690,7 +694,7 @@ class Recipe:
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
 
-    def _run_path_motion(self, rt, points, vaj, primitive="smove", tool_pose=None):
+    def _run_path_motion(self, rt, points, vaj, primitive="smove", tool_pose=None, padding=None):
         """Execute a planned/fused waypoint path (first point = current
         pose) — the ONE chokepoint for every planned path a recipe
         sends. ``primitive`` comes from the has_motion_plan grammar:
@@ -712,17 +716,24 @@ class Recipe:
         if primitive == "tmove":
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
-        if primitive in ("cjmove", "clmove"):
+        if primitive == "cjmove":
+            # Max-smoothness chain: per-corner radius at the firmware
+            # clamp (capped by self.corner), corner cuts validated once
+            # at creation, per-section (vel, accel) from TOPP-RA over
+            # the TRUE executed geometry — see core.chain_prm.
+            pts, vajs, corners = self.core.chain_prm(
+                points, vel, accel, jerk, corner_cap=self.corner, padding=padding)
+            if len(pts) < 2:
+                return
+            rt.cjmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners)
+            return
+        if primitive == "clmove":
             pts, vels, accels = self.core.section_vels(points, vel, accel)
             if len(pts) < 2:
                 return
             vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
             corners = [self.corner] * (len(pts) - 1)
-            targets = [list(p) for p in pts[1:]]
-            if primitive == "cjmove":
-                rt.cjmove(joints=targets, vajs=vajs, corners=corners)
-            else:
-                rt.clmove(joints=targets, vajs=vajs, corners=corners, tool_pose=tp)
+            rt.clmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners, tool_pose=tp)
             return
         if primitive in ("jmove", "lmove"):
             for p in points[1:]:

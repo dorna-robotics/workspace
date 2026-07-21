@@ -1652,6 +1652,144 @@ class Core:
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return pts, vels, accels
 
+    def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0):
+        """Chain parameters for cjmove tuned for MAXIMUM smoothness
+        under the user's caps — derived from the firmware's actual
+        execution model (see the _fw_* ports of server/motion.cpp):
+
+        1. Per-corner radius: min(corner_cap, 0.4 * min(adjacent leg
+           lengths)) — the firmware's own clamp, computed host-side so
+           the executed geometry is KNOWN, not guessed.
+        2. When ``padding`` is given, each corner's exact firmware
+           curve is validated once at creation against the slimmed
+           envelope under the fillet contract: the cut may not
+           introduce a collision the sharp corner didn't have. A
+           failing corner drops to 0 (the chain passes THROUGH that
+           knot, still continuous — geometrically safe, and step 3
+           slows for the kink).
+        3. TOPP-RA over the TRUE executed path — lines + corner curves
+           sampled every ``sample`` units — so per-section (vel,
+           accel) reflect real arc curvature: bigger corners earn
+           higher corner speeds (v ~ sqrt(accel * r)).
+
+        Returns ``(pts, vajs, corners)`` ready for cjmove: deduped
+        waypoints (pts[0] = current pose), one [vel, accel, jerk] and
+        one corner per section."""
+        try:
+            import toppra as ta
+            import toppra.constraint as tc
+        except ImportError as ex:
+            raise RuntimeError(
+                "cjmove chain_prm requires toppra (sudo pip3 install toppra)") from ex
+        pts = [[float(v) for v in p] for p in points]
+        pts = [p for i, p in enumerate(pts)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        n_sec = len(pts) - 1
+        if n_sec < 1:
+            return pts, [], []
+        t0 = time.perf_counter()
+
+        # 1. corners: firmware clamp, host-side
+        legs = [_fw_norm(_fw_vec(pts[k + 1], pts[k], 1.0, -1.0)) for k in range(n_sec)]
+        corners = [min(float(corner_cap), 0.4 * min(legs[k], legs[k + 1]))
+                   for k in range(n_sec - 1)] + [0.0]
+
+        # 2. creation-time validation of the exact corner cuts
+        curves = [None] * n_sec
+        check = None
+        if padding is not None:
+            check_pad = max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN)
+            cw, ct = self.workspace.compute_collision_boxes(check_pad)
+            base_in_world = list(self.rail_base.pose(anchor="carriage"))
+            self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
+            check = lambda seg: self.planner.check([list(q) for q in seg], rail_weight=rail_weight)
+        for k in range(n_sec - 1):
+            if corners[k] <= 0:
+                continue
+            c = _fw_create_curve(pts[k], pts[k + 1], pts[k + 2], corners[k])
+            if check is not None and c["length"] > 0:
+                m = max(2, int(math.ceil(c["length"] / sample)))
+                arc = ([_fw_curve_point(c, i * (c["length"] / 2) / m, True) for i in range(m + 1)]
+                       + [_fw_curve_point(c, i * (c["length"] / 2) / m, False) for i in range(1, m + 1)])
+                if not check(arc):
+                    sharp = [c["curveInitial"], list(pts[k + 1]), c["curveFinal"]]
+                    if check(sharp):
+                        corners[k] = 0.0   # cut would hit something the corner didn't
+                        continue
+            curves[k] = c
+
+        # 3. TOPP-RA over the true executed geometry
+        path_pts = [list(pts[0])]
+        bounds = []            # cumulative arc length at each section end
+        acc_len = 0.0
+        for k in range(n_sec):
+            start = curves[k - 1]["curveFinal"] if k > 0 and curves[k - 1] else pts[k]
+            end = curves[k]["curveInitial"] if curves[k] else pts[k + 1]
+            d_line = _fw_norm(_fw_vec(end, start, 1.0, -1.0))
+            m = max(1, int(math.ceil(d_line / sample)))
+            for i in range(1, m + 1):
+                path_pts.append(_fw_vec(start, end, 1.0 - i / m, i / m))
+            acc_len += d_line
+            if curves[k]:
+                c = curves[k]
+                half = c["length"] / 2
+                m = max(1, int(math.ceil(half / sample)))
+                for i in range(1, m + 1):
+                    path_pts.append(_fw_curve_point(c, i * half / m, True))
+                acc_len += half
+                bounds.append(acc_len)     # section ends mid-curve
+                for i in range(1, m + 1):
+                    path_pts.append(_fw_curve_point(c, i * half / m, False))
+                acc_len += half
+            else:
+                bounds.append(acc_len)
+
+        arr = np.array(path_pts)
+        s = np.zeros(len(arr))
+        for i in range(1, len(arr)):
+            s[i] = s[i - 1] + float(np.linalg.norm(arr[i] - arr[i - 1]))
+        total = float(s[-1])
+        if total <= 0.0:
+            return pts, [[1.0, float(accel), float(jerk)]] * n_sec, corners
+        keep = [0] + [i for i in range(1, len(arr)) if s[i] > s[i - 1] + 1e-9]
+        arr, s = arr[keep], s[keep]
+        traj = ta.algorithm.TOPPRA(
+            [tc.JointVelocityConstraint(np.array([[-vel, vel]] * arr.shape[1])),
+             tc.JointAccelerationConstraint(np.array([[-accel, accel]] * arr.shape[1]))],
+            ta.SplineInterpolator(s / total, arr),
+            parametrizer="ParametrizeConstAccel",
+        ).compute_trajectory()
+        if traj is None:
+            raise RuntimeError("TOPP-RA could not parameterize the chain path")
+        ts = np.append(np.arange(0.0, traj.duration, dt), float(traj.duration))
+        q = np.array([traj(float(x)) for x in ts])
+        seg = np.linalg.norm(np.diff(q, axis=0), axis=1)
+        s_mid = np.concatenate([[0.0], np.cumsum(seg)])[:-1] + seg / 2.0
+        v_chord = seg / dt
+        a_chord = np.abs(np.diff(v_chord)) / dt
+        s_acc = s_mid[:-1] + np.diff(s_mid) / 2.0
+        vajs = []
+        lo = 0.0
+        for k in range(n_sec):
+            hi = bounds[k]
+            in_v = v_chord[(s_mid >= lo) & (s_mid < hi)]
+            v_sec = float(in_v.max()) if len(in_v) else float(vel)
+            d = np.array(pts[k + 1]) - np.array(pts[k])
+            d_lead = float(np.abs(d).max())
+            lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
+            v_k = max(1.0, min(float(vel), v_sec * lead))
+            in_a = a_chord[(s_acc >= lo) & (s_acc < hi)]
+            a_k = (float(in_a.max()) if len(in_a) else float(accel)) * lead
+            v_prev = vajs[-1][0] if vajs else 0.0
+            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_lead, 1e-9)
+            vajs.append([v_k, min(float(accel), max(a_k, a_need)), float(jerk)])
+            lo = hi
+        print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections, "
+              f"vels {[round(v[0]) for v in vajs]}, accels {[round(v[1]) for v in vajs]}, "
+              f"corners {[round(c) for c in corners]}, "
+              f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
+        return pts, vajs, corners
+
     @staticmethod
     def _boxes_to_cubes(boxes):
         out = []
