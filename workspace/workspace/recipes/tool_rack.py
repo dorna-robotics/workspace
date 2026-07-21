@@ -65,27 +65,31 @@ class ToolRack(Recipe):
         motion_prm ={
             "target_solid": self.component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": [0, 0, -height_offset, 0, 0, 0],
             "output_approach": output_approach,
             "approach_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            "approach_path": [
+            # Groups: the entry corridor flows as one motion; mating
+            # the changer plates is the contact group after the
+            # stop+verify boundary.
+            "approach": [
+                            [
                                 [-padding, 0, -padding-height_offset, 0, 0, 0],
                                 [0, 0, -padding-height_offset, 0, 0, 0],
-                                [0, 0, -12-gap-height_offset, 0, 0, 0]
+                                [0, 0, -12-gap-height_offset, 0, 0, 0],
                             ],
-            # Mating the changer plates is a deliberate contact leg —
-            # fused smove to the near point, slow lmove to engage.
-            "soft_approach": True,
+                            [
+                                [0, 0, -height_offset, 0, 0, 0],
+                            ],
+                        ],
             "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
             "attach": [tool, {"parent": self.core.tool_changer_robot_side, "parent_anchor":"tool_changer_connection", "child_anchor":"tool_changer_connection"}],
             "exit_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            "exit_path": [
+            "exit": [[
                     [0, 0, -gap-height_offset, 0, 0, 0],
                     [-padding,0,-gap-height_offset,0,0,0],
                     [-padding,0,-padding-height_offset,0,0,0],
-                ],
+                ]],
         }
 
         # motion
@@ -140,26 +144,29 @@ class ToolRack(Recipe):
         motion_prm ={
             "target_solid": self.component.assembly[solid_name],
             "target_anchor": anchor, 
-            "target_offset": [0, 0, -height_offset, 0, 0, 0],
             "approach_tool": {"solid": tool, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            "approach_path":[
+            # Groups: entry corridor as one motion; seating the tool
+            # into the rack slot is the contact group after the stop.
+            "approach": [
+                            [
                                 [-padding,0,-padding-height_offset,0,0,0],
                                 [-padding,0,-gap-height_offset,0,0,0],
                                 [0, 0, -gap-height_offset, 0, 0, 0],
+                            ],
+                            [
+                                [0, 0, -height_offset, 0, 0, 0],
+                            ],
                         ],
-            # Seating the tool into the rack slot is a deliberate
-            # contact leg — fused smove to the near point, slow lmove in.
-            "soft_approach": True,
             "output_touch": output_touch,
             "actions": [],
             "sleep": 0.1,
             "attach": [tool, {"parent": self.component.assembly[solid_name], "parent_anchor": anchor, "child_anchor":"tool_rack_connection"}],
             "exit_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            "exit_path": [
+            "exit": [[
                             [0, 0, -12-gap-height_offset, 0, 0, 0],
                             [0, 0, -padding-height_offset, 0, 0, 0],
                             [-padding, 0, -padding-height_offset, 0, 0, 0],
-                        ],
+                        ]],
             "output_exit": output_exit
         }
 

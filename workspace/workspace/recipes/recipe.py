@@ -524,10 +524,23 @@ class Recipe:
         contact descent is never part of ``path`` here — touch() keeps
         it as its own slow lmove.
         """
-        plan_on, unplanned, planned = False, "jmove", "smove"
-        if first_approach:
-            plan_on, unplanned, planned = self._motion_plan_mode(
-                has_motion_plan if has_motion_plan is not None else False)
+        plan_on, unplanned, planned = self._motion_plan_mode(
+            has_motion_plan if has_motion_plan is not None else False)
+        plan_on = plan_on and first_approach
+
+        if not first_approach and len(path) > 1 and planned == "jmove":
+            # Group continuity under the cont-jmove primitive: a
+            # non-travel group (contact class, exits) executes as ONE
+            # chain over its bare knots — lmove speed class — instead
+            # of per-point stop-start lmoves. Other primitives keep
+            # the classic discrete execution for these groups.
+            pts = [[float(v) for v in rt.joint()]]
+            for offset in path:
+                J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
+                pts.append([float(v) for v in J])
+            rt.checkpoint()
+            self._run_path_motion(rt, pts, vaj_map["lmove"], "jmove")
+            return
 
         if first_approach and len(path) > 1 and blend and blend > 0:
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
@@ -900,11 +913,10 @@ class Recipe:
         self,
         target_solid,
         target_anchor,
-        target_offset=[0, 0, 0, 0, 0, 0],
+        approach=[],
+        travel=True,
         output_approach=[],
         approach_tool={"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
-        approach_path=[],
-        soft_approach=True,
         approach_j5=None,
         output_touch=[],
         actions=[],
@@ -920,7 +932,7 @@ class Recipe:
             },
         ],
         exit_tool={"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
-        exit_path=[],
+        exit=[],
         exit_j5=None,
         output_exit=[],
         has_motion_plan=None,
@@ -930,14 +942,35 @@ class Recipe:
     ):
         """Universal motion primitive used by pick/place/above/stand/immerse/retract.
 
-        Flow:
-            1. Apply ``output_approach`` IO.
-            2. Move through ``approach_path`` waypoints, then to ``target_offset``.
-               The very first hop can be path-planned if ``has_motion_plan`` is True.
-            3. Apply ``output_touch`` IO, run ``actions``, sleep.
-            4. Attach solids per ``attach`` spec (e.g. gripped item → tool).
-            5. Retract along ``exit_path`` with ``exit_tool`` active.
-            6. Apply ``output_exit`` IO.
+        MOTION GROUPS — the protocol:
+            * ``approach`` and ``exit`` are lists of GROUPS. A group is
+              ONE continuous motion — the robot never stops inside it.
+            * A boundary between groups is a full stop with a named
+              purpose: the IO verify barrier, a speed-class change, or
+              a process action. A stop that serves none of these is a
+              bug — merge the groups.
+            * The planned TRAVEL hop is implicit: it is the entry into
+              the first approach group (``travel=False`` keeps that
+              hop direct and unplanned — set by the builders when
+              ``approach=False``; the immerse dive relies on it).
+            * ``output_approach`` IO overlaps the FIRST group and is
+              joined + pin-verified at its end. With a single group
+              there is no boundary to verify at, so the chain completes
+              BEFORE motion starts. Contact never begins on an
+              unverified chain.
+            * The last approach group runs the touch speed class
+              (per-point lmoves / lmove-class chain) when more than
+              one group exists; every other group and all exit groups
+              run their class the same way. Exit groups never plan.
+
+        Flow: approach groups → output_touch IO, actions, sleep,
+        attach → exit groups → output_exit IO.
+
+        Builders (``pick_setting`` / ``place_setting``) construct the
+        groups: ``soft_approach=True`` puts the contact point in its
+        own final group (stop + verify at the gap); ``False`` folds it
+        into the previous group (one continuous motion to touch);
+        ``approach=False`` emits ``[[contact]]`` with ``travel=False``.
 
         Normally you won't call ``touch`` directly — call ``pick``/``place``/``above``/
         ``stand`` which build the parameter dict via ``pick_setting`` / ``place_setting``.
@@ -945,10 +978,12 @@ class Recipe:
         Args:
             target_solid: Solid that owns the target anchor.
             target_anchor: Name of the anchor on ``target_solid``.
-            target_offset: [x, y, z, a, b, c] offset applied at touch-down.
-                Set to None to skip the final touch step (used by ``above``/``stand``).
-            approach_path: List of pre-positioning offsets before touch-down.
-            exit_path: List of offsets after touch-down / attach.
+            approach: List of groups (each a list of [x,y,z,a,b,c]
+                offsets). The last point of the last group is the
+                contact pose.
+            travel: Whether the first group's first hop is the planned
+                travel (True) or a direct unplanned motion (False).
+            exit: List of groups after touch-down / attach.
             has_motion_plan: If True, use ``core.motion_plan`` for the first hop.
                 Defaults to ``self.core.has_motion_plan``.
             motion_plan_kwargs: Dict forwarded to ``core.motion_plan``
@@ -992,48 +1027,33 @@ class Recipe:
         #                         (the S-curve decelerates to zero
         #                         there anyway).
         #   approach=False      → contact leg only, as before.
-        travel = approach_path[:]
-        descent = [] if target_offset is None else [target_offset]
-        if soft_approach and travel:
-            fused, tail = travel, descent
-        else:
-            fused, tail = travel + descent, []
-        # Approach chain: overlapped UNDER the fused travel when a
-        # natural stop exists to verify at — soft touches stop at the
-        # gap point before the contact leg, and the join + physical
-        # pin verification sits exactly there. Without such a stop
-        # (non-soft: fused straight to contact) the chain completes
-        # and pin-verifies BEFORE any motion. Either way, contact
-        # never starts on an unverified chain.
+        approach = [list(g) for g in approach if g]
+        exit = [list(g) for g in exit if g]
+        # IO chain: overlapped UNDER the first group when a boundary
+        # exists to verify at (the join + physical pin verification IS
+        # the first group boundary). Single group -> no boundary ->
+        # the chain completes and pin-verifies BEFORE any motion.
+        # Either way, contact never starts on an unverified chain.
         io_handle = None
         if output_approach:
-            if fused and tail:
+            if len(approach) > 1:
                 io_handle = self._output_async(output_approach)
             else:
                 self._output_join(self._output_async(output_approach))
-        if fused:
+        for gi, group in enumerate(approach):
+            first = gi == 0
             self._move_along_path(
-                rt, fused, target_solid, target_anchor,
+                rt, group, target_solid, target_anchor,
                 tool_dict=approach_tool,
                 j5_override=approach_j5,
                 vaj_map=vaj_map,
                 has_motion_plan=has_motion_plan,
-                first_approach=bool(travel),
+                first_approach=first and travel,
                 motion_plan_kwargs=motion_plan_kwargs,
                 blend=blend,
             )
-        if io_handle is not None:
-            self._output_join(io_handle)
-        if tail:
-            self._move_along_path(
-                rt, tail, target_solid, target_anchor,
-                tool_dict=approach_tool,
-                j5_override=approach_j5,
-                vaj_map=vaj_map,
-                has_motion_plan=has_motion_plan,
-                first_approach=False,
-                motion_plan_kwargs=motion_plan_kwargs,
-            )
+            if first and io_handle is not None:
+                self._output_join(io_handle)
 
         # output touch
         self._apply_output_config(rt, output_touch)
@@ -1049,16 +1069,19 @@ class Recipe:
         if isinstance(attach, (list, tuple)) and len(attach) == 2 and attach[0] is not None:
             attach[0].attach_to(**attach[1])
 
-        # exit path — its terminal pose is the NEXT hop's start: the
-        # recipe padding must park it OUTSIDE the plan-padded station
-        # box, or the next planner start is invalid (the [plan] START
-        # diagnostic names this when a padding is set too low).
-        self._move_along_path(
-            rt, list(exit_path), target_solid, target_anchor,
-            tool_dict=exit_tool,
-            j5_override=exit_j5,
-            vaj_map=vaj_map,
-        )
+        # exit groups — the last group's terminal pose is the NEXT
+        # hop's start: the recipe padding must park it OUTSIDE the
+        # plan-padded station box, or the next planner start is
+        # invalid (the [plan] START diagnostic names this when a
+        # padding is set too low).
+        for group in exit:
+            self._move_along_path(
+                rt, group, target_solid, target_anchor,
+                tool_dict=exit_tool,
+                j5_override=exit_j5,
+                vaj_map=vaj_map,
+                has_motion_plan=has_motion_plan,
+            )
 
         # output exit
         self._apply_output_config(rt, output_exit)
@@ -1126,8 +1149,9 @@ class Recipe:
                 ``speed_factor``, ``motion_type``).
 
         Returns:
-            Dict with keys: target_solid, target_anchor, target_offset,
-            output_approach, approach_tool, approach_path, output_touch, actions,
+            Dict with keys: target_solid, target_anchor, approach
+            (motion groups), travel, contact, exit (motion groups),
+            output_approach, approach_tool, output_touch, actions,
             sleep, attach, exit_tool, exit_path, output_exit, height_tool,
             height_load, height_container, load_list, tool, pose_offset.
         """
@@ -1157,24 +1181,23 @@ class Recipe:
         )
 
         # target offset
-        target_offset = pose_offset.pose(offset=[0, 0, height_load, 0, 0, 0])
+        contact = pose_offset.pose(offset=[0, 0, height_load, 0, 0, 0])
 
-        # approach path
-        approach_path = []
+        # Motion groups (see touch): soft_approach owns the boundary
+        # before the contact group; approach=False means no travel
+        # corridor — the contact hop runs direct and unplanned.
+        approach_groups = [[contact]]
         if approach:
-            _approach_path = [
-                [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
-                [0, 0, height_load + height_tool + gap, 0, 0, 0],
-            ]
-            if not soft_approach:
-                _approach_path = _approach_path[0:1]
-            approach_path = [pose_offset.pose(offset=p) for p in _approach_path]
+            a_pad = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + padding, 0, 0, 0])
+            if soft_approach:
+                a_gap = pose_offset.pose(offset=[0, 0, height_load + height_tool + gap, 0, 0, 0])
+                approach_groups = [[a_pad, a_gap], [contact]]
+            else:
+                approach_groups = [[a_pad, contact]]
 
-        # exit path
-        exit_path = []
+        exit_groups = []
         if exit:
-            _exit_path = [[0, 0, max(height_load, height_container) + padding, 0, 0, 0]]
-            exit_path = [pose_offset.pose(offset=p) for p in _exit_path]
+            exit_groups = [[pose_offset.pose(offset=[0, 0, max(height_load, height_container) + padding, 0, 0, 0])]]
 
         # IO config
         output_approach = []
@@ -1217,21 +1240,21 @@ class Recipe:
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor,
-            "target_offset": target_offset,
+            "approach": approach_groups,
+            "travel": bool(approach),
+            "contact": contact,
             "output_approach": output_approach,
             "approach_tool": {
                 "solid": tool_body,
                 "anchor": "tcp",
                 "offset": [0, 0, tool_tcp_z_offset, 0, 180, 0],
             },
-            "approach_path": approach_path,
-            "soft_approach": soft_approach,
             "output_touch": output_touch,
             "actions": actions,
             "sleep": 0,
             "attach": attach,
             "exit_tool": exit_tool,
-            "exit_path": exit_path,
+            "exit": exit_groups,
             "output_exit": output_exit,
             "height_tool": height_tool,
             "height_load": height_load,
@@ -1412,22 +1435,17 @@ class Recipe:
             )[2]
         )
 
-        # approach path
-        approach_path = []
+        # Motion-group ingredients (groups assembled after the
+        # gravity target below — see touch for the protocol).
+        a_pad = a_gap = None
         if approach:
-            _approach_path = [
-                [0, 0, max(height_load, height_container) + padding, 0, 0, 0],
-                [0, 0, height_container + gap, 0, 0, 0],
-            ]
-            if not soft_approach:
-                _approach_path = _approach_path[0:1]
-            approach_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _approach_path]
+            a_pad = dorna_pose.transform_pose([0, 0, max(height_load, height_container) + padding, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
+            if soft_approach:
+                a_gap = dorna_pose.transform_pose([0, 0, height_container + gap, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
 
-        # exit path
-        exit_path = []
+        exit_groups = []
         if exit:
-            _exit_path = [[0, 0, max(height_load, height_container) + padding, 0, 0, 0]]
-            exit_path = [dorna_pose.transform_pose(p, from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0]) for p in _exit_path]
+            exit_groups = [[dorna_pose.transform_pose([0, 0, max(height_load, height_container) + padding, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])]]
 
         # IO config
         output_approach = []
@@ -1468,23 +1486,27 @@ class Recipe:
             }
 
         # gravity compensation
-        target_offset = offset[:]
-        target_offset[2] += gravity_offset
+        contact = offset[:]
+        contact[2] += gravity_offset
+
+        approach_groups = [[contact]]
+        if approach:
+            approach_groups = [[a_pad, a_gap], [contact]] if soft_approach else [[a_pad, contact]]
 
         return {
             "target_solid": component.assembly[solid_name],
             "target_anchor": anchor,
-            "target_offset": target_offset,
+            "approach": approach_groups,
+            "travel": bool(approach),
+            "contact": contact,
             "output_approach": output_approach,
             "approach_tool": {"solid": load_list[0], "anchor": load_anchor, "offset": [0, 0, 0, 0, 0, 0]},
-            "approach_path": approach_path,
-            "soft_approach": soft_approach,
             "output_touch": output_touch,
             "actions": actions,
             "sleep": 0,
             "attach": attach,
             "exit_tool": exit_tool,
-            "exit_path": exit_path,
+            "exit": exit_groups,
             "output_exit": output_exit,
             "height_tool": height_tool,
             "height_load": height_load,
@@ -1610,8 +1632,7 @@ class Recipe:
         if not pick_prm:
             raise RecipeError("above failed — could not compute pick parameters")
         pick_prm.pop("pose_offset", None)
-        pick_prm["target_offset"] = None
-        pick_prm["approach_path"] = pick_prm["approach_path"][0:1]
+        pick_prm["approach"] = [pick_prm["approach"][0][0:1]]
         return self.touch(**pick_prm, **kwargs)
 
     def stand(self, anchor, offset=[0, 0, 0, 0, 0, 0], solid_name="body", component=None, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
@@ -1661,8 +1682,7 @@ class Recipe:
         if not pick_prm:
             raise RecipeError("stand failed — could not compute parameters")
         pose_offset = pick_prm.pop("pose_offset")
-        pick_prm["target_offset"] = None
-        pick_prm["approach_path"] = [pose_offset.pose(offset=offset)]
+        pick_prm["approach"] = [[pose_offset.pose(offset=offset)]]
         return self.touch(**pick_prm, **kwargs)
 
     def rotate(self, rotation=90, joint="j5", limit=[-175, 175], vaj=[500, 3000, 15000], **kwargs):
