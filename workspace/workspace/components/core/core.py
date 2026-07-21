@@ -2838,6 +2838,33 @@ class SimulationAPI:
         self.joints = [float(v) for v in samples[-1][1:]]
         return 2
 
+    def cjmove(self, points, vajs, corners, timeout=-1, **kwargs):
+        """Sim twin of Dorna.cjmove: same signature and validation,
+        executed serially (corner/cont blending is firmware behavior —
+        the sim runs each section to completion, stop-start)."""
+        if not points:
+            return None
+        if len(vajs) != len(points) or len(corners) != len(points):
+            raise ValueError("cjmove: points, vajs and corners must have the same length")
+        for p, vaj in zip(points, vajs):
+            r = self.jmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+            if r != 2:
+                return r
+        return 2
+
+    def clmove(self, points, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
+        """Sim twin of Dorna.clmove: straight TCP line per section,
+        one tool_pose for the whole path, serial execution."""
+        if not points:
+            return None
+        if len(vajs) != len(points) or len(corners) != len(points):
+            raise ValueError("clmove: points, vajs and corners must have the same length")
+        for p, vaj in zip(points, vajs):
+            r = self.lmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], tool_pose=tool_pose)
+            if r != 2:
+                return r
+        return 2
+
     def raw_output(self, index, val):
         """Sim twin of RobotStation.raw_output — record only, no sleep
         (the caller's IO thread owns the sequencing delays)."""
