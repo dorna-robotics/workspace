@@ -516,9 +516,7 @@ class Recipe:
                 has_motion_plan if has_motion_plan is not None else False)
 
         if first_approach and len(path) > 1 and blend and blend > 0:
-            _t0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
-            _t_ik = _time.perf_counter() - _t0
             rt.checkpoint()
 
             tool_pose = [0, 0, 0, 0, 0, 0]
@@ -546,7 +544,6 @@ class Recipe:
                 else:  # jmove — a straight joint segment IS its smove form
                     points = [cur, [float(v) for v in J0]]
 
-            _t0 = _time.perf_counter()
             folded = points is not None
             travel_end = len(points) - 1 if folded else 0
             rest = []
@@ -560,12 +557,6 @@ class Recipe:
                         break
                     rest.extend(seg)
                     prev = J
-            _t_fold = _time.perf_counter() - _t0
-            # Attribute pre-motion latency: IK rail sweeps + fold
-            # sampling. The planner's own time is on the [plan] line.
-            if _t_ik + _t_fold > 0.05:
-                print(f"[touch] prep: ik {_t_ik:.2f}s, fold {_t_fold:.2f}s")
-
             if folded:
                 points.extend(rest)
                 # Corner blending: G1 Bezier fillets on EVERY sharp
@@ -977,9 +968,7 @@ class Recipe:
             if fused and tail:
                 io_handle = self._output_async(output_approach)
             else:
-                _t0 = _time.perf_counter()
                 self._output_join(self._output_async(output_approach))
-                print(f"[touch] approach io {_time.perf_counter() - _t0:.2f}s")
         if fused:
             self._move_along_path(
                 rt, fused, target_solid, target_anchor,
@@ -992,11 +981,7 @@ class Recipe:
                 blend=blend,
             )
         if io_handle is not None:
-            _t0 = _time.perf_counter()
             self._output_join(io_handle)
-            _dt = _time.perf_counter() - _t0
-            if _dt > 0.05:
-                print(f"[touch] approach io join {_dt:.2f}s (not hidden by travel)")
         if tail:
             self._move_along_path(
                 rt, tail, target_solid, target_anchor,
