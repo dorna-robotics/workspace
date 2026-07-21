@@ -136,7 +136,7 @@ class Decapper(Recipe):
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, -10 -gap - height_cap, 0, 0, 0],
+                target_offset=[0, 0, -20 -gap - height_cap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
