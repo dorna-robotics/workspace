@@ -666,11 +666,11 @@ class Recipe:
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
         if primitive == "jmove":
-            pts, vels = self.core.section_vels(points, vel, accel)
+            pts, vels, accels = self.core.section_vels(points, vel, accel)
             for k in range(1, len(pts)):
                 last = k == len(pts) - 1
                 extra = {} if last else {"timeout": 0}
-                rt.jmove(joint=pts[k], vel=vels[k - 1], accel=accel, jerk=jerk,
+                rt.jmove(joint=pts[k], vel=vels[k - 1], accel=accels[k - 1], jerk=jerk,
                          cont=0 if last else 1, **extra)
             return
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)

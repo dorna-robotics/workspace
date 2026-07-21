@@ -1577,19 +1577,26 @@ class Core:
         return samples
 
     def section_vels(self, points, vel, accel, dt=0.01):
-        """Per-section velocities for a cont-jmove chain: run the same
-        TOPP-RA profile as tmove, then compress it to ONE vel per
-        waypoint section (knot k -> k+1) — the profile's peak chord
-        speed inside that section, scaled to the section's leading
-        joint (jmove's vel caps the fastest joint). The firmware's own
-        accel-limited ramps between per-section vels reproduce the
-        profile's shape with existing jmove+cont — no tmove firmware
-        needed. Conservative by construction: no section is told to go
-        faster than TOPP-RA ever went inside it.
+        """Per-section velocity AND acceleration for a cont-jmove
+        chain: run the same TOPP-RA profile as tmove, then compress it
+        to one (vel, accel) pair per waypoint section (knot k -> k+1).
 
-        Returns ``(pts, vels)``: the deduped waypoints the chain must
-        drive and one velocity per section (len(pts)-1), floored at
-        1.0 so the ramp-from-zero endpoints never stall a section."""
+        vel_k: the profile's peak chord speed inside the section,
+        scaled to the section's leading joint (jmove's vel caps the
+        fastest joint). accel_k: the peak |dv/dt| the profile used
+        inside the section (same leading-joint scaling), floored at
+        the accel needed to ramp from vel_{k-1} to vel_k within the
+        section's leading-joint travel (a lazier section would lag the
+        chain), capped at the configured accel. Jerk stays global —
+        the profile carries no jerk information. Conservative by
+        construction: no section is told to move faster or ramp harder
+        than TOPP-RA did inside it (modulo the reachability floor,
+        itself derived from the profile's own speeds).
+
+        Returns ``(pts, vels, accels)``: the deduped waypoints the
+        chain must drive and per-section values (len(pts)-1 each);
+        vels floored at 1.0 so the ramp-from-zero endpoints never
+        stall a section."""
         try:
             import toppra as ta
             import toppra.constraint as tc
@@ -1600,14 +1607,14 @@ class Core:
         pts = [p for i, p in enumerate(pts)
                if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
         if len(pts) < 2:
-            return pts, []
+            return pts, [], []
         arr = np.array(pts)
         knots_s = np.zeros(len(arr))
         for i in range(1, len(arr)):
             knots_s[i] = knots_s[i - 1] + float(np.linalg.norm(arr[i] - arr[i - 1]))
         total = float(knots_s[-1])
         if total <= 0.0:
-            return pts, [1.0] * (len(pts) - 1)
+            return pts, [1.0] * (len(pts) - 1), [float(accel)] * (len(pts) - 1)
         t0 = time.perf_counter()
         inst = ta.algorithm.TOPPRA(
             [tc.JointVelocityConstraint(np.array([[-vel, vel]] * arr.shape[1])),
@@ -1623,17 +1630,27 @@ class Core:
         seg = np.linalg.norm(np.diff(q, axis=0), axis=1)
         s_mid = np.concatenate([[0.0], np.cumsum(seg)])[:-1] + seg / 2.0
         v_chord = seg / dt
-        vels = []
+        a_chord = np.abs(np.diff(v_chord)) / dt
+        s_acc = s_mid[:-1] + np.diff(s_mid) / 2.0
+        vels, accels = [], []
         for k in range(len(pts) - 1):
             lo, hi = knots_s[k], knots_s[k + 1]
             in_sec = v_chord[(s_mid >= lo) & (s_mid < hi)]
             v_sec = float(in_sec.max()) if len(in_sec) else float(vel)
             d = arr[k + 1] - arr[k]
-            lead = float(np.abs(d).max()) / max(float(np.linalg.norm(d)), 1e-9)
-            vels.append(max(1.0, min(float(vel), v_sec * lead)))
+            d_lead = float(np.abs(d).max())
+            lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
+            v_k = max(1.0, min(float(vel), v_sec * lead))
+            a_sec = a_chord[(s_acc >= lo) & (s_acc < hi)]
+            a_k = (float(a_sec.max()) if len(a_sec) else float(accel)) * lead
+            v_prev = vels[-1] if vels else 0.0
+            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_lead, 1e-9)
+            accels.append(min(float(accel), max(a_k, a_need)))
+            vels.append(v_k)
         print(f"[traj] {len(pts)} pts -> {len(vels)} cont-jmove sections, "
-              f"vels {[round(v) for v in vels]}, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
-        return pts, vels
+              f"vels {[round(v) for v in vels]}, accels {[round(a) for a in accels]}, "
+              f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
+        return pts, vels, accels
 
     @staticmethod
     def _boxes_to_cubes(boxes):
