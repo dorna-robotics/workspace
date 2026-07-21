@@ -2838,33 +2838,33 @@ class SimulationAPI:
         self.joints = [float(v) for v in samples[-1][1:]]
         return 2
 
-    def cjmove(self, points, vajs, corners, **kwargs):
+    def cjmove(self, joints, vajs, corners, **kwargs):
         """Sim twin of Dorna.cjmove: same signature and validation,
         executed serially (corner/cont blending is firmware behavior —
         the sim runs each section to completion, stop-start)."""
-        if not points:
+        if not joints:
             return None
-        if len(vajs) != len(points) or len(corners) != len(points):
-            raise ValueError("cjmove: points, vajs and corners must have the same length")
+        if len(vajs) != len(joints) or len(corners) != len(joints):
+            raise ValueError("cjmove: joints, vajs and corners must have the same length")
         r = None
-        for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
-            last = k == len(points) - 1
+        for k, (p, vaj, corner) in enumerate(zip(joints, vajs, corners)):
+            last = k == len(joints) - 1
             r = self.jmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
                            cont=0 if last else 1, corner=corner,
                            timeout=-1 if last else 0)
         return r
 
-    def clmove(self, points, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
+    def clmove(self, joints, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
         """Sim twin of Dorna.clmove: straight TCP line per section,
         serial execution. tool_pose applies to the FIRST motion only,
         mirroring the real call shape (tool set once up front)."""
-        if not points:
+        if not joints:
             return None
-        if len(vajs) != len(points) or len(corners) != len(points):
-            raise ValueError("clmove: points, vajs and corners must have the same length")
+        if len(vajs) != len(joints) or len(corners) != len(joints):
+            raise ValueError("clmove: joints, vajs and corners must have the same length")
         r = None
-        for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
-            last = k == len(points) - 1
+        for k, (p, vaj, corner) in enumerate(zip(joints, vajs, corners)):
+            last = k == len(joints) - 1
             r = self.lmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
                            tool_pose=tool_pose if k == 0 else [0, 0, 0, 0, 0, 0],
                            cont=0 if last else 1, corner=corner,
