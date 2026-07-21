@@ -2846,34 +2846,30 @@ class SimulationAPI:
             return None
         if len(vajs) != len(points) or len(corners) != len(points):
             raise ValueError("cjmove: points, vajs and corners must have the same length")
+        r = None
         for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
             last = k == len(points) - 1
             r = self.jmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
                            cont=0 if last else 1, corner=corner,
                            timeout=-1 if last else 0)
-            if r != 2:
-                return r
-        return 2
+        return r
 
     def clmove(self, points, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
         """Sim twin of Dorna.clmove: straight TCP line per section,
-        ONE tool_pose for the whole path, serial execution. The real
-        API sets the tool once up front and it persists; the sim lmove
-        is stateless, so the same path-wide tool_pose rides along on
-        every section — one tool either way."""
+        serial execution. tool_pose applies to the FIRST motion only,
+        mirroring the real call shape (tool set once up front)."""
         if not points:
             return None
         if len(vajs) != len(points) or len(corners) != len(points):
             raise ValueError("clmove: points, vajs and corners must have the same length")
+        r = None
         for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
             last = k == len(points) - 1
             r = self.lmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
-                           tool_pose=tool_pose,
+                           tool_pose=tool_pose if k == 0 else [0, 0, 0, 0, 0, 0],
                            cont=0 if last else 1, corner=corner,
                            timeout=-1 if last else 0)
-            if r != 2:
-                return r
-        return 2
+        return r
 
     def raw_output(self, index, val):
         """Sim twin of RobotStation.raw_output — record only, no sleep
