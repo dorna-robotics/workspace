@@ -1517,7 +1517,7 @@ class Core:
                 continue
         return out
 
-    def motion_plan(self, joint, seed=1234, padding=20, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
 
         """
         Collision-aware joint move:
