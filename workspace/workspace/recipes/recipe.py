@@ -35,7 +35,7 @@ class Recipe:
         # Corner-blend radius (mm) for fused approach motions — a
         # motion-SHAPING knob, independent of path planning (unplanned
         # touches fuse and blend too). 0 → classic discrete motions.
-        blend=75.0,
+        blend=100.0,
         # Per-recipe has_motion_plan override (full grammar: True /
         # False / [False, "jmove"|"lmove"]). None → defer to the
         # scene's core.has_motion_plan. Per-call args still win.
