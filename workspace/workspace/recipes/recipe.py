@@ -42,6 +42,11 @@ class Recipe:
         # args still win.
         has_motion_plan=None,
         speed_factor=0.5,
+        # Corner blend radius for cont-jmove chains (mm/deg in the
+        # chain's operating space) — matches the firmware default.
+        # The commanded midpoints are never touched: the path cuts
+        # inside each corner by min(corner, 0.4 * min(leg lengths)).
+        corner=60.0,
         jmove_vaj=[200, 500, 3000],  # [200, 1200, 6000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
@@ -100,6 +105,7 @@ class Recipe:
         self.blend = prm["blend"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
+        self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
 
@@ -680,11 +686,11 @@ class Recipe:
             return
         if primitive == "jmove":
             pts, vels, accels = self.core.section_vels(points, vel, accel)
-            for k in range(1, len(pts)):
-                last = k == len(pts) - 1
-                extra = {} if last else {"timeout": 0}
-                rt.jmove(joint=pts[k], vel=vels[k - 1], accel=accels[k - 1], jerk=jerk,
-                         cont=0 if last else 1, **extra)
+            if len(pts) < 2:
+                return
+            vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
+            corners = [self.corner] * (len(pts) - 1)
+            rt.cjmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners)
             return
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
 

@@ -2304,6 +2304,277 @@ def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0],
     return blend_path_points(kinematic, points, corners, radius, tool_pose, step, check=check)
 
 
+# ── Firmware-fidelity cont-chain engine ─────────────────────────────
+# Direct Python ports from the controller firmware (server/motion.cpp)
+# so the sim executes cjmove/clmove chains EXACTLY like the robot:
+#  * corner curves (Motion::createCurve + traverse pathType 2): the
+#    commanded midpoint B is NEVER touched — the path leaves the
+#    incoming line r before B and rejoins r after, r = min(corner,
+#    0.4*min(leg lengths));
+#  * tick-quantized carried-velocity S-curve profiles (cont()/slice(),
+#    1 ms ticks — resolutionFactor 1000);
+#  * the same q-over-concatenated-paths playback as Motion::addJMove
+#    (each chain section = [second half of previous corner] + line +
+#    [first half of own corner], one profile per section, velocity
+#    carried across sections).
+# Keep in lockstep with motion.cpp — quirks are ported deliberately
+# (e.g. slice()'s pow(x, 1/3) integer-division bug).
+
+def _fw_q_n(t, j, a0, v0, q0=0.0):
+    return q0 + t * v0 + t * (t - 1) / 2 * a0 + t * (t - 1) * (t - 2) / 6 * j
+
+def _fw_q_n_prime(t, j, a0, v0):
+    return v0 - a0 / 2 + t * a0 + j * (3 * t * t - 6 * t + 2) / 6
+
+def _fw_v_n(t, j, a0, v0):
+    return v0 + t * a0 + t * (t - 1) / 2 * j
+
+def _fw_a_n(t, j, a0):
+    return a0 + t * j
+
+def _fw_solver_quadratic(a, b, c):
+    delta = b * b - 4 * a * c
+    if delta < 0:
+        return None
+    delta = math.sqrt(delta)
+    return ((-b - delta) / (2 * a), (-b + delta) / (2 * a))
+
+def _fw_sign3(x):
+    return 1 if x >= 0 else -1
+
+def _fw_slice(t, j0, a0, v0, d):
+    """Port of slice() — one jerk segment of at most t ticks, capped so
+    the covered distance never exceeds d. finish=1 means the full t
+    ticks fit inside d."""
+    q_t = _fw_q_n(t, j0, a0, v0)
+    if q_t <= d:
+        return {"ticks": [t], "jerks": [j0], "vFinal": _fw_v_n(t, j0, a0, v0),
+                "aFinal": _fw_a_n(t, j0, a0), "d": q_t, "finish": 1}
+    if j0 == 0:
+        roots = _fw_solver_quadratic(a0 / 2, v0 - a0 / 2, -d)
+        if roots is not None:
+            x = math.floor(min(roots))
+            if x >= 0:
+                return {"ticks": [x], "jerks": [j0], "vFinal": _fw_v_n(x, j0, a0, v0),
+                        "aFinal": _fw_a_n(x, j0, a0), "d": _fw_q_n(x, j0, a0, v0), "finish": 0}
+        else:
+            return {"ticks": [0], "jerks": [j0], "vFinal": _fw_v_n(0, j0, a0, v0),
+                    "aFinal": _fw_a_n(0, j0, a0), "d": _fw_q_n(0, j0, a0, v0), "finish": 0}
+    # Newton search (C++ quirk kept: pow(x, 1/3) with integer division
+    # is pow(x, 0) == 1.0)
+    x_u, q_u = t, q_t
+    x_l, q_l = 0.0, 0.0
+    x = max(0.0, min(1.0, t)) if j0 > 0 else t
+    qq_n = _fw_q_n(x, j0, a0, v0, 0)
+    i = 0
+    while i < 100 and math.floor(x_u) > math.ceil(x_l):
+        denom = _fw_q_n_prime(x, j0, a0, v0)
+        if denom == 0:
+            break
+        x = x - (qq_n - d) / denom
+        qq_n = _fw_q_n(x, j0, a0, v0, 0)
+        if x_l <= x <= x_u:
+            if qq_n > d and qq_n < q_u:
+                x_u, q_u = x, qq_n
+            elif qq_n < d and qq_n > q_l:
+                x_l, q_l = x, qq_n
+            else:
+                x_u, q_u = x, qq_n
+                x_l, q_l = x, qq_n
+        i += 1
+    x = math.floor(x_u)
+    return {"ticks": [x], "jerks": [j0], "vFinal": _fw_v_n(x, j0, a0, v0),
+            "aFinal": _fw_a_n(x, j0, a0), "d": _fw_q_n(x, j0, a0, v0), "finish": 0}
+
+def _fw_append(rtn, slc):
+    rtn["ticks"] += slc["ticks"]
+    rtn["jerks"] += slc["jerks"]
+    rtn["aFinal"] = slc["aFinal"]
+    rtn["vFinal"] = slc["vFinal"]
+    rtn["d"] += slc["d"]
+
+def _fw_cont(a0, v0, jm, am, vm, d):
+    """Port of cont() — carried-velocity S-curve profile toward target
+    speed vm over distance d, tick-quantized."""
+    rtn = {"ticks": [], "jerks": [], "aFinal": a0, "vFinal": v0, "d": 0.0}
+    if d < v0:
+        return rtn
+    if vm > 0:
+        if a0 == 0:
+            if v0 == vm:
+                t4 = math.floor(d / vm)
+                rtn["ticks"], rtn["jerks"] = [t4], [0]
+                rtn["d"] += _fw_q_n(t4, 0, 0, v0)
+                return rtn
+            t1 = math.floor(am / jm) + 1
+            if t1 * am >= abs(vm - v0):
+                t1 = math.floor(math.sqrt(abs(vm - v0) / jm)) + 1
+                j = (vm - v0) / (t1 * t1)
+                a = j * t1
+                t2 = 0
+            else:
+                t2 = math.floor(abs(vm - v0) / am) - t1 + 1
+                a = (vm - v0) / (t1 + t2)
+                j = a / t1
+            slc = _fw_slice(t1, j, a0, v0, d)
+            _fw_append(rtn, slc)
+            if slc["finish"]:
+                slc = _fw_slice(t2, 0, a, rtn["vFinal"], d - rtn["d"])
+                _fw_append(rtn, slc)
+                if slc["finish"]:
+                    slc = _fw_slice(t1, -j, a, rtn["vFinal"], d - rtn["d"])
+                    _fw_append(rtn, slc)
+                    if slc["finish"]:
+                        _fw_append(rtn, _fw_cont(0, rtn["vFinal"], jm, am, vm, d - rtn["d"]))
+            return rtn
+        # a0 != 0
+        roots = _fw_solver_quadratic(_fw_sign3(a0) * jm, 2 * a0,
+                                     v0 - a0 * a0 / (2 * jm) + a0 / 2 - vm)
+        if roots is not None:
+            t1 = min(roots) if a0 >= 0 else max(roots)
+            if t1 >= 1:
+                a1 = _fw_a_n(t1, _fw_sign3(a0) * jm, a0)
+                v1 = _fw_v_n(t1, _fw_sign3(a0) * jm, a0, v0)
+                t1_adj = math.floor(abs(min(abs(a1), am) - abs(a0)) / jm)
+                v1_adj = _fw_v_n(t1_adj, _fw_sign3(a0) * _fw_sign3(am - abs(a0)) * jm, a0, v0)
+                a1_adj = _fw_a_n(t1_adj, _fw_sign3(a0) * _fw_sign3(am - abs(a0)) * jm, a0)
+                t_tmp = abs(a1 - a1_adj) / jm
+                v_tmp = _fw_v_n(t_tmp, -_fw_sign3(a0) * jm, a1, v1)
+                t2_adj = math.floor((v_tmp - v1_adj) / (_fw_sign3(a0) * am))
+                v2_adj = _fw_v_n(t2_adj, 0, a1_adj, v1_adj)
+                t3_adj = math.floor(abs(a1_adj) / jm)
+                j3 = -a1_adj / t3_adj if t3_adj else 0.0
+                slc = _fw_slice(t1_adj, _fw_sign3(a0) * _fw_sign3(am - abs(a0)) * jm, a0, v0, d)
+                _fw_append(rtn, slc)
+                if slc["finish"]:
+                    slc = _fw_slice(t2_adj, 0, a1_adj, v1_adj, d - rtn["d"])
+                    _fw_append(rtn, slc)
+                    if slc["finish"]:
+                        slc = _fw_slice(t3_adj, j3, a1_adj, v2_adj, d - rtn["d"])
+                        _fw_append(rtn, slc)
+                        if slc["finish"]:
+                            _fw_append(rtn, _fw_cont(0, rtn["vFinal"], jm, am, vm, d - rtn["d"]))
+                return rtn
+        # go toward a = 0 as fast as possible
+        if a0 < -v0:
+            a0 = -v0
+        t3 = math.floor(abs(a0) / jm) + 1
+        j3 = -a0 / t3
+        v3 = _fw_v_n(t3, j3, a0, v0)
+        if v3 < 0:
+            t3 = math.floor(2 * v0 / abs(a0)) - 1
+            j3 = -a0 / t3 if t3 else 0.0
+        slc = _fw_slice(t3, j3, a0, v0, d)
+        _fw_append(rtn, slc)
+        if slc["finish"]:
+            _fw_append(rtn, _fw_cont(0, rtn["vFinal"], jm, am, vm, d - rtn["d"]))
+        return rtn
+    # vm <= 0: decelerate to stop within d
+    if a0 == 0:
+        t1_a = math.floor(am / jm)
+        t1_v = math.floor(math.sqrt(v0 / jm)) if v0 > 0 else 0
+        t1_d = math.floor((d / v0) - 1.0) if v0 > 0 else 0
+        t1 = max(0, min(t1_a, t1_v, t1_d))
+        t2 = 0
+        if t1 == 0:
+            t4 = max(0, math.ceil(d / v0) - 1.0) if v0 > 0 else 0
+            j_t = 0
+        else:
+            if t1_a <= min(t1_v, t1_d):
+                t2_v = math.floor((v0 / (jm * t1)) - t1)
+                t2_d = 2.0 * (t1_d - t1)
+                t2 = max(0.0, min(t2_v, t2_d))
+            t4 = max(0.0, math.ceil((d / v0) - t1 - t2 / 2.0 - 1.0))
+            j_t = v0 / (t1 * (t1 + t2))
+        rtn["ticks"] += [t4, t1, t2, t1]
+        rtn["jerks"] += [0, -j_t, 0, j_t]
+        rtn["aFinal"] = 0.0
+        rtn["vFinal"] = 0.0
+        rtn["d"] = j_t * t1 * (t1 + t2) * (t1 + t2 / 2.0 + t4 + 1.0)
+        return rtn
+    d1 = d / 2
+    roots = _fw_solver_quadratic(a0 / 3, v0, -a0 / 3 - d1)
+    if roots is not None:
+        t1 = math.floor(min(roots))
+        if t1 < 0:
+            t1 = math.floor(max(roots))
+        if a0 < 0 and t1 > -2 * (v0 / a0) - 1:
+            t1 = math.floor(-(v0 / a0) - 0.5)
+        j1 = -a0 / t1 if t1 else 0.0
+        v1 = _fw_v_n(t1, j1, a0, v0)
+        d1 = _fw_q_n(t1, j1, a0, v0)
+        rtn["ticks"].append(t1)
+        rtn["jerks"].append(j1)
+        rtn["d"] += d1
+        _fw_append(rtn, _fw_cont(0, v1, jm, am, vm, d - d1))
+    return rtn
+
+def _fw_profile(jerk, accel, vel, d, v_init, a_init, to_stop):
+    """Port of Motion::createProfile types 1/2 — the x1000 tick
+    scaling wrapper around cont(). Quirk kept: an empty profile is
+    replaced by a single zero segment with vFinal forced to 0."""
+    F = 1000.0
+    prof = _fw_cont(a_init * F, v_init * F, jerk * F, accel * F,
+                    (0.0 if to_stop else vel * F), d * F + 1.0e-6)
+    if to_stop:
+        prof["vFinal"] = 0.0
+        prof["aFinal"] = 0.0
+    if not prof["ticks"]:
+        prof = {"ticks": [0], "jerks": [0], "vFinal": 0.0, "aFinal": 0.0, "d": prof["d"]}
+    return {"ticks": [int(round(t)) for t in prof["ticks"]],
+            "jerks": [j / F for j in prof["jerks"]],
+            "vInitial": v_init, "aInitial": a_init,
+            "vFinal": prof["vFinal"] / F, "aFinal": prof["aFinal"] / F,
+            "d": prof["d"] / F}
+
+def _fw_vec(a, b, ca, cb):
+    return [ca * x + cb * y for x, y in zip(a, b)]
+
+def _fw_norm(v):
+    return math.sqrt(sum(x * x for x in v))
+
+def _fw_unit(v):
+    n = _fw_norm(v)
+    return [x / n for x in v] if n > 0 else list(v)
+
+def _fw_inner(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+def _fw_create_curve(A, B, C, corner):
+    """Port of Motion::createCurve — the cont corner blend between the
+    incoming leg A->B and outgoing leg B->C. B is never touched."""
+    BA = _fw_vec(A, B, 1.0, -1.0)
+    BC = _fw_vec(C, B, 1.0, -1.0)
+    LBA, LBC = _fw_norm(BA), _fw_norm(BC)
+    BA, BC = _fw_unit(BA), _fw_unit(BC)
+    y = _fw_unit(_fw_vec(BA, BC, 1.0, 1.0))
+    x = _fw_unit(_fw_vec(BC, y, 1.0, -_fw_inner(BC, y)))
+    r = min(corner, 0.4 * min(LBA, LBC))
+    a_abs = _fw_vec(B, BA, 1.0, r)
+    c_abs = _fw_vec(B, BC, 1.0, r)
+    return {"r": r, "b": list(B), "x": x, "y": y,
+            "a": _fw_vec(a_abs, B, 1.0, -1.0),
+            "c": _fw_vec(c_abs, B, 1.0, -1.0),
+            "curveInitial": a_abs, "curveFinal": c_abs,
+            "length": 2.0 * r}
+
+def _fw_curve_point(c, q, first):
+    """Port of Motion::traverse pathType 2 — evaluate the corner curve
+    at arc position q of its half (first / second)."""
+    z = q if first else q + c["length"] / 2
+    z = z / c["length"] if c["length"] > 0 else 0.0
+    zp = 1.0 - z
+    f = 0.5 * (1.0 - math.cos(math.pi * 0.5 * (1.0 - math.cos(math.pi * z))))
+    lam = -3.48
+    x = _fw_inner(c["a"], c["x"]) * zp + _fw_inner(c["c"], c["x"]) * z
+    y = (_fw_inner(c["a"], c["y"]) * (1.0 - 2.0 * z - lam * z ** 3) * (1.0 - f)
+         + _fw_inner(c["c"], c["y"]) * (1.0 - 2.0 * zp - lam * zp ** 3) * f)
+    v = list(c["b"])
+    v = _fw_vec(v, c["x"], 1.0, x)
+    v = _fw_vec(v, c["y"], 1.0, y)
+    return v
+
+
 class SimulationAPI:
     def __init__(self, joints=[0,0,0,0,0,0,0,0]):
         self.joints = joints
@@ -2838,37 +3109,142 @@ class SimulationAPI:
         self.joints = [float(v) for v in samples[-1][1:]]
         return 2
 
+    def _fw_profile_cont(self, jerk, accel, vel, d, v0_tick, a0_tick, to_stop):
+        """Section profile with carried velocity — Motion::createProfile
+        types 1/2 (the cont() wrapper) in the sim's per-tick unit
+        convention (see create_profile: user units / FREQ powers, then
+        the x1000 resolution scale). vFinal/aFinal come back in
+        per-tick units, ready to carry into the next section."""
+        F = float(self.FREQ)
+        R = 1000.0
+        prof = _fw_cont(a0_tick * R, v0_tick * R,
+                        jerk / (F * F * F) * R, accel / (F * F) * R,
+                        (0.0 if to_stop else vel / F * R), d * R + 1.0e-6)
+        ticks = [int(round(x)) for x in prof["ticks"] if int(round(x)) > 0]
+        jerks = [j / R for j, x in zip(prof["jerks"], prof["ticks"]) if int(round(x)) > 0]
+        v_final, a_final = prof["vFinal"] / R, prof["aFinal"] / R
+        if to_stop or not ticks:   # firmware quirk: empty profile forces vFinal 0
+            v_final, a_final = 0.0, 0.0
+        return {"ticks": ticks, "jerks": jerks, "vFinal": v_final, "aFinal": a_final}
+
     def cjmove(self, joints, vajs, corners, **kwargs):
-        """Sim twin of Dorna.cjmove: same signature and validation,
-        executed serially (corner/cont blending is firmware behavior —
-        the sim runs each section to completion, stop-start)."""
+        """Sim twin of Dorna.cjmove with FIRMWARE fidelity (ports of
+        server/motion.cpp): corner curves cut inside every intermediate
+        target — the commanded midpoint is never touched — one
+        tick-quantized S-curve per section with velocity carried
+        across sections, full stop only at the chain end."""
         if not joints:
             return None
         if len(vajs) != len(joints) or len(corners) != len(joints):
             raise ValueError("cjmove: joints, vajs and corners must have the same length")
-        r = None
-        for k, (p, vaj) in enumerate(zip(joints, vajs)):
-            last = k == len(joints) - 1
-            kw = {"cont": 0, "timeout": -1} if last else {"cont": 1, "corner": corners[k], "timeout": 0}
-            r = self.jmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], **kw)
-        return r
+        targets = [[float(v) for v in p] for p in joints]
+        return self._fw_chain_exec(list(self.joints), targets, vajs, corners,
+                                   lambda pose, cur: [float(v) for v in pose])
 
     def clmove(self, joints, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], **kwargs):
-        """Sim twin of Dorna.clmove: straight TCP line per section,
-        serial execution. tool_pose applies to the FIRST motion only,
-        mirroring the real call shape (tool set once up front)."""
+        """Sim twin of Dorna.clmove with FIRMWARE fidelity: the chain
+        runs in xyzj space ([x, y, z, j3, j4, j5, aux…] — the
+        controller's lmove space, straight TCP lines) with corner
+        curves in that same space; ONE tool_pose for the whole chain
+        (the controller sets the tool once and it persists)."""
         if not joints:
             return None
         if len(vajs) != len(joints) or len(corners) != len(joints):
             raise ValueError("clmove: joints, vajs and corners must have the same length")
-        r = None
-        for k, (p, vaj) in enumerate(zip(joints, vajs)):
-            last = k == len(joints) - 1
-            kw = {"cont": 0, "timeout": -1} if last else {"cont": 1, "corner": corners[k], "timeout": 0}
-            if k == 0:
-                kw["tool_pose"] = tool_pose
-            r = self.lmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], **kw)
-        return r
+        kin = self.dorna.kinematic
+        kin.set_tcp_xyzabc(tool_pose)
+
+        def to_xyzj(J):
+            f = kin.fw(J[:6])
+            return [float(f[0]), float(f[1]), float(f[2]),
+                    float(J[3]), float(J[4]), float(J[5])] + [float(v) for v in J[6:]]
+
+        def to_joints(pose, cur):
+            return _xyzj_to_joints(pose, cur, tool_pose, kin)
+
+        start = to_xyzj(list(self.joints))
+        targets = [to_xyzj([float(v) for v in p]) for p in joints]
+        return self._fw_chain_exec(start, targets, vajs, corners, to_joints)
+
+    def _fw_chain_exec(self, start, targets, vajs, corners, to_joints):
+        """Firmware-faithful chain playback (Motion::addJMove): section
+        k drives [second half of previous corner] + line + [first half
+        of own corner] under ONE carried-velocity profile; q maps
+        across the concatenated paths exactly like the tick loop in
+        the firmware. The sim assumes the whole chain is queued ahead
+        (nextReady always true) — on the real robot a starved command
+        queue breaks the chain into a stop, which the sim cannot
+        show."""
+        pts = [start] + [list(p) for p in targets]
+        n = len(targets)
+        dt = 1.0 / float(self.INTERP_FREQ)
+        v_tick, a_tick = 0.0, 0.0
+        last_curve = None
+        cur_joints = list(self.joints)
+        for k in range(n):
+            vel, accel, jerk = (float(vajs[k][0]), float(vajs[k][1]), float(vajs[k][2]))
+            A, B = pts[k], pts[k + 1]
+            has_next = k + 1 < n
+            paths = []
+            if last_curve is not None and last_curve["length"] > 0:
+                paths.append(("curve2", last_curve, last_curve["length"] / 2))
+            line_start = last_curve["curveFinal"] if last_curve is not None else A
+            curve = None
+            if has_next:
+                corner = float(corners[k]) if corners[k] else 0.0
+                curve = _fw_create_curve(A, B, pts[k + 2], corner)
+                line_end = curve["curveInitial"]
+            else:
+                line_end = B
+            d_line = _fw_norm(_fw_vec(line_end, line_start, 1.0, -1.0))
+            paths.append(("line", (line_start, line_end, d_line), d_line))
+            if curve is not None and curve["length"] > 0:
+                paths.append(("curve1", curve, curve["length"] / 2))
+            d_total = sum(pd for _, _, pd in paths)
+
+            prof = self._fw_profile_cont(jerk, accel, vel, d_total, v_tick, a_tick,
+                                         to_stop=not has_next)
+            duration = sum(prof["ticks"]) / float(self.FREQ)
+            t0 = time.perf_counter()
+            step = 0
+            while True:
+                elapsed = time.perf_counter() - t0
+                final = elapsed >= duration
+                q, _, _ = self.traverse(prof["jerks"], prof["ticks"],
+                                        q0=0.0, v0=v_tick, a0=a_tick,
+                                        t=min(elapsed, duration))
+                qq = min(max(q, 0.0), d_total)
+                pose, acc = None, 0.0
+                for idx, (kind, data, pd) in enumerate(paths):
+                    if qq <= acc + pd or idx == len(paths) - 1:
+                        qe = min(max(qq - acc, 0.0), pd)
+                        if kind == "line":
+                            s0, s1, dl = data
+                            f = qe / dl if dl > 0 else 1.0
+                            pose = _fw_vec(s0, s1, 1.0 - f, f)
+                        else:
+                            pose = _fw_curve_point(data, qe, kind == "curve1")
+                        break
+                    acc += pd
+                J = to_joints(pose, cur_joints)
+                if J is None:
+                    return -1  # IK failure mid-line (firmware error -110)
+                cur_joints = [float(x) for x in J]
+                self.joints = list(cur_joints)
+                if final:
+                    break
+                step += 1
+                sleep_for = t0 + step * dt - time.perf_counter()
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+            v_tick, a_tick = prof["vFinal"], 0.0
+            last_curve = curve
+        # land exactly on the final target
+        J = to_joints(pts[-1], cur_joints)
+        if J is None:
+            return -1
+        self.joints = [float(v) for v in J]
+        return 2
 
     def raw_output(self, index, val):
         """Sim twin of RobotStation.raw_output — record only, no sleep
