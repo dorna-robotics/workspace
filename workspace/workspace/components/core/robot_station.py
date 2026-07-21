@@ -354,6 +354,16 @@ class RobotStation:
             except Exception:
                 log.exception("RobotStation[%s]: down-listener raised", self.label)
 
+    def tmove(self, samples=None, **kwargs):
+        """PVT trajectory execution — NOT available on the real robot
+        yet: it needs a firmware-side tmove (ring buffer + timed
+        sample interpolation). Until that lands, recipes must run with
+        ``pvt: false`` (smove). Loud failure by design — no silent
+        fallback to a different motion primitive."""
+        raise RuntimeError(
+            "tmove (PVT trajectory) requires controller firmware support "
+            "that is not available yet — set pvt: false in the recipe")
+
     def raw_output(self, index, val):
         """Track-free, fire-and-forget single digital output.
 

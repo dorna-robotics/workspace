@@ -36,6 +36,13 @@ class Recipe:
         # motion-SHAPING knob, independent of path planning (unplanned
         # touches fuse and blend too). 0 → classic discrete motions.
         blend=100.0,
+        # PVT trajectory execution: True → fused paths run as a
+        # TOPP-RA time-parameterized tmove (curvature-aware speed,
+        # per-joint vel/accel caps from jmove_vaj) instead of smove.
+        # Requires tmove support from the robot side (sim has it; the
+        # real controller needs the firmware tmove — until then the
+        # real robot fails loudly with pvt on).
+        pvt=False,
         # Per-recipe has_motion_plan override (full grammar: True /
         # False / [False, "jmove"|"lmove"]). None → defer to the
         # scene's core.has_motion_plan. Per-call args still win.
@@ -97,6 +104,7 @@ class Recipe:
         self.motion_type = prm["motion_type"]
         self.padding = prm["padding"]
         self.blend = prm["blend"]
+        self.pvt = prm["pvt"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.speed_factor = prm["speed_factor"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -479,12 +487,7 @@ class Recipe:
                 points = self.core.motion_plan(joint=J)
             if not points:
                 raise RecipeError("no proper path was found")
-            rt.smove(
-                points[1:],
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
-            )
+            self._run_path_motion(rt, points, vaj_map["jmove"])
         else:
             self._do_motion(
                 rt, J,
@@ -569,22 +572,12 @@ class Recipe:
                     padding=motion_plan_kwargs.get("padding", 10))
                 if blended is not None:
                     points = blended
-                rt.smove(
-                    points[1:],
-                    vel=vaj_map["jmove"][0] * self.speed_factor,
-                    accel=vaj_map["jmove"][1] * self.speed_factor,
-                    jerk=vaj_map["jmove"][2] * self.speed_factor,
-                )
+                self._run_path_motion(rt, points, vaj_map["jmove"])
                 return
             if plan_on and points:
                 # Fold sampling failed mid-way — execute the planned
                 # travel, then the remaining offsets as classic lmoves.
-                rt.smove(
-                    points[1:],
-                    vel=vaj_map["jmove"][0] * self.speed_factor,
-                    accel=vaj_map["jmove"][1] * self.speed_factor,
-                    jerk=vaj_map["jmove"][2] * self.speed_factor,
-                )
+                self._run_path_motion(rt, points, vaj_map["jmove"])
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                     rt.checkpoint()
@@ -634,6 +627,19 @@ class Recipe:
                 accel=vaj_map["jmove"][1] * self.speed_factor,
                 jerk=vaj_map["jmove"][2] * self.speed_factor,
             )
+
+    def _run_path_motion(self, rt, points, vaj):
+        """Execute a fused waypoint path (first point = current pose).
+        The ONE chokepoint for every planned/fused path a recipe sends:
+        ``pvt`` on → TOPP-RA-timed tmove (curvature-aware speed under
+        per-joint vel/accel caps); off → classic smove (single global
+        S-curve, jerk cap included)."""
+        vel = vaj[0] * self.speed_factor
+        accel = vaj[1] * self.speed_factor
+        if self.pvt:
+            rt.tmove(self.core.traj_points(points, vel, accel))
+            return
+        rt.smove(points[1:], vel=vel, accel=accel, jerk=vaj[2] * self.speed_factor)
 
     def _build_io_config(self, tool, component, trigger_io):
         """Build the four IO building-block lists for pick / place.

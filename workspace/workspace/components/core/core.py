@@ -1526,6 +1526,48 @@ class Core:
         except Exception:
             return None
 
+    def traj_points(self, points, vel, accel, dt=0.01):
+        """Time-parameterize a waypoint path with TOPP-RA under
+        per-joint velocity / acceleration caps. Returns tmove samples
+        ``[[t, j0..j7], ...]`` every ``dt`` seconds, t starting at 0.
+
+        Curvature-aware where smove's single global S-curve is flat:
+        the profile slows exactly where the path bends (the fillets)
+        and cruises on straights, so corners are taken within the
+        per-joint accel bound instead of whipped through at cruise
+        speed. Deterministic: same path + caps -> same trajectory.
+        toppra is required when this runs — no silent fallback."""
+        try:
+            import toppra as ta
+            import toppra.constraint as tc
+        except ImportError as ex:
+            raise RuntimeError(
+                "pvt motion requires toppra (sudo pip3 install toppra)") from ex
+        pts = [[float(v) for v in p] for p in points]
+        pts = [p for i, p in enumerate(pts)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        if len(pts) < 2:
+            return [[0.0] + pts[0]] if pts else []
+        arr = np.array(pts)
+        s = np.zeros(len(arr))
+        for i in range(1, len(arr)):
+            s[i] = s[i - 1] + float(np.linalg.norm(arr[i] - arr[i - 1]))
+        if s[-1] <= 0.0:
+            return [[0.0] + pts[0]]
+        s /= s[-1]
+        ndof = arr.shape[1]
+        inst = ta.algorithm.TOPPRA(
+            [tc.JointVelocityConstraint(np.array([[-vel, vel]] * ndof)),
+             tc.JointAccelerationConstraint(np.array([[-accel, accel]] * ndof))],
+            ta.SplineInterpolator(s, arr),
+            parametrizer="ParametrizeConstAccel",
+        )
+        traj = inst.compute_trajectory()
+        if traj is None:
+            raise RuntimeError("TOPP-RA could not parameterize the path")
+        ts = [float(t) for t in np.arange(0.0, traj.duration, dt)] + [float(traj.duration)]
+        return [[t] + [float(v) for v in traj(t)] for t in ts]
+
     @staticmethod
     def _boxes_to_cubes(boxes):
         out = []
@@ -2672,6 +2714,40 @@ class SimulationAPI:
                 self._outputs[int(index)] = int(val)
             return True
         return self._outputs[:]
+
+    def tmove(self, samples, **kwargs):
+        """Follow a time-parameterized joint trajectory (PVT): samples
+        = [[t, j0..j7], ...], t strictly increasing from 0. The sim
+        twin of the future firmware tmove — linear interpolation
+        between timed samples, executed wall-clock so the viewer (and
+        the motion trail) shows the true speed profile.
+        Returns 2 on success."""
+        if not samples:
+            return 2
+        if len(samples) == 1:
+            self.joints = [float(v) for v in samples[0][1:]]
+            return 2
+        t0 = time.perf_counter()
+        dt = 1.0 / float(self.INTERP_FREQ)
+        T = float(samples[-1][0])
+        k, step = 0, 0
+        while True:
+            el = time.perf_counter() - t0
+            if el >= T:
+                break
+            while k + 1 < len(samples) and samples[k + 1][0] <= el:
+                k += 1
+            a = samples[k]
+            b = samples[k + 1] if k + 1 < len(samples) else samples[k]
+            span = float(b[0]) - float(a[0])
+            f = 0.0 if span <= 0 else (el - float(a[0])) / span
+            self.joints = [pa + (pb - pa) * f for pa, pb in zip(a[1:], b[1:])]
+            step += 1
+            sleep_for = t0 + step * dt - time.perf_counter()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+        self.joints = [float(v) for v in samples[-1][1:]]
+        return 2
 
     def raw_output(self, index, val):
         """Sim twin of RobotStation.raw_output — record only, no sleep
