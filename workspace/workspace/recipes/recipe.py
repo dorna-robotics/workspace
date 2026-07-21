@@ -30,10 +30,12 @@ class Recipe:
         # Motion type for everything OUTSIDE the planned travel —
         # contact groups, exits, unplanned hops. jmove/lmove run each
         # point DISCRETE (even inside a group); cjmove/clmove run a
-        # multi-point group as ONE continuous chain (and normalize to
-        # their discrete twin for single points). Continuity is an
+        # multi-point group as ONE continuous chain and normalize to
+        # their discrete twin for single points. Continuity is an
         # explicit choice here — grouping alone never implies it.
-        motion_type="lmove",
+        # Platform default: clmove — grouped exits flow continuously,
+        # lone points (incl. the contact leg) are plain lmoves.
+        motion_type="clmove",
         # Per-recipe approach padding override (mm). None → each
         # method's own default. Per-call args still win.
         padding=None,
