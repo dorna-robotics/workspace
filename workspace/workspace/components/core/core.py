@@ -1566,8 +1566,12 @@ class Core:
         traj = inst.compute_trajectory()
         if traj is None:
             raise RuntimeError("TOPP-RA could not parameterize the path")
-        ts = [float(t) for t in np.arange(0.0, traj.duration, dt)] + [float(traj.duration)]
-        samples = [[t] + [float(v) for v in traj(t)] for t in ts]
+        # Uniform time grid (the tmove wire contract: t_i = i*dt, no
+        # off-grid tail) — the final grid point clamps to the exact
+        # trajectory end, so the last sample IS the goal pose.
+        n = int(math.ceil(traj.duration / dt)) + 1
+        samples = [[round(i * dt, 6)] + [float(v) for v in traj(min(i * dt, float(traj.duration)))]
+                   for i in range(n)]
         print(f"[traj] {len(pts)} pts -> {len(samples)} samples, "
               f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return samples
