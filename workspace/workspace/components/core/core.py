@@ -1584,14 +1584,30 @@ class Core:
         # rail travel ~2.5x cheaper than stock in the path-length metric
         # so paths slide the bench instead of contorting the arm.
         self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
-        # Loud diagnosis for a doomed solve: a start inside the padded
-        # envelope means the PREVIOUS motion ended inside a box (its
-        # exit should have auto-lifted) — the planner would silently
-        # burn its whole budget and report NO PATH.
+        # Two-tier padding: ``padding`` is the ROUTE clearance, but
+        # endpoints legitimately live near stations — that's where the
+        # work happens. AIT* refuses invalid endpoints outright, so
+        # when the start or goal sits inside the padded envelope, this
+        # hop falls back to the base envelope (10 mm) instead of
+        # burning the whole budget into NO PATH. A start invalid even
+        # at base padding is a real fault and is named loudly.
+        pad_eff = padding
         try:
-            if not self.planner.check([list(start), list(start)], rail_weight=rail_weight):
+            def _state_ok(q):
+                return self.planner.check([list(q), list(q)], rail_weight=rail_weight)
+            start_ok, goal_ok = _state_ok(start), _state_ok(goal)
+            if (not start_ok or not goal_ok) and padding > 10.0:
+                print(f"[plan] endpoint within the {padding:g}mm envelope — "
+                      f"planning this hop at padding 10")
+                pad_eff = 10.0
+                wb2, tb2 = self.workspace.compute_collision_boxes(pad_eff)
+                self.planner.update(scene=self._boxes_to_cubes(wb2),
+                                    gripper=self._boxes_to_cubes(tb2),
+                                    base_in_world=list(base_in_world))
+                start_ok = _state_ok(start)
+            if not start_ok:
                 print("[plan] START is inside the collision envelope — the previous "
-                      "motion ended inside a box (exit not lifted?)")
+                      "motion ended inside a box (exit padding too low?)")
         except Exception:
             pass
         res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
@@ -1619,7 +1635,7 @@ class Core:
                 sparse = self._decimate_path(res, self.PATH_DECIMATE_EPS)
                 if len(sparse) < len(res):
                     try:
-                        check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
+                        check_pad = max(0.0, pad_eff - self.PATH_CHECK_PADDING_MARGIN)
                         cw, ct = self.workspace.compute_collision_boxes(check_pad)
                         self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
                         if self.planner.check(sparse, gravity=gravity,
