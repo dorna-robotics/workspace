@@ -660,3 +660,19 @@ class Runtime:
             _wrapped.__name__ = name
             return _wrapped
         return attr
+
+    def smove(self, points, **kwargs):
+        """Forward smove with strictly duplicate-free waypoints.
+
+        Consecutive identical waypoints form a zero-length spline
+        segment; the controller firmware alarms on it (code -110).
+        SimulationAPI.smove already drops them — this enforces the
+        same contract on the real robot. Zero-length hops in a fused
+        approach (e.g. a gap point that IK-solves onto the previous
+        segment's endpoint) are the known producer.
+        """
+        pts = [list(p) for p in points]
+        pts = [p for i, p in enumerate(pts)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        rb = self._require_robot()
+        return self.call(rb.smove, pts, **kwargs)
