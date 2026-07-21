@@ -446,6 +446,11 @@ class Recipe:
             [True, "tmove"]  → (True,  "jmove", "tmove")  plan, PVT
                                trajectory (TOPP-RA timing; needs tmove
                                support — sim now, firmware later)
+            [True, "jmove"]  → (True,  "jmove", "jmove")  plan, cont-jmove
+                               chain: one jmove per waypoint section,
+                               per-section vel from the TOPP-RA profile,
+                               cont=1 blending — runs on EXISTING
+                               firmware (sim executes it stop-start)
             False            → (False, "jmove", "smove")  direct jmove
             [False, "jmove"] → (False, "jmove", "smove")  explicit spelling
             [False, "lmove"] → (False, "lmove", "smove")  planning off,
@@ -456,9 +461,9 @@ class Recipe:
             motion = flag[1] if len(flag) > 1 else None
             if plan:
                 planned = motion if motion is not None else "smove"
-                if planned not in ("smove", "tmove"):
+                if planned not in ("smove", "tmove", "jmove"):
                     raise RecipeError(
-                        f"has_motion_plan planned motion must be 'smove' or 'tmove', got {planned!r}"
+                        f"has_motion_plan planned motion must be 'smove', 'tmove' or 'jmove', got {planned!r}"
                     )
                 return True, "jmove", planned
             unplanned = motion if motion is not None else "jmove"
@@ -559,6 +564,15 @@ class Recipe:
                 prev = points[-1]
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
+                    if planned == "jmove":
+                        # cont-jmove chain: BARE knots — one section per
+                        # approach offset, straight in joint space. No
+                        # 5 mm sampling, no fillet arcs: the controller
+                        # blends section corners (cont=1), and section
+                        # count stays ~one per waypoint by design.
+                        rest.append([float(v) for v in J])
+                        prev = J
+                        continue
                     seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
                     if seg is None:
                         folded = False
@@ -567,17 +581,18 @@ class Recipe:
                     prev = J
             if folded:
                 points.extend(rest)
-                # Corner blending: G1 Bezier fillets on EVERY sharp
-                # corner of the fused path — travel and approach alike,
-                # detected by geometry. Each fillet is validated once
-                # at creation against the slimmed envelope: an arc may
-                # not introduce a collision the sharp corner didn't
-                # have (see core.blend_points).
-                blended = self.core.blend_points(
-                    points, blend, tool_pose=tool_pose, from_idx=1,
-                    padding=motion_plan_kwargs.get("padding", 10))
-                if blended is not None:
-                    points = blended
+                if planned != "jmove":
+                    # Corner blending: G1 Bezier fillets on EVERY sharp
+                    # corner of the fused path — travel and approach
+                    # alike, detected by geometry. Each fillet is
+                    # validated once at creation against the slimmed
+                    # envelope: an arc may not introduce a collision the
+                    # sharp corner didn't have (see core.blend_points).
+                    blended = self.core.blend_points(
+                        points, blend, tool_pose=tool_pose, from_idx=1,
+                        padding=motion_plan_kwargs.get("padding", 10))
+                    if blended is not None:
+                        points = blended
                 self._run_path_motion(rt, points, vaj_map["jmove"], planned)
                 return
             if plan_on and points:
@@ -639,14 +654,26 @@ class Recipe:
         The ONE chokepoint for every planned/fused path a recipe sends.
         ``primitive`` comes from the has_motion_plan grammar:
         "tmove" → TOPP-RA-timed trajectory (curvature-aware speed under
-        per-joint vel/accel caps); "smove" → classic spline (single
+        per-joint vel/accel caps); "jmove" → cont-jmove chain (one
+        jmove per section with its own TOPP-RA-derived vel, queued
+        with timeout=0 so the controller blends them, last one blocks
+        to completion with cont=0); "smove" → classic spline (single
         global S-curve, jerk cap included)."""
         vel = vaj[0] * self.speed_factor
         accel = vaj[1] * self.speed_factor
+        jerk = vaj[2] * self.speed_factor
         if primitive == "tmove":
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
-        rt.smove(points[1:], vel=vel, accel=accel, jerk=vaj[2] * self.speed_factor)
+        if primitive == "jmove":
+            pts, vels = self.core.section_vels(points, vel, accel)
+            for k in range(1, len(pts)):
+                last = k == len(pts) - 1
+                extra = {} if last else {"timeout": 0}
+                rt.jmove(joint=pts[k], vel=vels[k - 1], accel=accel, jerk=jerk,
+                         cont=0 if last else 1, **extra)
+            return
+        rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
 
     def _build_io_config(self, tool, component, trigger_io):
         """Build the four IO building-block lists for pick / place.

@@ -1576,6 +1576,65 @@ class Core:
               f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return samples
 
+    def section_vels(self, points, vel, accel, dt=0.01):
+        """Per-section velocities for a cont-jmove chain: run the same
+        TOPP-RA profile as tmove, then compress it to ONE vel per
+        waypoint section (knot k -> k+1) — the profile's peak chord
+        speed inside that section, scaled to the section's leading
+        joint (jmove's vel caps the fastest joint). The firmware's own
+        accel-limited ramps between per-section vels reproduce the
+        profile's shape with existing jmove+cont — no tmove firmware
+        needed. Conservative by construction: no section is told to go
+        faster than TOPP-RA ever went inside it.
+
+        Returns ``(pts, vels)``: the deduped waypoints the chain must
+        drive and one velocity per section (len(pts)-1), floored at
+        1.0 so the ramp-from-zero endpoints never stall a section."""
+        try:
+            import toppra as ta
+            import toppra.constraint as tc
+        except ImportError as ex:
+            raise RuntimeError(
+                "cont-jmove sections require toppra (sudo pip3 install toppra)") from ex
+        pts = [[float(v) for v in p] for p in points]
+        pts = [p for i, p in enumerate(pts)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        if len(pts) < 2:
+            return pts, []
+        arr = np.array(pts)
+        knots_s = np.zeros(len(arr))
+        for i in range(1, len(arr)):
+            knots_s[i] = knots_s[i - 1] + float(np.linalg.norm(arr[i] - arr[i - 1]))
+        total = float(knots_s[-1])
+        if total <= 0.0:
+            return pts, [1.0] * (len(pts) - 1)
+        t0 = time.perf_counter()
+        inst = ta.algorithm.TOPPRA(
+            [tc.JointVelocityConstraint(np.array([[-vel, vel]] * arr.shape[1])),
+             tc.JointAccelerationConstraint(np.array([[-accel, accel]] * arr.shape[1]))],
+            ta.SplineInterpolator(knots_s / total, arr),
+            parametrizer="ParametrizeConstAccel",
+        )
+        traj = inst.compute_trajectory()
+        if traj is None:
+            raise RuntimeError("TOPP-RA could not parameterize the path")
+        ts = np.append(np.arange(0.0, traj.duration, dt), float(traj.duration))
+        q = np.array([traj(float(t)) for t in ts])
+        seg = np.linalg.norm(np.diff(q, axis=0), axis=1)
+        s_mid = np.concatenate([[0.0], np.cumsum(seg)])[:-1] + seg / 2.0
+        v_chord = seg / dt
+        vels = []
+        for k in range(len(pts) - 1):
+            lo, hi = knots_s[k], knots_s[k + 1]
+            in_sec = v_chord[(s_mid >= lo) & (s_mid < hi)]
+            v_sec = float(in_sec.max()) if len(in_sec) else float(vel)
+            d = arr[k + 1] - arr[k]
+            lead = float(np.abs(d).max()) / max(float(np.linalg.norm(d)), 1e-9)
+            vels.append(max(1.0, min(float(vel), v_sec * lead)))
+        print(f"[traj] {len(pts)} pts -> {len(vels)} cont-jmove sections, "
+              f"vels {[round(v) for v in vels]}, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
+        return pts, vels
+
     @staticmethod
     def _boxes_to_cubes(boxes):
         out = []
@@ -2462,10 +2521,15 @@ class SimulationAPI:
 
 
 
-    def jmove(self, joint, vel=100, accel=1000, jerk=4000):
+    def jmove(self, joint, vel=100, accel=1000, jerk=4000, **kwargs):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
         Interpolates joint updates at `interp_freq` Hz (default 120).
+
+        Extra kwargs (``cont``, ``timeout``, ``rel`` …) are accepted for
+        real-SDK call compatibility and ignored: the sim executes every
+        jmove to completion serially — a cont chain runs stop-start
+        here (velocity shape preserved, blending is firmware behavior).
 
         Returns:
             -1 : if any error happens
