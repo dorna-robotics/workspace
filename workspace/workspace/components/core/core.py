@@ -2848,7 +2848,7 @@ class SimulationAPI:
             raise ValueError("cjmove: points, vajs and corners must have the same length")
         for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
             last = k == len(points) - 1
-            r = self.jmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
+            r = self.jmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
                            cont=0 if last else 1, corner=corner,
                            timeout=-1 if last else 0)
             if r != 2:
@@ -2857,14 +2857,18 @@ class SimulationAPI:
 
     def clmove(self, points, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
         """Sim twin of Dorna.clmove: straight TCP line per section,
-        one tool_pose for the whole path, serial execution."""
+        ONE tool_pose for the whole path, serial execution. The real
+        API sets the tool once up front and it persists; the sim lmove
+        is stateless, so the same path-wide tool_pose rides along on
+        every section — one tool either way."""
         if not points:
             return None
         if len(vajs) != len(points) or len(corners) != len(points):
             raise ValueError("clmove: points, vajs and corners must have the same length")
         for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
             last = k == len(points) - 1
-            r = self.lmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], tool_pose=tool_pose,
+            r = self.lmove(joint=list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
+                           tool_pose=tool_pose,
                            cont=0 if last else 1, corner=corner,
                            timeout=-1 if last else 0)
             if r != 2:
