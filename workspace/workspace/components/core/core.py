@@ -2854,7 +2854,7 @@ class SimulationAPI:
                            timeout=-1 if last else 0)
         return r
 
-    def clmove(self, joints, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], timeout=-1, **kwargs):
+    def clmove(self, joints, vajs, corners, tool_pose=[0, 0, 0, 0, 0, 0], **kwargs):
         """Sim twin of Dorna.clmove: straight TCP line per section,
         serial execution. tool_pose applies to the FIRST motion only,
         mirroring the real call shape (tool set once up front)."""
