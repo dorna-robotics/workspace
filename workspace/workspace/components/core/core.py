@@ -1556,6 +1556,7 @@ class Core:
             return [[0.0] + pts[0]]
         s /= s[-1]
         ndof = arr.shape[1]
+        t0 = time.perf_counter()
         inst = ta.algorithm.TOPPRA(
             [tc.JointVelocityConstraint(np.array([[-vel, vel]] * ndof)),
              tc.JointAccelerationConstraint(np.array([[-accel, accel]] * ndof))],
@@ -1566,7 +1567,10 @@ class Core:
         if traj is None:
             raise RuntimeError("TOPP-RA could not parameterize the path")
         ts = [float(t) for t in np.arange(0.0, traj.duration, dt)] + [float(traj.duration)]
-        return [[t] + [float(v) for v in traj(t)] for t in ts]
+        samples = [[t] + [float(v) for v in traj(t)] for t in ts]
+        print(f"[traj] {len(pts)} pts -> {len(samples)} samples, "
+              f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
+        return samples
 
     @staticmethod
     def _boxes_to_cubes(boxes):
