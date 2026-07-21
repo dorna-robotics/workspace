@@ -2838,7 +2838,7 @@ class SimulationAPI:
         self.joints = [float(v) for v in samples[-1][1:]]
         return 2
 
-    def cjmove(self, points, vajs, corners, timeout=-1, **kwargs):
+    def cjmove(self, points, vajs, corners, **kwargs):
         """Sim twin of Dorna.cjmove: same signature and validation,
         executed serially (corner/cont blending is firmware behavior —
         the sim runs each section to completion, stop-start)."""
@@ -2846,8 +2846,11 @@ class SimulationAPI:
             return None
         if len(vajs) != len(points) or len(corners) != len(points):
             raise ValueError("cjmove: points, vajs and corners must have the same length")
-        for p, vaj in zip(points, vajs):
-            r = self.jmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+        for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
+            last = k == len(points) - 1
+            r = self.jmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2],
+                           cont=0 if last else 1, corner=corner,
+                           timeout=-1 if last else 0)
             if r != 2:
                 return r
         return 2
@@ -2859,8 +2862,11 @@ class SimulationAPI:
             return None
         if len(vajs) != len(points) or len(corners) != len(points):
             raise ValueError("clmove: points, vajs and corners must have the same length")
-        for p, vaj in zip(points, vajs):
-            r = self.lmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], tool_pose=tool_pose)
+        for k, (p, vaj, corner) in enumerate(zip(points, vajs, corners)):
+            last = k == len(points) - 1
+            r = self.lmove(list(p), vel=vaj[0], accel=vaj[1], jerk=vaj[2], tool_pose=tool_pose,
+                           cont=0 if last else 1, corner=corner,
+                           timeout=-1 if last else 0)
             if r != 2:
                 return r
         return 2
