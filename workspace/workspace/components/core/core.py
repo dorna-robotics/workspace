@@ -989,13 +989,22 @@ class Core:
     PATH_CHECK_PADDING_MARGIN = 2.0  # mm — check envelope hysteresis vs the plan envelope
 
     @staticmethod
-    def _decimate_path(path, eps):
+    def _decimate_path(path, eps, check=None):
         """Corner-aware decimation (Ramer-Douglas-Peucker in joint
         space): drop waypoints where the path runs straight, keep them
         where it bends. smove's spline then flows through sparse points
         in free space while staying pinned exactly where the path
         hugs obstacles — the bends are where the kept points cluster.
-        The caller re-checks the decimated polyline before executing."""
+
+        ``check(two_point_segment) -> bool`` (the collision gate) is
+        enforced PER SEGMENT: a straightened span must pass on its own,
+        and one that fails splits at its max-deviation point so only
+        its halves retry. Free-space travel collapses to its endpoints
+        while spans that actually hug an obstacle keep dense samples —
+        unlike a wholesale gate, one tight span near a station no
+        longer condemns the entire hop to the dense polyline. Adjacent
+        original points are never checked: they are the planner's own
+        validated steps, the worst-case output equals the input."""
         if len(path) <= 2:
             return path
         pts = np.array(path, dtype=float)
@@ -1015,7 +1024,9 @@ class Core:
                 d = float(np.linalg.norm(v - t * seg))
                 if d > best_d:
                     best_d, best_i = d, i
-            if best_d > eps:
+            if best_d > eps or (check is not None
+                                and not check([[float(v) for v in pts[a]],
+                                               [float(v) for v in pts[b]]])):
                 keep[best_i] = True
                 stack.append((a, best_i))
                 stack.append((best_i, b))
@@ -1609,25 +1620,26 @@ class Core:
             res = [[float(v) for v in p] for p in res]
             # Sparse execution: decimate to the essential corners so the
             # smove spline flows instead of hugging the dense polyline.
-            # The gate checks against a slightly slimmer envelope
-            # (padding - margin): OMPL validates sampled points along
-            # segments, so the solved path may graze the full envelope
-            # within one resolution step — the margin absorbs that;
-            # anything deeper keeps the dense path. This is the ONE
+            # The collision gate runs PER SEGMENT inside the decimation
+            # (see _decimate_path): a failing span splits and its halves
+            # retry, so free-space travel goes sparse while only the
+            # spans that hug an obstacle stay dense. The gate checks a
+            # slightly slimmer envelope (padding - margin): OMPL
+            # validates sampled points along segments, so the solved
+            # path may graze the full envelope within one resolution
+            # step — the margin absorbs that. This is the ONE
             # validation a stored row ever gets (creation-time).
             if len(res) > 2:
-                sparse = self._decimate_path(res, self.PATH_DECIMATE_EPS)
-                if len(sparse) < len(res):
-                    try:
-                        check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
-                        cw, ct = self.workspace.compute_collision_boxes(check_pad)
-                        self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
-                        if self.planner.check(sparse, gravity=gravity,
-                                              gravity_vec=(gravity_vec if gravity_vec is not None else [0, 0, 1]),
-                                              gravity_thr=gravity_thr, rail_weight=rail_weight):
-                            res = sparse
-                    except Exception:
-                        pass  # keep the dense path
+                try:
+                    check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
+                    cw, ct = self.workspace.compute_collision_boxes(check_pad)
+                    self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
+                    gv = gravity_vec if gravity_vec is not None else [0, 0, 1]
+                    seg_ok = lambda seg: self.planner.check(seg, gravity=gravity, gravity_vec=gv,
+                                                            gravity_thr=gravity_thr, rail_weight=rail_weight)
+                    res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
+                except Exception:
+                    pass  # keep the dense path
             if path_sig is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
                 self._path_cache_put(start, goal, path_sig, res)
         else:
