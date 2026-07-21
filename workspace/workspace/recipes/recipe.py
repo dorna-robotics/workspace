@@ -545,7 +545,6 @@ class Recipe:
                     points = [cur, [float(v) for v in J0]]
 
             folded = points is not None
-            travel_end = len(points) - 1 if folded else 0
             rest = []
             if folded:
                 prev = points[-1]
@@ -560,11 +559,14 @@ class Recipe:
             if folded:
                 points.extend(rest)
                 # Corner blending: G1 Bezier fillets on EVERY sharp
-                # corner from the first hop's endpoint on — detected by
-                # geometry, so any appended motion is covered without
-                # bookkeeping. No re-check: the fixed collision boxes
-                # are the project's contract.
-                blended = self.core.blend_points(points, blend, tool_pose=tool_pose, from_idx=max(1, travel_end))
+                # corner of the fused path — travel and approach alike,
+                # detected by geometry. Each fillet is validated once
+                # at creation against the slimmed envelope: an arc may
+                # not introduce a collision the sharp corner didn't
+                # have (see core.blend_points).
+                blended = self.core.blend_points(
+                    points, blend, tool_pose=tool_pose, from_idx=1,
+                    padding=motion_plan_kwargs.get("padding", 10))
                 if blended is not None:
                     points = blended
                 rt.smove(

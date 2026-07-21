@@ -1503,13 +1503,26 @@ class Core:
         except Exception:
             return None
 
-    def blend_points(self, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], from_idx=1, step=5.0):
+    def blend_points(self, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], from_idx=1, step=5.0, padding=None, rail_weight=0.004):
         """Fillet EVERY sharp corner from ``from_idx`` on, auto-detected
-        by TCP direction change — see blend_sharp_corners. Returns the
-        blended list (unchanged when no corners), or None on failure
-        (keep the sharp path)."""
+        by TCP direction change — see blend_sharp_corners. When
+        ``padding`` is given, each fillet is validated ONCE at creation
+        against the same slimmed envelope the decimation gate uses
+        (padding - margin): an arc may not introduce a collision the
+        sharp corner didn't have — travel arcs that would cut toward
+        an obstacle keep their corner, approach arcs inside station
+        envelopes keep the fixed-boxes contract. Returns the blended
+        list (unchanged when no corners), or None on failure (keep the
+        sharp path)."""
         try:
-            return blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx)
+            check = None
+            if padding is not None:
+                check_pad = max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN)
+                cw, ct = self.workspace.compute_collision_boxes(check_pad)
+                base_in_world = list(self.rail_base.pose(anchor="carriage"))
+                self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
+                check = lambda seg: self.planner.check([list(p) for p in seg], rail_weight=rail_weight)
+            return blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx, check=check)
         except Exception:
             return None
 
@@ -1991,9 +2004,20 @@ def lmove_path_points(kinematic, joint_from, joint_to, tool_pose=[0, 0, 0, 0, 0,
     return points
 
 
-def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
+def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0, check=None):
     """Round the corners of a fused waypoint path with quadratic-Bezier
     fillets, blended directly in JOINT space.
+
+    ``check(waypoints) -> bool`` (a collision gate, run ONCE at
+    creation) enforces one rule per fillet: THE ARC MAY NOT INTRODUCE
+    A COLLISION THE SHARP CORNER DID NOT HAVE. An arc that fails the
+    gate is compared against the sharp span it replaces — if the sharp
+    span passes, the corner stays sharp (the fillet would cut into an
+    obstacle, e.g. a travel corner the planner routed around); if the
+    sharp span fails too, the fillet goes in (approach corners
+    legitimately live inside station envelopes — the fixed collision
+    boxes are the project's contract there, same as the unchecked
+    behavior). check=None blends unconditionally.
 
     At each junction index C: walk back ``r_in`` mm (Cartesian arc
     length, measured by FK — the radius is spatial) along the incoming
@@ -2095,22 +2119,33 @@ def blend_path_points(kinematic, points, junctions, radius, tool_pose=[0, 0, 0, 
                 for a, c, b in zip(A, C, B)
             ])
 
+        if check is not None and not check(blend_pts):
+            # the fillet may not introduce a collision the sharp
+            # corner didn't have (see docstring)
+            sharp_span = [A] + [list(p) for p in pts[ia:ib + 1]] + [B]
+            if check(sharp_span):
+                continue  # arc cuts into an obstacle — keep the corner
+
         pts = pts[:ia] + blend_pts + pts[ib + 1:]
         X = [fk_xyz(p) for p in pts]
 
     return pts
 
 
-def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0, from_idx=1, angle_deg=30.0):
+def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0, from_idx=1, angle_deg=20.0, check=None):
     """Auto-detect sharp corners and fillet them all — dumb on purpose.
 
     A corner is any waypoint (index >= from_idx) where the TCP
     direction changes by more than ``angle_deg`` between the incoming
-    and outgoing segments. Whatever motions get appended after the
-    planned travel, their corners are found by GEOMETRY, not by
-    bookkeeping — new motion types are covered automatically. The
-    planner's own portion (< from_idx) is left alone: its interior
-    corners are the planner's route, not artifacts.
+    and outgoing segments. ALL corners of a fused path qualify —
+    travel and approach alike: since per-segment decimation the
+    planner's portion is a sparse polyline whose corners are as sharp
+    as anyone's, and the smove spline carries full speed through
+    anything unfilleted. Corners are found by GEOMETRY, not by
+    bookkeeping — new motion types are covered automatically.
+    ``check`` gates each fillet at creation (see blend_path_points:
+    an arc may not introduce a collision the sharp corner didn't
+    have).
 
     Returns the blended list (unchanged when nothing qualifies), or
     None on failure (caller keeps the sharp path)."""
@@ -2140,7 +2175,7 @@ def blend_sharp_corners(kinematic, points, radius, tool_pose=[0, 0, 0, 0, 0, 0],
             corners.append(i)
     if not corners:
         return [list(map(float, p)) for p in points]
-    return blend_path_points(kinematic, points, corners, radius, tool_pose, step)
+    return blend_path_points(kinematic, points, corners, radius, tool_pose, step, check=check)
 
 
 class SimulationAPI:
