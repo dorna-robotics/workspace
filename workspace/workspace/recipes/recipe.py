@@ -316,13 +316,22 @@ class Recipe:
     # ── Overlapped approach IO ──────────────────────────────────────────
     # The approach-side IO chain (e.g. opening the gripper: pins with
     # ~1.35s of pneumatic sequencing) can run WHILE the robot travels
-    # to the point above the target: digital outputs execute on the
-    # controller's IO thread concurrently with motion, so the host
-    # fires them track-free (RobotStation.raw_output — never play(),
-    # never the shared _track slot) from a short-lived side thread that
-    # owns the inter-pin delays. Before the descent segment a HARD
-    # barrier joins the thread AND verifies the physical pin states —
-    # the contact motion cannot start on an unfinished or failed chain.
+    # to the point above the target. Two controller semantics make
+    # this work:
+    #   * the pin frames go out with queue=1 (BYPASS) via
+    #     RobotStation.raw_output — never play(), never the shared
+    #     _track slot. queue=0 would enqueue them behind the travel
+    #     they are meant to overlap and inject frames between a cont
+    #     chain's queued sections.
+    #   * because a bypassing frame carries no queued `sleep`, the
+    #     HOST owns the inter-pin timing — the side thread sleeps the
+    #     config's delays itself, reproducing exactly what the queued
+    #     form would have done.
+    # Before the descent segment a HARD barrier joins the thread AND
+    # verifies the physical pin states — the contact motion cannot
+    # start on an unfinished or failed chain. Touch-time IO is NOT
+    # overlapped: it goes through the normal queued output(config=…),
+    # which is inherently synced with the motion.
 
     def _output_async(self, output_list):
         """Fire an IO chain in a side thread. Returns a handle for

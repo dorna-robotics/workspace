@@ -365,16 +365,32 @@ class RobotStation:
             "that is not available yet — set pvt: false in the recipe")
 
     def raw_output(self, index, val):
-        """Track-free, fire-and-forget single digital output.
+        """Track-free, QUEUE-BYPASSING single digital output.
 
-        Safe to call from a side thread while the main thread blocks in
-        a tracked motion: this bypasses ``play()`` (and therefore the
-        client's single ``_track`` slot) entirely — the message goes
-        straight to the client's event loop, and ``write()`` is
-        cross-thread safe by construction (``run_coroutine_threadsafe``
-        onto one loop; each message buffered whole before any await).
-        The controller executes digital outputs on its IO thread,
-        concurrently with an in-flight motion.
+        ``queue: 1`` is the controller's bypass flag: the frame skips
+        the normal command queue and executes immediately, ahead of
+        whatever motion is in flight. ``queue: 0`` (the default the
+        SDK's ``output(config=…)`` uses) means the OPPOSITE — the
+        frame enters the normal queue and waits for every command
+        before it, motions included. That is right for touch-time IO
+        (it stays synced with the motion) and wrong here: a queued
+        pin write would sit behind the travel it is supposed to
+        overlap, and injecting frames between a cont chain's queued
+        sections breaks the chain (bench: gripper never opened,
+        motion halted with -600).
+
+        Because the frame bypasses the queue, the controller does NOT
+        sequence its inter-pin delays — the CALLER owns the timing
+        (see the recipe layer's async chain, which sleeps between
+        pins exactly as the queued ``sleep`` frames would have).
+
+        Safe to call from a side thread while the main thread blocks
+        in a tracked motion: this bypasses ``play()`` (and therefore
+        the client's single ``_track`` slot) entirely — the message
+        goes straight to the client's event loop, and ``write()`` is
+        cross-thread safe by construction
+        (``run_coroutine_threadsafe`` onto one loop; each message
+        buffered whole before any await).
 
         Fire-and-forget means NO completion/error feedback — callers
         must verify the physical outcome afterwards (see the recipe
@@ -384,7 +400,7 @@ class RobotStation:
             "cmd": "output",
             f"out{int(index)}": int(val),
             "id": self._client.rand_id(100, 1000000),
-            "queue": 0,
+            "queue": 1,
         }
         self._client.write(json.dumps(msg))
         return True
