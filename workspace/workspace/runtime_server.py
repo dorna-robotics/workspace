@@ -93,8 +93,23 @@ def merge_into_state(state, payload):
         state[name] = prev
 
 
+# Live socket.io clients. Both edges are logged with the resulting count
+# so a disconnect can be read for what it is: routine churn (a viewer that
+# reconnects a second later) or a client that actually stayed gone. Only
+# the disconnect edge used to be printed, which made every ordinary
+# reconnect look like a one-way failure in the run log.
+_clients: set = set()
+
+
+def _client_log(edge: str, sid: str) -> None:
+    n = len(_clients)
+    print(f"{edge} {sid} ({n} client{'' if n == 1 else 's'})")
+
+
 @sio.event
 async def connect(sid, environ, auth):
+    _clients.add(sid)
+    _client_log("connect", sid)
     if world_state:
         await sio.emit("scene_update", world_state, room=sid)
     if not _has_meshurl(world_state):
@@ -116,7 +131,8 @@ async def request_snapshot(sid):
 
 @sio.event
 async def disconnect(sid):
-    print("disconnect", sid)
+    _clients.discard(sid)
+    _client_log("disconnect", sid)
 
 
 # --------------------------------------------------
