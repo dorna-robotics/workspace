@@ -1544,8 +1544,25 @@ class Core:
             raise RuntimeError(
                 "pvt motion requires toppra (sudo pip3 install toppra)") from ex
         pts = [[float(v) for v in p] for p in points]
-        pts = [p for i, p in enumerate(pts)
-               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        # Physical knot merge: knots closer than MIN_LEG are the SAME
+        # waypoint (encoder noise makes a robot that is already at the
+        # chain's first knot produce a ~0.3-unit ghost leg, whose
+        # 0.4*leg corner then certifies the whole hop to a crawl —
+        # seen on the bench as a 12 s scale pick-off). The final
+        # target always survives exactly: it replaces its
+        # too-close predecessor instead of being dropped.
+        MIN_LEG = 1.0
+        merged = [pts[0]]
+        for i, q in enumerate(pts[1:], 1):
+            if max(abs(a - b) for a, b in zip(q, merged[-1])) < MIN_LEG:
+                if i == len(pts) - 1 and len(merged) > 1:
+                    merged[-1] = q
+                elif i == len(pts) - 1:
+                    merged.append(q)
+                continue
+            merged.append(q)
+        pts = [p for i, p in enumerate(merged)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, merged[i - 1]))]
         if len(pts) < 2:
             return [[0.0] + pts[0]] if pts else []
         arr = np.array(pts)
@@ -1604,8 +1621,25 @@ class Core:
             raise RuntimeError(
                 "cont-jmove sections require toppra (sudo pip3 install toppra)") from ex
         pts = [[float(v) for v in p] for p in points]
-        pts = [p for i, p in enumerate(pts)
-               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        # Physical knot merge: knots closer than MIN_LEG are the SAME
+        # waypoint (encoder noise makes a robot that is already at the
+        # chain's first knot produce a ~0.3-unit ghost leg, whose
+        # 0.4*leg corner then certifies the whole hop to a crawl —
+        # seen on the bench as a 12 s scale pick-off). The final
+        # target always survives exactly: it replaces its
+        # too-close predecessor instead of being dropped.
+        MIN_LEG = 1.0
+        merged = [pts[0]]
+        for i, q in enumerate(pts[1:], 1):
+            if max(abs(a - b) for a, b in zip(q, merged[-1])) < MIN_LEG:
+                if i == len(pts) - 1 and len(merged) > 1:
+                    merged[-1] = q
+                elif i == len(pts) - 1:
+                    merged.append(q)
+                continue
+            merged.append(q)
+        pts = [p for i, p in enumerate(merged)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, merged[i - 1]))]
         if len(pts) < 2:
             return pts, [], []
         arr = np.array(pts)
@@ -1688,8 +1722,20 @@ class Core:
             raise RuntimeError(
                 "cjmove chain_prm requires toppra (sudo pip3 install toppra)") from ex
         pts = [[float(v) for v in p] for p in points]
-        pts = [p for i, p in enumerate(pts)
-               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+        # Physical knot merge — see section_vels: ghost legs from
+        # encoder noise must not mint crawl-speed micro corners.
+        MIN_LEG = 1.0
+        merged = [pts[0]]
+        for i, q in enumerate(pts[1:], 1):
+            if max(abs(a - b) for a, b in zip(q, merged[-1])) < MIN_LEG:
+                if i == len(pts) - 1 and len(merged) > 1:
+                    merged[-1] = q
+                elif i == len(pts) - 1:
+                    merged.append(q)
+                continue
+            merged.append(q)
+        pts = [p for i, p in enumerate(merged)
+               if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, merged[i - 1]))]
         n_sec = len(pts) - 1
         if n_sec < 1:
             return pts, [], []
