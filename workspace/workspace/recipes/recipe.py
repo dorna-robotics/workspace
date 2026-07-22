@@ -28,14 +28,12 @@ class Recipe:
         rail_step=0,  # step size
         rail_span=0,  # number of tries around that point positive and negative directions
         # Motion type for everything OUTSIDE the planned travel —
-        # contact groups, exits, unplanned hops. jmove/lmove run each
-        # point DISCRETE (even inside a group); cjmove/clmove run a
-        # multi-point group as ONE continuous chain and normalize to
-        # their discrete twin for single points. Continuity is an
-        # explicit choice here — grouping alone never implies it.
-        # Platform default: clmove — grouped exits flow continuously,
-        # lone points (incl. the contact leg) are plain lmoves.
-        motion_type="clmove",
+        # contact groups, exits, unplanned hops. "jmove" (joint
+        # geometry) or "lmove" (straight TCP). Continuity comes from
+        # GROUPING: a multi-point group always runs as ONE chain via
+        # the continuous twin (lmove group → clmove chain, jmove
+        # group → cjmove chain); a single point is a discrete move.
+        motion_type="lmove",
         # Per-recipe approach padding override (mm). None → each
         # method's own default. Per-call args still win.
         padding=None,
@@ -109,9 +107,9 @@ class Recipe:
 
         # motion
         self.motion_type = prm["motion_type"]
-        if self.motion_type not in ("jmove", "lmove", "cjmove", "clmove"):
+        if self.motion_type not in ("jmove", "lmove"):
             raise RecipeError(
-                f"motion_type must be one of ('jmove', 'lmove', 'cjmove', 'clmove'), got {self.motion_type!r}")
+                f"motion_type must be 'jmove' or 'lmove', got {self.motion_type!r}")
         self.padding = prm["padding"]
         self.blend = prm["blend"]
         self.has_motion_plan = prm["has_motion_plan"]
@@ -562,13 +560,13 @@ class Recipe:
             has_motion_plan if has_motion_plan is not None else False)
         plan_on = plan_on and first_approach
 
-        if not first_approach and len(path) > 1 and self.motion_type in ("cjmove", "clmove"):
-            # Group continuity is an explicit MOTION TYPE choice: a
-            # non-travel group (contact class, exits) runs as ONE chain
-            # only when motion_type is cjmove/clmove — at the vaj class
-            # of its discrete twin. jmove/lmove keep every point
-            # discrete even inside a group; the grammar's planned
-            # primitive governs the travel alone.
+        if not first_approach and len(path) > 1:
+            # Grouping IS continuity: a multi-point non-travel group
+            # (contact class, exits) always runs as ONE chain, via the
+            # continuous twin of the motion type — lmove → clmove
+            # (TCP-straight sections), jmove → cjmove (joint-straight).
+            # Single points stay discrete via the motion type; the
+            # grammar's planned primitive governs the travel alone.
             pts = [[float(v) for v in rt.joint()]]
             for offset in path:
                 J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
@@ -579,8 +577,8 @@ class Recipe:
                 tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
                                              in_frame=self.core.robot_flange,
                                              offset=tool_dict["offset"])
-            vaj_key = "jmove" if self.motion_type == "cjmove" else "lmove"
-            self._run_path_motion(rt, pts, vaj_map[vaj_key], self.motion_type, tool_pose=tp,
+            chain = "cjmove" if self.motion_type == "jmove" else "clmove"
+            self._run_path_motion(rt, pts, vaj_map[self.motion_type], chain, tool_pose=tp,
                                   padding=motion_plan_kwargs.get("padding", 10))
             return
 
@@ -674,11 +672,8 @@ class Recipe:
 
     def _do_motion(self, rt, J, tool_dict, vaj_map, motion_type=None):
         """Dispatch a single motion step based on ``motion_type`` (or
-        the recipe's ``self.motion_type`` when not given). A single
-        point has no chain to be continuous in — cjmove/clmove
-        normalize to their discrete twin."""
+        the recipe's ``self.motion_type`` when not given)."""
         motion_type = motion_type or self.motion_type
-        motion_type = {"cjmove": "jmove", "clmove": "lmove"}.get(motion_type, motion_type)
         if motion_type == "lmove":
             tool_pose = [0, 0, 0, 0, 0, 0]
             if tool_dict["solid"] and tool_dict["anchor"]:

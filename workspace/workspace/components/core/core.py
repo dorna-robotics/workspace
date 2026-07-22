@@ -2982,16 +2982,19 @@ class SimulationAPI:
 
         # --- Interpolation timing
         dt = 1.0 / float(self.INTERP_FREQ)
+        # Playback advances SIMULATED time one tick per frame — never
+        # wall-clock catch-up: a Python thread stall must slow the sim
+        # down, not teleport the pose along the path (the firmware
+        # ticks at a fixed rate and can never skip).
         t0 = time.perf_counter()
         step = 0
         while True:
-            now = time.perf_counter()
-            elapsed = now - t0
-            if elapsed >= t_total:
+            t_sim = step * dt
+            if t_sim >= t_total:
                 break
 
             # scalar motion state at this time
-            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=t_sim)
             s = max(0.0, min(q / d, 1.0))
 
             # update joints
@@ -3046,17 +3049,18 @@ class SimulationAPI:
             return 2
 
         dt = 1.0 / float(self.INTERP_FREQ)
+        # Simulated-time stepping — see jmove: stalls slow the sim,
+        # they never skip the pose along the path.
         t0 = time.perf_counter()
         step = 0
 
         while True:
-            now = time.perf_counter()
-            elapsed = now - t0
-            if elapsed >= t_total:
+            t_sim = step * dt
+            if t_sim >= t_total:
                 break
 
             # Distance traveled at this time
-            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=t_sim)
             # q is in [0, d]
 
             # Get joint positions at that arc length
@@ -3157,13 +3161,12 @@ class SimulationAPI:
 
 
         while True:
-            now = time.perf_counter()
-            elapsed = now - t0
-            if elapsed >= t_total:
+            t_sim = step * dt   # simulated time — stalls slow, never skip
+            if t_sim >= t_total:
                 break
 
             # scalar motion state at this time
-            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=elapsed)
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=t_sim)
             s = max(0.0, min(q / d, 1.0))
 
             # update joints
@@ -3230,7 +3233,7 @@ class SimulationAPI:
         T = float(samples[-1][0])
         k, step = 0, 0
         while True:
-            el = time.perf_counter() - t0
+            el = step * dt   # simulated time — stalls slow, never skip
             if el >= T:
                 break
             while k + 1 < len(samples) and samples[k + 1][0] <= el:
@@ -3255,6 +3258,14 @@ class SimulationAPI:
         per-tick units, ready to carry into the next section."""
         F = float(self.FREQ)
         R = 1000.0
+        if to_stop and v0_tick == 0.0 and a0_tick == 0.0:
+            # Stop-to-stop section: cont() is the carried-velocity
+            # engine and returns EMPTY for v0=0/vm=0 — the firmware
+            # routes this case to createProfile type 0
+            # (Motion::addJMove, combined_profile_type 0). Mirror it.
+            prof0 = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+            return {"ticks": list(prof0["ticks"]), "jerks": list(prof0["jerks"]),
+                    "vFinal": 0.0, "aFinal": 0.0}
         prof = _fw_cont(a0_tick * R, v0_tick * R,
                         jerk / (F * F * F) * R, accel / (F * F) * R,
                         (0.0 if to_stop else vel / F * R), d * R + 1.0e-6)
@@ -3346,11 +3357,11 @@ class SimulationAPI:
             t0 = time.perf_counter()
             step = 0
             while True:
-                elapsed = time.perf_counter() - t0
-                final = elapsed >= duration
+                t_sim = step * dt   # simulated time — stalls slow, never skip
+                final = t_sim >= duration
                 q, _, _ = self.traverse(prof["jerks"], prof["ticks"],
                                         q0=0.0, v0=v_tick, a0=a_tick,
-                                        t=min(elapsed, duration))
+                                        t=min(t_sim, duration))
                 qq = min(max(q, 0.0), d_total)
                 pose, acc = None, 0.0
                 for idx, (kind, data, pd) in enumerate(paths):
