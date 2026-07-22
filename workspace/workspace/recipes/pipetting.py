@@ -68,9 +68,14 @@ class PipettingSite(Recipe):
         # motion prm
         motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, component=component, actions=actions, trigger_io=False, gravity_offset=0, **kwargs)
 
-        # adjust exit: the seat-shake is its own group (one continuous
-        # gesture), then the base lift group
-        motion_prm["exit"] = [[[shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [-shake_travel, 0, motion_prm["height_load"], 0, 0, 0], [shake_travel, 0, motion_prm["height_load"], 0, 0, 0]]] + motion_prm["exit"]
+        # adjust exit: each shake point is its OWN group — a shake's
+        # direction reversals ARE the gesture, so every reversal is a
+        # full stop (a continuous chain through a 180-degree reversal
+        # is meaningless and degenerates the cont corner blend), then
+        # the base lift group follows
+        motion_prm["exit"] = [[[shake_travel, 0, motion_prm["height_load"], 0, 0, 0]],
+                              [[-shake_travel, 0, motion_prm["height_load"], 0, 0, 0]],
+                              [[shake_travel, 0, motion_prm["height_load"], 0, 0, 0]]] + motion_prm["exit"]
 
         # run the motion. Tip-gone is NOT sensor-verified for now —
         # see pick_tip; the pump's eject itself ran as a touch action.
