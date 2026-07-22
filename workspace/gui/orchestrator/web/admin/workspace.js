@@ -735,9 +735,14 @@ function renderDevicesPanel() {
     const simTitle = isPublisherSim
       ? "Device publisher is in simulation mode"
       : "This project uses this device in simulation mode";
-    const simPill = isSim
+    // MODE pill — always present, SIM or LIVE. Stating the real case
+    // explicitly beats leaving the operator to infer it from an absent
+    // chip: "no SIM" and "not rendered yet" look identical otherwise.
+    // Orthogonal to the dot (device-guide §16): LIVE + red dot = real
+    // hardware, currently down.
+    const modePill = isSim
       ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>`
-      : "";
+      : `<span class="device-pill device-pill--live" title="This project drives the real hardware for this device">LIVE</span>`;
     let control = "";
     if (visualState === "recovering") {
       // Amber chip matches the amber warn-pulse dot for visual
@@ -768,7 +773,7 @@ function renderDevicesPanel() {
         <span class="device-id">${escHtml(d.id)}</span>
         ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
         ${control}
-        ${simPill}
+        ${modePill}
       </div>`;
   }).join("");
   // Skip the DOM write when nothing visible changed. WS events stream
@@ -876,7 +881,9 @@ function _renderDeviceModalBody(d) {
     <div class="dd-state-row">
       <span class="dot ${dotClass}"></span>
       <span class="dd-state">${escHtml(visualState)}</span>
-      ${isSim ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>` : ""}
+      ${isSim
+        ? `<span class="device-pill device-pill--sim" title="${escAttr(simTitle)}">SIM</span>`
+        : `<span class="device-pill device-pill--live" title="This project drives the real hardware for this device">LIVE</span>`}
       ${online ? "" : `<span class="device-pill">offline</span>`}
     </div>
     ${msg ? `<div class="dd-msg">${escHtml(msg)}</div>` : ""}

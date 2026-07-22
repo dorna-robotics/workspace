@@ -293,6 +293,25 @@
       background: rgba(12,108,179,0.10);
       box-shadow: inset 0 0 0 1px rgba(12,108,179,0.25);
     }
+    /* LIVE pill: the SIM pill's counterpart — same slot, so every
+       device always states its MODE explicitly instead of leaving the
+       operator to infer "no SIM chip = real hardware". Violet: reads
+       as informational like SIM (cyan), and cannot be confused with
+       the green/amber/red dot which carries connection state. Mode
+       and state stay orthogonal (device-guide §16) — a LIVE device
+       with a red dot is real hardware that is currently down. */
+    .device-row .device-pill--live,
+    .device-detail .device-pill--live {
+      color: #b98cff;
+      background: rgba(185,140,255,0.12);
+      box-shadow: inset 0 0 0 1px rgba(185,140,255,0.25);
+    }
+    [data-theme="light"] .device-row .device-pill--live,
+    [data-theme="light"] .device-detail .device-pill--live {
+      color: #6b3fc4;
+      background: rgba(107,63,196,0.10);
+      box-shadow: inset 0 0 0 1px rgba(107,63,196,0.25);
+    }
     /* Recovering pill — amber, matches the row's warn-pulse dot.
        Used in the device row's text-msg column so operator gets a
        full-text signal next to "Recovering…" alongside the dot. */
