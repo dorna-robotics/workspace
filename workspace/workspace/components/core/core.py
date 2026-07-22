@@ -1989,9 +1989,16 @@ class Core:
                     vajs[k][0] = max(1.0, vajs[k][0] / rv)
                     worst = max(worst, rv)
                 if ra_e > TOL and k > 0:
-                    # entry-half curvature is set by the PREVIOUS
-                    # section's plateau (it enters the corner)
+                    # Entry-half acceleration is the VECTOR SUM of two
+                    # sources: centripetal, set by the speed carried in
+                    # from the previous section, and tangential, set by
+                    # THIS section's accel param when its ramp runs
+                    # through the entry curve. Reducing only the former
+                    # cannot converge when the latter dominates — the
+                    # loop then drives speed to the floor and still
+                    # fails (bench: vels [.., 1, ..] then DEGRADED).
                     vajs[k - 1][0] = max(1.0, vajs[k - 1][0] / math.sqrt(min(ra_e, 4.0)))
+                    vajs[k][1] = max(1.0, vajs[k][1] / ra_e)
                     worst = max(worst, ra_e)
                 if ra_b > TOL:
                     # body: tangential shrinks with the accel param,
@@ -2009,6 +2016,17 @@ class Core:
             # estimate is wrong somewhere worth fixing.
             corners = [0.0] * n_sec
             stops = [True] * n_sec
+            # Recompute the speeds for THIS geometry — do not inherit
+            # what the failed search left behind. Every section is now
+            # a clean stop-to-stop straight line, so its speed is the
+            # geometry cap limited by the room it has to accelerate and
+            # brake in; carrying the crushed values forward would leave
+            # the fallback crawling (bench: 94 s at vels [223, 1, 15]).
+            vajs = []
+            for k in range(n_sec):
+                leg = max(legs[k], 1e-9)
+                v_k = min(sec_vel_caps[k], math.sqrt(a_budget * leg))
+                vajs.append([max(1.0, v_k), a_budget, float(jerk)])
             report = self._fw_verify_chain(pts, vajs, corners, stops)
             print(f"[traj] DEGRADED to stop-at-every-knot: certification would not "
                   f"converge within caps (vel {vel:.0f}, acc {accel:.0f}) — model gap, report it")
