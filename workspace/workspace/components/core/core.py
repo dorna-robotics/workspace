@@ -1743,7 +1743,7 @@ class Core:
                if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, merged[i - 1]))]
         n_sec = len(pts) - 1
         if n_sec < 1:
-            return pts, [], []
+            return pts, [], [], []
         t0 = time.perf_counter()
         a_budget_est = float(accel) / 2.0
 
@@ -1869,16 +1869,29 @@ class Core:
             sec_vel_caps.append(v_cap_sec if v_cap_sec < float("inf") else float(vel))
             last_c = cv
 
+        # A knot with no arc is one of two things, never a "slow
+        # pass-through": either a COLLINEAR knot (zero turn — the
+        # cruise/brake split points), which needs no bound at all, or a
+        # real direction change that could not be blended, which is a
+        # velocity DISCONTINUITY — no speed makes it valid, so the
+        # chain STOPS there and a new one starts. That removes both
+        # arbitrary constants the old model needed (a 2.5-degree
+        # straight/not-straight cliff and a vel=1 crawl floor) and
+        # replaces them with the firmware's own cont=0 semantics.
+        stops = [False] * n_sec
+        stops[-1] = True                       # a chain always ends stopped
+        for k in range(n_sec - 1):
+            if curves[k] is None and not straight[k]:
+                stops[k] = True
+
         v_corner = []
         for k in range(n_sec - 1):
             c = curves[k]
             if c is None or c["length"] <= 0:
-                if straight[k]:
-                    # collinear pass-through: no curvature, no bound
-                    v_corner.append((float("inf"), float("inf")))
-                else:
-                    # genuine sharp corner with no curve: crawl it
-                    v_corner.append((1.0, 1.0))
+                # collinear (no turn) or a full stop — either way the
+                # knot imposes no curvature bound; the stop constraint
+                # in the passes below governs.
+                v_corner.append((float("inf"), float("inf")))
                 continue
             m = max(8, int(math.ceil(c["length"] / max(c["r"] / 8.0, 0.25))))
             arc = ([_fw_curve_point(c, i * (c["length"] / 2) / m, True) for i in range(m + 1)]
@@ -1913,17 +1926,27 @@ class Core:
             if k > 0:
                 v_k = min(v_k, v_corner[k - 1][1])
             v_t.append(max(1.0, v_k))
-        # backward pass: entering section k+1 at v_k must allow braking
-        # to v_{k+1} BEFORE its corner arc begins — the braking budget
-        # is the section's straight-line portion only (bench
-        # certification caught braking spilling into the arcs)
-        for k in range(n_sec - 2, -1, -1):
-            v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * sec_line_lens[k + 1]))
-        # forward pass: reachability from the carried speed
+        # Braking room is a section's straight-line portion (bench
+        # certification caught braking spilling into the arcs); a
+        # section that is all curve falls back to its full length.
+        def _room(k):
+            r = sec_line_lens[k]
+            return r if r > 1e-9 else max(sec_lens[k], 1e-9)
+        # backward pass: a section that ENDS AT A STOP must brake to 0
+        # within its own room (the firmware gives it a move-stop
+        # profile); otherwise braking to the next plateau happens in
+        # the next section, before its corner arc begins.
+        for k in range(n_sec - 1, -1, -1):
+            if stops[k]:
+                v_t[k] = min(v_t[k], math.sqrt(2.0 * a_budget * _room(k)))
+            else:
+                v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * _room(k + 1)))
+        # forward pass: reachability from the carried speed — a stop
+        # resets the carry to zero.
         v_prev = 0.0
         for k in range(n_sec):
-            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * sec_line_lens[k]))
-            v_prev = v_t[k]
+            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * _room(k)))
+            v_prev = 0.0 if stops[k] else v_t[k]
 
         # binding-constraint tag per section (log diagnosis):
         #   v = geometry vel cap, c = own exit corner, e = entry
@@ -1945,24 +1968,62 @@ class Core:
 
         vajs = [[v_t[k], a_budget, float(jerk)] for k in range(n_sec)]
 
-        # Certification: play the exact firmware profiles over the exact
-        # geometry and measure what the robot would command. Expected to
-        # pass by construction — a failure is a modeling bug and is
-        # reported loudly, never silently corrected.
-        report = self._fw_verify_chain(pts, vajs, corners)
+        # CERTIFICATION IS AUTHORITATIVE. The analytic model above is a
+        # fast estimate; this plays the exact firmware profiles over the
+        # exact firmware geometry and measures what the robot would
+        # actually command. Where the two disagree the measurement wins:
+        # offending sections are reduced (deterministically, by the
+        # measured violation ratio) and re-measured. The system must not
+        # be able to emit a chain it knows exceeds the caps — a warning
+        # was never a guarantee.
+        TOL = 1.05
+        report = []
+        for _ in range(8):
+            report = self._fw_verify_chain(pts, vajs, corners, stops)
+            worst = 1.0
+            for k, (jv, ja_entry, ja_body) in enumerate(report):
+                rv = jv / float(vel)
+                ra_e = ja_entry / float(accel)
+                ra_b = ja_body / float(accel)
+                if rv > TOL:
+                    vajs[k][0] = max(1.0, vajs[k][0] / rv)
+                    worst = max(worst, rv)
+                if ra_e > TOL and k > 0:
+                    # entry-half curvature is set by the PREVIOUS
+                    # section's plateau (it enters the corner)
+                    vajs[k - 1][0] = max(1.0, vajs[k - 1][0] / math.sqrt(min(ra_e, 4.0)))
+                    worst = max(worst, ra_e)
+                if ra_b > TOL:
+                    # body: tangential shrinks with the accel param,
+                    # own-corner centripetal with this section's vel
+                    vajs[k][1] = max(1.0, vajs[k][1] / ra_b)
+                    vajs[k][0] = max(1.0, vajs[k][0] / math.sqrt(min(ra_b, 4.0)))
+                    worst = max(worst, ra_b)
+            if worst <= TOL:
+                break
+        else:
+            # Did not converge: DEGRADE to the always-valid form —
+            # stop at every knot, no blends. A stop-to-stop section is
+            # within caps by construction, so the guarantee holds even
+            # when the model cannot. Loud, because it means the
+            # estimate is wrong somewhere worth fixing.
+            corners = [0.0] * n_sec
+            stops = [True] * n_sec
+            report = self._fw_verify_chain(pts, vajs, corners, stops)
+            print(f"[traj] DEGRADED to stop-at-every-knot: certification would not "
+                  f"converge within caps (vel {vel:.0f}, acc {accel:.0f}) — model gap, report it")
         jv_max = max(r[0] for r in report) if report else 0.0
         ja_max = max(max(r[1], r[2]) for r in report) if report else 0.0
-        if jv_max > float(vel) * 1.10 or ja_max > float(accel) * 1.25:
-            print(f"[traj] WARNING: chain certification exceeded caps "
-                  f"(joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}) — model bug, report it")
-        print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections, "
+        n_stop = sum(1 for i, s in enumerate(stops) if s and i < n_sec - 1)
+        print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections"
+              f"{f' ({n_stop} internal stop)' if n_stop else ''}, "
               f"vels {[round(v[0]) for v in vajs]}, corners {[round(c) for c in corners]}, "
               f"legs {legs}, bind {bind}, "
               f"certified: joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}, "
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
-        return pts, vajs, corners
+        return pts, vajs, corners, stops
 
-    def _fw_verify_chain(self, pts, vajs, corners, dt=0.02):
+    def _fw_verify_chain(self, pts, vajs, corners, stops=None, dt=0.004):
         """Evaluate the chain with the FIRMWARE's exact math — the
         ported cont()/createProfile section profiles with carried
         velocity over the ported corner geometry — and return, per
@@ -1978,9 +2039,10 @@ class Core:
         n_sec = len(pts) - 1
         for k in range(n_sec):
             paths, d_total, curve = _fw_build_section(pts, corners, k, last_curve)
+            to_stop = stops[k] if stops is not None else (k == n_sec - 1)
             prof = sim._fw_profile_cont(vajs[k][2], vajs[k][1], vajs[k][0],
                                         d_total, v_tick, a_tick,
-                                        to_stop=(k == n_sec - 1))
+                                        to_stop=to_stop)
             dur = sum(prof["ticks"]) / float(sim.FREQ)
             m = max(2, int(math.ceil(dur / dt)))
             poses = []
@@ -2010,7 +2072,7 @@ class Core:
                         ja_body = max(ja_body, acc_j)
                 prev_v = v
             report.append((jv, ja_entry, ja_body))
-            v_tick, a_tick = prof["vFinal"], 0.0
+            v_tick, a_tick = (0.0, 0.0) if to_stop else (prof["vFinal"], 0.0)
             last_curve = curve
         return report
 

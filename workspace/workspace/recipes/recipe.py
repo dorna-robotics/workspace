@@ -760,15 +760,13 @@ class Recipe:
             rt.tmove(self.core.traj_points(points, vel, accel))
             return
         if primitive == "cjmove":
-            # Max-smoothness chain: per-corner radius at the firmware
-            # clamp (capped by self.corner), corner cuts validated once
-            # at creation, per-section (vel, accel) from TOPP-RA over
-            # the TRUE executed geometry — see core.chain_prm.
-            pts, vajs, corners = self.core.chain_prm(
+            # Chain parameters derived from the firmware's own execution
+            # model and certified against it — see core.chain_prm.
+            pts, vajs, corners, stops = self.core.chain_prm(
                 points, vel, accel, jerk, corner_cap=self.corner, padding=padding)
             if len(pts) < 2:
                 return
-            rt.cjmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners)
+            self._emit_chain(rt, "cjmove", pts, vajs, corners, stops)
             return
         if primitive == "clmove":
             # Same firmware-derived treatment as cjmove — corners,
@@ -787,19 +785,21 @@ class Recipe:
                         float(J[3]), float(J[4]), float(J[5])] + [float(v) for v in J[6:]]
 
             xp = [_to_xyzj([float(v) for v in q]) for q in points]
-            xpts, vajs, corners = self.core.chain_prm(
+            xpts, vajs, corners, stops = self.core.chain_prm(
                 xp, vel, accel, jerk, corner_cap=self.corner, padding=None)
             if len(xpts) < 2:
                 return
             if len(xpts) != len(points):
-                # xyzj dedup collapsed a knot — keep targets and
+                # xyzj merge collapsed a knot — keep targets and
                 # parameters aligned by falling back to per-knot vaj
                 pts, vels, accels = self.core.section_vels(points, vel, accel)
                 vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
                 corners = [self.corner] * (len(pts) - 1)
-                rt.clmove(joints=[list(q) for q in pts[1:]], vajs=vajs, corners=corners, tool_pose=tp)
+                stops = [False] * (len(pts) - 1)
+                stops[-1] = True
+                self._emit_chain(rt, "clmove", pts, vajs, corners, stops, tool_pose=tp)
                 return
-            rt.clmove(joints=[list(q) for q in points[1:]], vajs=vajs, corners=corners, tool_pose=tp)
+            self._emit_chain(rt, "clmove", points, vajs, corners, stops, tool_pose=tp)
             return
         if primitive in ("jmove", "lmove"):
             for p in points[1:]:
@@ -810,6 +810,32 @@ class Recipe:
                     rt.lmove(joint=list(p), vel=vel, accel=accel, jerk=jerk, tool_pose=tp)
             return
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
+
+    def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):
+        """Send a chain, split at its internal STOPS.
+
+        A knot the planner could not blend is a velocity discontinuity
+        — there is no speed at which the robot can pass through it — so
+        it is a chain BOUNDARY: the sub-chain before it decelerates to
+        rest (its last section carries cont=0), the next sub-chain
+        accelerates away. That is the firmware's own semantics, and it
+        is why nothing here ever needs a crawl speed to survive a
+        corner it cannot round."""
+        targets = [list(p) for p in pts[1:]]
+        start = 0
+        for k in range(len(targets)):
+            if not (stops[k] or k == len(targets) - 1):
+                continue
+            seg_c = list(corners[start:k + 1])
+            seg_c[-1] = 0.0                      # sub-chain ends stopped
+            kw = {"joints": targets[start:k + 1],
+                  "vajs": [list(v) for v in vajs[start:k + 1]],
+                  "corners": seg_c}
+            if primitive == "clmove":
+                kw["tool_pose"] = tool_pose if tool_pose is not None else [0, 0, 0, 0, 0, 0]
+            rt.checkpoint()
+            getattr(rt, primitive)(**kw)
+            start = k + 1
 
     def _build_io_config(self, tool, component, trigger_io):
         """Build the four IO building-block lists for pick / place.
