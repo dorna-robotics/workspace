@@ -1130,20 +1130,34 @@ class Recipe:
                 io_handle = self._output_async(output_approach)
             else:
                 self._output_join(self._output_async(output_approach))
-        for gi, group in enumerate(approach):
-            first = gi == 0
-            self._move_along_path(
-                rt, group, target_solid, target_anchor,
-                tool_dict=approach_tool,
-                j5_override=approach_j5,
-                vaj_map=vaj_map,
-                has_motion_plan=has_motion_plan,
-                first_approach=first and travel,
-                motion_plan_kwargs=motion_plan_kwargs,
-                blend=blend,
-            )
-            if first and io_handle is not None:
-                self._output_join(io_handle)
+        try:
+            for gi, group in enumerate(approach):
+                first = gi == 0
+                self._move_along_path(
+                    rt, group, target_solid, target_anchor,
+                    tool_dict=approach_tool,
+                    j5_override=approach_j5,
+                    vaj_map=vaj_map,
+                    has_motion_plan=has_motion_plan,
+                    first_approach=first and travel,
+                    motion_plan_kwargs=motion_plan_kwargs,
+                    blend=blend,
+                )
+                if first and io_handle is not None:
+                    self._output_join(io_handle)
+                    io_handle = None
+        finally:
+            # An IO chain must NEVER outlive its touch. If the approach
+            # failed (planner/IK error, abort, pause-kill), the side
+            # thread would keep writing pins with its inter-pin sleeps
+            # into whatever runs next — a half-finished open sequence
+            # landing on top of the next touch's close, both track-free
+            # (queue 0), last writer wins per pin. That is the classic
+            # "the gripper ignored the open" desync. Drain it here; the
+            # original exception still propagates.
+            if io_handle is not None:
+                _h, io_handle = io_handle, None
+                _h["thread"].join(timeout=_h["duration"] + 5.0)
 
         # output touch
         self._apply_output_config(rt, output_touch)
