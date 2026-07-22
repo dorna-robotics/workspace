@@ -218,6 +218,7 @@ def make_schedule_builder(
     *,
     use_cpsat: bool = False,
     precedence_fn: Optional[Callable[[Sequence[Action]], List[set]]] = None,
+    capacity_fn: Optional[Callable[[Sequence[Action]], Dict[str, List[Tuple[int, int]]]]] = None,
 ) -> Callable[[Sequence[Action]], List[Tuple[str, int, float]]]:
     """Return a closure that schedules any plan with the given meta.
 
@@ -251,6 +252,14 @@ def make_schedule_builder(
             ``workspace.bt.dsl.build_precedence`` partialled with the
             ActionRegistry. If omitted, scheduler falls back to
             per-item serialisation (correct but suboptimal).
+        capacity_fn: Optional ``(plan) -> Dict[str, List[Tuple[int,int]]]``
+            callback — ``workspace.bt.dsl.derive_capacity_spans``
+            partialled the same way. Only consulted when
+            ``use_cpsat``: gives the solver the same-resource mutual-
+            exclusion constraint that ``capacity=True`` predicates were
+            deliberately left OUT of ``precedence_fn``'s edges for.
+            ``schedule_greedy`` never reorders away from the plan's own
+            order, so it's correct with or without this.
 
     Returns:
         A callable ``(plan) -> schedule`` with the right signature for
@@ -264,7 +273,8 @@ def make_schedule_builder(
                 # the project doesn't have it, the failure surfaces here
                 # and we fall back to greedy without crashing the run.
                 from workspace.planner.cpsat_scheduler import schedule_cpsat
-                return schedule_cpsat(actions, meta, predecessors=preds)
+                caps = capacity_fn(actions) if capacity_fn is not None else None
+                return schedule_cpsat(actions, meta, predecessors=preds, capacity_spans=caps)
             except Exception as ex:
                 log.warning(
                     "CP-SAT scheduler failed (%s: %s) — falling back to greedy",

@@ -48,6 +48,7 @@ from workspace.bt.builder import (
 from workspace.bt.dsl import (
     ActionRegistry,
     build_precedence,
+    derive_capacity_spans,
     state_to_frozen,
 )
 from workspace.bt.engine import BTEngine, EngineConfig
@@ -580,9 +581,14 @@ def run_protocol(
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
         return build_precedence(plan, registry, initial_state=initial, ctx=ctx)
 
+    def _capacity(plan):
+        facts = ctx.state.get("facts", frozenset())
+        initial = facts if isinstance(facts, frozenset) else frozenset(facts)
+        return derive_capacity_spans(plan, registry, initial_state=initial, ctx=ctx)
+
     use_cpsat = (str(scheduler).lower() == "cpsat")
     build_schedule = make_schedule_builder(
-        meta, use_cpsat=use_cpsat, precedence_fn=_precedence,
+        meta, use_cpsat=use_cpsat, precedence_fn=_precedence, capacity_fn=_capacity,
     )
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 

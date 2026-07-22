@@ -628,6 +628,39 @@ consume it on fill, restore it on empty.** The reference implementation is
 it, single-item protocols look fine in small batches by luck and produce
 impossible schedules as soon as the planner finds the reordering.
 
+#### Always flag them `capacity=True`
+
+```python
+hand_empty = predicate("hand_empty", capacity=True)
+pan_empty  = predicate("pan_empty",  capacity=True)
+```
+
+Declaring the fact is only half the job. A capacity fact is **shared**
+— the same `hand_empty` toggles as *every* item passes through the
+gripper — whereas an ordinary fact like `weighed(t)` belongs to one
+item. The scheduler derives its ordering constraints from "which
+earlier action last set this fact", and for a shared fact that answer
+is whichever item the plan's own linearization happened to touch last.
+The result is a chain welding every item's actions into one serial
+sequence.
+
+You only *see* the damage when an item **revisits a tool** — puts the
+gripper down for another tool and comes back to it later (bd's re-cap
+chain: gripper → pipettor → gripper). Batching then requires
+interleaving items, which the weld forbids, and a batch that used to
+run "all the decaps, then all the doses" collapses into strict
+one-item-at-a-time with a tool change each way. On a 4-item bd batch
+that was 10 tool swaps instead of 4.
+
+`capacity=True` keeps the mutual exclusion (two items still can never
+share the slot — it becomes a scheduler mutex constraint instead of an
+ordering edge) while letting the solver interleave items to cluster by
+tool. It is never *wrong* to omit — the schedule stays correct, just
+needlessly serial — and the framework only pays the extra solve cost
+on protocols where an item actually revisits a tool, so there is no
+reason not to flag every predicate of this shape. Full rationale in
+`workspace/bt/dsl.py`'s module docstring ("Capacity facts").
+
 ---
 
 ## 9. Running a project

@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import threading
 import time as _time
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -74,6 +74,20 @@ def _start_watchdog(
 
     def _watch():
         while not stop_event.wait(0.25):
+            # Never stop before a solution EXISTS. ``last_improve`` is
+            # seeded at construction, so without this the watchdog
+            # counts idle time against a search that simply hasn't
+            # found its first answer yet — on a batch big enough to
+            # need more than ``idle_seconds`` to get there, it killed
+            # the solve, schedule_cpsat raised, and the launcher
+            # silently fell back to greedy. Greedy never reorders, so
+            # the whole batch then ran in raw plan order (item by
+            # item, tool swap each way) with nothing in the logs
+            # beyond one warning. The watchdog's job is "stop
+            # polishing once we've plateaued" — that presupposes
+            # something to polish.
+            if tracker.num_solutions == 0:
+                continue
             if _time.monotonic() - tracker.last_improve > idle_seconds:
                 solver.StopSearch()
                 return
@@ -83,11 +97,160 @@ def _start_watchdog(
     return stop_event
 
 
+def _phase_batched_order(
+    actions: Sequence[Action],
+    tools: List[Optional[str]],
+    tool_required: List[bool],
+) -> List[int]:
+    """A good STARTING-POINT ordering for the warm-start hint below —
+    not a constraint, just something close enough to the batched
+    answer that CP-SAT confirms/polishes it instead of discovering the
+    whole clustering from a cold, unguided search.
+
+    Splits each item's own action indices (already in causally-valid
+    relative order, since we scan the plan 0..n-1 and append per item
+    as we go) into contiguous same-tool blocks, then interleaves
+    items' blocks breadth-first by block position: every item's FIRST
+    tool-phase, then every item's second, and so on — precisely the
+    "gripper-phase for every item, then pipettor-phase for every item,
+    then gripper-phase-2 for every item" pattern batching is after.
+    Items are only ever reordered relative to EACH OTHER; no item's
+    own action sequence is reordered relative to itself, so this stays
+    close to a valid plan even before the solver checks it (hints are
+    advisory — an imperfect heuristic here can only cost search time,
+    never correctness, since the real constraints are enforced by the
+    model regardless of what's hinted).
+
+    Actions with no params (``Start``, ``Park`` — global, one-off
+    bookends) aren't tied to any item; they're placed before/after the
+    per-item block in their original relative position.
+    """
+    n = len(actions)
+    itemless = [i for i in range(n) if not actions[i].params]
+    by_item: "Dict[Any, List[int]]" = {}
+    for i in range(n):
+        if not actions[i].params:
+            continue
+        by_item.setdefault(actions[i].params[0], []).append(i)
+
+    phase_lists = []
+    for idxs in by_item.values():
+        blocks: List[List[int]] = []
+        cur_block: List[int] = []
+        cur_key: Any = object()  # sentinel != any real tool/None-first-time
+        for i in idxs:
+            key = tools[i] if tool_required[i] else None
+            if cur_block and key != cur_key:
+                blocks.append(cur_block)
+                cur_block = []
+            cur_block.append(i)
+            cur_key = key
+        if cur_block:
+            blocks.append(cur_block)
+        phase_lists.append(blocks)
+
+    order: List[int] = []
+    max_phases = max((len(b) for b in phase_lists), default=0)
+    for p in range(max_phases):
+        for blocks in phase_lists:
+            if p < len(blocks):
+                order.extend(blocks[p])
+
+    first_item_idx = min((i for i in range(n) if actions[i].params), default=n)
+    pre = [i for i in itemless if i < first_item_idx]
+    post = [i for i in itemless if i >= first_item_idx]
+    return pre + order + post
+
+
+def _simulate_order(
+    order: List[int],
+    durations: List[int],
+    resources_list: List[Tuple[str, ...]],
+    tools: List[Optional[str]],
+    tool_required: List[bool],
+    swap_durations: List[int],
+    predecessors: Optional[List[set]],
+    tool_resource: str,
+) -> "Dict[int, float]":
+    """Simplified :func:`workspace.planner.plan_scheduler.schedule_greedy`
+    timing pass, but driven by an arbitrary ``order`` (a permutation of
+    ``range(len(durations))``) instead of the plan's own order — used
+    to turn :func:`_phase_batched_order`'s permutation into concrete
+    ``starts[i]`` hint VALUES the solver can check for consistency.
+    Keyed throughout by the ORIGINAL action index, so ``predecessors``
+    (indexed by original plan position) needs no remapping.
+    """
+    action_end: "Dict[int, float]" = {}
+    resource_end: "Dict[str, float]" = {}
+    current_tool: Optional[str] = None
+    starts_hint: "Dict[int, float]" = {}
+    for i in order:
+        earliest_causal = max(
+            (action_end.get(j, 0.0) for j in (predecessors[i] if predecessors else ())),
+            default=0.0,
+        )
+        resources = resources_list[i] or ("robot",)
+        earliest_resource = max(
+            (resource_end.get(r, 0.0) for r in resources), default=0.0,
+        )
+        start = max(earliest_causal, earliest_resource)
+        if tool_required[i] and tools[i] != current_tool:
+            start += swap_durations[i]
+            current_tool = tools[i]
+        starts_hint[i] = start
+        end = start + durations[i]
+        action_end[i] = end
+        for r in resources:
+            resource_end[r] = end
+    return starts_hint
+
+
+def _add_capacity_mutex(
+    model: cp_model.CpModel,
+    starts: List[cp_model.IntVar],
+    ends: List[cp_model.IntVar],
+    capacity_spans: "dict[str, List[Tuple[int, int]]]",
+    horizon: int,
+) -> None:
+    """Forbid two items' spans on the same capacity resource from
+    overlapping in time — the mutual exclusion a ``capacity=True``
+    fact implies, in place of the precedence edges
+    :func:`workspace.bt.dsl.build_precedence` deliberately omits for
+    it (see that function's docstring for the failure mode this
+    replaces).
+
+    Each span ``(first_idx, last_idx)`` — an item's exclusive
+    occupancy, from :func:`workspace.bt.dsl.derive_capacity_spans` —
+    becomes ONE derived interval running ``starts[first_idx] ..
+    ends[last_idx]``; ``AddNoOverlap`` over a resource's spans lets the
+    solver pick ANY order among them (unlike the tool circuit, a
+    capacity mutex has no sequence-dependent setup cost to schedule,
+    so plain disjunctive-scheduling non-overlap is the right, far
+    cheaper primitive here — no permutation/circuit variables needed,
+    unlike the tool sequence below which genuinely needs one because
+    its arc cost depends on WHICH pair is adjacent).
+
+    A resource with 0 or 1 span needs no constraint (nothing to
+    exclude against) and is skipped.
+    """
+    for resource, spans in capacity_spans.items():
+        if len(spans) < 2:
+            continue
+        intervals = []
+        for idx, (first, last) in enumerate(spans):
+            size = model.NewIntVar(0, horizon, f"cap_{resource}_size_{idx}")
+            intervals.append(
+                model.NewIntervalVar(starts[first], size, ends[last], f"cap_{resource}_span_{idx}")
+            )
+        model.AddNoOverlap(intervals)
+
+
 def schedule_cpsat(
     actions: Sequence[Action],
     meta: ActionMetaMap,
     *,
     predecessors: Optional[List[set]] = None,
+    capacity_spans: Optional["dict[str, List[Tuple[int, int]]]"] = None,
     tool_resource: str = "robot",
     time_limit_s: float = 30.0,
     no_improvement_s: float = 2.0,
@@ -105,6 +268,18 @@ def schedule_cpsat(
             solver assumes every action is causally independent — which
             will allow ordering reversals that may invalidate runtime
             preconditions. Always pass this.
+        capacity_spans: Optional ``{resource_name: [(first_idx, last_idx), ...]}``
+            from :func:`workspace.bt.dsl.derive_capacity_spans` — one
+            entry per item's exclusive-occupancy span of a
+            ``capacity=True`` predicate (gripper payload, scale seat,
+            …). Each resource's spans get a same-resource mutual-
+            exclusion circuit so different items' visits can never
+            interleave, WITHOUT tying them to the specific order the
+            classical planner's plan happened to serialize them in —
+            this is what lets the solver batch same-tool work across
+            items again once an item revisits a tool a second time
+            (see :func:`workspace.bt.dsl.build_precedence`'s docstring
+            for the failure mode this replaces).
         tool_resource: Name of the resource that holds the tool changer.
             Sequence-dependent setup costs apply only to this resource.
         time_limit_s: Solver wall-clock budget. Lab batches solve far
@@ -170,6 +345,12 @@ def schedule_cpsat(
         for i in range(n):
             for j in predecessors[i]:
                 model.Add(starts[i] >= ends[j])
+
+    # ── Capacity-resource mutual exclusion ─────────────────────────────
+    # Replaces the precedence edges build_precedence deliberately omits
+    # for capacity=True facts — see _add_capacity_mutex's docstring.
+    if capacity_spans:
+        _add_capacity_mutex(model, starts, ends, capacity_spans, horizon)
 
     # ── Per-resource non-overlap ───────────────────────────────────────
     # Every resource gets basic mutex via ``AddNoOverlap``. The tool
@@ -245,30 +426,43 @@ def schedule_cpsat(
                 model.Add(starts[j] >= ends[i] + setup).OnlyEnforceIf(arc)
         model.AddCircuit(arcs)
 
-        # Warm-start from greedy.
+        # Warm-start: hint both the tool circuit and the capacity
+        # circuits from ONE phase-batched reference order (see
+        # _phase_batched_order) rather than the raw (unbatched) plan
+        # order. Hinting the unbatched order is a valid, cheap-to-find
+        # starting point, but it's exactly the solution the fix exists
+        # to move the solver AWAY from — with a same-resource circuit
+        # now sized like a second tool circuit (a real batch's
+        # hand_empty circuit has as many nodes as the tool circuit
+        # itself) and given nothing but that starting point, the
+        # solver was spending 10s of seconds re-discovering the
+        # clustering from scratch. Hinting the already-batched order
+        # instead gives it something to confirm/polish.
         try:
-            from workspace.planner.plan_scheduler import schedule_greedy
-            g_actions, _ = schedule_greedy(
-                actions, meta, predecessors=predecessors,
-                tool_resource=tool_resource,
+            hint_order = _phase_batched_order(actions, tools, tool_required)
+            hint_starts = _simulate_order(
+                hint_order, durations, resources_list, tools, tool_required,
+                swap_durations, predecessors, tool_resource,
             )
             for i in range(n):
-                model.AddHint(starts[i], int(g_actions[i][2]))
-            greedy_robot_order = sorted(
-                tool_actions, key=lambda i: g_actions[i][2],
-            )
+                model.AddHint(starts[i], int(hint_starts[i]))
+            hinted_tool_order = [i for i in hint_order if i in set(tool_actions)]
             pos = {ti: idx + 1 for idx, ti in enumerate(tool_actions)}
             prev_node = 0
-            for i in greedy_robot_order:
+            for i in hinted_tool_order:
                 cur_node = pos[i]
                 key = (prev_node, cur_node)
                 if key in arc_pair:
                     model.AddHint(arc_lits[arc_pair.index(key)], 1)
                 prev_node = cur_node
-            if greedy_robot_order:
-                final_key = (pos[greedy_robot_order[-1]], 0)
+            if hinted_tool_order:
+                final_key = (pos[hinted_tool_order[-1]], 0)
                 if final_key in arc_pair:
                     model.AddHint(arc_lits[arc_pair.index(final_key)], 1)
+            # Capacity resources use AddNoOverlap (see _add_capacity_mutex),
+            # not a permutation circuit — it needs no arc hints of its
+            # own; the starts[i] hint above already places every span
+            # at the batched position _phase_batched_order chose.
         except Exception:
             log.debug("CP-SAT warm-start hint failed; solving cold.",
                       exc_info=True)

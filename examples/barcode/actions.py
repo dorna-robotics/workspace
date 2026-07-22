@@ -54,7 +54,13 @@ parked     = predicate("parked")
 # Consumed on Pick, restored on Place; the tube is held the whole
 # Pick→Present→Scan→Place chain, so Present/Scan don't touch it.
 # See project-guide §8 "Single-occupancy resources".
-hand_empty = predicate("hand_empty")  # gripper holds no tube
+#
+# capacity=True: shared mutual-exclusion facts, not causal ones —
+# see dsl.py's "Capacity facts" section. Without the flag the
+# scheduler ties precedence to whichever item's action the plan's
+# own linearization set the fact last, serializing items that
+# could otherwise be batched by tool.
+hand_empty = predicate("hand_empty", capacity=True)  # gripper holds no tube
 
 
 RACK = "rack_autosampler_2ml_1"

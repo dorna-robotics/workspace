@@ -66,8 +66,14 @@ parked    = predicate("parked")
 # model that: each is consumed (-fact) when the slot fills and restored
 # (+fact) when it empties, forcing strictly one-tube-at-a-time through both
 # the hand and the pan. See project-guide §8 "Single-occupancy resources".
-hand_empty = predicate("hand_empty")   # gripper holds no tube
-pan_empty  = predicate("pan_empty")    # balance pan is free
+#
+# capacity=True: shared mutual-exclusion facts, not causal ones —
+# see dsl.py's "Capacity facts" section. Without the flag the
+# scheduler ties precedence to whichever item's action the plan's
+# own linearization set the fact last, serializing items that
+# could otherwise be batched by tool.
+hand_empty = predicate("hand_empty", capacity=True)   # gripper holds no tube
+pan_empty  = predicate("pan_empty", capacity=True)    # balance pan is free
 
 
 RACK = "rack_autosampler_2ml_1"

@@ -47,6 +47,35 @@ machinery; nothing here is *required* — projects with unusual needs
 can drop down to the raw building blocks (``ActionTemplate``,
 ``ActionMeta``, ``RecipeAction``) any time. Use the DSL for the 90%
 case; escape hatch for the 10%.
+
+Capacity facts (single-slot shared resources)
+----------------------------------------------
+
+Most predicates are causal — "item 3 has a cap" — and should keep
+creating scheduling edges. A different, common shape is a **shared,
+single-slot resource** that toggles across *different* items sharing
+one physical thing: the gripper's payload, a scale seat, a station's
+"nothing currently in it" state:
+
+    hand_empty = predicate("hand_empty", capacity=True)
+    scale_free = predicate("scale_free", capacity=True)
+
+Flag these with ``capacity=True``. Nothing about *using* the
+predicate changes — ``hand_empty()`` in ``pre()``/``eff()`` reads and
+writes exactly as before. What changes is how the scheduler treats
+it: an un-flagged fact ties precedence to "whichever action the
+plan's own linearization happened to set it last," which — for a fact
+shared across items — welds every item's action chain into one long
+serial sequence in whatever order the classical planner's search
+produced (harmless for a single item, but for four tubes revisiting
+the gripper twice each it collapses batching into full one-tube-at-
+a-time execution). A capacity-flagged fact instead gets a proper
+mutual-exclusion constraint between items' occupancy *spans* (see
+:func:`derive_capacity_spans`), leaving the CP-SAT scheduler free to
+interleave items so it can still cluster by tool. Forgetting the flag
+is never *wrong* — the schedule stays correct, just needlessly
+serial; there's no reason not to flag every predicate that fits this
+shape.
 """
 
 from __future__ import annotations
@@ -279,6 +308,16 @@ def _ensure_expr(x: Any) -> Expr:
 # ── Predicate — factory for facts and conditions ───────────────────────────
 
 
+# Names of predicates declared with ``capacity=True`` — see Predicate
+# and predicate() below. Populated at project-module-load time (when
+# the project's ``actions.py`` calls ``predicate("x", capacity=True)``
+# at the top level, same as every other predicate declaration) and
+# consulted by build_precedence / derive_capacity_spans purely by
+# fact-tuple name, since Fact/state tuples carry no reference back to
+# the Predicate object that produced them.
+_CAPACITY_PREDICATE_NAMES: set = set()
+
+
 class Predicate:
     """A named relation. Apply to args to get a :class:`Fact`.
 
@@ -290,14 +329,23 @@ class Predicate:
     Predicate identity is by name. Two ``predicate("has_cap")`` calls
     return distinct objects but the facts they produce are
     interchangeable in state sets (it's the tuple that matters).
+
+    ``capacity=True`` marks a predicate as a **shared-resource** fact
+    rather than a causal one — a zero-arg (or item-agnostic) fact that
+    toggles as different items pass through a single-capacity
+    station: ``hand_empty``, ``scale_free``, ``nozzle_free``. See the
+    module docstring's "Capacity facts" section for the full picture.
     """
 
-    __slots__ = ("name",)
+    __slots__ = ("name", "capacity")
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, capacity: bool = False):
         if not isinstance(name, str) or not name.isidentifier():
             raise ValueError(f"predicate name must be a Python identifier, got {name!r}")
         self.name = name
+        self.capacity = capacity
+        if capacity:
+            _CAPACITY_PREDICATE_NAMES.add(name)
 
     def __call__(self, *args: Any) -> Fact:
         return Fact(self.name, tuple(args), polarity=True)
@@ -317,10 +365,21 @@ class Predicate:
         return f"predicate({self.name!r})"
 
 
-def predicate(name: str) -> Predicate:
+def predicate(name: str, *, capacity: bool = False) -> Predicate:
     """Public helper — same as ``Predicate(name)`` but reads nicer in
-    project authoring files."""
-    return Predicate(name)
+    project authoring files.
+
+    ``capacity=True`` — declare this predicate as a shared-resource
+    fact (e.g. ``hand_empty = predicate("hand_empty", capacity=True)``).
+    :func:`build_precedence` then excludes it from causal-edge
+    derivation (a capacity fact toggling across *different* items must
+    not weld their action chains into one serial sequence), and
+    :func:`derive_capacity_spans` picks it up to give the CP-SAT
+    scheduler the narrower "these spans must not interleave" mutex
+    constraint instead. Costs nothing to leave off — the default
+    (``capacity=False``) is today's behaviour, unchanged.
+    """
+    return Predicate(name, capacity=capacity)
 
 
 # ── Condition leaves auto-generated from predicates ────────────────────────
@@ -463,45 +522,24 @@ def _extract_eff_facts(branch: Any) -> Tuple[set, set]:
     return added, removed
 
 
-def build_precedence(
-    plan: Sequence[Any],          # list of workspace.planner.pddl.Action
+def _walk_plan_metas(
+    plan: Sequence[Any],
     registry: "ActionRegistry",
-    initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
-    ctx: Optional["WorkspaceContext"] = None,
-) -> List[set]:
-    """Compute per-action causal predecessor sets from the plan.
+    initial_state: Optional[FrozenSet[Tuple[Any, ...]]],
+    ctx: Optional["WorkspaceContext"],
+) -> List[Dict[str, set]]:
+    """Shared state-walk behind :func:`build_precedence` and
+    :func:`derive_capacity_spans` — both need the IDENTICAL per-action
+    pre/eff extraction and forward-simulated state (a state-aware
+    ``pre()``/``eff()`` must see the same world in both places, so the
+    walk is written once here rather than duplicated).
 
-    For each action at index ``i``, returns a set of earlier indices
-    ``{j: j < i and action[i].pre intersects action[j].eff (default
-    branch)}``. The scheduler uses this to allow actions with no
-    causal dependency to overlap on different resources.
-
-    Positive pre-facts (the action needs X to be true): predecessor =
-    the most recent earlier action that ADDED X (or none, if X was
-    true at t=0).
-
-    Negative pre-facts (the action needs X to be false): predecessor =
-    the most recent earlier action that REMOVED X.
-
-    ``initial_state`` — needed when any action uses state-aware
-    ``self.state``. The walker simulates state forward along the plan
-    so each state-aware pre/eff sees the world it would actually see
-    at runtime. Defaults to ``frozenset()`` — fine for purely static
-    projects.
-
-    ``ctx`` — set on each fresh action instance so state-aware bodies
-    can also reach ``self.ctx`` (e.g. ``self.ctx.meta["objects"]`` to
-    enumerate the current slice's items). Without it, helpers like
-    ``self._ctx_objects()`` return ``{}`` and any pre/eff that depends
-    on object enumeration silently returns no facts — which the
-    scheduler then mis-reads as "no dependencies" and runs the action
-    at t=0. Always pass ctx when calling this from a project context.
+    Returns one ``{"pre_pos", "pre_neg", "added", "removed"}`` dict of
+    fact tuples per action, in plan order.
     """
     state: FrozenSet[Tuple[Any, ...]] = (
         initial_state if initial_state is not None else frozenset()
     )
-    # Pre-compute each action's positive/negative pre facts and added/
-    # removed eff facts (using the default eff branch — first dict key).
     metas: List[Dict[str, set]] = []
     for action in plan:
         cls = registry.get(action.name)
@@ -537,6 +575,112 @@ def build_precedence(
             else:
                 s.discard(f.as_tuple())
         state = frozenset(s)
+    return metas
+
+
+def _capacity_relaxation_helps(
+    plan: Sequence[Any],
+    registry: "ActionRegistry",
+) -> bool:
+    """Would relaxing capacity-fact precedence let the scheduler find a
+    better tool ordering than it can today?
+
+    Only when some item's actions form MORE THAN ONE contiguous
+    same-tool block — i.e. the item puts a tool down and picks it up
+    again later (bd: gripper → pipettor → gripper for the re-cap
+    chain). Then batching means "every item's block 1, then every
+    item's block 2, …", which the capacity welding forbids.
+
+    When every item is a single tool block (the common shape — pick,
+    do things, put back, all with one tool), interleaving items can't
+    reduce swaps: the schedule is already one swap in, one swap out.
+    The welding costs nothing there, and relaxing it only hands
+    CP-SAT a much larger search space to rediscover the same answer
+    in — measured at 8-40x the solve time on exactly those projects,
+    for an identical schedule. So we keep the edges and stay fast.
+
+    Cheap: one pass over the plan, no state simulation.
+
+    Tool-AGNOSTIC actions (no ``tool`` declared — they run with
+    whatever is already held, e.g. a ``Weigh`` that just reads a
+    balance) are transparent here: they don't end a block, because
+    they force no swap. Counting them as boundaries would report a
+    revisit for the very common pick → read → place shape and give
+    every such project the expensive treatment for nothing.
+    """
+    meta = registry.to_meta()
+    blocks_by_item: Dict[Any, int] = {}
+    last_tool_by_item: Dict[Any, Any] = {}
+    for action in plan:
+        if not action.params:
+            continue                      # global bookends (Start/Park)
+        m = meta.get(action.name)
+        if not (m and m.tool_required):
+            continue                      # tool-agnostic: inherits, no boundary
+        item = action.params[0]
+        if last_tool_by_item.get(item, m.tool) != m.tool or item not in last_tool_by_item:
+            blocks_by_item[item] = blocks_by_item.get(item, 0) + 1
+            last_tool_by_item[item] = m.tool
+    return any(count > 1 for count in blocks_by_item.values())
+
+
+def build_precedence(
+    plan: Sequence[Any],          # list of workspace.planner.pddl.Action
+    registry: "ActionRegistry",
+    initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
+    ctx: Optional["WorkspaceContext"] = None,
+) -> List[set]:
+    """Compute per-action causal predecessor sets from the plan.
+
+    For each action at index ``i``, returns a set of earlier indices
+    ``{j: j < i and action[i].pre intersects action[j].eff (default
+    branch)}``. The scheduler uses this to allow actions with no
+    causal dependency to overlap on different resources.
+
+    Positive pre-facts (the action needs X to be true): predecessor =
+    the most recent earlier action that ADDED X (or none, if X was
+    true at t=0).
+
+    Negative pre-facts (the action needs X to be false): predecessor =
+    the most recent earlier action that REMOVED X.
+
+    **Capacity facts are excluded** (predicates declared with
+    ``predicate(name, capacity=True)``, e.g. ``hand_empty``). Such a
+    fact toggles across *different* items sharing one physical slot
+    (gripper payload, scale seat, …); tying precedence to "whichever
+    action the GIVEN plan's linearization happens to have set it last"
+    welds unrelated items' action chains together in whatever order
+    the classical planner's search produced them — observed on a real
+    protocol as batching collapsing into full one-item-at-a-time
+    serialization the moment an item revisits the same tool twice
+    (item 2's first gripper action ended up preceded by item 1's
+    *very last* action, including its entire unrelated tool-2 phase in
+    between). :func:`derive_capacity_spans` supplies the CP-SAT
+    scheduler with the narrower constraint this fact actually implies
+    (mutual exclusion of same-resource spans) instead, leaving the
+    solver free to interleave items to minimise tool swaps. Actions'
+    own ``pre()``/``eff()`` are untouched — this only changes which
+    facts contribute a *scheduling* edge; the runtime leaf still
+    re-checks the real precondition before executing.
+
+    ``initial_state`` — needed when any action uses state-aware
+    ``self.state``. The walker simulates state forward along the plan
+    so each state-aware pre/eff sees the world it would actually see
+    at runtime. Defaults to ``frozenset()`` — fine for purely static
+    projects.
+
+    ``ctx`` — set on each fresh action instance so state-aware bodies
+    can also reach ``self.ctx`` (e.g. ``self.ctx.meta["objects"]`` to
+    enumerate the current slice's items). Without it, helpers like
+    ``self._ctx_objects()`` return ``{}`` and any pre/eff that depends
+    on object enumeration silently returns no facts — which the
+    scheduler then mis-reads as "no dependencies" and runs the action
+    at t=0. Always pass ctx when calling this from a project context.
+    """
+    metas = _walk_plan_metas(plan, registry, initial_state, ctx)
+    # Only skip capacity edges when doing so can actually buy a better
+    # tool ordering — see _capacity_relaxation_helps.
+    skip_capacity = _capacity_relaxation_helps(plan, registry)
 
     predecessors: List[set] = []
     for i, m in enumerate(metas):
@@ -544,6 +688,8 @@ def build_precedence(
         # Positive pre — last earlier action that added the fact.
         # Stop at first remover (the fact was just removed; we're a bug).
         for f in m["pre_pos"]:
+            if skip_capacity and f[0] in _CAPACITY_PREDICATE_NAMES:
+                continue
             for j in range(i - 1, -1, -1):
                 if f in metas[j]["added"]:
                     preds.add(j); break
@@ -551,6 +697,8 @@ def build_precedence(
                     break
         # Negative pre — last earlier action that removed the fact.
         for f in m["pre_neg"]:
+            if skip_capacity and f[0] in _CAPACITY_PREDICATE_NAMES:
+                continue
             for j in range(i - 1, -1, -1):
                 if f in metas[j]["removed"]:
                     preds.add(j); break
@@ -558,6 +706,72 @@ def build_precedence(
                     break
         predecessors.append(preds)
     return predecessors
+
+
+def derive_capacity_spans(
+    plan: Sequence[Any],
+    registry: "ActionRegistry",
+    initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
+    ctx: Optional["WorkspaceContext"] = None,
+) -> Dict[str, List[Tuple[int, int]]]:
+    """Find the exclusive-occupancy spans a capacity fact implies.
+
+    For each predicate declared ``capacity=True`` (e.g. ``hand_empty``),
+    walks the plan and pairs each **acquire** — an action whose
+    positive precondition needs the fact true AND whose own effect
+    removes it (e.g. ``Pick``: needs ``hand_empty()``, sets
+    ``-hand_empty``) — with the next **release** — an action whose
+    effect adds the fact back (e.g. ``PlaceOnScale``: sets
+    ``+hand_empty``). Each ``(acquire_idx, release_idx)`` pair is one
+    span during which that item exclusively holds the resource; two
+    spans on the same resource must never interleave (though several
+    *disjoint* spans per item are normal — bd's tube visits the
+    gripper across five separate hand_empty spans in one run: pick,
+    the scale/inspect/scan/decap block, retrieve, pick-for-cap, and
+    the final cap-and-return).
+
+    Returns ``{resource_name: [(acquire_idx, release_idx), ...]}`` —
+    only resources with at least one span, in plan order. Feed
+    straight to :func:`workspace.planner.cpsat_scheduler.schedule_cpsat`
+    (``capacity_spans=``) so it can add a same-resource mutual-
+    exclusion circuit; :func:`schedule_greedy` doesn't need this — it
+    never reorders away from the given plan, so it stays correct
+    without it.
+
+    A capacity fact that gets acquired but never released before the
+    plan ends is dropped with a warning (a released-elsewhere modeling
+    bug, not something to silently paper over).
+
+    Returns ``{}`` when :func:`build_precedence` kept the capacity
+    edges (see :func:`_capacity_relaxation_helps`) — the mutex is
+    already enforced by those edges there, and adding a second,
+    weaker-propagating encoding of the same constraint would only slow
+    the solver down. The two functions MUST agree on this: spans
+    without dropped edges is merely redundant, but dropped edges
+    without spans would lose the mutual exclusion entirely.
+    """
+    if not _capacity_relaxation_helps(plan, registry):
+        return {}
+    metas = _walk_plan_metas(plan, registry, initial_state, ctx)
+    spans: Dict[str, List[Tuple[int, int]]] = {}
+    open_at: Dict[str, int] = {}
+    for i, m in enumerate(metas):
+        for name in _CAPACITY_PREDICATE_NAMES:
+            acquires = any(f[0] == name for f in m["pre_pos"]) and \
+                any(f[0] == name for f in m["removed"])
+            releases = any(f[0] == name for f in m["added"])
+            if acquires and name not in open_at:
+                open_at[name] = i
+            if releases and name in open_at:
+                spans.setdefault(name, []).append((open_at.pop(name), i))
+    for name, i in open_at.items():
+        log.warning(
+            "derive_capacity_spans: %r acquired at plan index %d but never "
+            "released before the plan ended — dropping that span (the "
+            "scheduler will not enforce mutual exclusion for it)",
+            name, i,
+        )
+    return spans
 
 
 def _normalise_eff(effs: Any, action_name: str) -> Dict[str, Tuple[Fact, ...]]:
