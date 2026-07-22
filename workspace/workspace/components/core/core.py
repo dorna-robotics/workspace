@@ -1745,10 +1745,45 @@ class Core:
         if n_sec < 1:
             return pts, [], []
         t0 = time.perf_counter()
+        a_budget_est = float(accel) / 2.0
 
-        # 1. corners: firmware clamp, host-side
+        def _turn_dot(A, B, C):
+            BA = _fw_unit(_fw_vec(A, B, 1.0, -1.0))
+            BC = _fw_unit(_fw_vec(C, B, 1.0, -1.0))
+            return _fw_inner(BA, BC)   # ~ -1 = straight through, ~ +1 = reversal
+
+        # 0. CRUISE/BRAKE SPLIT: the firmware runs ONE speed plateau
+        # per section, so a long leg ending in a small corner would
+        # crawl its whole length at corner speed (bench: 204-unit
+        # travel at 75 because of a 9-unit exit corner). Insert a
+        # collinear knot at the braking point so the leg becomes
+        # cruise-section + brake-section. The knot lies ON the
+        # validated segment — geometry unchanged.
+        out = [pts[0]]
+        for k in range(len(pts) - 1):
+            A, B = pts[k], pts[k + 1]
+            L = _fw_norm(_fw_vec(B, A, 1.0, -1.0))
+            if k + 2 < len(pts):
+                leg2 = _fw_norm(_fw_vec(pts[k + 2], B, 1.0, -1.0))
+                c_est = min(float(corner_cap), 0.4 * min(L, leg2))
+                v_exit_est = math.sqrt(max(a_budget_est * c_est, 1.0))
+                brake = max(0.0, (float(vel) ** 2 - v_exit_est ** 2) / (2.0 * a_budget_est))
+                tail = brake + max(2.5 * c_est, 10.0)
+                if L > tail + 20.0:
+                    f = (L - tail) / L
+                    out.append(_fw_vec(A, B, 1.0 - f, f))
+            out.append(list(B))
+        pts = out
+        n_sec = len(pts) - 1
+
+        # 1. corners: firmware clamp, host-side; straight-through
+        # knots (incl. the synthetic split knots) get NO corner — a
+        # collinear pass at speed has no curvature to bound, and the
+        # blend curve is degenerate there anyway
         legs = [_fw_norm(_fw_vec(pts[k + 1], pts[k], 1.0, -1.0)) for k in range(n_sec)]
-        corners = [min(float(corner_cap), 0.4 * min(legs[k], legs[k + 1]))
+        straight = [_turn_dot(pts[k], pts[k + 1], pts[k + 2]) < -0.999
+                    for k in range(n_sec - 1)]
+        corners = [0.0 if straight[k] else min(float(corner_cap), 0.4 * min(legs[k], legs[k + 1]))
                    for k in range(n_sec - 1)] + [0.0]
 
         # 2. creation-time validation of the exact corner cuts
@@ -1817,7 +1852,12 @@ class Core:
         for k in range(n_sec - 1):
             c = curves[k]
             if c is None or c["length"] <= 0:
-                v_corner.append(1.0)   # sharp pass-through: crawl the knot
+                if straight[k]:
+                    # collinear pass-through: no curvature, no bound
+                    v_corner.append((float("inf"), float("inf")))
+                else:
+                    # genuine sharp corner with no curve: crawl it
+                    v_corner.append((1.0, 1.0))
                 continue
             m = max(8, int(math.ceil(c["length"] / max(c["r"] / 8.0, 0.25))))
             arc = ([_fw_curve_point(c, i * (c["length"] / 2) / m, True) for i in range(m + 1)]
