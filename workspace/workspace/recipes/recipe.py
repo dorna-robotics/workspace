@@ -8,6 +8,7 @@ from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from dorna2 import Pose
 from workspace.components.probe_calibration import ProbeCalibration
+from workspace.components.core.core import _xyzj_to_joints
 
 
 class RecipeError(Exception):
@@ -786,20 +787,37 @@ class Recipe:
 
             xp = [_to_xyzj([float(v) for v in q]) for q in points]
             xpts, vajs, corners, stops = self.core.chain_prm(
-                xp, vel, accel, jerk, corner_cap=self.corner, padding=None)
+                xp, vel, accel, jerk, corner_cap=self.corner, padding=None, label="clmove")
             if len(xpts) < 2:
                 return
-            if len(xpts) != len(points):
-                # xyzj merge collapsed a knot — keep targets and
-                # parameters aligned by falling back to per-knot vaj
-                pts, vels, accels = self.core.section_vels(points, vel, accel)
-                vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
-                corners = [self.corner] * (len(pts) - 1)
-                stops = [False] * (len(pts) - 1)
-                stops[-1] = True
-                self._emit_chain(rt, "clmove", pts, vajs, corners, stops, tool_pose=tp)
+            # chain_prm works in xyzj and may MERGE knots (encoder
+            # ghosts) or INSERT them (cruise/brake splits), so its
+            # output rarely matches the input one-for-one. Convert its
+            # points back to joint targets — the same nearest-branch
+            # solve the controller does for an lmove — instead of
+            # abandoning the certified parameters. Falling back here
+            # was silently sending most clmove travel uncertified,
+            # because a split knot alone changed the count.
+            targets, cur, ok = [], [float(v) for v in points[0]], True
+            for q in xpts[1:]:
+                J = _xyzj_to_joints(q, cur, tp, kin)
+                if J is None:
+                    ok = False
+                    break
+                J = [float(v) for v in J]
+                targets.append(J)
+                cur = J
+            if ok:
+                self._emit_chain(rt, "clmove", [points[0]] + targets, vajs, corners, stops, tool_pose=tp)
                 return
-            self._emit_chain(rt, "clmove", points, vajs, corners, stops, tool_pose=tp)
+            # IK genuinely failed on the chain geometry — per-knot vaj
+            # over the original targets is the safe remainder.
+            pts, vels, accels = self.core.section_vels(points, vel, accel)
+            vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
+            corners = [self.corner] * (len(pts) - 1)
+            stops = [False] * (len(pts) - 1)
+            stops[-1] = True
+            self._emit_chain(rt, "clmove", pts, vajs, corners, stops, tool_pose=tp)
             return
         if primitive in ("jmove", "lmove"):
             for p in points[1:]:

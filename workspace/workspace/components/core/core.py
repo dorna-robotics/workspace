@@ -1697,7 +1697,7 @@ class Core:
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return pts, vels, accels
 
-    def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0):
+    def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0, label="cjmove"):
         """Chain parameters for cjmove tuned for MAXIMUM smoothness
         under the user's caps — derived from the firmware's actual
         execution model (see the _fw_* ports of server/motion.cpp):
@@ -2033,7 +2033,7 @@ class Core:
         jv_max = max(r[0] for r in report) if report else 0.0
         ja_max = max(max(r[1], r[2]) for r in report) if report else 0.0
         n_stop = sum(1 for i, s in enumerate(stops) if s and i < n_sec - 1)
-        print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections"
+        print(f"[traj] {len(pts)} pts -> {n_sec} {label} sections"
               f"{f' ({n_stop} internal stop)' if n_stop else ''}, "
               f"vels {[round(v[0]) for v in vajs]}, corners {[round(c) for c in corners]}, "
               f"legs {legs}, bind {bind}, "
