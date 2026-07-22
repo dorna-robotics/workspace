@@ -300,18 +300,33 @@ class Recipe:
         hold pins physically before any contact motion. If memory says
         disengaged, it fires (a re-grip attempt loses nothing).
         """
-        _output_config = []
+        seq = []
         for entry in output_list:
             _config, get_call, set_call = entry[0], entry[1], entry[2]
             if (len(entry) > 3 and entry[3] == "skip_if_state"
                     and get_call is not None and set_call is not None
                     and get_call[0](*get_call[1]) == set_call[1][0]):
                 continue
-            _output_config += _config
+            for c in _config:
+                if len(c) < 2 or c[0] is None:
+                    continue
+                delay = float(c[2]) if len(c) > 2 and c[2] else 0.0
+                seq.append((int(c[0]), int(c[1]), delay))
             if set_call is not None:
                 set_call[0](*set_call[1])
         rt.checkpoint()
-        rt.output(config=_output_config)
+        # Pin frames go through the normal QUEUE (queue 0) so they stay
+        # synced with the motion — a touch-time output must execute
+        # after the motion ahead of it. The inter-pin delays are HOST
+        # side (_time.sleep) and never queued `sleep` frames: a queued
+        # sleep occupies the controller's motion queue, so it delays
+        # whatever motion sits behind it and breaks a cont chain's
+        # lookahead. Same rule as the overlapped chain — the host owns
+        # IO timing everywhere; only pin states go to the controller.
+        for pin, val, delay in seq:
+            rt.output(config=[[pin, val, 0]])
+            if delay > 0:
+                _time.sleep(delay)
 
     # ── Overlapped approach IO ──────────────────────────────────────────
     # The approach-side IO chain (e.g. opening the gripper: pins with
