@@ -61,7 +61,7 @@ class Recipe:
         # The commanded midpoints are never touched: the path cuts
         # inside each corner by min(corner, 0.4 * min(leg lengths)).
         corner=60.0,
-        jmove_vaj=[200, 800, 4800],  # [200, 500, 3000],
+        jmove_vaj=[200, 600, 4000],  # [200, 500, 3000],
         lmove_vaj=[600, 1400, 6000],
         # calibration
         calibration_name=None,
