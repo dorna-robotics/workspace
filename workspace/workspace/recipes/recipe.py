@@ -738,12 +738,35 @@ class Recipe:
             rt.cjmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners)
             return
         if primitive == "clmove":
-            pts, vels, accels = self.core.section_vels(points, vel, accel)
-            if len(pts) < 2:
+            # Same firmware-derived treatment as cjmove — corners,
+            # curvature speed bounds, braking passes and certification
+            # — computed in the chain's own xyzj space (x,y,z + wrist
+            # + aux: the controller's lmove space, so corner radii and
+            # speeds are mm-true). Collision validation of the cuts is
+            # skipped (padding=None): exit corridors are recipe-owned
+            # clearance, exactly as their discrete lmoves were.
+            kin = self.core.dorna.kinematic
+            kin.set_tcp_xyzabc(tp)
+
+            def _to_xyzj(J):
+                f = kin.fw(J[:6])
+                return [float(f[0]), float(f[1]), float(f[2]),
+                        float(J[3]), float(J[4]), float(J[5])] + [float(v) for v in J[6:]]
+
+            xp = [_to_xyzj([float(v) for v in q]) for q in points]
+            xpts, vajs, corners = self.core.chain_prm(
+                xp, vel, accel, jerk, corner_cap=self.corner, padding=None)
+            if len(xpts) < 2:
                 return
-            vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
-            corners = [self.corner] * (len(pts) - 1)
-            rt.clmove(joints=[list(p) for p in pts[1:]], vajs=vajs, corners=corners, tool_pose=tp)
+            if len(xpts) != len(points):
+                # xyzj dedup collapsed a knot — keep targets and
+                # parameters aligned by falling back to per-knot vaj
+                pts, vels, accels = self.core.section_vels(points, vel, accel)
+                vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
+                corners = [self.corner] * (len(pts) - 1)
+                rt.clmove(joints=[list(q) for q in pts[1:]], vajs=vajs, corners=corners, tool_pose=tp)
+                return
+            rt.clmove(joints=[list(q) for q in points[1:]], vajs=vajs, corners=corners, tool_pose=tp)
             return
         if primitive in ("jmove", "lmove"):
             for p in points[1:]:
