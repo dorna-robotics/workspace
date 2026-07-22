@@ -55,22 +55,31 @@ class Printer(Recipe):
         return super().place(anchor=anchor, solid_name=solid_name, offset=offset, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, gravity_offset=gravity_offset, **kwargs)
     
 
-    def dry_run_spin(self, count=1):
-        """Cycle the print head without printing — ``count`` times. No-op in simulation."""
-        if not self.component._simulation_mode:
-            return self.component.device.dry_run_spin(count=count)
-        return True
+    # Device ops are atomic operations on the component (component-guide
+    # §7) and the component is sim-agnostic (the station owns the one
+    # sim/real branch), so these are pure pass-throughs — no branching on
+    # ``_simulation_mode`` here. ``sim_return`` rides along per call
+    # (device-guide §17).
 
-    def print_label(self, data, code_type="code128", autorun=True, verify=True):
-        """Print ``data`` as a label with encoding ``code_type`` (e.g. ``"code128"``).
+    def dry_run_spin(self, count=1, sim_return=True):
+        """Cycle the applicator ``count`` times without printing (bool)."""
+        return self.component.dry_run_spin(count=count, sim_return=sim_return)
+
+    def print_label(self, data, code_type="code128", autorun=True, verify=True,
+                    sim_return=True):
+        """Print ``data`` as a label with encoding ``code_type`` (bool).
 
         Args:
             data: Text to encode.
-            code_type: Barcode/QR encoding family.
+            code_type: Barcode/QR encoding family (``code128``, ``qrcode``,
+                ``datamatrix``).
             autorun: If True, advance the label automatically after printing.
-            verify: If True, verify the print with the scanner.
+            verify: If True, block until the printer confirms the job id
+                finished (``ESC s`` Y→N plus an ``ESC j`` match).
+            sim_return: Value returned in simulation — shaped like the
+                real return (a ``bool``).
         """
-        if not self.component._simulation_mode:
-            from workspace.components.printer.cab_driver import CodeType
-            return self.component.device.print_one(CodeType(code_type), data, autorun=autorun, verify=verify)
-        return True
+        return self.component.print_label(
+            data, code_type=code_type, autorun=autorun, verify=verify,
+            sim_return=sim_return,
+        )
