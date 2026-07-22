@@ -1724,90 +1724,160 @@ class Core:
                         continue
             curves[k] = c
 
-        # 3. TOPP-RA over the true executed geometry
-        path_pts = [list(pts[0])]
-        bounds = []            # cumulative arc length at each section end
-        acc_len = 0.0
+        # 3. Section speeds from the FIRMWARE's own execution model —
+        # no profile compression, no iteration. cont() runs ONE speed
+        # plateau per section (ramp from the carried speed toward this
+        # section's vel, then hold), so the chain's speed sequence is
+        # fully determined by per-section target speeds. Those are
+        # computed exactly:
+        #   - corner limit: per-joint peak curvature of the REAL curve
+        #     (sampled from the motion.cpp port) -> v = sqrt(accel/k)
+        #   - velocity limit: per-joint tangent components -> chord cap
+        #   - backward pass: braking feasibility at the full accel cap
+        #   - forward pass: reachability from the previous speed
+        # THE ACCEL BUDGET IS SPLIT: tangential ramps and corner
+        # curvature superimpose on the same joints (short sections
+        # ramp all the way through their corners), so each gets half
+        # the cap — their sum provably never exceeds it.
+        a_budget = float(accel) / 2.0
+        sec_lens = []
+        sec_vel_caps = []
+        last_c = None
         for k in range(n_sec):
-            start = curves[k - 1]["curveFinal"] if k > 0 and curves[k - 1] else pts[k]
-            end = curves[k]["curveInitial"] if curves[k] else pts[k + 1]
-            d_line = _fw_norm(_fw_vec(end, start, 1.0, -1.0))
-            m = max(1, int(math.ceil(d_line / sample)))
-            for i in range(1, m + 1):
-                path_pts.append(_fw_vec(start, end, 1.0 - i / m, i / m))
-            acc_len += d_line
-            if curves[k]:
-                c = curves[k]
-                half = c["length"] / 2
-                m = max(1, int(math.ceil(half / sample)))
-                for i in range(1, m + 1):
-                    path_pts.append(_fw_curve_point(c, i * half / m, True))
-                acc_len += half
-                bounds.append(acc_len)     # section ends mid-curve
-                for i in range(1, m + 1):
-                    path_pts.append(_fw_curve_point(c, i * half / m, False))
-                acc_len += half
-            else:
-                bounds.append(acc_len)
+            paths, d_total, cv = _fw_build_section(pts, corners, k, last_c)
+            sec_lens.append(d_total)
+            v_cap_sec = float("inf")
+            for kind, data, pd in paths:
+                m = max(2, int(math.ceil(pd / max(sample, 1e-9))) * 2)
+                for i in range(m):
+                    q0p = _fw_path_pose(paths, min(i * d_total / m, d_total))
+                    q1p = _fw_path_pose(paths, min((i + 1) * d_total / m, d_total))
+                    ds = d_total / m
+                    comp = max(abs(b - a) / ds for a, b in zip(q0p, q1p)) if ds > 0 else 1.0
+                    if comp > 1e-9:
+                        v_cap_sec = min(v_cap_sec, float(vel) / comp)
+                break  # tangent sampled once over the whole section
+            sec_vel_caps.append(v_cap_sec if v_cap_sec < float("inf") else float(vel))
+            last_c = cv
 
-        arr = np.array(path_pts)
-        s = np.zeros(len(arr))
-        for i in range(1, len(arr)):
-            s[i] = s[i - 1] + float(np.linalg.norm(arr[i] - arr[i - 1]))
-        total = float(s[-1])
-        if total <= 0.0:
-            return pts, [[1.0, float(accel), float(jerk)]] * n_sec, corners
-        keep = [0] + [i for i in range(1, len(arr)) if s[i] > s[i - 1] + 1e-9]
-        arr, s = arr[keep], s[keep]
-        traj = ta.algorithm.TOPPRA(
-            [tc.JointVelocityConstraint(np.array([[-vel, vel]] * arr.shape[1])),
-             tc.JointAccelerationConstraint(np.array([[-accel, accel]] * arr.shape[1]))],
-            ta.SplineInterpolator(s / total, arr),
-            parametrizer="ParametrizeConstAccel",
-        ).compute_trajectory()
-        if traj is None:
-            raise RuntimeError("TOPP-RA could not parameterize the chain path")
-        ts = np.append(np.arange(0.0, traj.duration, dt), float(traj.duration))
-        q = np.array([traj(float(x)) for x in ts])
-        seg = np.linalg.norm(np.diff(q, axis=0), axis=1)
-        s_mid = np.concatenate([[0.0], np.cumsum(seg)])[:-1] + seg / 2.0
-        v_chord = seg / dt
-        a_chord = np.abs(np.diff(v_chord)) / dt
-        s_acc = s_mid[:-1] + np.diff(s_mid) / 2.0
-        vajs = []
-        lo = 0.0
+        v_corner = []
+        for k in range(n_sec - 1):
+            c = curves[k]
+            if c is None or c["length"] <= 0:
+                v_corner.append(1.0)   # sharp pass-through: crawl the knot
+                continue
+            m = max(8, int(math.ceil(c["length"] / max(c["r"] / 8.0, 0.25))))
+            arc = ([_fw_curve_point(c, i * (c["length"] / 2) / m, True) for i in range(m + 1)]
+                   + [_fw_curve_point(c, i * (c["length"] / 2) / m, False) for i in range(1, m + 1)])
+            ds = c["length"] / (2 * m)
+            # Pointwise centripetal bounds, one per corner HALF: the
+            # first half is crossed at THIS section's plateau, the
+            # second half at the NEXT section's plateau (the ramp
+            # between them stays under max(v_k, v_{k+1}), which the
+            # two bounds cover region-wise; certification guards the
+            # residual).
+            b1_sq = b2_sq = float("inf")
+            for i in range(1, len(arc) - 1):
+                a_, b_, c_ = arc[i - 1], arc[i], arc[i + 1]
+                kappa = max(abs(x - 2 * y + z) for x, y, z in zip(a_, b_, c_)) / (ds * ds)
+                if kappa <= 1e-12:
+                    continue
+                if i <= m:
+                    b1_sq = min(b1_sq, a_budget / kappa)
+                else:
+                    b2_sq = min(b2_sq, a_budget / kappa)
+            v_corner.append((math.sqrt(max(b1_sq, 1.0)) if b1_sq < float("inf") else float(vel),
+                             math.sqrt(max(b2_sq, 1.0)) if b2_sq < float("inf") else float(vel)))
+
+        # target per-section speeds: capped by geometry, the exit
+        # corner's first half, and the entry corner's second half
+        v_t = []
         for k in range(n_sec):
-            hi = bounds[k]
-            in_v = v_chord[(s_mid >= lo) & (s_mid < hi)]
-            v_sec = float(in_v.max()) if len(in_v) else float(vel)
-            # The firmware rides a section's vel plateau all the way to
-            # its END — which is the corner. Cap the plateau at the
-            # profile's speed AT that boundary, so every corner is
-            # crossed at the speed TOPP-RA planned for it (the
-            # deceleration happens BEFORE the corner, not after).
-            if k < n_sec - 1 and len(s_mid):
-                j = int(np.argmin(np.abs(s_mid - hi)))
-                v_sec = min(v_sec, float(v_chord[j]))
-            # Firmware semantics (motion.cpp createLine/createProfile):
-            # vel and accel apply to the joint-space CHORD — one scalar
-            # profile over norm(delta). TOPP-RA's chord profile is
-            # therefore passed through UNSCALED: per-joint limits are
-            # already guaranteed by TOPP-RA's own constraints, and any
-            # leading-axis rescaling just runs the chain slower than
-            # the plan.
-            d_sec = float(np.linalg.norm(np.array(pts[k + 1]) - np.array(pts[k])))
-            v_k = max(1.0, v_sec)
-            in_a = a_chord[(s_acc >= lo) & (s_acc < hi)]
-            a_k = float(in_a.max()) if len(in_a) else float(accel)
-            v_prev = vajs[-1][0] if vajs else 0.0
-            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_sec, 1e-9)
-            vajs.append([v_k, max(a_k, a_need), float(jerk)])
-            lo = hi
+            v_k = sec_vel_caps[k]
+            if k < n_sec - 1:
+                v_k = min(v_k, v_corner[k][0])
+            if k > 0:
+                v_k = min(v_k, v_corner[k - 1][1])
+            v_t.append(max(1.0, v_k))
+        # backward pass: entering section k+1 at v_k must allow braking
+        # to v_{k+1} within section k+1 at the ramp half-budget
+        for k in range(n_sec - 2, -1, -1):
+            v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * sec_lens[k + 1]))
+        # forward pass: reachability from the carried speed
+        v_prev = 0.0
+        for k in range(n_sec):
+            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * sec_lens[k]))
+            v_prev = v_t[k]
+
+        vajs = [[v_t[k], a_budget, float(jerk)] for k in range(n_sec)]
+
+        # Certification: play the exact firmware profiles over the exact
+        # geometry and measure what the robot would command. Expected to
+        # pass by construction — a failure is a modeling bug and is
+        # reported loudly, never silently corrected.
+        report = self._fw_verify_chain(pts, vajs, corners)
+        jv_max = max(r[0] for r in report) if report else 0.0
+        ja_max = max(max(r[1], r[2]) for r in report) if report else 0.0
+        if jv_max > float(vel) * 1.10 or ja_max > float(accel) * 1.25:
+            print(f"[traj] WARNING: chain certification exceeded caps "
+                  f"(joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}) — model bug, report it")
         print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections, "
-              f"vels {[round(v[0]) for v in vajs]}, accels {[round(v[1]) for v in vajs]}, "
-              f"corners {[round(c) for c in corners]}, "
+              f"vels {[round(v[0]) for v in vajs]}, corners {[round(c) for c in corners]}, "
+              f"certified: joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}, "
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return pts, vajs, corners
+
+    def _fw_verify_chain(self, pts, vajs, corners, dt=0.02):
+        """Evaluate the chain with the FIRMWARE's exact math — the
+        ported cont()/createProfile section profiles with carried
+        velocity over the ported corner geometry — and return, per
+        section, the maximum per-joint |velocity| and |acceleration|
+        the robot would actually command. No approximation: this IS
+        the execution model, sampled at ``dt``."""
+        if getattr(self, "_fw_eval", None) is None:
+            self._fw_eval = SimulationAPI()
+        sim = self._fw_eval
+        v_tick, a_tick = 0.0, 0.0
+        last_curve = None
+        report = []
+        n_sec = len(pts) - 1
+        for k in range(n_sec):
+            paths, d_total, curve = _fw_build_section(pts, corners, k, last_curve)
+            prof = sim._fw_profile_cont(vajs[k][2], vajs[k][1], vajs[k][0],
+                                        d_total, v_tick, a_tick,
+                                        to_stop=(k == n_sec - 1))
+            dur = sum(prof["ticks"]) / float(sim.FREQ)
+            m = max(2, int(math.ceil(dur / dt)))
+            poses = []
+            for i in range(m + 1):
+                q, _, _ = sim.traverse(prof["jerks"], prof["ticks"],
+                                       q0=0.0, v0=v_tick, a0=a_tick,
+                                       t=min(i * dur / m, dur))
+                poses.append(_fw_path_pose(paths, min(q, d_total)))
+            step_t = dur / m if m else dt
+            entry_len = paths[0][2] if paths and paths[0][0] == "curve2" else 0.0
+            jv = ja_entry = ja_body = 0.0
+            prev_v = None
+            q_marks = []
+            for i in range(m + 1):
+                qi, _, _ = sim.traverse(prof["jerks"], prof["ticks"],
+                                        q0=0.0, v0=v_tick, a0=a_tick,
+                                        t=min(i * dur / m, dur))
+                q_marks.append(min(qi, d_total))
+            for i, (a, b) in enumerate(zip(poses, poses[1:])):
+                v = [(y - x) / step_t for x, y in zip(a, b)]
+                jv = max(jv, max(abs(x) for x in v))
+                if prev_v is not None:
+                    acc_j = max(abs(y - x) / step_t for x, y in zip(prev_v, v))
+                    if q_marks[i] <= entry_len:
+                        ja_entry = max(ja_entry, acc_j)
+                    else:
+                        ja_body = max(ja_body, acc_j)
+                prev_v = v
+            report.append((jv, ja_entry, ja_body))
+            v_tick, a_tick = prof["vFinal"], 0.0
+            last_curve = curve
+        return report
 
     @staticmethod
     def _boxes_to_cubes(boxes):
@@ -2732,6 +2802,46 @@ def _fw_curve_point(c, q, first):
     return v
 
 
+def _fw_build_section(pts, corners, k, last_curve):
+    """One chain section's path list, exactly as Motion::addJMove builds
+    it: [second half of previous corner] + line + [first half of own
+    corner]. Shared by the sim executor and the host-side verifier so
+    both evaluate the SAME geometry. Returns (paths, d_total, curve)."""
+    A, B = pts[k], pts[k + 1]
+    has_next = k + 1 < len(pts) - 1
+    paths = []
+    if last_curve is not None and last_curve["length"] > 0:
+        paths.append(("curve2", last_curve, last_curve["length"] / 2))
+    line_start = last_curve["curveFinal"] if last_curve is not None else A
+    curve = None
+    if has_next:
+        corner = float(corners[k]) if corners[k] else 0.0
+        curve = _fw_create_curve(A, B, pts[k + 2], corner)
+        line_end = curve["curveInitial"]
+    else:
+        line_end = B
+    d_line = _fw_norm(_fw_vec(line_end, line_start, 1.0, -1.0))
+    paths.append(("line", (line_start, line_end, d_line), d_line))
+    if curve is not None and curve["length"] > 0:
+        paths.append(("curve1", curve, curve["length"] / 2))
+    return paths, sum(pd for _, _, pd in paths), curve
+
+def _fw_path_pose(paths, qq):
+    """Pose at arc position qq over a section's concatenated paths —
+    the firmware's q mapping (traverse dispatch)."""
+    acc = 0.0
+    for idx, (kind, data, pd) in enumerate(paths):
+        if qq <= acc + pd or idx == len(paths) - 1:
+            qe = min(max(qq - acc, 0.0), pd)
+            if kind == "line":
+                s0, s1, dl = data
+                f = qe / dl if dl > 0 else 1.0
+                return _fw_vec(s0, s1, 1.0 - f, f)
+            return _fw_curve_point(data, qe, kind == "curve1")
+        acc += pd
+    return list(paths[-1][1][1]) if paths[-1][0] == "line" else _fw_curve_point(paths[-1][1], paths[-1][2], False)
+
+
 class SimulationAPI:
     def __init__(self, joints=[0,0,0,0,0,0,0,0]):
         self.joints = joints
@@ -3351,24 +3461,8 @@ class SimulationAPI:
         cur_joints = list(self.joints)
         for k in range(n):
             vel, accel, jerk = (float(vajs[k][0]), float(vajs[k][1]), float(vajs[k][2]))
-            A, B = pts[k], pts[k + 1]
             has_next = k + 1 < n
-            paths = []
-            if last_curve is not None and last_curve["length"] > 0:
-                paths.append(("curve2", last_curve, last_curve["length"] / 2))
-            line_start = last_curve["curveFinal"] if last_curve is not None else A
-            curve = None
-            if has_next:
-                corner = float(corners[k]) if corners[k] else 0.0
-                curve = _fw_create_curve(A, B, pts[k + 2], corner)
-                line_end = curve["curveInitial"]
-            else:
-                line_end = B
-            d_line = _fw_norm(_fw_vec(line_end, line_start, 1.0, -1.0))
-            paths.append(("line", (line_start, line_end, d_line), d_line))
-            if curve is not None and curve["length"] > 0:
-                paths.append(("curve1", curve, curve["length"] / 2))
-            d_total = sum(pd for _, _, pd in paths)
+            paths, d_total, curve = _fw_build_section(pts, corners, k, last_curve)
 
             prof = self._fw_profile_cont(jerk, accel, vel, d_total, v_tick, a_tick,
                                          to_stop=not has_next)
@@ -3381,19 +3475,7 @@ class SimulationAPI:
                 q, _, _ = self.traverse(prof["jerks"], prof["ticks"],
                                         q0=0.0, v0=v_tick, a0=a_tick,
                                         t=min(t_sim, duration))
-                qq = min(max(q, 0.0), d_total)
-                pose, acc = None, 0.0
-                for idx, (kind, data, pd) in enumerate(paths):
-                    if qq <= acc + pd or idx == len(paths) - 1:
-                        qe = min(max(qq - acc, 0.0), pd)
-                        if kind == "line":
-                            s0, s1, dl = data
-                            f = qe / dl if dl > 0 else 1.0
-                            pose = _fw_vec(s0, s1, 1.0 - f, f)
-                        else:
-                            pose = _fw_curve_point(data, qe, kind == "curve1")
-                        break
-                    acc += pd
+                pose = _fw_path_pose(paths, min(max(q, 0.0), d_total))
                 J = to_joints(pose, cur_joints)
                 if J is None:
                     return -1  # IK failure mid-line (firmware error -110)
