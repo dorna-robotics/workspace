@@ -1798,17 +1798,38 @@ class Core:
         for k in range(n_sec - 1):
             if corners[k] <= 0:
                 continue
-            c = _fw_create_curve(pts[k], pts[k + 1], pts[k + 2], corners[k])
-            if check is not None and c["length"] > 0:
+            # Largest SAFE arc, not accept-or-reject: a rejected corner
+            # forces a sharp pass-through, which cannot be taken at
+            # speed — the section then falls to the crawl floor and the
+            # whole hop stalls (bench: two sections at vel 1, 45 s).
+            # Shrinking keeps most of the benefit, because a smaller
+            # arc hugs the sharp path it is replacing and is far more
+            # likely to clear whatever the full-size cut hit.
+            r_try = corners[k]
+            accepted = None
+            for _ in range(4):            # r, r/2, r/4, r/8
+                c = _fw_create_curve(pts[k], pts[k + 1], pts[k + 2], r_try)
+                if check is None or c["length"] <= 0:
+                    accepted = c
+                    break
                 m = max(2, int(math.ceil(c["length"] / sample)))
                 arc = ([_fw_curve_point(c, i * (c["length"] / 2) / m, True) for i in range(m + 1)]
                        + [_fw_curve_point(c, i * (c["length"] / 2) / m, False) for i in range(1, m + 1)])
-                if not check(arc):
-                    sharp = [c["curveInitial"], list(pts[k + 1]), c["curveFinal"]]
-                    if check(sharp):
-                        corners[k] = 0.0   # cut would hit something the corner didn't
-                        continue
-            curves[k] = c
+                if check(arc):
+                    accepted = c
+                    break
+                sharp = [c["curveInitial"], list(pts[k + 1]), c["curveFinal"]]
+                if not check(sharp):
+                    # the sharp corner is no safer — keep the fillet
+                    # (same contract as the approach-leg blends)
+                    accepted = c
+                    break
+                r_try *= 0.5
+            if accepted is None:
+                corners[k] = 0.0          # nothing fits: sharp pass-through
+            else:
+                corners[k] = accepted["r"]
+                curves[k] = accepted
 
         # 3. Section speeds from the FIRMWARE's own execution model —
         # no profile compression, no iteration. cont() runs ONE speed
