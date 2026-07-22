@@ -1643,15 +1643,15 @@ class Core:
             if k < len(pts) - 2 and len(s_mid):
                 j = int(np.argmin(np.abs(s_mid - hi)))
                 v_sec = min(v_sec, float(v_chord[j]))
-            d = arr[k + 1] - arr[k]
-            d_lead = float(np.abs(d).max())
-            lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
-            v_k = max(1.0, min(float(vel), v_sec * lead))
+            # Chord semantics — see chain_prm: vel/accel pass through
+            # unscaled, TOPP-RA already enforced the per-joint caps.
+            d_sec = float(np.linalg.norm(arr[k + 1] - arr[k]))
+            v_k = max(1.0, v_sec)
             a_sec = a_chord[(s_acc >= lo) & (s_acc < hi)]
-            a_k = (float(a_sec.max()) if len(a_sec) else float(accel)) * lead
+            a_k = float(a_sec.max()) if len(a_sec) else float(accel)
             v_prev = vels[-1] if vels else 0.0
-            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_lead, 1e-9)
-            accels.append(min(float(accel), max(a_k, a_need)))
+            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_sec, 1e-9)
+            accels.append(max(a_k, a_need))
             vels.append(v_k)
         print(f"[traj] {len(pts)} pts -> {len(vels)} cont-jmove sections, "
               f"vels {[round(v) for v in vels]}, accels {[round(a) for a in accels]}, "
@@ -1788,15 +1788,20 @@ class Core:
             if k < n_sec - 1 and len(s_mid):
                 j = int(np.argmin(np.abs(s_mid - hi)))
                 v_sec = min(v_sec, float(v_chord[j]))
-            d = np.array(pts[k + 1]) - np.array(pts[k])
-            d_lead = float(np.abs(d).max())
-            lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
-            v_k = max(1.0, min(float(vel), v_sec * lead))
+            # Firmware semantics (motion.cpp createLine/createProfile):
+            # vel and accel apply to the joint-space CHORD — one scalar
+            # profile over norm(delta). TOPP-RA's chord profile is
+            # therefore passed through UNSCALED: per-joint limits are
+            # already guaranteed by TOPP-RA's own constraints, and any
+            # leading-axis rescaling just runs the chain slower than
+            # the plan.
+            d_sec = float(np.linalg.norm(np.array(pts[k + 1]) - np.array(pts[k])))
+            v_k = max(1.0, v_sec)
             in_a = a_chord[(s_acc >= lo) & (s_acc < hi)]
-            a_k = (float(in_a.max()) if len(in_a) else float(accel)) * lead
+            a_k = float(in_a.max()) if len(in_a) else float(accel)
             v_prev = vajs[-1][0] if vajs else 0.0
-            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_lead, 1e-9)
-            vajs.append([v_k, min(float(accel), max(a_k, a_need)), float(jerk)])
+            a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_sec, 1e-9)
+            vajs.append([v_k, max(a_k, a_need), float(jerk)])
             lo = hi
         print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections, "
               f"vels {[round(v[0]) for v in vajs]}, accels {[round(v[1]) for v in vajs]}, "
