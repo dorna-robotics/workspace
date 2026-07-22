@@ -1859,6 +1859,24 @@ class Core:
             v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * sec_line_lens[k]))
             v_prev = v_t[k]
 
+        # binding-constraint tag per section (log diagnosis):
+        #   v = geometry vel cap, c = own exit corner, e = entry
+        #   corner (previous knot), b = braking for a slower section
+        #   ahead, r = reachability ramp from the carried speed
+        bind = []
+        for k in range(n_sec):
+            v = v_t[k]
+            tol = 1e-6
+            if abs(v - sec_vel_caps[k]) < tol:
+                bind.append("v")
+            elif k < n_sec - 1 and abs(v - v_corner[k][0]) < tol:
+                bind.append("c")
+            elif k > 0 and abs(v - v_corner[k - 1][1]) < tol:
+                bind.append("e")
+            else:
+                bind.append("b" if k < n_sec - 1 and v_t[k] > v_t[k + 1] else "r")
+        legs = [round(_fw_norm(_fw_vec(pts[k + 1], pts[k], 1.0, -1.0))) for k in range(n_sec)]
+
         vajs = [[v_t[k], a_budget, float(jerk)] for k in range(n_sec)]
 
         # Certification: play the exact firmware profiles over the exact
@@ -1873,6 +1891,7 @@ class Core:
                   f"(joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}) — model bug, report it")
         print(f"[traj] {len(pts)} pts -> {n_sec} cjmove sections, "
               f"vels {[round(v[0]) for v in vajs]}, corners {[round(c) for c in corners]}, "
+              f"legs {legs}, bind {bind}, "
               f"certified: joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}, "
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return pts, vajs, corners
