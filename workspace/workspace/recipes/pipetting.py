@@ -26,7 +26,7 @@ class PipettingSite(Recipe):
         )
 
 
-    def pick_tip(self, anchor="place", padding=70, **kwargs):
+    def pick_tip(self, anchor="place", padding=70, gap=4, **kwargs):
         """Pick a disposable tip from the tip-box at ``anchor``.
 
         Resolves the tip-rack sitting on this pipetting site and
@@ -35,11 +35,15 @@ class PipettingSite(Recipe):
         tip-register query is unknown for the current pump firmware
         (see keyto_driver.has_tip); the operator "Tip?" button remains
         for manual checks.
+
+        ``gap`` is 4 mm (the base ``pick`` uses 2): the soft-approach
+        stop sits 4 mm above the tip so the press-on leg is a longer,
+        gentler slow segment.
         """
         component, solid_name = self._resolve_attached_component()
 
         # motion
-        if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, trigger_io=False, soft_approach=True, **kwargs):
+        if not self.pick(anchor=anchor, solid_name=solid_name, component=component, padding=padding, gap=gap, trigger_io=False, soft_approach=True, **kwargs):
             raise RecipeError("pick_tip failed — could not pick from anchor")
         return True
 
