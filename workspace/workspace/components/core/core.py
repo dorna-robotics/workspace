@@ -1651,7 +1651,7 @@ class Core:
             a_k = float(a_sec.max()) if len(a_sec) else float(accel)
             v_prev = vels[-1] if vels else 0.0
             a_need = abs(v_k ** 2 - v_prev ** 2) / max(2.0 * d_sec, 1e-9)
-            accels.append(max(a_k, a_need))
+            accels.append(min(float(accel), max(a_k, a_need)))
             vels.append(v_k)
         print(f"[traj] {len(pts)} pts -> {len(vels)} cont-jmove sections, "
               f"vels {[round(v) for v in vels]}, accels {[round(a) for a in accels]}, "
@@ -1741,11 +1741,13 @@ class Core:
         # the cap — their sum provably never exceeds it.
         a_budget = float(accel) / 2.0
         sec_lens = []
+        sec_line_lens = []
         sec_vel_caps = []
         last_c = None
         for k in range(n_sec):
             paths, d_total, cv = _fw_build_section(pts, corners, k, last_c)
             sec_lens.append(d_total)
+            sec_line_lens.append(sum(pd for kind, _, pd in paths if kind == "line"))
             v_cap_sec = float("inf")
             for kind, data, pd in paths:
                 m = max(2, int(math.ceil(pd / max(sample, 1e-9))) * 2)
@@ -1800,13 +1802,15 @@ class Core:
                 v_k = min(v_k, v_corner[k - 1][1])
             v_t.append(max(1.0, v_k))
         # backward pass: entering section k+1 at v_k must allow braking
-        # to v_{k+1} within section k+1 at the ramp half-budget
+        # to v_{k+1} BEFORE its corner arc begins — the braking budget
+        # is the section's straight-line portion only (bench
+        # certification caught braking spilling into the arcs)
         for k in range(n_sec - 2, -1, -1):
-            v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * sec_lens[k + 1]))
+            v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * sec_line_lens[k + 1]))
         # forward pass: reachability from the carried speed
         v_prev = 0.0
         for k in range(n_sec):
-            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * sec_lens[k]))
+            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * sec_line_lens[k]))
             v_prev = v_t[k]
 
         vajs = [[v_t[k], a_budget, float(jerk)] for k in range(n_sec)]
