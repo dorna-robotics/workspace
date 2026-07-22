@@ -47,6 +47,14 @@ class Recipe:
         # (see _motion_plan_mode). None → defer to the scene's
         # core.has_motion_plan. Per-call args still win.
         has_motion_plan=None,
+        # Overlap the approach IO chain with the travel motion. True:
+        # the chain runs in a side thread while the robot travels and
+        # is joined + pin-verified at the gap stop (fast, but the
+        # track-free output frames interleave with the motion
+        # commands on the wire). False: the chain completes and
+        # verifies BEFORE the motion starts — no interleaving, costs
+        # the chain's duration (~1.35 s for a pneumatic gripper).
+        io_overlap=True,
         speed_factor=0.5,
         # Corner blend radius for cont-jmove chains (mm/deg in the
         # chain's operating space) — matches the firmware default.
@@ -113,6 +121,7 @@ class Recipe:
         self.padding = prm["padding"]
         self.blend = prm["blend"]
         self.has_motion_plan = prm["has_motion_plan"]
+        self.io_overlap = prm["io_overlap"]
         self.speed_factor = prm["speed_factor"]
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -1126,7 +1135,7 @@ class Recipe:
         # Either way, contact never starts on an unverified chain.
         io_handle = None
         if output_approach:
-            if len(approach) > 1:
+            if len(approach) > 1 and self.io_overlap:
                 io_handle = self._output_async(output_approach)
             else:
                 self._output_join(self._output_async(output_approach))
