@@ -56,10 +56,15 @@ class Hotel(Recipe):
 
         # update approach
         motion_prm["approach"] = [
-                        [[self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0],
-                         [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
-                         [padding, 0, motion_prm["height_load"], 0, 0, 0]],
-                        [motion_prm["contact"]]]
+                            [
+                                [self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0],
+                                [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
+                                [padding, 0, motion_prm["height_load"], 0, 0, 0]
+                            ],
+                            [
+                                motion_prm["contact"]
+                            ]
+                        ]
 
         # update exit
         motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0],

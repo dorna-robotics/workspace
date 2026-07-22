@@ -86,10 +86,15 @@ class ToolRack(Recipe):
             "attach": [tool, {"parent": self.core.tool_changer_robot_side, "parent_anchor":"tool_changer_connection", "child_anchor":"tool_changer_connection"}],
             "exit_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
             "exit": [[
-                    [0, 0, -gap-height_offset, 0, 0, 0],
-                    [-padding,0,-gap-height_offset,0,0,0],
-                    [-padding,0,-padding-height_offset,0,0,0],
-                ]],
+                        [0, 0, -gap-height_offset, 0, 0, 0]
+                    ],
+                    [
+                        [-padding,0,-gap-height_offset,0,0,0]
+                    ],
+                    [
+                        [-padding,0,-padding-height_offset,0,0,0]
+                    ]
+                ],
         }
 
         # motion
@@ -151,7 +156,9 @@ class ToolRack(Recipe):
                             [
                                 [-padding,0,-padding-height_offset,0,0,0],
                                 [-padding,0,-gap-height_offset,0,0,0],
-                                [0, 0, -gap-height_offset, 0, 0, 0],
+                            ],
+                            [
+                                [0, 0, -gap-height_offset, 0, 0, 0]
                             ],
                             [
                                 [0, 0, -height_offset, 0, 0, 0],

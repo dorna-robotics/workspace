@@ -45,10 +45,15 @@ class Adapter(Recipe):
 
         # update approach
         motion_prm["approach"] = [
-                                    [[10, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0],
-                                     [10, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
-                                     [10, 0, motion_prm["height_load"], 0, 0, 0]],
-                                    [motion_prm["contact"]]]
+                                    [
+                                        [10, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + padding, 0, 0, 0],
+                                        [10, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
+                                        [10, 0, motion_prm["height_load"], 0, 0, 0]
+                                    ],
+                                    [
+                                        motion_prm["contact"]
+                                    ]
+                                ]
 
         # run touch
         return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
