@@ -1637,6 +1637,12 @@ class Core:
             lo, hi = knots_s[k], knots_s[k + 1]
             in_sec = v_chord[(s_mid >= lo) & (s_mid < hi)]
             v_sec = float(in_sec.max()) if len(in_sec) else float(vel)
+            # Cap the plateau at the boundary speed — corners are
+            # crossed at the profile's corner speed, not the cruise
+            # (see chain_prm for the firmware plateau rationale).
+            if k < len(pts) - 2 and len(s_mid):
+                j = int(np.argmin(np.abs(s_mid - hi)))
+                v_sec = min(v_sec, float(v_chord[j]))
             d = arr[k + 1] - arr[k]
             d_lead = float(np.abs(d).max())
             lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
@@ -1774,6 +1780,14 @@ class Core:
             hi = bounds[k]
             in_v = v_chord[(s_mid >= lo) & (s_mid < hi)]
             v_sec = float(in_v.max()) if len(in_v) else float(vel)
+            # The firmware rides a section's vel plateau all the way to
+            # its END — which is the corner. Cap the plateau at the
+            # profile's speed AT that boundary, so every corner is
+            # crossed at the speed TOPP-RA planned for it (the
+            # deceleration happens BEFORE the corner, not after).
+            if k < n_sec - 1 and len(s_mid):
+                j = int(np.argmin(np.abs(s_mid - hi)))
+                v_sec = min(v_sec, float(v_chord[j]))
             d = np.array(pts[k + 1]) - np.array(pts[k])
             d_lead = float(np.abs(d).max())
             lead = d_lead / max(float(np.linalg.norm(d)), 1e-9)
