@@ -985,7 +985,12 @@ class Core:
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
     PATH_CACHE_MAX_ROWS = 500    # oldest evicted first
-    PATH_DECIMATE_EPS = 2.0      # deg/mm max deviation for waypoint decimation
+    PATH_DECIMATE_EPS = 4.0      # deg/mm max deviation for waypoint decimation
+                                 # (4: spreads travel knots so cont corners
+                                 # grow — 2 clustered knots 11-15 apart and
+                                 # corner-bound whole chains to ~55; every
+                                 # straightened segment is still validated
+                                 # against the collision envelope)
     PATH_CHECK_PADDING_MARGIN = 2.0  # mm — check envelope hysteresis vs the plan envelope
 
     @staticmethod
