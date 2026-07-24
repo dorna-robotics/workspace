@@ -134,7 +134,7 @@ These declare the anchor + offset the constructor probes with
 | Key | Default | What |
 |---|---|---|
 | `motion_type` | `"lmove"` | Default move type for subsequent waypoints in `touch`. `"lmove"` = Cartesian straight line; `"jmove"` = joint space; any `rt.*` method name also works. |
-| `speed_factor` | `0.5` | Multiplier applied to every move's `vel` / `accel` / `jerk`. Use a smaller value per recipe instance for sensitive sites. |
+| `speed_factor` | `0.5` | True playback-rate knob: `sf` asks for the same path in `1/sf` of the time, so it scales `vel×sf`, `accel×sf²`, `jerk×sf³` (the time-scale law — each derivative pulls down another factor of `sf`). The chain certifier clamps wherever geometry can't deliver and reports requested/achieved on every `[traj]` line. Use a smaller value per recipe instance for sensitive sites. |
 | `jmove_vaj` | `[200, 500, 3000]` | `[velocity, acceleration, jerk]` for joint-space moves *before* `speed_factor` is applied. |
 | `lmove_vaj` | `[600, 1400, 6000]` | Same shape, for linear moves. |
 

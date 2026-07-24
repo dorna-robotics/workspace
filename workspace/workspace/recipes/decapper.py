@@ -153,12 +153,8 @@ class Decapper(Recipe):
             J[5] = last_J[5]
 
             rt.checkpoint()
-            rt.lmove(
-                joint=J,
-                vel=self.lmove_vaj[0] * self.speed_factor,
-                accel=self.lmove_vaj[1] * self.speed_factor,
-                jerk=self.lmove_vaj[2] * self.speed_factor,
-            )
+            vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
+            rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
 
             # unwind the screw turns: normalize j5 into ±180 (same tool
             # pose mod 360 — the free cap just spins in place) so the
@@ -308,12 +304,8 @@ class Decapper(Recipe):
                 raise RecipeError("could not find valid joints for exit")
 
             rt.checkpoint()
-            rt.lmove(
-                joint=J,
-                vel=self.lmove_vaj[0] * self.speed_factor,
-                accel=self.lmove_vaj[1] * self.speed_factor,
-                jerk=self.lmove_vaj[2] * self.speed_factor,
-            )
+            vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
+            rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
 
             # unwind the screw turns: normalize j5 into ±180 (same tool
             # pose mod 360 — the gripper is already empty here) so the

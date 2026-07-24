@@ -16,6 +16,35 @@ class RecipeError(Exception):
     pass
 
 
+def _timed(category):
+    """Bracket a recipe method's wall-clock into the runtime's
+    cycle-time budget (``rt.time_note``) under ``category``.
+
+    Pure accounting — the wrapped call's result and exceptions pass
+    through untouched, and a runtime without ``time_note`` (or no
+    runtime at all) degrades to a no-op. Times are wall-clock, so a
+    pause inside the bracketed motion counts toward its category; the
+    end-of-run report says where the time went, not what the motors
+    were doing every millisecond.
+    """
+    def deco(fn):
+        def wrap(self, *args, **kwargs):
+            t0 = _time.perf_counter()
+            try:
+                return fn(self, *args, **kwargs)
+            finally:
+                try:
+                    note = getattr(getattr(self, "rt", None), "time_note", None)
+                    if note is not None:
+                        note(category, _time.perf_counter() - t0)
+                except Exception:
+                    pass
+        wrap.__name__ = fn.__name__
+        wrap.__doc__ = fn.__doc__
+        return wrap
+    return deco
+
+
 class Recipe:
     DEFAULTS = dict(
         # ref joints
@@ -56,6 +85,11 @@ class Recipe:
         # verifies BEFORE the motion starts — no interleaving, costs
         # the chain's duration (~1.35 s for a pneumatic gripper).
         io_overlap=True,
+        # True playback-rate knob: sf asks for the SAME path in 1/sf of
+        # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
+        # (each time-derivative pulls down another factor of sf). See
+        # ``scaled_vaj``. The chain certifier clamps wherever geometry
+        # can't deliver, and its [traj] line reports requested/achieved.
         speed_factor=0.5,
         # Corner blend radius for cont-jmove chains (mm/deg in the
         # chain's operating space) — matches the firmware default.
@@ -281,6 +315,7 @@ class Recipe:
 
     # ── Shared helpers ──────────────────────────────────────────────────────
 
+    @_timed("io")
     def _apply_output_config(self, rt, output_list):
         """Apply an IO output list: [[config, get_call, set_call], ...].
 
@@ -483,6 +518,40 @@ class Recipe:
             return self.padding
         return default
 
+    def scaled_vaj(self, vaj):
+        """Apply ``speed_factor`` as a true time-scale: vel×s, accel×s²,
+        jerk×s³.
+
+        Playing the identical path in 1/s of the time requires exactly
+        this law — q(s·t) differentiates to s·v, s²·a, s³·j. Scaling
+        all three by s (the old behaviour) under-scales acceleration,
+        so on short accel-limited legs (v = √(a·leg)) the felt speedup
+        was only √s: sf 1→1.5 measured 1.22×, which operators
+        correctly read as "nothing changed". The chain certifier
+        remains authoritative — it clamps to what the firmware model
+        can actually execute and reports requested vs achieved on
+        every [traj] line.
+        """
+        s = self.speed_factor
+        return [vaj[0] * s, vaj[1] * s * s, vaj[2] * s * s * s]
+
+    def _plan_points(self, **kwargs):
+        """``core.motion_plan`` bracketed into the "planning" budget
+        category — the one chokepoint for every OMPL solve a recipe
+        requests, so the end-of-run report can say how much wall-clock
+        went to path planning (10 s constrained-planner stalls hide in
+        run logs otherwise)."""
+        t0 = _time.perf_counter()
+        try:
+            return self.core.motion_plan(**kwargs)
+        finally:
+            try:
+                note = getattr(self.rt, "time_note", None)
+                if note is not None:
+                    note("planning", _time.perf_counter() - t0)
+            except Exception:
+                pass
+
     PLANNED_MOTIONS = ("smove", "tmove", "cjmove", "clmove", "jmove", "lmove")
     UNPLANNED_MOTIONS = ("jmove", "lmove", "cjmove", "clmove")
 
@@ -557,10 +626,10 @@ class Recipe:
         """
         use_planning, unplanned, planned = self._motion_plan_mode(use_planning)
         if use_planning:
-            points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
+            points = self._plan_points(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
                 rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
-                points = self.core.motion_plan(joint=J)
+                points = self._plan_points(joint=J)
             if not points:
                 raise RecipeError("no proper path was found")
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
@@ -630,10 +699,10 @@ class Recipe:
 
             # First hop → smove waypoints, planned or not.
             if plan_on:
-                points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
+                points = self._plan_points(joint=J0, **motion_plan_kwargs)
                 if not points and motion_plan_kwargs:
                     rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
-                    points = self.core.motion_plan(joint=J0)
+                    points = self._plan_points(joint=J0)
                 if not points:
                     raise RecipeError("no proper path was found")
                 points = [list(p) for p in points]
@@ -704,6 +773,7 @@ class Recipe:
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
+    @_timed("contact")
     def _do_motion(self, rt, J, tool_dict, vaj_map, motion_type=None):
         """Dispatch a single motion step based on ``motion_type`` (or
         the recipe's ``self.motion_type`` when not given)."""
@@ -716,28 +786,16 @@ class Recipe:
                     in_frame=self.core.robot_flange,
                     offset=tool_dict["offset"],
                 )
-            rt.lmove(
-                joint=J,
-                vel=vaj_map["lmove"][0] * self.speed_factor,
-                accel=vaj_map["lmove"][1] * self.speed_factor,
-                jerk=vaj_map["lmove"][2] * self.speed_factor,
-                tool_pose=tool_pose,
-            )
+            vel, accel, jerk = self.scaled_vaj(vaj_map["lmove"])
+            rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk, tool_pose=tool_pose)
         elif motion_type == "jmove":
-            rt.jmove(
-                joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
-            )
+            vel, accel, jerk = self.scaled_vaj(vaj_map["jmove"])
+            rt.jmove(joint=J, vel=vel, accel=accel, jerk=jerk)
         else:
-            getattr(rt, motion_type)(
-                joint=J,
-                vel=vaj_map["jmove"][0] * self.speed_factor,
-                accel=vaj_map["jmove"][1] * self.speed_factor,
-                jerk=vaj_map["jmove"][2] * self.speed_factor,
-            )
+            vel, accel, jerk = self.scaled_vaj(vaj_map["jmove"])
+            getattr(rt, motion_type)(joint=J, vel=vel, accel=accel, jerk=jerk)
 
+    @_timed("travel")
     def _run_path_motion(self, rt, points, vaj, primitive="smove", tool_pose=None, padding=None):
         """Execute a planned/fused waypoint path (first point = current
         pose) — the ONE chokepoint for every planned path a recipe
@@ -753,9 +811,7 @@ class Recipe:
             jmove   → discrete: one jmove per knot, stop at each
             lmove   → discrete: one lmove per knot, stop at each
         """
-        vel = vaj[0] * self.speed_factor
-        accel = vaj[1] * self.speed_factor
-        jerk = vaj[2] * self.speed_factor
+        vel, accel, jerk = self.scaled_vaj(vaj)
         tp = tool_pose if tool_pose is not None else [0, 0, 0, 0, 0, 0]
         if primitive == "tmove":
             rt.tmove(self.core.traj_points(points, vel, accel))
@@ -984,6 +1040,7 @@ class Recipe:
 
         return height_load, height_container, height_tool, pose_offset, tool_body
 
+    @_timed("screw")
     def _screw_motion(self, tool, pitch, total_twist, max_rotation, direction,
                       lmove_vaj, jmove_vaj, j5_start):
         """Chunked screw/unscrew motion around the tool TCP's Z-axis.
@@ -1973,14 +2030,10 @@ class Recipe:
         joint_list = cnt * joint_list
         joint_list.append(current_joint)
 
+        vel, accel, jerk = self.scaled_vaj(vaj)
         for J in joint_list:
             rt.checkpoint()
-            rt.jmove(
-                joint=J,
-                vel=vaj[0] * self.speed_factor,
-                accel=vaj[1] * self.speed_factor,
-                jerk=vaj[2] * self.speed_factor,
-            )
+            rt.jmove(joint=J, vel=vel, accel=accel, jerk=jerk)
         return True
 
     def park(self, joint, has_motion_plan=None, motion_plan_kwargs={}, **kwargs):
