@@ -1842,10 +1842,20 @@ class Core:
         #   - velocity limit: per-joint tangent components -> chord cap
         #   - backward pass: braking feasibility at the full accel cap
         #   - forward pass: reachability from the previous speed
-        # THE ACCEL BUDGET IS SPLIT: tangential ramps and corner
-        # curvature superimpose on the same joints (short sections
-        # ramp all the way through their corners), so each gets half
-        # the cap — their sum provably never exceeds it.
+        # THE ACCEL BUDGET IS SPLIT — BUT ONLY WHERE ARCS EXIST.
+        # Tangential ramps and corner curvature superimpose on the same
+        # joints (short sections ramp all the way through their
+        # corners), so on any section whose traversal crosses an arc
+        # each source gets half the cap — their sum provably never
+        # exceeds it. A section with NO arc on either side (both
+        # adjacent knots collinear, stopped, or chain ends) has zero
+        # centripetal demand over its entire length, so its tangential
+        # ramps get the FULL cap: the flat 50/50 split was leaving
+        # straight legs to brake at half their real capability
+        # (achieved acc ~350/600 on every straight-dominated bench
+        # chain). Per-section budgets are assigned after the corner
+        # geometry is known (see ``a_tan`` below); the centripetal
+        # share for the corner bounds stays accel/2.
         a_budget = float(accel) / 2.0
         sec_lens = []
         sec_line_lens = []
@@ -1883,6 +1893,17 @@ class Core:
         for k in range(n_sec - 1):
             if curves[k] is None and not straight[k]:
                 stops[k] = True
+
+        # Per-section tangential accel budget (see the split comment
+        # above): full cap on arc-free sections, half where the
+        # traversal crosses an entry or exit arc. Certification below
+        # remains authoritative either way — it plays the exact
+        # firmware profiles and reduces whatever it measures over cap.
+        def _has_arc(k):
+            ent = k > 0 and curves[k - 1] is not None and curves[k - 1]["length"] > 0
+            exi = k < n_sec - 1 and curves[k] is not None and curves[k]["length"] > 0
+            return ent or exi
+        a_tan = [a_budget if _has_arc(k) else float(accel) for k in range(n_sec)]
 
         v_corner = []
         for k in range(n_sec - 1):
@@ -1938,14 +1959,14 @@ class Core:
         # the next section, before its corner arc begins.
         for k in range(n_sec - 1, -1, -1):
             if stops[k]:
-                v_t[k] = min(v_t[k], math.sqrt(2.0 * a_budget * _room(k)))
+                v_t[k] = min(v_t[k], math.sqrt(2.0 * a_tan[k] * _room(k)))
             else:
-                v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_budget * _room(k + 1)))
+                v_t[k] = min(v_t[k], math.sqrt(v_t[k + 1] ** 2 + 2.0 * a_tan[k + 1] * _room(k + 1)))
         # forward pass: reachability from the carried speed — a stop
         # resets the carry to zero.
         v_prev = 0.0
         for k in range(n_sec):
-            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_budget * _room(k)))
+            v_t[k] = min(v_t[k], math.sqrt(v_prev ** 2 + 2.0 * a_tan[k] * _room(k)))
             v_prev = 0.0 if stops[k] else v_t[k]
 
         # binding-constraint tag per section (log diagnosis):
@@ -1966,7 +1987,7 @@ class Core:
                 bind.append("b" if k < n_sec - 1 and v_t[k] > v_t[k + 1] else "r")
         legs = [round(_fw_norm(_fw_vec(pts[k + 1], pts[k], 1.0, -1.0))) for k in range(n_sec)]
 
-        vajs = [[v_t[k], a_budget, float(jerk)] for k in range(n_sec)]
+        vajs = [[v_t[k], a_tan[k], float(jerk)] for k in range(n_sec)]
 
         # CERTIFICATION IS AUTHORITATIVE. The analytic model above is a
         # fast estimate; this plays the exact firmware profiles over the
@@ -2022,11 +2043,13 @@ class Core:
             # geometry cap limited by the room it has to accelerate and
             # brake in; carrying the crushed values forward would leave
             # the fallback crawling (bench: 94 s at vels [223, 1, 15]).
+            # Stop-to-stop straight lines have no arcs at all, so the
+            # tangential budget is the FULL cap here.
             vajs = []
             for k in range(n_sec):
                 leg = max(legs[k], 1e-9)
-                v_k = min(sec_vel_caps[k], math.sqrt(a_budget * leg))
-                vajs.append([max(1.0, v_k), a_budget, float(jerk)])
+                v_k = min(sec_vel_caps[k], math.sqrt(float(accel) * leg))
+                vajs.append([max(1.0, v_k), float(accel), float(jerk)])
             report = self._fw_verify_chain(pts, vajs, corners, stops)
             print(f"[traj] DEGRADED to stop-at-every-knot: certification would not "
                   f"converge within caps (vel {vel:.0f}, acc {accel:.0f}) — model gap, report it")
