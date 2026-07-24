@@ -764,12 +764,6 @@ def run_protocol(
         "%s: starting BT engine — %d action(s) in plan",
         project_name, len(replanner.last_plan or []),
     )
-    # Cycle-time budget: zeroed here, accumulated by the recipe layer's
-    # chokepoints (travel / contact / screw / io / planning), reported
-    # once when the engine exits. "other" is device reads + BT overhead
-    # + idle — everything no chokepoint claimed.
-    if hasattr(ctx.runtime, "time_budget_reset"):
-        ctx.runtime.time_budget_reset()
     try:
         status = engine.run()
     finally:
@@ -778,12 +772,5 @@ def run_protocol(
         # leak into an old state dict.
         if hasattr(workspace, "clear_active_ctx"):
             workspace.clear_active_ctx()
-        try:
-            report = ctx.runtime.time_budget_report()
-            if report:
-                log.info("%s: %s", project_name, report)
-                ctx.runtime.step(report)
-        except Exception:
-            pass  # the report must never mask the engine's own exit
     log.info("%s: BT engine finished with status=%s", project_name, status.name)
     return status

@@ -54,17 +54,6 @@ class Runtime:
         self._lock = threading.RLock()
         self._cv = threading.Condition(self._lock)
 
-        # ── Cycle-time budget ─────────────────────────────────────────
-        # Wall-clock seconds per work category ("travel", "contact",
-        # "screw", "io", "planning"), noted by the recipe layer's
-        # chokepoints and reported once per protocol run by the BT
-        # launcher. Pure accounting — never blocks, never raises into
-        # the caller. Times are wall-clock, so an operator pause inside
-        # a bracketed motion counts toward that motion's category.
-        self._tb_lock = threading.Lock()
-        self._time_budget: dict = {}
-        self._tb_start: Optional[float] = None
-
         self._status = RTStatus()
 
         # start-token handshake
@@ -269,49 +258,6 @@ class Runtime:
     def _clear_steps(self) -> None:
         self._steps.clear()
         self._progress = -1
-
-    # ---------------------------------------------------------------------
-    # Cycle-time budget (observability — never blocks, never raises)
-    # ---------------------------------------------------------------------
-
-    def time_budget_reset(self) -> None:
-        """Zero the budget and stamp the run start. Called by the BT
-        launcher at protocol start."""
-        with self._tb_lock:
-            self._time_budget = {}
-            self._tb_start = time.perf_counter()
-
-    def time_note(self, category: str, seconds: float) -> None:
-        """Accumulate ``seconds`` of wall-clock into ``category``."""
-        try:
-            with self._tb_lock:
-                self._time_budget[category] = (
-                    self._time_budget.get(category, 0.0) + float(seconds)
-                )
-        except Exception:
-            pass  # accounting must never take down the caller
-
-    def time_budget_report(self) -> Optional[str]:
-        """One-line budget summary, or None if no run was bracketed.
-
-        ``other`` = run wall-clock not claimed by any category: device
-        reads, BT/scheduler overhead, IO settle outside the tracked
-        chokepoints, and idle.
-        """
-        with self._tb_lock:
-            if self._tb_start is None:
-                return None
-            total = time.perf_counter() - self._tb_start
-            budget = dict(self._time_budget)
-        if total <= 0:
-            return None
-        other = max(0.0, total - sum(budget.values()))
-        parts = [
-            f"{cat} {sec:.0f}s ({sec / total * 100:.0f}%)"
-            for cat, sec in sorted(budget.items(), key=lambda kv: -kv[1])
-        ]
-        parts.append(f"other {other:.0f}s ({other / total * 100:.0f}%)")
-        return f"time budget — run {total:.0f}s: " + ", ".join(parts)
 
     # ---------------------------------------------------------------------
     # Control API
