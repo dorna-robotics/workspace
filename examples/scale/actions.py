@@ -225,17 +225,20 @@ class Weigh(Action):
     module's docstring."""
     params   = ["tube"]
     duration = 3
-    # resource is the SCHEDULING lock, not "which device this touches". The
-    # read touches the scale, but the *robot is committed* to this tube the
-    # whole place→weigh→pick sequence: gripper released on the pan, must
-    # return to re-grip the SAME tube. So "robot" is correct — it stops the
-    # scheduler interleaving another tube's motion into the weigh window and
-    # wandering the arm off while this tube sits ungripped on the pan (the
-    # scheduler has no "robot stays put" model; it only honours the lock).
-    # Use a device resource (cf. sample_prep ShakerOne/Two: resource=
-    # "shaker_1") ONLY when the robot is genuinely FREE during the op —
-    # load, leave, come back later. A ~instant hands-on weigh is not that.
-    resource = "robot"
+    # resource is the SCHEDULING lock, not "which device this touches".
+    # During the read the tube sits on the pan and the hand is EMPTY
+    # (PlaceOnScale restored hand_empty) — the robot is genuinely free,
+    # so holding the "robot" lock here serialized 3 s of pure device
+    # wait into the arm's schedule for nothing. "scale" is the honest
+    # lock: the pan is occupied, the arm is not. The scheduler may now
+    # interleave another tube's motion into the weigh window; it comes
+    # back for PickFromScale when the causal chain (weighed +
+    # hand_empty) allows. No ``tool`` declared for the same reason — a
+    # pure read is transparent to tool sequencing. Caveat this encodes:
+    # a settling balance sharing the bench with a moving arm can settle
+    # slower — if stable reads degrade on hardware, the fix is damping
+    # or placement, not re-serializing the whole schedule.
+    resource = "scale"
 
     def pre(self, tube):
         return on_scale(tube) & ~weighed(tube)
