@@ -920,27 +920,10 @@ class Recipe:
         (pipetting site, dosing site, rack adapter) and the actual motion
         target is whatever's sitting on it.
 
-        Payloads attach at ``place`` in hand-authored scenes and at
-        ``center`` in scenes the scene builder emits (place == center
-        numerically on every adapter) — both resolve, place first. The
-        center fallback skips ``collision_box`` children, which also
-        attach at center and are never the motion target.
-
         Raises:
-            RecipeError: If nothing is attached at either anchor.
+            RecipeError: If nothing is attached at the anchor.
         """
-        solid = self.component.assembly[solid_name]
-        attached = self.solid_attached_to_anchor(solid, anchor)
-        if attached is None and anchor == "place":
-            try:
-                for child in solid.children["center"]:
-                    cand = child["child_solid"]
-                    comp = self.workspace.components.get(cand.component)
-                    if comp is not None and getattr(comp, "type", None) != "collision_box":
-                        attached = cand
-                        break
-            except Exception:
-                pass
+        attached = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
         if attached is None:
             raise RecipeError(f"no component attached at {solid_name}/{anchor}")
         component = self.workspace.components[attached.component]
