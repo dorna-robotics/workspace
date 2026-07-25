@@ -59,6 +59,13 @@ the mounted tool's TCP.
 
 ## Step 3 — solve (cheap checks ONLY, no OMPL, no motion)
 
+Run it — from ``~/Downloads/workspace/workspace``:
+
+    sudo python3 -m workspace.recipes.solve <project_dir>
+    sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
+
+Report-only; values are applied deliberately after review.
+
 Per station, with its declared tool virtually mounted:
 
 1. **Reference IK sweep** — `left_approach × base_distance` at
