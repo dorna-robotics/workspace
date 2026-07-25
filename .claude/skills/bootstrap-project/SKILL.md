@@ -97,6 +97,37 @@ clearance comfort, physical seating. Failures here are rare and
 localized — the step log names the action; the [traj]/[plan] lines
 name the motion.
 
+## Who writes what, who proves what
+
+| Artifact | Written by | Proven by |
+|---|---|---|
+| scene | operator (builder GUI) | step-3 endpoint report |
+| skeleton (class/component/tool) | AI | operator's one-glance confirm |
+| recipes.j2 parameters | solver (arithmetic + IK sweep) | evidence comments per value |
+| actions.py (pre/eff/flow) | AI, from operator's INTENT in plain words | schedule replay: 0 precondition failures + goal reached, batch 1 AND multi-item |
+| schedule | NOBODY — derived (pre/eff -> build_precedence -> CP-SAT) | correct by construction IF pre/eff/resource/capacity are truthful |
+| motions | — | operator's eyes on the bench |
+
+The author's only scheduling responsibility is telling the truth in
+four places: ``pre``, ``eff``, ``resource``, and ``capacity=True`` on
+shared single-slot facts. Untruthful capacity facts serialize batches
+(the bd collapse); untruthful pre lets the planner act on items that
+are not where it thinks (caught by the replay, e.g. bd's seeded
+``printed`` letting Decap fire on an unpicked tube).
+
+## How to invoke
+
+Say ``/bootstrap-project`` (or "bootstrap the project", "the scene is
+ready, build the project"). Then the conversation is exactly:
+
+1. Operator: "scene is done" (+ any protocol intent in plain words).
+2. AI presents the SKELETON table -> operator confirms tools/roles.
+3. AI runs the solve -> operator decides on any reported scene fixes.
+4. AI writes actions.py from the stated intent -> shows the replay
+   result (0 failures + goal, batch 1 and N).
+5. Operator launches and watches. Failures at this stage name their
+   action in the step log and their motion in the [traj]/[plan] lines.
+
 ## Canonical references
 
 - `docs/recipe-guide.md` — recipe kwargs, motion primitives
