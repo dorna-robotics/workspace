@@ -9,6 +9,7 @@ doc sections — skills navigate, they don't duplicate.
 
 | Task | Skill |
 |---|---|
+| Stand up a NEW project from a finished scene (pipeline + error-localization map) | [`bootstrap-project`](bootstrap-project/SKILL.md) |
 | Add a workspace-owned device (USB/serial — robot, multimeter, in-process pump) | [`add-workspace-device`](add-workspace-device/SKILL.md) |
 | Add a daemon-owned device (camera + vision server, printer service, etc.) | [`add-daemon-device`](add-daemon-device/SKILL.md) |
 | Write a new recipe (motion + workflow coordination) | [`write-recipe`](write-recipe/SKILL.md) |
