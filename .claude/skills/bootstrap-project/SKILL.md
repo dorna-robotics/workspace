@@ -59,10 +59,10 @@ the mounted tool's TCP.
 
 ## Step 3 — solve (cheap checks ONLY, no OMPL, no motion)
 
-Run it — from ``~/Downloads/workspace/workspace``:
+Run it (the ``cd`` is part of the command — ``-m`` resolves from cwd):
 
-    sudo python3 -m workspace.recipes.solve <project_dir>
-    sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.recipes.solve <project_dir>
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
 
 Report-only; values are applied deliberately after review. Geometry is
 measured along each anchor's APPROACH RAY (tilted stations included)
@@ -102,15 +102,16 @@ Validate with the replay command — plan (PDDL) → precedence →
 schedule (CP-SAT) → replay in scheduled order against real
 `pre()`/`eff()` → 0 failures + goal reached. Seconds, no motion:
 
-    sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
 
 Then the last software gate — the REAL protocol through the REAL
 engine in sim, real motion planning, stubbed playback (minutes):
 
-    sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
 
 Green dryrun means the bench run is judging path SHAPE, not hunting
-logic bugs.
+logic bugs. Reading the solve report — samples, column meanings, what
+``(swept)`` and ``UNREACHABLE`` demand of you — is project-guide §10.1.
 
 ## Step 5 — bench
 

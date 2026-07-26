@@ -773,15 +773,17 @@ Three commands take a project from "scene finished" to "bench-ready"
 without guessing, each answering one question and naming its failures.
 The step-by-step pipeline that strings them together (who owns which
 step, where an error class lives) is the `bootstrap-project` skill;
-this section is the reference for the tools themselves. All run from
-`~/Downloads/workspace/workspace`, always in sim — they force
+this section is the reference for the tools themselves. All are `-m`
+module runs, so the `cd` is part of the command — from anywhere else
+they fail with `ImportError: cannot import name 'Workspace'`. Always
+in sim — they force
 `simulation: true` on every device, so real hardware is never touched
 (or fought over) by validation.
 
 ### 10.1 `workspace.recipes.solve` — recipe parameters + geometry
 
-    sudo python3 -m workspace.recipes.solve <project_dir>
-    sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.recipes.solve <project_dir>
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
 
 Per station: boots the recipe with its declared `left_approach` /
 `base_distance` (reference IK), sweeps both approaches × distances at
@@ -806,9 +808,42 @@ surface pass in sim and fail on real joints (measured — the retract
 knife edge). Report-only; values are applied to `recipes.j2`
 deliberately, with the evidence.
 
+Sample output (bna) and how to read it:
+
+    source_rack_1   la=False bd= 200 (declared)   min pad 31 / min end 31 above load ([305x186x123](collision_box_7) holds the ray to 112 @ A1; incl 20 margin)
+    decapper        la=True  bd= 200 (declared)   min pad 122 / min end 132 above load ([88x88x166](collision_box_5) holds the ray to 112 @ place; incl 20 margin)
+    scale           la=True  bd=  50 (swept)      ray clear (incl 20 margin)
+    needle          UNREACHABLE — rail-frame x=941 y=-337, rail [-199, 801]   ** FIX SCENE **
+
+Column by column:
+
+- `la=... bd=... (declared)` — the recipe's own `left_approach` /
+  `base_distance` verified as-is: your recipes.j2 needs no change.
+- `(swept)` — the declared values FAILED reference IK; the shown pair
+  is what the sweep found. Copy it into recipes.j2.
+- `min pad 122` — every pick/place/immerse at this station must use
+  hover `padding >= 122` (defaults: pick/place 50, immerse 10 — if
+  the minimum exceeds the default, pass it per call).
+- `min end 132 above load` — every motion must END at least 132 above
+  the payload here: retract distances, exit heights. Lower and the
+  arm is stranded inside a box → the NEXT plan dies with "invalid
+  start state".
+- `([88x88x166](collision_box_5) holds the ray to 112 @ place)` — the
+  evidence: WHICH box constrains the approach ray, how far along the
+  ray it reaches, at which probe anchor. If a number looks absurd,
+  this names the box to inspect.
+- `ray clear` — no box constrains this station; defaults suffice.
+- `UNREACHABLE ... ** FIX SCENE **` — no (la, bd) solves the
+  reference IK; the rail-frame x/y vs rail range says why. This is a
+  bench-design decision (move the rack / station), not a parameter
+  to tune — nothing downstream can fix it.
+
+Numbers already include the 20 mm margin — use them as-is; do not add
+your own on top.
+
 ### 10.2 `workspace.bt.replay` — the logic gate
 
-    sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
 
 PDDL plan → precedence → capacity spans → CP-SAT schedule → replay in
 **scheduled** order against the real `pre()`/`eff()`. Zero
@@ -821,7 +856,7 @@ what proves the derivation's inputs truthful.
 
 ### 10.3 `workspace.bt.dryrun` — the last software gate
 
-    sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
+    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
 
 The real protocol through the real engine: planning, scheduling,
 checks, the BT leaf engine, and **real motion planning** for every
