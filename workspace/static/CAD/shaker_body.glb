@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 12462
+      "count": 12882
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4293,
+      "count": 4363,
       "max": [
-        2.499877452850342,
+        2.5,
         20.600000381469727,
-        -0.5998196601867676
+        -0.6000000238418579
       ],
       "min": [
         -2.5,
@@ -27,21 +27,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4293
+      "count": 4363
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 7086
+      "count": 7092
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2418,
+      "count": 2420,
       "max": [
-        2.769918918609619,
-        18.25,
-        -3.1000640392303467
+        2.7699999809265137,
+        18.24968147277832,
+        -3.0999999046325684
       ],
       "min": [
         -2.7699999809265137,
@@ -52,60 +52,60 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2418
+      "count": 2420
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 19230
+      "count": 29646
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7053,
+      "count": 10349,
       "max": [
-        3.2495055198669434,
+        3.25,
         20.600000381469727,
-        3.2495055198669434
+        3.25
       ],
       "min": [
         -3.25,
         0,
-        -3.25
+        -3.950000047683716
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7053
+      "count": 10349
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11272
+      "byteLength": 11696
     },
     {
       "buffer": 0,
-      "byteOffset": 11272,
-      "byteLength": 7242
+      "byteOffset": 11696,
+      "byteLength": 7276
     },
     {
       "buffer": 0,
-      "byteOffset": 18514,
-      "byteLength": 18872
+      "byteOffset": 18972,
+      "byteLength": 28489
     }
   ],
   "buffers": [
     {
       "uri": "shaker_body.glb.bin",
-      "byteLength": 37386
+      "byteLength": 47461
     }
   ],
   "materials": [
     {
-      "name": "Opaque(176,176,176).001",
+      "name": "Opaque(176,176,176)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -123,7 +123,7 @@
       }
     },
     {
-      "name": "Opaque(128,128,128).001",
+      "name": "Opaque(128,128,128)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -141,7 +141,7 @@
       }
     },
     {
-      "name": "Steel_-_Satin.001",
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -161,7 +161,7 @@
   ],
   "meshes": [
     {
-      "name": "shakerpost",
+      "name": "shakerpost3",
       "primitives": [
         {
           "attributes": {
@@ -222,7 +222,7 @@
   ],
   "nodes": [
     {
-      "name": "shakerpost",
+      "name": "shakerpost3",
       "rotation": [
         0.7071068286895752,
         0,

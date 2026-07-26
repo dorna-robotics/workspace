@@ -16,6 +16,7 @@ class ScaleTopFalcon15ml:
             "center": [0, 0, 0, 0, 0, 0],
             "place":  [0, 0, 10, 0, 0, 0],
             "top":    [0, 0, 70, 0, 0, 0],
+            "clb_0":  [0, 0, 6, 0, 0, 0],
         }},
         collision_box =
             {"body":[

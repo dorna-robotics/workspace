@@ -16,6 +16,7 @@ class VortexGenieTop2ml:
     DEFAULTS = dict(
         anchors={"body": {
             "center": [0, 0, 0, 0, 0, 0],
+            "clb_0":  [0, 0, 24, 0, 0, 0],
             "place":  [0, 0, 4, 0, 0, 0],    # bore floor — tube bottoms out here
             "top":    [0, 0, 24, 0, 0, 0],   # socket rim
         }},

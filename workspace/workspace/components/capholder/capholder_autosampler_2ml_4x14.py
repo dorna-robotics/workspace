@@ -7,7 +7,7 @@ from workspace.components.rack.rack import Rack
 @register("capholder_autosampler_2ml_4x14")
 class CapholderAutosampler2ml4x14(Rack):
     DEFAULTS = dict(
-        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 4, 0, 0, 0], "top": [0, 0, 7.5, 0, 0, 0], "hole_0":[50,0,0,0,0,0], "hole_1":[-50,0,0,0,0,0]}},
+        anchors = {"body": {"center": [0, 0, 0, 0, 0, 0], "place": [0, 0, 4, 0, 0, 0], "top": [0, 0, 7.5, 0, 0, 0]}},
         collision_box =
             {"body":[
                 {"pose":[0.0, 0.0, 7.5/2, 0.0, 0.0, 0.0], "scale":[236.0, 71.0, 7.5]}#[xyzabc] , [lx,ly,lz]

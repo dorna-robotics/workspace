@@ -1,125 +1,118 @@
 {
-    "asset": {
-        "generator": "glTF-Transform v4.4.0",
-        "version": "2.0"
+  "asset": {
+    "generator": "glTF-Transform v4.4.0",
+    "version": "2.0"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 37182
     },
-    "accessors": [
-        {
-            "type": "SCALAR",
-            "componentType": 5123,
-            "count": 37332
-        },
-        {
-            "type": "VEC3",
-            "componentType": 5126,
-            "count": 11687,
-            "max": [
-                24.386499404907227,
-                12.9986572265625,
-                18.851247787475586
-            ],
-            "min": [
-                -31.613500595092773,
-                -13,
-                0
-            ]
-        },
-        {
-            "type": "VEC3",
-            "componentType": 5126,
-            "count": 11687
-        },
-        {
-            "type": "VEC2",
-            "componentType": 5126,
-            "count": 11687
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 11625,
+      "max": [
+        24.386499404907227,
+        12.9986572265625,
+        18.851247787475586
+      ],
+      "min": [
+        -31.613500595092773,
+        -13,
+        0
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 11625
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 40392
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "printer_axon_1.glb.bin",
+      "byteLength": 40392
+    }
+  ],
+  "materials": [
+    {
+      "name": "Steel_-_Satin",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
         }
-    ],
-    "bufferViews": [
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "printer_axon_1",
+      "primitives": [
         {
-            "buffer": 0,
-            "byteOffset": 0,
-            "byteLength": 41199
-        }
-    ],
-    "buffers": [
-        {
-            "uri": "printer_axon_1.glb.bin",
-            "byteLength": 41199
-        }
-    ],
-    "materials": [
-        {
-            "name": "Steel_-_Satin",
-            "doubleSided": true,
-            "pbrMetallicRoughness": {
-                "metallicFactor": 0,
-                "baseColorFactor": [
-                    0.6274510025978088,
-                    0.6274510025978088,
-                    0.6274510025978088,
-                    1
-                ]
-            },
-            "extensions": {
-                "KHR_materials_specular": {
-                    "specularFactor": 0
-                }
+          "attributes": {
+            "POSITION": 1,
+            "NORMAL": 2
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 0,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
             }
+          }
         }
-    ],
-    "meshes": [
-        {
-            "name": "printer_axon_1",
-            "primitives": [
-                {
-                    "attributes": {
-                        "POSITION": 1,
-                        "NORMAL": 2,
-                        "TEXCOORD_0": 3
-                    },
-                    "mode": 4,
-                    "material": 0,
-                    "indices": 0,
-                    "extensions": {
-                        "KHR_draco_mesh_compression": {
-                            "bufferView": 0,
-                            "attributes": {
-                                "POSITION": 0,
-                                "NORMAL": 1,
-                                "TEXCOORD_0": 2
-                            }
-                        }
-                    }
-                }
-            ]
-        }
-    ],
-    "nodes": [
-        {
-            "name": "printer_axon_1",
-            "scale": [
-                10,
-                10,
-                10
-            ],
-            "mesh": 0
-        }
-    ],
-    "scenes": [
-        {
-            "name": "Scene",
-            "nodes": [
-                0
-            ]
-        }
-    ],
-    "scene": 0,
-    "extensionsUsed": [
-        "KHR_draco_mesh_compression",
-        "KHR_materials_specular"
-    ],
-    "extensionsRequired": [
-        "KHR_draco_mesh_compression"
-    ]
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "printer_axon_1",
+      "scale": [
+        10,
+        10,
+        10
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_draco_mesh_compression",
+    "KHR_materials_specular"
+  ],
+  "extensionsRequired": [
+    "KHR_draco_mesh_compression"
+  ]
 }

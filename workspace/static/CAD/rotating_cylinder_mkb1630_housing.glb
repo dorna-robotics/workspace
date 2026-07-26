@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4217
+      "byteLength": 4292
     },
     {
       "buffer": 0,
-      "byteOffset": 4217,
-      "byteLength": 7512
+      "byteOffset": 4292,
+      "byteLength": 7360
     }
   ],
   "buffers": [
     {
       "uri": "rotating_cylinder_mkb1630_housing.glb.bin",
-      "byteLength": 11729
+      "byteLength": 11652
     }
   ],
   "materials": [

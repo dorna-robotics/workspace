@@ -7,45 +7,45 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 113514
+      "count": 2370
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36375,
+      "count": 830,
       "max": [
-        3.249725341796875,
-        15,
-        3.249725341796875
+        10.249774932861328,
+        0.5999674797058105,
+        0.25050783157348633
       ],
       "min": [
-        -3.25,
-        0,
-        -3.25
+        -10.249774932861328,
+        -0.6000000238418579,
+        -0.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36375
+      "count": 830
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 102083
+      "byteLength": 2541
     }
   ],
   "buffers": [
     {
-      "uri": "probe_rail_calibration.glb.bin",
-      "byteLength": 102083
+      "uri": "adapter_plate_amber_40ml_4x7.glb.bin",
+      "byteLength": 2541
     }
   ],
   "materials": [
     {
-      "name": "Opaque(160,160,160)",
+      "name": "Steel_-_Satin.002",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "rail offset calibration",
+      "name": "adapter47",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "rail offset calibration",
+      "name": "adapter47",
       "rotation": [
         0.7071068286895752,
         0,

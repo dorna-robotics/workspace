@@ -7,45 +7,93 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 33156
+      "count": 3798
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 11744,
+      "count": 1249,
       "max": [
-        2.149625778198242,
-        2.149625778198242,
-        12.651000022888184
+        1.2197589874267578,
+        2.7500104904174805,
+        1.2197589874267578
       ],
       "min": [
-        -2.1500000953674316,
-        -2.1500000953674316,
-        0
+        -0.565684974193573,
+        1.4273020029067993,
+        -0.565684974193573
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 11744
+      "count": 1249
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 82518
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 25007,
+      "max": [
+        2.149625778198242,
+        12.651000022888184,
+        2.149625778198242
+      ],
+      "min": [
+        -2.1500000953674316,
+        0,
+        -2.1500000953674316
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 25007
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 35741
+      "byteLength": 4442
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4442,
+      "byteLength": 79723
     }
   ],
   "buffers": [
     {
       "uri": "gripper_suction.glb.bin",
-      "byteLength": 35741
+      "byteLength": 84165
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.007",
+      "name": "Opaque(176,176,176)",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6901959776878357,
+          0.6901959776878357,
+          0.6901959776878357,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +113,7 @@
   ],
   "meshes": [
     {
-      "name": "suction_gripper",
+      "name": "suciton gripper origin",
       "primitives": [
         {
           "attributes": {
@@ -84,13 +132,37 @@
               }
             }
           }
+        },
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5
+          },
+          "mode": 4,
+          "material": 1,
+          "indices": 3,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 1,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
         }
       ]
     }
   ],
   "nodes": [
     {
-      "name": "suction_gripper",
+      "name": "suciton gripper origin",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,
