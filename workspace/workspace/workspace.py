@@ -40,6 +40,15 @@ class Workspace:
             cfg = yaml.safe_load(text) or {}
             comp_cfgs.update(cfg)  # later files override earlier ones
 
+        # Scene fingerprint — stamps the IK/path caches so a geometry
+        # change invalidates them automatically instead of relying on
+        # the operator remembering to delete core/*.json.
+        import hashlib as _hashlib
+        import json as _json
+        self.scene_fingerprint = _hashlib.sha1(
+            _json.dumps(comp_cfgs, sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
+
         # Scene-mutation lock — protects ``self.components`` and any
         # kinematic-tree edits from runtime add/remove calls. Re-entrant
         # so the BT thread can hold it briefly across nested ops.

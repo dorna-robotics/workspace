@@ -11,10 +11,20 @@ arithmetic — no OMPL, no motion, seconds for a whole bench):
               which (la, bd) at rail_span 1 does?  Total failures are
               diagnosed geometrically (rail-frame x/y vs rail range).
 
-  GEOMETRY    per station target, where is the payload top, where is
-              the governing collision box top AFTER the planner's
-              inflation (+10 mm per face), and therefore what hover
-              padding does any pick/place/immerse need to clear it?
+  GEOMETRY    per station target, march along the anchor's APPROACH
+              RAY (its local +z — world-vertical only for upright
+              anchors; tilted for feeders/presenters) and find where
+              the ray exits every inflated collision box (+10 mm per
+              face). Boxes owned by the payload stack itself (the tube
+              being entered/picked, its cap, its own boxes) are
+              excluded by componentName. Two numbers per station, both
+              including a hard 20 mm margin (the retract knife-edge
+              lesson — sim passes boundary-exact endpoints, real
+              joints do not):
+                min pad   what any pick/place/immerse hover needs
+                min end   how far above the payload ANY motion must
+                          END (retracts, exits) — a stranded arm
+                          inside a box poisons the next plan's start.
               This layer is robot-agnostic — pure scene arithmetic.
 
 Modes:
@@ -86,40 +96,113 @@ def _rail_frame_xy(core, solid, anchor):
     return p[0] - c0[0], p[1] - c0[1]
 
 
-def _payload_top_z(ws, solid, anchor):
-    """World z of the top of whatever stack sits at ``anchor`` —
-    the anchor itself when empty."""
-    top = solid.pose(anchor)[2]
+# Hard clearance margin on every reported number — endpoints that sit
+# exactly on an inflated box surface pass in sim and fail on real
+# joints (the retract knife edge, measured on the bna bench).
+MARGIN = 20.0
+RAY_HORIZON = 400.0
+RAY_STEP = 2.0
+
+
+def _anchor_ray(solid, anchor):
+    """World (origin, unit direction) of the anchor's local +z — the
+    axis recipe paddings actually extend along (a_pad is an offset in
+    the ANCHOR frame, not world-vertical: tilted for the capfeeder's
+    -48 deg place, vertical for rack slots)."""
+    import numpy as np
+    from dorna2 import pose as dpose
+    T = np.array(dpose.xyzabc_to_T(list(solid.pose(anchor))))
+    origin, direction = T[:3, 3], T[:3, 2]
+    # The corridor leaves the station AWAY from the bench. Some anchors
+    # (tool racks — tools hang mouth-down) have their local +z pointing
+    # INTO the plate; marching that way reports the bench itself as an
+    # obstacle. Sign the axis upward.
+    if direction[2] < 0:
+        direction = -direction
+    return origin, direction
+
+
+def _stack_members(solid, anchor):
+    """(component names, top points) of everything stacked at ``anchor``
+    — the payload the operation carries/enters. Their collision boxes
+    are NOT obstacles for this station's approach ray."""
+    import numpy as np
+    names, pts = set(), []
+
+    def walk(s):
+        ch_map = s.children if isinstance(s.children, dict) else {}
+        for lst in ch_map.values():
+            for ch in lst:
+                c = ch["child_solid"]
+                comp = getattr(c, "component", None)
+                if comp:
+                    names.add(comp)
+                try:
+                    pts.append(np.array(list(c.pose("top"))[:3]))
+                except Exception:
+                    pass
+                walk(c)
+
     try:
-        children = solid.children.get(anchor, []) if isinstance(solid.children, dict) else solid.children[anchor]
+        anchor_children = (solid.children.get(anchor, [])
+                           if isinstance(solid.children, dict) else solid.children[anchor])
     except Exception:
-        children = []
-    for ch in children:
-        child = ch["child_solid"]
+        anchor_children = []
+    for ch in anchor_children:
+        c = ch["child_solid"]
+        comp = getattr(c, "component", None)
+        if comp:
+            names.add(comp)
         try:
-            top = max(top, _payload_top_z(ws, child, "top"))
+            pts.append(np.array(list(c.pose("top"))[:3]))
         except Exception:
             pass
-    return top
+        walk(c)
+    return names, pts
 
 
-def _governing_box(ws, x, y, above_z):
-    """The tallest INFLATED box whose footprint contains (x, y) —
-    the box any vertical entry at that spot must clear. Returns
-    (inflated_top_z, label) or (None, None)."""
+def _ray_clearance(ws, solid, anchor):
+    """March the approach ray; return (d_in, label, h_stack, h_container).
+
+    d_in: the largest distance along the ray still inside ANY inflated
+    obstacle box (payload-stack boxes excluded by componentName) —
+    every endpoint of every motion at this station must sit beyond
+    d_in + MARGIN along the ray.
+    """
+    import numpy as np
+    from dorna2 import pose as dpose
+    origin, direction = _anchor_ray(solid, anchor)
+    stack_names, stack_pts = _stack_members(solid, anchor)
+
+    h_stack = 0.0
+    for pt in stack_pts:
+        h_stack = max(h_stack, float(np.dot(pt - origin, direction)))
+    h_container = 0.0
+    try:
+        top_pt = np.array(list(solid.pose("top"))[:3])
+        h_container = max(0.0, float(np.dot(top_pt - origin, direction)))
+    except Exception:
+        pass
+
     world, _tool = ws.compute_collision_boxes(PLANNER_PADDING)
-    best, label = None, None
+    ts = np.arange(0.0, RAY_HORIZON, RAY_STEP)
+    pts = origin[None, :] + ts[:, None] * direction[None, :]
+    pts_h = np.hstack([pts, np.ones((len(ts), 1))])
+
+    d_in, label = 0.0, None
     for b in world:
-        px, py, pz = b["pose"][0:3]
-        lx, ly, lz = b["scale"]
-        # world boxes from compute_collision_boxes come axis-aligned in
-        # pose+scale form; treat the footprint as axis-aligned (true
-        # for every 0/90/180/270-degree bench layout).
-        if abs(x - px) <= lx / 2 and abs(y - py) <= ly / 2:
-            top = pz + lz / 2
-            if top > above_z - 200 and (best is None or top > best):
-                best, label = top, f"[{lx:.0f}x{ly:.0f}x{lz:.0f}]@z{top:.0f}"
-    return best, label
+        if b.get("componentName") in stack_names:
+            continue
+        T_inv = np.linalg.inv(np.array(dpose.xyzabc_to_T(list(b["pose"]))))
+        local = (T_inv @ pts_h.T).T[:, :3]
+        half = np.array(b["scale"]) / 2.0
+        inside = np.all(np.abs(local) <= half, axis=1)
+        if inside.any():
+            t_max = float(ts[inside][-1]) + RAY_STEP
+            if t_max > d_in:
+                lx, ly, lz = b["scale"]
+                d_in, label = t_max, f"[{lx:.0f}x{ly:.0f}x{lz:.0f}]({b.get('componentName', '?')})"
+    return d_in, label, h_stack, h_container
 
 
 # Per-class probe: which anchor(s) represent the station's target.
@@ -144,27 +227,34 @@ def _probe_anchors(recipe_obj, comp):
     return solid, [next(iter(solid.anchors))]
 
 
-def solve(project_dir, skeleton_path=None, port=5999):
-    from workspace.workspace import Workspace
-    from workspace.bt.launcher import load_recipes
+def load_launch(project_dir):
+    return yaml.safe_load(open(os.path.join(project_dir, "launch.yaml")))
 
-    launch = yaml.safe_load(open(os.path.join(project_dir, "launch.yaml")))
-    scene = [os.path.join(project_dir, s) for s in launch["scene"]]
-    # The solve is pure geometry — ALWAYS run the throwaway workspace in
-    # sim, whatever the scene says. Booting a simulation:false scene here
-    # would grab (or fail to grab) the real hardware and poison every IK
-    # with a missing joint source.
+
+def merged_sim_scene(project_dir, launch=None):
+    """Render + merge the project's scene files with every device forced
+    to sim, into one temp yaml. Validation tooling must NEVER grab (or
+    fail to grab) real hardware — a missing joint source poisons every
+    IK. Returns the temp file path."""
+    launch = launch or load_launch(project_dir)
     merged = {}
-    for path in scene:
-        merged.update(_load_yaml_j2(path))
+    for rel in launch["scene"]:
+        merged.update(_load_yaml_j2(os.path.join(project_dir, rel)))
     for cfg in merged.values():
         if isinstance(cfg, dict) and cfg.get("simulation") is False:
             cfg["simulation"] = True
     import tempfile
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         yaml.safe_dump(merged, f, sort_keys=False)
-        merged_path = f.name
-    ws = Workspace(config_path=merged_path, port=port)
+        return f.name
+
+
+def solve(project_dir, skeleton_path=None, port=5999):
+    from workspace.workspace import Workspace
+    from workspace.bt.launcher import load_recipes
+
+    launch = load_launch(project_dir)
+    ws = Workspace(config_path=merged_sim_scene(project_dir, launch), port=port)
     core = ws.components["core"]
 
     if skeleton_path:
@@ -231,7 +321,7 @@ def solve(project_dir, skeleton_path=None, port=5999):
             kw["rail_span"] = kw.get("rail_span", 1)
         kw["component"] = comp_name
 
-        # ── geometry: hover clearance over the governing inflated box ──
+        # ── geometry: ray clearance with the hard margin ──
         try:
             solid, anchors = _probe_anchors(robj, comp)
         except Exception as ex:
@@ -239,24 +329,35 @@ def solve(project_dir, skeleton_path=None, port=5999):
                   f"geometry probe failed: {type(ex).__name__}")
             solved[name] = {"class": e["class"], "kwargs": kw}
             continue
-        need = 0.0
-        note = ""
+        need_pad, need_end, note = 0.0, 0.0, ""
         for a in anchors:
-            ax, ay = solid.pose(a)[0], solid.pose(a)[1]
-            ptop = _payload_top_z(ws, solid, a)
-            btop, blabel = _governing_box(ws, ax, ay, ptop)
-            if btop is not None and btop > ptop:
-                if btop - ptop > need:
-                    need = btop - ptop
-                    note = f"box {blabel} over payload top z{ptop:.0f} @ {a}"
-        geom = f"min hover padding {need:.0f} ({note})" if need > 0 else "hover clear at any padding"
+            try:
+                d_in, blabel, h_stack, h_cont = _ray_clearance(ws, solid, a)
+            except Exception:
+                continue
+            if d_in <= 0:
+                continue
+            h_base = max(h_stack, h_cont)
+            np_ = max(0.0, d_in + MARGIN - h_base)
+            ne_ = max(0.0, d_in + MARGIN - h_stack)
+            if np_ > need_pad or ne_ > need_end:
+                need_pad, need_end = max(need_pad, np_), max(need_end, ne_)
+                note = f"{blabel} holds the ray to {d_in:.0f} @ {a}"
+        if need_pad > 0 or need_end > 0:
+            geom = (f"min pad {need_pad:.0f} / min end {need_end:.0f} above load "
+                    f"({note}; incl {MARGIN:.0f} margin)")
+        else:
+            geom = f"ray clear (incl {MARGIN:.0f} margin)"
         print(f"{name:22s} la={str(la):5s} bd={kw['base_distance']!s:>4s} ({how})   {geom}")
         solved[name] = {"class": e["class"], "kwargs": kw}
 
-    print("\nGeometry notes: 'min hover padding' is what ANY pick/place/immerse")
-    print("at that station must exceed to keep its planned hover goal outside")
-    print(f"the inflated boxes (planner padding {PLANNER_PADDING:.0f}/face). pick/place default")
-    print("is 50, immerse default is 10 — raise per call where the minimum is higher.")
+    print(f"\nGeometry notes (all numbers include the {MARGIN:.0f} mm margin):")
+    print("  min pad — what any pick/place/immerse hover padding at that station")
+    print("            must reach (pick/place default 50, immerse default 10).")
+    print("  min end — how far above the payload ANY motion must END there")
+    print("            (retract distances, exit heights): an arm stranded")
+    print("            inside an inflated box poisons the next plan's start.")
+    print("  Measured along the anchor's approach ray, tilted stations included.")
     return solved
 
 

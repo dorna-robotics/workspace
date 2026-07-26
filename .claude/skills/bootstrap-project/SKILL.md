@@ -64,7 +64,14 @@ Run it — from ``~/Downloads/workspace/workspace``:
     sudo python3 -m workspace.recipes.solve <project_dir>
     sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
 
-Report-only; values are applied deliberately after review.
+Report-only; values are applied deliberately after review. Geometry is
+measured along each anchor's APPROACH RAY (tilted stations included)
+with a hard 20 mm margin, and reports TWO numbers per station:
+``min pad`` (what any hover padding must reach) and ``min end`` (how
+far above the payload any motion must END there — retract distances
+and exit heights; an arm stranded inside an inflated box poisons the
+next plan's start). Boundary-exact endpoints pass in sim and fail on
+real joints — never accept less than the margin.
 
 Per station, with its declared tool virtually mounted:
 
@@ -91,10 +98,19 @@ enough to leave for step 5's eyes.
 ## Step 4 — flow + schedule validation (pure logic, no robot sim)
 
 Author `actions.py` from the gold exemplars (see CLAUDE.md table).
-Validate with the precondition replay: plan (PDDL) → precedence →
+Validate with the replay command — plan (PDDL) → precedence →
 schedule (CP-SAT) → replay in scheduled order against real
-`pre()`/`eff()` → 0 failures + goal reached, at batch 1 AND a
-multi-item batch. Seconds. Motion never runs.
+`pre()`/`eff()` → 0 failures + goal reached. Seconds, no motion:
+
+    sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
+
+Then the last software gate — the REAL protocol through the REAL
+engine in sim, real motion planning, stubbed playback (minutes):
+
+    sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
+
+Green dryrun means the bench run is judging path SHAPE, not hunting
+logic bugs.
 
 ## Step 5 — bench
 
@@ -134,6 +150,18 @@ ready, build the project"). Then the conversation is exactly:
    result (0 failures + goal, batch 1 and N).
 5. Operator launches and watches. Failures at this stage name their
    action in the step log and their motion in the [traj]/[plan] lines.
+
+## Scene file ownership + caches
+
+- The scene BUILDER owns ``layout.j2`` and regenerates it wholesale —
+  hand-added blocks there get clobbered on the next export. Hand-
+  maintained scene content (stock: caps in a feeder, consumables)
+  lives in ``stock.j2``, listed AFTER ``layout.j2`` in launch.yaml's
+  scene list so the merge applies it on top.
+- ``core/ik.json`` and ``core/path.json`` are stamped with a scene
+  fingerprint and AUTO-DISCARD when the scene changes — the old
+  "delete path.json after geometry changes" ritual is obsolete.
+  Unstamped legacy caches are treated as stale once.
 
 ## Canonical references
 

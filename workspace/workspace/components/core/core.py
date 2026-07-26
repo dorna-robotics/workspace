@@ -835,6 +835,9 @@ class Core:
             self._ik_cache_path = None
         if self._ik_cache_path is None or not self._ik_cache_path.is_file():
             return
+        if not self._cache_scene_ok(self._ik_cache_path):
+            self._cache_discard_stale(self._ik_cache_path, "ik.json")
+            return
         try:
             text = self._ik_cache_path.read_text()
             # Format detection must be parse-based — JSONL lines also
@@ -878,13 +881,61 @@ class Core:
         """Atomically rewrite the whole file as compact JSONL."""
         try:
             tmp = self._ik_cache_path.with_suffix(".json.tmp")
-            tmp.write_text("".join(
+            fp = self._scene_fp()
+            stamp = (json.dumps({"__scene__": fp}) + "\n") if fp else ""
+            tmp.write_text(stamp + "".join(
                 json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
                 for k, v in self._ik_cache.items()
             ))
             os.replace(tmp, self._ik_cache_path)
         except Exception:
             pass
+
+    # ── scene-fingerprint cache guard ─────────────────────────────────
+    # Both caches store solves keyed on world poses; ANY scene-geometry
+    # change silently invalidates them. The first JSONL line stamps the
+    # workspace's scene fingerprint; a mismatch (or a legacy unstamped
+    # file) discards the cache instead of serving stale rows. Old
+    # loaders skip the stamp line naturally (no "v" field).
+
+    def _scene_fp(self):
+        try:
+            return getattr(self.workspace, "scene_fingerprint", None)
+        except Exception:
+            return None
+
+    def _cache_scene_ok(self, path):
+        """True when ``path`` is stamped with THIS scene's fingerprint.
+        Unstamped or foreign-stamped files are stale."""
+        fp = self._scene_fp()
+        if fp is None:
+            return True  # no fingerprint available — never discard on doubt
+        try:
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    return False
+                return rec.get("__scene__") == fp
+        except Exception:
+            return False
+        return False  # empty file — restamp
+
+    def _cache_discard_stale(self, path, label):
+        try:
+            path.unlink()
+            print(f"[cache] {label} discarded — scene changed since it was built")
+        except Exception:
+            pass
+
+    def _cache_stamp(self, f):
+        """Write the stamp line into a fresh cache file handle."""
+        fp = self._scene_fp()
+        if fp is not None:
+            f.write(json.dumps({"__scene__": fp}) + "\n")
 
     def _ik_key(self, target_solid, target_anchor, target_offset, tool_solid,
                 tool_anchor, tool_offset, base_distance, rail_step, rail_span,
@@ -955,7 +1006,10 @@ class Core:
             self._ik_cache[key] = row
             if self._ik_cache_path is None:
                 return  # no resolvable project folder — in-memory only
+            _fresh = not self._ik_cache_path.is_file()
             with open(self._ik_cache_path, "a") as f:
+                if _fresh:
+                    self._cache_stamp(f)
                 f.write(json.dumps({"k": key, "v": row}, separators=(",", ":")) + "\n")
         except Exception:
             pass  # read-only fs / race — keep the in-memory row, move on
@@ -1102,6 +1156,9 @@ class Core:
             self._path_cache_path = None
         if self._path_cache_path is None or not self._path_cache_path.is_file():
             return
+        if not self._cache_scene_ok(self._path_cache_path):
+            self._cache_discard_stale(self._path_cache_path, "path.json")
+            return
         try:
             lines = 0
             for line in self._path_cache_path.read_text().splitlines():
@@ -1118,7 +1175,9 @@ class Core:
             # Compact when replaced/dropped rows dominate the file.
             if lines > 50 and lines > 2 * len(self._path_cache):
                 tmp = self._path_cache_path.with_suffix(".json.tmp")
-                tmp.write_text("".join(
+                fp = self._scene_fp()
+                stamp = (json.dumps({"__scene__": fp}) + "\n") if fp else ""
+                tmp.write_text(stamp + "".join(
                     json.dumps({"v": row}, separators=(",", ":")) + "\n"
                     for row in self._path_cache
                 ))
@@ -1154,7 +1213,10 @@ class Core:
             self._path_rows_add(row)
             if self._path_cache_path is None:
                 return  # no resolvable project folder — in-memory only
+            _fresh = not self._path_cache_path.is_file()
             with open(self._path_cache_path, "a") as f:
+                if _fresh:
+                    self._cache_stamp(f)
                 f.write(json.dumps({"v": row}, separators=(",", ":")) + "\n")
         except Exception:
             pass
