@@ -766,3 +766,84 @@ you want — by the time the operator resumes, the wait is done.
 
 That one paragraph covers the contract for all four trigger sources.
 
+
+## 10. Validating a project — the toolchain
+
+Three commands take a project from "scene finished" to "bench-ready"
+without guessing, each answering one question and naming its failures.
+The step-by-step pipeline that strings them together (who owns which
+step, where an error class lives) is the `bootstrap-project` skill;
+this section is the reference for the tools themselves. All run from
+`~/Downloads/workspace/workspace`, always in sim — they force
+`simulation: true` on every device, so real hardware is never touched
+(or fought over) by validation.
+
+### 10.1 `workspace.recipes.solve` — recipe parameters + geometry
+
+    sudo python3 -m workspace.recipes.solve <project_dir>
+    sudo python3 -m workspace.recipes.solve <project_dir> --skeleton skeleton.yaml
+
+Per station: boots the recipe with its declared `left_approach` /
+`base_distance` (reference IK), sweeps both approaches × distances at
+`rail_span: 1` when the declared values fail, and diagnoses total
+failures geometrically (`UNREACHABLE — rail-frame x=941, rail ends at
+801` is a bench-design error caught before any flow work).
+
+Geometry is measured along each anchor's **approach ray** — its local
++z signed away from the bench, so tilted stations (a −48° feeder, a
+hanging tool rack) are measured on their true axis, not world-vertical.
+Boxes owned by the payload stack itself (the tube being entered, its
+cap, their own collision boxes) are excluded by `componentName`. Two
+numbers per station, both including a **hard 20 mm margin**:
+
+| number | meaning |
+|---|---|
+| `min pad` | what any pick/place/immerse **hover padding** must reach (pick/place default 50, immerse default 10 — raise per call where the minimum is higher) |
+| `min end` | how far above the payload any motion must **end** there — retract distances, exit heights. An arm stranded inside an inflated box poisons the *next* plan's start ("invalid start state") |
+
+The margin is not negotiable: endpoints exactly on an inflated box
+surface pass in sim and fail on real joints (measured — the retract
+knife edge). Report-only; values are applied to `recipes.j2`
+deliberately, with the evidence.
+
+### 10.2 `workspace.bt.replay` — the logic gate
+
+    sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
+
+PDDL plan → precedence → capacity spans → CP-SAT schedule → replay in
+**scheduled** order against the real `pre()`/`eff()`. Zero
+precondition failures + goal reached, or the exact action and time
+that broke. Pure logic — seconds, no workspace, no motion. Run after
+any `actions.py` change, at batch 1 AND a multi-item batch: batch 1
+catches wrongly-seeded facts, multi-item catches capacity and
+interleaving mistakes. Schedules are derived, never authored — this is
+what proves the derivation's inputs truthful.
+
+### 10.3 `workspace.bt.dryrun` — the last software gate
+
+    sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
+
+The real protocol through the real engine: planning, scheduling,
+checks, the BT leaf engine, and **real motion planning** for every
+hop — only the playback is stubbed (moves land instantly), so a batch
+runs in minutes. This catches what endpoint arithmetic cannot: recipe
+machinery against live scene state, IK corridors with the actual tool
+mounted, residual planner failures. Green here means the bench run is
+judging path *shape*, not hunting logic bugs.
+
+Both bt commands resolve operator kwargs from `launch.yaml` (`--batch`
+lands on the first int kwarg; `--kw name=value` overrides any) and are
+exit-coded for scripting.
+
+### 10.4 Caches and scene-file ownership
+
+- `core/ik.json` and `core/path.json` are stamped with a **scene
+  fingerprint** and auto-discard on mismatch (`[cache] ik.json
+  discarded — scene changed since it was built`). The old "delete
+  path.json after geometry changes" ritual is obsolete; legacy
+  unstamped files count as stale once.
+- The scene **builder owns `layout.j2`** and regenerates it wholesale.
+  Hand-maintained scene content — consumable stock like caps in a
+  feeder — lives in **`stock.j2`**, listed after `layout.j2` in
+  `launch.yaml`'s scene list so the merge applies it on top and
+  regeneration can never eat it.

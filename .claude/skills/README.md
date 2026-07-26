@@ -26,7 +26,7 @@ Every skill points back to `docs/`:
 
 - `docs/device-guide.md` — device bus, contract, adapter wiring, sim model
 - `docs/component-guide.md` — component authoring, atomic ops, operator actions, runtime mutation
-- `docs/project-guide.md` — project structure, runtime API, pause semantics
+- `docs/project-guide.md` — project structure, runtime API, pause semantics, validation toolchain (§10: solve / replay / dryrun, caches, stock.j2)
 - `docs/recipe-guide.md` — recipe patterns, motion primitives, `rt.*` API
 - `docs/bt-framework-guide.md` — BT projects, PDDL planning, actions, slicing
 - `docs/design-system.md` — UI tokens, surfaces, theme
