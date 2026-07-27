@@ -176,6 +176,9 @@ class Display:
                     item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
+            markers = getattr(self.workspace, "hover_markers", None)
+            if markers:
+                batch["__hover_markers__"] = {"markers": list(markers.values())}
         except Exception as e:
             print("[Display] error building snapshot batch:", e)
         return batch
@@ -222,6 +225,17 @@ class Display:
                     "collisionWorld": cw,
                     "collisionFlange": cf,
                 }
+
+        # Hover markers register when recipes load — AFTER boot and any
+        # already-sent snapshot — so frames carry them too, once per
+        # change of the marker set.
+        markers = getattr(self.workspace, "hover_markers", None)
+        if markers:
+            sig = len(markers)
+            with self._state_lock:
+                if self._last_sent.get("__hover_markers__") != sig:
+                    self._last_sent["__hover_markers__"] = sig
+                    out["__hover_markers__"] = {"markers": list(markers.values())}
 
         return out
 

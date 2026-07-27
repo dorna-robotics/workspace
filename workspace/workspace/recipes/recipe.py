@@ -158,6 +158,21 @@ class Recipe:
                 raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
             self.ref_joints = J
 
+            # Pre-run hover marker for the viewer: the plane where this
+            # recipe's pick/place approaches and exits END (anchor +
+            # stacked load/container height + resolved padding). Lets
+            # the operator judge padding values against the (padded)
+            # collision boxes BEFORE any motion. Never blocks boot.
+            try:
+                m = self._hover_marker(prm["target_solid_name"], prm["target_anchor"])
+                if m is not None:
+                    if not hasattr(self.workspace, "hover_markers"):
+                        self.workspace.hover_markers = {}
+                    self.workspace.hover_markers[
+                        f"{self.component.name}:{m['anchor']}:{round(m['padding'])}"] = m
+            except Exception:
+                pass
+
     @property
     def rt(self):
         # Workspace Runtime (pause/stop/resume aware + robot_api proxy + lock)
@@ -478,6 +493,76 @@ class Recipe:
             raise RecipeError("could not find a valid pose")
 
         return J
+
+    def _hover_marker(self, solid_name, target_anchor):
+        """Compute this recipe's hover-plane marker (viewer visual).
+
+        The disc sits where approaches/exits END: ``anchor +
+        max(height_load, height_container) + padding`` along the anchor
+        frame, signed away from the bench (same rule as the solve
+        rays, so tool racks whose anchors point down still read
+        correctly). Anchor preference: the first slot-like anchor
+        (racks — slots are what ops target and where load stacks
+        register), else ``place``, else the recipe's target anchor.
+        Returns None when geometry can't say."""
+        import re
+
+        def _slot(anks):
+            return next((a for a in anks if re.fullmatch(r"[A-Z]\d{1,2}", a)), None)
+
+        body = self.component.assembly[solid_name]
+        anchors = getattr(body, "anchors", None) or {}
+        anchor = _slot(anchors)
+        if anchor is None:
+            # Holder pattern (rack adapter, dosing site): the slots live
+            # on the item attached at "place" — same resolution the ops
+            # themselves use.
+            try:
+                comp2, sname2 = self._resolve_attached_component()
+                body2 = comp2.assembly[sname2]
+                anchors2 = getattr(body2, "anchors", None) or {}
+                a2 = _slot(anchors2)
+                if a2 is not None:
+                    body, anchors, anchor = body2, anchors2, a2
+            except Exception:
+                pass
+        if anchor is None and "place" in anchors:
+            anchor = "place"
+        anchor = anchor or target_anchor
+        if anchor not in anchors or "top" not in anchors:
+            return None
+
+        height_load = 0.0
+        loads = self.solid_hierarchy(parent_solid=body, parent_anchor=anchor, connection_anchor="place")
+        if loads:
+            height_load = abs(dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=loads[0].pose("center"), to_frame=loads[-1].pose("top"))[2])
+        height_container = abs(dorna_pose.transform_pose(
+            [0, 0, 0, 0, 0, 0],
+            from_frame=body.pose("top"), to_frame=body.pose(anchor))[2])
+
+        padding = self._padding(None)
+        dz = max(height_load, height_container) + padding
+        up = body.pose(anchor, offset=[0, 0, dz, 0, 0, 0])
+        dn = body.pose(anchor, offset=[0, 0, -dz, 0, 0, 0])
+        pose = up if up[2] >= dn[2] else dn
+
+        radius = 50.0
+        boxes = getattr(body, "collision_box", None)
+        if boxes:
+            try:
+                s = boxes[0]["scale"] if isinstance(boxes, list) else boxes["scale"]
+                radius = max(20.0, max(float(s[0]), float(s[1])) / 2.0)
+            except Exception:
+                pass
+        return {
+            "pose": [float(v) for v in pose],
+            "radius": radius,
+            "padding": float(padding),
+            "anchor": anchor,
+            "label": f"{self.component.name} @{anchor} pad {padding:.0f}",
+        }
 
     def _padding(self, padding, default=50):
         """Resolve an approach padding: per-call > recipe (recipes.j2

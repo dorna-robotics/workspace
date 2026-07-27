@@ -411,6 +411,13 @@
       collisionFlangeGroup.visible = false;
       scene.add(collisionFlangeGroup);
 
+      // Recipe hover-plane discs (where approaches/exits end) — shown
+      // with the collision boxes so padding reads against the padded
+      // envelope before any motion.
+      const hoverMarkerGroup = new THREE.Group();
+      hoverMarkerGroup.visible = false;
+      scene.add(hoverMarkerGroup);
+
       const collisionMeshesByKey = new Map();
 
       // ── Motion trail (flange path trace) ──────────────────────────────────
@@ -522,6 +529,7 @@
         showCollisionBoxes = !showCollisionBoxes;
         collisionWorldGroup.visible  = showCollisionBoxes;
         collisionFlangeGroup.visible = showCollisionBoxes;
+        hoverMarkerGroup.visible     = showCollisionBoxes;
         document.getElementById("btnCollision").classList.toggle("active", showCollisionBoxes);
       });
 
@@ -1113,8 +1121,44 @@
         });
       }
 
+      // ── hover-plane markers (recipe padding visuals) ─────────────────────
+      let hoverMarkerSig = "";
+      function updateHoverMarkers(markers) {
+        const sig = (markers || []).map(m => (m.pose || []).join(",") + ":" + m.radius).join("|");
+        if (sig === hoverMarkerSig) return;
+        hoverMarkerSig = sig;
+        for (const c of [...hoverMarkerGroup.children]) {
+          hoverMarkerGroup.remove(c);
+          c.geometry?.dispose(); c.material?.dispose();
+        }
+        for (const m of (markers || [])) {
+          if (!Array.isArray(m.pose) || m.pose.length !== 6) continue;
+          const r = Math.max(15, m.radius || 50);
+          const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(r, 48),
+            new THREE.MeshBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.20, side: THREE.DoubleSide, depthWrite: false })
+          );
+          const rim = new THREE.Mesh(
+            new THREE.RingGeometry(r * 0.93, r, 48),
+            new THREE.MeshBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false })
+          );
+          const [x, y, z, rx, ry, rz] = m.pose;
+          for (const mesh of [disc, rim]) {
+            mesh.position.set(x, y, z);
+            mesh.quaternion.copy(rodriguesDegToQuaternion(rx, ry, rz));
+            mesh.renderOrder = 21;
+            mesh.userData = { hoverMarker: true, label: m.label };
+            hoverMarkerGroup.add(mesh);
+          }
+        }
+      }
+
       // ── upsert pipeline ───────────────────────────────────────────────────
       function upsertObject(name, spec) {
+        if (name === "__hover_markers__") {
+          updateHoverMarkers(spec?.delete ? [] : (spec?.markers || []));
+          return;
+        }
         if (spec.delete) {
           const prev = objectsByName.get(name);
           if (prev) {
