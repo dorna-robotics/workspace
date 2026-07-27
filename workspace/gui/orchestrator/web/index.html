@@ -1124,7 +1124,7 @@
       // ── hover-plane markers (recipe padding visuals) ─────────────────────
       let hoverMarkerSig = "";
       function updateHoverMarkers(markers) {
-        const sig = (markers || []).map(m => (m.pose || []).join(",") + ":" + m.radius).join("|");
+        const sig = (markers || []).map(m => (m.pose || []).join(",") + ":" + (m.base || []).join(",")).join("|");
         if (sig === hoverMarkerSig) return;
         hoverMarkerSig = sig;
         for (const c of [...hoverMarkerGroup.children]) {
@@ -1133,22 +1133,30 @@
         }
         for (const m of (markers || [])) {
           if (!Array.isArray(m.pose) || m.pose.length !== 6) continue;
-          const r = Math.max(15, m.radius || 50);
-          const disc = new THREE.Mesh(
-            new THREE.CircleGeometry(r, 48),
-            new THREE.MeshBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.20, side: THREE.DoubleSide, depthWrite: false })
-          );
-          const rim = new THREE.Mesh(
-            new THREE.RingGeometry(r * 0.93, r, 48),
-            new THREE.MeshBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false })
-          );
+          const r = m.radius || 2.5;
           const [x, y, z, rx, ry, rz] = m.pose;
-          for (const mesh of [disc, rim]) {
-            mesh.position.set(x, y, z);
-            mesh.quaternion.copy(rodriguesDegToQuaternion(rx, ry, rz));
-            mesh.renderOrder = 21;
-            mesh.userData = { hoverMarker: true, label: m.label };
-            hoverMarkerGroup.add(mesh);
+          const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(r, 24),
+            new THREE.MeshBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+          );
+          disc.position.set(x, y, z);
+          disc.quaternion.copy(rodriguesDegToQuaternion(rx, ry, rz));
+          disc.renderOrder = 21;
+          disc.userData = { hoverMarker: true, label: m.label };
+          hoverMarkerGroup.add(disc);
+          // Drop line: disc center -> the anchor the height is
+          // measured from (follows the anchor axis on tilted stations).
+          if (Array.isArray(m.base) && m.base.length === 3) {
+            const line = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(x, y, z),
+                new THREE.Vector3(m.base[0], m.base[1], m.base[2]),
+              ]),
+              new THREE.LineBasicMaterial({ color: 0x22cc88, transparent: true, opacity: 0.7 })
+            );
+            line.renderOrder = 21;
+            line.userData = { hoverMarker: true, label: m.label };
+            hoverMarkerGroup.add(line);
           }
         }
       }

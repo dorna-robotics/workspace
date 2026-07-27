@@ -548,17 +548,11 @@ class Recipe:
         dn = body.pose(anchor, offset=[0, 0, -dz, 0, 0, 0])
         pose = up if up[2] >= dn[2] else dn
 
-        radius = 50.0
-        boxes = getattr(body, "collision_box", None)
-        if boxes:
-            try:
-                s = boxes[0]["scale"] if isinstance(boxes, list) else boxes["scale"]
-                radius = max(20.0, max(float(s[0]), float(s[1])) / 2.0)
-            except Exception:
-                pass
+        base = body.pose(anchor)
         return {
             "pose": [float(v) for v in pose],
-            "radius": radius,
+            "base": [float(v) for v in base[:3]],
+            "radius": 2.5,
             "padding": float(padding),
             "anchor": anchor,
             "label": f"{self.component.name} @{anchor} pad {padding:.0f}",
