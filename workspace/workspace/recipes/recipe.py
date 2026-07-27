@@ -2112,17 +2112,17 @@ class Recipe:
             return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=False, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         raise RecipeError("immerse failed — could not move above target")
 
-    def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=False, **kwargs):
+    def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=[False, "lmove"], **kwargs):
         """Inverse of ``immerse`` — lift the held load ``dist`` mm above ``anchor``.
 
         Under the hood, calls ``above`` with tool Z offsets shifted so
         the tip ends up ``dist`` mm above the surface (not the load's
         center — the math accounts for load height).
 
-        **Planning is OFF by default** (``has_motion_plan=False``) —
-        the lift is straight up and rarely needs planning. If you
-        have obstacles above the workspace, pass
-        ``has_motion_plan=True`` explicitly.
+        **Planning is OFF by default** (``[False, "lmove"]``) — one
+        direct lmove, a straight TCP line up, matching the immerse
+        dive's lmove class. If you have obstacles above the workspace,
+        pass ``has_motion_plan=True`` explicitly.
 
         Required state:
             The robot must be holding a load (same as ``immerse``).
@@ -2133,8 +2133,9 @@ class Recipe:
             anchor: Reference anchor (default ``"place"``).
             padding: Extra padding applied by ``above`` (mm,
                 default ``0``).
-            has_motion_plan: Default ``False``. Set ``True`` if
-                obstacles are present above.
+            has_motion_plan: Default ``[False, "lmove"]`` — unplanned
+                straight-line lift. Set ``True`` if obstacles are
+                present above.
 
         Example:
             >>> rcp["doser"].retract(dist=20)                 # lift 20mm above
