@@ -1031,10 +1031,9 @@ class Core:
     # itself, plus the decimation gate on the sparse polyline. The row
     # format is simple on purpose — hand-authored rows (teach a hop its
     # waypoints) are first-class, but note they replay unvalidated.
-    # Only slow solves (>= PATH_CACHE_MIN_SEC) are stored — direct-
-    # shortcut hops replan faster than a lookup.
+    # EVERY solved hop is stored — direct-connection segments and OMPL
+    # detours alike: one solve pipeline, one record, one replay rule.
 
-    PATH_CACHE_MIN_SEC = 1.0
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
@@ -2242,27 +2241,6 @@ class Core:
         # planner.plan(start, goal): start should match goal dimensionality
         start = start_full[:len(goal)]
 
-        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
-
-        # -------------------------
-        # Direct connection first — deterministic, before cache and OMPL
-        # -------------------------
-        # If the straight joint segment start→goal clears the padded
-        # envelope, it IS the path: the same segment a bare jmove would
-        # drive, now collision-certified. OMPL's informed planners only
-        # SOMETIMES converge to it within budget — this makes it a
-        # guarantee. Checked before the cache so a stored detour can
-        # never shadow a hop that is directly connectable (e.g. after a
-        # padding change).
-        gv = gravity_vec if gravity_vec is not None else [0, 0, 1]
-        try:
-            if self.planner.check([list(start), list(goal)], gravity=gravity,
-                                  gravity_vec=gv, gravity_thr=gravity_thr,
-                                  rail_weight=rail_weight):
-                return [[float(v) for v in start], [float(v) for v in goal]]
-        except Exception:
-            pass
-
         # -------------------------
         # Path cache (core_path.json) — hit = return (validated at creation)
         # -------------------------
@@ -2276,11 +2254,7 @@ class Core:
 
         start_time = time.perf_counter()
 
-        # pp branch: AIT* @ 10s is the platform default for every planned
-        # hop (requires the pp path_planning build — planner selection +
-        # honored time budget + GIL release). rail_weight=0.004 makes
-        # rail travel ~2.5x cheaper than stock in the path-length metric
-        # so paths slide the bench instead of contorting the arm.
+        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
         # Loud diagnosis for a doomed solve: a start inside the padded
         # envelope means the PREVIOUS motion ended inside a box (its
         # exit should have auto-lifted) — the planner would silently
@@ -2291,7 +2265,33 @@ class Core:
                       "motion ended inside a box (exit not lifted?)")
         except Exception:
             pass
-        res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
+
+        # -------------------------
+        # ONE solve pipeline: direct connection, else OMPL. Either way
+        # the result is recorded below and replays from the cache.
+        # -------------------------
+        # Direct: if the straight joint segment start→goal clears the
+        # padded envelope, it IS the path — the same segment a bare
+        # jmove would drive, now collision-certified. OMPL's informed
+        # planners only SOMETIMES converge to it within budget; this
+        # makes it a guarantee.
+        # pp branch: AIT* @ 10s is the platform default for the OMPL
+        # fallback (requires the pp path_planning build — planner
+        # selection + honored time budget + GIL release).
+        # rail_weight=0.004 makes rail travel ~2.5x cheaper than stock
+        # in the path-length metric so paths slide the bench instead of
+        # contorting the arm.
+        gv = gravity_vec if gravity_vec is not None else [0, 0, 1]
+        res = None
+        try:
+            if self.planner.check([list(start), list(goal)], gravity=gravity,
+                                  gravity_vec=gv, gravity_thr=gravity_thr,
+                                  rail_weight=rail_weight):
+                res = [list(start), list(goal)]
+        except Exception:
+            res = None
+        if res is None:
+            res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
@@ -2320,13 +2320,15 @@ class Core:
                     check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
                     cw, ct = self.workspace.compute_collision_boxes(check_pad)
                     self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
-                    gv = gravity_vec if gravity_vec is not None else [0, 0, 1]
                     seg_ok = lambda seg: self.planner.check(seg, gravity=gravity, gravity_vec=gv,
                                                             gravity_thr=gravity_thr, rail_weight=rail_weight)
                     res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
                 except Exception:
                     pass  # keep the dense path
-            if path_sig is not None and execution_time >= self.PATH_CACHE_MIN_SEC:
+            # Record EVERY solved hop — direct and OMPL alike. One
+            # pipeline, one record: the next call replays from the
+            # cache instead of re-deriving.
+            if path_sig is not None:
                 self._path_cache_put(start, goal, path_sig, res)
         else:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
