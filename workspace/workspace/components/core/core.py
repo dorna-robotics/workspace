@@ -2242,8 +2242,29 @@ class Core:
         # planner.plan(start, goal): start should match goal dimensionality
         start = start_full[:len(goal)]
 
+        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
+
         # -------------------------
-        # Path cache (core_path.json) — hit = revalidate + return
+        # Direct connection first — deterministic, before cache and OMPL
+        # -------------------------
+        # If the straight joint segment start→goal clears the padded
+        # envelope, it IS the path: the same segment a bare jmove would
+        # drive, now collision-certified. OMPL's informed planners only
+        # SOMETIMES converge to it within budget — this makes it a
+        # guarantee. Checked before the cache so a stored detour can
+        # never shadow a hop that is directly connectable (e.g. after a
+        # padding change).
+        gv = gravity_vec if gravity_vec is not None else [0, 0, 1]
+        try:
+            if self.planner.check([list(start), list(goal)], gravity=gravity,
+                                  gravity_vec=gv, gravity_thr=gravity_thr,
+                                  rail_weight=rail_weight):
+                return [[float(v) for v in start], [float(v) for v in goal]]
+        except Exception:
+            pass
+
+        # -------------------------
+        # Path cache (core_path.json) — hit = return (validated at creation)
         # -------------------------
         if self._path_cache is None:
             self._path_cache_init()
@@ -2260,7 +2281,6 @@ class Core:
         # honored time budget + GIL release). rail_weight=0.004 makes
         # rail travel ~2.5x cheaper than stock in the path-length metric
         # so paths slide the bench instead of contorting the arm.
-        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
         # Loud diagnosis for a doomed solve: a start inside the padded
         # envelope means the PREVIOUS motion ended inside a box (its
         # exit should have auto-lifted) — the planner would silently
