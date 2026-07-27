@@ -52,6 +52,7 @@ import contextlib
 import importlib
 import io
 import os
+import pkgutil
 import sys
 
 import yaml
@@ -228,6 +229,17 @@ def _probe_anchors(recipe_obj, comp):
 
 
 def load_launch(project_dir):
+    """Read launch.yaml AND register the project's local components —
+    every tool that boots a project scene needs both, and a scene
+    referencing a project-local ``type:`` dies with "Unknown component
+    type" otherwise (mirrors main.py's _register_project_components)."""
+    comp_dir = os.path.join(project_dir, "components")
+    if os.path.isdir(comp_dir):
+        if project_dir not in sys.path:
+            sys.path.insert(0, project_dir)
+        for mod in pkgutil.iter_modules([comp_dir]):
+            if not mod.name.startswith("_"):
+                importlib.import_module(f"components.{mod.name}")
     return yaml.safe_load(open(os.path.join(project_dir, "launch.yaml")))
 
 
