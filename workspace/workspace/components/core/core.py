@@ -2083,10 +2083,25 @@ class Core:
                     vajs[k][1] = max(1.0, vajs[k][1] / ra_e)
                     worst = max(worst, ra_e)
                 if ra_b > TOL:
-                    # body: tangential shrinks with the accel param,
-                    # own-corner centripetal with this section's vel
-                    vajs[k][1] = max(1.0, vajs[k][1] / ra_b)
-                    vajs[k][0] = max(1.0, vajs[k][0] / math.sqrt(min(ra_b, 4.0)))
+                    # body: TWO regimes, opposite fixes. When the speed
+                    # carried in exceeds this section's own target, the
+                    # section is BRAKING and the violation is overshoot
+                    # into its exit corner — the entry speed is the
+                    # driver, and cutting this section's accel would cut
+                    # the very braking authority that resolves it (the
+                    # loop then diverges: measured accel RISES as params
+                    # fall, runs to the floor, DEGRADED — bench: the
+                    # tool-rack -> source-rack travel). Reduce the
+                    # upstream speed instead and keep the accel.
+                    # Otherwise the violation is this section's own
+                    # doing (tangential ramp + own-corner centripetal):
+                    # shrink its params by the measured ratio.
+                    v_in = vajs[k - 1][0] if k > 0 and not stops[k - 1] else 0.0
+                    if v_in > vajs[k][0]:
+                        vajs[k - 1][0] = max(1.0, vajs[k - 1][0] / math.sqrt(min(ra_b, 4.0)))
+                    else:
+                        vajs[k][1] = max(1.0, vajs[k][1] / ra_b)
+                        vajs[k][0] = max(1.0, vajs[k][0] / math.sqrt(min(ra_b, 4.0)))
                     worst = max(worst, ra_b)
             if worst <= TOL:
                 break
