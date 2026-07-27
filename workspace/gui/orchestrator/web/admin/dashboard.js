@@ -304,7 +304,12 @@ function render() {
     }
 
     const newCls = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
-    if (_lastCardCls.get(ws.name) !== newCls) {
+    // isNew must force the write: a stale cache entry (from a removed
+    // card of the same name) would otherwise skip it, leaving the new
+    // element WITHOUT the ws-card class — invisible to every selector,
+    // so each subsequent render appends another copy (the duplicate-
+    // card-until-refresh bug).
+    if (isNew || _lastCardCls.get(ws.name) !== newCls) {
       el.className = newCls;
       _lastCardCls.set(ws.name, newCls);
     }
@@ -466,6 +471,11 @@ function render() {
         await apiFetch("/remove_workspace", { method: "POST", body: JSON.stringify({ name: ws.name }) });
         workspaces = workspaces.filter(w => w.name !== ws.name);
         el.remove();
+        // The stale-card sweep can't clean these (the element is
+        // already gone) — clear them here or a re-added workspace of
+        // the same name inherits stale render caches.
+        _lastCardHtml.delete(ws.name);
+        _lastCardCls.delete(ws.name);
         render();
         toast(`Removed ${ws.name}`, "ok");
       } catch (err) { toast(String(err), "bad"); }
