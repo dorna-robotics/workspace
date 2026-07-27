@@ -292,12 +292,17 @@ class Decapper(Recipe):
             rt.output(config=tool.output_disable)
             tool.output_state(0)
 
-        # exit
+        # exit — the empty tool lifts to the SAME resolved padding the
+        # approach used (tip ends padding + gap above the seated cap),
+        # consistent with decap and every pick/place exit. The old
+        # full-stack lift was generous for tall tubes but would park
+        # the tool inside the inflated box after capping short vials.
         if exit and last_J is not None:
+            pad = self._padding(padding)
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, -height_total - gap, 0, 0, 0],
+                target_offset=[0, 0, -pad - gap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
