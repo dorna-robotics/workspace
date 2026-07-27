@@ -104,14 +104,13 @@ schedule (CP-SAT) → replay in scheduled order against real
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
 
-Then the last software gate — the REAL protocol through the REAL
-engine in sim, real motion planning, stubbed playback (minutes):
-
-    cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
-
-Green dryrun means the bench run is judging path SHAPE, not hunting
-logic bugs. Reading the solve report — samples, column meanings, what
-``(swept)`` and ``UNREACHABLE`` demand of you — is project-guide §10.1.
+solve + replay are the ONLY standard software gates — path checking
+is the operator's job on the bench, not the agent's. (The
+`workspace.bt.dryrun` command exists for off-bench machinery
+debugging when replay is green but the bench dies deep in engine
+plumbing; it is not part of bootstrap.) Reading the solve report —
+samples, column meanings, what ``(swept)`` and ``UNREACHABLE`` demand
+of you — is project-guide §10.1.
 
 ## Step 5 — bench
 

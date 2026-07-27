@@ -854,17 +854,17 @@ catches wrongly-seeded facts, multi-item catches capacity and
 interleaving mistakes. Schedules are derived, never authored — this is
 what proves the derivation's inputs truthful.
 
-### 10.3 `workspace.bt.dryrun` — the last software gate
+### 10.3 `workspace.bt.dryrun` — optional machinery debug, NOT a gate
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
 
-The real protocol through the real engine: planning, scheduling,
-checks, the BT leaf engine, and **real motion planning** for every
-hop — only the playback is stubbed (moves land instantly), so a batch
-runs in minutes. This catches what endpoint arithmetic cannot: recipe
-machinery against live scene state, IK corridors with the actual tool
-mounted, residual planner failures. Green here means the bench run is
-judging path *shape*, not hunting logic bugs.
+The standard software gates are solve (10.1) and replay (10.2) —
+path judgment belongs to the operator on the bench (step 5), never
+to a sim check. Reach for dryrun only when replay is green but the
+bench dies deep in recipe/engine plumbing and the failure needs
+reproducing off-bench: it runs the real protocol through the real
+engine in sim (planning, scheduling, checks, BT leaves) with playback
+stubbed, so a batch runs in minutes.
 
 Both bt commands resolve operator kwargs from `launch.yaml` (`--batch`
 lands on the first int kwarg; `--kw name=value` overrides any) and are
