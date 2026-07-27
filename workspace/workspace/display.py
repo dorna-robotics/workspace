@@ -176,12 +176,27 @@ class Display:
                     item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
-            markers = getattr(self.workspace, "hover_markers", None)
+            markers = self._hover_markers()
             if markers:
                 batch["__hover_markers__"] = {"markers": list(markers.values())}
         except Exception as e:
             print("[Display] error building snapshot batch:", e)
         return batch
+
+    def _hover_markers(self):
+        """Live hover-plane markers, recomputed from the CURRENT stacks
+        so pins track what the ops would actually do (a tube entering
+        the decapper lifts its pin by the tube height). Dedupes recipes
+        sharing a component/anchor/padding."""
+        out = {}
+        for r in list(getattr(self.workspace, "hover_marker_recipes", []) or []):
+            try:
+                m = r._hover_marker(*r._hover_marker_args)
+                if m is not None:
+                    out[f"{r.component.name}:{m['anchor']}:{round(m['padding'])}"] = m
+            except Exception:
+                continue
+        return out
 
     def _build_pose_frame(self):
         """Only pose + visible; DO NOT delete meshUrl. Delta: skip unchanged objects."""
@@ -227,11 +242,12 @@ class Display:
                 }
 
         # Hover markers register when recipes load — AFTER boot and any
-        # already-sent snapshot — so frames carry them too, once per
-        # change of the marker set.
-        markers = getattr(self.workspace, "hover_markers", None)
+        # already-sent snapshot — and their heights track the live
+        # stacks, so frames carry them whenever the content changes.
+        markers = self._hover_markers()
         if markers:
-            sig = len(markers)
+            sig = tuple(sorted((k, round(m["pose"][2], 1), round(m["base"][2], 1))
+                               for k, m in markers.items()))
             with self._state_lock:
                 if self._last_sent.get("__hover_markers__") != sig:
                     self._last_sent["__hover_markers__"] = sig

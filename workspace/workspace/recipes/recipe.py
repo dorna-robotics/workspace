@@ -158,18 +158,17 @@ class Recipe:
                 raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
             self.ref_joints = J
 
-            # Pre-run hover marker for the viewer: the plane where this
+            # Hover marker for the viewer: the plane where this
             # recipe's pick/place approaches and exits END (anchor +
-            # stacked load/container height + resolved padding). Lets
-            # the operator judge padding values against the (padded)
-            # collision boxes BEFORE any motion. Never blocks boot.
+            # stacked load/container height + resolved padding). The
+            # Display recomputes it from the LIVE stacks — a tube
+            # entering the decapper lifts its pin by the tube height —
+            # so pins track what the ops actually do. Never blocks boot.
             try:
-                m = self._hover_marker(prm["target_solid_name"], prm["target_anchor"])
-                if m is not None:
-                    if not hasattr(self.workspace, "hover_markers"):
-                        self.workspace.hover_markers = {}
-                    self.workspace.hover_markers[
-                        f"{self.component.name}:{m['anchor']}:{round(m['padding'])}"] = m
+                self._hover_marker_args = (prm["target_solid_name"], prm["target_anchor"])
+                if not hasattr(self.workspace, "hover_marker_recipes"):
+                    self.workspace.hover_marker_recipes = []
+                self.workspace.hover_marker_recipes.append(self)
             except Exception:
                 pass
 
