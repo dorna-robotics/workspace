@@ -805,26 +805,31 @@ class Recipe:
             # abandoning the certified parameters. Falling back here
             # was silently sending most clmove travel uncertified,
             # because a split knot alone changed the count.
-            targets, cur, ok = [], [float(v) for v in points[0]], True
-            for q in xpts[1:]:
+            targets, cur, fail_i = [], [float(v) for v in points[0]], None
+            for i, q in enumerate(xpts[1:], 1):
                 J = _xyzj_to_joints(q, cur, tp, kin)
                 if J is None:
-                    ok = False
+                    fail_i = i
                     break
                 J = [float(v) for v in J]
                 targets.append(J)
                 cur = J
-            if ok:
+            if fail_i is None:
                 self._emit_chain(rt, "clmove", [points[0]] + targets, vajs, corners, stops, tool_pose=tp)
                 return
-            # IK genuinely failed on the chain geometry — per-knot vaj
-            # over the original targets is the safe remainder.
-            pts, vels, accels = self.core.section_vels(points, vel, accel)
-            vajs = [[vels[i], accels[i], jerk] for i in range(len(pts) - 1)]
-            corners = [self.corner] * (len(pts) - 1)
-            stops = [False] * (len(pts) - 1)
-            stops[-1] = True
-            self._emit_chain(rt, "clmove", pts, vajs, corners, stops, tool_pose=tp)
+            # IK genuinely failed on the chain geometry — fall back to
+            # the classic DISCRETE lmoves over the original targets.
+            # A fallback must be incapable of overspeeding: the old
+            # section_vels chain fed chord-space speeds to the firmware
+            # as joint-class params (a diagonal move's chord exceeds
+            # every single-joint cap) and alarmed the robot on the
+            # bench. Discrete lmoves at the recipe's lmove vaj are the
+            # pre-chain behavior — always within caps.
+            print(f"[traj] clmove chain: knot {fail_i}/{len(xpts) - 1} IK failed — "
+                  f"discrete-lmove fallback (certified chain abandoned)")
+            for p in points[1:]:
+                rt.checkpoint()
+                rt.lmove(joint=list(p), vel=vel, accel=accel, jerk=jerk, tool_pose=tp)
             return
         if primitive in ("jmove", "lmove"):
             for p in points[1:]:
