@@ -63,7 +63,9 @@ class Decapper(Recipe):
 
         Args:
             anchor: Anchor holding the capped tube (default "place").
-            padding, gap: Safe-height and near-gap (mm).
+            padding, gap: Safe-height and near-gap (mm). ``padding``
+                governs the approach AND the exit lift — the carried
+                cap ends ``padding + gap`` above the tube.
             lmove_vaj, jmove_vaj: [vel, accel, jerk] for linear / joint moves.
             max_rotation: Maximum j5 swing per chunk (degrees).
             twist: Total rotation to unscrew (degrees). Defaults to component's.
@@ -131,12 +133,17 @@ class Decapper(Recipe):
             j5_start=j5_start,
         )
 
-        # exit (gripper stays ON — we're carrying the cap out)
+        # exit (gripper stays ON — we're carrying the cap out). The
+        # lift height is the SAME resolved padding the approach used
+        # (per-call > recipe > default) — one knob, one meaning. A
+        # fixed 20 here parked the cap inside the decapper's inflated
+        # collision box and poisoned the next plan's start.
         if exit and last_J is not None:
+            pad = self._padding(padding)
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, -20 -gap - height_cap, 0, 0, 0],
+                target_offset=[0, 0, -pad - gap - height_cap, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
