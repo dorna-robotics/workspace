@@ -225,7 +225,16 @@ class Display:
 
         return out
 
-    def _collision_boxes_by_solid(self, padding=0.0):
+    # The viewer shows the PLANNER's envelope: boxes inflated by the
+    # same default padding core.motion_plan plans with (and only the
+    # padding_enabled boxes — the planner's own opt-in rule). What the
+    # operator sees is what the planner enforces. The scene builder
+    # keeps rendering the raw boxes — padding is not a scene concept.
+    PLAN_PADDING = 10.0
+
+    def _collision_boxes_by_solid(self, padding=None):
+        if padding is None:
+            padding = self.PLAN_PADDING
         if not hasattr(self.workspace, "compute_collision_boxes"):
             return {}, {}
 
