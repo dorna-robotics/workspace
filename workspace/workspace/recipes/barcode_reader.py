@@ -38,7 +38,7 @@ class BarcodeReader(Recipe):
             **prm,
         )
 
-    def present(self, approach=True, padding=50, load_anchor="center", **kwargs):
+    def present(self, approach=True, padding=50, soft_approach=False, load_anchor="center", **kwargs):
         """Position the held item in front of the scanner's window
         ("place" anchor). Robot motion runs whether or not we're in
         simulation — only ``detect()`` / ``code()`` returns canned values
@@ -52,6 +52,7 @@ class BarcodeReader(Recipe):
             trigger_io=False,
             padding=padding,
             gap=2,
+            soft_approach=soft_approach,
             load_anchor=load_anchor,
             gravity_offset=0,
             **kwargs,
