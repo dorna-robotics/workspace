@@ -148,10 +148,19 @@ D=None)` generates it from bench geometry:
 `w d h` — extents along the box's local axes, and the SIGN of `h`
 picks the side: `> 0` rises from the bottom plane, `< 0` hangs below
 it. The box lives in the frame `base_in_world` defines — the same
-frame detections report in. Fixed camera with `base_in_world =
-[0,0,0,0,0,0]` (the default): world IS the camera's own frame,
-centered between its lenses; set `base_in_world` to the lens pose to
-work in bench coordinates. The call returns the convex hull of the 8
+frame detections report in — and never the camera's own moving frame.
+The two mountings differ only in the chain root:
+
+- **fixed camera**: root = the lens; `base_in_world` is the lens pose
+  (default identity: world IS the camera frame, between the lenses).
+- **robot-mounted**: root = the ROBOT BASE; `base_in_world` places the
+  robot base (default identity: world IS the robot base frame). The
+  server composes base -> joints -> mount -> lens per capture — which
+  is why capture() snapshots frames AND joints atomically: boxes stay
+  bench-fixed no matter where the arm was looking from.
+
+Set `base_in_world` once to work in bench coordinates in either case.
+The call returns the convex hull of the 8
 projected corners, paste-ready as `corners` — regenerate on camera
 moves instead of re-drawing in the GUI.
 
