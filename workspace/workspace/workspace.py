@@ -398,14 +398,14 @@ class Workspace:
         # ======================================================================
         # PHASE 1: FULL KINEMATIC UPDATE (same as before): compute solid._world_T
         # ======================================================================
-        for comp in self.components.values():
+        for comp in list(self.components.values()):
             if hasattr(comp, "update_pose"):
                 comp.update_pose()
 
         roots = []
         seen = set()
-        for comp in self.components.values():
-            for solid in comp.assembly.values():
+        for comp in list(self.components.values()):
+            for solid in list(comp.assembly.values()):
                 if solid.parent["parent_solid"] is None and id(solid) not in seen:
                     seen.add(id(solid))
                     roots.append(solid)
@@ -418,7 +418,7 @@ class Workspace:
             node, T_parent = stack.pop()
             T_world = T_parent @ node.local["T"]
             node._world_T = T_world
-            for child_list in node.children.values():
+            for child_list in list(node.children.values()):
                 for entry in child_list:
                     stack.append((entry["child_solid"], T_world))
 
@@ -541,9 +541,9 @@ class Workspace:
                 return []
             return c_box_data
 
-        for comp in self.components.values():
+        for comp in list(self.components.values()):
             comp_name = getattr(comp, "name", None)
-            for solid_name, solid in comp.assembly.items():
+            for solid_name, solid in list(comp.assembly.items()):
                 safe_solid_name = str(solid_name) if solid_name else ""
                 if safe_solid_name.lower().startswith("robot_"):
                     continue
@@ -615,8 +615,8 @@ class Workspace:
         # ----------------------------------------------------------------------
         # 0) Ensure runtime fields on all solids; clear flags for this pass
         # ----------------------------------------------------------------------
-        for comp in self.components.values():
-            for solid in comp.assembly.values():
+        for comp in list(self.components.values()):
+            for solid in list(comp.assembly.values()):
                 if not hasattr(solid, "_pose_flag"):
                     solid._pose_flag = False
                 if not hasattr(solid, "_world_T"):
@@ -628,11 +628,11 @@ class Workspace:
         # 1) Update pose of all driving components (robot, rail, etc.)
         #    and flag ALL their solids.
         # ----------------------------------------------------------------------
-        for comp in self.components.values():
+        for comp in list(self.components.values()):
             if hasattr(comp, "update_pose"):
                 comp.update_pose()
                 # Mark all solids of this component as "changed"
-                for solid in comp.assembly.values():
+                for solid in list(comp.assembly.values()):
                     solid._pose_flag = True
 
         # ----------------------------------------------------------------------
@@ -640,8 +640,8 @@ class Workspace:
         # ----------------------------------------------------------------------
         roots = []
         seen = set()
-        for comp in self.components.values():
-            for solid in comp.assembly.values():
+        for comp in list(self.components.values()):
+            for solid in list(comp.assembly.values()):
                 if solid.parent["parent_solid"] is None and id(solid) not in seen:
                     seen.add(id(solid))
                     roots.append(solid)
@@ -689,7 +689,7 @@ class Workspace:
                 node._pose_flag = False  # not a source of updates for children
 
             # Push children; they recompute only if THIS node was updated
-            for child_list in node.children.values():
+            for child_list in list(node.children.values()):
                 for entry in child_list:
                     child_solid = entry["child_solid"]
                     stack.append((child_solid, T_world, node._pose_flag))
@@ -698,8 +698,8 @@ class Workspace:
         # 4) Build name->pose dict (same as your original behavior)
         # ----------------------------------------------------------------------
         poses = {}
-        for comp_name, comp in self.components.items():
-            for solid_name, solid in comp.assembly.items():
+        for comp_name, comp in list(self.components.items()):
+            for solid_name, solid in list(comp.assembly.items()):
                 key = f"{comp_name}_{solid_name}"
                 T = getattr(solid, "_world_T", None)
 
@@ -734,7 +734,7 @@ class Workspace:
             pass
 
         # give each component a chance to cleanup
-        for comp in self.components.values():
+        for comp in list(self.components.values()):
             if hasattr(comp, "stop"):
                 try:
                     comp.stop()
