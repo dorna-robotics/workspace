@@ -145,14 +145,16 @@ save per cycle is an SD write per cycle at production volume.
   returns ``ok: False`` → ``detect()`` raises ``CameraUnavailableError``
   → the BT leaf fails → the workflow PAUSES for the operator. Resume
   retries the action.
-- **The vision server dies**: the workspace does NOT crash. The next
-  detect/capture fails the same way and the workflow pauses. When the
-  operator restarts the server, the next attempt (Resume) transparently
-  RECONNECTS: the client re-dials, re-adds the camera (the pool is
-  idempotent) and re-registers every detection this station authored —
-  detections are per-session state on the server and die with it, so
-  the station replays them from its own record. No workspace relaunch
-  needed.
+- **The vision server dies**: the workspace does NOT crash and the
+  failure is never absorbed — the failing call marks the session dead
+  and surfaces, the workflow pauses per the device's critical flag,
+  exactly like any other device. On the operator's Resume, the re-run
+  action re-establishes the session first (re-dial, camera_add — the
+  pool is idempotent — and re-registration of every detection this
+  station authored, since detections are per-session server state) and
+  runs ONCE. Honest failures, explicit recovery, no workspace relaunch.
+  Session re-establishment is transport plumbing (same class as the
+  device bus's own MQTT reconnect); it is not an operation retry.
 - **Launch-time**: an unreachable server (or a bad serial) fails the
   LAUNCH loudly — real mode never silently demotes to sim.
 

@@ -121,6 +121,10 @@ class VisionStation:
         # vision-server restart kills the SESSION, and detections are
         # per-session state on the server.
         self._detections: dict = {}
+        # Set on any failed client call; the next call re-establishes
+        # the session before running. NOT the sim gate — a dead session
+        # in real mode keeps failing loudly, never demotes to sim.
+        self._dead = False
 
         # Simulation gate. True when explicitly authored OR when there's
         # nothing to connect to (no ip/serial). Real-mode failures must
@@ -187,16 +191,23 @@ class VisionStation:
         print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
 
     def _call(self, thunk):
-        """Run a client call; on failure, ONE reconnect-and-retry. This
-        is what makes a mid-run vision-server restart survivable: the
-        failing action pauses the workflow, the operator restarts the
-        server, and the next attempt reconnects instead of failing
-        forever (relaunching the workspace was the only cure before)."""
+        """Client calls fail HONESTLY — the operation is never retried
+        behind the action's back. A failure marks the session dead and
+        surfaces (capture -> ok False -> CameraUnavailableError -> the
+        workflow pauses per the device's critical flag, same as any
+        other device). The NEXT call — the action re-running after the
+        operator fixed the server and hit Resume — re-establishes the
+        session first and runs once. Session re-establishment is
+        transport-level plumbing (MQTT's own reconnect is the same
+        class); RECOVERY stays explicit: pause, operator, Resume."""
+        if self._dead:
+            self._reconnect()
+            self._dead = False
         try:
             return thunk()
         except Exception:
-            self._reconnect()
-            return thunk()
+            self._dead = True
+            raise
 
     def add_detection(self, name: str, **detection_preset: Any) -> bool:
         """Register a detection on the server. Returns False in simulation."""
