@@ -137,7 +137,26 @@ on the VISION server's machine, resolved against its cwd; use absolute:
 Don't point saves at `/tmp` (tmpfs — gone on reboot), and remember a
 save per cycle is an SD write per cycle at production volume.
 
-## 6. Operational notes
+## 6. Failure semantics — what survives what
+
+- **A camera dies (USB)**: the vision server's per-camera AutoRecover
+  reconnects it when it reappears; health flows to the device bus, the
+  card goes red in the GUI. Detections fail while it's down — capture
+  returns ``ok: False`` → ``detect()`` raises ``CameraUnavailableError``
+  → the BT leaf fails → the workflow PAUSES for the operator. Resume
+  retries the action.
+- **The vision server dies**: the workspace does NOT crash. The next
+  detect/capture fails the same way and the workflow pauses. When the
+  operator restarts the server, the next attempt (Resume) transparently
+  RECONNECTS: the client re-dials, re-adds the camera (the pool is
+  idempotent) and re-registers every detection this station authored —
+  detections are per-session state on the server and die with it, so
+  the station replays them from its own record. No workspace relaunch
+  needed.
+- **Launch-time**: an unreachable server (or a bad serial) fails the
+  LAUNCH loudly — real mode never silently demotes to sim.
+
+## 7. Operational notes
 
 - Viewer/GUI socket blips during a Capture are benign: the JPEG encode
   burst can delay a keepalive; the client auto-reconnects within a

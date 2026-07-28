@@ -117,6 +117,10 @@ class VisionStation:
         for k in ("ip", "port", "serial_number"):
             self.camera_cfg.pop(k, None)
         self.label = label
+        # Detections this station authored — replayed on reconnect: a
+        # vision-server restart kills the SESSION, and detections are
+        # per-session state on the server.
+        self._detections: dict = {}
 
         # Simulation gate. True when explicitly authored OR when there's
         # nothing to connect to (no ip/serial). Real-mode failures must
@@ -167,16 +171,44 @@ class VisionStation:
 
     # ── Detection lifecycle ────────────────────────────────────────────
 
+    def _reconnect(self) -> None:
+        """One reconnect attempt after a dead socket. The restart that
+        killed the socket also killed the server-side session, so this
+        re-adds the camera (idempotent on the pool) and re-registers
+        every detection this station authored."""
+        from dorna_vision_client import VisionClient
+        self._safe_close()
+        self._client = VisionClient()
+        self._client.connect(host=self.ip, port=self.port)
+        self._client.camera_add(serial_number=self.serial_number, **self.camera_cfg)
+        for name, preset in self._detections.items():
+            self._client.detection_add(
+                name=name, camera_serial_number=self.serial_number, **preset)
+        print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
+
+    def _call(self, thunk):
+        """Run a client call; on failure, ONE reconnect-and-retry. This
+        is what makes a mid-run vision-server restart survivable: the
+        failing action pauses the workflow, the operator restarts the
+        server, and the next attempt reconnects instead of failing
+        forever (relaunching the workspace was the only cure before)."""
+        try:
+            return thunk()
+        except Exception:
+            self._reconnect()
+            return thunk()
+
     def add_detection(self, name: str, **detection_preset: Any) -> bool:
         """Register a detection on the server. Returns False in simulation."""
         if self.simulation or self._client is None:
             return False
+        self._detections[name] = dict(detection_preset)
         try:
-            self._client.detection_add(
+            self._call(lambda: self._client.detection_add(
                 name=name,
                 camera_serial_number=self.serial_number,
                 **detection_preset,
-            )
+            ))
             return True
         except Exception as ex:
             print(f"[{self.label}] detection_add({name}) failed: {ex}")
@@ -208,7 +240,7 @@ class VisionStation:
         if self.simulation or self._client is None:
             return {"name": name, "ok": True, "ts": None, "has_joint": False, "sim": True}
         try:
-            return self._client.detection_capture(name, data=data)
+            return self._call(lambda: self._client.detection_capture(name, data=data))
         except Exception as ex:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
 
@@ -258,7 +290,7 @@ class VisionStation:
             use_last = True   # run on the just-captured frame
 
         try:
-            return self._client.detection_run(name, use_last=use_last, **kwargs)
+            return self._call(lambda: self._client.detection_run(name, use_last=use_last, **kwargs))
         except Exception as ex:
             print(f"[{self.label}] detect({name}) failed: {ex}")
             return sim_return
