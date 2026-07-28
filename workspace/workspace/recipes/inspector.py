@@ -4,6 +4,20 @@ from workspace.recipes.recipe import Recipe
 
 
 """
+ONE inspector for fixed AND robot-mounted cameras. Fixed vs mobile is a
+SCENE property — where the camera solid sits in the kinematic tree —
+not a class split. Every capture/detect states the lens's world pose at
+imaging time (``camera_in_world``): the workspace is the single
+kinematic authority, and the vision server never models the robot.
+
+Contract (vision-guide §5):
+  * capture at REST — ``present()`` ends checkpointed; mobile detection
+    while moving is not supported.
+  * the component's ``lens`` anchor is calibrated — every world result
+    inherits its accuracy. A component without a ``lens`` anchor (the
+    core camera, until its mount is calibrated) passes no pose and the
+    server falls back to its configured ``base_in_world``.
+
 detection_preset shape: a dict configuring a single Detection on the vision server.
 Example:
     detection_preset = {
@@ -14,7 +28,7 @@ Example:
     }
 
 Full reference — camera wiring, intrinsics, save_img paths, USB
-fallback: docs/vision-guide.md.
+fallback, ROI boxes: docs/vision-guide.md.
 
 The recipe registers this preset under a single name (default "default") on the
 vision server during construction; ``detect()`` runs it via RPC. Robot motions
@@ -23,14 +37,14 @@ in simulation, so workflow timing stays the same with or without hardware.
 """
 
 
-class FixedInspector(Recipe):
+class Inspector(Recipe):
     DEFAULTS = dict(
         base_distance=200,
         # ref joints
         target_anchor="place",
     )
 
-    def __init__(self, workspace, core, component, detection_preset=None,
+    def __init__(self, workspace, core, component=None, detection_preset=None,
                  detection_name="default", **kwargs):
         # prm
         prm = deepcopy(Recipe.DEFAULTS)
@@ -44,18 +58,36 @@ class FixedInspector(Recipe):
             **prm,
         )
 
+        # component=None -> the robot-mounted core camera (no station,
+        # no motion surface); detections run through core's vision.
+        self._vision_owner = component if component is not None else core
+
         # Cache the name we registered the detection under so detect() can
-        # find it. Each FixedInspector instance owns one named detection.
+        # find it. Each Inspector instance owns one named detection.
         self.detection_name = detection_name
         if detection_preset:
-            self.component.add_detection(self.detection_name, **detection_preset)
+            self._vision_owner.add_detection(self.detection_name, **detection_preset)
+
+    def _camera_in_world(self):
+        """The lens's world pose at THIS moment — the per-capture frame.
+        None when the owning component has no calibrated ``lens`` anchor
+        yet (the server then uses its configured base_in_world)."""
+        try:
+            return self._vision_owner.lens_pose()
+        except Exception:
+            return None
 
     def present(self, approach=True, padding=50, soft_approach=False, load_anchor="center", **kwargs):
         """Position the held item in front of the inspector's camera.
 
         Robot motion runs whether or not we're in simulation — only
         ``detect()`` returns canned values when the component is offline.
+        Requires a station component (raises on the core-camera form —
+        the robot-mounted camera moves with the arm instead).
         """
+        if self.component is None:
+            raise ValueError("present() needs a station component — the "
+                             "robot-mounted camera moves with the arm instead")
         return self.place(
             anchor="place",
             solid_name="body",
@@ -73,57 +105,25 @@ class FixedInspector(Recipe):
 
     def capture(self, data=None) -> dict:
         """Capture a fresh atomic snapshot for this inspector's detection
-        (camera frames + robot joints) and cache it server-side.
-
-        Pair with ``detect(use_last=True)`` when you want one frame to
-        feed multiple detections, or when you need to branch on capture
-        success before running the (potentially expensive) detection.
-
-        ``detect()`` already calls capture internally by default — only
-        use this when you specifically want the two-step.
+        and cache it server-side, stamped with the lens's current world
+        pose. Pair with ``detect(use_last=True)`` for one-frame/many-
+        detections flows; ``detect()`` already captures by default.
         """
-        return self.component.capture(self.detection_name, data=data)
+        return self._vision_owner.capture(
+            self.detection_name, data=data,
+            camera_in_world=self._camera_in_world())
 
     def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. By default, captures a fresh
-        frame first and runs on it; raises ``CameraUnavailableError``
-        on capture failure (so the recipe never operates on stale data).
-
-        Returns ``sim_return`` (default True) in simulation — device-guide
-        §17. Pass ``use_last=True`` to skip capture and run on the
-        previously-cached frame; pass ``data=...`` (None / dict /
-        server-local path) to bypass the live camera for replay/testing.
+        frame first (stamped with the lens's current world pose) and
+        runs on it; raises ``CameraUnavailableError`` on capture
+        failure. Returns ``sim_return`` (default True) in simulation —
+        device-guide §17. ``use_last=True`` skips capture; ``data=...``
+        bypasses the live camera for replay/testing.
         """
-        return self.component.detect(self.detection_name, sim_return=sim_return, **kwargs)
+        kwargs.setdefault("camera_in_world", self._camera_in_world())
+        return self._vision_owner.detect(self.detection_name, sim_return=sim_return, **kwargs)
 
     def rotate(self, rotation=90, **kwargs):
         """Rotate j5 — used to flip the camera angle."""
         return super().rotate(rotation=rotation, joint="j5", **kwargs)
-
-
-class MobileInspector:
-    """Robot-mounted camera. Detection runs on the vision server using the
-    Core's camera; this recipe is a thin wrapper around ``core.detect()``.
-
-    Same simulation semantics as FixedInspector: the recipe stays usable when
-    the vision server is unreachable, ``detect()`` just returns canned values.
-    """
-
-    def __init__(self, workspace, core, detection_preset=None,
-                 detection_name="default", **kwargs):
-        self.workspace = workspace
-        self.core = core
-        self.detection_name = detection_name
-        if detection_preset:
-            self.core.add_detection(self.detection_name, **detection_preset)
-
-    def capture(self, data=None) -> dict:
-        """Capture a fresh atomic snapshot. See FixedInspector.capture."""
-        return self.core.capture(self.detection_name, data=data)
-
-    def detect(self, sim_return=True, **kwargs):
-        """Run the inspector's detection. Default: captures-then-runs on
-        a fresh frame; raises ``CameraUnavailableError`` on capture
-        failure. See FixedInspector.detect for the full contract.
-        """
-        return self.core.detect(self.detection_name, sim_return=sim_return, **kwargs)

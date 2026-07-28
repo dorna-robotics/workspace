@@ -225,7 +225,7 @@ class VisionStation:
             print(f"[{self.label}] detection_add({name}) failed: {ex}")
             return False
 
-    def capture(self, name: str, data: Any = None) -> dict:
+    def capture(self, name: str, data: Any = None, camera_in_world: Any = None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
         for ``name`` and cache it on the server.
 
@@ -251,7 +251,8 @@ class VisionStation:
         if self.simulation or self._client is None:
             return {"name": name, "ok": True, "ts": None, "has_joint": False, "sim": True}
         try:
-            return self._call(lambda: self._client.detection_capture(name, data=data))
+            return self._call(lambda: self._client.detection_capture(
+                name, data=data, camera_in_world=camera_in_world))
         except Exception as ex:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
 
@@ -261,6 +262,7 @@ class VisionStation:
         sim_return: Any = [],
         use_last: bool = False,
         data: Any = None,
+        camera_in_world: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Run the named detection. Returns ``sim_return`` in simulation.
@@ -295,7 +297,7 @@ class VisionStation:
             # errors fall through the legacy log-and-return-sim_return
             # path so non-camera failures (bad model, missing key) keep
             # the existing recipe contract.
-            snap = self.capture(name, data=data)
+            snap = self.capture(name, data=data, camera_in_world=camera_in_world)
             if not snap.get("ok"):
                 raise CameraUnavailableError(name, snap.get("msg", "capture failed"))
             use_last = True   # run on the just-captured frame

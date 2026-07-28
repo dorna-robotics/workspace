@@ -6,7 +6,7 @@ from workspace.components.barcode_reader.ds457_driver import ALL_SYMBOLOGIES
 
 """Barcode-reader recipe — present the held item to the scanner, then read.
 
-Same shape as ``FixedInspector`` (workspace/recipes/inspector.py): a thin
+Same shape as ``Inspector`` (workspace/recipes/inspector.py): a thin
 ``Recipe`` over a fixed bench station the robot presents a tube to. The
 robot motion (``present()``) always runs; only the device read
 (``scan()`` / ``code()``) returns canned values in simulation, so workflow

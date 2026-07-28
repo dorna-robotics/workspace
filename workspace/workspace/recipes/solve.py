@@ -383,7 +383,7 @@ _DEFAULT_CLASS_PATHS = {
     "Shaker":         "workspace.recipes.shaker.Shaker",
     "Scale":          "workspace.recipes.scale.Scale",
     "Feeder":         "workspace.recipes.feeder.Feeder",
-    "FixedInspector": "workspace.recipes.inspector.FixedInspector",
+    "Inspector": "workspace.recipes.inspector.Inspector",
     "BarcodeReader":  "workspace.recipes.barcode_reader.BarcodeReader",
     "Printer":        "workspace.recipes.printer.Printer",
 }

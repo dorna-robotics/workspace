@@ -1500,13 +1500,13 @@ class Core:
         ``operator_actions``). Mirrors ``Inspection.operator_detect``."""
         return self.detect(self._default_detection)
 
-    def capture(self, name: str, data=None) -> dict:
+    def capture(self, name: str, data=None, camera_in_world=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
         and cache it server-side. Pair with ``detect(name, use_last=True)``
         so detection runs only on a confirmed-fresh frame. See
         VisionStation.capture for the reply shape and ``data`` modes.
         """
-        return self.vision.capture(name, data=data)
+        return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
 
     def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame

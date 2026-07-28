@@ -26,9 +26,9 @@ feeder:
       - [-1, {}]
       - [1, {}]
 
-# MobileInspector — uses the robot's mounted camera via core.detect().
+# Core-camera Inspector — the robot's mounted camera (no component).
 inspector:
-  class: workspace.recipes.inspector.MobileInspector
+  class: workspace.recipes.inspector.Inspector
   kwargs: {detection_preset: {}}
 
 cap_holder:

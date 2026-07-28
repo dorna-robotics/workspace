@@ -112,15 +112,22 @@ class Inspection:
         self._default_detection = name
         return self.vision.add_detection(name, **detection_preset)
 
-    def capture(self, name: str, data=None) -> dict:
+    def lens_pose(self) -> list:
+        """The lens's CURRENT world pose (xyzabc) — the per-capture
+        frame the Inspector passes so detections report in scene
+        coordinates. Fixed vs robot-mounted is purely where this
+        component sits in the kinematic tree."""
+        return [float(v) for v in self.assembly["body"].pose("lens")]
+
+    def capture(self, name: str, data=None, camera_in_world=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
         and cache it server-side. Pair with ``detect(name, use_last=True)``
         so detection runs only on a confirmed-fresh frame. See
         VisionStation.capture for the reply shape and ``data`` modes.
         """
-        return self.vision.capture(name, data=data)
+        return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
 
-    def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
+    def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, camera_in_world=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame
         first and runs on it (raises ``CameraUnavailableError`` on
         capture failure). Pass ``use_last=True`` to skip capture and
@@ -129,7 +136,8 @@ class Inspection:
         ``sim_return`` (device-guide §17) — the detection result returned
         in sim (default ``[]``); pass detections to inject them.
         """
-        return self.vision.detect(name, sim_return=sim_return, use_last=use_last, data=data, **kwargs)
+        return self.vision.detect(name, sim_return=sim_return, use_last=use_last, data=data,
+                                  camera_in_world=camera_in_world, **kwargs)
 
     # ── Operator action (workspace.components.operator_actions) ────────
 

@@ -113,12 +113,30 @@ REQUEST (recover retries the best mode after a re-plug);
 and the intrinsics scaling read. A card showing usb 2.x with a small
 image means: fix the cable/port, everything re-negotiates up on its own.
 
-## 5. Inspector recipes and detections
+## 5. The Inspector and detections
 
-`FixedInspector.present()` positions the held item at the station
-(`soft_approach=False` — presenting is not an insertion), `detect()`
-captures a fresh frame and runs the named detection via RPC (canned
-`sim_return` in simulation, so workflow timing is sim-identical).
+ONE recipe class — `Inspector` — for fixed and robot-mounted cameras.
+Fixed vs mobile is a SCENE property (where the camera solid sits in
+the kinematic tree), not a class split:
+
+- **station form** (`component: inspection_...`): `present()` positions
+  the held item (`soft_approach=False` — presenting is not an
+  insertion), then `detect()`.
+- **core-camera form** (no `component:` key): detections through the
+  robot-mounted camera; no motion surface (`present()` raises — the
+  arm IS the positioning).
+
+Every capture/detect states the lens's world pose at imaging time
+(`camera_in_world`) — the workspace is the single kinematic authority
+and the vision server never models the robot. The contract this rests
+on: **capture at rest** (`present()` ends checkpointed; detection
+while moving is unsupported), and **a calibrated `lens` anchor** on
+the owning component — without one (the core camera, until its mount
+is calibrated) no pose is sent and the server falls back to its
+configured `base_in_world`.
+
+`detect()` runs the named detection via RPC (canned `sim_return` in
+simulation, so workflow timing is sim-identical).
 
 `detection_preset` shape — see the example in
 `workspace/recipes/inspector.py`. Author it by building the detection in
