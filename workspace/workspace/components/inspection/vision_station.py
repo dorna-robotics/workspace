@@ -106,6 +106,13 @@ class VisionStation:
         self.port = int(port)
         self.serial_number = serial_number
         self.camera_cfg = dict(camera_cfg or {})
+        # ip / port / serial_number identify the server and camera and
+        # travel as explicit args — everything ELSE forwards to
+        # camera_add. Leaving them in the dict made camera_add() see
+        # serial_number twice (TypeError) as soon as a scene authored
+        # a real camera_cfg.
+        for k in ("ip", "port", "serial_number"):
+            self.camera_cfg.pop(k, None)
         self.label = label
 
         # Simulation gate. True when explicitly authored OR when there's
