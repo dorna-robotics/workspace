@@ -13,6 +13,16 @@ Example:
         "display":   {"label": 0, "save_img": False, "save_img_roi": False},
     }
 
+display.save_img / save_img_roi — where detection frames land (paths are
+on the VISION server's machine, resolved against its cwd; use absolute):
+    False / 0          no saving.
+    True / 1           timestamped jpgs in "output/" under the server cwd.
+    "/some/folder/"    trailing slash (or an existing dir): auto-created,
+                       default <timestamp>.jpg / roi_<timestamp>.jpg
+                       naming inside it — per-detection history.
+    "/some/file.jpg"   that exact file, OVERWRITTEN every detection
+                       ("always the latest"); its parent dir must exist.
+
 The recipe registers this preset under a single name (default "default") on the
 vision server during construction; ``detect()`` runs it via RPC. Robot motions
 (``present()``, ``rotate()``) always run — only the detection call short-circuits
