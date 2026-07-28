@@ -137,6 +137,24 @@ on the VISION server's machine, resolved against its cwd; use absolute:
 Don't point saves at `/tmp` (tmpfs — gone on reboot), and remember a
 save per cycle is an SD write per cycle at production volume.
 
+**ROI from a 3D box.** The preset's `roi.corners` is always a pixel
+polygon `[[u, v], ...]`; `detection_box_corners(name, box, K=None,
+D=None)` generates it from bench geometry:
+
+    box = [x, y, z,  a, b, c,  w, d, h]
+
+`x y z` — center of the box's BOTTOM plane; `a b c` — rotation VECTOR
+(axis-angle, degrees — the dorna2 xyzabc convention, not Euler);
+`w d h` — extents along the box's local axes, and the SIGN of `h`
+picks the side: `> 0` rises from the bottom plane, `< 0` hangs below
+it. The box lives in the frame `base_in_world` defines — the same
+frame detections report in. Fixed camera with `base_in_world =
+[0,0,0,0,0,0]` (the default): world IS the camera's own frame,
+centered between its lenses; set `base_in_world` to the lens pose to
+work in bench coordinates. The call returns the convex hull of the 8
+projected corners, paste-ready as `corners` — regenerate on camera
+moves instead of re-drawing in the GUI.
+
 ## 6. Failure semantics — what survives what
 
 - **A camera dies (USB)**: the vision server's per-camera AutoRecover
