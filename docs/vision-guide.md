@@ -155,9 +155,16 @@ on the VISION server's machine, resolved against its cwd; use absolute:
 Don't point saves at `/tmp` (tmpfs — gone on reboot), and remember a
 save per cycle is an SD write per cycle at production volume.
 
-**ROI from a 3D box.** The preset's `roi.corners` is always a pixel
-polygon `[[u, v], ...]`; `detection_box_corners(name, box, K=None,
-D=None)` generates it from bench geometry:
+**ROI from a 3D box.** Two forms. The static one: `roi.corners`, a
+pixel polygon `[[u, v], ...]` — `detection_box_corners(name, box)`
+generates it once (fixed camera / fixed look pose; omit K/D — the
+last capture's true intrinsics are used). The live one: put the box
+straight into the roi — `roi: {box: [...], offset: 10}` — and the
+server projects it to corners PER FRAME using that frame's
+`camera_in_world`: a moving camera needs no ROI re-authoring, the box
+is bench geometry and pixels are derived. `corners` wins when both
+are present. Per-call `detect(roi={"box": ...})` also works (and
+becomes the detection's roi from then on). Box format:
 
     box = [x, y, z,  a, b, c,  w, d, h]
 
