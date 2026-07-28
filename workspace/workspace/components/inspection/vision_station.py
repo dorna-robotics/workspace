@@ -104,7 +104,10 @@ class VisionStation:
     ):
         self.ip = ip
         self.port = int(port)
-        self.serial_number = serial_number
+        # str() at the boundary: an unquoted serial in scene yaml
+        # arrives as an int, and the server pool keys by STRING — the
+        # mismatch reads as a 10 s connect timeout, not a type error.
+        self.serial_number = str(serial_number) if serial_number else ""
         self.camera_cfg = dict(camera_cfg or {})
         # ip / port / serial_number identify the server and camera and
         # travel as explicit args — everything ELSE forwards to
