@@ -203,7 +203,7 @@ class VisionStation:
         try:
             port = int(os.environ.get("DEVICE_MQTT_PORT", "1883"))
             self._client.bus_connect(port=port)
-            print(f"🚌 {self.label}: unit publishes device state to this host's bus")
+            print(f"[bus] {self.label}: unit publishes device state to this host")
         except Exception as ex:
             print(f"[{self.label}] bus handshake unavailable ({type(ex).__name__}) — "
                   f"unit keeps its own DEVICE_MQTT_HOST; set it manually for bus health")
