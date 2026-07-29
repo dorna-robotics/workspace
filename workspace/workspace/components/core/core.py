@@ -220,6 +220,9 @@ class Core:
         # ------- camera
         self.has_camera = prm["has_camera"]
         self.camera_cfg = prm["camera_cfg"]
+        # lens anchor is stamped on the first chain sync (update_pose) —
+        # it needs solids + kinematics in one consistent joint state
+        self._lens_anchor_set = False
         
         # planner
         self.planner = Planner()
@@ -590,7 +593,38 @@ class Core:
             child_anchor="input",
             offset=[0, 0, 0, 0, 0, joints[5]],
         )
-    
+
+        # One-time: stamp the camera lens frame as a visible anchor.
+        if self.has_camera and not self._lens_anchor_set:
+            self._lens_anchor_set = True
+            try:
+                self._set_lens_anchor(joints)
+            except Exception as ex:
+                print(f"[camera] {self.name}: could not stamp the lens anchor ({ex})")
+
+    def _set_lens_anchor(self, joints):
+        """Stamp the lens frame as a ``lens`` anchor on robot_A5 — the
+        rigid body that carries the camholder bracket (it rotates with
+        joints[4], not the flange's joints[5]) — so the viewer shows the
+        robot camera like any other anchor (click the robot). The offset
+        is joint-invariant; it is computed ONCE from a self-consistent
+        snapshot: the same ``joints`` this update_pose call just applied
+        to the solid chain, run through the same math as lens_pose()."""
+        mount = (self.camera_cfg or {}).get("mount") or {}
+        T = mount.get("T")
+        if not T:
+            return
+        ej = [float(v) for v in (mount.get("ej") or [])] + [0.0] * 6
+        j6 = [float(v) + ej[i] for i, v in enumerate(joints[0:6])]
+        kin = self.dorna.kinematic
+        T5 = np.array(kin.Ti_r_world(i=5, joint=j6))
+        T6 = np.array(kin.Ti_r_world(i=6, joint=j6))
+        T_a5 = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_A5.pose())))
+        T_fl = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_flange.pose())))
+        T_mount = np.array(dorna2.pose.xyzabc_to_T(np.array([float(v) for v in T])))
+        T_off = np.linalg.inv(T_a5) @ T_fl @ np.linalg.inv(T6) @ T5 @ T_mount
+        self.robot_A5.anchors["lens"] = [float(v) for v in dorna2.pose.T_to_xyzabc(T_off)]
+
 
 
     # ── Operator-callable primitives ──────────────────────────────────
