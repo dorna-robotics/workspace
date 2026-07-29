@@ -1501,17 +1501,35 @@ class Core:
         return self.detect(self._default_detection)
 
     def lens_pose(self) -> list:
-        """The robot-mounted lens's CURRENT world pose: the calibrated
-        camera-mount transform (camera_cfg["mount"]["T"], lens in the
-        flange frame) composed on the live flange. This is the
-        per-capture frame the Inspector passes (camera_in_world) — with
-        it the robot camera joins the same contract as fixed stations
-        (vision-guide §5)."""
+        """The robot-mounted lens's CURRENT world pose — the per-capture
+        frame the Inspector passes (camera_in_world), putting the robot
+        camera on the same contract as fixed stations (vision-guide §5).
+
+        The camholder bracket rides the J4 housing — dorna2 chain frame
+        5, which does NOT rotate with J5 — and camera_cfg["mount"]["T"]
+        is the lens in THAT frame (the same convention the vision
+        server's own chain uses: Ti_r_world(i=5) @ mount.T). Composing
+        it on the flange (frame 6) would be wrong by the wrist rotation
+        AND the fixed frame-5→6 link offset. The flange solid tracks
+        frame 6 in world, so:
+
+            lens_world = flange_world · Ti6⁻¹ · Ti5 · T_mount
+
+        mount["ej"] holds per-joint calibration offsets, added to the
+        joint readings exactly as the vision server does."""
         mount = (self.camera_cfg or {}).get("mount") or {}
         T = mount.get("T")
         if not T:
             raise RuntimeError("core camera_cfg has no mount.T — cannot state the lens pose")
-        return [float(v) for v in self.robot_flange.pose(offset=[float(v) for v in T])]
+        ej = [float(v) for v in (mount.get("ej") or [])] + [0.0] * 6
+        joint = [float(v) + ej[i] for i, v in enumerate(self.robot_api.joint()[0:6])]
+        kin = self.dorna.kinematic
+        T5 = np.array(kin.Ti_r_world(i=5, joint=joint))
+        T6 = np.array(kin.Ti_r_world(i=6, joint=joint))
+        T_flange_world = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_flange.pose())))
+        T_mount = np.array(dorna2.pose.xyzabc_to_T(np.array([float(v) for v in T])))
+        T_lens = T_flange_world @ np.linalg.inv(T6) @ T5 @ T_mount
+        return [float(v) for v in dorna2.pose.T_to_xyzabc(T_lens)]
 
     def capture(self, name: str, data=None, camera_in_world=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)

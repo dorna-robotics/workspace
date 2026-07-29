@@ -130,10 +130,14 @@ Every capture/detect states the lens's world pose at imaging time
 (`camera_in_world`) — the workspace is the single kinematic authority
 and the vision server never models the robot. The contract this rests
 on: **capture at rest** (`present()` ends checkpointed; detection
-while moving is unsupported), and **a calibrated `lens` anchor** on
-the owning component — without one (the core camera, until its mount
-is calibrated) no pose is sent and the server falls back to its
-configured `base_in_world`.
+while moving is unsupported), and **a known lens frame** on the owning
+component. For fixed stations that is the component's calibrated
+`lens` anchor. For the core camera it is `camera_cfg["mount"]["T"]` —
+the lens in the **J4-camholder frame** (dorna2 chain frame 5, which
+does NOT rotate with J5), the same convention the vision server's own
+robot chain uses; `Core.lens_pose()` composes it on the live chain
+per capture. It is NOT a flange offset — composing it on the flange
+is wrong by the wrist rotation plus the fixed frame-5→6 link offset.
 
 `detect()` runs the named detection via RPC (canned `sim_return` in
 simulation, so workflow timing is sim-identical).
