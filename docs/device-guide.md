@@ -498,6 +498,22 @@ var `DEVICE_BUS_DETECT_CONFLICT=0` or pass `detect_conflict=False` to
 
 ---
 
+### Broker topology (fleet rule)
+
+The bus is MQTT, and BOTH sides resolve the broker from
+``DEVICE_MQTT_HOST`` / ``DEVICE_MQTT_PORT`` (default ``localhost:1883``
+— workspace `devices/orchestrator.py`, vision `server/mqtt_relay.py`,
+and every future device daemon). The default is fine on a single-Pi
+bench and WRONG the moment devices live on another machine: each host
+gets its own isolated bus and every remote device shows "not on bus"
+while working perfectly over its own protocol.
+
+Fleet rule: run ONE broker, bound to the LAN (`0.0.0.0`), on a stable
+host, and set ``DEVICE_MQTT_HOST=<broker-ip>`` on every workspace host
+and every device unit. The runtime server warns after 20 s when a
+declared real device never publishes — that warning names this exact
+misconfiguration.
+
 ## 9. ID convention
 
 Every device id is `<kind>:<natural-id>`. Both halves are required.

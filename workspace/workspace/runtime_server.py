@@ -721,6 +721,16 @@ def _status_payload(rt, workspace) -> dict:
     return out
 
 
+# Declared-but-never-published watchdog: a claimed-real device that
+# stays off the bus is almost always broker topology — every machine
+# defaulting DEVICE_MQTT_HOST=localhost gives each host its own
+# isolated bus — not a dead device. Say so in the panel and once,
+# loudly, in the log (device-guide §8).
+_NOT_ON_BUS_WARN_SEC = 20.0
+_not_on_bus_since: dict = {}
+_not_on_bus_warned: set = set()
+
+
 def _project_devices_snapshot(workspace) -> list[dict]:
     """List of device snapshots this project claims, in stable id order.
     Each entry is a dict from MQTTOrchestrator.list_devices() (id, state,
@@ -740,11 +750,27 @@ def _project_devices_snapshot(workspace) -> list[dict]:
         if did in bus:
             entry = dict(bus[did])
             entry["claimed"] = True
+            _not_on_bus_since.pop(did, None)
+            _not_on_bus_warned.discard(did)
         else:
+            first = _not_on_bus_since.setdefault(did, time.time())
+            msg = "not on bus"
+            if (claims.get(did, "real") == "real"
+                    and time.time() - first > _NOT_ON_BUS_WARN_SEC):
+                msg = ("not on bus — no publisher seen; check "
+                       "DEVICE_MQTT_HOST / broker reachability")
+                if did not in _not_on_bus_warned:
+                    _not_on_bus_warned.add(did)
+                    print(f"[devices] {did}: declared by this project but no bus "
+                          f"publisher after {int(_NOT_ON_BUS_WARN_SEC)}s — likely "
+                          f"broker topology: DEVICE_MQTT_HOST defaults to localhost "
+                          f"on every machine, so each host gets an ISOLATED bus. "
+                          f"Point every workspace host and device unit at ONE "
+                          f"shared broker (device-guide §8).")
             entry = {
                 "id": did,
                 "state": "down",
-                "msg": "not on bus",
+                "msg": msg,
                 "kind": did.split(":", 1)[0] if ":" in did else "device",
                 "critical": True,
                 "sim": False,
