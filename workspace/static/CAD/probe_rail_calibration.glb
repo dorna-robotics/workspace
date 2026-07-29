@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 113514
+      "count": 113208
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36375,
+      "count": 36306,
       "max": [
         3.249725341796875,
         15,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36375
+      "count": 36306
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 102083
+      "byteLength": 101935
     }
   ],
   "buffers": [
     {
       "uri": "probe_rail_calibration.glb.bin",
-      "byteLength": 102083
+      "byteLength": 101935
     }
   ],
   "materials": [

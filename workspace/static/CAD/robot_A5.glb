@@ -7,75 +7,105 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5772
+      "count": 53040
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2083,
+      "count": 17447,
       "max": [
-        7.124837875366211,
-        2.8999996185302734,
-        8.699921607971191
+        2.200207471847534,
+        8.700011253356934,
+        6.500002384185791
       ],
       "min": [
-        -2.1999990940093994,
-        -6.5,
-        -0.22499999403953552
+        -2.200002908706665,
+        0,
+        -2.900002956390381
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2083
+      "count": 17447
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5125,
+      "count": 305880
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 96013,
+      "max": [
+        2.319889545440674,
+        8.435288429260254,
+        2.4501121044158936
+      ],
+      "min": [
+        -2.320003032684326,
+        0.3000830113887787,
+        -2.4499800205230713
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 96013
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 822
+      "count": 4254
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 283,
+      "count": 1392,
       "max": [
-        2.320235013961792,
-        2.5000410079956055,
-        8.819999694824219
+        2.3202309608459473,
+        8.819999694824219,
+        2.500037908554077
       ],
       "min": [
-        -2.3199989795684814,
-        -2.5,
-        0.10000000149011612
+        -2.320003032684326,
+        0.10000000149011612,
+        -2.5000030994415283
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 283
+      "count": 1392
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6039
+      "byteLength": 52126
     },
     {
       "buffer": 0,
-      "byteOffset": 6039,
-      "byteLength": 848
+      "byteOffset": 52126,
+      "byteLength": 300586
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 352712,
+      "byteLength": 4294
     }
   ],
   "buffers": [
     {
       "uri": "robot_A5.glb.bin",
-      "byteLength": 6887
+      "byteLength": 357006
     }
   ],
   "materials": [
     {
-      "name": "Powder_Coat_(Black).002",
+      "name": "Paint_-_Enamel_Glossy_(Black)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -93,13 +123,31 @@
       }
     },
     {
-      "name": "Powder_Coat_(White).001",
+      "name": "Opaque(160,160,160)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Opaque(245,245,246)",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9607840180397034,
+          0.9607840180397034,
           0.9647060036659241,
-          0.9647060036659241,
-          0.9529410004615784,
           1
         ],
         "metallicFactor": 0
@@ -113,7 +161,7 @@
   ],
   "meshes": [
     {
-      "name": "A5 v6",
+      "name": "Robot A5",
       "primitives": [
         {
           "attributes": {
@@ -150,13 +198,37 @@
               }
             }
           }
+        },
+        {
+          "attributes": {
+            "POSITION": 7,
+            "NORMAL": 8
+          },
+          "mode": 4,
+          "material": 2,
+          "indices": 6,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 2,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
         }
       ]
     }
   ],
   "nodes": [
     {
-      "name": "A5 v6",
+      "name": "Robot A5",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
       "scale": [
         10,
         10,

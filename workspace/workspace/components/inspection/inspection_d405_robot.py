@@ -4,13 +4,11 @@ from workspace.components.factory import register
 from workspace.components.inspection.inspection import Inspection
 
 
-# Robot-mounted inspection camera. Geometry is identical to
-# inspection_horizontal (same anchors, same two collision boxes) — the only
-# difference is that this one has NO GLB, so it draws nothing in the viewer.
-# Fixed vs robot-mounted is purely where the component sits in the kinematic
-# tree (see Inspection.lens_pose), so no code differs: attach it to the
-# flange in scene yaml instead of a fixture plate and lens_pose() follows
-# the arm.
+# Robot-mounted inspection camera (D405 + camholder bracket), drawn from
+# its own lightweight GLB. Auto-added by Core when has_camera is true and
+# bolted to robot_A5's camholder holes — fixed vs robot-mounted is purely
+# where the component sits in the kinematic tree (see Inspection.lens_pose),
+# so no code differs from a fixed station.
 @register("inspection_d405_robot")
 class InspectionD405Robot(Inspection):
     DEFAULTS = dict(
@@ -38,9 +36,3 @@ class InspectionD405Robot(Inspection):
 
         # init
         super().__init__(name=name, workspace=workspace, **prm)
-
-        # no CAD model: solid type "" makes the viewer keep an empty
-        # group (meshUrl None) — pose/anchors stay live, nothing drawn,
-        # no GLB fetch. The component type above stays for the factory.
-        for solid in self.assembly.values():
-            solid.type = ""

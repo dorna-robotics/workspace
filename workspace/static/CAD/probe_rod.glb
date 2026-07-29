@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4650
+      "count": 4644
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1512,
+      "count": 1511,
       "max": [
         2.14994478225708,
         5.900000095367432,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1512
+      "count": 1511
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4950
+      "byteLength": 4979
     }
   ],
   "buffers": [
     {
       "uri": "probe_rod.glb.bin",
-      "byteLength": 4950
+      "byteLength": 4979
     }
   ],
   "materials": [

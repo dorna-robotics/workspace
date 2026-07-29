@@ -7,81 +7,81 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5220
+      "count": 3432
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1712,
+      "count": 1128,
       "max": [
-        3.25,
-        0.5998901128768921,
-        3.25
+        2.3249757289886475,
+        2.700122117996216,
+        2.3249998092651367
       ],
       "min": [
-        -3.25,
+        -2.325000047683716,
         0,
-        -3.25
+        -6.324999809265137
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1712
+      "count": 1128
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 9822
+      "count": 324
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3323,
+      "count": 112,
       "max": [
-        1.4501097202301025,
-        11,
-        1.4501097202301025
+        2.109999895095825,
+        2.699968099594116,
+        2.109999895095825
       ],
       "min": [
-        -1.4500000476837158,
-        0.5,
-        -1.4500000476837158
+        -2.109999895095825,
+        0.4000000059604645,
+        -2.109999895095825
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3323
+      "count": 112
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4292
+      "byteLength": 3459
     },
     {
       "buffer": 0,
-      "byteOffset": 4292,
-      "byteLength": 7335
+      "byteOffset": 3459,
+      "byteLength": 483
     }
   ],
   "buffers": [
     {
-      "uri": "rotating_cylinder_mkb1630_housing.glb.bin",
-      "byteLength": 11627
+      "uri": "inspection_d405_robot.glb.bin",
+      "byteLength": 3942
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.004",
+      "name": "Paint_-_Metal_Flake_(Black)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.6274510025978088,
-          0.6274510025978088,
-          0.6274510025978088,
+          0.09803900122642517,
+          0.09803900122642517,
+          0.09803900122642517,
           1
         ],
         "metallicFactor": 0
@@ -93,13 +93,13 @@
       }
     },
     {
-      "name": "Opaque(216,216,216)",
+      "name": "Paint_-_Enamel_Glossy_(Dark_Grey)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.8470590114593506,
-          0.8470590114593506,
-          0.8470590114593506,
+          0.34902000427246094,
+          0.34902000427246094,
+          0.34902000427246094,
           1
         ],
         "metallicFactor": 0
@@ -113,7 +113,7 @@
   ],
   "meshes": [
     {
-      "name": "probe cylider",
+      "name": "camera_robot_origin",
       "primitives": [
         {
           "attributes": {
@@ -156,7 +156,7 @@
   ],
   "nodes": [
     {
-      "name": "probe cylider",
+      "name": "camera_robot_origin",
       "rotation": [
         0.7071068286895752,
         0,

@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3798
+      "count": 3792
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1249,
+      "count": 1248,
       "max": [
         1.2197589874267578,
         2.7500104904174805,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1249
+      "count": 1248
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 82518
+      "count": 80196
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 25007,
+      "count": 24520,
       "max": [
         2.149625778198242,
         12.651000022888184,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 25007
+      "count": 24520
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4442
+      "byteLength": 4449
     },
     {
       "buffer": 0,
-      "byteOffset": 4442,
-      "byteLength": 79723
+      "byteOffset": 4449,
+      "byteLength": 77577
     }
   ],
   "buffers": [
     {
       "uri": "gripper_suction.glb.bin",
-      "byteLength": 84165
+      "byteLength": 82026
     }
   ],
   "materials": [
