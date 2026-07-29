@@ -109,12 +109,12 @@ class VisionStation:
         # mismatch reads as a 10 s connect timeout, not a type error.
         self.serial_number = str(serial_number) if serial_number else ""
         self.camera_cfg = dict(camera_cfg or {})
-        # ip / port / serial_number identify the server and camera and
-        # travel as explicit args — everything ELSE forwards to
-        # camera_add. Leaving them in the dict made camera_add() see
-        # serial_number twice (TypeError) as soon as a scene authored
-        # a real camera_cfg.
-        for k in ("ip", "port", "serial_number"):
+        # ip / port / serial_number identify the server and camera;
+        # mount is WORKSPACE-side kinematics (the lens-on-flange
+        # transform Core.lens_pose composes for camera_in_world) —
+        # none of them are Camera.connect parameters. Everything else
+        # forwards to camera_add.
+        for k in ("ip", "port", "serial_number", "mount"):
             self.camera_cfg.pop(k, None)
         self.label = label
         # Detections this station authored — replayed on reconnect: a

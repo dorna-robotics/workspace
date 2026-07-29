@@ -1500,6 +1500,19 @@ class Core:
         ``operator_actions``). Mirrors ``Inspection.operator_detect``."""
         return self.detect(self._default_detection)
 
+    def lens_pose(self) -> list:
+        """The robot-mounted lens's CURRENT world pose: the calibrated
+        camera-mount transform (camera_cfg["mount"]["T"], lens in the
+        flange frame) composed on the live flange. This is the
+        per-capture frame the Inspector passes (camera_in_world) — with
+        it the robot camera joins the same contract as fixed stations
+        (vision-guide §5)."""
+        mount = (self.camera_cfg or {}).get("mount") or {}
+        T = mount.get("T")
+        if not T:
+            raise RuntimeError("core camera_cfg has no mount.T — cannot state the lens pose")
+        return [float(v) for v in self.robot_flange.pose(offset=[float(v) for v in T])]
+
     def capture(self, name: str, data=None, camera_in_world=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
         and cache it server-side. Pair with ``detect(name, use_last=True)``
