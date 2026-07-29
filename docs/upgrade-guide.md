@@ -40,3 +40,13 @@ sudo python3 gui/server.py
 | `pip install` fails | Make sure you include `--break-system-packages`. |
 | License error after update | Your license should survive updates. If not, contact Dorna support. |
 | Import errors | Run `sudo pip3 install --break-system-packages -e .` again from the `workspace/` folder. |
+
+## Device-bus broker (site fleet rule)
+
+Every upgrade, run once on the workspace host:
+
+    sudo python3 -m workspace.devices.provision_broker
+
+Idempotent. Makes this host the site's device-bus broker (LAN
+listener); device units point themselves here automatically via the
+``bus_connect`` handshake (device-guide §8).

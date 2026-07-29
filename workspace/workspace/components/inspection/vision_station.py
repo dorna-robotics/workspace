@@ -163,6 +163,7 @@ class VisionStation:
                 f"✅ {self.label} connected @ {self.ip}:{self.port} "
                 f"(camera {self.serial_number})"
             )
+            self._bus_connect()
         except Exception as ex:
             self._safe_close()
             self._client = None
@@ -188,7 +189,24 @@ class VisionStation:
         for name, preset in self._detections.items():
             self._client.detection_add(
                 name=name, camera_serial_number=self.serial_number, **preset)
+        self._bus_connect()
         print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
+
+    def _bus_connect(self) -> None:
+        """Site-bus handshake (device-guide §8): tell the unit to
+        publish device state to THIS host's broker. Host is implicit —
+        the server uses the caller's address — so a fleet of benches
+        needs zero per-machine bus config. Best-effort: an older
+        server without the command keeps its own DEVICE_MQTT_HOST and
+        we say so once instead of failing the launch."""
+        import os
+        try:
+            port = int(os.environ.get("DEVICE_MQTT_PORT", "1883"))
+            self._client.bus_connect(port=port)
+            print(f"🚌 {self.label}: unit publishes device state to this host's bus")
+        except Exception as ex:
+            print(f"[{self.label}] bus handshake unavailable ({type(ex).__name__}) — "
+                  f"unit keeps its own DEVICE_MQTT_HOST; set it manually for bus health")
 
     def _call(self, thunk):
         """Client calls fail HONESTLY — the operation is never retried

@@ -508,11 +508,19 @@ bench and WRONG the moment devices live on another machine: each host
 gets its own isolated bus and every remote device shows "not on bus"
 while working perfectly over its own protocol.
 
-Fleet rule: run ONE broker, bound to the LAN (`0.0.0.0`), on a stable
-host, and set ``DEVICE_MQTT_HOST=<broker-ip>`` on every workspace host
-and every device unit. The runtime server warns after 20 s when a
-declared real device never publishes — that warning names this exact
-misconfiguration.
+Fleet rule — zero per-site configuration:
+
+1. **The workspace host IS the site's broker.** Provision it once per
+   upgrade: ``sudo python3 -m workspace.devices.provision_broker``
+   (idempotent — writes the LAN listener conf and restarts mosquitto).
+2. **Device units learn the broker dynamically.** On every connect the
+   workspace sends ``bus_connect`` to the unit, which re-points its
+   device-state publishing at the caller's own address — no env vars,
+   no per-machine setup. ``DEVICE_MQTT_HOST`` remains as a manual
+   override (and the fallback for units predating the handshake).
+
+The runtime server warns after 20 s when a declared real device never
+publishes — that warning names this exact misconfiguration.
 
 ## 9. ID convention
 
