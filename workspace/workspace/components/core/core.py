@@ -150,11 +150,6 @@ class Core:
             "filter": {},
             "exposure": None,
             "native_res": None,
-            "mount": {
-                "type": "dorna_ta_j4_1",
-                "T": [46.5174596, 32.0776662, -4.24772615, -0.27547989, 0.27691881, 89.6939516],
-                "ej": [0, 0, 0, 0, 0, 0, 0, 0]
-            },
         },
         has_tool_changer = True,
         # I/O signals fired on attach/detach. Each list-of-lists is a
@@ -220,9 +215,6 @@ class Core:
         # ------- camera
         self.has_camera = prm["has_camera"]
         self.camera_cfg = prm["camera_cfg"]
-        # lens anchor is stamped on the first chain sync (update_pose) —
-        # it needs solids + kinematics in one consistent joint state
-        self._lens_anchor_set = False
         
         # planner
         self.planner = Planner()
@@ -316,24 +308,15 @@ class Core:
             print(f"🔵 {self.name} simulation api enabled")
 
 
-        # Robot-mounted camera. Like Inspection, the actual Camera lives on
-        # the vision server; we just hold a VisionClient to it via the
-        # shared VisionStation helper. has_camera=False keeps it in
-        # simulation regardless of ip/serial.
-        from workspace.components.inspection.vision_station import VisionStation
-        self.vision = VisionStation(
-            ip=self.camera_cfg.get("ip", "127.0.0.1"),
-            port=int(self.camera_cfg.get("port", 80)),
-            serial_number=self.camera_cfg.get("serial_number", ""),
-            camera_cfg=self.camera_cfg,
-            simulation=(not self.has_camera) or bool(prm["simulation"]),
-            label=f"{self.name} camera",
-        )
+        # Robot-mounted camera: wired at the END of __init__ (the
+        # camera is a real component bolted to robot_A5, so the robot
+        # solids must exist first). See the block after the rail attach.
+        self.camera = None
         # Detection the operator "Detect" button runs (last registered;
         # mirrors Inspection). Only surfaced when has_camera (see
         # operator_actions).
         self._default_detection = "default"
-        
+
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
 
@@ -449,6 +432,8 @@ class Core:
         robot_A5_anchors = {
             "input": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "output": [0, 29, 60.0, -90, 0, 0.0],
+            "hole_0": [10, -24, 21, -69.282032, 69.282032, 69.282032],
+            "hole_1": [-10, -24, 21, -69.282032, 69.282032, 69.282032],
         }
         robot_flange_anchors = {
             "input": [0.0, 0.0, -6.0, 0.0, 0.0, 0.0],
@@ -495,8 +480,43 @@ class Core:
             if att:
                 self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor=att.get("rail_carriage_anchor","hole_1"), child_anchor=att.get("robot_A0_anchor","hole_0"), offset=att.get("offset",[0, 0, 0, 0, 0, 0]))
             else:
-                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="hole_0", offset=[0, 0, 0, 0, 0, 0])   
- 
+                self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="hole_0", offset=[0, 0, 0, 0, 0, 0])
+
+        # ------- robot-mounted camera: a real component, not core math.
+        # has_camera=true auto-adds an inspection_d405_robot component
+        # ("<core>_camera") bolted to robot_A5's camholder holes. ITS
+        # ``lens`` anchor states the camera frame (the scene tree is the
+        # kinematic truth — see lens_pose) and IT owns the VisionStation;
+        # core proxies capture/detect through it so recipes keep pointing
+        # at the core. has_camera=false keeps a detached sim station so
+        # the surface stays callable.
+        from workspace.components.inspection.vision_station import VisionStation
+        if self.has_camera:
+            from workspace.components import factory as comp_factory
+            cam_name = f"{self.name}_camera"
+            self.camera = comp_factory.create_component(cam_name, {
+                "type": "inspection_d405_robot",
+                "simulation": bool(prm["simulation"]),
+                "camera_cfg": deepcopy(self.camera_cfg),
+            }, workspace)
+            workspace.components[cam_name] = self.camera
+            self.camera.assembly["body"].attach_to(
+                parent=self.robot_A5,
+                parent_anchor="hole_0",
+                child_anchor="hole_0",
+                offset=[0, 0, 0, 0, 0, 0],
+            )
+            self.vision = self.camera.vision
+        else:
+            self.vision = VisionStation(
+                ip=self.camera_cfg.get("ip", "127.0.0.1"),
+                port=int(self.camera_cfg.get("port", 80)),
+                serial_number=self.camera_cfg.get("serial_number", ""),
+                camera_cfg=self.camera_cfg,
+                simulation=True,
+                label=f"{self.name} camera",
+            )
+
 
     # -------------------------------------------------------------------------
     # live joint update
@@ -593,37 +613,6 @@ class Core:
             child_anchor="input",
             offset=[0, 0, 0, 0, 0, joints[5]],
         )
-
-        # One-time: stamp the camera lens frame as a visible anchor.
-        if self.has_camera and not self._lens_anchor_set:
-            self._lens_anchor_set = True
-            try:
-                self._set_lens_anchor(joints)
-            except Exception as ex:
-                print(f"[camera] {self.name}: could not stamp the lens anchor ({ex})")
-
-    def _set_lens_anchor(self, joints):
-        """Stamp the lens frame as a ``lens`` anchor on robot_A5 — the
-        rigid body that carries the camholder bracket (it rotates with
-        joints[4], not the flange's joints[5]) — so the viewer shows the
-        robot camera like any other anchor (click the robot). The offset
-        is joint-invariant; it is computed ONCE from a self-consistent
-        snapshot: the same ``joints`` this update_pose call just applied
-        to the solid chain, run through the same math as lens_pose()."""
-        mount = (self.camera_cfg or {}).get("mount") or {}
-        T = mount.get("T")
-        if not T:
-            return
-        ej = [float(v) for v in (mount.get("ej") or [])] + [0.0] * 6
-        j6 = [float(v) + ej[i] for i, v in enumerate(joints[0:6])]
-        kin = self.dorna.kinematic
-        T5 = np.array(kin.Ti_r_world(i=5, joint=j6))
-        T6 = np.array(kin.Ti_r_world(i=6, joint=j6))
-        T_a5 = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_A5.pose())))
-        T_fl = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_flange.pose())))
-        T_mount = np.array(dorna2.pose.xyzabc_to_T(np.array([float(v) for v in T])))
-        T_off = np.linalg.inv(T_a5) @ T_fl @ np.linalg.inv(T6) @ T5 @ T_mount
-        self.robot_A5.anchors["lens"] = [float(v) for v in dorna2.pose.T_to_xyzabc(T_off)]
 
 
 
@@ -1539,31 +1528,14 @@ class Core:
         frame the Inspector passes (camera_in_world), putting the robot
         camera on the same contract as fixed stations (vision-guide §5).
 
-        The camholder bracket rides the J4 housing — dorna2 chain frame
-        5, which does NOT rotate with J5 — and camera_cfg["mount"]["T"]
-        is the lens in THAT frame (the same convention the vision
-        server's own chain uses: Ti_r_world(i=5) @ mount.T). Composing
-        it on the flange (frame 6) would be wrong by the wrist rotation
-        AND the fixed frame-5→6 link offset. The flange solid tracks
-        frame 6 in world, so:
-
-            lens_world = flange_world · Ti6⁻¹ · Ti5 · T_mount
-
-        mount["ej"] holds per-joint calibration offsets, added to the
-        joint readings exactly as the vision server does."""
-        mount = (self.camera_cfg or {}).get("mount") or {}
-        T = mount.get("T")
-        if not T:
-            raise RuntimeError("core camera_cfg has no mount.T — cannot state the lens pose")
-        ej = [float(v) for v in (mount.get("ej") or [])] + [0.0] * 6
-        joint = [float(v) + ej[i] for i, v in enumerate(self.robot_api.joint()[0:6])]
-        kin = self.dorna.kinematic
-        T5 = np.array(kin.Ti_r_world(i=5, joint=joint))
-        T6 = np.array(kin.Ti_r_world(i=6, joint=joint))
-        T_flange_world = np.array(dorna2.pose.xyzabc_to_T(np.array(self.robot_flange.pose())))
-        T_mount = np.array(dorna2.pose.xyzabc_to_T(np.array([float(v) for v in T])))
-        T_lens = T_flange_world @ np.linalg.inv(T6) @ T5 @ T_mount
-        return [float(v) for v in dorna2.pose.T_to_xyzabc(T_lens)]
+        Read straight from the auto-added camera component's ``lens``
+        anchor: the component is bolted to robot_A5's camholder holes,
+        so the scene tree — not kinematic math — is the single source
+        of the lens frame."""
+        if self.camera is None:
+            raise RuntimeError(
+                f"{self.name} has no camera component (has_camera is false) — no lens pose")
+        return self.camera.lens_pose()
 
     def capture(self, name: str, data=None, camera_in_world=None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
@@ -1590,17 +1562,13 @@ class Core:
     def device_ids(self) -> list[str]:
         """Device ids this component depends on. See docs/device-guide.md §9.
 
-        Includes the robot itself (Core wraps dorna2.Dorna in a
-        RobotStation that publishes connection + alarm state to the
-        device bus) and the robot-mounted camera, when present. Both
-        appear in the Devices panel for any project that uses Core.
+        The robot only — the robot-mounted camera is its own component
+        (``<core>_camera``, auto-added when has_camera) and reports the
+        camera device itself.
         """
         ids: list[str] = []
         if self.robot_ip:
             ids.append(f"dorna:{self.robot_ip}")
-        sn = self.vision.serial_number
-        if sn:
-            ids.append(f"camera:{sn}")
         return ids
 
     def device_claim(self, device_id: str) -> str:
@@ -1608,15 +1576,12 @@ class Core:
 
         For the robot, Core IS the bus publisher and the bus already
         carries the sim flag; this method just mirrors that for any
-        consumer that prefers the workspace-side surface. For the
-        robot-mounted camera, the vision server owns the bus entry —
-        this method is the only place workspace sim intent surfaces.
+        consumer that prefers the workspace-side surface. The robot-
+        mounted camera claims through its own component
+        (``<core>_camera`` — see Inspection.device_claim).
         """
         if self.robot_ip and device_id == f"dorna:{self.robot_ip}":
             return "sim" if self._simulation_mode else "real"
-        sn = self.vision.serial_number
-        if sn and device_id == f"camera:{sn}":
-            return "sim" if self.vision.simulation else "real"
         return "real"
 
     def lmove_points(self, joint_from, joint_to, tool_pose=[0, 0, 0, 0, 0, 0], step=5.0):
