@@ -157,7 +157,11 @@ class Display:
                     mesh_id = getattr(solid, "type", getattr(solid, "name", solid_name))
 
                     item = {
-                        "meshUrl": f"/static/CAD/{mesh_id}.glb",
+                        # type "" is the sanctioned "no CAD model" — the
+                        # viewer keeps an empty group (pose/anchors/collision
+                        # still live) and never fetches a mesh, so a virtual
+                        # solid renders nothing instead of 404ing.
+                        "meshUrl": f"/static/CAD/{mesh_id}.glb" if mesh_id else None,
                         "pose": pose,
                         "visible": True,
                         "componentName": comp_name,
