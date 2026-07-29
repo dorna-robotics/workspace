@@ -42,6 +42,11 @@ STATIC_DIR = os.path.join(WS_ROOT, "static")
 if WS_ROOT not in sys.path:
     sys.path.insert(0, WS_ROOT)
 
+from workspace.version import version as _ws_version
+
+# Once per process — the landing page stamps it into its footer.
+_WS_VERSION = _ws_version()
+
 # ---------------------------------------------------------------------------
 # Import orchestrator
 # ---------------------------------------------------------------------------
@@ -143,6 +148,14 @@ LANDING_HTML = """<!DOCTYPE html>
     .cards[hidden] { display: none; }
     .cards-label svg { transition: transform 0.15s; }
     .cards-label.open svg { transform: rotate(90deg); }
+    /* Quiet version line under the cards — same as the vision home. */
+    .landing-footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.02em;
+    }
 
     /* Per-card accent colors */
     .card-orchestrator .card-icon { background: rgba(10,132,255,0.12); color: var(--accent); }
@@ -247,6 +260,7 @@ LANDING_HTML = """<!DOCTYPE html>
           devApply(devCards.hidden);
         });
       </script>
+      <div class="landing-footer">v__WS_VERSION__</div>
     </div>
   </main>
   <script src="/vendor/theme.js"></script>
@@ -258,7 +272,7 @@ LANDING_HTML = """<!DOCTYPE html>
 class LandingHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/html")
-        self.write(LANDING_HTML)
+        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION))
 
 
 class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
