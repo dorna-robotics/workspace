@@ -274,10 +274,25 @@ The XS has a liquid autofocus lens. Three modes, all runtime-settable
 | `{"mode": "manual", "position": N}` | pin the lens (N in the device range, ~0..255) |
 
 **Region focus** — the GUI workflow: Cameras → expand a frame →
-**Focus region** → drag a rectangle → the server sweeps the lens
-(coarse → fine → micro, scoring Laplacian sharpness inside the rect,
-~20 s) and pins the sharpest position. The settled position comes back
-in the toast — persist it, don't re-sweep in production.
+**Focus region** → drag a rectangle → the server finds the sharpest
+lens position for that rect and pins it. Under the hood it prefers the
+SDK's native AF-AOI (~1-2 s) and falls back to the lens sweep (coarse
+→ fine → micro, Laplacian sharpness, ~10-20 s); the **XS Rev 1.1
+lacks the AF-AOI capability** (verified), so on it region focus is
+always the sweep. The settled position comes back in the toast —
+persist it, don't re-sweep in production.
+
+**Exposure & white balance** — the XS ISP owns both, and the platform
+reports what it verified on hardware instead of pretending:
+
+- Exposure: **auto only** (`camera_exposure` reads the live ms;
+  pinning raises with the explanation). Software brightness lives in
+  the detection's `intensity`.
+- White balance: `camera_wb(auto=True)` or `camera_wb(hold=True)` —
+  hold freezes WB at its current convergence. Bench recipe: let auto
+  settle on the lit scene, then hold — deterministic color from then
+  on (same philosophy as pinning focus). Fixed kelvin/rgb are
+  ISP-rejected on the XS.
 
 **Where focus is authored** (explicit, two levels):
 
