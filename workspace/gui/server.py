@@ -116,6 +116,12 @@ LANDING_HTML = """<!DOCTYPE html>
       grid-template-columns: 1fr;
       gap: 12px;
       text-align: left;
+      /* Fixed card-column width, shared with the vision server's
+         landing (.home-cards) — keep the two values in sync so the
+         two home pages are pixel-identical. */
+      width: 300px;
+      margin-left: auto;
+      margin-right: auto;
     }
     a.card {
       display: flex; align-items: center; gap: 14px;
