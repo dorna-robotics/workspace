@@ -145,6 +145,9 @@ class Core:
             "serial_number": "",
             "ip": "127.0.0.1",
             "port": 80,
+            # Camera driver on the vision server: "d405" (RealSense,
+            # depth+color) or "ueye_xs" (IDS uEye XS, color + autofocus).
+            "type": "d405",
             "stream": {"width":1280, "height":720, "fps":30},
             "mode": "bgrd",
             "filter": {},

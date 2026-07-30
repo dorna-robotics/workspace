@@ -67,8 +67,12 @@ Rules (each one is a bug we actually hit):
   timeout, not a type error. (The platform now str()-coerces at the
   boundary, but explicit strings are the convention.)
 - `serial_number` / `ip` / `port` identify the server + camera; every
-  OTHER key in `camera_cfg` (`stream`, `K`, `D`, `native_res`, `mode`,
-  `exposure`, `filter`) is forwarded to the server's `camera_add`.
+  OTHER key in `camera_cfg` (`type`, `stream`, `K`, `D`, `native_res`,
+  `mode`, `exposure`, `filter`, `focus`) is forwarded to the server's
+  `camera_add`.
+- **`type` picks the driver** on the vision server: `"d405"` (RealSense,
+  depth + color — the default) or `"ueye_xs"` (IDS uEye XS, color +
+  autofocus — §8). Write it explicitly.
 - Sim is authored intent: `simulation: true` (or an empty ip/serial)
   stubs the camera; real-mode failures raise at launch — they never
   silently demote to sim.
@@ -225,3 +229,75 @@ moves instead of re-drawing in the GUI.
   prior launch) already added the camera — pool idempotency.
 - Restart order after code changes: camera/vision repo changes need a
   vision-server restart; GUI-only changes need a browser hard-refresh.
+
+## 8. The uEye XS — color + autofocus
+
+The second camera type. Same pool, same MQTT health adapter, same
+AutoRecover loop, same honest-fail workflow semantics as the D405 —
+`type: "ueye_xs"` in `camera_cfg` is the only authoring difference:
+
+```yaml
+inspection_horizontal_1:
+  type: "inspection_horizontal"
+  simulation: false
+  camera_cfg:
+    serial_number: "4103698214"
+    ip: "10.0.1.40"
+    port: 80
+    type: "ueye_xs"
+```
+
+What differs, stated plainly:
+
+- **Color only.** No depth, no IR — `xyz()` and depth feeds fail
+  loudly. 2D detections (label, barcode, blob, OCR, roi crops, saves)
+  work as-is.
+- **Intrinsics are authored or nominal.** No factory calibration
+  exists; author `K`/`D`/`native_res` for metric work (roi.box
+  projection). Without them the server reports a NOMINAL pinhole,
+  labeled `"nominal"` in `camera_info` and the GUI lightbox.
+- **Prerequisite on the vision unit**: the IDS Software Suite (the
+  `libueye_api` runtime) installed once per unit, plus `pyueye` (the
+  upgrade installs the pip side; the IDS runtime is a manual one-time
+  install from IDS). Without them the camera type simply isn't
+  available — enumeration returns nothing and `camera_add` says why.
+
+### Focus — the lens is a parameter
+
+The XS has a liquid autofocus lens. Three modes, all runtime-settable
+(`camera_focus` over the WS API, or the GUI):
+
+| mode | meaning |
+|---|---|
+| `{"mode": "continuous"}` | SDK continuous AF (connect default) |
+| `{"mode": "once"}` | one-shot AF, then hold |
+| `{"mode": "manual", "position": N}` | pin the lens (N in the device range, ~0..255) |
+
+**Region focus** — the GUI workflow: Cameras → expand a frame →
+**Focus region** → drag a rectangle → the server sweeps the lens
+(coarse → fine → micro, scoring Laplacian sharpness inside the rect,
+~20 s) and pins the sharpest position. The settled position comes back
+in the toast — persist it, don't re-sweep in production.
+
+**Where focus is authored** (explicit, two levels):
+
+- **Camera-level**: `camera_cfg: {focus: {mode: "manual", position: 164}}`
+  — the lens state established at connect.
+- **Per-detection**: `focus` in the detection preset (next to `roi`),
+  applied BEFORE each capture — different detections on the same camera
+  can each pin their own position:
+
+  ```yaml
+  detection_preset:
+    focus: {mode: "manual", position: 164}
+    roi: {...}
+  ```
+
+  Per-call `detect(focus={"mode": "manual", "position": 180})` also
+  works and becomes the detection's pin from then on (same update
+  semantics as roi). A no-change apply is a no-op — pinned focus adds
+  ~0 latency to the cycle.
+
+The region SWEEP is a tuning tool (~20 s, moves the lens through its
+whole range); the PIN is the production artifact. Sweep once in the
+GUI, paste the position into the preset.

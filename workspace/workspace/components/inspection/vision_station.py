@@ -243,7 +243,8 @@ class VisionStation:
             print(f"[{self.label}] detection_add({name}) failed: {ex}")
             return False
 
-    def capture(self, name: str, data: Any = None, camera_in_world: Any = None) -> dict:
+    def capture(self, name: str, data: Any = None, camera_in_world: Any = None,
+                focus: Any = None) -> dict:
         """Capture a fresh atomic snapshot (camera frames + robot joints)
         for ``name`` and cache it on the server.
 
@@ -261,6 +262,11 @@ class VisionStation:
           * ``dict``  — pre-fetched payload (replay / cross-detection).
           * ``str``   — server-local image path (file replay).
 
+        ``focus`` (cameras with a focus surface — uEye XS): applied
+        BEFORE the grab and stored as the detection's pin from then on,
+        e.g. ``{"mode": "manual", "position": 164}``. None = leave the
+        lens wherever the detection's existing pin (or the camera) has it.
+
         In simulation, returns ``{"ok": True, "ts": None, "has_joint": False,
         "sim": True}`` so callers can skip the capture/run split branch.
         Server errors are surfaced as ``{"ok": False, "msg": ...}``; we
@@ -270,7 +276,7 @@ class VisionStation:
             return {"name": name, "ok": True, "ts": None, "has_joint": False, "sim": True}
         try:
             return self._call(lambda: self._client.detection_capture(
-                name, data=data, camera_in_world=camera_in_world))
+                name, data=data, camera_in_world=camera_in_world, focus=focus))
         except Exception as ex:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
 
@@ -281,6 +287,7 @@ class VisionStation:
         use_last: bool = False,
         data: Any = None,
         camera_in_world: Any = None,
+        focus: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Run the named detection. Returns ``sim_return`` in simulation.
@@ -314,8 +321,11 @@ class VisionStation:
             # capture → run pattern. Capture errors raise; detection
             # errors fall through the legacy log-and-return-sim_return
             # path so non-camera failures (bad model, missing key) keep
-            # the existing recipe contract.
-            snap = self.capture(name, data=data, camera_in_world=camera_in_world)
+            # the existing recipe contract. ``focus`` rides the capture
+            # (it must land BEFORE the grab; on use_last the frame
+            # already exists, so it is ignored there).
+            snap = self.capture(name, data=data, camera_in_world=camera_in_world,
+                                focus=focus)
             if not snap.get("ok"):
                 raise CameraUnavailableError(name, snap.get("msg", "capture failed"))
             use_last = True   # run on the just-captured frame
