@@ -498,6 +498,29 @@ class Recipe:
             return self.padding
         return default
 
+    def _exit_clearance(self, exit, padding):
+        """Resolve the ``exit`` knob for pick/place settings:
+
+            True       exit leg at the shared ``padding`` clearance
+            False      no exit leg
+            number>0   exit leg at THAT clearance (mm) — the approach
+                       keeps ``padding``, so a careful high approach can
+                       pair with a short pull-off (e.g. ``exit=10``)
+
+        Returns the clearance in mm, or ``None`` for "no exit leg".
+        ``exit=0`` is rejected: ``0`` conventionally means "off" in this
+        codebase (``save_img`` etc.), so a zero-clearance exit must be
+        impossible to author by accident. The bool check comes first —
+        ``bool`` is a subclass of ``int``."""
+        if isinstance(exit, bool):
+            return padding if exit else None
+        clearance = float(exit)
+        if clearance <= 0:
+            raise RecipeError(
+                f"exit={exit!r} is ambiguous — pass exit=False to skip the "
+                f"exit leg, or a positive clearance in mm")
+        return clearance
+
     def scaled_vaj(self, vaj):
         """Apply ``speed_factor`` as a true time-scale: vel×s, accel×s²,
         jerk×s³.
@@ -1324,7 +1347,14 @@ class Recipe:
             approach: If True, build approach waypoints from padding/gap.
                 Set False for a direct one-shot motion (no planning, no hover).
             actions: List of ``(fn, args, kwargs)`` called during the touch phase.
-            exit: If True, build an exit path retracting to ``padding`` height.
+            exit: True — exit path retracting to ``padding`` clearance;
+                False — no exit path; a NUMBER (mm) — exit path at that
+                clearance instead of ``padding`` (the approach keeps
+                ``padding``), for a short pull-off after a careful
+                approach, e.g. ``exit=10``. Clearance is above
+                ``max(height_load, height_container)``, so a small
+                number still clears a tall stack. ``exit=0`` raises —
+                use False.
             attachment: If True, attach the picked solid to the tool at touch-down.
             trigger_io: If True, build tool/component enable-disable IO lists
                 (``output_approach`` / ``output_touch``).
@@ -1399,8 +1429,9 @@ class Recipe:
                 approach_groups = [[a_pad, contact]]
 
         exit_groups = []
-        if exit:
-            exit_groups = [[pose_offset.pose(offset=[0, 0, max(height_load, height_container) + padding, 0, 0, 0])]]
+        exit_clearance = self._exit_clearance(exit, padding)
+        if exit_clearance is not None:
+            exit_groups = [[pose_offset.pose(offset=[0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0])]]
 
         # IO config
         output_approach = []
@@ -1569,7 +1600,11 @@ class Recipe:
             offset: [x, y, z, a, b, c] applied to the target pose.
             approach: If True, build approach waypoints from padding/gap.
             actions: ``(fn, args, kwargs)`` list run during the touch phase.
-            exit: If True, build an exit path retracting to padding height.
+            exit: True — exit path retracting to ``padding`` clearance;
+                False — no exit path; a NUMBER (mm) — exit path at that
+                clearance instead of ``padding`` (the approach keeps
+                ``padding``), e.g. ``exit=10`` for a short pull-off.
+                ``exit=0`` raises — use False.
             attachment: If True, transfer the held solid to the destination
                 anchor on touch-down (so it "lives" there afterwards).
             trigger_io: If True, build tool/component enable-disable IO lists.
@@ -1647,8 +1682,9 @@ class Recipe:
                 a_gap = dorna_pose.transform_pose([0, 0, height_container + gap, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
 
         exit_groups = []
-        if exit:
-            exit_groups = [[dorna_pose.transform_pose([0, 0, max(height_load, height_container) + padding, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])]]
+        exit_clearance = self._exit_clearance(exit, padding)
+        if exit_clearance is not None:
+            exit_groups = [[dorna_pose.transform_pose([0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])]]
 
         # IO config
         output_approach = []

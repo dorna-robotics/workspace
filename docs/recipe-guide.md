@@ -292,6 +292,12 @@ pass is in the same frame `pick_setting` uses internally.
 - **`approach_path`** — list of waypoints to pre-position the tool
   above/near the target. Built by `pick_setting` from `padding` and
   `gap` (and optionally `soft_approach`).
+- **`exit`** — `True` retracts to `padding` clearance after touch-down
+  (the default); `False` skips the exit leg entirely; a **number** is
+  the exit's own clearance in mm — `pick(..., exit=10)` pairs the
+  normal careful approach with a short 10 mm pull-off. The clearance
+  is measured above `max(height_load, height_container)`, so a small
+  number still clears a tall stack; `exit=0` is rejected (use `False`).
 - **`target_offset`** — the exact final touch-down pose. For
   `pick`/`place` it's the anchor itself (transformed via `pose_offset`).
   For `above`/`stand` it's `None` so the motion stops at the single
