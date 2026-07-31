@@ -18,6 +18,7 @@ from workspace.components.inspection.inspection import Inspection
 class InspectionHorizontalIDS5MP(Inspection):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "lens": [0, -3.75, 25.4, 0, 0, 0],
+                "place": [0, -3.75, 25.4+100, 0, 0, 0], "top": [0, -3.75, 25.4+100, 0, 0, 0],
                 "hole_1": [0, 37.5, 5, 0, 0, 0], "hole_3": [0, 57.5, 5, 0, 0, 0],
                 "hole_0": [0, 22.5, 0, 0, 0, 0], "hole_2": [0, 47.5, 0, 0, 0, 0]}},
         collision_box = {"body":[
