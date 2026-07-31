@@ -1378,8 +1378,10 @@ class Recipe:
                     attach offset (``height_load + tool_tcp_z_offset``).
                 ``tool_tcp_z_offset`` drives the motion identically either
                 way; this flag only changes where the item ends up attached.
-            **kwargs: Any attribute on ``self`` named here is overwritten (e.g.
-                ``speed_factor``, ``motion_type``).
+            **kwargs: Absorbed. Per-call overrides (``has_motion_plan``,
+                ``motion_plan_kwargs``, …) act for that call only — the
+                calling verb forwards them to ``touch``; nothing here
+                ever writes to the recipe instance.
 
         Returns:
             Dict with keys: target_solid, target_anchor, approach
@@ -1388,10 +1390,6 @@ class Recipe:
             sleep, attach, exit_tool, exit_path, output_exit, height_tool,
             height_load, height_container, load_list, tool, pose_offset.
         """
-        for k, v in kwargs.items():
-            if hasattr(self, k):
-                setattr(self, k, v)
-
         padding = self._padding(padding)
         component = component or self.component
 
@@ -1567,7 +1565,7 @@ class Recipe:
         )
         if not pick_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
-        return self.touch(**pick_prm, motion_plan_kwargs=kwargs.get("motion_plan_kwargs", {}))
+        return self.touch(**pick_prm, **kwargs)
 
     def place_setting(
         self,
@@ -1619,15 +1617,12 @@ class Recipe:
             soft_approach: If True, insert a second approach waypoint just
                 above the target for a vertical final descent. Recommended
                 for racks.
-            **kwargs: Any attribute on ``self`` named here is overwritten.
+            **kwargs: Absorbed — see ``pick_setting``; never written to
+                the recipe instance.
 
         Returns:
             Dict consumed by ``touch`` — same shape as ``pick_setting`` output.
         """
-        for k, v in kwargs.items():
-            if hasattr(self, k):
-                setattr(self, k, v)
-
         padding = self._padding(padding)
         component = component or self.component
 
@@ -1823,7 +1818,7 @@ class Recipe:
         )
         if not place_prm:
             raise RecipeError("place_setting failed — could not compute place parameters")
-        return self.touch(**place_prm, motion_plan_kwargs=kwargs.get("motion_plan_kwargs", {}))
+        return self.touch(**place_prm, **kwargs)
 
     # ── High-level motions ──────────────────────────────────────────────────
     def above(self, anchor, solid_name="body", component=None, padding=50, tool_tcp_z_offset=0, tool_tip_z_offset=0, **kwargs):
