@@ -256,11 +256,13 @@ What differs, stated plainly:
   exists; author `K`/`D`/`native_res` for metric work (roi.box
   projection). Without them the server reports a NOMINAL pinhole,
   labeled `"nominal"` in `camera_info` and the GUI lightbox.
-- **Prerequisite on the vision unit**: the IDS Software Suite (the
-  `libueye_api` runtime) installed once per unit, plus `pyueye` (the
-  upgrade installs the pip side; the IDS runtime is a manual one-time
-  install from IDS). Without them the camera type simply isn't
-  available — enumeration returns nothing and `camera_add` says why.
+- **No manual prerequisites**: the normal vision-unit upgrade installs
+  everything — `pyueye` from pip, and the IDS runtime (`libueye_api` +
+  the `ueyeusbdrc` daemon) from debs vendored in the camera repo
+  (`ids/`), version-idempotently. A fresh unit sees the uEye XS after
+  one standard upgrade. Without the runtime the camera type simply
+  isn't available — enumeration returns nothing and `camera_add` says
+  why.
 
 ### Focus — the lens is a parameter
 
