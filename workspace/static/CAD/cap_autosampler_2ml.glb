@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1349
+      "byteLength": 1338
     },
     {
       "buffer": 0,
-      "byteOffset": 1349,
+      "byteOffset": 1338,
       "byteLength": 282
     }
   ],
   "buffers": [
     {
       "uri": "cap_autosampler_2ml.glb.bin",
-      "byteLength": 1631
+      "byteLength": 1620
     }
   ],
   "materials": [

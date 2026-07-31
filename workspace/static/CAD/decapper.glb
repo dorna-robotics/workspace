@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5125,
-      "count": 301212
+      "count": 301056
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 93622,
+      "count": 93583,
       "max": [
         3.5,
         3.400036334991455,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 93622
+      "count": 93583
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 308134
+      "byteLength": 307852
     }
   ],
   "buffers": [
     {
       "uri": "decapper.glb.bin",
-      "byteLength": 308134
+      "byteLength": 307852
     }
   ],
   "materials": [

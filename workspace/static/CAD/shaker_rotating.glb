@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5125,
-      "count": 490836
+      "count": 483012
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 157268,
+      "count": 155335,
       "max": [
         8.300000190734863,
         4.040227890014648,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 157268
+      "count": 155335
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 14838
+      "count": 14658
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4778,
+      "count": 4746,
       "max": [
         1.7200000286102295,
         0.35005250573158264,
@@ -52,7 +52,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4778
+      "count": 4746
     },
     {
       "type": "SCALAR",
@@ -82,12 +82,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 13650
+      "count": 13506
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2563,
+      "count": 2539,
       "max": [
         0.6935486197471619,
         0.27502015233039856,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2563
+      "count": 2539
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 483839
+      "byteLength": 477502
     },
     {
       "buffer": 0,
-      "byteOffset": 483839,
-      "byteLength": 16137
+      "byteOffset": 477502,
+      "byteLength": 16186
     },
     {
       "buffer": 0,
-      "byteOffset": 499976,
-      "byteLength": 9666
+      "byteOffset": 493688,
+      "byteLength": 9647
     },
     {
       "buffer": 0,
-      "byteOffset": 509642,
-      "byteLength": 12241
+      "byteOffset": 503335,
+      "byteLength": 12218
     }
   ],
   "buffers": [
     {
       "uri": "shaker_rotating.glb.bin",
-      "byteLength": 521883
+      "byteLength": 515553
     }
   ],
   "materials": [
