@@ -318,3 +318,18 @@ reports what it verified on hardware instead of pretending:
 The region SWEEP is a tuning tool (~20 s, moves the lens through its
 whole range); the PIN is the production artifact. Sweep once in the
 GUI, paste the position into the preset.
+
+**Frame averaging** (`frames_avg`, camera-agnostic) — deterministic
+noise reduction at capture: N>1 grabs N color frames, registers each
+to the first by sub-pixel translation (phase correlation — absorbs
+the servo/PID jitter of a robot holding position) and averages; noise
+drops ~√N with no AI enhancement, no invented texture. Frames shifted
+more than a few px are dropped (that is real motion, not jitter);
+depth/IR stay single-frame. `frames_avg: 1` = off (the default —
+single grab, zero cost). Author it like `focus`: in the detection
+preset (`frames_avg: 4`) or per call
+(`detection_capture(..., frames_avg=4)`, sticky). Cost is grab time
+(~N/fps) plus alignment compute — measured on a Pi at XS full res:
+~1 s total at N=4 (noise ÷2), ~2.5 s at N=8 (noise ÷2.8). N=4 is the
+recommended station default; N=8 only where the cycle can afford it.
+Use it on stationary stations; leave it off for moving captures.
