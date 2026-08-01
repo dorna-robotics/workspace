@@ -330,6 +330,8 @@ single grab, zero cost). Author it like `focus`: in the detection
 preset (`frames_avg: 4`) or per call
 (`detection_capture(..., frames_avg=4)`, sticky). Cost is grab time
 (~N/fps) plus alignment compute — measured on a Pi at XS full res:
-~1 s total at N=4 (noise ÷2), ~2.5 s at N=8 (noise ÷2.8). N=4 is the
-recommended station default; N=8 only where the cycle can afford it.
-Use it on stationary stations; leave it off for moving captures.
+~1 s total at N=4 (noise ÷2), ~2.5 s at N=8 (noise ÷2.8). The default
+is 1 — averaging never turns itself on; enabling it is always the
+user's explicit call. When opting in, N=4 is the sweet spot (N=8 only
+where the cycle can afford it). Use it on stationary stations; leave
+it off for moving captures.
