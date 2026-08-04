@@ -1102,6 +1102,7 @@ class ProjectBundleHandler(tornado.web.RequestHandler):
                 launch = yaml.safe_load(f) or {}
         except Exception as ex:
             out["launch_error"] = str(ex)
+        out["project_name"] = launch.get("project_name")
         scene = launch.get("scene") or []
         if isinstance(scene, str):
             scene = [scene]

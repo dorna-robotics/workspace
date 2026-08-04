@@ -7240,9 +7240,16 @@ ensureBuilderBar();
     window.__projectBundle = j;
     // Header identity: which project this builder session is editing.
     try {
-      const base = String(j.project).replace(/\/+$/, "").split("/").pop();
+      const base = j.project_name ||
+        String(j.project).replace(/\/+$/, "").split("/").pop();
       const t = document.getElementById("sbHeadTitle");
-      if (t && base) t.innerHTML = 'Scene Builder · <span class="proj">' + base + "</span>";
+      if (t && base) {
+        t.textContent = "Scene Builder · ";
+        const p = document.createElement("span");
+        p.className = "proj";
+        p.textContent = base;
+        t.appendChild(p);
+      }
     } catch (_) {}
     const bs = window.builderState;
     const empty = !bs.components || !Object.keys(bs.components).length;
