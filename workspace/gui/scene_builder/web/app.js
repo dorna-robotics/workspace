@@ -7326,13 +7326,12 @@ ensureBuilderBar();
       const sub = document.createElement("span");
       sub.style.cssText = "font-size:9.5px;font-family:monospace;" +
         "color:var(--muted);line-height:1.25;word-break:break-all;";
-      sub.textContent = r.component ? "solving…" : "—";
+      sub.textContent = "solving…";
       row.appendChild(sub);
       subs[r.name] = { sub, row, recipe: r };
       row.addEventListener("click", () => {
         const sr = (__refSolve || {})[r.name];
         if (sr && sr.ref_joints) __poseCoreAt(sr.ref_joints);
-        else if (!r.component) showToast(r.name + " has no station — no reference pose");
         else if (sr && sr.error) showToast(r.name + ": " + sr.error, "bad");
         else showToast("Still solving — one moment");
       });

@@ -167,6 +167,13 @@ class Recipe:
                 if C != 2:
                     raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
                 self.ref_joints = J
+        else:
+            # No station component (bare robot handle, device-only
+            # recipes): the reference pose is the initial joints — or an
+            # explicit ref_joints pin — so every recipe exposes a
+            # meaningful pose without a solve.
+            src = prm["ref_joints"] if prm["ref_joints"] is not None else prm["initial_joints"]
+            self.ref_joints = [float(v) for v in src]
 
     @property
     def rt(self):
