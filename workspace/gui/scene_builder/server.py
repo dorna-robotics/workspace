@@ -601,6 +601,17 @@ def instantiate_component_blueprint(type_name: str, options: dict, joints=None):
     cfg = {"type": type_name}
     if isinstance(options, dict):
         cfg.update(options)
+    # Builder previews are GEOMETRY-ONLY: force simulation and blank every
+    # connection field (ip / port / serial_number, top-level or inside
+    # camera_cfg) so no component ever dials hardware or waits on a
+    # timeout from a preview. Display truth = the scene; connection truth
+    # stays untouched in the authored yaml.
+    cfg["simulation"] = True
+    for k in ("ip", "port", "serial_number"):
+        cfg.pop(k, None)
+    if isinstance(cfg.get("camera_cfg"), dict):
+        cfg["camera_cfg"] = {k: v for k, v in cfg["camera_cfg"].items()
+                             if k not in ("ip", "port", "serial_number")}
 
     dummy_ws = type("BuilderWS", (), {})()
     dummy_ws.components = {}
