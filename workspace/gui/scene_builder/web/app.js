@@ -7178,6 +7178,14 @@ ensureBuilderBar();
         window.builderState.components[cfgName].__file = srcFile;
       }
 
+      // Collision boxes load HIDDEN by default — they're authored
+      // clearance envelopes, visual clutter in a scene review. They
+      // stay in the objects list, so showing one is a single click.
+      if (cfgVal.type === "collision_box") {
+        try { upsertObject(cfgName, { visible: false }); } catch (_) {}
+        try { socket.emit("upstream_update", { [cfgName]: { visible: false } }); } catch (_) {}
+      }
+
       // For attached objects: store attach in builderState immediately so the
       // fixture_plate auto-drop async code sees it and skips the ground-drop.
       if (cfgVal.attach && window.builderState.components[cfgName]) {
