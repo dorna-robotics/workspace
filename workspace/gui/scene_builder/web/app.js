@@ -7215,6 +7215,110 @@ ensureBuilderBar();
   }
   if (loadBtn) loadBtn.addEventListener("click", () => { fileInput?.click(); });
 
+  // ── Project import: scenes + recipes ─────────────────────────────
+  // The server resolves the active project's launch.yaml exactly the way
+  // main.py does: scene files (contents, merge order) + the recipes
+  // listing. Scenes auto-load ONLY into an empty world — right after the
+  // New Scene reset — never over work in progress.
+  async function __loadProjectBundle() {
+    let j = null;
+    try {
+      j = await fetch(SB_API + "/project_bundle").then(r => r.json());
+    } catch (e) { return; }
+    if (!j || !j.ok || !j.project) return;
+    window.__projectBundle = j;
+    const bs = window.builderState;
+    const empty = !bs.components || !Object.keys(bs.components).length;
+    if (empty && j.scenes && j.scenes.length) {
+      const names = j.scenes.map(s => s.name);
+      bs.files = names.slice();
+      bs.activeFile = names[names.length - 1];
+      for (const s of j.scenes) {
+        if (!s.text) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
+        try {
+          const cfg = __parseSimpleYaml(s.text);
+          if (cfg && Object.keys(cfg).length)
+            await __loadConfigToScene(cfg, { clear: false, file: s.name });
+        } catch (e) { console.error("project scene load", s.name, e); }
+      }
+      try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
+      showToast("Project loaded: " + names.join(" + "));
+    }
+    __renderRecipesList((j.recipes || []));
+  }
+
+  // Recipes panel — one row per recipe from the project's recipes.j2.
+  // Click = solve its reference joints server-side (the same solve its
+  // __init__ runs at project boot; pinned values pass through) and show
+  // them. The solve covers ALL recipes in one subprocess and is cached
+  // by file mtimes, so only the first click waits.
+  let __refSolve = null;
+  function __renderRecipesList(recipes) {
+    const sec = document.getElementById("sbRecipesSection");
+    const list = document.getElementById("sbRecipesList");
+    if (!sec || !list) return;
+    if (!recipes.length) { sec.style.display = "none"; return; }
+    sec.style.display = "";
+    list.innerHTML = "";
+    for (const r of recipes) {
+      const wrap = document.createElement("div");
+      const row = document.createElement("div");
+      row.className = "sb-file-row";
+      row.style.cursor = "pointer";
+      row.title = (r.class || "") + (r.component ? " · " + r.component : "") +
+                  " — click to solve reference joints";
+      const nameEl = document.createElement("span");
+      nameEl.className = "sb-file-name";
+      nameEl.textContent = r.name;
+      row.appendChild(nameEl);
+      const badge = document.createElement("span");
+      badge.className = "sb-file-count";
+      badge.textContent = r.component ? (r.pinned ? "pinned" : "solve") : "—";
+      row.appendChild(badge);
+      const out = document.createElement("div");
+      out.style.cssText = "display:none;padding:2px 8px 8px;font-size:11px;" +
+        "font-family:monospace;color:var(--muted);word-break:break-all;";
+      row.addEventListener("click", async () => {
+        if (!r.component) {
+          showToast(r.name + " has no station component — no reference pose");
+          return;
+        }
+        if (out.style.display === "") { out.style.display = "none"; return; }
+        badge.textContent = "solving…";
+        try {
+          if (!__refSolve) {
+            const res = await fetch(SB_API + "/solve_ref", { method: "POST" })
+              .then(x => x.json());
+            if (!res.ok) throw new Error(res.error || "solve failed");
+            __refSolve = res.recipes || {};
+          }
+          const sr = __refSolve[r.name] || {};
+          if (sr.error) throw new Error(sr.error);
+          if (!sr.ref_joints) {
+            badge.textContent = "—";
+            showToast(r.name + ": no reference joints");
+            return;
+          }
+          badge.textContent = sr.pinned ? "pinned" : "solved";
+          out.textContent = "ref joints  [" +
+            sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+          out.style.display = "";
+        } catch (e) {
+          badge.textContent = "error";
+          out.textContent = String(e.message || e);
+          out.style.display = "";
+        }
+      });
+      wrap.appendChild(row);
+      wrap.appendChild(out);
+      list.appendChild(wrap);
+    }
+  }
+  // After the socket has had a chance to replay any existing world state
+  // (connect -> scene_update), import the project. The empty-world check
+  // inside makes a late/duplicate call harmless.
+  setTimeout(__loadProjectBundle, 1500);
+
   // ── Files list: rows with a radio (active target) + count + delete ──
   const filesListEl = document.getElementById("sbFilesList");
   function renderFilesList() {

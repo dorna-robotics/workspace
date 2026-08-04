@@ -82,6 +82,8 @@ from gui.scene_builder.server import (
     RailsHandler,
     SaveConfigHandler,
     SetProjectHandler,
+    ProjectBundleHandler,
+    SolveRefHandler,
 )
 import socketio as _socketio
 
@@ -342,6 +344,8 @@ def make_app(port=5000):
         (r"/scene-builder/api/rails", RailsHandler),
         (r"/scene-builder/api/save_config", SaveConfigHandler),
         (r"/scene-builder/api/set_project", SetProjectHandler),
+        (r"/scene-builder/api/project_bundle", ProjectBundleHandler),
+        (r"/scene-builder/api/solve_ref", SolveRefHandler),
         (r"/scene-builder/api/config_version", ConfigVersionHandler),
 
         # ---- Scene Builder Socket.IO + GUI (catch-all last) ----

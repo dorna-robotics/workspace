@@ -1058,9 +1058,138 @@ class SetProjectHandler(tornado.web.RequestHandler):
             "components": sorted(_project_component_map.keys()),
         })
 
+class ProjectBundleHandler(tornado.web.RequestHandler):
+    """Everything the builder can import from the active project, resolved
+    the way ``main.py`` resolves it: ``launch.yaml`` names the scene files
+    (served with contents, in merge order) and the recipes file (served as
+    a parsed name/class/component listing). No platform imports — recipes
+    are rendered as text (jinja2) + yaml only; the SOLVE is a separate,
+    subprocess-backed endpoint (/api/solve_ref)."""
+
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+    def get(self):
+        if not _project_path:
+            self.write({"ok": True, "project": None, "scenes": [], "recipes": []})
+            return
+        out = {"ok": True, "project": _project_path, "scenes": [], "recipes": [],
+               "components": sorted(_project_component_map.keys())}
+        launch = {}
+        try:
+            with open(os.path.join(_project_path, "launch.yaml")) as f:
+                launch = yaml.safe_load(f) or {}
+        except Exception as ex:
+            out["launch_error"] = str(ex)
+        scene = launch.get("scene") or []
+        if isinstance(scene, str):
+            scene = [scene]
+        for rel in scene:
+            p = os.path.join(_project_path, rel)
+            try:
+                out["scenes"].append({"name": os.path.basename(rel),
+                                      "path": rel,
+                                      "text": open(p, encoding="utf-8").read()})
+            except Exception as ex:
+                out["scenes"].append({"name": os.path.basename(rel), "path": rel,
+                                      "error": str(ex)})
+        rel = launch.get("recipes", "recipes.j2")
+        rp = os.path.join(_project_path, rel)
+        if os.path.isfile(rp):
+            out["recipes_file"] = rel
+            try:
+                from jinja2 import Template as _T
+                defs = yaml.safe_load(_T(open(rp, encoding="utf-8").read()).render()) or {}
+                for name, spec in defs.items():
+                    kw = (spec or {}).get("kwargs") or {}
+                    out["recipes"].append({
+                        "name": name,
+                        "class": (spec or {}).get("class", ""),
+                        "component": kw.get("component"),
+                        "pinned": kw.get("ref_joints") is not None,
+                    })
+            except Exception as ex:
+                out["recipes_error"] = str(ex)
+        self.write(out)
+
+
+# /api/solve_ref result cache: {project_path: (sig, result_dict)} where sig
+# is the mtime fingerprint of launch.yaml + scene files + recipes file —
+# any edit re-solves, an unchanged project answers instantly.
+_ref_solve_cache = {}
+
+
+def _project_solve_sig(project_dir):
+    files = [os.path.join(project_dir, "launch.yaml")]
+    try:
+        launch = yaml.safe_load(open(files[0])) or {}
+    except Exception:
+        launch = {}
+    scene = launch.get("scene") or []
+    if isinstance(scene, str):
+        scene = [scene]
+    files += [os.path.join(project_dir, p) for p in scene]
+    files.append(os.path.join(project_dir, launch.get("recipes", "recipes.j2")))
+    sig = []
+    for p in files:
+        try:
+            sig.append((p, os.path.getmtime(p)))
+        except OSError:
+            sig.append((p, None))
+    return tuple(sig)
+
+
+class SolveRefHandler(tornado.web.RequestHandler):
+    """Solve every recipe's reference joints for the active project.
+
+    Runs ``ref_solve.py`` in a SUBPROCESS: the builder patches dorna2 and
+    friends with preview stubs, and the solve must run the real platform
+    code (Workspace in simulation + each recipe's own __init__). First
+    call costs seconds; repeats are served from the mtime cache."""
+
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    async def post(self):
+        if not _project_path:
+            self.write({"ok": False, "error": "no project path set"})
+            return
+        sig = _project_solve_sig(_project_path)
+        cached = _ref_solve_cache.get(_project_path)
+        if cached and cached[0] == sig:
+            self.write(cached[1])
+            return
+        script = os.path.join(BASE_DIR, "ref_solve.py")
+
+        def _run():
+            import subprocess
+            r = subprocess.run([sys.executable, script, _project_path],
+                               capture_output=True, text=True, timeout=600,
+                               cwd=PARENT_DIR)
+            line = (r.stdout or "").strip().splitlines()
+            try:
+                return json.loads(line[-1]) if line else {"ok": False, "error": "no output"}
+            except Exception:
+                return {"ok": False,
+                        "error": (r.stderr or r.stdout or "solve failed")[-800:]}
+
+        result = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        if result.get("ok"):
+            _ref_solve_cache[_project_path] = (sig, result)
+        self.write(result)
+
+
 # patch handler into app
 app.add_handlers(r".*$", [(r"/save_config", SaveConfigHandler)])
 app.add_handlers(r".*$", [(r"/api/set_project", SetProjectHandler)])
+app.add_handlers(r".*$", [(r"/api/project_bundle", ProjectBundleHandler)])
+app.add_handlers(r".*$", [(r"/api/solve_ref", SolveRefHandler)])
 
 # catalog endpoint (CAD/*.glb)
 app.add_handlers(r".*$", [(r"/api/catalog", CatalogHandler)])
