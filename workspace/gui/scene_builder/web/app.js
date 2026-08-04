@@ -7419,7 +7419,15 @@ ensureBuilderBar();
     let info = window.__ikInfo;
     if (!info) {
       sub.textContent = "starting IK worker…";
-      const res = await fetch(SB_API + "/recipe_ik").then(x => x.json());
+      let res = null;
+      try {
+        const raw = await fetch(SB_API + "/recipe_ik");
+        if (raw.status === 404) throw new Error("endpoint missing — restart gui/server.py");
+        res = await raw.json();
+      } catch (e) {
+        sub.textContent = "IK worker failed: " + (e.message || e);
+        return;
+      }
       if (!res.ok) { sub.textContent = "IK worker failed: " + (res.error || ""); return; }
       info = window.__ikInfo = res.recipes || {};
     }
