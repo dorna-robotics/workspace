@@ -7247,6 +7247,41 @@ ensureBuilderBar();
     __renderRecipesList((j.recipes || []));
   }
 
+  // Pose the scene's core at the given joints — VIEW-only: re-fetch the
+  // core blueprint at those joints and update the existing object's
+  // solid holders (no socket emit, no scene-state change; a refresh
+  // returns the robot to zeros).
+  async function __poseCoreAt(joints) {
+    const bs = window.builderState;
+    const coreName = Object.keys(bs.components || {})
+      .find(n => (bs.components[n] || {}).type === "core");
+    if (!coreName) { showToast("No core in the scene to pose"); return; }
+    const meta = bs.components[coreName] || {};
+    const options = {};
+    for (const [k, v] of Object.entries(meta)) {
+      if (k !== "type" && !k.startsWith("__")) options[k] = v;
+    }
+    options.joints = joints;
+    try {
+      const js = await fetch(SB_API + "/instantiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "core", options }),
+      }).then(r => r.json());
+      if (!js || !js.ok || !js.blueprint) throw new Error((js && js.error) || "instantiate failed");
+      const meshes = [];
+      for (const s of (js.blueprint.solids || [])) {
+        if (s && s.glb) meshes.push({
+          meshUrl: s.glb, pose: s.pose || [0, 0, 0, 0, 0, 0], solidName: s.solid,
+          collisionLocal: s.collisionLocal || [], boxForGrip: !!s.boxForGrip,
+        });
+      }
+      if (meshes.length && window.upsertObject) window.upsertObject(coreName, { meshes });
+    } catch (e) {
+      showToast("Robot pose failed: " + (e.message || e), "bad");
+    }
+  }
+
   // Recipes panel — one row per recipe from the project's recipes.j2.
   // Click = solve its reference joints server-side (the same solve its
   // __init__ runs at project boot; pinned values pass through) and show
@@ -7303,6 +7338,7 @@ ensureBuilderBar();
           out.textContent = "ref joints  [" +
             sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
           out.style.display = "";
+          await __poseCoreAt(sr.ref_joints);
         } catch (e) {
           badge.textContent = "error";
           out.textContent = String(e.message || e);

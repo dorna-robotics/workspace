@@ -580,7 +580,7 @@ def _compute_world_Ts_for_solids(solids: dict):
     return world
 
 
-def instantiate_component_blueprint(type_name: str, options: dict):
+def instantiate_component_blueprint(type_name: str, options: dict, joints=None):
     """
     Create the component exactly like simulation does (factory.create_component)
     and return a blueprint that the Builder UI can render.
@@ -617,13 +617,19 @@ def instantiate_component_blueprint(type_name: str, options: dict):
     try:
         if hasattr(comp, "update_pose"):
             # Some components (core) only update link poses when robot_api exists.
+            J = ([float(v) for v in joints] + [0.0] * 8)[:8] if joints else [0.0] * 8
             if getattr(comp, "robot_api", None) is None:
                 mod = sys.modules.get(comp.__class__.__module__)
                 SimAPI = getattr(mod, "SimulationAPI", None) if mod else None
                 if SimAPI is not None:
                     comp._simulation_mode = True
-                    comp.robot_api = SimAPI(joints=[0.0] * 8)
-            # run once to build attachment chain at zero joints
+                    comp.robot_api = SimAPI(joints=J)
+            elif joints:
+                try:
+                    comp.robot_api.joints = J
+                except Exception:
+                    pass
+            # run once to build the attachment chain at the requested joints
             comp.update_pose()
     except Exception:
         pass
@@ -927,9 +933,13 @@ class InstantiateHandler(tornado.web.RequestHandler):
         # Never allow builder UI/state to force non-simulation behavior.
         # Some components (notably Core) interpret this flag as "connect to real robot".
         opts.pop("simulation", None)
+        # ``joints`` is a VIEW parameter, not component config: pose the
+        # kinematic chain (core) at these joints instead of zeros — used
+        # by the recipes panel to show a solved reference pose.
+        joints = opts.pop("joints", None)
 
         try:
-            bp = instantiate_component_blueprint(t, opts)
+            bp = instantiate_component_blueprint(t, opts, joints=joints)
             self.write({"ok": True, "blueprint": bp})
         except Exception as e:
             self.set_status(500)
