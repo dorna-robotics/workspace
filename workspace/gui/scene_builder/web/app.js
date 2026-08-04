@@ -3746,6 +3746,27 @@ function __showAllHidden() {
   }
 }
 
+function __applyHiddenGhost(name) {
+  // Idempotent re-apply of the hidden ghost — meshes/lines that stream
+  // in AFTER the hide (async GLB loads, collision-box viz) arrive at
+  // full opacity; call this again to catch them. No state change.
+  if (!__hiddenObjects.has(name)) return;
+  const obj = objectsByName.get(name);
+  if (!obj) return;
+  obj.traverse(o => {
+    if (o.isMesh || o.isLine) {
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of ms) {
+        if (!m) continue;
+        if (m.__origOpacity === undefined) m.__origOpacity = m.opacity;
+        m.transparent = true;
+        m.opacity = 0.08;
+      }
+      if (o.isMesh) pickableMeshes.delete(o);
+    }
+  });
+}
+
 let __lastScrolledSel = null;
 
 function updateObjectList() {
@@ -7249,6 +7270,15 @@ ensureBuilderBar();
           }
         }
       }, 1200);
+      // Re-sweep: ghost whatever streamed in after the hide (GLB
+      // callbacks, procedural box viz) — idempotent, state untouched.
+      for (const delay of [3000, 6000, 12000]) {
+        setTimeout(() => {
+          for (const n of __collisionToHide) {
+            try { __applyHiddenGhost(n); } catch (_) {}
+          }
+        }, delay);
+      }
     }
 
     try { window.__updateConfigPreview(); } catch(e) {}
