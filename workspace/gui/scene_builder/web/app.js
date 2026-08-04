@@ -7677,7 +7677,13 @@ ensureBuilderBar();
       subs[r.name] = { sub, row, resetB, recipe: r };
       row.addEventListener("click", () => {
         const sr = (__refSolve || {})[r.name];
-        if (!r.component) { showToast(r.name + " has no station — nothing to select"); return; }
+        if (!r.component) {
+          // No station → no drag frame, but the pose is still real:
+          // send the robot to its reference (initial joints).
+          if (sr && sr.ref_joints) __poseCoreAt(sr.ref_joints);
+          else showToast(r.name + " has no station and no reference pose");
+          return;
+        }
         if (sr && sr.error) { showToast(r.name + ": " + sr.error, "bad"); return; }
         if (!sr) { showToast("Still solving — one moment"); return; }
         // Selection model: click selects (marker + drag live), click
