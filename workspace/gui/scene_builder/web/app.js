@@ -7447,12 +7447,31 @@ ensureBuilderBar();
       __ikRod(ri.anchor_world[3], ri.anchor_world[4], ri.anchor_world[5]),
       new T.Vector3(1, 1, 1));
     const off = ri.target_offset.slice();
-    const marker = new T.Mesh(new T.SphereGeometry(9, 20, 14),
+    // Marker group: free-drag ball + XYZ axis arrows (anchor frame).
+    const marker = new T.Group();
+    const ball = new T.Mesh(new T.SphereGeometry(9, 20, 14),
       new T.MeshBasicMaterial({ color: 0x4f9cf9, depthTest: false, transparent: true, opacity: 0.9 }));
-    marker.renderOrder = 999;
+    ball.renderOrder = 999;
+    ball.userData.kind = "ball";
+    marker.add(ball);
+    const AX = [[1, 0, 0, 0xe05555], [0, 1, 0, 0x4caf50], [0, 0, 1, 0x4f9cf9]];
+    const aq = __ikRod(ri.anchor_world[3], ri.anchor_world[4], ri.anchor_world[5]);
+    for (const [ax, ay, az, col] of AX) {
+      const dirL = new T.Vector3(ax, ay, az);
+      const dirW = dirL.clone().applyQuaternion(aq);
+      const g = new T.Group();
+      const mat = new T.MeshBasicMaterial({ color: col, depthTest: false, transparent: true, opacity: 0.85 });
+      const shaft = new T.Mesh(new T.CylinderGeometry(2.5, 2.5, 70, 10), mat);
+      shaft.position.y = 44;
+      const tip = new T.Mesh(new T.ConeGeometry(7, 18, 12), mat);
+      tip.position.y = 88;
+      for (const m of [shaft, tip]) { m.renderOrder = 999; m.userData.kind = "axis"; m.userData.axisW = dirW; g.add(m); }
+      g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dirW);
+      marker.add(g);
+    }
     marker.position.copy(new T.Vector3(off[0], off[1], off[2]).applyMatrix4(anchorM));
     t.scene.add(marker);
-    Object.assign(__ikDrag, { recipe: name, info: ri, marker, anchorM, sub, off });
+    Object.assign(__ikDrag, { recipe: name, info: ri, marker, ball, anchorM, sub, off });
     __ikSolve(off);   // seed at the recipe's own offset
 
     const el = t.renderer.domElement;
@@ -7465,25 +7484,45 @@ ensureBuilderBar();
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1,
               -((e.clientY - r.top) / r.height) * 2 + 1);
     }
+    let axisDir = null;   // world-space axis lock, null = free plane drag
+    let axisOrigin = null;
     function down(e) {
       if (!__ikDrag.marker) { cleanup(); return; }
       toNdc(e);
       ray.setFromCamera(ndc, t.camera);
-      if (ray.intersectObject(__ikDrag.marker, false).length) {
-        dragging = true;
-        t.controls.enabled = false;
+      const hits = ray.intersectObject(__ikDrag.marker, true);
+      if (!hits.length) return;
+      dragging = true;
+      t.controls.enabled = false;
+      const kind = hits[0].object.userData.kind;
+      if (kind === "axis") {
+        axisDir = hits[0].object.userData.axisW.clone().normalize();
+        axisOrigin = __ikDrag.marker.position.clone();
+      } else {
+        axisDir = null;
         plane.setFromNormalAndCoplanarPoint(
           t.camera.getWorldDirection(new T.Vector3()).negate(),
           __ikDrag.marker.position);
-        e.stopPropagation();
       }
+      e.stopPropagation();
     }
     function move(e) {
       if (!dragging || !__ikDrag.marker) return;
       toNdc(e);
       ray.setFromCamera(ndc, t.camera);
       const hit = new T.Vector3();
-      if (!ray.ray.intersectPlane(plane, hit)) return;
+      if (axisDir) {
+        // closest point on the locked axis line to the pointer ray
+        const w0 = axisOrigin.clone().sub(ray.ray.origin);
+        const a = 1, b = axisDir.dot(ray.ray.direction), c = 1;
+        const d = axisDir.dot(w0), ee = ray.ray.direction.dot(w0);
+        const denom = a * c - b * b;
+        if (Math.abs(denom) < 1e-6) return;
+        const tt = (b * ee - c * d) / denom;
+        hit.copy(axisOrigin).add(axisDir.clone().multiplyScalar(tt));
+      } else if (!ray.ray.intersectPlane(plane, hit)) {
+        return;
+      }
       __ikDrag.marker.position.copy(hit);
       const local = hit.clone().applyMatrix4(__ikDrag.anchorM.clone().invert());
       const o = [local.x, local.y, local.z, __ikDrag.off[3], __ikDrag.off[4], __ikDrag.off[5]];
@@ -7516,12 +7555,12 @@ ensureBuilderBar();
         .find(n => (bs.components[n] || {}).type === "core");
       if (res.ok && res.solids && coreName && window.__setSolidPosesWorld) {
         window.__setSolidPosesWorld(coreName, res.solids);
-        if (__ikDrag.marker) __ikDrag.marker.material.color.set(0x4f9cf9);
+        if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
         if (__ikDrag.sub) __ikDrag.sub.textContent =
           "offset [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]  →  [" +
           res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
-      } else if (__ikDrag.marker) {
-        __ikDrag.marker.material.color.set(0xe05555);   // unreachable
+      } else if (__ikDrag.ball) {
+        __ikDrag.ball.material.color.set(0xff8a2b);   // unreachable — no IK solution here
       }
     } catch (_) {}
     __ikDrag.busy = false;
