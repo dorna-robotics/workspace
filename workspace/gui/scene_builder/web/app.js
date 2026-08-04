@@ -7220,6 +7220,35 @@ ensureBuilderBar();
   // main.py does: scene files (contents, merge order) + the recipes
   // listing. Scenes auto-load ONLY into an empty world — right after the
   // New Scene reset — never over work in progress.
+  // Small centered pill with a spinner while the project imports —
+  // text updates per scene file, removed when the world is ready.
+  function __projLoadBanner(text) {
+    let el = document.getElementById("sbProjLoading");
+    if (!text) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "sbProjLoading";
+      el.style.cssText = "position:fixed;top:64px;left:50%;transform:translateX(-50%);" +
+        "z-index:40000;background:var(--surface);border:1px solid var(--border2);" +
+        "border-radius:999px;padding:7px 16px;font-size:12px;color:var(--muted);" +
+        "box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;";
+      const spin = document.createElement("span");
+      spin.style.cssText = "width:12px;height:12px;border:2px solid var(--border2);" +
+        "border-top-color:var(--accent,#4f9cf9);border-radius:50%;" +
+        "display:inline-block;animation:sbspin .8s linear infinite;";
+      const st = document.createElement("style");
+      st.textContent = "@keyframes sbspin{to{transform:rotate(360deg)}}";
+      const txt = document.createElement("span");
+      txt.id = "sbProjLoadingText";
+      el.appendChild(st);
+      el.appendChild(spin);
+      el.appendChild(txt);
+      document.body.appendChild(el);
+    }
+    const t = document.getElementById("sbProjLoadingText");
+    if (t) t.textContent = text;
+  }
+
   async function __loadProjectBundle() {
     let j = null;
     try {
@@ -7233,13 +7262,20 @@ ensureBuilderBar();
       const names = j.scenes.map(s => s.name);
       bs.files = names.slice();
       bs.activeFile = names[names.length - 1];
-      for (const s of j.scenes) {
-        if (!s.text) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
-        try {
-          const cfg = __parseSimpleYaml(s.text);
-          if (cfg && Object.keys(cfg).length)
-            await __loadConfigToScene(cfg, { clear: false, file: s.name });
-        } catch (e) { console.error("project scene load", s.name, e); }
+      try {
+        let i = 0;
+        for (const s of j.scenes) {
+          i += 1;
+          __projLoadBanner(`Loading project — ${s.name} (${i}/${j.scenes.length})…`);
+          if (!s.text) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
+          try {
+            const cfg = __parseSimpleYaml(s.text);
+            if (cfg && Object.keys(cfg).length)
+              await __loadConfigToScene(cfg, { clear: false, file: s.name });
+          } catch (e) { console.error("project scene load", s.name, e); }
+        }
+      } finally {
+        __projLoadBanner(null);
       }
       try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
       showToast("Project loaded: " + names.join(" + "));
