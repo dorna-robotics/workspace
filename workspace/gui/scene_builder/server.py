@@ -1217,8 +1217,93 @@ class SolveRefHandler(tornado.web.RequestHandler):
         self.write(result)
 
 
+# ── Persistent IK worker (TCP drag): one subprocess per project ─────
+# Real Workspace + real core.IK live in the worker (the builder's
+# preview stubs must not touch them). Started lazily, restarted when
+# the project or its files change, requests serialized by a lock.
+_ik_worker = {"proc": None, "project": None, "sig": None, "info": None}
+import threading as _threading
+_ik_lock = _threading.Lock()
+
+
+def _ik_worker_ensure():
+    import subprocess
+    sig = _project_solve_sig(_project_path)
+    w = _ik_worker
+    if (w["proc"] is None or w["proc"].poll() is not None
+            or w["project"] != _project_path or w["sig"] != sig):
+        if w["proc"] is not None:
+            try:
+                w["proc"].kill()
+            except Exception:
+                pass
+        script = os.path.join(BASE_DIR, "ik_worker.py")
+        w["proc"] = subprocess.Popen(
+            [sys.executable, script, _project_path],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, cwd=PARENT_DIR)
+        w["project"], w["sig"] = _project_path, sig
+        line = w["proc"].stdout.readline()
+        w["info"] = json.loads(line) if line else {"ready": False}
+    return w
+
+
+class RecipeIKHandler(tornado.web.RequestHandler):
+    """POST {recipe, offset} → the recipe's own core.IK solve (worker).
+    GET → the worker handshake (per-recipe targets + anchor poses)."""
+
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    async def get(self):
+        if not _project_path:
+            self.write({"ok": False, "error": "no project path set"})
+            return
+
+        def _run():
+            with _ik_lock:
+                return _ik_worker_ensure()["info"]
+
+        info = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        self.write({"ok": bool(info and info.get("ready")), **(info or {})})
+
+    async def post(self):
+        if not _project_path:
+            self.write({"ok": False, "error": "no project path set"})
+            return
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception:
+            self.set_status(400)
+            self.write({"ok": False, "error": "invalid json"})
+            return
+
+        def _run():
+            with _ik_lock:
+                w = _ik_worker_ensure()
+                w["proc"].stdin.write(json.dumps(
+                    {"recipe": data.get("recipe"),
+                     "offset": data.get("offset")}) + "\n")
+                w["proc"].stdin.flush()
+                line = w["proc"].stdout.readline()
+                return json.loads(line) if line else {"ok": False, "error": "worker died"}
+
+        try:
+            out = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        except Exception as ex:
+            out = {"ok": False, "error": str(ex)}
+        self.write(out)
+
+
 # patch handler into app
 app.add_handlers(r".*$", [(r"/save_config", SaveConfigHandler)])
+app.add_handlers(r".*$", [(r"/api/recipe_ik", RecipeIKHandler)])
 app.add_handlers(r".*$", [(r"/api/set_project", SetProjectHandler)])
 app.add_handlers(r".*$", [(r"/api/project_bundle", ProjectBundleHandler)])
 app.add_handlers(r".*$", [(r"/api/solve_ref", SolveRefHandler)])
