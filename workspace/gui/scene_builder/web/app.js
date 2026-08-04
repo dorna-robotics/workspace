@@ -3705,26 +3705,34 @@ const __hiddenObjects = new Set();
 function __toggleObjectVisibility(name) {
   const obj = objectsByName.get(name);
   if (!obj) return;
+  // Meshes AND lines: edge overlays / collision-box wireframes are
+  // LineSegments — ghosting only meshes left wireframe-drawn objects
+  // (collision boxes) looking fully visible while "hidden".
+  const mats = (o) => (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
   if (__hiddenObjects.has(name)) {
     // Restore: make visible + re-add to pick list
     __hiddenObjects.delete(name);
     obj.traverse(o => {
-      if (o.isMesh) {
-        o.material.opacity = o.material.__origOpacity ?? 1;
-        o.material.transparent = o.material.opacity < 1;
-        o.material.__origOpacity = undefined;
-        pickableMeshes.add(o);
+      if (o.isMesh || o.isLine) {
+        for (const m of mats(o)) {
+          m.opacity = m.__origOpacity ?? 1;
+          m.transparent = m.opacity < 1;
+          m.__origOpacity = undefined;
+        }
+        if (o.isMesh) pickableMeshes.add(o);
       }
     });
   } else {
     // Hide: ghost + remove from pick list so clicks pass through
     __hiddenObjects.add(name);
     obj.traverse(o => {
-      if (o.isMesh) {
-        if (o.material.__origOpacity === undefined) o.material.__origOpacity = o.material.opacity;
-        o.material.transparent = true;
-        o.material.opacity = 0.08;
-        pickableMeshes.delete(o);
+      if (o.isMesh || o.isLine) {
+        for (const m of mats(o)) {
+          if (m.__origOpacity === undefined) m.__origOpacity = m.opacity;
+          m.transparent = true;
+          m.opacity = 0.08;
+        }
+        if (o.isMesh) pickableMeshes.delete(o);
       }
     });
   }
