@@ -7557,8 +7557,8 @@ ensureBuilderBar();
         window.__setSolidPosesWorld(coreName, res.solids);
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
         if (__ikDrag.sub) __ikDrag.sub.textContent =
-          "offset [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]  →  [" +
-          res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+          "offset  [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
+          "joints  [" + res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
       } else if (__ikDrag.ball) {
         __ikDrag.ball.material.color.set(0xff8a2b);   // unreachable — no IK solution here
       }
@@ -7588,24 +7588,16 @@ ensureBuilderBar();
       nameEl.style.cssText = "font-size:11px;flex:1;";
       nameEl.textContent = r.name;
       head.appendChild(nameEl);
+      let resetB = null;
       if (r.component) {
-        const mk = (title, txt) => {
-          const b = document.createElement("button");
-          b.className = "btn btn-ghost btn-sm btn-icon";
-          b.style.cssText = "width:18px;height:18px;min-height:18px;padding:0;font-size:11px;line-height:1;";
-          b.title = title;
-          b.textContent = txt;
-          return b;
-        };
-        const dragB = mk("Drag the flange — live IK with this recipe's solver", "✥");
-        dragB.addEventListener("click", (e) => {
-          e.stopPropagation();
-          __ikDragStart(r.name, subs[r.name].sub);
-        });
-        const resetB = mk("Back to the recipe's own pose", "⟲");
+        resetB = document.createElement("button");
+        resetB.className = "btn btn-ghost btn-sm btn-icon";
+        resetB.style.cssText = "width:18px;height:18px;min-height:18px;padding:0;" +
+          "font-size:11px;line-height:1;display:none;";
+        resetB.title = "Back to the recipe's own pose";
+        resetB.textContent = "⟲";
         resetB.addEventListener("click", (e) => {
           e.stopPropagation();
-          const sr = (__refSolve || {})[r.name];
           const ri = (window.__ikInfo || {})[r.name];
           if (__ikDrag.recipe === r.name && __ikDrag.marker && ri) {
             const T = window.__three.THREE;
@@ -7613,45 +7605,73 @@ ensureBuilderBar();
             __ikDrag.marker.position.copy(
               new T.Vector3(o[0], o[1], o[2]).applyMatrix4(__ikDrag.anchorM));
             __ikSolve(o.slice());
-          } else if (sr && sr.ref_joints) {
-            __poseCoreAt(sr.ref_joints);
           }
         });
-        head.appendChild(dragB);
         head.appendChild(resetB);
       }
       row.appendChild(head);
       const sub = document.createElement("span");
-      sub.style.cssText = "font-size:9.5px;font-family:monospace;" +
-        "color:var(--muted);line-height:1.25;word-break:break-all;";
-      sub.textContent = "solving…";
+      sub.style.cssText = "display:none;font-size:11.5px;font-family:monospace;" +
+        "color:var(--fg,inherit);line-height:1.55;white-space:pre-line;" +
+        "word-break:break-all;padding-top:3px;";
       row.appendChild(sub);
-      subs[r.name] = { sub, row, recipe: r };
+      subs[r.name] = { sub, row, resetB, recipe: r };
       row.addEventListener("click", () => {
         const sr = (__refSolve || {})[r.name];
-        if (sr && sr.ref_joints) __poseCoreAt(sr.ref_joints);
-        else if (sr && sr.error) showToast(r.name + ": " + sr.error, "bad");
-        else showToast("Still solving — one moment");
+        if (!r.component) { showToast(r.name + " has no station — nothing to select"); return; }
+        if (sr && sr.error) { showToast(r.name + ": " + sr.error, "bad"); return; }
+        if (!sr) { showToast("Still solving — one moment"); return; }
+        // Selection model: click selects (marker + drag live), click
+        // again deselects. Selecting one deselects the others.
+        if (__ikDrag.recipe === r.name) {
+          __ikDragStop();
+          row.classList.remove("active");
+          sub.style.display = "none";
+          if (resetB) resetB.style.display = "none";
+          return;
+        }
+        for (const o of Object.values(subs)) {
+          o.row.classList.remove("active");
+          o.sub.style.display = "none";
+          if (o.resetB) o.resetB.style.display = "none";
+        }
+        row.classList.add("active");
+        sub.style.display = "";
+        if (resetB) resetB.style.display = "";
+        sub.textContent = "offset  …\njoints  …";
+        __ikDragStart(r.name, sub);
       });
       list.appendChild(row);
+    }
+    // solving indicator: visible until the solve lands, then rows go
+    // clean (values only show on the SELECTED recipe's readout).
+    for (const o of Object.values(subs)) {
+      if (o.recipe.component) {
+        o.sub.style.display = "";
+        o.sub.textContent = "solving…";
+      }
     }
     __ensureRefSolve().then(sol => {
       for (const [name, o] of Object.entries(subs)) {
         const sr = (sol || {})[name] || {};
         if (sr.error) {
+          o.sub.style.display = "";
           o.sub.textContent = "error: " + sr.error;
-        } else if (!sr.ref_joints) {
-          o.sub.textContent = "—";
-        } else {
-          o.sub.textContent = "[" +
-            sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+        } else if (__ikDrag.recipe !== name) {
+          o.sub.style.display = "none";
+          o.sub.textContent = "";
+        }
+        if (o.recipe.component && !sr.error) {
           o.row.style.cursor = "pointer";
-          o.row.title += " — click to move the robot here";
+          o.row.title += " — click to select; drag the marker to move the robot";
         }
       }
     }).catch(e => {
       for (const o of Object.values(subs)) {
-        if (o.recipe.component) o.sub.textContent = "solve failed: " + (e.message || e);
+        if (o.recipe.component) {
+          o.sub.style.display = "";
+          o.sub.textContent = "solve failed: " + (e.message || e);
+        }
       }
     });
   }
