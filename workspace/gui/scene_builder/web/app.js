@@ -7140,6 +7140,7 @@ ensureBuilderBar();
     }
 
     const allEntries = Object.entries(cfg).filter(([, v]) => v && typeof v === "object" && v.type);
+    const __collisionToHide = [];
 
     // Topological sort: parents must be spawned and attached before children.
     const cfgMap = new Map(allEntries);
@@ -7178,13 +7179,8 @@ ensureBuilderBar();
         window.builderState.components[cfgName].__file = srcFile;
       }
 
-      // Collision boxes load HIDDEN by default — they're authored
-      // clearance envelopes, visual clutter in a scene review. They
-      // stay in the objects list, so showing one is a single click.
-      if (cfgVal.type === "collision_box") {
-        try { upsertObject(cfgName, { visible: false }); } catch (_) {}
-        try { socket.emit("upstream_update", { [cfgName]: { visible: false } }); } catch (_) {}
-      }
+      // Collision boxes load HIDDEN by default (see the post-loop pass).
+      if (cfgVal.type === "collision_box") __collisionToHide.push(cfgName);
 
       // For attached objects: store attach in builderState immediately so the
       // fixture_plate auto-drop async code sees it and skips the ground-drop.
@@ -7232,6 +7228,19 @@ ensureBuilderBar();
           try { socket.emit("upstream_update", { [cfgName]: { pose: [px, py, pz, rx, ry, rz] } }); } catch(e) {}
         }
       }
+    }
+
+    // Collision boxes hide through the objects list's OWN mechanism
+    // (ghost + eye toggle + the "Show all hidden (n)" button), so
+    // unhiding is one click there. Delayed so their meshes exist.
+    if (__collisionToHide.length) {
+      setTimeout(() => {
+        for (const n of __collisionToHide) {
+          if (!__hiddenObjects.has(n)) {
+            try { __toggleObjectVisibility(n); } catch (_) {}
+          }
+        }
+      }, 1200);
     }
 
     try { window.__updateConfigPreview(); } catch(e) {}
@@ -7704,15 +7713,19 @@ ensureBuilderBar();
       });
       list.appendChild(row);
     }
-    // solving indicator: visible until the solve lands, then rows go
-    // clean (values only show on the SELECTED recipe's readout).
+    // solving indicator: header phase + per-row text until the solve
+    // lands, then rows go clean (values only on the SELECTED readout).
     for (const o of Object.values(subs)) {
       if (o.recipe.component) {
         o.sub.style.display = "";
         o.sub.textContent = "solving…";
       }
     }
+    if (!__refSolve && Object.values(subs).some(o => o.recipe.component)) {
+      __projLoadBanner("Solving recipes…");
+    }
     __ensureRefSolve().then(sol => {
+      __projLoadBanner(null);
       for (const [name, o] of Object.entries(subs)) {
         const sr = (sol || {})[name] || {};
         if (sr.error) {
@@ -7728,6 +7741,7 @@ ensureBuilderBar();
         }
       }
     }).catch(e => {
+      __projLoadBanner(null);
       for (const o of Object.values(subs)) {
         if (o.recipe.component) {
           o.sub.style.display = "";
