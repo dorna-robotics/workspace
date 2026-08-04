@@ -158,7 +158,9 @@ select.input { cursor: pointer; }
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 .sidebar {
-  width: 340px;
+  /* --sbw is set BEFORE first paint by the inline snippet in index.html
+     (persisted drag width) — a late JS apply was flashing 340px first. */
+  width: var(--sbw, 340px);
   min-width: 220px;
   max-width: 560px;
   border-right: 1px solid var(--border2);

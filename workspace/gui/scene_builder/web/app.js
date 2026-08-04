@@ -7315,15 +7315,17 @@ ensureBuilderBar();
     for (const r of recipes) {
       const row = document.createElement("div");
       row.className = "sb-file-row";
-      row.style.cssText = "flex-direction:column;align-items:stretch;gap:1px;";
+      row.style.cssText = "flex-direction:column;align-items:stretch;gap:0;" +
+        "padding:3px 8px;border-radius:6px;";
       row.title = (r.class || "") + (r.component ? " · " + r.component : "");
       const nameEl = document.createElement("span");
       nameEl.className = "sb-file-name";
+      nameEl.style.cssText = "font-size:11px;";
       nameEl.textContent = r.name;
       row.appendChild(nameEl);
       const sub = document.createElement("span");
-      sub.style.cssText = "font-size:10px;font-family:monospace;" +
-        "color:var(--muted);line-height:1.3;word-break:break-all;";
+      sub.style.cssText = "font-size:9.5px;font-family:monospace;" +
+        "color:var(--muted);line-height:1.25;word-break:break-all;";
       sub.textContent = r.component ? "solving…" : "—";
       row.appendChild(sub);
       subs[r.name] = { sub, row, recipe: r };
@@ -9429,13 +9431,12 @@ function startRectPattern() {
 
   function applyW(w) {
     w = Math.max(220, Math.min(560, Math.round(w)));
-    sidebar.style.width = w + "px";
+    // Drive the same CSS variable the first-paint snippet in index.html
+    // sets — one source of width, no late-apply jump.
+    document.documentElement.style.setProperty("--sbw", w + "px");
     window.dispatchEvent(new Event("resize"));
     return w;
   }
-
-  const saved = parseInt(localStorage.getItem(KEY) || "", 10);
-  if (Number.isFinite(saved)) applyW(saved);
 
   let dragging = false, startX = 0, startW = 0;
   handle.addEventListener("pointerdown", (e) => {
