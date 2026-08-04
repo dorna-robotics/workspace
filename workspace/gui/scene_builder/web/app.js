@@ -7522,6 +7522,7 @@ ensureBuilderBar();
       dragging = true;
       t.controls.enabled = false;
       setDim(hits[0].object.material);
+      el.style.cursor = "grabbing";
       const kind = hits[0].object.userData.kind;
       if (kind === "axis") {
         axisDir = hits[0].object.userData.axisW.clone().normalize();
@@ -7540,8 +7541,31 @@ ensureBuilderBar();
       }
       e.stopPropagation();
     }
+    let hovered = null;
+    function setHover(m) {
+      // hover feedback: the part under the cursor goes vivid + a touch
+      // bigger; everything else keeps its resting look
+      __ikDrag.marker && __ikDrag.marker.traverse(o => {
+        if (!o.isMesh) return;
+        const hot = o.material === m;
+        o.material.opacity = hot ? 1.0 : (o.userData.kind === "ball" ? 0.9 : 0.85);
+        o.scale.setScalar(hot ? 1.18 : 1.0);
+      });
+    }
     function move(e) {
-      if (!dragging || !__ikDrag.marker) return;
+      if (!__ikDrag.marker) return;
+      if (!dragging) {
+        toNdc(e);
+        ray.setFromCamera(ndc, t.camera);
+        const h = ray.intersectObject(__ikDrag.marker, true);
+        const m = h.length ? h[0].object.material : null;
+        if (m !== hovered) {
+          hovered = m;
+          setHover(m);
+          el.style.cursor = m ? "grab" : "";
+        }
+        return;
+      }
       toNdc(e);
       ray.setFromCamera(ndc, t.camera);
       let hit;
@@ -7559,12 +7583,19 @@ ensureBuilderBar();
       __ikSolve(o);
     }
     function up() {
-      if (dragging) { dragging = false; t.controls.enabled = true; setDim(null); }
+      if (dragging) {
+        dragging = false;
+        t.controls.enabled = true;
+        hovered = null;
+        setHover(null);
+        el.style.cursor = "";
+      }
     }
     function cleanup() {
       el.removeEventListener("pointerdown", down, true);
       el.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      el.style.cursor = "";
     }
     el.addEventListener("pointerdown", down, true);
     el.addEventListener("pointermove", move);
