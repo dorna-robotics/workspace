@@ -7340,6 +7340,13 @@ ensureBuilderBar();
     // IK solve that starts below shows its own per-row "solving…".
     __projLoadBanner(null);
     __renderRecipesList((j.recipes || []));
+    // Warm the IK worker in the background so the first recipe select
+    // is instant instead of waiting ~10s for the Workspace build.
+    if ((j.recipes || []).some(r => r.component)) {
+      fetch(SB_API + "/recipe_ik").then(x => x.json())
+        .then(r => { if (r && r.ok) window.__ikInfo = r.recipes || {}; })
+        .catch(() => {});
+    }
   }
 
   // Pose the scene's core at the given joints — VIEW-only: re-fetch the
@@ -7489,6 +7496,23 @@ ensureBuilderBar();
     }
     let axisDir = null;   // world-space axis lock, null = free plane drag
     let axisOrigin = null;
+    const grabOff = new T.Vector3();   // marker − grab point: no jump on grab
+    function setDim(active) {
+      // visual feedback: the grabbed part stays vivid, the rest dims
+      __ikDrag.marker && __ikDrag.marker.traverse(o => {
+        if (!o.isMesh) return;
+        o.material.opacity = (active === null) ? (o.userData.kind === "ball" ? 0.9 : 0.85)
+          : (o.material === active ? 1.0 : 0.3);
+      });
+    }
+    function axisPoint(origin, dir) {
+      const w0 = origin.clone().sub(ray.ray.origin);
+      const b = dir.dot(ray.ray.direction);
+      const d = dir.dot(w0), ee = ray.ray.direction.dot(w0);
+      const denom = 1 - b * b;
+      if (Math.abs(denom) < 1e-6) return null;
+      return origin.clone().add(dir.clone().multiplyScalar((b * ee - d) / denom));
+    }
     function down(e) {
       if (!__ikDrag.marker) { cleanup(); return; }
       toNdc(e);
@@ -7497,15 +7521,22 @@ ensureBuilderBar();
       if (!hits.length) return;
       dragging = true;
       t.controls.enabled = false;
+      setDim(hits[0].object.material);
       const kind = hits[0].object.userData.kind;
       if (kind === "axis") {
         axisDir = hits[0].object.userData.axisW.clone().normalize();
         axisOrigin = __ikDrag.marker.position.clone();
+        const p0 = axisPoint(axisOrigin, axisDir);
+        grabOff.copy(__ikDrag.marker.position).sub(p0 || __ikDrag.marker.position);
       } else {
         axisDir = null;
         plane.setFromNormalAndCoplanarPoint(
           t.camera.getWorldDirection(new T.Vector3()).negate(),
           __ikDrag.marker.position);
+        const h0 = new T.Vector3();
+        grabOff.set(0, 0, 0);
+        if (ray.ray.intersectPlane(plane, h0))
+          grabOff.copy(__ikDrag.marker.position).sub(h0);
       }
       e.stopPropagation();
     }
@@ -7513,26 +7544,22 @@ ensureBuilderBar();
       if (!dragging || !__ikDrag.marker) return;
       toNdc(e);
       ray.setFromCamera(ndc, t.camera);
-      const hit = new T.Vector3();
+      let hit;
       if (axisDir) {
-        // closest point on the locked axis line to the pointer ray
-        const w0 = axisOrigin.clone().sub(ray.ray.origin);
-        const a = 1, b = axisDir.dot(ray.ray.direction), c = 1;
-        const d = axisDir.dot(w0), ee = ray.ray.direction.dot(w0);
-        const denom = a * c - b * b;
-        if (Math.abs(denom) < 1e-6) return;
-        const tt = (b * ee - c * d) / denom;
-        hit.copy(axisOrigin).add(axisDir.clone().multiplyScalar(tt));
-      } else if (!ray.ray.intersectPlane(plane, hit)) {
-        return;
+        hit = axisPoint(axisOrigin, axisDir);
+        if (!hit) return;
+      } else {
+        hit = new T.Vector3();
+        if (!ray.ray.intersectPlane(plane, hit)) return;
       }
+      hit.add(grabOff);
       __ikDrag.marker.position.copy(hit);
       const local = hit.clone().applyMatrix4(__ikDrag.anchorM.clone().invert());
       const o = [local.x, local.y, local.z, __ikDrag.off[3], __ikDrag.off[4], __ikDrag.off[5]];
       __ikSolve(o);
     }
     function up() {
-      if (dragging) { dragging = false; t.controls.enabled = true; }
+      if (dragging) { dragging = false; t.controls.enabled = true; setDim(null); }
     }
     function cleanup() {
       el.removeEventListener("pointerdown", down, true);
