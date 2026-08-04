@@ -7283,11 +7283,27 @@ ensureBuilderBar();
   }
 
   // Recipes panel — one row per recipe from the project's recipes.j2.
-  // Click = solve its reference joints server-side (the same solve its
-  // __init__ runs at project boot; pinned values pass through) and show
-  // them. The solve covers ALL recipes in one subprocess and is cached
-  // by file mtimes, so only the first click waits.
+  // The solve for ALL recipes starts in the background as soon as the
+  // panel renders (one subprocess, cached by file mtimes server-side);
+  // rows show a small "solving…" indicator until it lands, then every
+  // row permanently shows its 8 joint values in small type. Clicking a
+  // row moves the viewer robot to those joints.
   let __refSolve = null;
+  let __refSolvePromise = null;
+  function __ensureRefSolve() {
+    if (!__refSolvePromise) {
+      __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST" })
+        .then(x => x.json())
+        .then(res => {
+          if (!res || !res.ok) throw new Error((res && res.error) || "solve failed");
+          __refSolve = res.recipes || {};
+          return __refSolve;
+        })
+        .catch(e => { __refSolvePromise = null; throw e; });
+    }
+    return __refSolvePromise;
+  }
+
   function __renderRecipesList(recipes) {
     const sec = document.getElementById("sbRecipesSection");
     const list = document.getElementById("sbRecipesList");
@@ -7295,60 +7311,50 @@ ensureBuilderBar();
     if (!recipes.length) { sec.style.display = "none"; return; }
     sec.style.display = "";
     list.innerHTML = "";
+    const subs = {};
     for (const r of recipes) {
-      const wrap = document.createElement("div");
       const row = document.createElement("div");
       row.className = "sb-file-row";
-      row.style.cursor = "pointer";
-      row.title = (r.class || "") + (r.component ? " · " + r.component : "") +
-                  " — click to solve reference joints";
+      row.style.cssText = "flex-direction:column;align-items:stretch;gap:1px;";
+      row.title = (r.class || "") + (r.component ? " · " + r.component : "");
       const nameEl = document.createElement("span");
       nameEl.className = "sb-file-name";
       nameEl.textContent = r.name;
       row.appendChild(nameEl);
-      const badge = document.createElement("span");
-      badge.className = "sb-file-count";
-      badge.textContent = r.component ? (r.pinned ? "pinned" : "solve") : "—";
-      row.appendChild(badge);
-      const out = document.createElement("div");
-      out.style.cssText = "display:none;padding:2px 8px 8px;font-size:11px;" +
-        "font-family:monospace;color:var(--muted);word-break:break-all;";
-      row.addEventListener("click", async () => {
-        if (!r.component) {
-          showToast(r.name + " has no station component — no reference pose");
-          return;
-        }
-        if (out.style.display === "") { out.style.display = "none"; return; }
-        badge.textContent = "solving…";
-        try {
-          if (!__refSolve) {
-            const res = await fetch(SB_API + "/solve_ref", { method: "POST" })
-              .then(x => x.json());
-            if (!res.ok) throw new Error(res.error || "solve failed");
-            __refSolve = res.recipes || {};
-          }
-          const sr = __refSolve[r.name] || {};
-          if (sr.error) throw new Error(sr.error);
-          if (!sr.ref_joints) {
-            badge.textContent = "—";
-            showToast(r.name + ": no reference joints");
-            return;
-          }
-          badge.textContent = sr.pinned ? "pinned" : "solved";
-          out.textContent = "ref joints  [" +
-            sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
-          out.style.display = "";
-          await __poseCoreAt(sr.ref_joints);
-        } catch (e) {
-          badge.textContent = "error";
-          out.textContent = String(e.message || e);
-          out.style.display = "";
-        }
+      const sub = document.createElement("span");
+      sub.style.cssText = "font-size:10px;font-family:monospace;" +
+        "color:var(--muted);line-height:1.3;word-break:break-all;";
+      sub.textContent = r.component ? "solving…" : "—";
+      row.appendChild(sub);
+      subs[r.name] = { sub, row, recipe: r };
+      row.addEventListener("click", () => {
+        const sr = (__refSolve || {})[r.name];
+        if (sr && sr.ref_joints) __poseCoreAt(sr.ref_joints);
+        else if (!r.component) showToast(r.name + " has no station — no reference pose");
+        else if (sr && sr.error) showToast(r.name + ": " + sr.error, "bad");
+        else showToast("Still solving — one moment");
       });
-      wrap.appendChild(row);
-      wrap.appendChild(out);
-      list.appendChild(wrap);
+      list.appendChild(row);
     }
+    __ensureRefSolve().then(sol => {
+      for (const [name, o] of Object.entries(subs)) {
+        const sr = (sol || {})[name] || {};
+        if (sr.error) {
+          o.sub.textContent = "error: " + sr.error;
+        } else if (!sr.ref_joints) {
+          o.sub.textContent = "—";
+        } else {
+          o.sub.textContent = "[" +
+            sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+          o.row.style.cursor = "pointer";
+          o.row.title += " — click to move the robot here";
+        }
+      }
+    }).catch(e => {
+      for (const o of Object.values(subs)) {
+        if (o.recipe.component) o.sub.textContent = "solve failed: " + (e.message || e);
+      }
+    });
   }
   // After the socket has had a chance to replay any existing world state
   // (connect -> scene_update), import the project. The empty-world check
