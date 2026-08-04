@@ -7320,7 +7320,7 @@ ensureBuilderBar();
         let i = 0;
         for (const s of j.scenes) {
           i += 1;
-          __projLoadBanner(`Loading project — ${s.name} (${i}/${j.scenes.length})…`);
+          __projLoadBanner(`Loading scene — ${s.name} (${i}/${j.scenes.length})…`);
           if (!s.text && !s.cfg) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
           try {
             // Server-parsed cfg is authoritative (real Jinja+YAML);
@@ -7336,6 +7336,9 @@ ensureBuilderBar();
       try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
       showToast("Project loaded: " + names.join(" + "));
     }
+    // The header indicator belongs to SCENE loading only — the recipe
+    // IK solve that starts below shows its own per-row "solving…".
+    __projLoadBanner(null);
     __renderRecipesList((j.recipes || []));
   }
 
