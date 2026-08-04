@@ -2355,6 +2355,13 @@ function ensureBuilderBar() {
     // scene to come back on reconnect.
     try { await fetch(SB_API + "/reset", { method: "POST" }); } catch(e) {}
     try { window.socket?.emit?.("reset_scene"); } catch(e) {}
+    // New Scene = the explicit fresh start — drop persisted builder
+    // state (file slots, tags, hidden set) for every project.
+    try {
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith("sb_persist::")) localStorage.removeItem(k);
+      }
+    } catch(e) {}
 
     // Set project path (can be empty for no project)
     try {
@@ -7288,6 +7295,29 @@ ensureBuilderBar();
     el.style.display = "";
   }
 
+  // ── Refresh consistency ──────────────────────────────────────────
+  // The server holds the components; these CLIENT-side bits — file
+  // slots, per-component file tags, the hidden set — die on refresh
+  // unless persisted. Saved per project; "New Scene" clears them.
+  function __persistKey() {
+    return "sb_persist::" +
+      ((window.__projectBundle && window.__projectBundle.project) || "none");
+  }
+  window.__sbPersist = () => {
+    try {
+      const bs = window.builderState;
+      const tags = {};
+      for (const [n, m] of Object.entries(bs.components || {})) {
+        if (m && m.__file) tags[n] = m.__file;
+      }
+      localStorage.setItem(__persistKey(), JSON.stringify({
+        files: bs.files, activeFile: bs.activeFile,
+        tags, hidden: [...__hiddenObjects],
+      }));
+    } catch (_) {}
+  };
+  setInterval(() => { try { window.__sbPersist(); } catch (_) {} }, 3000);
+
   async function __loadProjectBundle() {
     let j = null;
     try {
@@ -7333,6 +7363,27 @@ ensureBuilderBar();
       }
       try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
       showToast("Project loaded: " + names.join(" + "));
+    } else if (!empty) {
+      // Refresh / navigate-back: components replayed from the server —
+      // restore the client-side state saved for this project.
+      try {
+        const saved = JSON.parse(localStorage.getItem(__persistKey()) || "null");
+        if (saved) {
+          if (Array.isArray(saved.files) && saved.files.length) {
+            bs.files = saved.files.slice();
+            bs.activeFile = saved.activeFile || saved.files[0];
+          }
+          for (const [n, f] of Object.entries(saved.tags || {})) {
+            if (bs.components[n]) bs.components[n].__file = f;
+          }
+          for (const n of (saved.hidden || [])) {
+            if (!__hiddenObjects.has(n)) {
+              try { __toggleObjectVisibility(n); } catch (_) {}
+            }
+          }
+          try { window.__renderFilesList && window.__renderFilesList(); } catch (_) {}
+        }
+      } catch (_) {}
     }
     // The header indicator belongs to SCENE loading only — the recipe
     // IK solve that starts below shows its own per-row "solving…".
