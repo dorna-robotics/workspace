@@ -1547,6 +1547,36 @@ if (node) {
 
         // Multi-mesh support (simulation-style assemblies)
         // spec.meshes: [{ meshUrl, pose:[x,y,z,a,b,c], solidName }]
+        if (Array.isArray(spec.meshes) && spec.meshes.length && spec.__tweenPoses) {
+          // Pose-only update: animate the EXISTING solid holders to the
+          // new poses (position lerp + quaternion slerp, eased) instead
+          // of rebuilding meshes — used by the recipes panel so the
+          // robot visibly moves to a solved pose. Purely visual; scene
+          // state untouched.
+          const dur = 650;
+          for (const m of spec.meshes) {
+            const holder = root.children.find(c => c.name === String(m.solidName));
+            if (!holder || !Array.isArray(m.pose) || m.pose.length !== 6) continue;
+            const p0 = holder.position.clone();
+            const q0 = holder.quaternion.clone();
+            const [x, y, z, rx, ry, rz] = m.pose;
+            const p1 = new THREE.Vector3(x, y, z);
+            const q1 = rodriguesDegToQuaternion(rx, ry, rz);
+            holder.userData.__poseAnim = (holder.userData.__poseAnim || 0) + 1;
+            const myId = holder.userData.__poseAnim;
+            const t0 = performance.now();
+            (function anim() {
+              if (holder.userData.__poseAnim !== myId) return; // superseded
+              const t = Math.min(1, (performance.now() - t0) / dur);
+              const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+              holder.position.lerpVectors(p0, p1, e);
+              holder.quaternion.slerpQuaternions(q0, q1, e);
+              if (t < 1) requestAnimationFrame(anim);
+            })();
+          }
+          root.userData.meshesSig = null; // next real load must rebuild
+          return;
+        }
         if (Array.isArray(spec.meshes) && spec.meshes.length) {
           const sig = JSON.stringify(spec.meshes.map(m => [m.meshUrl, ...(m.pose||[]), m.solidName||"", JSON.stringify(m.collisionLocal||[])]));
           if (root.userData.meshesSig !== sig) {
@@ -7307,7 +7337,8 @@ ensureBuilderBar();
           collisionLocal: s.collisionLocal || [], boxForGrip: !!s.boxForGrip,
         });
       }
-      if (meshes.length && window.upsertObject) window.upsertObject(coreName, { meshes });
+      if (meshes.length && window.upsertObject)
+        window.upsertObject(coreName, { meshes, __tweenPoses: true });
     } catch (e) {
       showToast("Robot pose failed: " + (e.message || e), "bad");
     }
