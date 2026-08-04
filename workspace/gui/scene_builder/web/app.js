@@ -7238,6 +7238,12 @@ ensureBuilderBar();
     } catch (e) { return; }
     if (!j || !j.ok || !j.project) return;
     window.__projectBundle = j;
+    // Header identity: which project this builder session is editing.
+    try {
+      const base = String(j.project).replace(/\/+$/, "").split("/").pop();
+      const t = document.getElementById("sbHeadTitle");
+      if (t && base) t.innerHTML = 'Scene Builder · <span class="proj">' + base + "</span>";
+    } catch (_) {}
     const bs = window.builderState;
     const empty = !bs.components || !Object.keys(bs.components).length;
     if (empty && j.scenes && j.scenes.length) {

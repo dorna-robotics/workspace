@@ -200,10 +200,14 @@ select.input { cursor: pointer; }
 
 /* Loading status — the orchestrator project page's "Starting…" idiom
    (spinner + muted 600-weight text), shown while a project imports. */
+.sb-head-title {
+  font-size: 13px; font-weight: 600; letter-spacing: -0.1px;
+  margin: 0 14px 0 6px; white-space: nowrap;
+}
+.sb-head-title .proj { color: var(--muted); font-weight: 500; }
 .ctrl-starting {
   font-size: 12px; font-weight: 600; color: var(--muted);
   display: flex; align-items: center; gap: 8px;
-  padding: 2px 2px 8px;
 }
 .ctrl-starting::before {
   content: ""; display: inline-block; width: 10px; height: 10px;
