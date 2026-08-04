@@ -953,6 +953,7 @@ class InstantiateHandler(tornado.web.RequestHandler):
             bp = instantiate_component_blueprint(t, opts, joints=joints)
             self.write({"ok": True, "blueprint": bp})
         except Exception as e:
+            print(f"[builder] instantiate {t} failed: {type(e).__name__}: {e}")
             self.set_status(500)
             self.write({"ok": False, "error": str(e)})
 
@@ -1109,9 +1110,18 @@ class ProjectBundleHandler(tornado.web.RequestHandler):
         for rel in scene:
             p = os.path.join(_project_path, rel)
             try:
-                out["scenes"].append({"name": os.path.basename(rel),
-                                      "path": rel,
-                                      "text": open(p, encoding="utf-8").read()})
+                text = open(p, encoding="utf-8").read()
+                row = {"name": os.path.basename(rel), "path": rel, "text": text}
+                # Real Jinja + YAML, server-side: the client's simple
+                # parser only handles two nesting levels and mangles
+                # deeper blocks (anchors: body: cap_seat:). cfg is the
+                # authoritative structure; text stays for display.
+                try:
+                    from jinja2 import Template as _T
+                    row["cfg"] = yaml.safe_load(_T(text).render()) or {}
+                except Exception as ex:
+                    row["cfg_error"] = str(ex)
+                out["scenes"].append(row)
             except Exception as ex:
                 out["scenes"].append({"name": os.path.basename(rel), "path": rel,
                                       "error": str(ex)})

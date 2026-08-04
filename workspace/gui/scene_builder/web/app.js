@@ -7292,9 +7292,11 @@ ensureBuilderBar();
         for (const s of j.scenes) {
           i += 1;
           __projLoadBanner(`Loading project — ${s.name} (${i}/${j.scenes.length})…`);
-          if (!s.text) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
+          if (!s.text && !s.cfg) { if (s.error) showToast(s.name + ": " + s.error, "bad"); continue; }
           try {
-            const cfg = __parseSimpleYaml(s.text);
+            // Server-parsed cfg is authoritative (real Jinja+YAML);
+            // the client parser is only a fallback.
+            const cfg = s.cfg || __parseSimpleYaml(s.text);
             if (cfg && Object.keys(cfg).length)
               await __loadConfigToScene(cfg, { clear: false, file: s.name });
           } catch (e) { console.error("project scene load", s.name, e); }
