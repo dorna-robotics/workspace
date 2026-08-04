@@ -1869,6 +1869,27 @@ if (node) {
           }
         }
       window.upsertObject = upsertObject;
+      // TCP drag support: viewer internals + a fast world-pose setter
+      // (drag solves return WORLD solid poses; holders are core-local).
+      window.__three = { scene, camera, renderer, controls, THREE };
+      window.__setSolidPosesWorld = (name, solids) => {
+        const root = objectsByName.get(name);
+        if (!root) return;
+        root.updateMatrixWorld(true);
+        const inv = root.matrixWorld.clone().invert();
+        for (const [sn, p] of Object.entries(solids || {})) {
+          const holder = root.children.find(c => c.name === sn);
+          if (!holder || !Array.isArray(p) || p.length !== 6) continue;
+          const M = new THREE.Matrix4().compose(
+            new THREE.Vector3(p[0], p[1], p[2]),
+            rodriguesDegToQuaternion(p[3], p[4], p[5]),
+            new THREE.Vector3(1, 1, 1));
+          const L = inv.clone().multiply(M);
+          L.decompose(holder.position, holder.quaternion, holder.scale);
+          holder.userData.__poseAnim = (holder.userData.__poseAnim || 0) + 1;
+        }
+        root.userData.meshesSig = null;
+      };
         try { if (window.updateObjectList) window.updateObjectList(); } catch(e) {}
         try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
         markDirty();
@@ -7368,6 +7389,129 @@ ensureBuilderBar();
     return __refSolvePromise;
   }
 
+  // ── TCP drag: grab the flange, offsets solve through the recipe's
+  // own core.IK (persistent worker, ~25ms/solve). Translation-only;
+  // the offset's rotation stays the recipe's target_offset rotation.
+  const __ikDrag = { recipe: null, info: null, marker: null, busy: false, queued: null };
+
+  function __ikRod(a, b, c) {
+    const T = window.__three.THREE;
+    const v = new T.Vector3(a, b, c);
+    const ang = v.length() * Math.PI / 180;
+    const q = new T.Quaternion();
+    if (ang > 1e-9) q.setFromAxisAngle(v.normalize(), ang);
+    return q;
+  }
+
+  function __ikDragStop() {
+    const t = window.__three;
+    if (__ikDrag.marker && t) t.scene.remove(__ikDrag.marker);
+    if (__ikDrag.cleanup) { try { __ikDrag.cleanup(); } catch (_) {} }
+    __ikDrag.recipe = null;
+    __ikDrag.marker = null;
+    __ikDrag.cleanup = null;
+  }
+
+  async function __ikDragStart(name, sub) {
+    const t = window.__three;
+    if (!t) return;
+    __ikDragStop();
+    let info = window.__ikInfo;
+    if (!info) {
+      sub.textContent = "starting IK worker…";
+      const res = await fetch(SB_API + "/recipe_ik").then(x => x.json());
+      if (!res.ok) { sub.textContent = "IK worker failed: " + (res.error || ""); return; }
+      info = window.__ikInfo = res.recipes || {};
+    }
+    const ri = info[name];
+    if (!ri || !ri.anchor_world) { showToast(name + ": no drag target"); return; }
+    const T = t.THREE;
+    const anchorM = new T.Matrix4().compose(
+      new T.Vector3(ri.anchor_world[0], ri.anchor_world[1], ri.anchor_world[2]),
+      __ikRod(ri.anchor_world[3], ri.anchor_world[4], ri.anchor_world[5]),
+      new T.Vector3(1, 1, 1));
+    const off = ri.target_offset.slice();
+    const marker = new T.Mesh(new T.SphereGeometry(9, 20, 14),
+      new T.MeshBasicMaterial({ color: 0x4f9cf9, depthTest: false, transparent: true, opacity: 0.9 }));
+    marker.renderOrder = 999;
+    marker.position.copy(new T.Vector3(off[0], off[1], off[2]).applyMatrix4(anchorM));
+    t.scene.add(marker);
+    Object.assign(__ikDrag, { recipe: name, info: ri, marker, anchorM, sub, off });
+    __ikSolve(off);   // seed at the recipe's own offset
+
+    const el = t.renderer.domElement;
+    const ray = new T.Raycaster();
+    const ndc = new T.Vector2();
+    let dragging = false;
+    const plane = new T.Plane();
+    function toNdc(e) {
+      const r = el.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1,
+              -((e.clientY - r.top) / r.height) * 2 + 1);
+    }
+    function down(e) {
+      if (!__ikDrag.marker) { cleanup(); return; }
+      toNdc(e);
+      ray.setFromCamera(ndc, t.camera);
+      if (ray.intersectObject(__ikDrag.marker, false).length) {
+        dragging = true;
+        t.controls.enabled = false;
+        plane.setFromNormalAndCoplanarPoint(
+          t.camera.getWorldDirection(new T.Vector3()).negate(),
+          __ikDrag.marker.position);
+        e.stopPropagation();
+      }
+    }
+    function move(e) {
+      if (!dragging || !__ikDrag.marker) return;
+      toNdc(e);
+      ray.setFromCamera(ndc, t.camera);
+      const hit = new T.Vector3();
+      if (!ray.ray.intersectPlane(plane, hit)) return;
+      __ikDrag.marker.position.copy(hit);
+      const local = hit.clone().applyMatrix4(__ikDrag.anchorM.clone().invert());
+      const o = [local.x, local.y, local.z, __ikDrag.off[3], __ikDrag.off[4], __ikDrag.off[5]];
+      __ikSolve(o);
+    }
+    function up() {
+      if (dragging) { dragging = false; t.controls.enabled = true; }
+    }
+    function cleanup() {
+      el.removeEventListener("pointerdown", down, true);
+      el.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    }
+    el.addEventListener("pointerdown", down, true);
+    el.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    __ikDrag.cleanup = cleanup;
+  }
+
+  async function __ikSolve(offset) {
+    if (__ikDrag.busy) { __ikDrag.queued = offset; return; }   // send-latest
+    __ikDrag.busy = true;
+    try {
+      const res = await fetch(SB_API + "/recipe_ik", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipe: __ikDrag.recipe, offset }),
+      }).then(x => x.json());
+      const bs = window.builderState;
+      const coreName = Object.keys(bs.components || {})
+        .find(n => (bs.components[n] || {}).type === "core");
+      if (res.ok && res.solids && coreName && window.__setSolidPosesWorld) {
+        window.__setSolidPosesWorld(coreName, res.solids);
+        if (__ikDrag.marker) __ikDrag.marker.material.color.set(0x4f9cf9);
+        if (__ikDrag.sub) __ikDrag.sub.textContent =
+          "offset [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]  →  [" +
+          res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+      } else if (__ikDrag.marker) {
+        __ikDrag.marker.material.color.set(0xe05555);   // unreachable
+      }
+    } catch (_) {}
+    __ikDrag.busy = false;
+    if (__ikDrag.queued) { const q = __ikDrag.queued; __ikDrag.queued = null; __ikSolve(q); }
+  }
+
   function __renderRecipesList(recipes) {
     const sec = document.getElementById("sbRecipesSection");
     const list = document.getElementById("sbRecipesList");
@@ -7382,11 +7526,46 @@ ensureBuilderBar();
       row.style.cssText = "flex-direction:column;align-items:stretch;gap:0;" +
         "padding:3px 8px;border-radius:6px;";
       row.title = (r.class || "") + (r.component ? " · " + r.component : "");
+      const head = document.createElement("span");
+      head.style.cssText = "display:flex;align-items:center;gap:4px;";
       const nameEl = document.createElement("span");
       nameEl.className = "sb-file-name";
-      nameEl.style.cssText = "font-size:11px;";
+      nameEl.style.cssText = "font-size:11px;flex:1;";
       nameEl.textContent = r.name;
-      row.appendChild(nameEl);
+      head.appendChild(nameEl);
+      if (r.component) {
+        const mk = (title, txt) => {
+          const b = document.createElement("button");
+          b.className = "btn btn-ghost btn-sm btn-icon";
+          b.style.cssText = "width:18px;height:18px;min-height:18px;padding:0;font-size:11px;line-height:1;";
+          b.title = title;
+          b.textContent = txt;
+          return b;
+        };
+        const dragB = mk("Drag the flange — live IK with this recipe's solver", "✥");
+        dragB.addEventListener("click", (e) => {
+          e.stopPropagation();
+          __ikDragStart(r.name, subs[r.name].sub);
+        });
+        const resetB = mk("Back to the recipe's own pose", "⟲");
+        resetB.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const sr = (__refSolve || {})[r.name];
+          const ri = (window.__ikInfo || {})[r.name];
+          if (__ikDrag.recipe === r.name && __ikDrag.marker && ri) {
+            const T = window.__three.THREE;
+            const o = ri.target_offset;
+            __ikDrag.marker.position.copy(
+              new T.Vector3(o[0], o[1], o[2]).applyMatrix4(__ikDrag.anchorM));
+            __ikSolve(o.slice());
+          } else if (sr && sr.ref_joints) {
+            __poseCoreAt(sr.ref_joints);
+          }
+        });
+        head.appendChild(dragB);
+        head.appendChild(resetB);
+      }
+      row.appendChild(head);
       const sub = document.createElement("span");
       sub.style.cssText = "font-size:9.5px;font-family:monospace;" +
         "color:var(--muted);line-height:1.25;word-break:break-all;";
