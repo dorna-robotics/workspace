@@ -7677,34 +7677,32 @@ ensureBuilderBar();
       subs[r.name] = { sub, row, resetB, recipe: r };
       row.addEventListener("click", () => {
         const sr = (__refSolve || {})[r.name];
-        if (!r.component) {
-          // No station → no drag frame, but the pose is still real:
-          // send the robot to its reference (initial joints).
-          if (sr && sr.ref_joints) __poseCoreAt(sr.ref_joints);
-          else showToast(r.name + " has no station and no reference pose");
-          return;
-        }
         if (sr && sr.error) { showToast(r.name + ": " + sr.error, "bad"); return; }
         if (!sr) { showToast("Still solving — one moment"); return; }
-        // Selection model: click selects (marker + drag live), click
-        // again deselects. Selecting one deselects the others.
-        if (__ikDrag.recipe === r.name) {
-          __ikDragStop();
-          row.classList.remove("active");
-          sub.style.display = "none";
-          if (resetB) resetB.style.display = "none";
-          return;
-        }
+        // Selection model: click selects, click again deselects, one
+        // at a time. Station recipes get the drag marker + live IK;
+        // componentless ones just show and pose their joints.
+        const wasActive = row.classList.contains("active");
+        __ikDragStop();
         for (const o of Object.values(subs)) {
           o.row.classList.remove("active");
           o.sub.style.display = "none";
           if (o.resetB) o.resetB.style.display = "none";
         }
+        if (wasActive) return;
         row.classList.add("active");
         sub.style.display = "";
-        if (resetB) resetB.style.display = "";
-        sub.textContent = "offset  …\njoints  …";
-        __ikDragStart(r.name, sub);
+        if (r.component) {
+          if (resetB) resetB.style.display = "";
+          sub.textContent = "offset  …\njoints  …";
+          __ikDragStart(r.name, sub);
+        } else if (sr.ref_joints) {
+          sub.textContent = "joints  [" +
+            sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+          __poseCoreAt(sr.ref_joints);
+        } else {
+          sub.textContent = "no reference pose";
+        }
       });
       list.appendChild(row);
     }
