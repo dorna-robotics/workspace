@@ -1797,7 +1797,8 @@ if (node) {
         }
 
         if (typeof spec.visible === "boolean") {
-          root.visible = spec.visible;
+          // an eye-hidden object stays hidden through server echoes
+          root.visible = spec.visible && !__hiddenObjects.has(name);
         }
 
         if (spec.anchors && typeof spec.anchors === "object") {
@@ -3705,36 +3706,17 @@ const __hiddenObjects = new Set();
 function __toggleObjectVisibility(name) {
   const obj = objectsByName.get(name);
   if (!obj) return;
-  // Meshes AND lines: edge overlays / collision-box wireframes are
-  // LineSegments — ghosting only meshes left wireframe-drawn objects
-  // (collision boxes) looking fully visible while "hidden".
-  const mats = (o) => (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
+  // Hidden = the root is INVISIBLE — no ghost, no wireframe, and it
+  // covers content that streams in later (GLB callbacks, box viz)
+  // because children inherit root visibility.
   if (__hiddenObjects.has(name)) {
-    // Restore: make visible + re-add to pick list
     __hiddenObjects.delete(name);
-    obj.traverse(o => {
-      if (o.isMesh || o.isLine) {
-        for (const m of mats(o)) {
-          m.opacity = m.__origOpacity ?? 1;
-          m.transparent = m.opacity < 1;
-          m.__origOpacity = undefined;
-        }
-        if (o.isMesh) pickableMeshes.add(o);
-      }
-    });
+    obj.visible = true;
+    obj.traverse(o => { if (o.isMesh) pickableMeshes.add(o); });
   } else {
-    // Hide: ghost + remove from pick list so clicks pass through
     __hiddenObjects.add(name);
-    obj.traverse(o => {
-      if (o.isMesh || o.isLine) {
-        for (const m of mats(o)) {
-          if (m.__origOpacity === undefined) m.__origOpacity = m.opacity;
-          m.transparent = true;
-          m.opacity = 0.08;
-        }
-        if (o.isMesh) pickableMeshes.delete(o);
-      }
-    });
+    obj.visible = false;
+    obj.traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
   }
   markDirty();
   updateObjectList();
@@ -3746,26 +3728,6 @@ function __showAllHidden() {
   }
 }
 
-function __applyHiddenGhost(name) {
-  // Idempotent re-apply of the hidden ghost — meshes/lines that stream
-  // in AFTER the hide (async GLB loads, collision-box viz) arrive at
-  // full opacity; call this again to catch them. No state change.
-  if (!__hiddenObjects.has(name)) return;
-  const obj = objectsByName.get(name);
-  if (!obj) return;
-  obj.traverse(o => {
-    if (o.isMesh || o.isLine) {
-      const ms = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of ms) {
-        if (!m) continue;
-        if (m.__origOpacity === undefined) m.__origOpacity = m.opacity;
-        m.transparent = true;
-        m.opacity = 0.08;
-      }
-      if (o.isMesh) pickableMeshes.delete(o);
-    }
-  });
-}
 
 let __lastScrolledSel = null;
 
@@ -7262,22 +7224,11 @@ ensureBuilderBar();
     // Collision boxes hide through the objects list's OWN mechanism
     // (ghost + eye toggle + the "Show all hidden (n)" button), so
     // unhiding is one click there. Delayed so their meshes exist.
-    if (__collisionToHide.length) {
-      setTimeout(() => {
-        for (const n of __collisionToHide) {
-          if (!__hiddenObjects.has(n)) {
-            try { __toggleObjectVisibility(n); } catch (_) {}
-          }
-        }
-      }, 1200);
-      // Re-sweep: ghost whatever streamed in after the hide (GLB
-      // callbacks, procedural box viz) — idempotent, state untouched.
-      for (const delay of [3000, 6000, 12000]) {
-        setTimeout(() => {
-          for (const n of __collisionToHide) {
-            try { __applyHiddenGhost(n); } catch (_) {}
-          }
-        }, delay);
+    // Collision boxes start in the hidden list — root-invisible, so
+    // late-loading content inherits it. One pass, no sweeps needed.
+    for (const n of __collisionToHide) {
+      if (!__hiddenObjects.has(n)) {
+        try { __toggleObjectVisibility(n); } catch (_) {}
       }
     }
 
