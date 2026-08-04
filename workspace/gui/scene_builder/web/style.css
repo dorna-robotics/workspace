@@ -198,6 +198,21 @@ select.input { cursor: pointer; }
   gap: 16px;
 }
 
+/* Loading status — the orchestrator project page's "Starting…" idiom
+   (spinner + muted 600-weight text), shown while a project imports. */
+.ctrl-starting {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 2px 8px;
+}
+.ctrl-starting::before {
+  content: ""; display: inline-block; width: 10px; height: 10px;
+  border: 2px solid var(--muted); border-top-color: var(--accent, #4f9cf9);
+  border-radius: 50%; animation: sbspin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes sbspin { to { transform: rotate(360deg); } }
+
 /* ── Controls row ───────────────────────────────────────────────────────── */
 .sb-controls {
   display: flex;

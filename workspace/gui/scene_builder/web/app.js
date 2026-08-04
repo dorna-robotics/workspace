@@ -7220,33 +7220,15 @@ ensureBuilderBar();
   // main.py does: scene files (contents, merge order) + the recipes
   // listing. Scenes auto-load ONLY into an empty world — right after the
   // New Scene reset — never over work in progress.
-  // Small centered pill with a spinner while the project imports —
-  // text updates per scene file, removed when the world is ready.
+  // Loading status in the sidebar's controls row — the same
+  // spinner+text idiom the orchestrator project page uses for
+  // "Starting…". Text updates per scene file; hidden when done.
   function __projLoadBanner(text) {
-    let el = document.getElementById("sbProjLoading");
-    if (!text) { if (el) el.remove(); return; }
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "sbProjLoading";
-      el.style.cssText = "position:fixed;top:64px;left:50%;transform:translateX(-50%);" +
-        "z-index:40000;background:var(--surface);border:1px solid var(--border2);" +
-        "border-radius:999px;padding:7px 16px;font-size:12px;color:var(--muted);" +
-        "box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;";
-      const spin = document.createElement("span");
-      spin.style.cssText = "width:12px;height:12px;border:2px solid var(--border2);" +
-        "border-top-color:var(--accent,#4f9cf9);border-radius:50%;" +
-        "display:inline-block;animation:sbspin .8s linear infinite;";
-      const st = document.createElement("style");
-      st.textContent = "@keyframes sbspin{to{transform:rotate(360deg)}}";
-      const txt = document.createElement("span");
-      txt.id = "sbProjLoadingText";
-      el.appendChild(st);
-      el.appendChild(spin);
-      el.appendChild(txt);
-      document.body.appendChild(el);
-    }
-    const t = document.getElementById("sbProjLoadingText");
-    if (t) t.textContent = text;
+    const el = document.getElementById("sbLoadStatus");
+    if (!el) return;
+    if (!text) { el.style.display = "none"; el.textContent = ""; return; }
+    el.textContent = text;
+    el.style.display = "";
   }
 
   async function __loadProjectBundle() {
