@@ -7340,7 +7340,7 @@ ensureBuilderBar();
         });
       }
       if (meshes.length && window.upsertObject)
-        window.upsertObject(coreName, { meshes, __tweenPoses: true });
+        window.upsertObject(coreName, { meshes });
     } catch (e) {
       showToast("Robot pose failed: " + (e.message || e), "bad");
     }
