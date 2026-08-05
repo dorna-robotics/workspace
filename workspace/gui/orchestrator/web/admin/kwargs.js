@@ -227,13 +227,31 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
     let input;
     if (type === "bool") {
+      // Touch toggle, not a bare checkbox — operator surfaces need a
+      // 44px target and unambiguous on/off (design-system §8/§10).
       input = document.createElement("input");
       input.type = "checkbox";
       input.checked = val === true || val === "true";
       input.dataset.kwKey = key;
       input.dataset.kwType = "bool";
-      input.className = "kw-checkbox";
+      input.className = "kw-checkbox kw-switch";
       if (frozen) input.disabled = true;
+      const sw = document.createElement("label");
+      sw.className = "kw-switch-wrap";
+      sw.appendChild(input);
+      const track = document.createElement("span");
+      track.className = "kw-switch-track";
+      sw.appendChild(track);
+      inputRow.appendChild(sw);
+      field.appendChild(inputRow);
+      if (hint) {
+        const h = document.createElement("div");
+        h.className = "kw-hint";
+        h.textContent = hint;
+        field.appendChild(h);
+      }
+      container.appendChild(field);
+      return;
     } else if (type === "textarea") {
       input = document.createElement("textarea");
       input.className = "input";

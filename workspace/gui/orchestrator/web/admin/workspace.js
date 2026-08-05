@@ -202,25 +202,45 @@ async function openParamsModal(frozen) {
         <button class="btn" id="btnParamsCancel">Cancel</button>
         <div class="spacer"></div>
         <button class="btn" id="btnParamsReset">Reset All</button>
-        <button class="btn btn-primary" id="btnParamsSet">Set</button>`;
+        <button class="btn" id="btnParamsSet">Set</button>
+        <button class="btn btn-primary" id="btnParamsSetLaunch">Set &amp; Launch</button>`;
       $("btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
       $("btnParamsReset").addEventListener("click", () => {
         renderKwargsForm(paramsForm, schema, {}, false, wsName);
         toast("Reset to defaults", "ok");
       });
-      $("btnParamsSet").addEventListener("click", async () => {
+      // Set = store the values. Set & Launch = store, then launch in
+      // one action — the run-setup flow the operator actually wants
+      // (mockup L's "Start run"), without a second trip to the panel.
+      const applyParams = async (btn, launch) => {
         const errs = validateKwargsForm(paramsForm, schema);
         if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
         const vals = readKwargsForm(paramsForm);
+        const label = btn.textContent;
+        btn.disabled = true;
+        if (launch) btn.textContent = "Launching…";
         try {
           await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
             method: "POST", body: JSON.stringify({ kwargs_values: vals })
           });
           _wsKwargsValues = vals;
-          toast("Parameters set", "ok");
+          if (launch) {
+            await sendCmd("launch");
+            toast("Parameters set — launching", "ok");
+          } else {
+            toast("Parameters set", "ok");
+          }
           paramsModal.classList.remove("show");
-        } catch (err) { toast(String(err), "bad"); }
-      });
+          if (launch) { await refreshStatus(); loadRunParams(); }
+        } catch (err) {
+          toast(String(err), "bad");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = label;
+        }
+      };
+      $("btnParamsSet").addEventListener("click", (e) => applyParams(e.currentTarget, false));
+      $("btnParamsSetLaunch").addEventListener("click", (e) => applyParams(e.currentTarget, true));
     } else {
       paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
       $("btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));

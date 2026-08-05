@@ -276,6 +276,23 @@
 .kw-file-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
 .kw-file-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 12px; color: var(--muted); }
 .kw-checkbox { width: auto; }
+/* ── bool as a touch switch ───────────────────────────────────────── */
+.kwargs-form .kw-switch-wrap { display: inline-flex; align-items: center; cursor: pointer; }
+.kwargs-form .kw-switch { position: absolute; opacity: 0; width: 0; height: 0; }
+.kwargs-form .kw-switch-track {
+  width: 52px; height: 31px; border-radius: 999px; background: var(--border);
+  position: relative; transition: background var(--motion-fast) var(--ease);
+}
+.kwargs-form .kw-switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 25px; height: 25px;
+  border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm);
+  transition: left var(--motion-fast) var(--ease);
+}
+.kwargs-form .kw-switch:checked + .kw-switch-track { background: var(--green); }
+.kwargs-form .kw-switch:checked + .kw-switch-track::after { left: 24px; }
+.kwargs-form .kw-switch:focus-visible + .kw-switch-track { box-shadow: var(--glow); }
+.kwargs-form .kw-switch:disabled + .kw-switch-track { opacity: 0.4; cursor: not-allowed; }
+.kwargs-form .kw-switch-wrap:active .kw-switch-track::after { transform: scale(0.94); }
 .kw-textarea { resize: vertical; font-family: var(--mono); font-size: 12px; }
 
 /* ── Stats bar ──────────────────────────────────────────────────────────── */
