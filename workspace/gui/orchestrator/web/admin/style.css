@@ -154,20 +154,23 @@
 .kwargs-form .kw-col { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-5); }
 /* the rack sits on its own recessed panel, like a rack in a tray */
 .kwargs-form .kw-slot-panel {
-  background: var(--bg); border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  background: var(--surface); border-radius: var(--radius-md);
+  padding: var(--space-4);
   /* hug the grid: inside the flex column the panel would stretch to
      full width and read as a gray band, not a rack tray */
   align-self: flex-start; width: max-content; max-width: 100%;
 }
 /* Parameters modal: wide enough for a two-column _layout to hold */
 .modal.modal-wide { width: min(860px, calc(100vw - 32px)); max-width: none; }
-.kwargs-form .kw-field { display: flex; flex-direction: column; gap: 5px; }
-.kwargs-form .kw-label-row { display: flex; align-items: center; gap: 6px; }
-.kwargs-form .kw-label {
-  font-size: 13px; font-weight: 600; color: var(--text);
-  letter-spacing: -0.01em;
+.kwargs-form .kw-field {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  /* each parameter is its own SECTION — the gray panel in the mockup
+     was doing the dividing work this form had none of */
+  background: var(--bg); border-radius: var(--radius-lg);
+  padding: var(--space-5);
 }
+.kwargs-form .kw-label-row { display: flex; align-items: center; gap: 6px; }
+.kwargs-form .kw-label { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.1px; }
 .kwargs-form .kw-optional {
   font-size: 11px; font-weight: 400; color: var(--muted);
   text-transform: none; letter-spacing: 0;
@@ -185,7 +188,7 @@
 .kwargs-form .kw-reset:hover { background: var(--surface3); color: var(--text); }
 [data-theme="light"] .kwargs-form .kw-reset { background: rgba(0,0,0,0.04); }
 [data-theme="light"] .kwargs-form .kw-reset:hover { background: rgba(0,0,0,0.08); }
-.kwargs-form .kw-hint { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.kwargs-form .kw-hint { font-size: var(--text-md); color: var(--muted); line-height: 1.5; }
 
 /* ── slots field: tap the real rack positions ─────────────────────── */
 .kwargs-form .kw-slots { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; }
@@ -236,7 +239,7 @@
   background: repeating-linear-gradient(45deg, var(--surface2) 0 3px, transparent 3px 6px);
 }
 .kwargs-form .kw-slot-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.kwargs-form .kw-slot-count { font-weight: 700; font-size: var(--text-md); margin-right: auto; }
+.kwargs-form .kw-slot-count { font-weight: 800; font-size: var(--text-lg); margin-right: auto; }
 
 .kwargs-empty { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
 .kwargs-banner {

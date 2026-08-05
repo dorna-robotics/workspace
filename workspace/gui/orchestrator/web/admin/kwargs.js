@@ -209,14 +209,6 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       });
       panel.appendChild(grid);
       wrap.appendChild(panel);
-      const legend = document.createElement("div");
-      legend.className = "kw-slot-legend";
-      legend.innerHTML =
-        '<span><i class="on"></i>Selected — will be processed</span>' +
-        '<span><i></i>Not selected</span>' +
-        (exclude.size ? '<span><i class="excluded"></i>' +
-          (spec.exclude_hint || "Not available") + '</span>' : "");
-      wrap.appendChild(legend);
       const bar = document.createElement("div");
       bar.className = "kw-slot-bar";
       const countEl = document.createElement("span");
