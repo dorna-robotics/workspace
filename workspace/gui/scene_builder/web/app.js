@@ -7488,6 +7488,23 @@ ensureBuilderBar();
     return q;
   }
 
+  // Full readout for a selected recipe — every parameter the recipe's
+  // core.IK call uses, plus the live offset/joints. ``joints`` may be
+  // an array, a status string, or null (shows …).
+  function __ikText(ri, sr, offset, joints) {
+    const f = v => Math.round(v * 10) / 10;
+    const jl = Array.isArray(joints) ? "[" + joints.map(f).join(", ") + "]" : (joints || "…");
+    const lines = [];
+    lines.push("anchor  " + (ri.component || "—") + " · " +
+      ri.target_solid_name + "/" + ri.target_anchor);
+    lines.push("prm     base " + ri.base_distance + " · step " + ri.rail_step +
+      " · span " + ri.rail_span + " · " + (ri.left_approach ? "left" : "right"));
+    if (sr && sr.ref_joints) lines.push("ref     [" + sr.ref_joints.map(f).join(", ") + "]");
+    lines.push("offset  [" + offset.map(f).join(", ") + "]");
+    lines.push("joints  " + jl);
+    return lines.join("\n");
+  }
+
   function __ikDragStop() {
     const t = window.__three;
     if (__ikDrag.marker && t) t.scene.remove(__ikDrag.marker);
@@ -7553,12 +7570,8 @@ ensureBuilderBar();
     // (solved at boot, or pinned by hand exactly when the default
     // offset has no solution). No solve until the user drags.
     const sr = (__refSolve || {})[name] || {};
-    if (sr.ref_joints) {
-      __poseCoreAt(sr.ref_joints);
-      if (sub) sub.textContent =
-        "offset  [" + off.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
-        "joints  [" + sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
-    }
+    if (sr.ref_joints) __poseCoreAt(sr.ref_joints);
+    if (sub) sub.textContent = __ikText(ri, sr, off, sr.ref_joints);
 
     const el = t.renderer.domElement;
     const ray = new T.Raycaster();
@@ -7693,15 +7706,14 @@ ensureBuilderBar();
         if (!window.__setSolidPosesWorld) throw new Error("viewer not ready (pose setter missing)");
         window.__setSolidPosesWorld(coreName, res.solids);
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
-        if (__ikDrag.sub) __ikDrag.sub.textContent =
-          "offset  [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
-          "joints  [" + res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+        if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(
+          __ikDrag.info, (__refSolve || {})[__ikDrag.recipe], offset, res.joints);
       } else {
         // genuine no-solution from the solver
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0xff8a2b);
-        if (__ikDrag.sub) __ikDrag.sub.textContent =
-          "offset  [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
-          "joints  no solution (status " + (res.status ?? res.error ?? "?") + ")";
+        if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(
+          __ikDrag.info, (__refSolve || {})[__ikDrag.recipe], offset,
+          "no solution (status " + (res.status ?? res.error ?? "?") + ")");
       }
     } catch (e) {
       // client-side failure ≠ unreachable — say so, loudly
@@ -7751,12 +7763,8 @@ ensureBuilderBar();
             __ikDrag.marker.position.copy(
               new T.Vector3(o[0], o[1], o[2]).applyMatrix4(__ikDrag.anchorM));
             if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
-            if (sr.ref_joints) {
-              __poseCoreAt(sr.ref_joints);
-              if (__ikDrag.sub) __ikDrag.sub.textContent =
-                "offset  [" + o.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
-                "joints  [" + sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
-            }
+            if (sr.ref_joints) __poseCoreAt(sr.ref_joints);
+            if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(ri, sr, o, sr.ref_joints);
           }
         });
         head.appendChild(resetB);
