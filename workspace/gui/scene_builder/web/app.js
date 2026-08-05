@@ -7663,16 +7663,26 @@ ensureBuilderBar();
       const bs = window.builderState;
       const coreName = Object.keys(bs.components || {})
         .find(n => (bs.components[n] || {}).type === "core");
-      if (res.ok && res.solids && coreName && window.__setSolidPosesWorld) {
+      if (res.ok && res.solids) {
+        if (!coreName) throw new Error("no core object in the scene");
+        if (!window.__setSolidPosesWorld) throw new Error("viewer not ready (pose setter missing)");
         window.__setSolidPosesWorld(coreName, res.solids);
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
         if (__ikDrag.sub) __ikDrag.sub.textContent =
           "offset  [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
           "joints  [" + res.joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
-      } else if (__ikDrag.ball) {
-        __ikDrag.ball.material.color.set(0xff8a2b);   // unreachable — no IK solution here
+      } else {
+        // genuine no-solution from the solver
+        if (__ikDrag.ball) __ikDrag.ball.material.color.set(0xff8a2b);
+        if (__ikDrag.sub) __ikDrag.sub.textContent =
+          "offset  [" + offset.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
+          "joints  no solution (status " + (res.status ?? res.error ?? "?") + ")";
       }
-    } catch (_) {}
+    } catch (e) {
+      // client-side failure ≠ unreachable — say so, loudly
+      console.error("recipe_ik apply failed:", e);
+      if (__ikDrag.sub) __ikDrag.sub.textContent = "apply failed: " + (e.message || e);
+    }
     __ikDrag.busy = false;
     if (__ikDrag.queued) { const q = __ikDrag.queued; __ikDrag.queued = null; __ikSolve(q); }
   }
