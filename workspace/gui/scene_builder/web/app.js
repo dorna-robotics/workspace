@@ -1852,7 +1852,15 @@ if (node) {
       socket.on("scene_update", (payload) => {
         if (!payload || typeof payload !== "object") return;
         for (const [n, s] of Object.entries(payload)) {
-          upsertObject(n, s || {});
+          // Per-entry isolation: one bad entry must not strand the
+          // rest of the replay (unrendered objects, unregistered
+          // components — the "no core object" class of bug).
+          try {
+            upsertObject(n, s || {});
+          } catch (e) {
+            console.error("scene_update: upsert failed for", n, e);
+            continue;
+          }
           // Sync builder state from server so object list + config work after refresh
           if (s && !s.delete && s.type) {
             if (!window.builderState.components[n]) {
@@ -1870,6 +1878,7 @@ if (node) {
           }
         }
       window.upsertObject = upsertObject;
+      window.__hasObject = (n) => objectsByName.has(n);
       // TCP drag support: viewer internals + a fast world-pose setter
       // (drag solves return WORLD solid poses; holders are core-local).
       window.__three = { scene, camera, renderer, controls, THREE };
@@ -7402,10 +7411,19 @@ ensureBuilderBar();
   // core blueprint at those joints and update the existing object's
   // solid holders (no socket emit, no scene-state change; a refresh
   // returns the robot to zeros).
+  function __coreName() {
+    const bs = window.builderState;
+    const n = Object.keys(bs.components || {})
+      .find(k => (bs.components[k] || {}).type === "core");
+    if (n) return n;
+    // The registry can lag the viewer after a refresh replay; the
+    // platform guarantees the core component is literally named "core".
+    return (window.__hasObject && window.__hasObject("core")) ? "core" : null;
+  }
+
   async function __poseCoreAt(joints) {
     const bs = window.builderState;
-    const coreName = Object.keys(bs.components || {})
-      .find(n => (bs.components[n] || {}).type === "core");
+    const coreName = __coreName();
     if (!coreName) { showToast("No core in the scene to pose"); return; }
     const meta = bs.components[coreName] || {};
     const options = {};
@@ -7660,9 +7678,7 @@ ensureBuilderBar();
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recipe: __ikDrag.recipe, offset }),
       }).then(x => x.json());
-      const bs = window.builderState;
-      const coreName = Object.keys(bs.components || {})
-        .find(n => (bs.components[n] || {}).type === "core");
+      const coreName = __coreName();
       if (res.ok && res.solids) {
         if (!coreName) throw new Error("no core object in the scene");
         if (!window.__setSolidPosesWorld) throw new Error("viewer not ready (pose setter missing)");
