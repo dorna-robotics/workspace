@@ -7549,7 +7549,16 @@ ensureBuilderBar();
     marker.position.copy(new T.Vector3(off[0], off[1], off[2]).applyMatrix4(anchorM));
     t.scene.add(marker);
     Object.assign(__ikDrag, { recipe: name, info: ri, marker, ball, anchorM, sub, off });
-    __ikSolve(off);   // seed at the recipe's own offset
+    // Selection brings the robot to ref_joints — ALWAYS available
+    // (solved at boot, or pinned by hand exactly when the default
+    // offset has no solution). No solve until the user drags.
+    const sr = (__refSolve || {})[name] || {};
+    if (sr.ref_joints) {
+      __poseCoreAt(sr.ref_joints);
+      if (sub) sub.textContent =
+        "offset  [" + off.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
+        "joints  [" + sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+    }
 
     const el = t.renderer.domElement;
     const ray = new T.Raycaster();
@@ -7735,12 +7744,19 @@ ensureBuilderBar();
         resetB.addEventListener("click", (e) => {
           e.stopPropagation();
           const ri = (window.__ikInfo || {})[r.name];
+          const sr = (__refSolve || {})[r.name] || {};
           if (__ikDrag.recipe === r.name && __ikDrag.marker && ri) {
             const T = window.__three.THREE;
             const o = ri.target_offset;
             __ikDrag.marker.position.copy(
               new T.Vector3(o[0], o[1], o[2]).applyMatrix4(__ikDrag.anchorM));
-            __ikSolve(o.slice());
+            if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
+            if (sr.ref_joints) {
+              __poseCoreAt(sr.ref_joints);
+              if (__ikDrag.sub) __ikDrag.sub.textContent =
+                "offset  [" + o.map(v => Math.round(v * 10) / 10).join(", ") + "]\n" +
+                "joints  [" + sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+            }
           }
         });
         head.appendChild(resetB);
