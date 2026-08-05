@@ -151,12 +151,17 @@
 .kwargs-form { display: flex; flex-direction: column; gap: var(--space-5); }
 /* _layout rows: fields side by side, stacking on narrow screens */
 .kwargs-form .kw-row { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
-.kwargs-form .kw-col { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-5); }
+.kwargs-form .kw-col { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-5); }
 /* the rack sits on its own recessed panel, like a rack in a tray */
 .kwargs-form .kw-slot-panel {
   background: var(--bg); border-radius: var(--radius-lg);
-  padding: var(--space-5); display: inline-block;
+  padding: var(--space-5);
+  /* hug the grid: inside the flex column the panel would stretch to
+     full width and read as a gray band, not a rack tray */
+  align-self: flex-start; width: max-content; max-width: 100%;
 }
+/* Parameters modal: wide enough for a two-column _layout to hold */
+.modal.modal-wide { width: min(860px, calc(100vw - 32px)); max-width: none; }
 .kwargs-form .kw-field { display: flex; flex-direction: column; gap: 5px; }
 .kwargs-form .kw-label-row { display: flex; align-items: center; gap: 6px; }
 .kwargs-form .kw-label {
