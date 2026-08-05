@@ -88,7 +88,10 @@
       // Pixel ratio capped at 1.5 for FPS on Retina/4K. Antialias stays
       // on for clean edges. See orchestrator/index.html.
       const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      // WebGL renders on the VIEWING machine's GPU (not the Pi) — cap
+      // at 2x, not 1.5x: the old cap under-resolved the canvas on
+      // scaled displays and read as aliasing on every mesh edge.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
