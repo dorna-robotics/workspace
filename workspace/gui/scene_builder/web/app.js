@@ -7774,7 +7774,7 @@ ensureBuilderBar();
       }
       row.appendChild(head);
       const sub = document.createElement("span");
-      sub.style.cssText = "display:none;font-size:11.5px;font-family:monospace;" +
+      sub.style.cssText = "display:none;font-size:12px;font-family:monospace;" +
         "color:var(--fg,inherit);line-height:1.55;white-space:pre-line;" +
         "word-break:break-all;padding-top:3px;";
       row.appendChild(sub);
