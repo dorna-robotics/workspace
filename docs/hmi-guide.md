@@ -187,7 +187,8 @@ Recurring question: is `.j2`/YAML enough for kwargs and HMI, or should
 these be Python / HTML? The answers, and the boundary that makes them
 work:
 
-**Run inputs stay in `launch.yaml`.** One schema, one source of truth;
+**Run inputs stay in the kwargs schema** (`hmi/kwargs.j2`, pointed at
+by `launch.yaml`). One schema, one source of truth;
 `hmi.j2` declares how the pendant *presents* run setup, never a second
 definition of it. (Rejected: moving kwargs into `hmi.j2` — two files
 defining the same inputs is how they drift.)

@@ -151,6 +151,24 @@ ready, build the project"). Then the conversation is exactly:
 5. Operator launches and watches. Failures at this stage name their
    action in the step log and their motion in the [traj]/[plan] lines.
 
+## Project layout convention
+
+`launch.yaml` is a list of POINTERS, never inline blocks:
+
+```yaml
+scene:    [scene/core_500.j2, scene/layout.j2]
+recipes:  recipes.j2
+actions:  actions.py
+checks:   checks.py
+kwargs:   hmi/kwargs.j2      # run parameters (Parameters / run-setup form)
+hmi:      hmi/hmi.j2         # pendant widgets, when the project declares one
+```
+
+Operator-facing declarations live in **`hmi/`** — run setup and the
+pendant HMI are the same concern. Inline `kwargs:` still works for
+legacy/small projects. Run-parameter field types (including `slots`,
+the rack-position picker) are project-guide §3.
+
 ## Scene file ownership + caches
 
 - The scene BUILDER owns ``layout.j2`` and regenerates it wholesale —

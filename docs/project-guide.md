@@ -14,10 +14,19 @@ projects/my_project/
 ├── states.py            # State handlers (what the robot does)
 ├── checks.py            # Verification checks (pre/post)
 ├── recipes.j2           # Component aliases → recipe classes (or recipes.yaml)
+├── hmi/                 # OPERATOR-FACING declarations (see §3)
+│   ├── kwargs.j2        # Run parameters — the Parameters / run-setup form
+│   └── hmi.j2           # Pendant HMI widgets (when the project declares one)
 └── scene/
     ├── base.j2          # Hardware layout (Jinja2)
     └── layout.j2        # Spatial arrangement
 ```
+
+**Convention for new projects: operator-facing declarations live in
+`hmi/`.** `launch.yaml` stays a short list of pointers (scene,
+recipes, actions, checks, kwargs, hmi) — one file per concern, none of
+them inline. Run parameters and the pendant HMI are the same concern
+(what the operator sees and sets), so they share the folder.
 
 To create a new project, copy `projects/pace_or/` as a template and edit each file. The sections below explain them in detail.
 
@@ -75,7 +84,7 @@ Two top-level keys:
 | Key | Description |
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
-| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. **Either inline (a dict) or a file path** — `kwargs: kwargs.j2`, split out like `recipes.j2`. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
+| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. **Either inline (a dict) or a file path** — new projects use `kwargs: hmi/kwargs.j2` (see §1); inline stays supported for small/legacy projects. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]
