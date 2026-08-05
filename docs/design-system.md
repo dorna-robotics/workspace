@@ -263,7 +263,101 @@ Workflow:
 7. If you needed to introduce a new token to fit the component,
    add it to `base.css` *and* document it here.
 
-## 8. When the system feels wrong
+## 8. Interaction states — every component ships all of them
+
+States are not follow-up polish: an interactive element ships its full
+state row the day it ships.
+
+| Component | rest | hover | pressed | selected/active | disabled | loading | empty | error |
+|---|---|---|---|---|---|---|---|---|
+| Button | surface + border | `--surface2` | scale ~0.95 | `--accent` fill | ghosted (§4 rule) | spinner replaces label, width kept | — | `--red` border |
+| Icon button | transparent | `--surface2` circle | scale 0.94 | `--accent-dim` fill | ghosted | spinner | — | — |
+| Card / panel | flat surface | only if clickable | — | `--accent` border | — | skeleton block | §11 empty text | inline `--red` banner |
+| List row | transparent | `--surface2` | — | `--accent-dim` + accent border | ghosted | shimmer row | "No X yet" row | `--red` dot + reason |
+| Input | surface + border | border `--text` | — | `--glow` focus ring | ghosted | — | `--muted` placeholder | `--red` border, message below |
+| Toggle (eye, sim) | per-state icon | `--surface2` | scale 0.94 | icon swap (slash/fill) | ghosted | — | — | — |
+
+Two universal rules:
+
+- **Async work is always visible where the user is looking** — phase
+  work uses the "Starting…" idiom (`.ctrl-starting` spinner + short
+  text), row-level work shows in the row, button-level work in the
+  button. Silent latency is a defect.
+- **Anything hidden or disabled says why** on hover/title.
+
+## 9. Color discipline
+
+- **Muted when normal; saturated only for active and attention.** A
+  screen that is colorful when everything is fine trains operators to
+  ignore color. Done leans muted; only the live thing and the problem
+  pop. (ISA-101 practice; also the HMI decision log.)
+- `--accent` means *interactive or live* — never decoration.
+- Red = needs a human. Amber = degraded / check. Green = confirmed
+  good, not "merely present".
+- **Never color alone.** A state carried by color also carries a
+  shape: ✓ badge on done, ! on attention, hollow vs filled for
+  occupancy, slash on hidden. Color-blind operators exist.
+
+## 10. Touch targets & gestures (operator surfaces)
+
+- Minimum target **44×44 px** on anything an operator touches on
+  glass (pendant, HMI, builder on a touchscreen). Desktop-only admin
+  may go to 32 px.
+- **Gestures are accelerators, never the only path**: hold/drag/
+  double-click actions must also exist as a visible control
+  (hold-to-edit needs an Edit affordance; drag-select needs Select
+  all).
+
+## 11. Empty states & first paint
+
+- Every list/panel designs its empty state: one muted sentence plus
+  the action that fills it ("No components yet — Insert adds the
+  first"). Never a blank rectangle.
+- First paint shows structure (skeletons / reserved space), not a
+  reflow; persisted layout state (sidebar width) applies **before**
+  first paint. Layout must not jump.
+
+## 12. Language
+
+- Operator surfaces speak operator words ("Filling tube 3 of 8");
+  the engineer timeline lives behind a details toggle.
+- Buttons are verbs ("Rescan", "Skip disc"), never nouns or codes.
+- Errors: one sentence, then the next action — the guided-recovery
+  pattern is the template.
+
+## 13. New-surface checklist
+
+Before a new page/panel/widget merges:
+
+1. Values from tokens only (§6 anti-patterns).
+2. Every interactive element covers its §8 state row.
+3. Async work visible at the right level (§8).
+4. Empty state designed (§11).
+5. Touch targets ≥ 44 px if operators touch it (§10).
+6. Color states carry a non-color signal (§9).
+7. Operator-language check (§12).
+8. Both themes checked (light is the one that drifts).
+9. Any new grammar the surface introduces gets a section here or in
+   the relevant guide — the rule that keeps the NEXT surface
+   consistent.
+
+## 14. Process: mockup first, grammar on sign-off
+
+Visual work follows the HMI workflow: disposable mockups on the
+design tokens (`docs/internal/*_mockups/`, preview server per
+`hmi-guide.md` §9) → agree → codify the new grammar here → build the
+real thing from the doc. Mockups never ship; grammars do.
+
+## 15. Known debt (fix opportunistically, no big-bang)
+
+- Builder panels (recipes list, drag readout) use inline `cssText`
+  with raw px — migrate to classes on tokens when next touched.
+- HMI mockup pages duplicate slot CSS per page — acceptable
+  (disposable), but production rack/bench widgets define the slot
+  grammar once.
+- Contrast audit of `--muted` on `--surface2` in light theme pending.
+
+## 16. When the system feels wrong
 
 If you're fighting the tokens — e.g. a designer says "this button
 needs to be 18 px radius" and we don't have a token for that —

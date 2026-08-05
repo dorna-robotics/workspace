@@ -19,6 +19,7 @@ doc sections — skills navigate, they don't duplicate.
 | Configure simulation mode for a device or component | [`enable-sim-mode`](enable-sim-mode/SKILL.md) |
 | Recover the workflow after a pause (operator-side) | [`operator-recovery`](operator-recovery/SKILL.md) |
 | Debug the device bus / MQTT state | [`debug-device-bus`](debug-device-bus/SKILL.md) |
+| Build or change any GUI surface (tokens, state matrix, mockup-first, HMI widgets) | [`build-gui`](build-gui/SKILL.md) |
 
 ## Canonical doc references
 
