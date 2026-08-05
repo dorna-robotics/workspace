@@ -208,9 +208,12 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         grid.appendChild(cell);
       });
       panel.appendChild(grid);
-      wrap.appendChild(panel);
+      const split = document.createElement("div");
+      split.className = "kw-slot-split";
+      split.appendChild(panel);
+      wrap.appendChild(split);
       const bar = document.createElement("div");
-      bar.className = "kw-slot-bar";
+      bar.className = "kw-slot-actions";
       const countEl = document.createElement("span");
       countEl.className = "kw-slot-count";
       bar.appendChild(countEl);
@@ -230,7 +233,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           bar.appendChild(b);
         });
       }
-      wrap.appendChild(bar);
+      split.appendChild(bar);
       inputRow.appendChild(wrap);
       sync();
       field.appendChild(inputRow);

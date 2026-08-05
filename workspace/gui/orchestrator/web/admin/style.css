@@ -238,17 +238,22 @@
   border-style: solid;
   background: repeating-linear-gradient(45deg, var(--surface2) 0 3px, transparent 3px 6px);
 }
+.kwargs-form .kw-slot-split { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
+.kwargs-form .kw-slot-actions {
+  flex: 1 1 190px; min-width: 0; display: flex; flex-direction: column;
+  gap: var(--space-3); align-items: stretch;
+}
 .kwargs-form .kw-slot-quick {
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  border-radius: var(--radius-sm); padding: 9px 16px; font-size: var(--text-md);
-  font-weight: 700; cursor: pointer; min-height: 40px;
+  border: 0; background: var(--surface); color: var(--text);
+  border-radius: var(--radius-md); padding: 13px 16px; font-size: var(--text-md);
+  font-weight: 700; cursor: pointer; min-height: 44px; text-align: left;
   transition: background var(--motion-fast) var(--ease);
 }
 .kwargs-form .kw-slot-quick:hover { background: var(--surface2); }
 .kwargs-form .kw-slot-quick:active { transform: scale(0.97); }
 .kwargs-form .kw-slot-quick:focus-visible { outline: none; box-shadow: var(--glow); }
-.kwargs-form .kw-slot-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.kwargs-form .kw-slot-count { font-weight: 800; font-size: var(--text-lg); margin-right: auto; }
+
+.kwargs-form .kw-slot-count { font-weight: 800; font-size: var(--text-lg); }
 
 .kwargs-empty { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
 .kwargs-banner {
