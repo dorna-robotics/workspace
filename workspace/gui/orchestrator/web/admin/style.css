@@ -202,6 +202,26 @@
     var(--surface2) 0 5px, transparent 5px 10px);
   color: var(--muted); cursor: not-allowed; opacity: 0.7;
 }
+.kwargs-form .kw-slot {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+}
+.kwargs-form .kw-slot-id { font-size: var(--text-sm); font-weight: 800; line-height: 1.1; }
+.kwargs-form .kw-slot-num {
+  font-size: 9px; font-weight: 700; line-height: 1.1; opacity: 0.75; min-height: 10px;
+}
+.kwargs-form .kw-slot-legend {
+  display: flex; flex-wrap: wrap; gap: var(--space-4);
+  font-size: var(--text-sm); color: var(--muted); font-weight: 600;
+}
+.kwargs-form .kw-slot-legend i {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px dashed var(--border); margin-right: 6px; vertical-align: -2px;
+}
+.kwargs-form .kw-slot-legend i.on { background: var(--accent); border: 2px solid var(--accent); }
+.kwargs-form .kw-slot-legend i.excluded {
+  border-style: solid;
+  background: repeating-linear-gradient(45deg, var(--surface2) 0 3px, transparent 3px 6px);
+}
 .kwargs-form .kw-slot-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .kwargs-form .kw-slot-count { font-weight: 700; font-size: var(--text-md); margin-right: auto; }
 .kwargs-form .kw-slot-quick {

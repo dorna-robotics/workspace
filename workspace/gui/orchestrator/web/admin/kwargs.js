@@ -143,8 +143,13 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 56px)`;
       const cells = [];
       const sync = () => {
-        cells.forEach(({ el, name }) => {
-          el.classList.toggle("on", chosen.has(name));
+        // run order = the component's slot order, so the numbers match
+        // the sequence the protocol will actually process them in
+        const order = spec.slots.filter(n => chosen.has(n));
+        cells.forEach(({ el, name, num }) => {
+          const on = chosen.has(name);
+          el.classList.toggle("on", on);
+          if (num && !exclude.has(name)) num.textContent = on ? String(order.indexOf(name) + 1) : "";
         });
         wrap.dataset.kwValue = JSON.stringify([...chosen]);
         countEl.textContent = `${chosen.size} selected`;
@@ -153,7 +158,14 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         const cell = document.createElement("button");
         cell.type = "button";
         cell.className = "kw-slot" + (exclude.has(name) ? " excluded" : "");
-        cell.textContent = name;
+        const idEl = document.createElement("span");
+        idEl.className = "kw-slot-id";
+        idEl.textContent = name;
+        const numEl = document.createElement("span");
+        numEl.className = "kw-slot-num";
+        numEl.textContent = exclude.has(name) ? (spec.exclude_label || "—") : "";
+        cell.appendChild(idEl);
+        cell.appendChild(numEl);
         if (exclude.has(name)) {
           cell.disabled = true;
           cell.title = spec.exclude_hint || "Not available for processing";
@@ -165,10 +177,18 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         } else {
           cell.disabled = true;
         }
-        cells.push({ el: cell, name });
+        cells.push({ el: cell, name, num: numEl });
         grid.appendChild(cell);
       });
       wrap.appendChild(grid);
+      const legend = document.createElement("div");
+      legend.className = "kw-slot-legend";
+      legend.innerHTML =
+        '<span><i class="on"></i>Selected — will be processed</span>' +
+        '<span><i></i>Not selected</span>' +
+        (exclude.size ? '<span><i class="excluded"></i>' +
+          (spec.exclude_hint || "Not available") + '</span>' : "");
+      wrap.appendChild(legend);
       const bar = document.createElement("div");
       bar.className = "kw-slot-bar";
       const countEl = document.createElement("span");
