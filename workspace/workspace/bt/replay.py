@@ -31,9 +31,28 @@ import sys
 import yaml
 
 
-def resolve_kwargs(launch, batch=None, overrides=()):
+def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     """launch.yaml kwargs schema → concrete kwargs dict. ``batch``
-    lands on the first int-typed kwarg; ``overrides`` are k=v strings."""
+    lands on the first int-typed kwarg (or the first ``slots`` one);
+    ``overrides`` are k=v strings.
+
+    ``kwargs:`` may be inline OR a file path (kwargs.j2) — same two
+    shapes the orchestrator accepts."""
+    launch = dict(launch or {})
+    spec = launch.get("kwargs")
+    if isinstance(spec, str) and project_dir:
+        from pathlib import Path
+        try:
+            from jinja2 import Template
+            text = (Path(project_dir) / spec).read_text()
+            if spec.endswith(".j2") or "{%" in text or "{{" in text:
+                text = Template(text).render()
+            data = yaml.safe_load(text) or {}
+            if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
+                data = data["kwargs"]
+            launch["kwargs"] = data if isinstance(data, dict) else {}
+        except Exception:
+            launch["kwargs"] = {}
     out = {}
     first_int = None
     first_slots = None
@@ -137,7 +156,7 @@ def main():
 
     bad = False
     for n in args.batch:
-        kwargs = resolve_kwargs(launch, batch=n, overrides=args.kw)
+        kwargs = resolve_kwargs(launch, batch=n, overrides=args.kw, project_dir=project)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
             plan_len, fails, goal_ok, mk = replay(project, kwargs)

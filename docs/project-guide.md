@@ -75,7 +75,7 @@ Two top-level keys:
 | Key | Description |
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
-| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. |
+| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. **Either inline (a dict) or a file path** — `kwargs: kwargs.j2`, split out like `recipes.j2`. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]

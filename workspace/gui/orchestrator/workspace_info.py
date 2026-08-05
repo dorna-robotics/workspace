@@ -131,6 +131,37 @@ def _free_port(port: int) -> None:
             pass
 
 
+def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
+    """The project's kwargs schema, from launch.yaml.
+
+    ``kwargs:`` accepts BOTH shapes, like ``scene``/``recipes`` do:
+
+      * a dict  — declared inline (unchanged, every existing project)
+      * a path  — ``kwargs: kwargs.j2`` / ``kwargs.yaml``, a separate
+        file next to recipes.j2, rendered as Jinja2 then parsed. Its
+        top level is the schema; a ``kwargs:`` key inside is unwrapped
+        so the file can stand alone or mirror launch.yaml's shape.
+
+    Never raises — an unreadable/invalid file yields None (the caller
+    shows "no parameters" rather than blocking the workspace).
+    """
+    from pathlib import Path as _P
+    spec = launch.get("kwargs") if isinstance(launch, dict) else None
+    if isinstance(spec, dict) or spec is None:
+        return spec
+    try:
+        from jinja2 import Template
+        text = (_P(project_dir) / str(spec)).read_text()
+        if str(spec).endswith(".j2") or "{%" in text or "{{" in text:
+            text = Template(text).render()
+        data = yaml.safe_load(text) or {}
+        if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
+            data = data["kwargs"]
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 class WorkspaceInfo:
     """Holds workspace process info and metadata."""
 
@@ -223,7 +254,7 @@ class WorkspaceInfo:
                 return None
             with open(launch_path) as f:
                 data = yaml.safe_load(f)
-            schema = data.get("kwargs") if isinstance(data, dict) else None
+            schema = load_kwargs_schema(data, launch_path.parent)
             if not isinstance(schema, dict):
                 return schema
             if any(isinstance(v, dict) and v.get("type") == "slots"
