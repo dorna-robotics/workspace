@@ -181,6 +181,53 @@ Static visual references, fake data, built on the platform design tokens:
 6. Remaining catalog widgets on demand; end-of-run report screen
    (composes the same widgets + `rt.op` history) as a later chapter.
 
+## 10b. Format decisions — what YAML holds, and where it stops
+
+Recurring question: is `.j2`/YAML enough for kwargs and HMI, or should
+these be Python / HTML? The answers, and the boundary that makes them
+work:
+
+**Run inputs stay in `launch.yaml`.** One schema, one source of truth;
+`hmi.j2` declares how the pendant *presents* run setup, never a second
+definition of it. (Rejected: moving kwargs into `hmi.j2` — two files
+defining the same inputs is how they drift.)
+
+**Why YAML holds for both today.** Both are *declarations*: a list of
+fields with types, a list of widgets with bindings. The `slots` field
+is the proof of the pattern — the yaml says `component:
+rack_falcon_15ml_1`, and everything else (grid, slot names, geometry)
+is DERIVED server-side from the scene. Declarations stay small when
+the platform does the deriving.
+
+**Where YAML genuinely stops**: computed schemas (a default that
+depends on the scene), conditional fields ("only when this device
+exists"), cross-field validation ("volume × tubes ≤ reservoir"), live
+capacity checks. Jinja can fake some of it and gets ugly fast.
+
+**The escape hatch when we need it** — and the constraint that shapes
+it: today `launch_config()` is a pure YAML read; the orchestrator
+never imports project code (project modules pull hardware imports —
+the scene builder had to stub dorna2 for exactly this reason). So a
+Python kwargs file must NOT be read by the orchestrator directly.
+Two acceptable designs, in preference order:
+
+1. **Schema from the workspace process** — the launched project
+   already imports its own code; it can expose a computed schema over
+   the existing API, and the orchestrator renders whatever it is told.
+   Projects that need computation get Python; everyone else keeps
+   YAML; the orchestrator stays import-free.
+2. **A declared hook** — `kwargs_hook: params.py:build` executed in
+   the *project* process (launch/replay), not the GUI.
+
+Until a project actually needs it, neither is built: `slots` covered
+the case that motivated the question.
+
+**HTML for the HMI stays rejected** (§2): per-project HTML fractures
+the design language and turns protocol authors into web developers.
+If declaration-order layout proves too thin, the answer is layout
+HINTS in the same YAML (`row:` grouping, like operator-action groups),
+not markup.
+
 ## 11. Decision log
 
 | Decision | Why |
@@ -193,4 +240,6 @@ Static visual references, fake data, built on the platform design tokens:
 | Color discipline: muted normal, color for active/attention | High-performance-HMI practice; colorful-when-fine trains color blindness. |
 | Guided recovery: one sentence + one operator_action button | Operators need the next action, not a dashboard; all machinery already exists. |
 | Parameters: presets + touch widgets over the existing kwargs schema | Converts a debug form into run setup without discarding the schema. |
+| Run inputs stay in launch.yaml; hmi.j2 only presents them | One source of truth for what a run takes; two definitions drift. `slots` shipped this way (project-guide §3). |
+| YAML/j2 for kwargs + HMI; Python only via the workspace process, never imported by the orchestrator | Both are declarations, and the platform derives the rest (grid from the scene). The GUI must not import project code — hardware imports; the builder needed dorna2 stubs for the same reason. |
 | Differentiators to invest in: bench map + guided recovery | Bench map is zero-config (derived from scene — competitors hand-draw screens); recovery kills the "written for programmers" complaint. |

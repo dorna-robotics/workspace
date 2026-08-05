@@ -109,7 +109,49 @@ kwargs:
 | `placeholder` | No | Greyed-out text inside the input when empty |
 | `optional` | No | `true` = field can be left empty, sent as `null` |
 | `min` / `max` | No | Numeric bounds (for `int` and `float` types) |
-| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — checkbox <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) |
+| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) <br>• `slots` — rack-position picker, see below |
+
+### `slots` — pick WHICH positions to run
+
+When the operator must choose *which* rack positions to process (not
+just how many), declare a `slots` field bound to a rack component:
+
+```yaml
+kwargs:
+  tubes:
+    type: slots
+    component: rack_falcon_15ml_1     # a rack in this project's scene
+    exclude: ["D5"]                   # positions that can never be picked
+    exclude_hint: "Reservoir (D5) — never processed"
+    exclude_label: "SOURCE"           # tiny caption inside the excluded slot
+    default: ["A1"]
+    label: Tubes to process
+    hint: Tap the rack positions you loaded.
+```
+
+The **grid is derived, never authored**: the orchestrator reads the
+component's rows/cols and slot names from the scene + the component
+class, so the form draws the real rack (bd: 4×5, `A1`…`D5`). A
+component that can't be resolved degrades to a plain field — a display
+concern must never block run setup.
+
+The value is a **list of slot names** (`["A1","A3","C2"]`), so
+`setup(**kwargs)` maps them to whatever the protocol keys on:
+
+```python
+slots = [f"{r}{c}" for r in "ABCD" for c in range(1, 6)]   # rack order
+picked = kwargs.get("tubes") or []
+tubes = sorted({slots.index(s) for s in picked
+                if s in slots and s != SOURCE_SLOT})
+```
+
+Filter excluded positions **in `setup` too** — the UI prevents picking
+them, but a replay/API caller can still pass anything.
+
+`workspace.bt.replay --batch N` understands `slots`: it selects the
+first N selectable positions, so the schedule gate keeps meaning "run
+N items". Verify a real selection with
+`--kw 'tubes=["A1","A3","C2"]'`.
 
 ### How kwargs flow
 
