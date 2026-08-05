@@ -133,6 +133,7 @@ kwargs:
     exclude: ["D5"]                   # positions that can never be picked
     exclude_hint: "Reservoir (D5) — never processed"
     exclude_label: "SOURCE"           # tiny caption inside the excluded slot
+    quick: [all, clear]               # optional bulk actions (omit = none)
     default: ["A1"]
     label: Tubes to process
     hint: Tap the rack positions you loaded.

@@ -214,6 +214,22 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       const countEl = document.createElement("span");
       countEl.className = "kw-slot-count";
       bar.appendChild(countEl);
+      // Bulk actions are DECLARED (quick: [all, clear]) — the platform
+      // never invents selection semantics for a project's rack.
+      if (!frozen) {
+        const acts = { all: ["Select all", () => spec.slots.forEach(n => { if (!exclude.has(n)) chosen.add(n); })],
+                       clear: ["Clear", () => chosen.clear()] };
+        (spec.quick || []).forEach(nameKey => {
+          const a = acts[String(nameKey).toLowerCase()];
+          if (!a) return;
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "kw-slot-quick";
+          b.textContent = a[0];
+          b.addEventListener("click", () => { a[1](); sync(); });
+          bar.appendChild(b);
+        });
+      }
       wrap.appendChild(bar);
       inputRow.appendChild(wrap);
       sync();
