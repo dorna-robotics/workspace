@@ -140,7 +140,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       wrap.dataset.kwType = "slots";
       const grid = document.createElement("div");
       grid.className = "kw-slot-grid";
-      grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 1fr)`;
+      grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 56px)`;
       const cells = [];
       const sync = () => {
         cells.forEach(({ el, name }) => {
