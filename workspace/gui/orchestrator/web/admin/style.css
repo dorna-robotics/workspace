@@ -237,13 +237,7 @@
 }
 .kwargs-form .kw-slot-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .kwargs-form .kw-slot-count { font-weight: 700; font-size: var(--text-md); margin-right: auto; }
-.kwargs-form .kw-slot-quick {
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  border-radius: var(--radius-sm); padding: 6px 12px; font-size: var(--text-sm);
-  font-weight: 600; cursor: pointer; transition: background var(--motion-fast) var(--ease);
-}
-.kwargs-form .kw-slot-quick:hover { background: var(--surface2); }
-.kwargs-form .kw-slot-quick:focus-visible { outline: none; box-shadow: var(--glow); }
+
 .kwargs-empty { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
 .kwargs-banner {
   display: flex; align-items: center; gap: 8px;

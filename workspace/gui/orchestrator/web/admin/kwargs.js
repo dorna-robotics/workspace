@@ -222,23 +222,6 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       const countEl = document.createElement("span");
       countEl.className = "kw-slot-count";
       bar.appendChild(countEl);
-      if (!frozen) {
-        const mk = (label, fn) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "kw-slot-quick";
-          b.textContent = label;
-          b.addEventListener("click", () => { fn(); sync(); });
-          bar.appendChild(b);
-        };
-        mk("All", () => spec.slots.forEach(n => { if (!exclude.has(n)) chosen.add(n); }));
-        mk("Clear", () => chosen.clear());
-        mk("First row", () => {
-          chosen.clear();
-          const n = (spec.cols || []).length || 5;
-          spec.slots.slice(0, n).forEach(s => { if (!exclude.has(s)) chosen.add(s); });
-        });
-      }
       wrap.appendChild(bar);
       inputRow.appendChild(wrap);
       sync();
