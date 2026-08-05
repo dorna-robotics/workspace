@@ -1,0 +1,108 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>K — Three visual directions, same page</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,system-ui,sans-serif; background:#0a0a0b; color:#eee; }
+.dir { padding:34px 40px 40px; }
+.dir h2 { font-size:13px; letter-spacing:0.12em; text-transform:uppercase; opacity:0.55; margin-bottom:4px; }
+.dir .why { font-size:13px; opacity:0.65; margin-bottom:20px; max-width:760px; line-height:1.5; }
+.board { display:flex; gap:14px; flex-wrap:wrap; align-items:stretch; }
+.pillrow { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.grow { flex:1; }
+
+/* ── A: current, polished ─────────────────────────────────────────── */
+.A { background:#000; }
+.A .card { background:#1c1c1e; border-radius:16px; padding:18px 20px; box-shadow:0 4px 16px rgba(0,0,0,0.35); }
+.A .pill { display:inline-flex; align-items:center; gap:8px; background:#1c1c1e; border-radius:999px;
+  padding:8px 16px; font-weight:700; font-size:13px; }
+.A .dot { width:9px; height:9px; border-radius:50%; background:#34c759; box-shadow:0 0 12px rgba(52,199,89,0.55); }
+.A .h1 { font-size:22px; font-weight:800; letter-spacing:-0.3px; }
+.A .stat .v { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+.A .stat .l { color:#8e8e93; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; margin-top:2px; }
+.A .btn { border:0; border-radius:12px; padding:12px 26px; font-weight:700; font-size:14px; cursor:pointer; }
+.A .go { background:#0a84ff; color:#fff; }
+.A .ghost { background:#2c2c2e; color:#eee; }
+.A .slots { display:flex; gap:8px; }
+.A .s { width:22px; height:22px; border-radius:50%; }
+
+/* ── B: instrument ────────────────────────────────────────────────── */
+.B { background:#0d0e10; font-family:ui-monospace,"JetBrains Mono",Menlo,monospace; }
+.B .card { background:#111214; border:1px solid #26282c; border-radius:8px; padding:14px 16px; }
+.B .pill { display:inline-flex; align-items:center; gap:8px; border:1px solid #26282c; border-radius:6px;
+  padding:5px 12px; font-weight:600; font-size:12px; letter-spacing:0.04em; }
+.B .dot { width:7px; height:7px; border-radius:50%; background:#38d16a; }
+.B .h1 { font-size:17px; font-weight:700; letter-spacing:0; font-family:-apple-system,system-ui,sans-serif; }
+.B .stat .v { font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; color:#e8eaed; }
+.B .stat .l { color:#6f747c; font-size:10.5px; text-transform:uppercase; letter-spacing:0.09em; margin-top:3px; }
+.B .btn { border:1px solid #2e3238; background:#16181b; border-radius:6px; padding:9px 20px;
+  font-weight:600; font-size:12.5px; color:#e8eaed; cursor:pointer; letter-spacing:0.03em; }
+.B .go { background:#0f66d0; border-color:#0f66d0; color:#fff; }
+.B .slots { display:flex; gap:5px; }
+.B .s { width:16px; height:16px; border-radius:3px; }   /* squares: denser, still one grammar */
+
+/* ── C: branded ───────────────────────────────────────────────────── */
+.C { background:#0c0b0a; font-family:"Inter",-apple-system,system-ui,sans-serif; }
+.C .card { background:#171512; border-radius:12px; padding:16px 18px; border:1px solid rgba(255,138,43,0.08); }
+.C .pill { display:inline-flex; align-items:center; gap:9px; background:#171512; border-radius:999px;
+  padding:7px 15px; font-weight:700; font-size:12.5px; }
+.C .dot { width:10px; height:10px; border-radius:50%; background:#ff8a2b; animation:cpulse 1.6s infinite; }
+@keyframes cpulse { 50% { box-shadow:0 0 0 7px rgba(255,138,43,0.15);} }
+.C .h1 { font-size:21px; font-weight:800; letter-spacing:-0.2px; }
+.C .stat .v { font-size:25px; font-weight:800; font-variant-numeric:tabular-nums; }
+.C .stat .l { color:#9b948b; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; margin-top:2px; }
+.C .btn { border:0; border-radius:10px; padding:11px 24px; font-weight:700; font-size:13.5px; cursor:pointer; }
+.C .go { background:#ff8a2b; color:#1a120a; }
+.C .ghost { background:#242019; color:#eee; }
+.C .slots { display:flex; gap:8px; }
+.C .s { width:22px; height:22px; border-radius:50%; }
+.C .hollow { background:transparent !important; border:2px dashed #3a352e; }
+
+/* shared slot colors (grammar constant across directions) */
+.sA1{background:#34c759} .sA2{background:#0a84ff} .sA3{background:#5a5a5e}
+.sB1{background:#38d16a} .sB2{background:#3d9bff} .sB3{background:#3a3f46}
+.sC1{background:#71b374} .sC2{background:#ff8a2b} .sC3{background:#494237}
+.hollowA{background:transparent;border:2px dashed #3a3a3c}
+.hollowB{background:transparent;border:1px dashed #3a3f46}
+</style></head><body>
+
+<div class="dir A">
+  <h2>A — current, polished</h2>
+  <div class="why">Today's language kept: SF-style type, iOS blue, 16px cards, soft shadows. Familiar, safe — but the accent is Apple's and the font only exists on Apple screens.</div>
+  <div class="pillrow"><span class="pill"><span class="dot"></span>RUNNING</span><span class="grow"></span><span style="opacity:0.6;font-size:13px">apc · disc 9 of 17</span></div>
+  <div class="board">
+    <div class="card" style="flex:2;min-width:250px"><div class="h1">Measuring disc B4</div>
+      <div style="margin-top:12px" class="slots"><span class="s sA1"></span><span class="s sA1"></span><span class="s sA1"></span><span class="s sA2"></span><span class="s sA3"></span><span class="s sA3"></span><span class="s hollowA"></span><span class="s hollowA"></span></div></div>
+    <div class="card stat"><div class="v">3.31<span style="font-size:14px;color:#8e8e93"> nF</span></div><div class="l">Last measure</div></div>
+    <div class="card stat"><div class="v">11<span style="font-size:14px;color:#8e8e93"> min</span></div><div class="l">Remaining</div></div>
+    <div class="card" style="display:flex;align-items:center;gap:10px"><button class="btn go">Resume</button><button class="btn ghost">Pause</button></div>
+  </div>
+</div>
+
+<div class="dir B">
+  <h2>B — instrument</h2>
+  <div class="why">Pro-tool language: hairlines instead of shadows, 6–8px radii, denser spacing, mono-forward data, square slot dots. Reads like a measurement device — precise, calm, engineer-first. (Admin/builder candidates; the pendant would stay airy.)</div>
+  <div class="pillrow"><span class="pill"><span class="dot"></span>RUNNING</span><span class="grow"></span><span style="opacity:0.55;font-size:12px;letter-spacing:0.04em">apc · disc 09/17</span></div>
+  <div class="board">
+    <div class="card" style="flex:2;min-width:250px"><div class="h1">Measuring disc B4</div>
+      <div style="margin-top:10px" class="slots"><span class="s sB1"></span><span class="s sB1"></span><span class="s sB1"></span><span class="s sB2"></span><span class="s sB3"></span><span class="s sB3"></span><span class="s hollowB"></span><span class="s hollowB"></span></div></div>
+    <div class="card stat"><div class="v">3.310<span style="font-size:12px;color:#6f747c"> nF</span></div><div class="l">Last measure</div></div>
+    <div class="card stat"><div class="v">11:24</div><div class="l">Remaining</div></div>
+    <div class="card" style="display:flex;align-items:center;gap:8px"><button class="btn go">RESUME</button><button class="btn">PAUSE</button></div>
+  </div>
+</div>
+
+<div class="dir C">
+  <h2>C — branded</h2>
+  <div class="why">Dorna's own: a signature warm accent (placeholder orange — swap for the true brand color), warm-tinted dark surfaces, self-hosted Inter/JetBrains type on every bench, and the dot grammar promoted to identity — the live dot breathes everywhere state lives.</div>
+  <div class="pillrow"><span class="pill"><span class="dot"></span>RUNNING</span><span class="grow"></span><span style="opacity:0.6;font-size:13px">apc · disc 9 of 17</span></div>
+  <div class="board">
+    <div class="card" style="flex:2;min-width:250px"><div class="h1">Measuring disc B4</div>
+      <div style="margin-top:12px" class="slots"><span class="s sC1"></span><span class="s sC1"></span><span class="s sC1"></span><span class="s sC2"></span><span class="s sC3"></span><span class="s sC3"></span><span class="s hollow"></span><span class="s hollow"></span></div></div>
+    <div class="card stat"><div class="v">3.31<span style="font-size:14px;color:#9b948b"> nF</span></div><div class="l">Last measure</div></div>
+    <div class="card stat"><div class="v">11<span style="font-size:14px;color:#9b948b"> min</span></div><div class="l">Remaining</div></div>
+    <div class="card" style="display:flex;align-items:center;gap:10px"><button class="btn go">Resume</button><button class="btn ghost">Pause</button></div>
+  </div>
+</div>
+
+</body></html>
