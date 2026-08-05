@@ -208,16 +208,91 @@ class WorkspaceInfo:
             return False
 
     def launch_config(self) -> Optional[Dict]:
-        """Read launch.yaml from the workspace directory and return kwargs schema."""
+        """Read launch.yaml from the workspace directory and return kwargs schema.
+
+        ``type: slots`` fields are ENRICHED here from the scene: the
+        declared ``component``'s rack geometry (rows / cols / slot
+        names) is read out of the project's scene yaml, so the operator
+        form draws the real rack instead of a hand-listed grid. A
+        component that can't be resolved degrades to a plain field —
+        the run setup must never be blocked by a display concern.
+        """
         try:
             launch_path = Path(self.path_to_file).parent / "launch.yaml"
             if not launch_path.is_file():
                 return None
             with open(launch_path) as f:
                 data = yaml.safe_load(f)
-            return data.get("kwargs") if isinstance(data, dict) else None
+            schema = data.get("kwargs") if isinstance(data, dict) else None
+            if not isinstance(schema, dict):
+                return schema
+            if any(isinstance(v, dict) and v.get("type") == "slots"
+                   for v in schema.values()):
+                schema = self._enrich_slot_fields(schema, launch_path, data)
+            return schema
         except Exception:
             return None
+
+    @staticmethod
+    def _component_grid(type_name: str, rows, cols):
+        """(rows, cols) for a registered component type, from its class
+        DEFAULTS (merged Rack → subclass). Import-only, no instantiation
+        — nothing touches hardware. (None, None) when unknown."""
+        try:
+            import workspace.components  # noqa: F401 — populates the registry
+            from workspace.components.factory import _registry as _reg
+        except Exception:
+            return rows, cols
+        cls = None
+        try:
+            cls = _reg.get(type_name)
+        except Exception:
+            return rows, cols
+        for klass in getattr(cls, "__mro__", []):
+            d = getattr(klass, "DEFAULTS", None)
+            if isinstance(d, dict):
+                rows = rows or d.get("rows")
+                cols = cols or d.get("cols")
+                if rows and cols:
+                    break
+        return rows, cols
+
+    def _enrich_slot_fields(self, schema: Dict, launch_path: Path, launch: Dict) -> Dict:
+        """Add rows/cols/slots to every ``type: slots`` field, read from
+        the project's scene. Never raises — enrichment is best-effort."""
+        import copy
+        try:
+            from jinja2 import Template
+        except Exception:
+            return schema
+        scene = launch.get("scene") or []
+        if isinstance(scene, str):
+            scene = [scene]
+        cfgs: Dict = {}
+        for rel in scene:
+            try:
+                text = (launch_path.parent / rel).read_text()
+                cfgs.update(yaml.safe_load(Template(text).render()) or {})
+            except Exception:
+                continue
+        out = copy.deepcopy(schema)
+        for spec in out.values():
+            if not (isinstance(spec, dict) and spec.get("type") == "slots"):
+                continue
+            cfg = cfgs.get(spec.get("component")) or {}
+            # Grid comes from the component CLASS defaults (rows/cols are
+            # component facts, e.g. rack_falcon_15ml = A-D x 1-5); the
+            # scene may override them per instance.
+            rows, cols = cfg.get("rows"), cfg.get("cols")
+            if (not rows or not cols) and cfg.get("type"):
+                rows, cols = self._component_grid(cfg["type"], rows, cols)
+            if not rows or not cols:
+                continue
+            # Rack.slot ordering: row-major, exactly as the component builds it.
+            spec["rows"] = list(rows)
+            spec["cols"] = list(cols)
+            spec["slots"] = [f"{r}{c}" for r in rows for c in cols]
+        return out
 
     def file_kwargs_keys(self) -> set:
         """Return the set of kwargs keys that are type=file."""

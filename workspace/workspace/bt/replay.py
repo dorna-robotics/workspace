@@ -36,14 +36,27 @@ def resolve_kwargs(launch, batch=None, overrides=()):
     lands on the first int-typed kwarg; ``overrides`` are k=v strings."""
     out = {}
     first_int = None
+    first_slots = None
     for name, spec in (launch.get("kwargs") or {}).items():
         if not isinstance(spec, dict):
             continue
         out[name] = spec.get("default")
         if first_int is None and spec.get("type") == "int":
             first_int = name
+        if first_slots is None and spec.get("type") == "slots":
+            first_slots = (name, spec)
     if batch is not None and first_int is not None:
         out[first_int] = int(batch)
+    elif batch is not None and first_slots is not None:
+        # ``slots`` batches by COUNT: take the first N selectable
+        # positions of the declared component's grid, so --batch keeps
+        # meaning "run N items" for slot-selected projects too.
+        name, spec = first_slots
+        rows = spec.get("rows") or list("ABCDEFGH")
+        cols = spec.get("cols") or list(range(1, 13))
+        exclude = set(spec.get("exclude") or [])
+        grid = [f"{r}{c}" for r in rows for c in cols if f"{r}{c}" not in exclude]
+        out[name] = grid[:int(batch)]
     for kv in overrides:
         k, _, v = kv.partition("=")
         try:

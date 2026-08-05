@@ -173,6 +173,39 @@
 [data-theme="light"] .kwargs-form .kw-reset { background: rgba(0,0,0,0.04); }
 [data-theme="light"] .kwargs-form .kw-reset:hover { background: rgba(0,0,0,0.08); }
 .kwargs-form .kw-hint { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* ── slots field: tap the real rack positions ─────────────────────── */
+.kwargs-form .kw-slots { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; }
+.kwargs-form .kw-slot-grid { display: grid; gap: var(--space-2); }
+.kwargs-form .kw-slot {
+  aspect-ratio: 1; min-height: 44px;            /* 44px: operator touch target */
+  border: 2px dashed var(--border); background: transparent; color: var(--muted);
+  border-radius: 50%; font-family: var(--mono); font-size: var(--text-sm);
+  font-weight: 700; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease),
+              border-color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+.kwargs-form .kw-slot:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+.kwargs-form .kw-slot:active:not(:disabled) { transform: scale(0.94); }
+.kwargs-form .kw-slot:focus-visible { outline: none; box-shadow: var(--glow); }
+.kwargs-form .kw-slot.on {
+  background: var(--accent); border: 2px solid var(--accent); color: #fff;
+}
+.kwargs-form .kw-slot.excluded {
+  border-style: solid; border-color: var(--border);
+  background: repeating-linear-gradient(45deg,
+    var(--surface2) 0 5px, transparent 5px 10px);
+  color: var(--muted); cursor: not-allowed; opacity: 0.7;
+}
+.kwargs-form .kw-slot-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.kwargs-form .kw-slot-count { font-weight: 700; font-size: var(--text-md); margin-right: auto; }
+.kwargs-form .kw-slot-quick {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: var(--radius-sm); padding: 6px 12px; font-size: var(--text-sm);
+  font-weight: 600; cursor: pointer; transition: background var(--motion-fast) var(--ease);
+}
+.kwargs-form .kw-slot-quick:hover { background: var(--surface2); }
+.kwargs-form .kw-slot-quick:focus-visible { outline: none; box-shadow: var(--glow); }
 .kwargs-empty { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
 .kwargs-banner {
   display: flex; align-items: center; gap: 8px;

@@ -127,6 +127,84 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       return;
     }
 
+    // ── slots: tap the rack positions to process ────────────────────
+    // Grid + slot names come from the SCENE (server-enriched spec), so
+    // the operator sees the real rack. Value is a list of slot names.
+    if (type === "slots" && Array.isArray(spec.slots) && spec.slots.length) {
+      const exclude = new Set(spec.exclude || []);
+      const chosen = new Set(Array.isArray(val) ? val
+        : (Array.isArray(defaultVal) ? defaultVal : []));
+      const wrap = document.createElement("div");
+      wrap.className = "kw-slots";
+      wrap.dataset.kwKey = key;
+      wrap.dataset.kwType = "slots";
+      const grid = document.createElement("div");
+      grid.className = "kw-slot-grid";
+      grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 1fr)`;
+      const cells = [];
+      const sync = () => {
+        cells.forEach(({ el, name }) => {
+          el.classList.toggle("on", chosen.has(name));
+        });
+        wrap.dataset.kwValue = JSON.stringify([...chosen]);
+        countEl.textContent = `${chosen.size} selected`;
+      };
+      spec.slots.forEach(name => {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "kw-slot" + (exclude.has(name) ? " excluded" : "");
+        cell.textContent = name;
+        if (exclude.has(name)) {
+          cell.disabled = true;
+          cell.title = spec.exclude_hint || "Not available for processing";
+        } else if (!frozen) {
+          cell.addEventListener("click", () => {
+            chosen.has(name) ? chosen.delete(name) : chosen.add(name);
+            sync();
+          });
+        } else {
+          cell.disabled = true;
+        }
+        cells.push({ el: cell, name });
+        grid.appendChild(cell);
+      });
+      wrap.appendChild(grid);
+      const bar = document.createElement("div");
+      bar.className = "kw-slot-bar";
+      const countEl = document.createElement("span");
+      countEl.className = "kw-slot-count";
+      bar.appendChild(countEl);
+      if (!frozen) {
+        const mk = (label, fn) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "kw-slot-quick";
+          b.textContent = label;
+          b.addEventListener("click", () => { fn(); sync(); });
+          bar.appendChild(b);
+        };
+        mk("All", () => spec.slots.forEach(n => { if (!exclude.has(n)) chosen.add(n); }));
+        mk("Clear", () => chosen.clear());
+        mk("First row", () => {
+          chosen.clear();
+          const n = (spec.cols || []).length || 5;
+          spec.slots.slice(0, n).forEach(s => { if (!exclude.has(s)) chosen.add(s); });
+        });
+      }
+      wrap.appendChild(bar);
+      inputRow.appendChild(wrap);
+      sync();
+      field.appendChild(inputRow);
+      if (hint) {
+        const h = document.createElement("div");
+        h.className = "kw-hint";
+        h.textContent = hint;
+        field.appendChild(h);
+      }
+      container.appendChild(field);
+      return;
+    }
+
     let input;
     if (type === "bool") {
       input = document.createElement("input");
@@ -226,6 +304,11 @@ export function validateKwargsForm(container, schema) {
 
     if (type === "file" || type === "bool" || type === "choice") {
       // no validation needed
+    } else if (type === "slots") {
+      let picked = [];
+      try { picked = JSON.parse(el.dataset.kwValue || "[]"); } catch {}
+      if (!picked.length && !optional) err = "Select at least one position";
+      else if (spec.max !== undefined && picked.length > spec.max) err = `Max: ${spec.max}`;
     } else if (type === "int") {
       if (el.value !== "" && (isNaN(parseInt(el.value, 10)) || el.value.includes("."))) {
         err = "Must be a whole number";
@@ -348,6 +431,9 @@ export function readKwargsForm(container) {
     if (type === "file") {
       kwargs[key] = el.dataset.kwValue || null;
       return;
+    } else if (type === "slots") {
+      try { kwargs[key] = JSON.parse(el.dataset.kwValue || "[]"); }
+      catch { kwargs[key] = []; }
     } else if (type === "bool") {
       kwargs[key] = el.checked;
     } else if (type === "int") {
