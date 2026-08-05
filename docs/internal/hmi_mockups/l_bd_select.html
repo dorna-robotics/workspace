@@ -1,0 +1,116 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>L — bd: select tubes to process</title><link rel="stylesheet" href="mock.css"/>
+<style>
+.hmi { padding:28px 34px; display:flex; flex-direction:column; gap:16px; }
+h1 { font-size:25px; font-weight:800; letter-spacing:-0.3px; }
+.sub { color:var(--muted); font-size:14.5px; margin-top:-6px; line-height:1.5; }
+.md { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
+/* the real bd rack: 4 rows x 5 cols, D5 = reservoir */
+.rack { display:grid; grid-template-columns:repeat(5,66px); gap:12px;
+  background:var(--bg); padding:20px; border-radius:var(--r-lg); }
+.slot { width:66px; height:66px; border-radius:50%; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:1px; font-family:var(--mono);
+  cursor:pointer; user-select:none; position:relative; }
+.slot .id  { font-weight:800; font-size:13.5px; }
+.slot .num { font-size:10px; opacity:0.75; font-weight:700; }
+.slot.sel   { background:var(--accent); color:#fff; box-shadow:0 3px 10px rgba(0,122,255,0.3); }
+.slot.unsel { background:transparent; border:2.5px dashed #c9c9cf; color:#9a9aa0; }
+.slot.unsel .num { visibility:hidden; }
+.slot.res   { background:repeating-linear-gradient(45deg,#e7e7ea 0 6px,#dcdce0 6px 12px);
+  color:#6f6f74; cursor:not-allowed; }
+.slot.res .num { font-size:9px; opacity:1; }
+.legend { display:flex; flex-direction:column; gap:10px; font-size:13.5px;
+  font-weight:600; color:var(--muted); }
+.legend i { display:inline-block; width:15px; height:15px; border-radius:50%;
+  margin-right:9px; vertical-align:-3px; }
+.legend i.hollow { background:transparent; border:2px dashed #c9c9cf; }
+.legend i.hatch  { background:repeating-linear-gradient(45deg,#e7e7ea 0 4px,#dcdce0 4px 8px); }
+.panel { flex:1; min-width:250px; display:flex; flex-direction:column; gap:12px; }
+.qbtn { border:0; background:var(--bg); border-radius:11px; padding:11px 15px;
+  font-weight:700; font-size:14px; color:var(--text); text-align:left; cursor:pointer; }
+.qbtn:hover { background:var(--surface2); }
+.qsec { font-size:11.5px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase;
+  color:var(--muted); margin-top:4px; }
+/* the other launch kwarg, rendered as a touch toggle */
+.togrow { display:flex; align-items:center; gap:12px; background:var(--bg);
+  border-radius:11px; padding:12px 15px; }
+.togrow .t { font-weight:700; font-size:14px; }
+.togrow .h { color:var(--muted); font-size:12px; margin-top:2px; line-height:1.4; }
+.tog { width:52px; height:31px; border-radius:999px; background:#c9c9cf; position:relative;
+  flex:0 0 auto; cursor:pointer; }
+.tog::after { content:""; position:absolute; top:3px; left:3px; width:25px; height:25px;
+  border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.25); }
+.tog.on { background:var(--green); } .tog.on::after { left:24px; }
+.footer { display:flex; align-items:center; gap:16px; background:var(--bg);
+  border-radius:var(--r-md); padding:13px 20px; }
+.count { font-weight:800; font-size:18px; }
+.count small { color:var(--muted); font-weight:600; font-size:13px; margin-left:8px; }
+.spacer { flex:1; }
+.start { border:0; background:var(--green); color:#fff; font-weight:800; font-size:16px;
+  padding:13px 32px; border-radius:12px; cursor:pointer; display:flex; align-items:center; gap:9px; }
+.start svg { width:17px; height:17px; }
+.note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+.note code { font-family:var(--mono); background:var(--bg); padding:1px 5px; border-radius:5px; }
+</style></head><body>
+<div class="topbar"><span class="pill"><span class="dot" style="background:#c9c9cf"></span>READY</span><span class="clock">bd</span><span style="width:110px"></span></div>
+<div class="stage">
+  <div class="card hmi">
+    <h1>Select tubes</h1>
+    <div class="sub">Tap the rack positions you loaded. Only selected tubes are processed —
+      each runs the full chain (pick → decap → pipette → recap → weigh → inspect → scan).</div>
+    <div class="md">
+      <div class="rack">
+        <div class="slot sel"><span class="id">A1</span><span class="num">1</span></div>
+        <div class="slot sel"><span class="id">A2</span><span class="num">2</span></div>
+        <div class="slot sel"><span class="id">A3</span><span class="num">3</span></div>
+        <div class="slot sel"><span class="id">A4</span><span class="num">4</span></div>
+        <div class="slot sel"><span class="id">A5</span><span class="num">5</span></div>
+        <div class="slot sel"><span class="id">B1</span><span class="num">6</span></div>
+        <div class="slot sel"><span class="id">B2</span><span class="num">7</span></div>
+        <div class="slot sel"><span class="id">B3</span><span class="num">8</span></div>
+        <div class="slot unsel"><span class="id">B4</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">B5</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">C1</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">C2</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">C3</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">C4</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">C5</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">D1</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">D2</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">D3</span><span class="num">—</span></div>
+        <div class="slot unsel"><span class="id">D4</span><span class="num">—</span></div>
+        <div class="slot res"><span class="id">D5</span><span class="num">SOURCE</span></div>
+      </div>
+      <div class="panel">
+        <div class="legend">
+          <div><i style="background:var(--accent)"></i>Selected — will be processed</div>
+          <div><i class="hollow"></i>Not selected</div>
+          <div><i class="hatch"></i>Reservoir (D5) — never processed</div>
+        </div>
+        <span class="qsec">Quick select</span>
+        <button class="qbtn">All 19 tubes</button>
+        <button class="qbtn">Clear</button>
+        <button class="qbtn">First row (A1–A5)</button>
+        <button class="qbtn">Same as last run</button>
+        <span class="qsec">Run options</span>
+        <div class="togrow">
+          <div style="flex:1"><div class="t">Print label</div>
+            <div class="h">Barcode label on each tube before decap. Off skips the printer.</div></div>
+          <div class="tog on"></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <span class="count">8 tubes selected<small>≈ 24 min · caps + tips available for 8 ✓</small></span>
+      <span class="spacer"></span>
+      <button class="start"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start run</button>
+    </div>
+    <div class="note">Platform shape: this screen writes the launch kwargs — the number-only
+      <code>tube_count: 8</code> becomes <code>tubes: ["A1","A2",…]</code> (a new
+      <code>type: slots</code> kwarg bound to <code>rack_falcon_15ml_1</code>), and
+      <code>print_label</code> is the existing bool rendered as a touch toggle.
+      The rack grid, its slot names and the excluded reservoir come from the SCENE — nothing drawn by hand.</div>
+  </div>
+</div>
+</body></html>
