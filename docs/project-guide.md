@@ -162,6 +162,21 @@ first N selectable positions, so the schedule gate keeps meaning "run
 N items". Verify a real selection with
 `--kw 'tubes=["A1","A3","C2"]'`.
 
+### `_layout` — arranging the run-setup form
+
+The schema renders stacked in declaration order. To place fields side
+by side, declare rows — a HINT, not a field:
+
+```yaml
+_layout:
+  - row: [tubes, print_label]     # rack left, run options right
+  - row: [volume, speed]
+```
+
+Unlisted fields stack below in declaration order; rows wrap to a
+single column on narrow screens (pendant portrait). This is the only
+layout vocabulary — projects never ship markup or CSS (hmi-guide §2).
+
 ### How kwargs flow
 
 All kwargs defined here are passed to `States.__init__(rcp, rt, **kwargs)` and `Checks.__init__(rcp, rt, **kwargs)`. Use `kwargs.get("my_param", default)` to access them.

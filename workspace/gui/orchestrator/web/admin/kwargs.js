@@ -15,7 +15,12 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   if (container._kwargsSig === sig) return;
   container._kwargsSig = sig;
   container.innerHTML = "";
-  const keys = Object.keys(schema || {});
+  // ``_layout`` is a LAYOUT HINT, not a field: a list of rows, each a
+  // list of field keys rendered side by side. Everything not named in
+  // it falls through to a stacked row, in declaration order.
+  //   _layout: [{row: [tubes, print_label]}]
+  const layout = (schema && schema._layout) || null;
+  const keys = Object.keys(schema || {}).filter(k => k !== "_layout");
   if (!keys.length) {
     container.innerHTML = `<div class="kwargs-empty">No parameters defined in launch.yaml</div>`;
     return;
@@ -29,6 +34,26 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
     container.insertAdjacentHTML("beforeend",
       `<div class="kwargs-banner">${_infoSvg} Set parameters before launch. Saved values persist across runs.</div>`);
   }
+
+  // Build the row scaffold declared by _layout; every field lands in
+  // its row's column, or in the stacked flow when unlisted.
+  const slotFor = {};
+  if (Array.isArray(layout)) {
+    layout.forEach(entry => {
+      const rowKeys = Array.isArray(entry) ? entry : (entry && entry.row) || [];
+      if (!rowKeys.length) return;
+      const row = document.createElement("div");
+      row.className = "kw-row";
+      rowKeys.forEach(k => {
+        const col = document.createElement("div");
+        col.className = "kw-col";
+        row.appendChild(col);
+        slotFor[k] = col;
+      });
+      container.appendChild(row);
+    });
+  }
+  const hostFor = (key) => slotFor[key] || container;
 
   keys.forEach(key => {
     const spec = schema[key];
@@ -123,7 +148,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         h.textContent = hint;
         field.appendChild(h);
       }
-      container.appendChild(field);
+      hostFor(key).appendChild(field);
       return;
     }
 
@@ -138,6 +163,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       wrap.className = "kw-slots";
       wrap.dataset.kwKey = key;
       wrap.dataset.kwType = "slots";
+      const panel = document.createElement("div");
+      panel.className = "kw-slot-panel";
       const grid = document.createElement("div");
       grid.className = "kw-slot-grid";
       grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 56px)`;
@@ -180,7 +207,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         cells.push({ el: cell, name, num: numEl });
         grid.appendChild(cell);
       });
-      wrap.appendChild(grid);
+      panel.appendChild(grid);
+      wrap.appendChild(panel);
       const legend = document.createElement("div");
       legend.className = "kw-slot-legend";
       legend.innerHTML =
@@ -221,7 +249,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         h.textContent = hint;
         field.appendChild(h);
       }
-      container.appendChild(field);
+      hostFor(key).appendChild(field);
       return;
     }
 
@@ -250,7 +278,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         h.textContent = hint;
         field.appendChild(h);
       }
-      container.appendChild(field);
+      hostFor(key).appendChild(field);
       return;
     } else if (type === "textarea") {
       input = document.createElement("textarea");
@@ -321,7 +349,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       field.appendChild(h);
     }
 
-    container.appendChild(field);
+    hostFor(key).appendChild(field);
   });
 }
 
