@@ -153,9 +153,27 @@ The split that keeps it generic:
   without rows/cols is skipped with a startup warning.
 * **The states come from the project** — it owns its facts, so it
   publishes `rt.op(tubes={"A1": "done", "B1": "active", …})`. The
-  platform owns only the GRAMMAR: `done` · `active` · `attention` ·
-  `queued` · `empty`, with muted done, saturated active/attention, and
-  a ✓ / ! badge so state is never carried by colour alone (§7).
+  platform owns only the GRAMMAR:
+
+  | state | means | reads as |
+  |---|---|---|
+  | `empty` | nothing here / not in this run | dashed ring |
+  | `queued` | selected, not started | solid ring, muted fill |
+  | `working` | started, not finished | accent tint |
+  | `active` | **the robot is here now** | saturated accent + breathing ring |
+  | `attention` | needs a human | amber + `!` badge |
+  | `done` | finished | muted green + `✓` badge |
+
+  `working` vs `active` is the one that matters in practice: a batch
+  INTERLEAVES items, so several are underway at once. Without the
+  distinction every started item reads as active and the operator
+  cannot see where the robot actually is. A project keeps exactly one
+  position `active` — bd demotes the previous one to `working` inside
+  its `_mark()` helper.
+
+  Done is muted and only active/attention are saturated (§7); each
+  state also differs in FORM (ring style, badge, animation) so colour
+  is never the only signal.
 * **`detail:` makes positions tappable** — a second op key holding
   `{slot: {label: value}}`; tapping a position opens a persistent
   pane showing that item's record (weight, barcode, dose, whatever the

@@ -644,7 +644,7 @@ const HMI_WIDGETS = {
   // GRID comes from the scene (server-enriched spec); STATE comes from
   // one rt.op key holding {slot: state}. The project decides what its
   // states mean (it owns the facts); the platform owns the grammar:
-  //   done · active · attention · queued · empty
+  //   done · active · working · attention · queued · empty
   rack(w) {
     const el = document.createElement("div");
     el.className = "hmi-rack";
@@ -686,7 +686,7 @@ const HMI_WIDGETS = {
       detailEl.style.display = "none";
       el.appendChild(detailEl);
     }
-    const STATES = ["done", "active", "attention", "queued", "empty"];
+    const STATES = ["done", "active", "working", "attention", "queued", "empty"];
     let lastStates = {}, lastDetail = {};
 
     function renderDetail() {

@@ -1108,6 +1108,15 @@
   box-shadow: var(--shadow-sm);
 }
 .hmi-slot.done::after { content: "✓"; color: var(--green); }
+/* In progress but not the position the robot is touching right now.
+   A batch interleaves items, so several are underway at once —
+   without this they would all read as "active" and the operator
+   could not see where the robot actually is. */
+.hmi-slot.working {
+  border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+}
 .hmi-slot.active {
   border: 2px solid var(--accent); background: var(--accent); color: #fff;
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent);
