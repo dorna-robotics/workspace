@@ -38,6 +38,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Build the row scaffold declared by _layout; every field lands in
   // its row's column, or in the stacked flow when unlisted.
   const slotFor = {};
+  // key -> {dots, cnt}: tab thumbnails a slots field updates on change
+  const thumbs = {};
   if (Array.isArray(layout)) {
     layout.forEach(entry => {
       // ── tabs: one pane per field, one tab per pane ────────────────
@@ -56,7 +58,31 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           const tab = document.createElement("button");
           tab.type = "button";
           tab.className = "kw-tab" + (i === 0 ? " on" : "");
-          tab.textContent = spec.label || k;
+          const tlab = document.createElement("span");
+          tlab.className = "kw-tab-label";
+          tlab.textContent = spec.label || k;
+          tab.appendChild(tlab);
+          // Thumbnail: the rack at a glance, so an empty tray is
+          // visible without opening its tab. Registered here and fed
+          // by the field's own sync() (see __thumbs).
+          if (spec.type === "slots" && Array.isArray(spec.slots) && spec.slots.length) {
+            const mini = document.createElement("span");
+            mini.className = "kw-tab-mini";
+            mini.style.gridTemplateColumns =
+              `repeat(${(spec.cols || []).length || 5}, 1fr)`;
+            const dots = {};
+            spec.slots.forEach(n => {
+              const d = document.createElement("i");
+              if ((spec.exclude || []).includes(n)) d.className = "ex";
+              mini.appendChild(d);
+              dots[n] = d;
+            });
+            tab.appendChild(mini);
+            const cnt = document.createElement("span");
+            cnt.className = "kw-tab-count";
+            tab.appendChild(cnt);
+            thumbs[k] = { dots, cnt };
+          }
           tab.setAttribute("role", "tab");
           tab.setAttribute("aria-selected", i === 0 ? "true" : "false");
           const pane = document.createElement("div");
@@ -233,6 +259,13 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
                        : String(order.indexOf(name) + 1));
           }
         });
+        const th = thumbs[key];
+        if (th) {
+          spec.slots.forEach(n => {
+            if (th.dots[n] && !exclude.has(n)) th.dots[n].className = chosen.has(n) ? "on" : "";
+          });
+          th.cnt.textContent = chosen.size ? `${chosen.size} selected` : "none";
+        }
         if (vspec) {
           const obj = {};
           spec.slots.forEach(n => { if (chosen.has(n)) obj[n] = vals.get(n) ?? Number(vspec.default ?? 0); });
