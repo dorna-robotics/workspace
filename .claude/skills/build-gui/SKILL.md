@@ -35,6 +35,10 @@ description: "Use when building or changing ANY platform GUI surface — orchest
 
 ## HMI-specific work
 
+**A PROJECT's operator UI (kwargs schema, setup screen, pendant
+screen) has its own skill: `project-ui`.** This skill is for
+PLATFORM-side surfaces. The boundary matters — see below.
+
 `docs/hmi-guide.md` — the pendant HMI: the `rt.op()` channel (§3), the
 project-screen contract (§4b), the fallback widget catalog (§4), bench
 subway map grammar, guided recovery, parameter presets. Mockups:

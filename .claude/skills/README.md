@@ -20,6 +20,7 @@ doc sections — skills navigate, they don't duplicate.
 | Recover the workflow after a pause (operator-side) | [`operator-recovery`](operator-recovery/SKILL.md) |
 | Debug the device bus / MQTT state | [`debug-device-bus`](debug-device-bus/SKILL.md) |
 | Build or change any GUI surface (tokens, state matrix, mockup-first, HMI widgets) | [`build-gui`](build-gui/SKILL.md) |
+| Give a project its operator UI — kwargs schema, run-setup screen, pendant screen | [`project-ui`](project-ui/SKILL.md) |
 
 ## Canonical doc references
 

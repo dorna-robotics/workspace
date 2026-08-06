@@ -8,6 +8,28 @@ The bench map (§5) and guided recovery (§6) remain design.
 the data and the frame. §2 records a reversal of this document's original
 principle and why. Companion visual reference: the static mockups in
 `docs/internal/hmi_mockups/` (disposable — see §9 Housekeeping).
+Task playbook: `.claude/skills/project-ui/SKILL.md`.
+
+## 0. The three operator-UI keys
+
+Everything operator-facing a project declares, in one place:
+
+```yaml
+kwargs:   hmi/kwargs.j2      # the kwargs themselves (data — Python reads it)
+setup:    hmi/setup.js       # screen to SET the kwargs, before the run
+pendant:  hmi/pendant.html   # screen shown DURING the run
+```
+
+| key | what | format | read by | served by | doc |
+|---|---|---|---|---|---|
+| `kwargs:` | schema — what a run takes | yaml/j2 (forced) | replay, launch, CLI, GUI | — | project-guide §3 |
+| `setup:` | run-setup screen | `.html`/`.js` | browser only | orchestrator (pre-launch, same-origin) | project-guide §3 |
+| `pendant:` | during-run screen | `.html`/`.js` | browser only | runtime server `/hmi/` (CORS) | §4b below |
+
+Only `kwargs:` is required; each screen is opt-in with a clean fallback
+(generic form / default pendant). The format rule is §10b: **if Python
+reads it, it's yaml; if only the browser reads it, it's the project's
+file.** Reference implementation: bd's `hmi/` folder.
 
 ## 1. The trigger (client feedback, verbatim spirit)
 

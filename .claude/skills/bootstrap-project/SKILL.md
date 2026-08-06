@@ -168,7 +168,8 @@ pendant:  hmi/pendant.html   # screen shown DURING the run
 Operator-facing files live in **`hmi/`**. Inline `kwargs:` still works
 for legacy/small projects. Field types are project-guide §3.
 
-**One contract, two screens.** `kwargs:` always — it is the schema, read
+**Full contracts + traps: the `project-ui` skill.** In brief —
+**one contract, two screens.** `kwargs:` always — it is the schema, read
 headlessly by `bt.replay`, so it stays YAML and never describes how
 anything looks. `setup:` only when run setup needs more than rows of
 scalars (picking WHICH rack positions to run — that is a picture of your
