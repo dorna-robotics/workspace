@@ -228,7 +228,6 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       keyItem("on", "Selected");
       keyItem("", "Available");
       if (exclude.size) keyItem("excluded", spec.exclude_hint || "Unavailable");
-      panel.appendChild(keyEl);
       const split = document.createElement("div");
       split.className = "kw-slot-split";
       split.appendChild(panel);
@@ -255,6 +254,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         });
       }
       split.appendChild(bar);
+      wrap.appendChild(keyEl);
       inputRow.appendChild(wrap);
       sync();
       field.appendChild(inputRow);

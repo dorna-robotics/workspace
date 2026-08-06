@@ -154,8 +154,8 @@
 .kwargs-form .kw-col { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-5); }
 /* the rack sits on its own recessed panel, like a rack in a tray */
 .kwargs-form .kw-slot-panel {
-  background: var(--surface); border-radius: var(--radius-md);
-  padding: var(--space-4);
+  background: var(--surface); border: 1px solid var(--border2, var(--border));
+  border-radius: var(--radius-md); padding: var(--space-4);
   /* hug the grid: inside the flex column the panel would stretch to
      full width and read as a gray band, not a rack tray */
   align-self: flex-start; width: max-content; max-width: 100%;
@@ -211,7 +211,9 @@
 .kwargs-form .kw-slot:focus-visible { outline: none; box-shadow: var(--glow); }
 .kwargs-form .kw-slot.on {
   background: var(--accent); border: 2px solid var(--accent); color: #fff;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 38%, transparent);
 }
+.kwargs-form .kw-slot.on:active { box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 30%, transparent); }
 .kwargs-form .kw-slot.excluded {
   border-style: solid; border-color: var(--border);
   background: repeating-linear-gradient(45deg,
@@ -242,8 +244,7 @@
    exactly like the slots they stand for. */
 .kwargs-form .kw-slot-key {
   display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
-  margin-top: var(--space-4); padding-top: var(--space-4);
-  border-top: 1px solid var(--border2, var(--border));
+  margin-top: var(--space-2);
 }
 .kwargs-form .kw-slot-key span {
   display: inline-flex; align-items: center; gap: var(--space-3);
