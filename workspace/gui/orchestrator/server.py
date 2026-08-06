@@ -50,6 +50,7 @@ from gui.orchestrator.handlers import (  # noqa: F401
     AuthedHandler,
     FileUploadHandler,
     LaunchConfigHandler,
+    ProjectParamsFileHandler,
     RemoveWorkspaceHandler,
     UpdateKwargsHandler,
     WorkspaceCmdHandler,
@@ -121,6 +122,7 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/params/(.*)", ProjectParamsFileHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=self.orch)),
 

@@ -160,14 +160,20 @@ scene:    [scene/core_500.j2, scene/layout.j2]
 recipes:  recipes.j2
 actions:  actions.py
 checks:   checks.py
-kwargs:   hmi/kwargs.j2      # run parameters (Parameters / run-setup form)
-hmi:      hmi/pendant.html   # the project's own pendant screen
+kwargs:   hmi/kwargs.j2      # the SCHEMA — what a run takes
+params:   hmi/params.js      # run setup — how the operator sets it
+hmi:      hmi/pendant.html   # the pendant screen during the run
 ```
 
-Operator-facing files live in **`hmi/`** — run setup and the pendant
-screen are the same concern. Inline `kwargs:` still works for
-legacy/small projects. Run-parameter field types (including `slots`,
-the rack-position picker) are project-guide §3.
+Operator-facing files live in **`hmi/`**. Inline `kwargs:` still works
+for legacy/small projects. Field types are project-guide §3.
+
+**Which of the three you need.** `kwargs:` always — it is the schema,
+and it is read headlessly by `bt.replay`, so it stays YAML and never
+describes how anything looks. `params:` only when run setup needs more
+than rows of scalars (picking WHICH rack positions to run — that is a
+picture of your hardware, so you draw it). `hmi:` only when the pendant
+should show something during the run.
 
 **The pendant screen is the project's own file** — `hmi/pendant.html`
 plus a sibling `pendant.css` (or `pendant.js` when it needs logic).

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 
 import requests
 import tornado.web
@@ -95,6 +96,46 @@ class RemoveWorkspaceHandler(AuthedHandler):
             self.write(self.orch.remove_workspace(name))
         except Exception as e:
             self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class ProjectParamsFileHandler(tornado.web.RequestHandler):
+    """Serves a project's own run-setup screen (``params:``) and the
+    files beside it, out of the project's ``hmi/`` folder.
+
+    The Parameters modal is used BEFORE launch, so the runtime server
+    that serves the pendant screen is not up yet — the orchestrator
+    serves these itself, which also keeps them same-origin with the
+    modal (no CORS, and ``import()`` of a project module just works).
+    Read-only, and confined to that one folder.
+    """
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name, rel):
+        try:
+            ws = self.orch.workspaces.get(name)
+            spec = ws.params_spec() if ws else None
+            if not spec:
+                raise ValueError("no params screen declared")
+            root = Path(spec["dir"]).resolve()
+            target = (root / rel).resolve()
+            # Confine to the declared folder — a project screen may pull
+            # in its own siblings, never anything above them.
+            if not str(target).startswith(str(root) + os.sep) or not target.is_file():
+                raise ValueError("not found")
+            ctype = {".html": "text/html", ".htm": "text/html",
+                     ".js": "text/javascript", ".css": "text/css",
+                     ".svg": "image/svg+xml", ".png": "image/png",
+                     ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                     ".json": "application/json"}.get(target.suffix.lower(),
+                                                      "application/octet-stream")
+            self.set_header("Content-Type", ctype)
+            self.set_header("Cache-Control", "no-store")
+            self.write(target.read_bytes())
+        except Exception as e:
+            self.set_status(404)
             self.write({"error": str(e)})
 
 

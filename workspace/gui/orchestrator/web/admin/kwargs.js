@@ -5,6 +5,122 @@ const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" s
 const _infoSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
+// ── the project's own run-setup screen (``params:``) ─────────────────
+//
+// Same hosting contract as the pendant screen (hmi-guide §4b) with one
+// addition: this one produces VALUES, so it also answers value() and
+// may answer validate().
+//
+//   HTML shape  — data-field="key" on an input/select/checkbox
+//   JS shape    — export default {css, mount(root, api), value(), validate()}
+//   api         — {schema, values, frozen, theme, onTheme}
+//
+// Served by the ORCHESTRATOR (same-origin), because Parameters is used
+// before launch, when the runtime server is not up yet.
+
+function readBoundFields(root) {
+  // HTML shape: collect [data-field] inputs. A project that needs more
+  // than plain fields uses the JS shape and returns value() itself.
+  const out = {};
+  for (const el of root.querySelectorAll("[data-field]")) {
+    const key = el.dataset.field;
+    if (!key) continue;
+    if (el.type === "checkbox") out[key] = el.checked;
+    else if (el.type === "number") out[key] = el.value === "" ? null : Number(el.value);
+    else out[key] = el.value === "" ? null : el.value;
+  }
+  return out;
+}
+
+async function mountProjectParams(container, schema, values, frozen, wsName) {
+  const spec = schema._params || {};
+  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/params/`;
+  const holder = document.createElement("div");
+  holder.className = "kw-project-params";
+  container.appendChild(holder);
+  const shadow = holder.attachShadow({ mode: "open" });
+  // Fields the screen does not draw keep their declared default (or the
+  // value saved from the last run) — a project screen is free to cover
+  // only the parameters it cares about.
+  const baseValues = {};
+  for (const [k, spec] of Object.entries(schema || {})) {
+    if (k.startsWith("_") || !spec || typeof spec !== "object") continue;
+    if (spec.default !== undefined) baseValues[k] = spec.default;
+    if (values?.[k] !== undefined) baseValues[k] = values[k];
+  }
+  const host = { shadow, module: null, base: baseValues };
+  container._paramsHost = host;
+
+  try {
+    if (spec.css) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = base + spec.css;
+      shadow.appendChild(link);
+    }
+    const api = {
+      get schema() {
+        const s = {};
+        for (const [k, v] of Object.entries(schema || {})) {
+          if (!k.startsWith("_")) s[k] = v;
+        }
+        return s;
+      },
+      get values() { return { ...(values || {}) }; },
+      frozen: !!frozen,
+      get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
+      onTheme(cb) { (host.themeCbs ||= []).push(cb); },
+    };
+    if (spec.kind === "js") {
+      const mod = await import(/* webpackIgnore: true */ base + spec.src);
+      const def = mod.default || mod;
+      host.module = def;
+      if (def.css) {
+        const st = document.createElement("style");
+        st.textContent = def.css;
+        shadow.appendChild(st);
+      }
+      if (typeof def.mount === "function") await def.mount(shadow, api);
+    } else {
+      const res = await fetch(base + spec.src);
+      const wrap = document.createElement("div");
+      wrap.innerHTML = await res.text();
+      shadow.appendChild(wrap);
+      // Seed declared fields from current values / schema defaults.
+      for (const el of shadow.querySelectorAll("[data-field]")) {
+        const key = el.dataset.field;
+        const v = values?.[key] !== undefined ? values[key] : schema?.[key]?.default;
+        if (v === undefined || v === null) continue;
+        if (el.type === "checkbox") el.checked = !!v; else el.value = v;
+      }
+      if (frozen) {
+        for (const el of shadow.querySelectorAll("input,select,textarea,button")) {
+          el.disabled = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("project params screen failed to load:", err);
+    container._paramsHost = null;
+    shadow.innerHTML = "";
+    const note = document.createElement("div");
+    note.style.cssText = "padding:16px;color:var(--muted);font:14px var(--font,system-ui)";
+    note.textContent = "This project's parameters screen failed to load — see the "
+                     + "console. Launch is blocked until it loads.";
+    shadow.appendChild(note);
+  }
+}
+
+// Theme toggle reaches a params screen that draws.
+new MutationObserver(() => {
+  const t = document.documentElement.getAttribute("data-theme") || "dark";
+  document.querySelectorAll(".kwargs-form").forEach(c => {
+    for (const cb of (c._paramsHost && c._paramsHost.themeCbs) || []) {
+      try { cb(t); } catch (_) {}
+    }
+  });
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 export function renderKwargsForm(container, schema, values, frozen = false, wsName = "") {
   // Render-signature cache. Reopening the modal with identical
   // params (most common case) is a no-op now instead of tearing
@@ -15,12 +131,22 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   if (container._kwargsSig === sig) return;
   container._kwargsSig = sig;
   container.innerHTML = "";
+  // A project that ships its own run-setup screen (``params:``) draws
+  // the whole body; the platform keeps the modal chrome, the Start /
+  // Launch buttons and schema validation. The generic form below is
+  // for everyone else.
+  container._paramsHost = null;
+  if (schema && schema._params) {
+    mountProjectParams(container, schema, values, frozen, wsName);
+    return;
+  }
   // ``_layout`` is a LAYOUT HINT, not a field: a list of rows, each a
   // list of field keys rendered side by side. Everything not named in
   // it falls through to a stacked row, in declaration order.
   //   _layout: [{row: [tubes, print_label]}]
   const layout = (schema && schema._layout) || null;
-  const keys = Object.keys(schema || {}).filter(k => k !== "_layout");
+  // Underscore keys are reserved for hints, never fields.
+  const keys = Object.keys(schema || {}).filter(k => !k.startsWith("_"));
   if (!keys.length) {
     container.innerHTML = `<div class="kwargs-empty">No parameters defined in launch.yaml</div>`;
     return;
@@ -38,86 +164,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Build the row scaffold declared by _layout; every field lands in
   // its row's column, or in the stacked flow when unlisted.
   const slotFor = {};
-  // key -> {dots, cnt}: tab thumbnails a slots field updates on change
-  const thumbs = {};
   if (Array.isArray(layout)) {
     layout.forEach(entry => {
-      // ── tabs: one pane per field, one tab per pane ────────────────
-      const tabKeys = (entry && entry.tabs) || [];
-      if (tabKeys.length) {
-        const wrapT = document.createElement("div");
-        wrapT.className = "kw-tabs";
-        if (entry.label) {
-          const h = document.createElement("div");
-          h.className = "kw-tabs-title";
-          h.textContent = entry.label;
-          wrapT.appendChild(h);
-        }
-        if (entry.hint) {
-          const p = document.createElement("div");
-          p.className = "kw-tabs-hint";
-          p.textContent = entry.hint;
-          wrapT.appendChild(p);
-        }
-        const bar = document.createElement("div");
-        bar.className = "kw-tabbar";
-        bar.setAttribute("role", "tablist");
-        const panes = document.createElement("div");
-        panes.className = "kw-tabpanes";
-        const tabs = [];
-        tabKeys.forEach((k, i) => {
-          const spec = (schema && schema[k]) || {};
-          const tab = document.createElement("button");
-          tab.type = "button";
-          tab.className = "kw-tab" + (i === 0 ? " on" : "");
-          const tlab = document.createElement("span");
-          tlab.className = "kw-tab-label";
-          tlab.textContent = spec.label || k;
-          tab.appendChild(tlab);
-          // Thumbnail: the rack at a glance, so an empty tray is
-          // visible without opening its tab. Registered here and fed
-          // by the field's own sync() (see __thumbs).
-          if (spec.type === "slots" && Array.isArray(spec.slots) && spec.slots.length) {
-            const mini = document.createElement("span");
-            mini.className = "kw-tab-mini";
-            mini.style.gridTemplateColumns =
-              `repeat(${(spec.cols || []).length || 5}, 1fr)`;
-            const dots = {};
-            spec.slots.forEach(n => {
-              const d = document.createElement("i");
-              if ((spec.exclude || []).includes(n)) d.className = "ex";
-              mini.appendChild(d);
-              dots[n] = d;
-            });
-            tab.appendChild(mini);
-            const cnt = document.createElement("span");
-            cnt.className = "kw-tab-count";
-            tab.appendChild(cnt);
-            thumbs[k] = { dots, cnt };
-          }
-          tab.setAttribute("role", "tab");
-          tab.setAttribute("aria-selected", i === 0 ? "true" : "false");
-          const pane = document.createElement("div");
-          pane.className = "kw-tabpane";
-          if (i !== 0) pane.style.display = "none";
-          tab.addEventListener("click", () => {
-            tabs.forEach(t => {
-              const active = t.tab === tab;
-              t.tab.classList.toggle("on", active);
-              t.tab.setAttribute("aria-selected", active ? "true" : "false");
-              t.pane.style.display = active ? "" : "none";
-            });
-          });
-          tabs.push({ tab, pane });
-          bar.appendChild(tab);
-          panes.appendChild(pane);
-          slotFor[k] = pane;
-        });
-        wrapT.appendChild(bar);
-        wrapT.appendChild(panes);
-        container.appendChild(wrapT);
-        return;
-      }
       // ── row: fields side by side ──────────────────────────────────
       const rowKeys = Array.isArray(entry) ? entry : (entry && entry.row) || [];
       if (!rowKeys.length) return;
@@ -231,210 +279,6 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       return;
     }
 
-    // ── slots: tap the rack positions to process ────────────────────
-    // Grid + slot names come from the SCENE (server-enriched spec), so
-    // the operator sees the real rack. Value is a list of slot names.
-    if (type === "slots" && Array.isArray(spec.slots) && spec.slots.length) {
-      const exclude = new Set(spec.exclude || []);
-      // With ``value`` declared, each selected position carries a NUMBER
-      // and the kwarg is a map {slot: value}; without it, a plain list.
-      const vspec = spec.value || null;
-      const seed = (val !== undefined && val !== null) ? val : defaultVal;
-      const vals = new Map();
-      const chosen = new Set();
-      if (seed && !Array.isArray(seed) && typeof seed === "object") {
-        Object.entries(seed).forEach(([k, v]) => { chosen.add(k); vals.set(k, Number(v)); });
-      } else if (Array.isArray(seed)) {
-        seed.forEach(k => { chosen.add(k); if (vspec) vals.set(k, Number(vspec.default ?? 0)); });
-      }
-      let pending = Number(vspec ? (vspec.default ?? 0) : 0);
-      const wrap = document.createElement("div");
-      wrap.className = "kw-slots";
-      wrap.dataset.kwKey = key;
-      wrap.dataset.kwType = "slots";
-      const panel = document.createElement("div");
-      panel.className = "kw-slot-panel";
-      const grid = document.createElement("div");
-      grid.className = "kw-slot-grid";
-      grid.style.gridTemplateColumns = `repeat(${(spec.cols || []).length || 5}, 56px)`;
-      const cells = [];
-      const sync = () => {
-        // run order = the component's slot order, so the numbers match
-        // the sequence the protocol will actually process them in
-        const order = spec.slots.filter(n => chosen.has(n));
-        cells.forEach(({ el, name, num }) => {
-          const on = chosen.has(name);
-          el.classList.toggle("on", on);
-          if (num && !exclude.has(name)) {
-            num.textContent = !on ? ""
-              : (vspec ? `${vals.get(name) ?? vspec.default} ${vspec.unit || ""}`.trim()
-                       : String(order.indexOf(name) + 1));
-          }
-        });
-        const th = thumbs[key];
-        if (th) {
-          spec.slots.forEach(n => {
-            if (th.dots[n] && !exclude.has(n)) th.dots[n].className = chosen.has(n) ? "on" : "";
-          });
-          th.cnt.textContent = chosen.size ? `${chosen.size} selected` : "none";
-        }
-        if (vspec) {
-          const obj = {};
-          spec.slots.forEach(n => { if (chosen.has(n)) obj[n] = vals.get(n) ?? Number(vspec.default ?? 0); });
-          wrap.dataset.kwValue = JSON.stringify(obj);
-          const total = Object.values(obj).reduce((a, b) => a + b, 0);
-          countEl.textContent = `${chosen.size} selected · ` +
-            `${Math.round(total * 100) / 100} ${vspec.unit || ""}`.trim();
-        } else {
-          wrap.dataset.kwValue = JSON.stringify([...chosen]);
-          countEl.textContent = `${chosen.size} selected`;
-        }
-      };
-      spec.slots.forEach(name => {
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "kw-slot" + (exclude.has(name) ? " excluded" : "");
-        const idEl = document.createElement("span");
-        idEl.className = "kw-slot-id";
-        idEl.textContent = name;
-        const numEl = document.createElement("span");
-        numEl.className = "kw-slot-num";
-        numEl.textContent = exclude.has(name) ? (spec.exclude_label || "—") : "";
-        cell.appendChild(idEl);
-        cell.appendChild(numEl);
-        if (exclude.has(name)) {
-          cell.disabled = true;
-          cell.title = spec.exclude_hint || "Not available for processing";
-        } else if (!frozen) {
-          cell.addEventListener("click", () => {
-            if (chosen.has(name)) { chosen.delete(name); vals.delete(name); }
-            else { chosen.add(name); if (vspec) vals.set(name, pending); }
-            sync();
-          });
-        } else {
-          cell.disabled = true;
-        }
-        cells.push({ el: cell, name, num: numEl });
-        grid.appendChild(cell);
-      });
-      panel.appendChild(grid);
-      // Key, attached to the rack it explains — only the states this
-      // rack actually HAS, so nothing decorative. The two generic
-      // states are the widget's own vocabulary; the excluded one is
-      // described by the project (exclude_hint).
-      // NB: not named ``key`` — that is the field key in this closure,
-      // and shadowing it puts every earlier use in the temporal dead
-      // zone (the form then dies before rendering anything).
-      const keyEl = document.createElement("div");
-      keyEl.className = "kw-slot-key";
-      const keyItem = (cls, text) => {
-        const item = document.createElement("span");
-        const dot = document.createElement("i");
-        dot.className = cls;
-        item.appendChild(dot);
-        item.appendChild(document.createTextNode(text));
-        keyEl.appendChild(item);
-      };
-      keyItem("on", "Selected");
-      keyItem("", "Available");
-      if (exclude.size) keyItem("excluded", spec.exclude_hint || "Unavailable");
-      const split = document.createElement("div");
-      split.className = "kw-slot-split";
-      split.appendChild(panel);
-      wrap.appendChild(split);
-      const bar = document.createElement("div");
-      bar.className = "kw-slot-actions";
-      const countEl = document.createElement("span");
-      countEl.className = "kw-slot-count";
-      bar.appendChild(countEl);
-      // Value control: sets what NEWLY selected positions get, and
-      // rewrites the current selection on Apply — so mixed values are
-      // "select a group, set, apply" rather than a fiddly per-slot popover.
-      if (vspec && !frozen) {
-        const step = Number(vspec.step ?? 1);
-        const lo = vspec.min !== undefined ? Number(vspec.min) : -Infinity;
-        const hi = vspec.max !== undefined ? Number(vspec.max) : Infinity;
-        const box = document.createElement("div");
-        box.className = "kw-val-box";
-        const lab = document.createElement("div");
-        lab.className = "kw-val-label";
-        lab.textContent = vspec.label || "Value";
-        box.appendChild(lab);
-        const row = document.createElement("div");
-        row.className = "kw-val-row";
-        const readout = document.createElement("span");
-        readout.className = "kw-val-num";
-        const show = () => {
-          readout.textContent = `${Math.round(pending * 100) / 100} ${vspec.unit || ""}`.trim();
-        };
-        const bump = (d) => {
-          pending = Math.min(hi, Math.max(lo, Math.round((pending + d) * 1000) / 1000));
-          show();
-        };
-        const mkStep = (txt, d) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "kw-val-step";
-          b.textContent = txt;
-          b.addEventListener("click", () => bump(d));
-          return b;
-        };
-        row.appendChild(mkStep("−", -step));
-        row.appendChild(readout);
-        row.appendChild(mkStep("+", step));
-        box.appendChild(row);
-        const apply = document.createElement("button");
-        apply.type = "button";
-        apply.className = "kw-slot-quick kw-val-apply";
-        apply.textContent = "Apply to selected";
-        apply.addEventListener("click", () => {
-          chosen.forEach(n => vals.set(n, pending));
-          sync();
-        });
-        box.appendChild(apply);
-        show();
-        bar.appendChild(box);
-      }
-
-      // Bulk actions are DECLARED (quick: [all, clear]) — the platform
-      // never invents selection semantics for a project's rack.
-      if (!frozen) {
-        // A bulk select behaves like tapping each slot: newly added
-        // positions take the CURRENT stepper value, not the default.
-        const acts = {
-          all: ["Select all", () => spec.slots.forEach(n => {
-            if (exclude.has(n) || chosen.has(n)) return;
-            chosen.add(n);
-            if (vspec) vals.set(n, pending);
-          })],
-          clear: ["Clear", () => { chosen.clear(); vals.clear(); }],
-        };
-        (spec.quick || []).forEach(nameKey => {
-          const a = acts[String(nameKey).toLowerCase()];
-          if (!a) return;
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "kw-slot-quick";
-          b.textContent = a[0];
-          b.addEventListener("click", () => { a[1](); sync(); });
-          bar.appendChild(b);
-        });
-      }
-      split.appendChild(bar);
-      wrap.appendChild(keyEl);
-      inputRow.appendChild(wrap);
-      sync();
-      field.appendChild(inputRow);
-      if (hint) {
-        const h = document.createElement("div");
-        h.className = "kw-hint";
-        h.textContent = hint;
-        field.appendChild(h);
-      }
-      hostFor(key).appendChild(field);
-      return;
-    }
-
     let input;
     if (type === "bool") {
       // Touch toggle, not a bare checkbox — operator surfaces need a
@@ -537,6 +381,39 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
 export function validateKwargsForm(container, schema) {
   const errors = [];
+  // A project screen draws its own inputs, so the per-field walk below
+  // has nothing to walk. Validate what it RETURNS against the schema
+  // instead — the schema is the contract, and a project screen is not
+  // trusted to enforce it — then let the screen add its own message.
+  const host = container._paramsHost;
+  if (host) {
+    const values = readKwargsForm(container);
+    for (const [key, spec] of Object.entries(schema || {})) {
+      if (key.startsWith("_") || !spec || typeof spec !== "object") continue;
+      const v = values[key];
+      const missing = v === undefined || v === null || v === "" ||
+                      (Array.isArray(v) && !v.length) ||
+                      (v && typeof v === "object" && !Array.isArray(v) &&
+                       !Object.keys(v).length);
+      if (missing && !spec.optional) {
+        errors.push(`${spec.label || key} is required`);
+        continue;
+      }
+      if (missing) continue;
+      const t = (spec.type || "").toLowerCase();
+      if ((t === "int" || t === "float") && typeof v === "number") {
+        if (spec.min !== undefined && v < spec.min) errors.push(`${spec.label || key} must be ≥ ${spec.min}`);
+        if (spec.max !== undefined && v > spec.max) errors.push(`${spec.label || key} must be ≤ ${spec.max}`);
+      }
+    }
+    if (host.module && typeof host.module.validate === "function") {
+      try {
+        const msg = host.module.validate();
+        if (msg) errors.push(String(msg));
+      } catch (err) { console.error("params validate() threw:", err); }
+    }
+    return errors;
+  }
   container.querySelectorAll("[data-kw-key]").forEach(el => {
     const key = el.dataset.kwKey;
     const type = el.dataset.kwType;
@@ -552,13 +429,6 @@ export function validateKwargsForm(container, schema) {
 
     if (type === "file" || type === "bool" || type === "choice") {
       // no validation needed
-    } else if (type === "slots") {
-      let picked = [];
-      try {
-        const raw = JSON.parse(el.dataset.kwValue || "[]");
-        picked = Array.isArray(raw) ? raw : Object.keys(raw || {});
-      } catch {}
-      if (!picked.length && !optional) err = "Select at least one position";
     } else if (type === "int") {
       if (el.value !== "" && (isNaN(parseInt(el.value, 10)) || el.value.includes("."))) {
         err = "Must be a whole number";
@@ -674,6 +544,21 @@ export function loadKwargsFromFile(container, toastFn) {
 }
 
 export function readKwargsForm(container) {
+  // A project screen owns its own state; ask it for the values.
+  const host = container._paramsHost;
+  if (host) {
+    try {
+      const v = host.module && typeof host.module.value === "function"
+        ? host.module.value()
+        : readBoundFields(host.shadow);
+      // Screen wins per key — a key it returns as {} or [] means the
+      // operator emptied it, not "fall back to the default".
+      return { ...(host.base || {}), ...((v && typeof v === "object") ? v : {}) };
+    } catch (err) {
+      console.error("params value() threw:", err);
+      return {};
+    }
+  }
   const kwargs = {};
   container.querySelectorAll("[data-kw-key]").forEach(el => {
     const key = el.dataset.kwKey;
@@ -681,9 +566,6 @@ export function readKwargsForm(container) {
     if (type === "file") {
       kwargs[key] = el.dataset.kwValue || null;
       return;
-    } else if (type === "slots") {
-      try { kwargs[key] = JSON.parse(el.dataset.kwValue || "[]"); }
-      catch { kwargs[key] = []; }
     } else if (type === "bool") {
       kwargs[key] = el.checked;
     } else if (type === "int") {

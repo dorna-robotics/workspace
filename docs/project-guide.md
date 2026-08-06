@@ -119,62 +119,59 @@ kwargs:
 | `placeholder` | No | Greyed-out text inside the input when empty |
 | `optional` | No | `true` = field can be left empty, sent as `null` |
 | `min` / `max` | No | Numeric bounds (for `int` and `float` types) |
-| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) <br>• `slots` — rack-position picker, see below |
+| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) <br>• `list` / `map` — a collection the project's own run-setup screen fills, see below |
 
-### `slots` — pick WHICH positions to run
+### `params` — the project's own run-setup screen
 
-When the operator must choose *which* rack positions to process (not
-just how many), declare a `slots` field bound to a rack component:
+The generic form covers scalars. When an operator must pick *which*
+positions to run — a rack, a tray, a carousel — that is a picture of
+the project's own hardware, so the project draws it. Declare it in
+`launch.yaml` next to the schema:
 
 ```yaml
-kwargs:
-  tubes:
-    type: slots
-    component: rack_falcon_15ml_1     # a rack in this project's scene
-    exclude: ["D5"]                   # positions that can never be picked
-    exclude_hint: "Reservoir (D5) — never processed"
-    exclude_label: "SOURCE"           # tiny caption inside the excluded slot
-    quick: [all, clear]               # optional bulk actions (omit = none)
-    value:                            # optional PER-POSITION value
-      label: Dispense
-      unit: mL
-      default: 0.4
-      min: 0.1
-      max: 5.0
-      step: 0.1
-    default: ["A1"]
-    label: Tubes to process
-    hint: Tap the rack positions you loaded.
+kwargs:  hmi/kwargs.j2      # the SCHEMA — what a run takes
+params:  hmi/params.js      # the SCREEN — how an operator sets it
 ```
 
-The **grid is derived, never authored**: the orchestrator reads the
-component's rows/cols and slot names from the scene + the component
-class, so the form draws the real rack (bd: 4×5, `A1`…`D5`). A
-component that can't be resolved degrades to a plain field — a display
-concern must never block run setup.
+The schema still declares every parameter, because it is read with no
+browser anywhere (`bt.replay`, the CLI, launch). It just stops
+describing how anything looks:
 
-Without `value:` the kwarg is a **list of slot names**
-(`["A1","A3","C2"]`). With `value:` each selected position carries a
-number and the kwarg becomes a **map** (`{"A1": 0.4, "B3": 2.5}`) —
-the operator sets the amount with a stepper and applies it to the
-current selection, so mixed runs are "select a group, set, apply".
-**Accept both shapes in `setup`** (a list means every item takes the
-default):
+```yaml
+tubes:
+  type: map                 # or list
+  label: Tubes to process
+  value: {label: Dispense, unit: mL, default: 0.4, min: 0.1, max: 5.0, step: 0.1}
+  default:                  # the project's own grid, in the project
+    "A1": 0.4
+    "A2": 0.4
+```
+
+The screen is hosted exactly like the pendant screen (hmi-guide §4b) —
+shadow root, design tokens, `.html` with `data-field="key"` or `.js`
+with `{css, mount(root, api), value(), validate()}`. Its `api` carries
+`{schema, values, frozen, theme, onTheme}`. Two rules make it safe:
+
+* **The platform validates whatever the screen returns** against the
+  schema — required, `min`, `max`. A project screen is not trusted to
+  enforce its own contract, and `validate()` only ADDS a message.
+* **Fields the screen does not draw keep their schema default**, so a
+  screen can cover only the parameters it cares about (bd draws the
+  rack; `print_label` keeps its default).
+
+Filter excluded positions **in `setup` too** — the screen prevents
+picking them, but a replay/API caller can pass anything:
 
 ```python
-slots = [f"{r}{c}" for r in "ABCD" for c in range(1, 6)]   # rack order
-picked = kwargs.get("tubes") or []
-tubes = sorted({slots.index(s) for s in picked
-                if s in slots and s != SOURCE_SLOT})
+picked = kwargs.get("tubes") or {}          # {"A1": 0.4, ...}
+tubes = sorted({SLOTS.index(s) for s in picked
+                if s in SLOTS and s != SOURCE_SLOT})
 ```
 
-Filter excluded positions **in `setup` too** — the UI prevents picking
-them, but a replay/API caller can still pass anything.
-
-`workspace.bt.replay --batch N` understands `slots`: it selects the
-first N selectable positions, so the schedule gate keeps meaning "run
-N items". Verify a real selection with
-`--kw 'tubes=["A1","A3","C2"]'`.
+`workspace.bt.replay --batch N` slices the first N entries of the
+first collection-typed kwarg's default, so the schedule gate keeps
+meaning "run N items" with no rack knowledge in the platform. Verify a
+real selection with `--kw 'tubes={"A1": 0.4, "C2": 1.5}'`.
 
 ### `_layout` — arranging the run-setup form
 
@@ -183,18 +180,13 @@ by side, declare rows — a HINT, not a field:
 
 ```yaml
 _layout:
-  - row:  [tubes, print_label]        # side by side
-  - tabs: [tubes_in_1, tubes_in_2]    # one pane per field, tab bar above
-    label: Load racks                 # optional heading for the group
-    hint: Tap a rack to edit it.      # optional description under it
+  - row: [batch_size, print_label]    # side by side
 ```
 
-`row` places fields side by side; `tabs` gives each field its own pane
-behind a tab (the tab's label is the field's `label`). Tabs are the
-answer to **multiple racks**: declare one `slots` field per rack —
-each keeps its own grid, key, quick actions and values — and tab them
-together. Nothing in the vocabulary is rack-specific; any field type
-works in either container.
+`row` places fields side by side. That is the whole vocabulary: a
+project that needs more than rows of scalars ships a `params` screen
+and arranges it however it likes (multiple racks, tabs, wizards — all
+project markup, none of it platform vocabulary).
 
 Unlisted fields stack below in declaration order; rows wrap to a
 single column on narrow screens (pendant portrait). This is the only
@@ -210,10 +202,10 @@ version they were written against. The rule that keeps old projects
 working:
 
 1. **New features are opt-in keys. Absent = previous behaviour.**
-   Everything added this cycle obeys it: no `value:` → the slots kwarg
-   is still a list; no `quick:` → no bulk buttons; no `_layout` →
-   fields stack; `kwargs:` as a dict still works exactly as before the
-   file form existed.
+   Everything added this cycle obeys it: no `params:` → the generic
+   form; no `hmi:` → the default pendant; no `_layout` → fields stack;
+   `kwargs:` as a dict still works exactly as before the file form
+   existed.
 2. **Never repurpose an existing key.** A changed meaning is a silent
    behaviour change on every project that already uses it. Add a new
    key instead and let the old one keep working.
@@ -229,6 +221,14 @@ working:
    `workspace.bt.replay` (and `workspace.recipes.solve` for motion
    changes) over the example projects — they are the cheap regression
    net for "did I just break older projects".
+
+**One removal, on the record.** `type: slots` — a rack-position picker
+the platform drew — was deleted rather than deprecated, against rule 3.
+It had exactly one user (bd), in-tree, migrated in the same commit, and
+keeping it would have meant carrying a rack in the platform forever
+(hmi-guide §2). A project still declaring it degrades to a plain text
+field rather than crashing (rule 4); the replacement is a `params`
+screen.
 
 ### How kwargs flow
 

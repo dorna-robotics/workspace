@@ -429,17 +429,35 @@ by `launch.yaml`). One schema, one source of truth;
 definition of it. (Rejected: moving kwargs into `hmi.j2` — two files
 defining the same inputs is how they drift.)
 
-**Why YAML holds for both today.** Both are *declarations*: a list of
-fields with types, a list of widgets with bindings. The `slots` field
-is the proof of the pattern — the yaml says `component:
-rack_falcon_15ml_1`, and everything else (grid, slot names, geometry)
-is DERIVED server-side from the scene. Declarations stay small when
-the platform does the deriving.
+**Why YAML holds for the SCHEMA.** It is a genuine declaration — a
+list of fields with types and defaults — and, decisively, it is read
+with **no browser anywhere**: `bt.replay`, the CLI and launch all
+resolve kwargs headlessly. A schema in HTML would mean
+`replay --batch 4` could not know what a run takes. That constraint,
+not taste, is what keeps kwargs YAML.
 
-**Where YAML genuinely stops**: computed schemas (a default that
-depends on the scene), conditional fields ("only when this device
-exists"), cross-field validation ("volume × tubes ≤ reservoir"), live
-capacity checks. Jinja can fake some of it and gets ugly fast.
+**Why the FORM is not YAML.** The first version of this section
+claimed `slots` proved declarations scale, because the platform
+derived the rack grid from the scene. It proved the opposite: the
+platform ended up owning a rack picker, tab bars and slot thumbnails —
+one project's hardware, carried by everyone, and the next project's
+tray or carousel would have been another platform change. So the
+schema stayed YAML and the FORM became a project file (`params:`,
+project-guide §3), hosted exactly like the pendant screen.
+
+The split that makes both true at once:
+
+| | schema (`kwargs:`) | form (`params:`) |
+|---|---|---|
+| answers | what a run takes | how an operator picks it |
+| read by | replay, CLI, launch, GUI | the GUI only |
+| owns | types, defaults, limits | markup, layout, interaction |
+| enforced by | the platform, on whatever the form returns | — |
+
+**Where YAML genuinely stops for the schema too**: computed schemas (a
+default that depends on the scene), conditional fields ("only when
+this device exists"), cross-field validation ("volume × tubes ≤
+reservoir"). Jinja fakes some of it and gets ugly fast.
 
 **The escape hatch when we need it** — and the constraint that shapes
 it: today `launch_config()` is a pure YAML read; the orchestrator
@@ -456,8 +474,10 @@ Two acceptable designs, in preference order:
 2. **A declared hook** — `kwargs_hook: params.py:build` executed in
    the *project* process (launch/replay), not the GUI.
 
-Until a project actually needs it, neither is built: `slots` covered
-the case that motivated the question.
+Until a project actually needs it, neither is built — the `params`
+screen covered the case that motivated the question, and it needs no
+project code in the GUI process: the screen is fetched over HTTP and
+runs in the browser, never imported by the orchestrator.
 
 **The HMI is where YAML stopped, and we crossed the line on purpose**
 (§2). A screen is not a declaration — it is a layout, and every attempt
@@ -487,6 +507,7 @@ root, so a broken screen is a blank content area, not a broken launch.
 | Color discipline: muted normal, color for active/attention | High-performance-HMI practice; colorful-when-fine trains color blindness. |
 | Guided recovery: one sentence + one operator_action button | Operators need the next action, not a dashboard; all machinery already exists. |
 | Parameters: presets + touch widgets over the existing kwargs schema | Converts a debug form into run setup without discarding the schema. |
-| Run inputs stay in launch.yaml; hmi.j2 only presents them | One source of truth for what a run takes; two definitions drift. `slots` shipped this way (project-guide §3). |
+| Run inputs stay in the kwargs schema; the form only presents them | One source of truth for what a run takes; two definitions drift. |
+| Schema stays YAML, the run-setup FORM becomes a project file (`params:`) | The schema is read headlessly (replay, CLI, launch) so it cannot be markup; the form is read only by the GUI. `type: slots` had put a rack picker, tab bar and slot thumbnails in the platform — deleted, and bd now draws its own (project-guide §3). |
 | YAML/j2 for kwargs + HMI; Python only via the workspace process, never imported by the orchestrator | Both are declarations, and the platform derives the rest (grid from the scene). The GUI must not import project code — hardware imports; the builder needed dorna2 stubs for the same reason. |
 | Differentiators to invest in: bench map + guided recovery | Bench map is zero-config (derived from scene — competitors hand-draw screens); recovery kills the "written for programmers" complaint. |

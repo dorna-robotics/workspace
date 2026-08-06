@@ -33,8 +33,9 @@ import yaml
 
 def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     """launch.yaml kwargs schema → concrete kwargs dict. ``batch``
-    lands on the first int-typed kwarg (or the first ``slots`` one);
-    ``overrides`` are k=v strings.
+    lands on the first int-typed kwarg, else on the first kwarg whose
+    default is a collection (sliced to N entries); ``overrides`` are
+    k=v strings.
 
     ``kwargs:`` may be inline OR a file path (kwargs.j2) — same two
     shapes the orchestrator accepts."""
@@ -55,27 +56,31 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
             launch["kwargs"] = {}
     out = {}
     first_int = None
-    first_slots = None
+    first_coll = None
     for name, spec in (launch.get("kwargs") or {}).items():
-        if not isinstance(spec, dict):
+        # Keys starting with "_" are presentation hints for the GUI
+        # (``_layout``), never run parameters.
+        if name.startswith("_") or not isinstance(spec, dict):
             continue
         out[name] = spec.get("default")
         if first_int is None and spec.get("type") == "int":
             first_int = name
-        if first_slots is None and spec.get("type") == "slots":
-            first_slots = (name, spec)
+        if first_coll is None and isinstance(spec.get("default"), (list, dict)):
+            first_coll = name
     if batch is not None and first_int is not None:
         out[first_int] = int(batch)
-    elif batch is not None and first_slots is not None:
-        # ``slots`` batches by COUNT: take the first N selectable
-        # positions of the declared component's grid, so --batch keeps
-        # meaning "run N items" for slot-selected projects too.
-        name, spec = first_slots
-        rows = spec.get("rows") or list("ABCDEFGH")
-        cols = spec.get("cols") or list(range(1, 13))
-        exclude = set(spec.get("exclude") or [])
-        grid = [f"{r}{c}" for r in rows for c in cols if f"{r}{c}" not in exclude]
-        out[name] = grid[:int(batch)]
+    elif batch is not None and first_coll is not None:
+        # No int to batch on, so batch the first COLLECTION kwarg by
+        # slicing its declared default to N entries — "run N items"
+        # keeps meaning for a project whose run is a set of positions.
+        # The default is the project's own list of what it can run; the
+        # platform reads its length and nothing about what the entries
+        # mean.
+        d = out[first_coll]
+        if isinstance(d, dict):
+            out[first_coll] = {k: d[k] for k in list(d)[:int(batch)]}
+        else:
+            out[first_coll] = d[:int(batch)]
     for kv in overrides:
         k, _, v = kv.partition("=")
         try:
