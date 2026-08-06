@@ -134,6 +134,13 @@ kwargs:
     exclude_hint: "Reservoir (D5) — never processed"
     exclude_label: "SOURCE"           # tiny caption inside the excluded slot
     quick: [all, clear]               # optional bulk actions (omit = none)
+    value:                            # optional PER-POSITION value
+      label: Dispense
+      unit: mL
+      default: 0.4
+      min: 0.1
+      max: 5.0
+      step: 0.1
     default: ["A1"]
     label: Tubes to process
     hint: Tap the rack positions you loaded.
@@ -145,8 +152,13 @@ class, so the form draws the real rack (bd: 4×5, `A1`…`D5`). A
 component that can't be resolved degrades to a plain field — a display
 concern must never block run setup.
 
-The value is a **list of slot names** (`["A1","A3","C2"]`), so
-`setup(**kwargs)` maps them to whatever the protocol keys on:
+Without `value:` the kwarg is a **list of slot names**
+(`["A1","A3","C2"]`). With `value:` each selected position carries a
+number and the kwarg becomes a **map** (`{"A1": 0.4, "B3": 2.5}`) —
+the operator sets the amount with a stepper and applies it to the
+current selection, so mixed runs are "select a group, set, apply".
+**Accept both shapes in `setup`** (a list means every item takes the
+default):
 
 ```python
 slots = [f"{r}{c}" for r in "ABCD" for c in range(1, 6)]   # rack order

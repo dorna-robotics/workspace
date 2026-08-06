@@ -157,8 +157,18 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
     // the operator sees the real rack. Value is a list of slot names.
     if (type === "slots" && Array.isArray(spec.slots) && spec.slots.length) {
       const exclude = new Set(spec.exclude || []);
-      const chosen = new Set(Array.isArray(val) ? val
-        : (Array.isArray(defaultVal) ? defaultVal : []));
+      // With ``value`` declared, each selected position carries a NUMBER
+      // and the kwarg is a map {slot: value}; without it, a plain list.
+      const vspec = spec.value || null;
+      const seed = (val !== undefined && val !== null) ? val : defaultVal;
+      const vals = new Map();
+      const chosen = new Set();
+      if (seed && !Array.isArray(seed) && typeof seed === "object") {
+        Object.entries(seed).forEach(([k, v]) => { chosen.add(k); vals.set(k, Number(v)); });
+      } else if (Array.isArray(seed)) {
+        seed.forEach(k => { chosen.add(k); if (vspec) vals.set(k, Number(vspec.default ?? 0)); });
+      }
+      let pending = Number(vspec ? (vspec.default ?? 0) : 0);
       const wrap = document.createElement("div");
       wrap.className = "kw-slots";
       wrap.dataset.kwKey = key;
@@ -176,10 +186,23 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         cells.forEach(({ el, name, num }) => {
           const on = chosen.has(name);
           el.classList.toggle("on", on);
-          if (num && !exclude.has(name)) num.textContent = on ? String(order.indexOf(name) + 1) : "";
+          if (num && !exclude.has(name)) {
+            num.textContent = !on ? ""
+              : (vspec ? `${vals.get(name) ?? vspec.default} ${vspec.unit || ""}`.trim()
+                       : String(order.indexOf(name) + 1));
+          }
         });
-        wrap.dataset.kwValue = JSON.stringify([...chosen]);
-        countEl.textContent = `${chosen.size} selected`;
+        if (vspec) {
+          const obj = {};
+          spec.slots.forEach(n => { if (chosen.has(n)) obj[n] = vals.get(n) ?? Number(vspec.default ?? 0); });
+          wrap.dataset.kwValue = JSON.stringify(obj);
+          const total = Object.values(obj).reduce((a, b) => a + b, 0);
+          countEl.textContent = `${chosen.size} selected · ` +
+            `${Math.round(total * 100) / 100} ${vspec.unit || ""}`.trim();
+        } else {
+          wrap.dataset.kwValue = JSON.stringify([...chosen]);
+          countEl.textContent = `${chosen.size} selected`;
+        }
       };
       spec.slots.forEach(name => {
         const cell = document.createElement("button");
@@ -198,7 +221,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           cell.title = spec.exclude_hint || "Not available for processing";
         } else if (!frozen) {
           cell.addEventListener("click", () => {
-            chosen.has(name) ? chosen.delete(name) : chosen.add(name);
+            if (chosen.has(name)) { chosen.delete(name); vals.delete(name); }
+            else { chosen.add(name); if (vspec) vals.set(name, pending); }
             sync();
           });
         } else {
@@ -237,6 +261,55 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       const countEl = document.createElement("span");
       countEl.className = "kw-slot-count";
       bar.appendChild(countEl);
+      // Value control: sets what NEWLY selected positions get, and
+      // rewrites the current selection on Apply — so mixed values are
+      // "select a group, set, apply" rather than a fiddly per-slot popover.
+      if (vspec && !frozen) {
+        const step = Number(vspec.step ?? 1);
+        const lo = vspec.min !== undefined ? Number(vspec.min) : -Infinity;
+        const hi = vspec.max !== undefined ? Number(vspec.max) : Infinity;
+        const box = document.createElement("div");
+        box.className = "kw-val-box";
+        const lab = document.createElement("div");
+        lab.className = "kw-val-label";
+        lab.textContent = vspec.label || "Value";
+        box.appendChild(lab);
+        const row = document.createElement("div");
+        row.className = "kw-val-row";
+        const readout = document.createElement("span");
+        readout.className = "kw-val-num";
+        const show = () => {
+          readout.textContent = `${Math.round(pending * 100) / 100} ${vspec.unit || ""}`.trim();
+        };
+        const bump = (d) => {
+          pending = Math.min(hi, Math.max(lo, Math.round((pending + d) * 1000) / 1000));
+          show();
+        };
+        const mkStep = (txt, d) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "kw-val-step";
+          b.textContent = txt;
+          b.addEventListener("click", () => bump(d));
+          return b;
+        };
+        row.appendChild(mkStep("−", -step));
+        row.appendChild(readout);
+        row.appendChild(mkStep("+", step));
+        box.appendChild(row);
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "kw-slot-quick kw-val-apply";
+        apply.textContent = "Apply to selected";
+        apply.addEventListener("click", () => {
+          chosen.forEach(n => vals.set(n, pending));
+          sync();
+        });
+        box.appendChild(apply);
+        show();
+        bar.appendChild(box);
+      }
+
       // Bulk actions are DECLARED (quick: [all, clear]) — the platform
       // never invents selection semantics for a project's rack.
       if (!frozen) {
@@ -387,9 +460,11 @@ export function validateKwargsForm(container, schema) {
       // no validation needed
     } else if (type === "slots") {
       let picked = [];
-      try { picked = JSON.parse(el.dataset.kwValue || "[]"); } catch {}
+      try {
+        const raw = JSON.parse(el.dataset.kwValue || "[]");
+        picked = Array.isArray(raw) ? raw : Object.keys(raw || {});
+      } catch {}
       if (!picked.length && !optional) err = "Select at least one position";
-      else if (spec.max !== undefined && picked.length > spec.max) err = `Max: ${spec.max}`;
     } else if (type === "int") {
       if (el.value !== "" && (isNaN(parseInt(el.value, 10)) || el.value.includes("."))) {
         err = "Must be a whole number";
