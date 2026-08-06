@@ -205,11 +205,12 @@ Controls at the bottom with **Kill on its own row**. The rail never
 scrolls — controls hold the same screen position no matter how much
 the content pane grows — and the pane beside it scrolls on its own.
 
-- Control buttons are **full-width rows, 56 px min-height** (the whole
-  row is the target); secondary actions 48 px.
-- **Park is an outline, not a filled tint**: it sits next to Pause and
-  has a very different consequence, so the two must not read alike to
-  a hurried thumb (§9 — never colour alone).
+- **Every rail button is the same size and shape** — full-width rows,
+  56 px min-height, one radius, from Start down to Kill. Colour is
+  what separates them; an odd-one-out button reads as a mistake, not
+  as a warning.
+- Park's separation from Pause comes from the **gap and Kill's
+  isolated row**, not from a different form.
 - **Portrait / narrow (≤ 860 px)** falls back to the pre-rail layout:
   the rail drops to the bottom and the controls return to the 2×2
   tile grid, so nothing regresses on a portrait tablet.
