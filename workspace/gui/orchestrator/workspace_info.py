@@ -131,6 +131,32 @@ def _free_port(port: int) -> None:
             pass
 
 
+def normalise_kwargs_schema(raw: Dict) -> Dict:
+    """Each schema entry is either BARE or a SPEC — one deterministic rule.
+
+      tubes: {"A1": 0.4, "A2": 0.4}     # bare — the value IS the default
+      print_label: false                 # bare
+      batch_size: {type: int, default: 4, min: 1}   # spec — for the
+                                         # generic form's widgets/limits
+
+    A dict entry containing the key ``"default"`` is a spec; anything
+    else is a bare default and is wrapped as ``{"default": value}`` so
+    every downstream reader sees one shape. (Corollary: a bare map
+    default must not itself contain a key literally named "default" —
+    use the spec form for that.) Keys starting with ``_`` are
+    presentation hints, passed through untouched.
+    """
+    out: Dict = {}
+    for k, v in (raw or {}).items():
+        if str(k).startswith("_"):
+            out[k] = v
+        elif isinstance(v, dict) and "default" in v:
+            out[k] = v
+        else:
+            out[k] = {"default": v}
+    return out
+
+
 def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
     """The project's kwargs schema, from launch.yaml.
 
@@ -142,13 +168,18 @@ def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
         top level is the schema; a ``kwargs:`` key inside is unwrapped
         so the file can stand alone or mirror launch.yaml's shape.
 
+    Entries are normalised (see :func:`normalise_kwargs_schema`) so a
+    project may declare bare defaults only.
+
     Never raises — an unreadable/invalid file yields None (the caller
     shows "no parameters" rather than blocking the workspace).
     """
     from pathlib import Path as _P
     spec = launch.get("kwargs") if isinstance(launch, dict) else None
-    if isinstance(spec, dict) or spec is None:
-        return spec
+    if isinstance(spec, dict):
+        return normalise_kwargs_schema(spec)
+    if spec is None:
+        return None
     try:
         from jinja2 import Template
         text = (_P(project_dir) / str(spec)).read_text()
@@ -157,7 +188,7 @@ def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
         data = yaml.safe_load(text) or {}
         if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
             data = data["kwargs"]
-        return data if isinstance(data, dict) else None
+        return normalise_kwargs_schema(data) if isinstance(data, dict) else None
     except Exception:
         return None
 

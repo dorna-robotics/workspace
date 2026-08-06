@@ -109,7 +109,32 @@ kwargs:
     min: 1
 ```
 
-### Kwarg field properties
+### Two entry shapes — bare, or a spec
+
+Each schema entry is either **bare** (the value IS the default) or a
+**spec dict** — one deterministic rule tells them apart: *a dict
+containing the key `"default"` is a spec; anything else is a bare
+default.* (Corollary: a bare map default must not itself contain a key
+named `default` — use the spec form then.)
+
+```yaml
+tubes: {"A1": 0.4, "A2": 0.4}     # bare — a map kwarg with its default
+print_label: false                 # bare
+batch_size: {type: int, default: 4, min: 1, max: 20}   # spec
+```
+
+**Bare is the shape for a project with its own `setup:` screen** — the
+schema stays "the kwargs themselves", and labels/units/limits live in
+the screen, which is where presentation belongs (bd is the exemplar).
+The generic form still renders bare entries by inferring the widget
+from the default's type (bool → toggle, number → number input,
+list/map → JSON textarea).
+
+**The spec form is for a project with NO screen** that wants typed
+widgets, labels and server-enforced limits on the auto-generated form
+(apc is the exemplar). Its properties:
+
+### Kwarg field properties (spec form)
 
 | Property | Required | Description |
 |----------|----------|-------------|
@@ -123,11 +148,12 @@ kwargs:
 
 **`type:` exists to pick the generic form's widget — nothing else.**
 A collection kwarg (a list or map, like bd's `tubes`) has NO type: its
-default's shape declares it, and replay batches on that shape. A
-project with its own `setup:` screen may omit `type` entirely. The
+default's shape declares it, and replay batches on that shape. The
 standing rule for this file: **every key must have a reader** (the
 generic form, validation, replay, or your screen) — a key nothing
-reads is deleted, not kept for documentation's sake.
+reads is deleted, not kept for documentation's sake. Taken to its
+conclusion: a project whose screen owns all presentation declares
+bare entries only.
 
 ### `setup` — the project's own run-setup screen
 

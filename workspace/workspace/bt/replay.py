@@ -60,8 +60,14 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     for name, spec in (launch.get("kwargs") or {}).items():
         # Keys starting with "_" are presentation hints for the GUI
         # (``_layout``), never run parameters.
-        if name.startswith("_") or not isinstance(spec, dict):
+        if name.startswith("_"):
             continue
+        # Bare entry vs spec — same rule as the orchestrator's
+        # ``normalise_kwargs_schema``: a dict containing "default" is a
+        # spec; anything else IS the default (``print_label: false``,
+        # ``tubes: {"A1": 0.4}``).
+        if not (isinstance(spec, dict) and "default" in spec):
+            spec = {"default": spec}
         out[name] = spec.get("default")
         if first_int is None and spec.get("type") == "int":
             first_int = name

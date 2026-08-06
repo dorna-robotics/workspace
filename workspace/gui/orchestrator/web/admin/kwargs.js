@@ -184,7 +184,14 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
   keys.forEach(key => {
     const spec = schema[key];
-    const type = (spec.type || "str").toLowerCase();
+    // No declared type (a BARE schema entry — just a default): infer
+    // the widget from the default's own type. bool → toggle, number →
+    // number input, list/map → JSON textarea, else text.
+    const type = (spec.type || (
+      typeof spec.default === "boolean" ? "bool"
+      : typeof spec.default === "number" ? (Number.isInteger(spec.default) ? "int" : "float")
+      : (spec.default !== null && typeof spec.default === "object") ? "textarea"
+      : "str")).toLowerCase();
     const label = spec.label || key;
     const optional = spec.optional || false;
     const hint = spec.hint || "";
