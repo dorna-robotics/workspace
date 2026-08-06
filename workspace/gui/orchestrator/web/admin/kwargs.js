@@ -313,8 +313,16 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       // Bulk actions are DECLARED (quick: [all, clear]) — the platform
       // never invents selection semantics for a project's rack.
       if (!frozen) {
-        const acts = { all: ["Select all", () => spec.slots.forEach(n => { if (!exclude.has(n)) chosen.add(n); })],
-                       clear: ["Clear", () => chosen.clear()] };
+        // A bulk select behaves like tapping each slot: newly added
+        // positions take the CURRENT stepper value, not the default.
+        const acts = {
+          all: ["Select all", () => spec.slots.forEach(n => {
+            if (exclude.has(n) || chosen.has(n)) return;
+            chosen.add(n);
+            if (vspec) vals.set(n, pending);
+          })],
+          clear: ["Clear", () => { chosen.clear(); vals.clear(); }],
+        };
         (spec.quick || []).forEach(nameKey => {
           const a = acts[String(nameKey).toLowerCase()];
           if (!a) return;
