@@ -209,8 +209,9 @@ the pane beside it scrolls on its own.
   is the fact that decides *which* control to press (READY→Start,
   RUNNING→Pause, PAUSED→Resume), so cause and action share one
   glance.
-- The **navbar mirrors the main page** — back arrow + workspace name
-  left, run timer centred, actions right. The timer is reference, not
+- The **navbar mirrors the main page** — same 54 px height (it
+  inherits the shared topbar rule; no pendant override), back arrow +
+  workspace name left, run timer centred, actions right. The timer is reference, not
   a trigger, so it stays out of the rail; the back arrow means the
   pendant is never a dead end, and the workspace name means an
   operator with several benches open never has to check a browser

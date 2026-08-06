@@ -595,17 +595,17 @@
 /* Pendant nav chrome (background, border, status-coloured
    underline) is shared with ``.ws-header`` via the topbar
    selector list in base.css. Pendant overrides:
-   - Height 76px so the operator-scale state pill + hero timer fit
-     (main page is engineer-sized at 54px). Keep in sync with the
-     3D-PiP offset in workspace.html.
+   - Height is NOT overridden: since the state pill moved into the
+     rail this bar carries the same furniture as the main page (back,
+     name, timer chip, actions), so it inherits the shared 54px and
+     the two headers line up. Keep the 3D-PiP offset in
+     workspace.html in sync with it.
    - Layout switched from flex to a 3-column grid so the centre
      column (timer) stays perfectly centred regardless of how
      wide the left pill or right action cluster grow. Flex with
      a spacer can't do this — only grid-template-columns
      ``1fr auto 1fr`` keeps the centre item locked. */
 .pendant-nav {
-  height: 76px;
-  min-height: 76px;
   padding: 0 24px;
   gap: 16px;
   display: grid;
@@ -755,7 +755,7 @@
 /* Pill height matches the hero timer chip so the two sit on a
    visual baseline. Pulled through a custom property so a future
    resize touches one line. */
-.pendant-nav                { --chip-h: 44px; }
+.pendant-nav                { --chip-h: 38px; }
 .pendant-nav .pill-state,
 .pendant-nav .pendant-timer { height: var(--chip-h); }
 .pendant-nav .pill-state {
