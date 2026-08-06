@@ -208,6 +208,24 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         grid.appendChild(cell);
       });
       panel.appendChild(grid);
+      // Key, attached to the rack it explains — only the states this
+      // rack actually HAS, so nothing decorative. The two generic
+      // states are the widget's own vocabulary; the excluded one is
+      // described by the project (exclude_hint).
+      const key = document.createElement("div");
+      key.className = "kw-slot-key";
+      const keyItem = (cls, text) => {
+        const item = document.createElement("span");
+        const dot = document.createElement("i");
+        dot.className = cls;
+        item.appendChild(dot);
+        item.appendChild(document.createTextNode(text));
+        key.appendChild(item);
+      };
+      keyItem("on", "Selected");
+      keyItem("", "Available");
+      if (exclude.size) keyItem("excluded", spec.exclude_hint || "Unavailable");
+      panel.appendChild(key);
       const split = document.createElement("div");
       split.className = "kw-slot-split";
       split.appendChild(panel);
