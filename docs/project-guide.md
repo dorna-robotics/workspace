@@ -241,6 +241,26 @@ If `batch_size` or `horizon` are in your kwargs, they override the defaults for 
 
 ---
 
+### `rt.op(**values)` — operator-facing values
+
+`rt.step` is the engineer timeline (append). `rt.op` is the operator
+value channel (replace): actions publish what a pendant widget binds
+to, and writing a key again overwrites it.
+
+```python
+rt.step(f"tube {t+1}: weighed")          # timeline entry
+rt.op(state=f"Weighing tube {t+1}", weight=grams)   # current values
+rt.op(last_image="/captures/bd/tube_06.jpg")        # assets BY REFERENCE
+rt.op(weight=None)                                   # remove a key
+```
+
+Rules: values must be JSON-able and small (≤4 KB each, ≤200 keys,
+≤64 KB total — over-limit values are dropped with one log line, never
+a crash); large data is passed as a URL, not inlined; the call never
+blocks and never raises into the workflow. Values are memory-only and
+cleared at run start. Delivery is a coalesced WS push — see
+`docs/hmi-guide.md` §3 for the channel spec.
+
 ## 4. Recipes — `recipes.yaml` or `recipes.j2`
 
 Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.

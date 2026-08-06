@@ -43,12 +43,58 @@ Three sources; two exist, one is a small addition:
    rack/bench slot colors and checklists with zero new action code.
 2. **Platform state** — progress %, runtime state, elapsed time, device
    health, joint stream (rail position). Already streamed.
-3. **`rt.op(key=value, ...)` — NEW, the operator-language channel.**
+3. **`rt.op(key=value, ...)` — the operator-language channel. BUILT.**
    Sibling of `rt.step`: actions publish HMI-worthy values explicitly —
-   `rt.op(state="Filling tube 3 of 8")`, `rt.op(weight=12.4)`. Key-value
-   store pushed over the existing status WS; widgets bind by key.
+   `rt.op(state="Filling tube 3 of 8")`, `rt.op(weight=12.4)`.
    `rt.step` stays as the engineer timeline, reachable behind a
    "details" toggle in the pendant — never its default face.
+
+   **Why a second channel and not a `rt.step` level.** They differ in
+   semantics, and the difference is what a widget needs:
+
+   | | `rt.step` | `rt.op` |
+   |---|---|---|
+   | behaviour | **append** — every call is a timeline entry | **replace** — a key has one current value |
+   | payload | a formatted human string | typed data (`12.4`, plus the widget's unit) |
+   | per call | one line | many keys at once |
+
+   Overloading `rt.step` would force the server to filter value-entries
+   back out of the timeline, deliver pre-formatted strings a widget
+   cannot re-format or trend, and spend one timeline entry per value.
+
+   ### The channel (implemented)
+
+   * **Transport** — the runtime server's WS. `/ws/op` for a dedicated
+     client, and `op_state` on the multiplexed `/ws` — the same
+     dual-broadcast pattern `runtime_status` / `step_state` use. No new
+     socket, no polling.
+   * **Wire shape** — deltas with a monotonic revision:
+     `{"rev": 417, "set": {"weight": 12.4}, "unset": ["last_error"]}`.
+     A connecting client first gets `{"rev": n, "set": {...},
+     "snapshot": true}`, so a freshly-opened pendant is never blank and
+     a gap in `rev` tells a client to resync instead of trusting a
+     stale reading.
+   * **Coalescing** — writes mark keys dirty; the server flushes on a
+     100 ms cadence (`OP_FLUSH_MS`). Measured: **500 writes in 6.9 ms
+     cost exactly one message.** Last-write-wins, so a slow client
+     loses intermediate values (correct for a value channel) and never
+     causes queue growth. The pending set is a send queue — drained
+     even with nobody connected, since the store itself holds the
+     values and a new client is served by the snapshot.
+   * **Never blocks** — `rt.op` writes memory and returns; it never
+     pauses, never raises into the workflow, never touches the socket
+     (project-guide §8).
+   * **Bounded by construction** — ≤200 keys, ≤4 KB per value, ≤64 KB
+     total; an unserialisable or oversized value is dropped with **one
+     log line per distinct reason** (deduping on the key alone would
+     still flood when the cap rejects a different key each call).
+   * **Assets by reference** — small JSON values inline; images and
+     other large data as a URL the widget loads over HTTP
+     (`rt.op(last_image="/captures/apc/d_0142.jpg")`). The socket stays
+     small and reconnects stay cheap.
+   * **Lifetime** — memory only, cleared at run start, nothing written
+     to the SD card. `rev` keeps climbing across runs so a reconnecting
+     client never sees it go backwards.
 
 ## 4. Widget catalog (v1 candidates — all mocked in the gallery)
 

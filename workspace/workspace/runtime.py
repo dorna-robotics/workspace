@@ -1,6 +1,7 @@
 # workspace/runtime.py
 from __future__ import annotations
 
+import json
 import threading
 import time
 from contextlib import contextmanager
@@ -55,6 +56,19 @@ class Runtime:
         self._cv = threading.Condition(self._lock)
 
         self._status = RTStatus()
+
+        # ── operator value channel (rt.op) ──────────────────────────
+        # Current values an operator surface binds to — NOT a timeline.
+        # ``rt.step`` appends events; ``rt.op`` replaces values. Held in
+        # memory only (nothing on the SD card), cleared at run start.
+        # Writes mark keys dirty; the server drains them on its own
+        # cadence (see ``op_drain``) so a hot loop cannot flood the
+        # socket. Bounded by construction — see the caps below.
+        self._op: dict = {}
+        self._op_rev = 0
+        self._op_dirty: set = set()
+        self._op_unset: set = set()
+        self._op_dropped: set = set()   # keys already warned about
 
         # start-token handshake
         self._start_token = 0
@@ -255,6 +269,112 @@ class Runtime:
                 d["progress"] = self._progress
             return d
 
+    # ── Operator values (rt.op) ─────────────────────────────────────
+    # Bounded by construction: a runaway project must not be able to
+    # grow the store without limit on a Pi.
+    OP_MAX_KEYS = 200
+    OP_MAX_VALUE_BYTES = 4096
+    OP_MAX_TOTAL_BYTES = 65536
+
+    def op(self, **values: Any) -> None:
+        """Publish current operator-facing values (HMI binds to these).
+
+        Replace semantics — writing ``weight`` again overwrites it;
+        ``None`` removes the key. Values must be JSON-able and small:
+        images and other assets are passed BY REFERENCE (a URL), never
+        inlined.
+
+            rt.op(state="Filling tube 3 of 8")
+            rt.op(weight=12.4, last_image="/captures/apc/d_0142.jpg")
+
+        Observability never blocks (project-guide §8): this never
+        pauses, never raises into the workflow, and never touches the
+        socket. It writes memory and marks the key dirty; the server
+        flushes on its own cadence. A value that is unserialisable or
+        over the caps is DROPPED with one log line — never a crash,
+        never unbounded memory.
+        """
+        if not values:
+            return
+        with self._lock:
+            for key, val in values.items():
+                k = str(key)
+                if val is None:
+                    if k in self._op:
+                        del self._op[k]
+                        self._op_unset.add(k)
+                        self._op_dirty.discard(k)
+                    continue
+                try:
+                    blob = json.dumps(val)
+                except (TypeError, ValueError):
+                    self._op_warn(k, f"value is not JSON-able ({type(val).__name__})")
+                    continue
+                if len(blob) > self.OP_MAX_VALUE_BYTES:
+                    self._op_warn(k, f"value is {len(blob)}B > {self.OP_MAX_VALUE_BYTES}B "
+                                     f"— pass large data by reference (a URL)")
+                    continue
+                if k not in self._op and len(self._op) >= self.OP_MAX_KEYS:
+                    self._op_warn(k, f"store already holds {self.OP_MAX_KEYS} keys")
+                    continue
+                if self._op.get(k) == val:
+                    continue                      # no change, no traffic
+                self._op[k] = val
+                self._op_dirty.add(k)
+                self._op_unset.discard(k)
+            # Total-size guard: drop the newest offenders rather than
+            # let the store creep past the cap over a long run.
+            while len(self._op) > 1 and len(json.dumps(self._op)) > self.OP_MAX_TOTAL_BYTES:
+                k, _ = self._op.popitem()
+                self._op_dirty.discard(k)
+                self._op_unset.add(k)
+                self._op_warn(k, "store over total size cap — dropped")
+
+    def _op_warn(self, key: str, why: str) -> None:
+        """One line per distinct REASON, ever.
+
+        Deduping on the key is not enough: hitting the key cap rejects a
+        different key every call, so a loop would still flood. The
+        reason is the thing worth saying once (the display-log lesson).
+        """
+        if why in self._op_dropped:
+            return
+        self._op_dropped.add(why)
+        print(f"[op] dropped {key!r}: {why} (further of this kind suppressed)")
+
+    def op_drain(self) -> Optional[dict]:
+        """Pending delta, or None when nothing changed.
+
+        ``{"rev": n, "set": {...}, "unset": [...]}``. The revision is
+        monotonic so a client can spot a gap and resync rather than sit
+        on a stale value.
+        """
+        with self._lock:
+            if not self._op_dirty and not self._op_unset:
+                return None
+            self._op_rev += 1
+            payload = {"rev": self._op_rev}
+            if self._op_dirty:
+                payload["set"] = {k: self._op[k] for k in self._op_dirty if k in self._op}
+            if self._op_unset:
+                payload["unset"] = sorted(self._op_unset)
+            self._op_dirty.clear()
+            self._op_unset.clear()
+            return payload
+
+    def op_snapshot(self) -> dict:
+        """Full current state — what a connecting client gets."""
+        with self._lock:
+            return {"rev": self._op_rev, "set": dict(self._op), "snapshot": True}
+
+    def _clear_ops(self) -> None:
+        self._op.clear()
+        self._op_dirty.clear()
+        self._op_unset.clear()
+        self._op_dropped.clear()
+        # rev keeps climbing across runs: a client that reconnects mid
+        # transition must never see a revision go backwards.
+
     def _clear_steps(self) -> None:
         self._steps.clear()
         self._progress = -1
@@ -303,6 +423,7 @@ class Runtime:
             self._start_token += 1
             self._status.last_error = None
             self._clear_steps()
+            self._clear_ops()
             self._set_state(RTState.IDLE)
             self._cv.notify_all()
 

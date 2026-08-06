@@ -255,8 +255,13 @@ class StatusHandler(tornado.web.RequestHandler):
 # --------------------------------------------------
 # Step WebSocket — push step updates to dashboard
 # --------------------------------------------------
+# rt.op push cadence (ms). The store is written at workflow speed; the
+# socket is fed at this rate.
+OP_FLUSH_MS = 100
+
 _step_ws_clients: set = set()
 _status_ws_clients: set = set()
+_op_ws_clients: set = set()
 
 # Multiplexed all-channel client set. Used by ``AllWebSocket`` at
 # ``/ws`` — replaces /ws/steps + /ws/status + /ws/devices +
@@ -403,6 +408,60 @@ def _run_operator_action(rt, fn):
 # --------------------------------------------------
 # Status WebSocket — push runtime state changes in real time
 # --------------------------------------------------
+class OpWebSocket(tornado.websocket.WebSocketHandler):
+    """WS /ws/op — current operator-facing values (``rt.op``).
+
+    A VALUE channel, not a timeline: each message carries the keys that
+    changed since the last one. New clients get a full snapshot first
+    (``snapshot: true``) so a freshly-opened pendant is never blank,
+    and every message carries a monotonic ``rev`` so a client can spot
+    a gap and resync rather than sit on a stale reading.
+    """
+
+    def check_origin(self, origin):
+        return True
+
+    def initialize(self, rt: Runtime):
+        self._rt = rt
+
+    def open(self):
+        _op_ws_clients.add(self)
+        try:
+            self.write_message(json.dumps(self._rt.op_snapshot()))
+        except Exception:
+            pass
+
+    def on_close(self):
+        _op_ws_clients.discard(self)
+
+
+def _broadcast_op(payload: dict) -> None:
+    _broadcast_dual(_op_ws_clients, json.dumps(payload), "op_state", payload)
+
+
+def _op_flush(rt: Runtime) -> None:
+    """Drain pending value changes and push them.
+
+    Called on a fixed cadence rather than per ``rt.op()`` call: a hot
+    loop writing values must cost the socket a bounded number of small
+    messages per second, not one per write. Last-write-wins, so a slow
+    client loses intermediate values (correct for a current-value
+    channel) and never causes queue growth.
+
+    The pending set is a SEND QUEUE, so it is drained every tick even
+    with nobody connected — the values themselves live in the store and
+    a connecting client gets them in its snapshot. Keeping them queued
+    instead would grow across an unwatched run and hand the first
+    client a delta duplicating the snapshot it just received.
+    """
+    try:
+        delta = rt.op_drain()
+    except Exception:
+        return
+    if delta and (_op_ws_clients or _all_ws_clients):
+        _broadcast_op(delta)
+
+
 class StatusWebSocket(tornado.websocket.WebSocketHandler):
     """WS /ws/status — push RTStatus snapshots on every state transition.
 
@@ -1075,6 +1134,9 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             # Runtime status.
             self._send("runtime_status", _status_payload(self._rt, self.workspace))
 
+            # Operator values — full snapshot, same shape /ws/op sends.
+            self._send("op_state", self._rt.op_snapshot())
+
             # Devices — bulk snapshot in one envelope (more efficient
             # than N device_state envelopes on connect).
             self._send("devices_snapshot", {
@@ -1377,6 +1439,7 @@ class RuntimeServer:
             (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
             (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
+            (r"/ws/op", OpWebSocket, dict(rt=self.rt)),
             (r"/ws/schedule", ScheduleWebSocket),
 
             # device panel — see DevicesHandler / DeviceCmdHandler / DeviceWebSocket
@@ -1471,6 +1534,13 @@ class RuntimeServer:
             else:
                 loop.default_exception_handler(ctx)
         asyncio.get_event_loop().set_exception_handler(_suppress_ws_closed)
+
+        # Operator-value flusher: bounded push rate for rt.op (see
+        # _op_flush). 100ms — human-perceptible immediacy, ~10 small
+        # messages/second worst case however hard a project writes.
+        tornado.ioloop.PeriodicCallback(
+            lambda: _op_flush(self.rt), OP_FLUSH_MS
+        ).start()
 
         # autoreload for dev
         for p in (self.web_dir, self.static_dir):
