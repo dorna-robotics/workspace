@@ -150,6 +150,22 @@
 /* ── Kwargs form ───────────────────────────────────────────────────────── */
 .kwargs-form { display: flex; flex-direction: column; gap: var(--space-5); }
 /* _layout rows: fields side by side, stacking on narrow screens */
+/* _layout tabs: one pane per field, tab bar above */
+.kwargs-form .kw-tabs { display: flex; flex-direction: column; gap: var(--space-4); }
+.kwargs-form .kw-tabbar {
+  display: flex; gap: var(--space-2); flex-wrap: wrap;
+  background: var(--bg); border-radius: var(--radius-md); padding: var(--space-1);
+}
+.kwargs-form .kw-tab {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  border-radius: var(--radius-sm); padding: 10px 18px; min-height: 44px;
+  font-size: var(--text-md); font-weight: 700;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.kwargs-form .kw-tab:hover { color: var(--text); }
+.kwargs-form .kw-tab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.kwargs-form .kw-tab:focus-visible { outline: none; box-shadow: var(--glow); }
+.kwargs-form .kw-tabpane { display: flex; flex-direction: column; gap: var(--space-5); }
 .kwargs-form .kw-row { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
 .kwargs-form .kw-col { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-5); }
 /* the rack sits on its own recessed panel, like a rack in a tray */

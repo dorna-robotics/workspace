@@ -40,6 +40,47 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   const slotFor = {};
   if (Array.isArray(layout)) {
     layout.forEach(entry => {
+      // ── tabs: one pane per field, one tab per pane ────────────────
+      const tabKeys = (entry && entry.tabs) || [];
+      if (tabKeys.length) {
+        const wrapT = document.createElement("div");
+        wrapT.className = "kw-tabs";
+        const bar = document.createElement("div");
+        bar.className = "kw-tabbar";
+        bar.setAttribute("role", "tablist");
+        const panes = document.createElement("div");
+        panes.className = "kw-tabpanes";
+        const tabs = [];
+        tabKeys.forEach((k, i) => {
+          const spec = (schema && schema[k]) || {};
+          const tab = document.createElement("button");
+          tab.type = "button";
+          tab.className = "kw-tab" + (i === 0 ? " on" : "");
+          tab.textContent = spec.label || k;
+          tab.setAttribute("role", "tab");
+          tab.setAttribute("aria-selected", i === 0 ? "true" : "false");
+          const pane = document.createElement("div");
+          pane.className = "kw-tabpane";
+          if (i !== 0) pane.style.display = "none";
+          tab.addEventListener("click", () => {
+            tabs.forEach(t => {
+              const active = t.tab === tab;
+              t.tab.classList.toggle("on", active);
+              t.tab.setAttribute("aria-selected", active ? "true" : "false");
+              t.pane.style.display = active ? "" : "none";
+            });
+          });
+          tabs.push({ tab, pane });
+          bar.appendChild(tab);
+          panes.appendChild(pane);
+          slotFor[k] = pane;
+        });
+        wrapT.appendChild(bar);
+        wrapT.appendChild(panes);
+        container.appendChild(wrapT);
+        return;
+      }
+      // ── row: fields side by side ──────────────────────────────────
       const rowKeys = Array.isArray(entry) ? entry : (entry && entry.row) || [];
       if (!rowKeys.length) return;
       const row = document.createElement("div");

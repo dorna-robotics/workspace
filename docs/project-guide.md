@@ -182,9 +182,16 @@ by side, declare rows — a HINT, not a field:
 
 ```yaml
 _layout:
-  - row: [tubes, print_label]     # rack left, run options right
-  - row: [volume, speed]
+  - row:  [tubes, print_label]        # side by side
+  - tabs: [tubes_in_1, tubes_in_2]    # one pane per field, tab bar above
 ```
+
+`row` places fields side by side; `tabs` gives each field its own pane
+behind a tab (the tab's label is the field's `label`). Tabs are the
+answer to **multiple racks**: declare one `slots` field per rack —
+each keeps its own grid, key, quick actions and values — and tab them
+together. Nothing in the vocabulary is rack-specific; any field type
+works in either container.
 
 Unlisted fields stack below in declaration order; rows wrap to a
 single column on narrow screens (pendant portrait). This is the only
