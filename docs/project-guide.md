@@ -9,14 +9,15 @@ How to create and run a workspace project.
 ```
 projects/my_project/
 ├── main.py              # Entry point — ties everything together
-├── launch.yaml          # Scene paths + runtime parameters (kwargs)
+├── launch.yaml          # Scene paths + run parameters (default/setup/pendant)
 ├── protocol.yaml        # States, dependencies, checks, goals
 ├── states.py            # State handlers (what the robot does)
 ├── checks.py            # Verification checks (pre/post)
 ├── recipes.j2           # Component aliases → recipe classes (or recipes.yaml)
 ├── hmi/                 # OPERATOR-FACING files (see §3)
-│   ├── kwargs.j2        # Run parameters — the Parameters / run-setup form
-│   ├── pendant.html     # The project's pendant screen (+ pendant.css)
+│   ├── default.j2       # The kwargs' defaults (data — Python reads it)
+│   ├── setup.js         # Screen to SET the kwargs (optional; .html or .js)
+│   ├── pendant.html     # Screen shown DURING the run (+ pendant.css)
 │   └── hmi.j2           # …or a platform widget list, if writing no markup
 └── scene/
     ├── base.j2          # Hardware layout (Jinja2)
