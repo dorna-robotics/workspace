@@ -129,8 +129,8 @@ the project's own hardware, so the project draws it. Declare it in
 `launch.yaml` next to the schema:
 
 ```yaml
-kwargs:  hmi/kwargs.j2      # the SCHEMA — what a run takes
-setup:   hmi/setup.js      # the SCREEN — how an operator sets it
+kwargs:  hmi/kwargs.j2      # the kwargs themselves (data)
+setup:   hmi/setup.js      # screen to SET them
 ```
 
 The schema still declares every parameter, because it is read with no

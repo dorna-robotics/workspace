@@ -160,9 +160,9 @@ scene:    [scene/core_500.j2, scene/layout.j2]
 recipes:  recipes.j2
 actions:  actions.py
 checks:   checks.py
-kwargs:   hmi/kwargs.j2      # the SCHEMA — what a run takes
-setup:    hmi/setup.js       # screen BEFORE the run
-pendant:  hmi/pendant.html   # screen DURING the run
+kwargs:   hmi/kwargs.j2      # the kwargs themselves (data)
+setup:    hmi/setup.js       # screen to SET the kwargs, before the run
+pendant:  hmi/pendant.html   # screen shown DURING the run
 ```
 
 Operator-facing files live in **`hmi/`**. Inline `kwargs:` still works
