@@ -435,7 +435,7 @@
        full controls return when the user exits pendant. */
     html.pendant-open.pendant-preview-on #ws3dFrame {
       position: fixed;
-      top: 72px;   /* below pendant nav (56px) + a 16px gap */
+      top: 92px;   /* below pendant nav (76px) + a 16px gap */
       right: 24px;
       width: 280px;
       height: 210px;
@@ -683,6 +683,20 @@
        the run timer chip. Layout, action order, and behaviour are
        identical. -->
   <header class="pendant-nav ws-header-like" data-state="off">
+    <div class="pendant-nav-left">
+      <span class="pill pill-state off" id="pendantState">
+        <span class="dot"></span>
+        <span class="pendant-state-text">—</span>
+      </span>
+      <span class="pendant-project" id="pendantProject">—</span>
+    </div>
+    <div class="pendant-timer" id="pendantTimer">
+      <svg class="pendant-timer-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <polyline points="12 7 12 12 15 14"/>
+      </svg>
+      <span class="pendant-timer-value" id="pendantTimerValue">—</span>
+    </div>
     <div class="topbar-actions">
       <!-- 3D preview toggle: shows/hides a floating top-right PiP of
            the live 3D viewer while pendant is open. ``active`` class
@@ -706,17 +720,6 @@
        is the pre-rail layout — see the media query in style.css. -->
   <div class="pendant-main">
   <aside class="pendant-rail">
-    <span class="pill pill-state off" id="pendantState">
-      <span class="dot"></span>
-      <span class="pendant-state-text">—</span>
-    </span>
-    <div class="pendant-timer" id="pendantTimer">
-      <svg class="pendant-timer-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/>
-        <polyline points="12 7 12 12 15 14"/>
-      </svg>
-      <span class="pendant-timer-value" id="pendantTimerValue">—</span>
-    </div>
     <div class="pendant-buttons">
       <button class="pendant-btn pendant-start"   id="pendantStart"   data-cmd="start">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -746,7 +749,7 @@
       </button>
       <!-- Operator Actions — opens a modal with component-grouped buttons.
            Hidden when no component declares any operator actions. -->
-      <button class="pendant-secondary" id="pendantOpActions" style="display:none">
+      <button class="pendant-secondary" id="pendantOpActions" disabled>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         Controls
       </button>

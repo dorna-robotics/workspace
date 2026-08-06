@@ -595,17 +595,17 @@
 /* Pendant nav chrome (background, border, status-coloured
    underline) is shared with ``.ws-header`` via the topbar
    selector list in base.css. Pendant overrides:
-   - 56px: since the rail took over state + timer, this bar holds
-     only the icon actions, so it no longer needs operator-chip
-     height. (Keep in sync with the 3D-PiP offset in workspace.html.)
+   - Height 76px so the operator-scale state pill + hero timer fit
+     (main page is engineer-sized at 54px). Keep in sync with the
+     3D-PiP offset in workspace.html.
    - Layout switched from flex to a 3-column grid so the centre
      column (timer) stays perfectly centred regardless of how
      wide the left pill or right action cluster grow. Flex with
      a spacer can't do this — only grid-template-columns
      ``1fr auto 1fr`` keeps the centre item locked. */
 .pendant-nav {
-  height: 56px;
-  min-height: 56px;
+  height: 76px;
+  min-height: 76px;
   padding: 0 24px;
   gap: 16px;
   display: grid;
@@ -617,6 +617,14 @@
    middle column and reads as "centred" instead of "right". Pinning
    by column number keeps every child in its lane regardless of
    which siblings are present. */
+.pendant-nav .pendant-nav-left { grid-column: 1; justify-self: start;
+  display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+/* Which workspace this pendant is driving — the operator may have
+   several benches open; the name has to be on screen, not in a tab. */
+.pendant-nav .pendant-project {
+  font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .pendant-nav .pill-state     { grid-column: 1; justify-self: start; }
 .pendant-nav .pendant-timer  { grid-column: 2; justify-self: center; }
 .pendant-nav .topbar-actions { grid-column: 3; justify-self: end; }
@@ -1008,9 +1016,25 @@
 }
 .pendant-secondary:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
 .pendant-secondary:active { transform: scale(0.97); }
+/* Ghosted secondary — present but inert (design-system §4). */
+.pendant-secondary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
 .pendant-kill-btn { color: var(--red); }
 .pendant-kill-btn:hover { color: var(--red); background: rgba(255,69,58,0.12); }
-[data-theme="light"] .pendant-kill-btn { color: var(--red); }
+[data-theme="light"] /* Ghosted secondary — present but inert (design-system §4). */
+.pendant-secondary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
+.pendant-kill-btn { color: var(--red); }
 [data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
 
 
@@ -1040,16 +1064,6 @@
   border-right: 1px solid var(--border);
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.pendant-rail .pill-state {
-  align-self: stretch;
-  justify-content: center;
-}
-.pendant-rail .pendant-timer {
-  align-self: stretch;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: var(--space-2);
 }
 /* Controls stack full-width: the whole row is the target, so thumb
    placement along it does not matter. */
@@ -1121,8 +1135,6 @@
     border-top: 1px solid var(--border);
     overflow: visible;
   }
-  .pendant-rail .pill-state    { align-self: auto; flex: 0 0 auto; }
-  .pendant-rail .pendant-timer { align-self: auto; flex: 0 0 auto; margin: 0 auto 0 0; }
   .pendant-rail .pendant-buttons {
     flex: 1 0 100%;
     display: grid;
@@ -1138,8 +1150,10 @@
   }
   .pendant-rail .pendant-btn svg { width: 30px; height: 30px; }
   .pendant-rail-gap { display: none; }
-  .pendant-rail .pendant-secondary-row { flex: 1 1 auto; flex-direction: row; }
-  .pendant-kill-row { flex: 0 0 auto; width: auto; margin-top: 0; }
+  /* one row for the secondary actions, Kill included — ``1 1 auto``
+     made the row grow and pushed Kill onto a line of its own. */
+  .pendant-rail .pendant-secondary-row { flex: 0 1 auto; flex-direction: row; width: auto; }
+  .pendant-kill-row { flex: 0 1 auto; width: auto; margin-top: 0; margin-left: auto; }
   .pendant-kill-row .pendant-secondary { width: auto; }
 }
 

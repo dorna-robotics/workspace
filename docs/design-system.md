@@ -200,10 +200,13 @@ The pendant is operator-facing on a tablet. The rules are tighter:
 ### 4.1 Control rail (landscape)
 
 The pendant's run controls live in a **fixed left rail** (224 px):
-state pill, run timer, the four run controls, then Parameters /
-Controls at the bottom with **Kill on its own row**. The rail never
-scrolls — controls hold the same screen position no matter how much
-the content pane grows — and the pane beside it scrolls on its own.
+the four run controls, then Parameters / Controls at the bottom with
+**Kill on its own row**. The rail never scrolls — controls hold the
+same screen position no matter how much the content pane grows — and
+the pane beside it scrolls on its own. Status stays in the **navbar**
+(state pill + workspace name left, run timer centred): an operator
+with several benches open must see which one this is without
+checking a browser tab.
 
 - **Every rail button is the same size and shape** — full-width rows,
   56 px min-height, one radius, from Start down to Kill. Colour is

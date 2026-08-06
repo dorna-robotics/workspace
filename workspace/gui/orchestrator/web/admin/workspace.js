@@ -85,6 +85,11 @@ const toastArea   = $("toastArea");
 // the first status arrives. _setFaviconForState swaps it as state changes.
 document.title = `${_TITLE_DOTS.off} ${wsName} — Dorna Workspace`;
 wsNameEl.textContent = wsName;
+// The pendant is full-screen, so it carries the workspace name too —
+// an operator with several benches open must never have to guess
+// which one this is.
+const pendantProjectEl = $("pendantProject");
+if (pendantProjectEl) pendantProjectEl.textContent = wsName;
 
 // ---- Toast ----
 function toast(msg, type = "ok") {
@@ -1117,8 +1122,14 @@ function renderOperatorActionsPanel() {
   // Pendant: only show the secondary-row button when there's
   // actually something to do. The pendant row is too constrained
   // to spend a tile on an empty surface.
+  // Ghosted, not hidden (design-system §4): the rail must look the
+  // same every time so muscle memory holds; an empty operator-action
+  // set disables the button instead of removing it.
   const pendantBtn = $("pendantOpActions");
-  if (pendantBtn) pendantBtn.style.display = _opActions.length ? "" : "none";
+  if (pendantBtn) {
+    pendantBtn.disabled = !_opActions.length;
+    pendantBtn.title = _opActions.length ? "" : "No operator actions for this workspace";
+  }
   const modalBody = $("opActionsModalBody");
   if (modalBody) modalBody.innerHTML = html;
 }
