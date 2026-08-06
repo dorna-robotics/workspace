@@ -119,7 +119,15 @@ kwargs:
 | `placeholder` | No | Greyed-out text inside the input when empty |
 | `optional` | No | `true` = field can be left empty, sent as `null` |
 | `min` / `max` | No | Numeric bounds (for `int` and `float` types) |
-| `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) <br>• `list` / `map` — a collection the project's own run-setup screen fills, see below |
+| `type` | For the generic form | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) |
+
+**`type:` exists to pick the generic form's widget — nothing else.**
+A collection kwarg (a list or map, like bd's `tubes`) has NO type: its
+default's shape declares it, and replay batches on that shape. A
+project with its own `setup:` screen may omit `type` entirely. The
+standing rule for this file: **every key must have a reader** (the
+generic form, validation, replay, or your screen) — a key nothing
+reads is deleted, not kept for documentation's sake.
 
 ### `setup` — the project's own run-setup screen
 

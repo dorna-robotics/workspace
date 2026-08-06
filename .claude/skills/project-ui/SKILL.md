@@ -30,9 +30,13 @@ Python (node subprocess, etc.) — rejected, hmi-guide §10b.
   generate collection defaults, e.g. bd's 19-tube grid loop).
 - Top level IS the schema; keys starting with `_` are reserved
   presentation hints (`_layout`, `_setup`) and never reach the run.
-- Types: `int` `float` `str` `bool` `choice` `textarea` `file` +
-  `list`/`map` for collections (a collection's `value:` sub-spec
-  declares the per-entry number: label/unit/default/min/max/step).
+- `type:` picks the GENERIC form's widget (`int` `float` `str` `bool`
+  `choice` `textarea` `file`) — that is its only job. Collections
+  (bd's `tubes`) have NO type: the default's shape declares them, and
+  a `value:` sub-spec carries the per-entry number
+  (label/unit/default/min/max/step). Every key in the schema must
+  have a reader (form, validation, replay, or the setup screen) —
+  delete keys nothing reads.
 - `replay --batch N` lands on the first `int` kwarg, else slices the
   first collection kwarg's **declared default** to N entries — so a
   collection's default should list everything processable, in the
