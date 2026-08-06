@@ -203,10 +203,18 @@ The pendant's run controls live in a **fixed left rail** (224 px):
 the four run controls, then Parameters / Controls at the bottom with
 **Kill on its own row**. The rail never scrolls — controls hold the
 same screen position no matter how much the content pane grows — and
-the pane beside it scrolls on its own. Status stays in the **navbar**
-(state pill + workspace name left, run timer centred): an operator
-with several benches open must see which one this is without
-checking a browser tab.
+the pane beside it scrolls on its own.
+
+- The **state pill leads the rail**, directly above the controls: it
+  is the fact that decides *which* control to press (READY→Start,
+  RUNNING→Pause, PAUSED→Resume), so cause and action share one
+  glance.
+- The **navbar mirrors the main page** — back arrow + workspace name
+  left, run timer centred, actions right. The timer is reference, not
+  a trigger, so it stays out of the rail; the back arrow means the
+  pendant is never a dead end, and the workspace name means an
+  operator with several benches open never has to check a browser
+  tab.
 
 - **Every rail button is the same size and shape** — full-width rows,
   56 px min-height, one radius, from Start down to Kill. Colour is
