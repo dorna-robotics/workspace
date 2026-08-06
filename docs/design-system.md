@@ -197,6 +197,23 @@ The pendant is operator-facing on a tablet. The rules are tighter:
   `.pendant-state-text`, and `.section-label`**. Anything else
   reads as shouting.
 
+### 4.1 Control rail (landscape)
+
+The pendant's run controls live in a **fixed left rail** (224 px):
+state pill, run timer, the four run controls, then Parameters /
+Controls at the bottom with **Kill on its own row**. The rail never
+scrolls — controls hold the same screen position no matter how much
+the content pane grows — and the pane beside it scrolls on its own.
+
+- Control buttons are **full-width rows, 56 px min-height** (the whole
+  row is the target); secondary actions 48 px.
+- **Park is an outline, not a filled tint**: it sits next to Pause and
+  has a very different consequence, so the two must not read alike to
+  a hurried thumb (§9 — never colour alone).
+- **Portrait / narrow (≤ 860 px)** falls back to the pre-rail layout:
+  the rail drops to the bottom and the controls return to the 2×2
+  tile grid, so nothing regresses on a portrait tablet.
+
 ## 5. Accessibility
 
 ### 5.1 Focus rings
