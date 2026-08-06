@@ -190,6 +190,33 @@ Unlisted fields stack below in declaration order; rows wrap to a
 single column on narrow screens (pendant portrait). This is the only
 layout vocabulary — projects never ship markup or CSS (hmi-guide §2).
 
+### Compatibility rule for declarative files
+
+Projects are `.j2`/`.yaml` declarations that outlive the platform
+version they were written against. The rule that keeps old projects
+working:
+
+1. **New features are opt-in keys. Absent = previous behaviour.**
+   Everything added this cycle obeys it: no `value:` → the slots kwarg
+   is still a list; no `quick:` → no bulk buttons; no `_layout` →
+   fields stack; `kwargs:` as a dict still works exactly as before the
+   file form existed.
+2. **Never repurpose an existing key.** A changed meaning is a silent
+   behaviour change on every project that already uses it. Add a new
+   key instead and let the old one keep working.
+3. **Deprecate loudly, never silently.** If a key must go, the loader
+   warns with the project name and the replacement for at least one
+   release; it does not quietly do something else.
+4. **Readers degrade, they don't crash.** Unknown keys are ignored;
+   an unresolvable reference (a `component:` that no longer exists)
+   falls back to a plain field. A display concern must never block a
+   run.
+5. **`examples/` is the compatibility suite.** Before shipping a
+   platform change that touches loaders, recipes or the schedule, run
+   `workspace.bt.replay` (and `workspace.recipes.solve` for motion
+   changes) over the example projects — they are the cheap regression
+   net for "did I just break older projects".
+
 ### How kwargs flow
 
 All kwargs defined here are passed to `States.__init__(rcp, rt, **kwargs)` and `Checks.__init__(rcp, rt, **kwargs)`. Use `kwargs.get("my_param", default)` to access them.
