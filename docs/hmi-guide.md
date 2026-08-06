@@ -156,6 +156,18 @@ The split that keeps it generic:
   platform owns only the GRAMMAR: `done` · `active` · `attention` ·
   `queued` · `empty`, with muted done, saturated active/attention, and
   a ✓ / ! badge so state is never carried by colour alone (§7).
+* **`detail:` makes positions tappable** — a second op key holding
+  `{slot: {label: value}}`; tapping a position opens a persistent
+  pane showing that item's record (weight, barcode, dose, whatever the
+  project records). A pane, not a popover: it never occludes
+  neighbours and it still works on a 96-well plate. Omit `detail:` and
+  the rack is display-only, exactly as before.
+
+```python
+# in an action, as the readings happen
+_record(rt, tube, Weight=f"{grams} g")        # → rt.op(tube_info={...})
+_record(rt, tube, Barcode=scan)
+```
 
 Adding a widget to the catalog is one entry in the pendant's registry
 plus one row in the table above — no change to the loader, the

@@ -672,17 +672,84 @@ const HMI_WIDGETS = {
     }
     panel.appendChild(grid);
     el.appendChild(panel);
+
+    // Master–detail: tapping a position shows what is known about it.
+    // A persistent pane, not a popover — it never occludes neighbours
+    // and it scales to a 96-well plate where popovers cannot.
+    // Rendered only when the project declares ``detail:`` (an op key
+    // holding {slot: {label: value}}), so a rack without per-item data
+    // stays exactly as it was.
+    let detailEl = null, picked = null;
+    if (w.detail) {
+      detailEl = document.createElement("div");
+      detailEl.className = "hmi-rack-detail";
+      detailEl.style.display = "none";
+      el.appendChild(detailEl);
+    }
     const STATES = ["done", "active", "attention", "queued", "empty"];
+    let lastStates = {}, lastDetail = {};
+
+    function renderDetail() {
+      if (!detailEl) return;
+      if (!picked) { detailEl.style.display = "none"; return; }
+      const info = (lastDetail && lastDetail[picked]) || null;
+      const st = String(lastStates[picked] || "empty");
+      detailEl.style.display = "";
+      detailEl.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "hmi-detail-head";
+      head.textContent = `${picked} · ${st}`;
+      detailEl.appendChild(head);
+      if (!info || typeof info !== "object" || !Object.keys(info).length) {
+        const none = document.createElement("div");
+        none.className = "hmi-detail-empty";
+        none.textContent = "Nothing recorded for this position yet";
+        detailEl.appendChild(none);
+        return;
+      }
+      const rows = document.createElement("div");
+      rows.className = "hmi-detail-rows";
+      for (const [k, v] of Object.entries(info)) {
+        const r = document.createElement("div");
+        r.className = "hmi-detail-row";
+        const kk = document.createElement("span");
+        kk.className = "hmi-detail-k";
+        kk.textContent = k;
+        const vv = document.createElement("span");
+        vv.className = "hmi-detail-v";
+        vv.textContent = (v === null || v === undefined) ? "—" : String(v);
+        r.appendChild(kk); r.appendChild(vv);
+        rows.appendChild(r);
+      }
+      detailEl.appendChild(rows);
+    }
+
+    if (w.detail) {
+      for (const [name, cell] of Object.entries(cells)) {
+        cell.classList.add("tappable");
+        cell.addEventListener("click", () => {
+          picked = (picked === name) ? null : name;
+          for (const [n, c] of Object.entries(cells)) c.classList.toggle("picked", n === picked);
+          renderDetail();
+        });
+      }
+    }
+
     return {
       el,
-      update: map => {
+      // Two bindings: ``bind`` = states, ``detail`` = per-slot data.
+      extraBinds: w.detail ? [w.detail] : [],
+      update: (map, extra) => {
         const m = (map && typeof map === "object") ? map : {};
+        lastStates = m;
+        if (extra && typeof extra === "object") lastDetail = extra;
         for (const [name, cell] of Object.entries(cells)) {
           const st = String(m[name] || "empty");
           cell.classList.remove(...STATES);
           cell.classList.add(STATES.includes(st) ? st : "empty");
           cell.title = `${name} — ${st}`;
         }
+        renderDetail();
       },
     };
   },
@@ -739,8 +806,10 @@ function buildHmi(spec) {
       statRow = null;
       host.appendChild(inst.el);
     }
+    inst.detailBind = w.detail || null;
     _hmiInstances.push(inst);
-    inst.update(inst.platform ? undefined : _opValues[inst.bind]);
+    inst.update(inst.platform ? undefined : _opValues[inst.bind],
+                inst.detailBind ? _opValues[inst.detailBind] : undefined);
   }
   host.style.display = _hmiInstances.length ? "" : "none";
   _hmiBuilt = true;
@@ -759,7 +828,10 @@ function applyOpState(payload) {
   for (const [k, v] of Object.entries(payload.set || {})) _opValues[k] = v;
   for (const k of payload.unset || []) delete _opValues[k];
   for (const inst of _hmiInstances) {
-    if (!inst.platform) inst.update(_opValues[inst.bind]);
+    if (!inst.platform) {
+      inst.update(_opValues[inst.bind],
+                  inst.detailBind ? _opValues[inst.detailBind] : undefined);
+    }
   }
 }
 
