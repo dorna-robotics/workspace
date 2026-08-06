@@ -134,7 +134,11 @@ def _phase_batched_order(
         by_item.setdefault(actions[i].params[0], []).append(i)
 
     phase_lists = []
-    for idxs in by_item.values():
+    # Declared order, not the order items happen to appear in the plan —
+    # the hint should already look like the answer the ordering
+    # constraint will insist on, so an early stop still lands on it.
+    for _key in sorted(by_item, key=lambda k: (isinstance(k, str), k)):
+        idxs = by_item[_key]
         blocks: List[List[int]] = []
         cur_block: List[int] = []
         cur_key: Any = object()  # sentinel != any real tool/None-first-time
@@ -308,6 +312,7 @@ def schedule_cpsat(
     tool_required: List[bool] = []
     swap_durations: List[int] = []
     items: List[int] = []
+    has_item: List[bool] = []
     for a in actions:
         m = meta.get(a.name) or ActionMeta(duration=1)
         durations.append(int(m.duration))
@@ -318,8 +323,13 @@ def schedule_cpsat(
         try:
             raw = a.params[m.item_arg_index]
             items.append(int(raw) if not isinstance(raw, int) else raw)
+            has_item.append(True)
         except (IndexError, ValueError, TypeError):
+            # Global bookends (Start / Park) belong to no item. They must
+            # not be mistaken for item 0 — that would put Start's t=0 in
+            # item 0's timeline and defeat the ordering below.
             items.append(0)
+            has_item.append(False)
 
     # Horizon: sum of every duration + every possible swap + slack.
     # CP-SAT requires integer bounds; this is generous enough that the
@@ -467,6 +477,48 @@ def schedule_cpsat(
             log.debug("CP-SAT warm-start hint failed; solving cold.",
                       exc_info=True)
 
+    # ── Interchangeable items start in declared order ──────────────────
+    # Minimising makespan alone says nothing about WHICH of several
+    # equally-fast schedules to return, so a batch of identical items
+    # came back in whatever order the search happened to land on — and,
+    # with four workers and a wall-clock cutoff, a different order on
+    # the next launch. Operators read that as the robot skipping around.
+    #
+    # Two items whose action-name sequences are identical are isomorphic
+    # in this model: swapping their variable assignments maps any
+    # schedule to an equally-good one. Fixing their relative start order
+    # therefore removes a symmetry, never a distinct solution — the
+    # optimal makespan is provably unchanged, and pruning those
+    # permutations usually makes the search converge sooner.
+    #
+    # Items whose sequences DIFFER (one tube already decapped, a
+    # different tool path) are left unconstrained: they are not
+    # interchangeable, so ordering them could cost makespan.
+    _item_actions: "Dict[int, List[int]]" = {}
+    for i in range(n):
+        if has_item[i]:
+            _item_actions.setdefault(items[i], []).append(i)
+
+    _by_signature: "Dict[Tuple[str, ...], List[int]]" = {}
+    for key, idxs in _item_actions.items():
+        sig = tuple(actions[i].name for i in idxs)
+        _by_signature.setdefault(sig, []).append(key)
+
+    _first_start: "Dict[int, Any]" = {}
+    _sym_pairs = 0
+    for group in _by_signature.values():
+        if len(group) < 2:
+            continue
+        group.sort()                    # declared order == item index order
+        for key in group:
+            if key not in _first_start:
+                v = model.NewIntVar(0, horizon, f"first_start_i{key}")
+                model.AddMinEquality(v, [starts[i] for i in _item_actions[key]])
+                _first_start[key] = v
+        for a_key, b_key in zip(group, group[1:]):
+            model.Add(_first_start[a_key] <= _first_start[b_key])
+            _sym_pairs += 1
+
     # ── Objective: minimise makespan ──────────────────────────────────
     makespan = model.NewIntVar(0, horizon, "makespan")
     model.AddMaxEquality(makespan, ends)
@@ -479,6 +531,11 @@ def schedule_cpsat(
     # scheduling.
     solver.parameters.num_search_workers = 4
     solver.parameters.relative_gap_limit = 0.01
+    # Same plan in, same schedule out. Without a fixed seed two launches
+    # of the identical batch could return different (equally optimal)
+    # schedules, which makes a bench run irreproducible and the replay
+    # gate's makespan drift between runs.
+    solver.parameters.random_seed = 0
 
     # Watchdog: stop the solver after ``no_improvement_s`` of no
     # objective improvement, even if there's budget left. Saves us from
@@ -499,9 +556,10 @@ def schedule_cpsat(
         )
 
     log.info(
-        "CP-SAT: %d actions, makespan=%d (%s, %.3fs wall)",
+        "CP-SAT: %d actions, makespan=%d (%s, %.3fs wall, %d item-order pair%s)",
         n, solver.Value(makespan),
         solver.StatusName(status), solver.WallTime(),
+        _sym_pairs, "" if _sym_pairs == 1 else "s",
     )
 
     # ── Extract action start times ────────────────────────────────────
