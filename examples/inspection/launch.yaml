@@ -16,7 +16,7 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
-kwargs:
+default:
   batch_size:
     type: int
     default: 4

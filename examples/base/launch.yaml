@@ -21,4 +21,4 @@ core_dir:     core
 plan_window:  4
 scheduler:    cpsat
 
-kwargs: {}
+default: {}

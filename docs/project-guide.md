@@ -85,12 +85,12 @@ Two top-level keys:
 | Key | Description |
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
-| `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). The original `kwargs` key is a forever-alias with the same meaning — every pre-rename project keeps working; `default` wins when both exist. |
+| `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]
 
-kwargs:
+default:
   batch_size:
     type: int
     default: 4
@@ -238,7 +238,7 @@ working:
 1. **New features are opt-in keys. Absent = previous behaviour.**
    Everything added this cycle obeys it: no `setup:` → the generic
    form; no `pendant:` → the default pendant; no `_layout` → fields stack;
-   `kwargs:` as a dict still works exactly as before the file form
+   `default:` as a dict still works exactly as before the file form
    existed.
 2. **Never repurpose an existing key.** A changed meaning is a silent
    behaviour change on every project that already uses it. Add a new
@@ -255,6 +255,11 @@ working:
    `workspace.bt.replay` (and `workspace.recipes.solve` for motion
    changes) over the example projects — they are the cheap regression
    net for "did I just break older projects".
+
+**One rename, on the record.** The schema's launch key was `kwargs:`
+until 2026-08; every in-tree example and bench project now declares
+`default:`. The old key still loads with the same meaning but prints a
+rename warning at load (rule 3) — new work never writes it.
 
 **One removal, on the record.** `type: slots` — a rack-position picker
 the platform drew — was deleted rather than deprecated, against rule 3.

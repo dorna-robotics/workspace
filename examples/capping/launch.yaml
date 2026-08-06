@@ -10,7 +10,7 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
-kwargs:
+default:
   tube_count:
     type: int
     default: 2

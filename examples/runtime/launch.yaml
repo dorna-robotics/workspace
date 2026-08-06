@@ -20,7 +20,7 @@ scheduler:    cpsat
 
 # One cycle = create a disc at a random in slot → transfer it to a
 # random out slot → remove it. ``batch_size`` is how many cycles to run.
-kwargs:
+default:
   batch_size:
     type: int
     default: 5

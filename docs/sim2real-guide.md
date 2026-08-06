@@ -249,7 +249,7 @@ Rules:
 # launch.yaml
 datasets: datasets.j2        # presence initializes ws.sim2real at boot
 
-kwargs:
+default:
   collect:
     type: bool
     default: false

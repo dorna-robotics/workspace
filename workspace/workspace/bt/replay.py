@@ -37,12 +37,15 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     default is a collection (sliced to N entries); ``overrides`` are
     k=v strings.
 
-    The schema key is ``default:`` (canonical) with ``kwargs:`` as its
-    forever-alias — same rule as the orchestrator's
-    ``load_kwargs_schema``. Either may be inline OR a file path
-    (default.j2 / kwargs.j2)."""
+    The schema key is ``default:`` (canonical). The old ``kwargs:``
+    key still loads but warns — same rule as the orchestrator's
+    ``load_kwargs_schema``. Either may be inline OR a file path."""
     launch = dict(launch or {})
-    schema = launch.get("default", launch.get("kwargs"))
+    schema = launch.get("default")
+    if schema is None and launch.get("kwargs") is not None:
+        print("[default] launch.yaml: `kwargs:` was renamed to "
+              "`default:` — it still loads, but rename it")
+        schema = launch.get("kwargs")
     if isinstance(schema, str) and project_dir:
         from pathlib import Path
         try:

@@ -20,7 +20,7 @@ Then Park.
 All in `launch.yaml`. The operator-visible knob is `batch_size`:
 
 ```yaml
-kwargs:
+default:
   batch_size:
     type: int
     default: 3

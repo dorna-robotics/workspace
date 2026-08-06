@@ -13,7 +13,7 @@ scheduler:    cpsat
 # Operator GUI form. ``batch_size`` controls how many capacitance reads
 # the run takes; each ReadMeter action waits 10 s, reads, and logs the
 # value as a step the operator sees in the timeline.
-kwargs:
+default:
   batch_size:
     type: int
     default: 3

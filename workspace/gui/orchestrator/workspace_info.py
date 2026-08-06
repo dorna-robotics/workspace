@@ -177,12 +177,17 @@ def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
     """
     from pathlib import Path as _P
     # ``default:`` is the canonical key — "the kwargs' defaults". The
-    # original ``kwargs:`` keeps working forever as an alias with the
-    # SAME meaning (every pre-rename project uses it); ``default:``
-    # wins when both are present.
+    # old ``kwargs:`` key still LOADS (same meaning, ``default:`` wins
+    # when both exist) but warns: every in-tree example and bench
+    # project is migrated, so a stray old key should be renamed, not
+    # silently indulged (compatibility rule 3 — deprecate loudly).
     spec = None
     if isinstance(launch, dict):
-        spec = launch.get("default", launch.get("kwargs"))
+        spec = launch.get("default")
+        if spec is None and launch.get("kwargs") is not None:
+            print("[default] launch.yaml: `kwargs:` was renamed to "
+                  "`default:` — it still loads, but rename it")
+            spec = launch.get("kwargs")
     if isinstance(spec, dict):
         return normalise_kwargs_schema(spec)
     if spec is None:

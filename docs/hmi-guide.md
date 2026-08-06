@@ -22,11 +22,11 @@ pendant:  hmi/pendant.html   # screen shown DURING the run
 
 | key | what | format | read by | served by | doc |
 |---|---|---|---|---|---|
-| `default:` (alias `kwargs:`) | the kwargs' defaults / schema | yaml/j2 (forced) | replay, launch, CLI, GUI | — | project-guide §3 |
+| `default:` | the kwargs' defaults / schema | yaml/j2 (forced) | replay, launch, CLI, GUI | — | project-guide §3 |
 | `setup:` | run-setup screen | `.html`/`.js` | browser only | orchestrator (pre-launch, same-origin) | project-guide §3 |
 | `pendant:` | during-run screen | `.html`/`.js` | browser only | runtime server `/hmi/` (CORS) | §4b below |
 
-Only `default:` is required (the original `kwargs:` key works forever as its alias); each screen is opt-in with a clean fallback
+Only `default:` is required; each screen is opt-in with a clean fallback
 (generic form / default pendant). The format rule is §10b: **if Python
 reads it, it's yaml; if only the browser reads it, it's the project's
 file.** Reference implementation: bd's `hmi/` folder.
@@ -445,7 +445,7 @@ Recurring question: is `.j2`/YAML enough for kwargs and HMI, or should
 these be Python / HTML? The answers, and the boundary that makes them
 work:
 
-**Run inputs stay in the kwargs schema** (`hmi/kwargs.j2`, pointed at
+**Run inputs stay in the schema** (`hmi/default.j2`, pointed at
 by `launch.yaml`). One schema, one source of truth;
 `hmi.j2` declares how the pendant *presents* run setup, never a second
 definition of it. (Rejected: moving kwargs into `hmi.j2` — two files
@@ -469,7 +469,7 @@ project-guide §3), hosted exactly like the pendant screen.
 
 The split that makes both true at once:
 
-| | schema (`kwargs:`) | form (`setup:`) |
+| | schema (`default:`) | form (`setup:`) |
 |---|---|---|
 | answers | what a run takes | how an operator picks it |
 | read by | replay, CLI, launch, GUI | the GUI only |
