@@ -618,7 +618,7 @@
    by column number keeps every child in its lane regardless of
    which siblings are present. */
 .pendant-nav .pendant-nav-left { grid-column: 1; justify-self: start;
-  display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 /* Which workspace this pendant is driving — the operator may have
    several benches open; the name has to be on screen, not in a tab. */
 .pendant-nav .pendant-project {
@@ -1067,6 +1067,11 @@
 }
 /* Controls stack full-width: the whole row is the target, so thumb
    placement along it does not matter. */
+.pendant-rail .pill-state {
+  align-self: stretch;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
 .pendant-rail .pendant-buttons {
   display: flex;
   flex-direction: column;
@@ -1135,7 +1140,12 @@
     border-top: 1px solid var(--border);
     overflow: visible;
   }
-  .pendant-rail .pendant-buttons {
+  .pendant-rail .pill-state {
+  align-self: stretch;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
+.pendant-rail .pendant-buttons {
     flex: 1 0 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;

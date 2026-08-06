@@ -684,10 +684,7 @@
        identical. -->
   <header class="pendant-nav ws-header-like" data-state="off">
     <div class="pendant-nav-left">
-      <span class="pill pill-state off" id="pendantState">
-        <span class="dot"></span>
-        <span class="pendant-state-text">—</span>
-      </span>
+      <a class="btn btn-ghost btn-sm btn-icon" href="/orchestrator/" title="Back to orchestrator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
       <span class="pendant-project" id="pendantProject">—</span>
     </div>
     <div class="pendant-timer" id="pendantTimer">
@@ -720,6 +717,14 @@
        is the pre-rail layout — see the media query in style.css. -->
   <div class="pendant-main">
   <aside class="pendant-rail">
+    <!-- State sits directly above the controls: it is the fact that
+         decides WHICH control to press (READY→Start, RUNNING→Pause,
+         PAUSED→Resume), so cause and action share one glance. The
+         run timer stays in the navbar — reference, not a trigger. -->
+    <span class="pill pill-state off" id="pendantState">
+      <span class="dot"></span>
+      <span class="pendant-state-text">—</span>
+    </span>
     <div class="pendant-buttons">
       <button class="pendant-btn pendant-start"   id="pendantStart"   data-cmd="start">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
