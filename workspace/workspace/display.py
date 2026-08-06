@@ -5,6 +5,28 @@ import threading
 import socketio
 
 
+
+# ── repeat-safe logging ────────────────────────────────────────────
+# The pose/collision paths run at frame rate: a persistent fault (a
+# scene the robot can't pose yet, a missing joint) printed per frame
+# buries every other line at 60 lines/second. Log the FIRST occurrence
+# of each distinct message, then stay quiet until it changes or clears
+# — and say so when it clears.
+_LOG_SEEN: dict = {}
+
+
+def _log_once(tag: str, msg: str) -> None:
+    if _LOG_SEEN.get(tag) == msg:
+        return
+    _LOG_SEEN[tag] = msg
+    print(f"[Display] {msg} (repeats suppressed until it changes)")
+
+
+def _log_clear(tag: str, msg: str) -> None:
+    if _LOG_SEEN.pop(tag, None) is not None:
+        print(f"[Display] {msg}")
+
+
 class Display:
     def __init__(self, workspace, port=8000, fps=60, debug=False):
         """
@@ -140,7 +162,7 @@ class Display:
         try:
             poses = self.workspace.compute_world_poses()
         except Exception as e:
-            print("[Display] compute_world_poses() failed in snapshot:", e)
+            _log_once("poses_snapshot", f"compute_world_poses() failed in snapshot: {e}")
             poses = {}
 
         world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
@@ -188,8 +210,9 @@ class Display:
         """Only pose + visible; DO NOT delete meshUrl. Delta: skip unchanged objects."""
         try:
             poses = self.workspace.compute_world_poses()
+            _log_clear("poses_frame", "world poses recovered")
         except Exception as e:
-            print("[Display] compute_world_poses() failed in frame:", e)
+            _log_once("poses_frame", f"compute_world_poses() failed in frame: {e}")
             poses = {}
 
         world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
@@ -244,8 +267,9 @@ class Display:
 
         try:
             collision_world, collision_flange = self.workspace.compute_collision_boxes(padding)
+            _log_clear("collision", "collision boxes recovered")
         except Exception as e:
-            print("[Display] compute_collision_boxes() failed:", e)
+            _log_once("collision", f"compute_collision_boxes() failed: {e}")
             return {}, {}
 
         world_map = {}
@@ -333,7 +357,7 @@ class Display:
                     if frame:  # delta: skip emit if nothing changed
                         self._emit_update(frame)
             except Exception as e:
-                print("[Display] error in main loop:", e)
+                _log_once("main_loop", f"error in main loop: {e}")
 
             next_t += period
             delay = next_t - time.perf_counter()
