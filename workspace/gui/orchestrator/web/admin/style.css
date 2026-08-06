@@ -1097,7 +1097,12 @@
 }
 .hmi-slot.empty    { }                                   /* dashed ring */
 .hmi-slot.queued   { border-style: solid; background: var(--surface2); color: var(--muted); }
-.hmi-slot.done     { border: 2px solid transparent; background: rgba(52,199,89,0.22); color: var(--text); }
+/* Done reads as GREEN at a glance. Muted-for-done (§9) exists so it
+   does not compete with active — not so it becomes ambiguous; the
+   distinction from active is hue + the breathing ring, not weakness. */
+.hmi-slot.done {
+  border: 2px solid var(--green); background: var(--green); color: #fff;
+}
 /* Icon redundancy: state is never carried by colour alone (§9). */
 .hmi-slot.done::after,
 .hmi-slot.attention::after {
