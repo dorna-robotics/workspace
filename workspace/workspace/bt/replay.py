@@ -37,27 +37,31 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     default is a collection (sliced to N entries); ``overrides`` are
     k=v strings.
 
-    ``kwargs:`` may be inline OR a file path (kwargs.j2) — same two
-    shapes the orchestrator accepts."""
+    The schema key is ``default:`` (canonical) with ``kwargs:`` as its
+    forever-alias — same rule as the orchestrator's
+    ``load_kwargs_schema``. Either may be inline OR a file path
+    (default.j2 / kwargs.j2)."""
     launch = dict(launch or {})
-    spec = launch.get("kwargs")
-    if isinstance(spec, str) and project_dir:
+    schema = launch.get("default", launch.get("kwargs"))
+    if isinstance(schema, str) and project_dir:
         from pathlib import Path
         try:
             from jinja2 import Template
-            text = (Path(project_dir) / spec).read_text()
-            if spec.endswith(".j2") or "{%" in text or "{{" in text:
+            text = (Path(project_dir) / schema).read_text()
+            if schema.endswith(".j2") or "{%" in text or "{{" in text:
                 text = Template(text).render()
             data = yaml.safe_load(text) or {}
             if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
                 data = data["kwargs"]
-            launch["kwargs"] = data if isinstance(data, dict) else {}
+            schema = data
         except Exception:
-            launch["kwargs"] = {}
+            schema = {}
+    if not isinstance(schema, dict):
+        schema = {}
     out = {}
     first_int = None
     first_coll = None
-    for name, spec in (launch.get("kwargs") or {}).items():
+    for name, spec in schema.items():
         # Keys starting with "_" are presentation hints for the GUI
         # (``_layout``), never run parameters.
         if name.startswith("_"):

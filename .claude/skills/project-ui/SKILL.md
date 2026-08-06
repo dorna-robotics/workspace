@@ -6,25 +6,25 @@ or a pendant screen — or when you're changing one and need the contract.
 ## The three keys (launch.yaml)
 
 ```yaml
-kwargs:   hmi/kwargs.j2      # the kwargs themselves (data — Python reads it)
+default:  hmi/default.j2     # the kwargs' defaults (data — Python reads it)
 setup:    hmi/setup.js       # screen to SET the kwargs, before the run
 pendant:  hmi/pendant.html   # screen shown DURING the run
 ```
 
-One contract, two screens. Only `kwargs:` is required; each screen is
+One contract, two screens. Only `default:` is required (`kwargs:` is its forever-alias — every pre-rename project uses it; same meaning, `default:` wins if both); each screen is
 opt-in and its absence falls back cleanly (generic form / default
 pendant). Gold exemplar for all three: **the bd project's `hmi/`
 folder** (`~/Downloads/projects/bd` on the bench Pi).
 
 **The rule that decides format** (hmi-guide §10b): *if Python reads it,
 it's yaml; if only the browser reads it, it's the project's file.*
-`kwargs` is read headlessly — `bt.replay`, launch, Start-with-defaults,
+`default` is read headlessly — `bt.replay`, launch, Start-with-defaults,
 server-side validation — so it stays yaml forever. The screens are read
 only by the pendant/modal, so they're `.html` or `.js`, project-owned.
 Do NOT try to merge them into one file or execute project JS from
 Python (node subprocess, etc.) — rejected, hmi-guide §10b.
 
-## `kwargs:` — the schema (project-guide §3)
+## `default:` — the schema (alias `kwargs:`; project-guide §3)
 
 - Inline dict, `.yaml`, or `.j2` (Jinja renders first — use it to
   generate collection defaults, e.g. bd's 19-tube grid loop).

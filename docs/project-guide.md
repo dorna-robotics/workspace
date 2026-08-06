@@ -85,7 +85,7 @@ Two top-level keys:
 | Key | Description |
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
-| `kwargs` | Parameter definitions shown in the GUI's Parameters modal. Each key becomes a field the user can set before starting. **Either inline (a dict) or a file path** — new projects use `kwargs: hmi/kwargs.j2` (see §1); inline stays supported for small/legacy projects. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
+| `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema (a `kwargs:` key inside is unwrapped), rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). The original `kwargs` key is a forever-alias with the same meaning — every pre-rename project keeps working; `default` wins when both exist. |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]
@@ -163,7 +163,7 @@ the project's own hardware, so the project draws it. Declare it in
 `launch.yaml` next to the schema:
 
 ```yaml
-kwargs:  hmi/kwargs.j2      # the kwargs themselves (data)
+default: hmi/default.j2     # the kwargs' defaults (data)
 setup:   hmi/setup.js      # screen to SET them
 ```
 

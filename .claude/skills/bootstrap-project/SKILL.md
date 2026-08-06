@@ -160,7 +160,7 @@ scene:    [scene/core_500.j2, scene/layout.j2]
 recipes:  recipes.j2
 actions:  actions.py
 checks:   checks.py
-kwargs:   hmi/kwargs.j2      # the kwargs themselves (data)
+default:  hmi/default.j2     # the kwargs' defaults (data)
 setup:    hmi/setup.js       # screen to SET the kwargs, before the run
 pendant:  hmi/pendant.html   # screen shown DURING the run
 ```
@@ -169,7 +169,7 @@ Operator-facing files live in **`hmi/`**. Inline `kwargs:` still works
 for legacy/small projects. Field types are project-guide §3.
 
 **Full contracts + traps: the `project-ui` skill.** In brief —
-**one contract, two screens.** `kwargs:` always — it is the schema, read
+**one contract, two screens.** `default:` always (the old `kwargs:` key is its forever-alias) — it is the schema, read
 headlessly by `bt.replay`, so it stays YAML and never describes how
 anything looks. `setup:` only when run setup needs more than rows of
 scalars (picking WHICH rack positions to run — that is a picture of your

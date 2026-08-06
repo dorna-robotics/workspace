@@ -160,7 +160,8 @@ def normalise_kwargs_schema(raw: Dict) -> Dict:
 def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
     """The project's kwargs schema, from launch.yaml.
 
-    ``kwargs:`` accepts BOTH shapes, like ``scene``/``recipes`` do:
+    ``default:`` (alias: ``kwargs:``) accepts BOTH shapes, like
+    ``scene``/``recipes`` do:
 
       * a dict  — declared inline (unchanged, every existing project)
       * a path  — ``kwargs: kwargs.j2`` / ``kwargs.yaml``, a separate
@@ -175,7 +176,13 @@ def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
     shows "no parameters" rather than blocking the workspace).
     """
     from pathlib import Path as _P
-    spec = launch.get("kwargs") if isinstance(launch, dict) else None
+    # ``default:`` is the canonical key — "the kwargs' defaults". The
+    # original ``kwargs:`` keeps working forever as an alias with the
+    # SAME meaning (every pre-rename project uses it); ``default:``
+    # wins when both are present.
+    spec = None
+    if isinstance(launch, dict):
+        spec = launch.get("default", launch.get("kwargs"))
     if isinstance(spec, dict):
         return normalise_kwargs_schema(spec)
     if spec is None:

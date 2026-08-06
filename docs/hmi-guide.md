@@ -15,18 +15,18 @@ Task playbook: `.claude/skills/project-ui/SKILL.md`.
 Everything operator-facing a project declares, in one place:
 
 ```yaml
-kwargs:   hmi/kwargs.j2      # the kwargs themselves (data — Python reads it)
+default:  hmi/default.j2     # the kwargs' defaults (data — Python reads it)
 setup:    hmi/setup.js       # screen to SET the kwargs, before the run
 pendant:  hmi/pendant.html   # screen shown DURING the run
 ```
 
 | key | what | format | read by | served by | doc |
 |---|---|---|---|---|---|
-| `kwargs:` | schema — what a run takes | yaml/j2 (forced) | replay, launch, CLI, GUI | — | project-guide §3 |
+| `default:` (alias `kwargs:`) | the kwargs' defaults / schema | yaml/j2 (forced) | replay, launch, CLI, GUI | — | project-guide §3 |
 | `setup:` | run-setup screen | `.html`/`.js` | browser only | orchestrator (pre-launch, same-origin) | project-guide §3 |
 | `pendant:` | during-run screen | `.html`/`.js` | browser only | runtime server `/hmi/` (CORS) | §4b below |
 
-Only `kwargs:` is required; each screen is opt-in with a clean fallback
+Only `default:` is required (the original `kwargs:` key works forever as its alias); each screen is opt-in with a clean fallback
 (generic form / default pendant). The format rule is §10b: **if Python
 reads it, it's yaml; if only the browser reads it, it's the project's
 file.** Reference implementation: bd's `hmi/` folder.
