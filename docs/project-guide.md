@@ -184,6 +184,8 @@ by side, declare rows — a HINT, not a field:
 _layout:
   - row:  [tubes, print_label]        # side by side
   - tabs: [tubes_in_1, tubes_in_2]    # one pane per field, tab bar above
+    label: Load racks                 # optional heading for the group
+    hint: Tap a rack to edit it.      # optional description under it
 ```
 
 `row` places fields side by side; `tabs` gives each field its own pane

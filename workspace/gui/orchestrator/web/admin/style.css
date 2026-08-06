@@ -152,20 +152,28 @@
 /* _layout rows: fields side by side, stacking on narrow screens */
 /* _layout tabs: one pane per field, tab bar above */
 .kwargs-form .kw-tabs { display: flex; flex-direction: column; gap: var(--space-4); }
-.kwargs-form .kw-tabbar {
-  display: flex; gap: var(--space-2); flex-wrap: wrap;
-  background: var(--bg); border-radius: var(--radius-md); padding: var(--space-1);
+.kwargs-form .kw-tabs-title {
+  font-size: var(--text-xl); font-weight: 800; letter-spacing: -0.2px;
 }
+.kwargs-form .kw-tabs-hint {
+  font-size: var(--text-md); color: var(--muted); line-height: 1.5; margin-top: -6px;
+}
+.kwargs-form .kw-tabbar { display: flex; gap: var(--space-4); flex-wrap: wrap; }
 .kwargs-form .kw-tab {
-  border: 0; background: transparent; color: var(--muted); cursor: pointer;
-  border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); min-height: 44px;
-  font-size: var(--text-md); font-weight: 700;
-  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2);
+  /* a tab is a CARD of its rack, not a pill: label, thumbnail, count */
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  border: 2px solid var(--border2, var(--border)); border-radius: var(--radius-lg);
+  padding: var(--space-4); min-height: 44px; min-width: 132px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3);
   text-align: left;
-  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease),
+              background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
-.kwargs-form .kw-tab:hover { color: var(--text); }
-.kwargs-form .kw-tab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.kwargs-form .kw-tab:hover { border-color: var(--muted); color: var(--text); }
+.kwargs-form .kw-tab.on {
+  border-color: var(--accent); color: var(--text);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
 .kwargs-form .kw-tab:focus-visible { outline: none; box-shadow: var(--glow); }
 .kwargs-form .kw-tab-label { font-size: var(--text-md); font-weight: 700; }
 .kwargs-form .kw-tab-mini { display: grid; gap: 2px; }

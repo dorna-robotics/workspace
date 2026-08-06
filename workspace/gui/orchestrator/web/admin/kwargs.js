@@ -47,6 +47,18 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       if (tabKeys.length) {
         const wrapT = document.createElement("div");
         wrapT.className = "kw-tabs";
+        if (entry.label) {
+          const h = document.createElement("div");
+          h.className = "kw-tabs-title";
+          h.textContent = entry.label;
+          wrapT.appendChild(h);
+        }
+        if (entry.hint) {
+          const p = document.createElement("div");
+          p.className = "kw-tabs-hint";
+          p.textContent = entry.hint;
+          wrapT.appendChild(p);
+        }
         const bar = document.createElement("div");
         bar.className = "kw-tabbar";
         bar.setAttribute("role", "tablist");
