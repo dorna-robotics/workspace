@@ -2046,10 +2046,14 @@ async function loadRunParams() {
       _wsKwargsValues = { ...values };
     }
     const filtered = {};
-    for (const k of Object.keys(schema)) {
+    // Underscore keys are presentation hints (_setup, _layout), not run
+    // parameters — they never reach the run, so they must not appear
+    // here either.
+    const fields = Object.keys(schema).filter(k => !k.startsWith("_"));
+    for (const k of fields) {
       filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
     }
-    paramsPre.textContent = Object.keys(schema).length ? formatParamsYaml(filtered) : "(no parameters defined)";
+    paramsPre.textContent = fields.length ? formatParamsYaml(filtered) : "(no parameters defined)";
   } catch {
     paramsPre.textContent = "(could not load)";
   }
