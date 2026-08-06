@@ -378,6 +378,26 @@ design tokens (`docs/internal/*_mockups/`, preview server per
 `hmi-guide.md` §9) → agree → codify the new grammar here → build the
 real thing from the doc. Mockups never ship; grammars do.
 
+## 14b. WebGL contexts are a shared, capped resource
+
+A browser allows only ~16 live WebGL contexts per PROCESS, across all
+tabs. This GUI can hold five at once (viewer + view cube, builder
+viewer + view cube + thumbnails), so a few open tabs exhaust the pool
+and the browser starts REFUSING contexts ("Web page caused context
+loss and was blocked").
+
+- **Never let a refused context kill the page.** Create renderers
+  through the local `makeRenderer()` guard: on failure it renders an
+  explanation in the 3D area and returns `null`, and the caller bails
+  out of 3D setup only — controls, status and HMI keep working
+  (readers degrade, they don't crash).
+- **Release contexts you are not using.** Transient renderers (catalog
+  thumbnails) drop theirs after 30 s idle via `forceContextLoss()` +
+  `dispose()`, and re-create lazily.
+- Adding a new 3D surface means drawing from a *capped* pool — prefer
+  rendering into an existing context (a viewport region) over creating
+  another one.
+
 ## 15. Known debt (fix opportunistically, no big-bang)
 
 - Builder panels (recipes list, drag readout) use inline `cssText`
