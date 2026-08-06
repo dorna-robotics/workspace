@@ -266,7 +266,11 @@ rt.op(weight=None)                                   # remove a key
 Rules: values must be JSON-able and small (≤4 KB each, ≤200 keys,
 ≤64 KB total — over-limit values are dropped with one log line, never
 a crash); large data is passed as a URL, not inlined; the call never
-blocks and never raises into the workflow. Values are memory-only and
+blocks and never raises into the workflow. Values are stored as
+**detached copies** — keep and mutate your own dict freely, the store
+never sees it. Publish plain data only (a barcode STRING, not the
+driver's Scan object): an object sneaks a nice repr into ``rt.step``
+but is not a value. Values are memory-only and
 cleared at run start. Delivery is a coalesced WS push — see
 `docs/hmi-guide.md` §3 for the channel spec.
 

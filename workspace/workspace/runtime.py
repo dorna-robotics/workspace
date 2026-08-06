@@ -65,6 +65,7 @@ class Runtime:
         # cadence (see ``op_drain``) so a hot loop cannot flood the
         # socket. Bounded by construction — see the caps below.
         self._op: dict = {}
+        self._op_sizes: dict = {}   # key -> serialized bytes, for the total cap
         self._op_rev = 0
         self._op_dirty: set = set()
         self._op_unset: set = set()
@@ -302,6 +303,7 @@ class Runtime:
                 if val is None:
                     if k in self._op:
                         del self._op[k]
+                        self._op_sizes.pop(k, None)
                         self._op_unset.add(k)
                         self._op_dirty.discard(k)
                     continue
@@ -317,15 +319,27 @@ class Runtime:
                 if k not in self._op and len(self._op) >= self.OP_MAX_KEYS:
                     self._op_warn(k, f"store already holds {self.OP_MAX_KEYS} keys")
                     continue
-                if self._op.get(k) == val:
+                # Store a DETACHED copy round-tripped through the json we
+                # just produced — never the caller's object. A project that
+                # keeps a dict and mutates it later (bd's SLOT_INFO did,
+                # via a shallow copy's shared inner dicts) would otherwise
+                # mutate the store in place, sneaking an unserialisable
+                # object past validation and poisoning every later call.
+                # loads(blob) is serialisable by construction, so nothing
+                # in the store can ever make a dumps raise again.
+                parsed = json.loads(blob)
+                if self._op.get(k) == parsed:
                     continue                      # no change, no traffic
-                self._op[k] = val
+                self._op[k] = parsed
+                self._op_sizes[k] = len(blob)
                 self._op_dirty.add(k)
                 self._op_unset.discard(k)
             # Total-size guard: drop the newest offenders rather than
-            # let the store creep past the cap over a long run.
-            while len(self._op) > 1 and len(json.dumps(self._op)) > self.OP_MAX_TOTAL_BYTES:
+            # let the store creep past the cap over a long run. Cached
+            # per-key sizes — no re-serialising the whole store per call.
+            while len(self._op) > 1 and sum(self._op_sizes.values()) > self.OP_MAX_TOTAL_BYTES:
                 k, _ = self._op.popitem()
+                self._op_sizes.pop(k, None)
                 self._op_dirty.discard(k)
                 self._op_unset.add(k)
                 self._op_warn(k, "store over total size cap — dropped")
@@ -369,6 +383,7 @@ class Runtime:
 
     def _clear_ops(self) -> None:
         self._op.clear()
+        self._op_sizes.clear()
         self._op_dirty.clear()
         self._op_unset.clear()
         self._op_dropped.clear()
