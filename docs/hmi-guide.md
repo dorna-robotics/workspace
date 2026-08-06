@@ -119,6 +119,26 @@ Three sources; two exist, one is a small addition:
 Catalog is **expandable by design**: one renderer entry per widget (exactly
 like the operator-icon set); projects gain new widgets with zero changes.
 
+### Declaration + widgets (implemented: `state`, `stat`, `progress`)
+
+`launch.yaml` points at the file (`hmi: hmi/hmi.j2`); the runtime
+server parses it ONCE at construction, validates every entry against
+the platform's widget catalog, and ships the result to the pendant as
+an `hmi_spec` envelope on connect. Rules:
+
+* An **unknown widget name is dropped with a startup warning** — a
+  typo must be visible when the workspace launches, not silently
+  missing on a pendant hours later.
+* **Binding keys are not validated**: a key legitimately appears only
+  once the action that publishes it runs.
+* A broken or missing file **never blocks a launch** — the project
+  falls back to the default pendant.
+* A project with no `hmi:` key is unchanged, forever.
+
+Adding a widget to the catalog is one entry in the pendant's registry
+plus one row in the table above — no change to the loader, the
+transport, or any project.
+
 `hmi.j2` sketch:
 
 ```yaml

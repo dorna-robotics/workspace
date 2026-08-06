@@ -2,9 +2,11 @@
 import os
 import time
 import json
+from pathlib import Path
 from threading import Thread
 from typing import Callable, Any, List, Optional
 
+import yaml
 import tornado.ioloop
 import tornado.web
 import tornado.websocket
@@ -259,6 +261,9 @@ class StatusHandler(tornado.web.RequestHandler):
 # socket is fed at this rate.
 OP_FLUSH_MS = 100
 
+# Parsed hmi.j2 for this workspace — set once in RuntimeServer.__init__.
+_HMI_SPEC: dict = {"widgets": [], "warnings": []}
+
 _step_ws_clients: set = set()
 _status_ws_clients: set = set()
 _op_ws_clients: set = set()
@@ -408,6 +413,68 @@ def _run_operator_action(rt, fn):
 # --------------------------------------------------
 # Status WebSocket — push runtime state changes in real time
 # --------------------------------------------------
+# ── HMI declaration (hmi/hmi.j2) ────────────────────────────────────
+# The project DECLARES widgets; the platform renders them. Widgets come
+# from a catalog the pendant owns — a project never ships markup, so it
+# cannot drift from the design system.
+HMI_WIDGETS = ("state", "stat", "progress")
+
+
+def _load_hmi_spec(workspace) -> dict:
+    """Parse the project's ``hmi:`` file into a validated widget list.
+
+    Returns ``{"widgets": [...], "warnings": [...]}`` — never raises and
+    never blocks a launch: a run must start even when its display
+    declaration is broken. Unknown widget names are dropped WITH a
+    warning (a typo must not silently render nothing); binding keys are
+    NOT checked, since a key legitimately appears only once the action
+    that publishes it runs.
+    """
+    out = {"widgets": [], "warnings": []}
+    try:
+        paths = getattr(workspace, "config_paths", None) or []
+        if not paths:
+            return out
+        proj = Path(paths[0]).resolve().parent
+        if proj.name == "scene":
+            proj = proj.parent
+        launch_path = proj / "launch.yaml"
+        if not launch_path.is_file():
+            return out
+        launch = yaml.safe_load(launch_path.read_text()) or {}
+        rel = launch.get("hmi")
+        if not rel:
+            return out                      # no hmi.j2 → default pendant
+        f = proj / str(rel)
+        if not f.is_file():
+            out["warnings"].append(f"hmi file not found: {rel}")
+            return out
+        text = f.read_text()
+        if str(rel).endswith(".j2") or "{%" in text or "{{" in text:
+            from jinja2 import Template
+            text = Template(text).render()
+        data = yaml.safe_load(text) or {}
+        widgets = data.get("hmi", data) if isinstance(data, dict) else data
+        if isinstance(widgets, dict):
+            widgets = [widgets]
+        if not isinstance(widgets, list):
+            out["warnings"].append("hmi file must be a list of widgets")
+            return out
+        for w in widgets:
+            if not isinstance(w, dict) or not w.get("widget"):
+                out["warnings"].append(f"skipped malformed entry: {w!r}")
+                continue
+            name = str(w["widget"])
+            if name not in HMI_WIDGETS:
+                out["warnings"].append(
+                    f"unknown widget {name!r} — known: {', '.join(HMI_WIDGETS)}")
+                continue
+            out["widgets"].append(w)
+    except Exception as ex:
+        out["warnings"].append(f"{type(ex).__name__}: {ex}")
+    return out
+
+
 class OpWebSocket(tornado.websocket.WebSocketHandler):
     """WS /ws/op — current operator-facing values (``rt.op``).
 
@@ -1137,6 +1204,10 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             # Operator values — full snapshot, same shape /ws/op sends.
             self._send("op_state", self._rt.op_snapshot())
 
+            # HMI declaration — what this project wants displayed. Sent
+            # once on connect; it is static for the life of the run.
+            self._send("hmi_spec", _HMI_SPEC)
+
             # Devices — bulk snapshot in one envelope (more efficient
             # than N device_state envelopes on connect).
             self._send("devices_snapshot", {
@@ -1510,6 +1581,16 @@ class RuntimeServer:
                 devices.subscribe(_on_device_event)
             except Exception:
                 pass
+
+        # Parse the project's HMI declaration once. Warnings are printed
+        # at startup (a typo'd widget must be visible then, not silently
+        # missing on the pendant hours later).
+        global _HMI_SPEC
+        _HMI_SPEC = _load_hmi_spec(workspace)
+        for w in _HMI_SPEC.get("warnings", []):
+            print(f"[hmi] {w}")
+        if _HMI_SPEC.get("widgets"):
+            print(f"[hmi] {len(_HMI_SPEC['widgets'])} widget(s) declared")
 
         self.app = tornado.web.Application(routes, debug=DEV_NOCACHE)
 

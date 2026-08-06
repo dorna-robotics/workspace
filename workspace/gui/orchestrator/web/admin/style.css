@@ -1038,6 +1038,46 @@
 [data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
 
 
+/* ── HMI widgets (declared in hmi.j2, rendered by the platform) ────
+   Operator scale: this is read across a room, not at a desk. Tokens
+   only — a project ships no CSS, so it cannot drift from the system. */
+.pendant-hmi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: min(680px, 92vw);
+}
+.hmi-state {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.15;
+  text-align: center;
+}
+.hmi-stat-row { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.hmi-stat {
+  flex: 1 1 130px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+.hmi-stat-v {
+  font-size: 28px; font-weight: 800;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+}
+.hmi-stat-v small { font-size: var(--text-lg); color: var(--muted); margin-left: 3px; }
+.hmi-stat-l {
+  color: var(--muted); font-weight: 700; font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;
+}
+.hmi-progress { display: flex; align-items: center; gap: var(--space-4); }
+.hmi-progress .progress-bar { flex: 1; }
+.hmi-progress-label {
+  font-family: var(--mono); font-weight: 800; font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums; min-width: 52px; text-align: right;
+}
+
 /* ══ Pendant control rail (landscape) ═══════════════════════════════
    The four run controls live in a FIXED left rail: they occupy the
    same screen position no matter how much the project's content pane

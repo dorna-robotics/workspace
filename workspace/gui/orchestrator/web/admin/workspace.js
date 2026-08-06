@@ -594,6 +594,141 @@ function disconnectWs() {
   _muxWsUrl = "";
 }
 
+
+// ── HMI widgets (hmi.j2 → rt.op values) ─────────────────────────────
+// The project DECLARES widgets; the platform renders them. One entry
+// per widget in the registry below — adding a widget is one entry and
+// one doc row, with no change to the loader, the transport, or any
+// project (the operator_actions precedent).
+//
+// Values arrive on the ``op_state`` envelope: a snapshot on connect,
+// then deltas. Widgets re-read from ``_opValues`` on every change.
+const _opValues = {};
+let _opRev = -1;
+let _hmiSpec = null;
+let _hmiBuilt = false;
+
+const HMI_WIDGETS = {
+  // Big headline — the one line an operator reads from across the room.
+  state(w) {
+    const el = document.createElement("div");
+    el.className = "hmi-state";
+    el.dataset.bind = w.bind || "state";
+    return { el, update: v => { el.textContent = (v ?? "—"); } };
+  },
+  // Large number + label + unit.
+  stat(w) {
+    const el = document.createElement("div");
+    el.className = "hmi-stat";
+    const v = document.createElement("div");
+    v.className = "hmi-stat-v";
+    const l = document.createElement("div");
+    l.className = "hmi-stat-l";
+    l.textContent = w.label || w.bind || "";
+    el.appendChild(v); el.appendChild(l);
+    return {
+      el,
+      update: val => {
+        v.textContent = "";
+        const num = document.createTextNode(val === undefined || val === null ? "—" : String(val));
+        v.appendChild(num);
+        if (w.unit && val !== undefined && val !== null) {
+          const u = document.createElement("small");
+          u.textContent = w.unit;
+          v.appendChild(u);
+        }
+      },
+    };
+  },
+  // Run progress — reads the platform's own progress, not an op key.
+  progress() {
+    const el = document.createElement("div");
+    el.className = "hmi-progress";
+    const bar = document.createElement("div");
+    bar.className = "progress-bar";
+    const fill = document.createElement("div");
+    fill.className = "progress-bar-fill";
+    fill.style.width = "0%";
+    bar.appendChild(fill);
+    const lbl = document.createElement("span");
+    lbl.className = "hmi-progress-label";
+    lbl.textContent = "0%";
+    el.appendChild(bar); el.appendChild(lbl);
+    return {
+      el,
+      platform: "progress",
+      update: v => {
+        const pct = Math.max(0, Math.min(100, Number(v) || 0));
+        fill.style.width = pct + "%";
+        lbl.textContent = pct + "%";
+      },
+    };
+  },
+};
+
+let _hmiInstances = [];
+
+function buildHmi(spec) {
+  const host = $("pendantHmi");
+  if (!host) return;
+  _hmiInstances = [];
+  host.innerHTML = "";
+  const widgets = (spec && spec.widgets) || [];
+  if (!widgets.length) { host.style.display = "none"; return; }
+  // Stats sit together in a row; everything else stacks in order.
+  let statRow = null;
+  for (const w of widgets) {
+    const make = HMI_WIDGETS[w.widget];
+    if (!make) continue;                    // server already warned
+    const inst = make(w);
+    inst.bind = w.bind || w.widget;
+    if (w.widget === "stat") {
+      if (!statRow) {
+        statRow = document.createElement("div");
+        statRow.className = "hmi-stat-row";
+        host.appendChild(statRow);
+      }
+      statRow.appendChild(inst.el);
+    } else {
+      statRow = null;
+      host.appendChild(inst.el);
+    }
+    _hmiInstances.push(inst);
+    inst.update(inst.platform ? undefined : _opValues[inst.bind]);
+  }
+  host.style.display = _hmiInstances.length ? "" : "none";
+  _hmiBuilt = true;
+}
+
+function applyOpState(payload) {
+  if (!payload) return;
+  // A gap in ``rev`` means we missed a delta — ask for the full state
+  // rather than leave a stale number on an operator's screen.
+  if (payload.snapshot) {
+    for (const k of Object.keys(_opValues)) delete _opValues[k];
+  } else if (_opRev >= 0 && typeof payload.rev === "number" && payload.rev !== _opRev + 1) {
+    _resyncOpState();
+  }
+  if (typeof payload.rev === "number") _opRev = payload.rev;
+  for (const [k, v] of Object.entries(payload.set || {})) _opValues[k] = v;
+  for (const k of payload.unset || []) delete _opValues[k];
+  for (const inst of _hmiInstances) {
+    if (!inst.platform) inst.update(_opValues[inst.bind]);
+  }
+}
+
+function _resyncOpState() {
+  // Reconnecting the mux WS re-delivers a snapshot; cheapest correct
+  // resync without a new endpoint.
+  try { if (_muxWs) _muxWs.close(); } catch (_) {}
+}
+
+function updateHmiProgress(pct) {
+  for (const inst of _hmiInstances) {
+    if (inst.platform === "progress") inst.update(pct);
+  }
+}
+
 // Route envelope ``{type, payload}`` to the existing per-category
 // handler. The handlers themselves (renderStep, updateStatusUI,
 // renderDevicesPanel, renderOperatorActionsPanel) stay unchanged
@@ -611,7 +746,17 @@ function _dispatchMuxMessage(env) {
       // Same comment as the legacy /ws/steps handler.
       if (typeof payload.progress === "number" && payload.progress >= 0) {
         updateProgress(payload.progress, isLaunched(_lastState));
+        updateHmiProgress(payload.progress);
       }
+      break;
+    }
+    case "op_state": {
+      applyOpState(payload);
+      break;
+    }
+    case "hmi_spec": {
+      _hmiSpec = payload;
+      buildHmi(payload);
       break;
     }
     case "runtime_status": {
