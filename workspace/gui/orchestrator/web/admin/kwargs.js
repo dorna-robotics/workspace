@@ -212,20 +212,23 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
       // rack actually HAS, so nothing decorative. The two generic
       // states are the widget's own vocabulary; the excluded one is
       // described by the project (exclude_hint).
-      const key = document.createElement("div");
-      key.className = "kw-slot-key";
+      // NB: not named ``key`` — that is the field key in this closure,
+      // and shadowing it puts every earlier use in the temporal dead
+      // zone (the form then dies before rendering anything).
+      const keyEl = document.createElement("div");
+      keyEl.className = "kw-slot-key";
       const keyItem = (cls, text) => {
         const item = document.createElement("span");
         const dot = document.createElement("i");
         dot.className = cls;
         item.appendChild(dot);
         item.appendChild(document.createTextNode(text));
-        key.appendChild(item);
+        keyEl.appendChild(item);
       };
       keyItem("on", "Selected");
       keyItem("", "Available");
       if (exclude.size) keyItem("excluded", spec.exclude_hint || "Unavailable");
-      panel.appendChild(key);
+      panel.appendChild(keyEl);
       const split = document.createElement("div");
       split.className = "kw-slot-split";
       split.appendChild(panel);
