@@ -62,6 +62,35 @@
       }
     }
 
+
+// ── WebGL context guard ─────────────────────────────────────────────
+// A browser caps live WebGL contexts per process (~16 in Chrome), and
+// this GUI can hold several at once — main viewer, view cube, builder
+// thumbnails, plus one set per open tab. Past the cap the browser
+// REFUSES a context ("Web page caused context loss and was blocked"),
+// and an uncaught throw here used to take the whole page down with it.
+//
+// Readers degrade, they never crash: on failure the 3D area explains
+// itself and everything else on the page keeps working.
+function makeRenderer(opts, mountEl) {
+  try {
+    return new THREE.WebGLRenderer(opts);
+  } catch (err) {
+    console.error("WebGL unavailable:", err);
+    const note = document.createElement("div");
+    note.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
+      "text-align:center;padding:24px;font:14px/1.6 system-ui,sans-serif;color:#8e8e93";
+    note.innerHTML =
+      "<div><b style='display:block;font-size:15px;margin-bottom:6px;color:inherit'>" +
+      "3D view unavailable</b>The browser refused a WebGL context — usually too many " +
+      "open views.<br>Close some tabs with a 3D view (or reload this one) to get it back." +
+      "<br>Everything else on this page keeps working.</div>";
+    try { (mountEl || document.body).appendChild(note); } catch (_) {}
+    return null;
+  }
+}
+
     async function boot() {
       // ---- Viewer container (right-side div, not full window) ----
       const viewerEl = document.getElementById("viewerArea");
@@ -87,7 +116,9 @@
 
       // Pixel ratio capped at 1.5 for FPS on Retina/4K. Antialias stays
       // on for clean edges. See orchestrator/index.html.
-      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      const renderer = makeRenderer(
+        { antialias: true, powerPreference: "high-performance" }, viewerEl);
+      if (!renderer) return;              // page stays alive without 3D
       // WebGL renders on the VIEWING machine's GPU (not the Pi) — cap
       // at 2x, not 1.5x: the old cap under-resolved the canvas on
       // scaled displays and read as aliasing on every mesh edge.
@@ -4799,8 +4830,27 @@ const _thumbCache = new Map();
 
 // Shared offscreen renderer (1 WebGL context for all thumbnails)
 let _thumbRenderer = null;
+let _thumbIdleTimer = null;
+const THUMB_IDLE_MS = 30000;
+
+function _releaseThumbRenderer() {
+  if (!_thumbRenderer) return;
+  try {
+    _thumbRenderer.forceContextLoss();   // hand the context back NOW
+    _thumbRenderer.dispose();
+  } catch (_) {}
+  _thumbRenderer = null;
+}
 let _thumbCanvas = null;
 function _getThumbRenderer() {
+  // Idle release: this renderer only draws catalog icons, but a WebGL
+  // context it keeps alive counts against the browser's per-process cap
+  // (~16) — shared with the main viewer, the view cube, and every other
+  // open tab. Past the cap the browser refuses new contexts outright.
+  // It is already lazy, so dropping it when idle costs nothing but a
+  // re-create on the next icon.
+  clearTimeout(_thumbIdleTimer);
+  _thumbIdleTimer = setTimeout(_releaseThumbRenderer, THUMB_IDLE_MS);
   if (_thumbRenderer) return _thumbRenderer;
   _thumbCanvas = document.createElement("canvas");
   _thumbRenderer = new THREE.WebGLRenderer({ canvas: _thumbCanvas, antialias: true, preserveDrawingBuffer: true });

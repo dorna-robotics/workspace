@@ -233,6 +233,35 @@
       } catch { window.__CONFIG_VERSION__ = String(Date.now()); }
     }
 
+
+// ── WebGL context guard ─────────────────────────────────────────────
+// A browser caps live WebGL contexts per process (~16 in Chrome), and
+// this GUI can hold several at once — main viewer, view cube, builder
+// thumbnails, plus one set per open tab. Past the cap the browser
+// REFUSES a context ("Web page caused context loss and was blocked"),
+// and an uncaught throw here used to take the whole page down with it.
+//
+// Readers degrade, they never crash: on failure the 3D area explains
+// itself and everything else on the page keeps working.
+function makeRenderer(opts, mountEl) {
+  try {
+    return new THREE.WebGLRenderer(opts);
+  } catch (err) {
+    console.error("WebGL unavailable:", err);
+    const note = document.createElement("div");
+    note.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
+      "text-align:center;padding:24px;font:14px/1.6 system-ui,sans-serif;color:#8e8e93";
+    note.innerHTML =
+      "<div><b style='display:block;font-size:15px;margin-bottom:6px;color:inherit'>" +
+      "3D view unavailable</b>The browser refused a WebGL context — usually too many " +
+      "open views.<br>Close some tabs with a 3D view (or reload this one) to get it back." +
+      "<br>Everything else on this page keeps working.</div>";
+    try { (mountEl || document.body).appendChild(note); } catch (_) {}
+    return null;
+  }
+}
+
     async function boot() {
       // ── Theme: URL param > localStorage > default dark ────────────────────
       const THEME_KEY = "orch_theme";
@@ -255,7 +284,8 @@
       // Pixel ratio capped at 1.5 — on Retina/4K this cuts fragment-shader
       // work ~40% with essentially invisible visual cost (vs the default
       // cap of 2). Antialias stays ON so edges stay clean.
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      const renderer = makeRenderer({ antialias: true });
+      if (!renderer) return;              // page stays alive without 3D
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
