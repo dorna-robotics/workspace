@@ -1079,8 +1079,12 @@
 }
 .pendant-rail .pendant-secondary {
   justify-content: center;
-  min-height: 48px;          /* secondary actions: still above the floor */
-  padding: 12px 14px;
+  /* same size and shape as the run controls above — a rail of
+     differently-sized buttons reads as unfinished, and Kill in
+     particular must be as easy to hit as the rest. */
+  min-height: 56px;
+  padding: 0 14px;
+  border-radius: var(--radius-lg);
   font-size: var(--text-md);
 }
 /* Kill: its own row with a deliberate gap above — the one irreversible
@@ -1095,23 +1099,10 @@
 /* Content pane — scrolls independently of the rail. */
 .pendant-main > .pendant-body { flex: 1 1 auto; min-width: 0; }
 
-/* Park is visually DISTINCT from Pause: outline, not a filled tint.
-   Adjacent controls with different consequences must not read alike
-   to a hurried thumb (design-system §9 — never colour alone). */
-.pendant-rail .pendant-park {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px rgba(255,122,63,0.55);
-  color: var(--text);
-}
-.pendant-rail .pendant-park:hover:not(:disabled) {
-  background: rgba(255,122,63,0.14);
-  box-shadow: inset 0 0 0 2px rgba(255,122,63,0.7);
-}
-[data-theme="light"] .pendant-rail .pendant-park {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px rgba(214,90,38,0.5);
-  color: var(--text);
-}
+/* Park keeps the shared control treatment — one shape for every run
+   control, colour is what separates them. Its separation from Pause
+   comes from the gap + Kill's isolation below, not a different form
+   (an odd-one-out button reads as a mistake, not a warning). */
 
 /* ── Portrait / narrow: the pre-rail layout, unchanged ───────────── */
 @media (orientation: portrait), (max-width: 860px) {
