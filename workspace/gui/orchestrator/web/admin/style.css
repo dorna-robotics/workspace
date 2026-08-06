@@ -1071,6 +1071,55 @@
   color: var(--muted); font-weight: 700; font-size: var(--text-xs);
   text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;
 }
+/* Rack widget — one dot grammar: filled = occupied, hollow = empty,
+   colour = process state. Muted for done, saturated only for active
+   and attention (§9), and every state also differs in FORM so colour
+   is never the only signal. */
+.hmi-rack { display: flex; flex-direction: column; gap: var(--space-3); align-items: center; }
+.hmi-rack-label {
+  font-size: var(--text-xs); font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); align-self: flex-start;
+}
+.hmi-rack-panel {
+  background: var(--surface); border: 1px solid var(--border2, var(--border));
+  border-radius: var(--radius-lg); padding: var(--space-4);
+  width: max-content; max-width: 100%;
+}
+.hmi-rack-grid { display: grid; gap: var(--space-3); }
+.hmi-slot {
+  position: relative;                      /* badges anchor to the slot */
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 800;
+  border: 2px dashed var(--border); color: var(--muted);
+  transition: background var(--motion-med) var(--ease),
+              border-color var(--motion-med) var(--ease);
+}
+.hmi-slot.empty    { }                                   /* dashed ring */
+.hmi-slot.queued   { border-style: solid; background: var(--surface2); color: var(--muted); }
+.hmi-slot.done     { border: 2px solid transparent; background: rgba(52,199,89,0.22); color: var(--text); }
+/* Icon redundancy: state is never carried by colour alone (§9). */
+.hmi-slot.done::after,
+.hmi-slot.attention::after {
+  position: absolute; top: -3px; right: -3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); font-size: 10px; font-weight: 900;
+  box-shadow: var(--shadow-sm);
+}
+.hmi-slot.done::after { content: "✓"; color: var(--green); }
+.hmi-slot.active {
+  border: 2px solid var(--accent); background: var(--accent); color: #fff;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: hmi-slot-breathe 1.6s ease-in-out infinite;
+}
+.hmi-slot.attention {
+  border: 2px solid var(--amber); background: var(--amber); color: #fff;
+}
+.hmi-slot.attention::after { content: "!"; color: var(--amber); }
+@keyframes hmi-slot-breathe {
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 10%, transparent); }
+}
 .hmi-progress { display: flex; align-items: center; gap: var(--space-4); }
 .hmi-progress .progress-bar { flex: 1; }
 .hmi-progress-label {

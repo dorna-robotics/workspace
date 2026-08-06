@@ -640,6 +640,52 @@ const HMI_WIDGETS = {
       },
     };
   },
+  // The rack — the site-visit ask: every position of a real rack, live.
+  // GRID comes from the scene (server-enriched spec); STATE comes from
+  // one rt.op key holding {slot: state}. The project decides what its
+  // states mean (it owns the facts); the platform owns the grammar:
+  //   done · active · attention · queued · empty
+  rack(w) {
+    const el = document.createElement("div");
+    el.className = "hmi-rack";
+    if (w.label) {
+      const h = document.createElement("div");
+      h.className = "hmi-rack-label";
+      h.textContent = w.label;
+      el.appendChild(h);
+    }
+    const panel = document.createElement("div");
+    panel.className = "hmi-rack-panel";
+    const grid = document.createElement("div");
+    grid.className = "hmi-rack-grid";
+    grid.style.gridTemplateColumns = `repeat(${(w.cols || []).length || 5}, 1fr)`;
+    const cells = {};
+    for (const name of (w.slots || [])) {
+      const c = document.createElement("div");
+      c.className = "hmi-slot";
+      const id = document.createElement("span");
+      id.className = "hmi-slot-id";
+      id.textContent = name;
+      c.appendChild(id);
+      grid.appendChild(c);
+      cells[name] = c;
+    }
+    panel.appendChild(grid);
+    el.appendChild(panel);
+    const STATES = ["done", "active", "attention", "queued", "empty"];
+    return {
+      el,
+      update: map => {
+        const m = (map && typeof map === "object") ? map : {};
+        for (const [name, cell] of Object.entries(cells)) {
+          const st = String(m[name] || "empty");
+          cell.classList.remove(...STATES);
+          cell.classList.add(STATES.includes(st) ? st : "empty");
+          cell.title = `${name} — ${st}`;
+        }
+      },
+    };
+  },
   // Run progress — reads the platform's own progress, not an op key.
   progress() {
     const el = document.createElement("div");

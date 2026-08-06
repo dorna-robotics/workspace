@@ -119,7 +119,7 @@ Three sources; two exist, one is a small addition:
 Catalog is **expandable by design**: one renderer entry per widget (exactly
 like the operator-icon set); projects gain new widgets with zero changes.
 
-### Declaration + widgets (implemented: `state`, `stat`, `progress`)
+### Declaration + widgets (implemented: `state`, `stat`, `progress`, `rack`)
 
 `launch.yaml` points at the file (`hmi: hmi/hmi.j2`); the runtime
 server parses it ONCE at construction, validates every entry against
@@ -134,6 +134,28 @@ an `hmi_spec` envelope on connect. Rules:
 * A broken or missing file **never blocks a launch** — the project
   falls back to the default pendant.
 * A project with no `hmi:` key is unchanged, forever.
+
+**The `rack` widget** is the site-visit ask — every position of a real
+rack, live:
+
+```yaml
+  - widget: rack
+    component: rack_falcon_15ml_1   # a rack in this project's scene
+    bind: tubes                     # rt.op key holding {slot: state}
+    label: Falcon rack
+```
+
+The split that keeps it generic:
+
+* **The grid is derived, never authored** — rows, columns and slot
+  names are read off the LIVE scene component at launch, so the
+  pendant cannot show a rack the bench does not have. A component
+  without rows/cols is skipped with a startup warning.
+* **The states come from the project** — it owns its facts, so it
+  publishes `rt.op(tubes={"A1": "done", "B1": "active", …})`. The
+  platform owns only the GRAMMAR: `done` · `active` · `attention` ·
+  `queued` · `empty`, with muted done, saturated active/attention, and
+  a ✓ / ! badge so state is never carried by colour alone (§7).
 
 Adding a widget to the catalog is one entry in the pendant's registry
 plus one row in the table above — no change to the loader, the

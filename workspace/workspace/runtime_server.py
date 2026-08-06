@@ -417,7 +417,7 @@ def _run_operator_action(rt, fn):
 # The project DECLARES widgets; the platform renders them. Widgets come
 # from a catalog the pendant owns — a project never ships markup, so it
 # cannot drift from the design system.
-HMI_WIDGETS = ("state", "stat", "progress")
+HMI_WIDGETS = ("state", "stat", "progress", "rack")
 
 
 def _load_hmi_spec(workspace) -> dict:
@@ -469,6 +469,23 @@ def _load_hmi_spec(workspace) -> dict:
                 out["warnings"].append(
                     f"unknown widget {name!r} — known: {', '.join(HMI_WIDGETS)}")
                 continue
+            if name == "rack":
+                # The GRID is derived from the live scene component, never
+                # authored: rows, columns and slot names come straight off
+                # the rack in the workspace, so the pendant cannot show a
+                # rack the bench does not have.
+                w = dict(w)
+                comp = (getattr(workspace, "components", {}) or {}).get(w.get("component"))
+                rows = getattr(comp, "rows", None)
+                cols = getattr(comp, "cols", None)
+                if not rows or not cols:
+                    out["warnings"].append(
+                        f"rack widget: component {w.get('component')!r} has no "
+                        f"rows/cols — skipped")
+                    continue
+                w["rows"] = [str(r) for r in rows]
+                w["cols"] = [str(c) for c in cols]
+                w["slots"] = [f"{r}{c}" for r in rows for c in cols]
             out["widgets"].append(w)
     except Exception as ex:
         out["warnings"].append(f"{type(ex).__name__}: {ex}")
