@@ -151,6 +151,29 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
         return None if DEV_NOCACHE else super().compute_etag()
 
 
+class HmiStaticFileHandler(NoCacheStaticFileHandler):
+    """The project's own hmi/ folder.
+
+    The pendant page is served by the orchestrator GUI, on a different
+    port from this runtime server, so every read of a project screen is
+    cross-origin. A <link> stylesheet does not care, but ``fetch()`` (the
+    HTML shape) and ``import()`` (the JS shape) both refuse to hand the
+    body to the page without these headers. Read-only project UI files
+    on the same LAN as an unauthenticated runtime server — nothing here
+    is more exposed than the rest of the API.
+    """
+
+    def set_extra_headers(self, path):
+        super().set_extra_headers(path)
+        self.set_header("Access-Control-Allow-Origin", "*")
+
+    def options(self, *args):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.set_status(204)
+        self.finish()
+
+
 class FallbackStaticHandler(NoCacheStaticFileHandler):
     """Serves from multiple directories — first match wins."""
 
@@ -420,24 +443,43 @@ def _run_operator_action(rt, fn):
 HMI_WIDGETS = ("state", "stat", "progress", "rack")
 
 
-def _load_hmi_spec(workspace) -> dict:
-    """Parse the project's ``hmi:`` file into a validated widget list.
-
-    Returns ``{"widgets": [...], "warnings": [...]}`` — never raises and
-    never blocks a launch: a run must start even when its display
-    declaration is broken. Unknown widget names are dropped WITH a
-    warning (a typo must not silently render nothing); binding keys are
-    NOT checked, since a key legitimately appears only once the action
-    that publishes it runs.
-    """
-    out = {"widgets": [], "warnings": []}
+def _project_dir(workspace):
+    """The project folder, or None. Derived from the scene paths."""
     try:
         paths = getattr(workspace, "config_paths", None) or []
         if not paths:
-            return out
+            return None
         proj = Path(paths[0]).resolve().parent
-        if proj.name == "scene":
-            proj = proj.parent
+        return proj.parent if proj.name == "scene" else proj
+    except Exception:
+        return None
+
+
+def _load_hmi_spec(workspace) -> dict:
+    """Resolve the project's ``hmi:`` declaration.
+
+    Two shapes, and the FILE is the primary one:
+
+      hmi: hmi/pendant.html   → the project ships its own screen. The
+                                platform hosts it (shadow-scoped, design
+                                tokens inherited) and binds rt.op values
+                                into it. Nothing about that screen lives
+                                in the platform.
+      hmi: hmi/hmi.j2         → the built-in widget list, for a project
+                                that wants a default screen with no
+                                front-end work at all.
+
+    Returns ``{"kind": "file"|"widgets", ...}``. Never raises and never
+    blocks a launch: a run must start even when its display is broken.
+    For the widget shape, an unknown widget name is dropped WITH a
+    warning (a typo must not silently render nothing); binding keys are
+    not checked, since a key appears only once its action runs.
+    """
+    out = {"kind": "widgets", "widgets": [], "warnings": []}
+    try:
+        proj = _project_dir(workspace)
+        if proj is None:
+            return out
         launch_path = proj / "launch.yaml"
         if not launch_path.is_file():
             return out
@@ -449,6 +491,19 @@ def _load_hmi_spec(workspace) -> dict:
         if not f.is_file():
             out["warnings"].append(f"hmi file not found: {rel}")
             return out
+
+        # A project-supplied screen: hand the pendant its URL and let it
+        # host the thing. The platform never parses or ships this file's
+        # contents — it is the project's UI, served from the project.
+        if f.suffix.lower() in (".html", ".htm", ".js"):
+            out["kind"] = "file"
+            out["src"] = f"/hmi/{Path(rel).name}"
+            out["kind_hint"] = "js" if f.suffix.lower() == ".js" else "html"
+            css = f.with_suffix(".css")      # beside the screen, not in the root
+            if css.is_file():
+                out["css"] = f"/hmi/{css.name}"
+            return out
+
         text = f.read_text()
         if str(rel).endswith(".j2") or "{%" in text or "{{" in text:
             from jinja2 import Template
@@ -1598,6 +1653,14 @@ class RuntimeServer:
                 devices.subscribe(_on_device_event)
             except Exception:
                 pass
+
+        # Serve the project's own hmi/ folder (its screen, css, modules
+        # and any asset they import). Project-owned files, served from
+        # the project — the platform holds none of it.
+        _proj = _project_dir(workspace)
+        if _proj is not None and (_proj / "hmi").is_dir():
+            routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler,
+                              {"path": str(_proj / "hmi")}))
 
         # Parse the project's HMI declaration once. Warnings are printed
         # at startup (a typo'd widget must be visible then, not silently

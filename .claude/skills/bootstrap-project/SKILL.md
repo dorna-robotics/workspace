@@ -161,13 +161,26 @@ recipes:  recipes.j2
 actions:  actions.py
 checks:   checks.py
 kwargs:   hmi/kwargs.j2      # run parameters (Parameters / run-setup form)
-hmi:      hmi/hmi.j2         # pendant widgets, when the project declares one
+hmi:      hmi/pendant.html   # the project's own pendant screen
 ```
 
-Operator-facing declarations live in **`hmi/`** — run setup and the
-pendant HMI are the same concern. Inline `kwargs:` still works for
+Operator-facing files live in **`hmi/`** — run setup and the pendant
+screen are the same concern. Inline `kwargs:` still works for
 legacy/small projects. Run-parameter field types (including `slots`,
 the rack-position picker) are project-guide §3.
+
+**The pendant screen is the project's own file** — `hmi/pendant.html`
+plus a sibling `pendant.css` (or `pendant.js` when it needs logic).
+The platform hosts it in a shadow root, fills `data-bind` attributes
+from `rt.op`, and passes down the design tokens; it holds no domain
+widgets. Write it against `docs/design-system.md` tokens and never a
+raw hex — that is what makes light/dark work for free. Contract and a
+worked example: **hmi-guide §4b**; bd's screen is the reference.
+
+A project that would rather write no markup can point `hmi:` at an
+`hmi/hmi.j2` widget list instead (hmi-guide §4) — fine for bring-up,
+not where domain features belong. No `hmi:` key at all = the default
+pendant.
 
 ## Scene file ownership + caches
 

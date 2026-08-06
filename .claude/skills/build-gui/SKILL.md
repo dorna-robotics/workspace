@@ -9,7 +9,7 @@ description: "Use when building or changing ANY platform GUI surface — orchest
 
 - "Add a panel / page / widget to the [builder / orchestrator / pendant / vision GUI]"
 - "Make the UI show X" / "improve how Y looks"
-- Any HMI widget work (`hmi.j2` catalog)
+- Any pendant HMI work (a project's own screen, or the fallback catalog)
 - Visual redesign discussions → mockups
 
 ## The contract (read before writing CSS or DOM)
@@ -35,11 +35,19 @@ description: "Use when building or changing ANY platform GUI surface — orchest
 
 ## HMI-specific work
 
-`docs/hmi-guide.md` — the pendant HMI design: widget catalog, hmi.j2
-declaration model, rt.op() channel, bench subway map grammar, guided
-recovery, parameter presets. Mockups: `docs/internal/hmi_mockups/`
-(preview: `python3 -m http.server 8123` from the bench copy — see
-hmi-guide §9).
+`docs/hmi-guide.md` — the pendant HMI: the `rt.op()` channel (§3), the
+project-screen contract (§4b), the fallback widget catalog (§4), bench
+subway map grammar, guided recovery, parameter presets. Mockups:
+`docs/internal/hmi_mockups/` (preview: `python3 -m http.server 8123`
+from the bench copy — see hmi-guide §9).
+
+**The rule that decides where HMI work goes** (hmi-guide §2): the
+platform owns the channel, the frame and the tokens; the PROJECT owns
+its screen, as a file in its own `hmi/` folder. If a request sounds like
+"add a widget for tubes / discs / plates", it is a project screen, not a
+platform change — domain UI in the platform is carried by every project
+forever. Platform-side HMI work is the generic half only: transport,
+hosting, bindings, tokens.
 
 ## Wiring facts (hard-won, do not rediscover)
 

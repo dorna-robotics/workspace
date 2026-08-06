@@ -815,6 +815,133 @@ function buildHmi(spec) {
   _hmiBuilt = true;
 }
 
+
+// ── The project's own screen ────────────────────────────────────────
+// ``hmi: hmi/pendant.html`` (or .js) in launch.yaml means the PROJECT
+// ships its UI and the platform just hosts it. Nothing about that
+// screen lives in the platform — no widget for it, no CSS for it.
+//
+// What the host guarantees:
+//   * a SHADOW ROOT — the project's CSS cannot leak out (it can never
+//     restyle Kill or the rail) and platform CSS cannot surprise it;
+//   * DESIGN TOKENS still reach in — CSS custom properties inherit
+//     through the shadow boundary, so var(--accent) / var(--space-3)
+//     work and the screen follows the light/dark toggle for free;
+//   * live values — rt.op deltas are applied to the bindings below,
+//     or handed to the module's update() for the JS shape.
+//
+// Declarative bindings for the HTML shape (no JS needed):
+//   data-bind="key"                  → element text = value
+//   data-bind="key" data-unit="g"    → value + unit
+//   data-bind-map="key" data-slot="A1"
+//                                    → data-state attribute = map[A1]
+//                                      (style it in your own CSS)
+//   data-bind-attr="key" data-attr="src"  → sets any attribute
+let _hmiHost = null;      // {shadow, module|null, binds}
+
+async function mountProjectHmi(spec) {
+  const el = $("pendantHmi");
+  if (!el || !spec || !spec.src) return;
+  el.innerHTML = "";
+  el.style.display = "";
+  const shadow = el.shadowRoot || el.attachShadow({ mode: "open" });
+  shadow.innerHTML = "";
+  _hmiHost = { shadow, module: null, binds: [] };
+
+  const base = (_devicesUrl || "").replace(/\/$/, "");
+  const url = p => (base ? base + p : p);
+
+  try {
+    if (spec.css) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = url(spec.css);
+      shadow.appendChild(link);
+    }
+    if (spec.kind_hint === "js") {
+      const mod = await import(/* webpackIgnore: true */ url(spec.src));
+      const def = mod.default || mod;
+      _hmiHost.module = def;
+      if (def.css) {
+        const st = document.createElement("style");
+        st.textContent = def.css;
+        shadow.appendChild(st);
+      }
+      const api = {
+        get values() { return { ..._opValues }; },
+        get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
+        onTheme(cb) { (_hmiHost.themeCbs ||= []).push(cb); },
+        // The same operator-action path the platform buttons use — a
+        // project screen can trigger declared actions, nothing more.
+        invoke(component, method) { return runOperatorAction(component, method); },
+      };
+      if (typeof def.mount === "function") await def.mount(shadow, api);
+      if (typeof def.update === "function") def.update({ ..._opValues });
+    } else {
+      const res = await fetch(url(spec.src));
+      const html = await res.text();
+      const wrap = document.createElement("div");
+      wrap.innerHTML = html;
+      shadow.appendChild(wrap);
+      _hmiHost.binds = [
+        ...shadow.querySelectorAll("[data-bind],[data-bind-map],[data-bind-attr]"),
+      ];
+      applyProjectHmiValues();
+    }
+  } catch (err) {
+    console.error("project HMI failed to load:", err);
+    const note = document.createElement("div");
+    note.style.cssText = "padding:16px;color:var(--muted);font:14px system-ui";
+    note.textContent = "This project's HMI failed to load — see the console. "
+                     + "The run is unaffected.";
+    shadow.appendChild(note);
+  }
+}
+
+function applyProjectHmiValues() {
+  if (!_hmiHost) return;
+  // JS shape: hand the module the values and let it decide.
+  if (_hmiHost.module) {
+    try {
+      if (typeof _hmiHost.module.update === "function") {
+        _hmiHost.module.update({ ..._opValues });
+      }
+    } catch (err) { console.error("HMI update() threw:", err); }
+    return;
+  }
+  // HTML shape: the platform does the binding.
+  for (const el of _hmiHost.binds) {
+    try {
+      const k = el.dataset.bind;
+      if (k) {
+        const v = _opValues[k];
+        el.textContent = (v === undefined || v === null)
+          ? "" : String(v) + (el.dataset.unit ? " " + el.dataset.unit : "");
+      }
+      const mk = el.dataset.bindMap;
+      if (mk) {
+        const m = _opValues[mk] || {};
+        const slot = el.dataset.slot;
+        el.setAttribute("data-state", (slot && m[slot]) ? String(m[slot]) : "empty");
+      }
+      const ak = el.dataset.bindAttr;
+      if (ak && el.dataset.attr) {
+        const v = _opValues[ak];
+        if (v === undefined || v === null) el.removeAttribute(el.dataset.attr);
+        else el.setAttribute(el.dataset.attr, String(v));
+      }
+    } catch (_) {}
+  }
+}
+
+// Theme toggle reaches project modules that draw (canvas, images).
+new MutationObserver(() => {
+  const t = document.documentElement.getAttribute("data-theme") || "dark";
+  for (const cb of (_hmiHost && _hmiHost.themeCbs) || []) {
+    try { cb(t); } catch (_) {}
+  }
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 function applyOpState(payload) {
   if (!payload) return;
   // A gap in ``rev`` means we missed a delta — ask for the full state
@@ -833,6 +960,7 @@ function applyOpState(payload) {
                   inst.detailBind ? _opValues[inst.detailBind] : undefined);
     }
   }
+  applyProjectHmiValues();
 }
 
 function _resyncOpState() {
@@ -874,7 +1002,8 @@ function _dispatchMuxMessage(env) {
     }
     case "hmi_spec": {
       _hmiSpec = payload;
-      buildHmi(payload);
+      if (payload && payload.kind === "file") mountProjectHmi(payload);
+      else buildHmi(payload);
       break;
     }
     case "runtime_status": {

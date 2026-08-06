@@ -14,9 +14,10 @@ projects/my_project/
 ├── states.py            # State handlers (what the robot does)
 ├── checks.py            # Verification checks (pre/post)
 ├── recipes.j2           # Component aliases → recipe classes (or recipes.yaml)
-├── hmi/                 # OPERATOR-FACING declarations (see §3)
+├── hmi/                 # OPERATOR-FACING files (see §3)
 │   ├── kwargs.j2        # Run parameters — the Parameters / run-setup form
-│   └── hmi.j2           # Pendant HMI widgets (when the project declares one)
+│   ├── pendant.html     # The project's pendant screen (+ pendant.css)
+│   └── hmi.j2           # …or a platform widget list, if writing no markup
 └── scene/
     ├── base.j2          # Hardware layout (Jinja2)
     └── layout.j2        # Spatial arrangement
@@ -197,7 +198,10 @@ works in either container.
 
 Unlisted fields stack below in declaration order; rows wrap to a
 single column on narrow screens (pendant portrait). This is the only
-layout vocabulary — projects never ship markup or CSS (hmi-guide §2).
+layout vocabulary for the **run-setup form** — a project never ships
+markup or CSS for its parameters, because a list of typed fields is a
+genuine declaration. Its pendant SCREEN is the opposite case and is a
+project-owned file (hmi-guide §2, §4b).
 
 ### Compatibility rule for declarative files
 
@@ -244,8 +248,13 @@ If `batch_size` or `horizon` are in your kwargs, they override the defaults for 
 ### `rt.op(**values)` — operator-facing values
 
 `rt.step` is the engineer timeline (append). `rt.op` is the operator
-value channel (replace): actions publish what a pendant widget binds
-to, and writing a key again overwrites it.
+value channel (replace): actions publish what the project's pendant
+screen binds to, and writing a key again overwrites it.
+
+An action publishes plain values and stays ignorant of the UI; the
+screen (`hmi/pendant.html`, hmi-guide §4b) decides how they look. A
+map value is how a rack is driven — `rt.op(tubes={"A1": "done"})` sets
+`data-state` on whatever element claims `data-slot="A1"`.
 
 ```python
 rt.step(f"tube {t+1}: weighed")          # timeline entry

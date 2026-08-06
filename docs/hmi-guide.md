@@ -1,8 +1,12 @@
 # HMI — operator-facing pendant, declarative per project
 
-**Status: design discussion captured, implementation NOT started.** This
-document records the direction agreed after client feedback on the pendant;
-we will return to it. Companion visual reference: the static mockups in
+**Status: shipped.** The `rt.op` channel (§3), the project-screen host
+(§4b) and the fallback widget catalog (§4) are built and in use by bd.
+The bench map (§5) and guided recovery (§6) remain design.
+
+**Start at §2 and §4b** — the project owns its screen, the platform owns
+the data and the frame. §2 records a reversal of this document's original
+principle and why. Companion visual reference: the static mockups in
 `docs/internal/hmi_mockups/` (disposable — see §9 Housekeeping).
 
 ## 1. The trigger (client feedback, verbatim spirit)
@@ -21,19 +25,52 @@ language, and per-project relevance must not mean per-project web code.
 
 ## 2. The principle
 
-**The project declares, the platform renders** — the same pattern as
-`operator_actions` (labels → icons → groups, all declared by components,
-all rendered by one UI). Concretely:
+**The platform owns the data and the frame; the project owns its
+screen.** The workspace carries no domain UI — no tube widget, no disc
+widget, no rack-that-knows-what-a-falcon-is. Concretely:
 
-- Each project ships an **`hmi.j2`** (separate file, next to `recipes.j2`).
-- It lists **widgets from a platform-owned catalog**, each bound to a data
-  source. No project ever contains HTML/JS.
-- A project with no `hmi.j2` gets today's default pendant — nothing breaks.
+- A project ships **its own screen file** — `hmi/pendant.html` (+ an
+  optional sibling `.css`) or `hmi/pendant.js` — and points `launch.yaml`
+  at it with `hmi: hmi/pendant.html`. This is the primary path. §4b is
+  the contract.
+- The platform hosts that file in the pendant's content area, hands it
+  live values from `rt.op`, and gives it the design tokens. It never
+  interprets what the values MEAN.
+- A project with no `hmi:` key gets today's default pendant — unchanged,
+  forever.
 
-Rejected alternative: per-project HTML pages. Maximum flexibility, but it
-turns protocol authors into web developers, fractures the design language,
-and rots. Every serious player (Grafana panels, Ignition faceplates,
-Opentrons' run app) converged on declarative widgets + data binding.
+**This reverses an earlier decision, deliberately.** v1 of this document
+rejected per-project HTML in favour of a platform-owned widget catalog
+(the `operator_actions` precedent; Grafana/Ignition/Opentrons all
+converged on declarative widgets). We built that catalog — `state`,
+`stat`, `progress`, `rack` — and then used it for bd. What it showed:
+
+- every genuinely useful widget was **domain-shaped**. The `rack` widget
+  needed a slot-state grammar, then a detail pane, then per-slot records
+  — each one a piece of one project's problem, permanently in the
+  platform, carried by every project that will never use it.
+- the catalog can only ever be as expressive as its last addition, so
+  each project's real ask arrived as a platform change — the opposite of
+  scalable.
+
+The generic half was never the problem, and it stays: the channel, the
+transport, the hosting, the tokens. Only the *domain* half moves out.
+
+**What keeps this from fracturing the design language** — the objection
+that drove v1, which is real:
+
+- the screen renders inside the platform's frame (navbar, control rail,
+  state pill, alarms) — a project styles its content area, not the
+  pendant;
+- it inherits the **design tokens** (`--accent`, `--surface`, `--space-*`,
+  `--radius-*`). Following them is the path of least effort, and light/
+  dark then works with no theme code in the project (verified: bd's CSS
+  names no colour, and its screen flips with the toggle);
+- `docs/design-system.md` is the reference a project screen is held to.
+
+The cost — a protocol author now writes some HTML — is real and accepted.
+It is bounded: the HTML shape (§4b) is markup plus `data-bind`
+attributes, no JavaScript, and bd's whole screen is 45 lines.
 
 ## 3. Data channels (bindings)
 
@@ -96,7 +133,91 @@ Three sources; two exist, one is a small addition:
      to the SD card. `rev` keeps climbing across runs so a reconnecting
      client never sees it go backwards.
 
-## 4. Widget catalog (v1 candidates — all mocked in the gallery)
+## 4b. The project screen — the contract (IMPLEMENTED, primary path)
+
+`launch.yaml`:
+
+```yaml
+hmi: hmi/pendant.html     # or hmi/pendant.js
+```
+
+Everything under the project's `hmi/` folder is served by the runtime
+server at `/hmi/…`, so a screen can pull in its own css, modules and
+assets with plain relative paths. The pendant is served by the
+orchestrator on a **different port**, so those files carry
+`Access-Control-Allow-Origin: *` (`HmiStaticFileHandler`) — without it
+`fetch()` and `import()` refuse the body and the screen never mounts.
+
+**Hosting.** The file is mounted in a **shadow root** on the pendant's
+content area. That gives isolation in both directions — project CSS
+cannot reach the rail or the navbar, platform CSS cannot restyle the
+project's markup — while **CSS custom properties inherit through the
+shadow boundary**, so design tokens and the theme toggle just work.
+A screen that fails to load leaves a quiet note in place; **the run is
+never affected**.
+
+### The HTML shape — markup + `data-bind`, no JavaScript
+
+```html
+<h1 data-bind="state">—</h1>
+<span data-bind="weight" data-unit="g">—</span>
+<div class="slot" data-bind-map="tubes" data-slot="A1">A1</div>
+<img data-bind-attr="last_image" data-attr="src">
+```
+
+| attribute | effect |
+|---|---|
+| `data-bind="key"` | element text ← `rt.op` key (`data-unit` appends a unit) |
+| `data-bind-map="key"` + `data-slot="A1"` | sets `data-state` from `{slot: state}`; **style it in your own CSS** |
+| `data-bind-attr="key"` + `data-attr="src"` | sets any attribute — images, links, progress values |
+
+`data-bind-map` is how a rack is drawn now: the project writes 20 divs
+and its own CSS for `[data-state="done"]`, and the platform stays
+ignorant of racks. The state names are the project's own — the
+six-state grammar in §4 is a *recommendation* that reads well, not a
+platform rule.
+
+### The JS shape — for screens with logic
+
+```js
+export default {
+  css: `.chart { color: var(--accent); }`,        // optional
+  mount(root, api) { … },                          // root = the shadow root
+  update(values) { … },                            // every rt.op delta
+};
+```
+
+`api` is deliberately small: `values` (current snapshot), `theme`
+(`"light"`/`"dark"`), `onTheme(cb)` (fires on toggle — for canvas and
+anything else that must repaint), and `invoke(component, method)`,
+which routes to the **same declared `operator_action` path** the
+platform's own buttons use. A screen can trigger what a component
+already declares, and nothing more — it gets no runtime handle, no
+device handle, no way to command the robot.
+
+Use JS when the screen computes (charts, canvas, animation, derived
+values); use HTML for everything else. A `.js` screen can import its
+own modules from `hmi/` normally.
+
+Verified end to end for both shapes: shadow attach, `mount`/`update`,
+token resolution inside the shadow CSS (`#007aff` light →
+`rgb(10,132,255)` dark), `onTheme` on toggle, and isolation from the
+host document.
+
+## 4. Widget catalog — the no-front-end fallback
+
+`hmi: hmi/hmi.j2` gets a stacked list of platform-drawn widgets instead
+of a project screen. It exists for the project that wants a usable
+operator face without writing any markup — a bring-up bench, an
+internal test rig, a first day on a new protocol.
+
+**It is not where new work goes.** Widgets already shipped
+(`state`, `stat`, `progress`, `rack`) stay and keep working; the rest of
+this table is a record of what was *considered*, not a roadmap. A new
+domain need is a project screen (§4b), not a new catalog entry —
+anything domain-shaped added here is carried by every project forever
+(§2). The generic ones that may still earn their place are the ones
+bound to platform data, not project data: `timer`, `devices`, `alert`.
 
 | Widget | Shows | Binds |
 |---|---|---|
@@ -115,9 +236,6 @@ Three sources; two exist, one is a small addition:
 | `scan` | last barcode, big mono | `rt.op` key |
 | `queue` | upcoming batches | platform |
 | `keyval` | small table (operator, recipe, started) | mixed |
-
-Catalog is **expandable by design**: one renderer entry per widget (exactly
-like the operator-icon set); projects gain new widgets with zero changes.
 
 ### Declaration + widgets (implemented: `state`, `stat`, `progress`, `rack`)
 
@@ -341,17 +459,27 @@ Two acceptable designs, in preference order:
 Until a project actually needs it, neither is built: `slots` covered
 the case that motivated the question.
 
-**HTML for the HMI stays rejected** (§2): per-project HTML fractures
-the design language and turns protocol authors into web developers.
-If declaration-order layout proves too thin, the answer is layout
-HINTS in the same YAML (`row:` grouping, like operator-action groups),
-not markup.
+**The HMI is where YAML stopped, and we crossed the line on purpose**
+(§2). A screen is not a declaration — it is a layout, and every attempt
+to declare one ends in the platform owning domain widgets. So the
+project's screen is a FILE it writes. Note the asymmetry with kwargs
+above: run inputs are genuinely a list of typed fields, so they stay
+YAML; a screen is not, so it does not.
+
+The constraint that made this safe is that the pendant is the only
+thing that reads it — no orchestrator import, no project code in the
+GUI process. The screen is fetched over HTTP and mounted in a shadow
+root, so a broken screen is a blank content area, not a broken launch.
 
 ## 11. Decision log
 
 | Decision | Why |
 |---|---|
-| Declarative widget catalog, no per-project HTML | Platform pattern (operator_actions precedent); industry convergence; protocol authors are not web developers. |
+| ~~Declarative widget catalog, no per-project HTML~~ | Platform pattern (operator_actions precedent); industry convergence; protocol authors are not web developers. **REVERSED — see the row below.** Kept here so the argument is not re-litigated from scratch: the design-language risk it names is real, and §2 says how hosting answers it. |
+| **The project's screen is a file it owns** (`hmi/pendant.html` / `.js`); the platform hosts it and feeds it `rt.op` | Building the catalog proved the objection: every useful widget was domain-shaped, so the platform accumulated one project's problem (rack → slot grammar → detail pane → per-slot records) and each new need arrived as a platform change. The workspace carries the channel, the frame and the tokens — never the domain. |
+| Hosted in a shadow root, tokens inherit through the boundary | Isolation both ways (project CSS cannot reach the rail; platform CSS cannot restyle the project) while `--accent`/`--surface`/`--space-*` still resolve — so following the design system is the low-effort path and light/dark needs no project code. |
+| Screen reaches the platform only via `invoke()` → declared `operator_action` | A project screen gets no runtime, device or motion handle — it can trigger what a component already declares, and nothing else. |
+| Widget catalog demoted to the no-front-end fallback | Still the right answer for a bring-up bench with no markup; wrong as the place domain features land. |
 | Separate `hmi.j2` per project | User decision; mirrors recipes.j2 / datasets.j2. |
 | `rt.op()` operator-language channel; `rt.step` demoted to details | Monitoring text must be operator words; engineer timeline preserved but not the default face. |
 | Bench map = subway map, not realistic top view | 3D viewer already owns realism; HMI's job is state-at-a-glance; schematic scales to any bench automatically. |
