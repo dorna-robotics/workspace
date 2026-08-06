@@ -5,7 +5,7 @@ const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" s
 const _infoSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
-// ── the project's own run-setup screen (``params:``) ─────────────────
+// ── the project's own run-setup screen (``setup:``) ──────────────────
 //
 // Same hosting contract as the pendant screen (hmi-guide §4b) with one
 // addition: this one produces VALUES, so it also answers value() and
@@ -32,11 +32,11 @@ function readBoundFields(root) {
   return out;
 }
 
-async function mountProjectParams(container, schema, values, frozen, wsName) {
-  const spec = schema._params || {};
-  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/params/`;
+async function mountProjectSetup(container, schema, values, frozen, wsName) {
+  const spec = schema._setup || {};
+  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/`;
   const holder = document.createElement("div");
-  holder.className = "kw-project-params";
+  holder.className = "kw-project-setup";
   container.appendChild(holder);
   const shadow = holder.attachShadow({ mode: "open" });
   // Fields the screen does not draw keep their declared default (or the
@@ -49,7 +49,7 @@ async function mountProjectParams(container, schema, values, frozen, wsName) {
     if (values?.[k] !== undefined) baseValues[k] = values[k];
   }
   const host = { shadow, module: null, base: baseValues };
-  container._paramsHost = host;
+  container._setupHost = host;
 
   try {
     if (spec.css) {
@@ -100,8 +100,8 @@ async function mountProjectParams(container, schema, values, frozen, wsName) {
       }
     }
   } catch (err) {
-    console.error("project params screen failed to load:", err);
-    container._paramsHost = null;
+    console.error("project setup screen failed to load:", err);
+    container._setupHost = null;
     shadow.innerHTML = "";
     const note = document.createElement("div");
     note.style.cssText = "padding:16px;color:var(--muted);font:14px var(--font,system-ui)";
@@ -111,11 +111,11 @@ async function mountProjectParams(container, schema, values, frozen, wsName) {
   }
 }
 
-// Theme toggle reaches a params screen that draws.
+// Theme toggle reaches a setup screen that draws.
 new MutationObserver(() => {
   const t = document.documentElement.getAttribute("data-theme") || "dark";
   document.querySelectorAll(".kwargs-form").forEach(c => {
-    for (const cb of (c._paramsHost && c._paramsHost.themeCbs) || []) {
+    for (const cb of (c._setupHost && c._setupHost.themeCbs) || []) {
       try { cb(t); } catch (_) {}
     }
   });
@@ -131,13 +131,13 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   if (container._kwargsSig === sig) return;
   container._kwargsSig = sig;
   container.innerHTML = "";
-  // A project that ships its own run-setup screen (``params:``) draws
+  // A project that ships its own run-setup screen (``setup:``) draws
   // the whole body; the platform keeps the modal chrome, the Start /
   // Launch buttons and schema validation. The generic form below is
   // for everyone else.
-  container._paramsHost = null;
-  if (schema && schema._params) {
-    mountProjectParams(container, schema, values, frozen, wsName);
+  container._setupHost = null;
+  if (schema && schema._setup) {
+    mountProjectSetup(container, schema, values, frozen, wsName);
     return;
   }
   // ``_layout`` is a LAYOUT HINT, not a field: a list of rows, each a
@@ -385,7 +385,7 @@ export function validateKwargsForm(container, schema) {
   // has nothing to walk. Validate what it RETURNS against the schema
   // instead — the schema is the contract, and a project screen is not
   // trusted to enforce it — then let the screen add its own message.
-  const host = container._paramsHost;
+  const host = container._setupHost;
   if (host) {
     const values = readKwargsForm(container);
     for (const [key, spec] of Object.entries(schema || {})) {
@@ -410,7 +410,7 @@ export function validateKwargsForm(container, schema) {
       try {
         const msg = host.module.validate();
         if (msg) errors.push(String(msg));
-      } catch (err) { console.error("params validate() threw:", err); }
+      } catch (err) { console.error("setup validate() threw:", err); }
     }
     return errors;
   }
@@ -545,7 +545,7 @@ export function loadKwargsFromFile(container, toastFn) {
 
 export function readKwargsForm(container) {
   // A project screen owns its own state; ask it for the values.
-  const host = container._paramsHost;
+  const host = container._setupHost;
   if (host) {
     try {
       const v = host.module && typeof host.module.value === "function"
@@ -555,7 +555,7 @@ export function readKwargsForm(container) {
       // operator emptied it, not "fall back to the default".
       return { ...(host.base || {}), ...((v && typeof v === "object") ? v : {}) };
     } catch (err) {
-      console.error("params value() threw:", err);
+      console.error("setup value() threw:", err);
       return {};
     }
   }

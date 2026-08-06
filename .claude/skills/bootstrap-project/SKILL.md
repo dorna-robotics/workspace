@@ -161,19 +161,20 @@ recipes:  recipes.j2
 actions:  actions.py
 checks:   checks.py
 kwargs:   hmi/kwargs.j2      # the SCHEMA — what a run takes
-params:   hmi/params.js      # run setup — how the operator sets it
-hmi:      hmi/pendant.html   # the pendant screen during the run
+setup:    hmi/setup.js       # screen BEFORE the run
+pendant:  hmi/pendant.html   # screen DURING the run
 ```
 
 Operator-facing files live in **`hmi/`**. Inline `kwargs:` still works
 for legacy/small projects. Field types are project-guide §3.
 
-**Which of the three you need.** `kwargs:` always — it is the schema,
-and it is read headlessly by `bt.replay`, so it stays YAML and never
-describes how anything looks. `params:` only when run setup needs more
-than rows of scalars (picking WHICH rack positions to run — that is a
-picture of your hardware, so you draw it). `hmi:` only when the pendant
-should show something during the run.
+**One contract, two screens.** `kwargs:` always — it is the schema, read
+headlessly by `bt.replay`, so it stays YAML and never describes how
+anything looks. `setup:` only when run setup needs more than rows of
+scalars (picking WHICH rack positions to run — that is a picture of your
+hardware, so you draw it). `pendant:` only when the pendant should show
+something during the run. The two screens are named for WHEN they
+appear; both are project files (`.html` or `.js`).
 
 **The pendant screen is the project's own file** — `hmi/pendant.html`
 plus a sibling `pendant.css` (or `pendant.js` when it needs logic).
@@ -183,9 +184,9 @@ widgets. Write it against `docs/design-system.md` tokens and never a
 raw hex — that is what makes light/dark work for free. Contract and a
 worked example: **hmi-guide §4b**; bd's screen is the reference.
 
-A project that would rather write no markup can point `hmi:` at an
+A project that would rather write no markup can point `pendant:` at an
 `hmi/hmi.j2` widget list instead (hmi-guide §4) — fine for bring-up,
-not where domain features belong. No `hmi:` key at all = the default
+not where domain features belong. No `pendant:` key at all = the default
 pendant.
 
 ## Scene file ownership + caches

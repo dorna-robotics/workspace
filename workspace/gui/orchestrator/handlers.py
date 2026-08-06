@@ -99,8 +99,8 @@ class RemoveWorkspaceHandler(AuthedHandler):
             self.write({"error": str(e)})
 
 
-class ProjectParamsFileHandler(tornado.web.RequestHandler):
-    """Serves a project's own run-setup screen (``params:``) and the
+class ProjectSetupFileHandler(tornado.web.RequestHandler):
+    """Serves a project's own run-setup screen (``setup:``) and the
     files beside it, out of the project's ``hmi/`` folder.
 
     The Parameters modal is used BEFORE launch, so the runtime server
@@ -116,9 +116,9 @@ class ProjectParamsFileHandler(tornado.web.RequestHandler):
     async def get(self, name, rel):
         try:
             ws = self.orch.workspaces.get(name)
-            spec = ws.params_spec() if ws else None
+            spec = ws.setup_spec() if ws else None
             if not spec:
-                raise ValueError("no params screen declared")
+                raise ValueError("no setup screen declared")
             root = Path(spec["dir"]).resolve()
             target = (root / rel).resolve()
             # Confine to the declared folder — a project screen may pull

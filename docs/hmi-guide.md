@@ -31,12 +31,12 @@ widget, no rack-that-knows-what-a-falcon-is. Concretely:
 
 - A project ships **its own screen file** — `hmi/pendant.html` (+ an
   optional sibling `.css`) or `hmi/pendant.js` — and points `launch.yaml`
-  at it with `hmi: hmi/pendant.html`. This is the primary path. §4b is
+  at it with `pendant: hmi/pendant.html`. This is the primary path. §4b is
   the contract.
 - The platform hosts that file in the pendant's content area, hands it
   live values from `rt.op`, and gives it the design tokens. It never
   interprets what the values MEAN.
-- A project with no `hmi:` key gets today's default pendant — unchanged,
+- A project with no `pendant:` key gets today's default pendant — unchanged,
   forever.
 
 **This reverses an earlier decision, deliberately.** v1 of this document
@@ -138,7 +138,7 @@ Three sources; two exist, one is a small addition:
 `launch.yaml`:
 
 ```yaml
-hmi: hmi/pendant.html     # or hmi/pendant.js
+pendant: hmi/pendant.html     # or hmi/pendant.js
 ```
 
 Everything under the project's `hmi/` folder is served by the runtime
@@ -206,7 +206,7 @@ host document.
 
 ## 4. Widget catalog — the no-front-end fallback
 
-`hmi: hmi/hmi.j2` gets a stacked list of platform-drawn widgets instead
+`pendant: hmi/hmi.j2` gets a stacked list of platform-drawn widgets instead
 of a project screen. It exists for the project that wants a usable
 operator face without writing any markup — a bring-up bench, an
 internal test rig, a first day on a new protocol.
@@ -239,7 +239,7 @@ bound to platform data, not project data: `timer`, `devices`, `alert`.
 
 ### Declaration + widgets (implemented: `state`, `stat`, `progress`, `rack`)
 
-`launch.yaml` points at the file (`hmi: hmi/hmi.j2`); the runtime
+`launch.yaml` points at the file (`pendant: hmi/hmi.j2`); the runtime
 server parses it ONCE at construction, validates every entry against
 the platform's widget catalog, and ships the result to the pendant as
 an `hmi_spec` envelope on connect. Rules:
@@ -251,7 +251,7 @@ an `hmi_spec` envelope on connect. Rules:
   once the action that publishes it runs.
 * A broken or missing file **never blocks a launch** — the project
   falls back to the default pendant.
-* A project with no `hmi:` key is unchanged, forever.
+* A project with no `pendant:` key is unchanged, forever.
 
 **The `rack` widget** is the site-visit ask — every position of a real
 rack, live:
@@ -442,12 +442,12 @@ derived the rack grid from the scene. It proved the opposite: the
 platform ended up owning a rack picker, tab bars and slot thumbnails —
 one project's hardware, carried by everyone, and the next project's
 tray or carousel would have been another platform change. So the
-schema stayed YAML and the FORM became a project file (`params:`,
+schema stayed YAML and the FORM became a project file (`setup:`,
 project-guide §3), hosted exactly like the pendant screen.
 
 The split that makes both true at once:
 
-| | schema (`kwargs:`) | form (`params:`) |
+| | schema (`kwargs:`) | form (`setup:`) |
 |---|---|---|
 | answers | what a run takes | how an operator picks it |
 | read by | replay, CLI, launch, GUI | the GUI only |
@@ -508,6 +508,6 @@ root, so a broken screen is a blank content area, not a broken launch.
 | Guided recovery: one sentence + one operator_action button | Operators need the next action, not a dashboard; all machinery already exists. |
 | Parameters: presets + touch widgets over the existing kwargs schema | Converts a debug form into run setup without discarding the schema. |
 | Run inputs stay in the kwargs schema; the form only presents them | One source of truth for what a run takes; two definitions drift. |
-| Schema stays YAML, the run-setup FORM becomes a project file (`params:`) | The schema is read headlessly (replay, CLI, launch) so it cannot be markup; the form is read only by the GUI. `type: slots` had put a rack picker, tab bar and slot thumbnails in the platform — deleted, and bd now draws its own (project-guide §3). |
+| Schema stays YAML, the run-setup FORM becomes a project file (`setup:`) | The schema is read headlessly (replay, CLI, launch) so it cannot be markup; the form is read only by the GUI. `type: slots` had put a rack picker, tab bar and slot thumbnails in the platform — deleted, and bd now draws its own (project-guide §3). |
 | YAML/j2 for kwargs + HMI; Python only via the workspace process, never imported by the orchestrator | Both are declarations, and the platform derives the rest (grid from the scene). The GUI must not import project code — hardware imports; the builder needed dorna2 stubs for the same reason. |
 | Differentiators to invest in: bench map + guided recovery | Bench map is zero-config (derived from scene — competitors hand-draw screens); recovery kills the "written for programmers" complaint. |

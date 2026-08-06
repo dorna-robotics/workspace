@@ -246,7 +246,7 @@ class WorkspaceInfo:
         limits — and nothing about how it looks. A project that wants a
         richer run-setup screen than the generic form ships its own,
         declared as ``params:`` and surfaced here as the reserved
-        ``_params`` key (see ``params_spec``).
+        ``_setup`` key (see ``setup_spec``).
         """
         try:
             launch_path = Path(self.path_to_file).parent / "launch.yaml"
@@ -257,20 +257,20 @@ class WorkspaceInfo:
             schema = load_kwargs_schema(data, launch_path.parent)
             if not isinstance(schema, dict):
                 return schema
-            params = self.params_spec(data, launch_path.parent)
-            if params:
+            setup = self.setup_spec(data, launch_path.parent)
+            if setup:
                 schema = dict(schema)
-                schema["_params"] = params
+                schema["_setup"] = setup
             return schema
         except Exception:
             return None
 
-    def params_spec(self, launch: Optional[Dict] = None,
+    def setup_spec(self, launch: Optional[Dict] = None,
                     proj: Optional[Path] = None) -> Optional[Dict]:
-        """Resolve ``params:`` — the project's own run-setup screen.
+        """Resolve ``setup:`` — the project's own run-setup screen.
 
-        Returns ``{"src": "params.html", "kind": "html"|"js",
-        "css": "params.css"|None}`` (names relative to the project's
+        Returns ``{"src": "setup.html", "kind": "html"|"js",
+        "css": "setup.css"|None}`` (names relative to the project's
         ``hmi/`` folder, which the orchestrator serves), or None when
         the project declares none and the generic form should be used.
 
@@ -286,8 +286,14 @@ class WorkspaceInfo:
                 with open(launch_path) as f:
                     launch = yaml.safe_load(f) or {}
                 proj = launch_path.parent
-            rel = (launch or {}).get("params")
+            rel = (launch or {}).get("setup")
             if not rel or not isinstance(rel, str):
+                # Renamed from ``params:`` (too close to ``kwargs:`` to
+                # tell apart). Don't drop the screen in silence.
+                if (launch or {}).get("params"):
+                    print("[setup] launch.yaml: `params:` was renamed to "
+                          "`setup:` — the screen is NOT loaded until you "
+                          "rename it")
                 return None
             f = Path(proj) / rel
             if not f.is_file():

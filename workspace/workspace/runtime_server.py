@@ -285,7 +285,7 @@ class StatusHandler(tornado.web.RequestHandler):
 OP_FLUSH_MS = 100
 
 # Parsed hmi.j2 for this workspace — set once in RuntimeServer.__init__.
-_HMI_SPEC: dict = {"widgets": [], "warnings": []}
+_PENDANT_SPEC: dict = {"widgets": [], "warnings": []}
 
 _step_ws_clients: set = set()
 _status_ws_clients: set = set()
@@ -455,17 +455,17 @@ def _project_dir(workspace):
         return None
 
 
-def _load_hmi_spec(workspace) -> dict:
-    """Resolve the project's ``hmi:`` declaration.
+def _load_pendant_spec(workspace) -> dict:
+    """Resolve the project's ``pendant:`` declaration.
 
     Two shapes, and the FILE is the primary one:
 
-      hmi: hmi/pendant.html   → the project ships its own screen. The
+      pendant: hmi/pendant.html  → the project ships its own screen. The
                                 platform hosts it (shadow-scoped, design
                                 tokens inherited) and binds rt.op values
                                 into it. Nothing about that screen lives
                                 in the platform.
-      hmi: hmi/hmi.j2         → the built-in widget list, for a project
+      pendant: hmi/hmi.j2        → the built-in widget list, for a project
                                 that wants a default screen with no
                                 front-end work at all.
 
@@ -484,12 +484,20 @@ def _load_hmi_spec(workspace) -> dict:
         if not launch_path.is_file():
             return out
         launch = yaml.safe_load(launch_path.read_text()) or {}
-        rel = launch.get("hmi")
+        rel = launch.get("pendant")
         if not rel:
-            return out                      # no hmi.j2 → default pendant
+            # ``hmi:`` and ``params:`` were renamed to ``pendant:`` and
+            # ``setup:`` — same meaning, clearer names (they used to read
+            # as synonyms of ``kwargs:``). Say so instead of silently
+            # dropping the screen.
+            if launch.get("hmi"):
+                out["warnings"].append(
+                    "launch.yaml: `hmi:` was renamed to `pendant:` — the "
+                    "screen is NOT loaded until you rename it")
+            return out                      # no declaration → default pendant
         f = proj / str(rel)
         if not f.is_file():
-            out["warnings"].append(f"hmi file not found: {rel}")
+            out["warnings"].append(f"pendant file not found: {rel}")
             return out
 
         # A project-supplied screen: hand the pendant its URL and let it
@@ -1261,7 +1269,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
 
             # HMI declaration — what this project wants displayed. Sent
             # once on connect; it is static for the life of the run.
-            self._send("hmi_spec", _HMI_SPEC)
+            self._send("pendant_spec", _PENDANT_SPEC)
 
             # Devices — bulk snapshot in one envelope (more efficient
             # than N device_state envelopes on connect).
@@ -1648,12 +1656,12 @@ class RuntimeServer:
         # Parse the project's HMI declaration once. Warnings are printed
         # at startup (a typo'd widget must be visible then, not silently
         # missing on the pendant hours later).
-        global _HMI_SPEC
-        _HMI_SPEC = _load_hmi_spec(workspace)
-        for w in _HMI_SPEC.get("warnings", []):
+        global _PENDANT_SPEC
+        _PENDANT_SPEC = _load_pendant_spec(workspace)
+        for w in _PENDANT_SPEC.get("warnings", []):
             print(f"[hmi] {w}")
-        if _HMI_SPEC.get("widgets"):
-            print(f"[hmi] {len(_HMI_SPEC['widgets'])} widget(s) declared")
+        if _PENDANT_SPEC.get("widgets"):
+            print(f"[pendant] {len(_PENDANT_SPEC['widgets'])} widget(s) declared")
 
         self.app = tornado.web.Application(routes, debug=DEV_NOCACHE)
 

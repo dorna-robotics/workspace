@@ -121,7 +121,7 @@ kwargs:
 | `min` / `max` | No | Numeric bounds (for `int` and `float` types) |
 | `type` | Yes | Widget type: <br>• `int` — number input (`min`, `max`, `step=1`) <br>• `float` — number input (`min`, `max`, `step=any`) <br>• `str` — text input <br>• `bool` — touch switch <br>• `choice` — dropdown (requires `options: [a, b, c]`) <br>• `textarea` — multi-line text (`rows` default 4, tries JSON parse) <br>• `file` — file upload (`accept: ".csv,.xlsx"`) <br>• `list` / `map` — a collection the project's own run-setup screen fills, see below |
 
-### `params` — the project's own run-setup screen
+### `setup` — the project's own run-setup screen
 
 The generic form covers scalars. When an operator must pick *which*
 positions to run — a rack, a tray, a carousel — that is a picture of
@@ -130,7 +130,7 @@ the project's own hardware, so the project draws it. Declare it in
 
 ```yaml
 kwargs:  hmi/kwargs.j2      # the SCHEMA — what a run takes
-params:  hmi/params.js      # the SCREEN — how an operator sets it
+setup:   hmi/setup.js      # the SCREEN — how an operator sets it
 ```
 
 The schema still declares every parameter, because it is read with no
@@ -184,7 +184,7 @@ _layout:
 ```
 
 `row` places fields side by side. That is the whole vocabulary: a
-project that needs more than rows of scalars ships a `params` screen
+project that needs more than rows of scalars ships a `setup` screen
 and arranges it however it likes (multiple racks, tabs, wizards — all
 project markup, none of it platform vocabulary).
 
@@ -202,8 +202,8 @@ version they were written against. The rule that keeps old projects
 working:
 
 1. **New features are opt-in keys. Absent = previous behaviour.**
-   Everything added this cycle obeys it: no `params:` → the generic
-   form; no `hmi:` → the default pendant; no `_layout` → fields stack;
+   Everything added this cycle obeys it: no `setup:` → the generic
+   form; no `pendant:` → the default pendant; no `_layout` → fields stack;
    `kwargs:` as a dict still works exactly as before the file form
    existed.
 2. **Never repurpose an existing key.** A changed meaning is a silent

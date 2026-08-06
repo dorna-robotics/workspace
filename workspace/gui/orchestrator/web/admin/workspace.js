@@ -702,7 +702,7 @@ function buildHmi(spec) {
 //   data-bind-attr="key" data-attr="src"  → sets any attribute
 let _hmiHost = null;      // {shadow, module|null, binds}
 
-async function mountProjectHmi(spec) {
+async function mountProjectPendant(spec) {
   const el = $("pendantHmi");
   if (!el || !spec || !spec.src) return;
   el.innerHTML = "";
@@ -863,9 +863,9 @@ function _dispatchMuxMessage(env) {
       applyOpState(payload);
       break;
     }
-    case "hmi_spec": {
+    case "pendant_spec": {
       _hmiSpec = payload;
-      if (payload && payload.kind === "file") mountProjectHmi(payload);
+      if (payload && payload.kind === "file") mountProjectPendant(payload);
       else buildHmi(payload);
       break;
     }
