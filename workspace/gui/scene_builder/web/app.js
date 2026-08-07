@@ -7598,21 +7598,13 @@ ensureBuilderBar();
   // core.IK call uses, plus the live offset/joints. ``joints`` may be
   // an array, a status string, or null (shows …).
   function __ikText(ri, sr, offset, joints, name) {
+    // Solve INPUTS live in the editor fields (one place to read AND
+    // edit); this readout is outputs only.
     const f = v => Math.round(v * 10) / 10;
-    const ov = (name && __ikParams[name]) || {};
-    const pick = k => (k in ov) ? ov[k] : ri[k];
-    const star = k => (k in ov) ? "*" : "";
     const jl = Array.isArray(joints) ? "[" + joints.map(f).join(", ") + "]" : (joints || "…");
     const lines = [];
     lines.push("anchor  " + (ri.component || "—") + " · " +
       ri.target_solid_name + "/" + ri.target_anchor);
-    lines.push("prm     base " + pick("base_distance") + star("base_distance") +
-      " · step " + pick("rail_step") + star("rail_step") +
-      " · span " + pick("rail_span") + star("rail_span") +
-      " · " + (pick("left_approach") ? "left" : "right") + star("left_approach"));
-    const refShown = ("ref_joints" in ov) ? ov.ref_joints : (sr && sr.ref_joints);
-    if (refShown) lines.push("ref" + (("ref_joints" in ov) ? "*" : " ") + "    [" +
-      refShown.map(f).join(", ") + "]");
     lines.push("offset  [" + offset.map(f).join(", ") + "]");
     lines.push("joints  " + jl);
     return lines.join("\n");
@@ -7639,6 +7631,11 @@ ensureBuilderBar();
 
     const ov = __ikParams[name] || {};
     const val = k => (k in ov) ? ov[k] : ri[k];
+    // An overridden (session-scratch) value reads accent; ⟲ resets.
+    const markOv = (i, k) => {
+      i.style.borderColor = (k in (__ikParams[name] || {}))
+        ? "var(--sb-accent,#4f9cf9)" : "var(--sb-border,#8884)";
+    };
 
     const mkNum = (label, key, step) => {
       const w = document.createElement("label");
@@ -7649,8 +7646,10 @@ ensureBuilderBar();
       i.style.cssText = "width:52px;font:inherit;padding:1px 3px;" +
         "background:var(--sb-bg,transparent);color:inherit;" +
         "border:1px solid var(--sb-border,#8884);border-radius:4px;";
+      markOv(i, key);
       i.addEventListener("change", () => {
         (__ikParams[name] ||= {})[key] = Number(i.value);
+        markOv(i, key);
         __resolveNow();
       });
       w.appendChild(i);
@@ -7672,6 +7671,8 @@ ensureBuilderBar();
     lw.append(lc, "left");
     row1.appendChild(lw);
     box.appendChild(row1);
+    lc.addEventListener("change", () => markOv(lc, "left_approach"));
+    markOv(lc, "left_approach");
 
     const row2 = document.createElement("div");
     row2.style.cssText = "display:flex;gap:4px;align-items:center;";
@@ -7685,25 +7686,15 @@ ensureBuilderBar();
     refI.style.cssText = "flex:1;font:inherit;padding:1px 4px;min-width:0;" +
       "background:var(--sb-bg,transparent);color:inherit;" +
       "border:1px solid var(--sb-border,#8884);border-radius:4px;";
+    markOv(refI, "ref_joints");
     refI.addEventListener("change", () => {
       const js = refI.value.split(/[,\s]+/).filter(Boolean).map(Number);
       if (js.some(isNaN) || !js.length) { showToast("ref: numbers only", "bad"); return; }
       (__ikParams[name] ||= {}).ref_joints = js;
+      markOv(refI, "ref_joints");
       __resolveNow();
     });
     row2.appendChild(refI);
-    const clr = document.createElement("button");
-    clr.className = "btn btn-ghost btn-sm";
-    clr.style.cssText = "font-size:10px;padding:1px 6px;min-height:0;height:20px;";
-    clr.textContent = "file values";
-    clr.title = "Drop the session overrides — back to recipes.j2";
-    clr.addEventListener("click", () => {
-      delete __ikParams[name];
-      box.remove();
-      __ikParamEditor(name, sub);
-      __resolveNow();
-    });
-    row2.appendChild(clr);
     box.appendChild(row2);
 
     function __resolveNow() {
@@ -7720,7 +7711,7 @@ ensureBuilderBar();
       __ikSolve(off);
     }
 
-    host.appendChild(box);
+    host.insertBefore(box, sub);
   }
 
   function __ikDragStop() {
@@ -7985,6 +7976,11 @@ ensureBuilderBar();
         resetB.textContent = "⟲";
         resetB.addEventListener("click", (e) => {
           e.stopPropagation();
+          // Full reset: marker pose AND session parameter scratch —
+          // back to recipes.j2 truth (nothing was ever written).
+          delete __ikParams[r.name];
+          const box = document.querySelector('.ik-prm-box[data-recipe="' + r.name + '"]');
+          if (box) box.remove();
           const ri = (window.__ikInfo || {})[r.name];
           const sr = (__refSolve || {})[r.name] || {};
           if (__ikDrag.recipe === r.name && __ikDrag.marker && ri) {
