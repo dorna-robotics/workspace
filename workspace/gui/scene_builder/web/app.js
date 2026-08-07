@@ -298,6 +298,22 @@ function makeRenderer(opts, mountEl) {
 
       // --- GLTF + object management ---
       const gltfLoader = makeGltfLoader();
+      // Parse-once GLB cache. A project import spawns the same tiny
+      // mesh many times (bd: 96 tips, 20 tubes, 19 caps) — without the
+      // cache every instance re-fetched and re-ran the Draco decode.
+      // Same 4-arg shape as gltfLoader.load, so callsites only change
+      // the function name; callers get a fresh clone per call.
+      const __gltfParseCache = new Map();
+      function loadGltfCached(url, onLoad, _onProgress, onError) {
+        let pr = __gltfParseCache.get(url);
+        if (!pr) {
+          pr = new Promise((resolve, reject) =>
+            gltfLoader.load(url, g => resolve(g.scene), undefined, reject));
+          __gltfParseCache.set(url, pr);
+        }
+        pr.then(scene => onLoad({ scene: scene.clone(true) }))
+          .catch(e => { __gltfParseCache.delete(url); if (onError) onError(e); });
+      }
       const objectsByName = new Map();
       window.objectsByName = objectsByName;
 
@@ -1644,7 +1660,7 @@ if (node) {
 
               root.add(holder);
 
-              gltfLoader.load(
+              loadGltfCached(
                 versioned(m.meshUrl),
                 (gltf) => {
                   gltf.scene.traverse(o => {
@@ -1700,7 +1716,7 @@ if (node) {
               root.remove(root.children[0]);
             }
 
-            gltfLoader.load(
+            loadGltfCached(
               versioned(spec.meshUrl),
               (gltf) => {
                 gltf.scene.traverse(o => {
@@ -2937,7 +2953,7 @@ window.spawnComponent = spawnComponent;
 
 // Spawn without opening the child-anchor picker UI. Used for automated patterning.
 // It mirrors spawnComponent() but skips any modal flow.
-async function spawnComponentSilent(type, meta=null, options=null, customName=null) {
+async function spawnComponentSilent(type, meta=null, options=null, customName=null, extra=null) {
   if (!window.builderState.next[type]) window.builderState.next[type] = 1;
 
   function __nameExists(n) {
@@ -2964,18 +2980,22 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
     name = `${type}_${window.builderState.next[type]++}`;
     while (__nameExists(name)) name = `${type}_${window.builderState.next[type]++}`;
   }
-  // Instantiate server-side so anchors/options match exactly.
-  let blueprint = null;
-  try {
-    const res = await fetch(SB_API + "/instantiate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, options: (options && typeof options === "object") ? options : {} })
-    });
-    const js = await res.json();
-    if (js && js.ok) blueprint = js.blueprint;
-  } catch (e) {
-    console.warn("instantiate failed", e);
+  // Instantiate server-side so anchors/options match exactly. A bulk
+  // import prefetches every blueprint in ONE /instantiate_batch call
+  // and hands it in via ``extra`` — no per-component round-trip.
+  let blueprint = (extra && extra.blueprint) || null;
+  if (!blueprint) {
+    try {
+      const res = await fetch(SB_API + "/instantiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, options: (options && typeof options === "object") ? options : {} })
+      });
+      const js = await res.json();
+      if (js && js.ok) blueprint = js.blueprint;
+    } catch (e) {
+      console.warn("instantiate failed", e);
+    }
   }
 
   let anchorsBySolid = {};
@@ -3033,12 +3053,14 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
   const optionsOut = (options && typeof options === "object") ? options : {};
   window.builderState.components[name] = { type, ...optionsOut };
 
-  try { socket.emit("upstream_update", { [name]: spec }); } catch (e) {}
+  if (extra && extra.collect) extra.collect[name] = spec;
+  else { try { socket.emit("upstream_update", { [name]: spec }); } catch (e) {} }
   try { upsertObject(name, spec); } catch (e) {}
   window.builderState.placedOrder.push(name);
 
-  // Undo: creation (silent spawns still behave like normal spawns for Ctrl+Z)
-  try {
+  // Undo: creation (silent spawns still behave like normal spawns for
+  // Ctrl+Z). A bulk project import is NOT an edit — no undo entries.
+  if (!(extra && extra.noUndo)) try {
     __pushUndo({
       kind: "create",
       names: [name],
@@ -7217,46 +7239,72 @@ ensureBuilderBar();
     }
     for (const [name] of allEntries) visit(name);
 
-    // Spawn with the exact config name (no rename needed)
-    for (const [cfgName, cfgVal] of sorted) {
-      const type = cfgVal.type;
+    // ── Phase 1: every blueprint in ONE round-trip ────────────────────
+    // The old per-component /instantiate walk was O(n) serial fetches
+    // that queued behind the GLB downloads on the browser's connection
+    // pool — a 172-component project took minutes (or wedged outright:
+    // the attach wait polled requestAnimationFrame, which stalls in a
+    // background tab).
+    const items = sorted.map(([cfgName, cfgVal]) => {
       const options = {};
       for (const [k, v] of Object.entries(cfgVal)) {
         if (k === "type" || k === "attach") continue;
         options[k] = v;
       }
+      return { name: cfgName, type: cfgVal.type, options };
+    });
+    let batch = {};
+    try {
+      const res = await fetch(SB_API + "/instantiate_batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      const js = await res.json();
+      if (js && js.ok) batch = js.results || {};
+    } catch (e) { console.warn("instantiate_batch failed — falling back to per-component", e); }
 
+    // ── Phase 2: spawn everything (meshes load in parallel) ──────────
+    const bulkSpecs = {};
+    for (const [cfgName, cfgVal] of sorted) {
+      const it = items.find(x => x.name === cfgName);
+      const pre = batch[cfgName] || {};
+      if (pre.error) { console.warn("loadConfig:", cfgName, pre.error); continue; }
       try {
-        await spawnComponentSilent(type, null, Object.keys(options).length ? options : null, cfgName);
-      } catch(e) {
+        await spawnComponentSilent(cfgVal.type, null,
+          Object.keys(it.options).length ? it.options : null, cfgName,
+          { blueprint: pre.blueprint || null, noUndo: true, collect: bulkSpecs });
+      } catch (e) {
         console.warn("loadConfig: failed to spawn", cfgName, e);
         continue;
       }
-
-      // Tag this component with the file it came from so a later save
-      // partitions it back to the same place.
       if (srcFile && window.builderState.components[cfgName]) {
         window.builderState.components[cfgName].__file = srcFile;
       }
-
-      // Collision boxes load HIDDEN by default (see the post-loop pass).
       if (cfgVal.type === "collision_box") __collisionToHide.push(cfgName);
-
-      // For attached objects: store attach in builderState immediately so the
-      // fixture_plate auto-drop async code sees it and skips the ground-drop.
       if (cfgVal.attach && window.builderState.components[cfgName]) {
         window.builderState.components[cfgName].attach = cfgVal.attach;
       }
+    }
+    // One state push for the whole import instead of one per component.
+    try { socket.emit("upstream_update", bulkSpecs); } catch (e) {}
 
+    // ── Phase 3: attach / place, in topo order ───────────────────────
+    // Deadline-based mesh wait (setTimeout, NOT requestAnimationFrame —
+    // rAF stops in occluded tabs and the old loop hung forever on it).
+    // All loads started in phase 2, so total wait ≈ slowest mesh.
+    const __meshReady = async (n, ms) => {
+      const t0 = performance.now();
+      while (performance.now() - t0 < ms) {
+        const o = objectsByName.get(n);
+        if (o && o.children && o.children.length) return true;
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return false;
+    };
+    for (const [cfgName, cfgVal] of sorted) {
       if (cfgVal.attach) {
-        // Wait for mesh to load before attaching
-        const t0 = performance.now();
-        while (performance.now() - t0 < 5000) {
-          const obj = objectsByName.get(cfgName);
-          if (obj && obj.children && obj.children.length) break;
-          await new Promise(r => requestAnimationFrame(r));
-        }
-
+        await __meshReady(cfgName, 5000);
         const att = cfgVal.attach;
         const parentName = att.parent_name;
         if (parentName && objectsByName.has(parentName)) {
@@ -7403,6 +7451,7 @@ ensureBuilderBar();
     const bs = window.builderState;
     const empty = !bs.components || !Object.keys(bs.components).length;
     if (empty && j.scenes && j.scenes.length) {
+      const __t0 = performance.now();
       const names = j.scenes.map(s => s.name);
       bs.files = names.slice();
       bs.activeFile = names[names.length - 1];
@@ -7424,7 +7473,11 @@ ensureBuilderBar();
         __projLoadBanner(null);
       }
       try { window.__renderFilesList && window.__renderFilesList(); } catch(_) {}
-      showToast("Project loaded: " + names.join(" + "));
+      const __ms = Math.round(performance.now() - __t0);
+      const __n = Object.keys(bs.components || {}).length;
+      console.log(`[import] ${__n} components in ${__ms} ms`);
+      window.__importStats = { components: __n, ms: __ms };
+      showToast(`Project loaded: ${names.join(" + ")} (${(__ms/1000).toFixed(1)}s)`);
     } else if (!empty) {
       // Refresh / navigate-back: components replayed from the server —
       // restore the client-side state saved for this project.

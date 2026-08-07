@@ -957,6 +957,43 @@ class InstantiateHandler(tornado.web.RequestHandler):
             self.set_status(500)
             self.write({"ok": False, "error": str(e)})
 
+class InstantiateBatchHandler(tornado.web.RequestHandler):
+    """One round-trip for a whole scene import. The serial per-component
+    /api/instantiate walk made a project load O(n) round-trips — 172 for
+    bd — with each fetch queueing behind the browser's connection limit.
+    Blueprints here are a few ms each server-side, so the whole batch
+    answers in well under a second."""
+
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception:
+            self.set_status(400)
+            self.write({"ok": False, "error": "invalid json"})
+            return
+        items = data.get("items") or []
+        out = {}
+        for it in items:
+            name = str((it or {}).get("name") or "")
+            t = (it or {}).get("type") or ""
+            opts = (it or {}).get("options") or {}
+            if not isinstance(opts, dict):
+                opts = {}
+            opts.pop("simulation", None)
+            joints = opts.pop("joints", None)
+            if not name:
+                continue
+            if t not in COMPONENT_MAP:
+                out[name] = {"error": f"unknown type: {t}"}
+                continue
+            try:
+                out[name] = {"blueprint": instantiate_component_blueprint(t, opts, joints=joints)}
+            except Exception as e:
+                print(f"[builder] batch instantiate {t} ({name}) failed: {type(e).__name__}: {e}")
+                out[name] = {"error": str(e)}
+        self.write({"ok": True, "results": out})
+
+
 class RailsHandler(tornado.web.RequestHandler):
     """Detect available rail types by scanning core.py for rail_hd_* references
        and verifying that a matching GLB model exists."""
@@ -1313,6 +1350,7 @@ app.add_handlers(r".*$", [(r"/api/catalog", CatalogHandler)])
 app.add_handlers(r".*$", [(r"/api/categories", CategoriesHandler)])
 app.add_handlers(r".*$", [(r"/api/type_meta", TypeMetaHandler)])
 app.add_handlers(r".*$", [(r"/api/instantiate", InstantiateHandler)])
+app.add_handlers(r".*$", [(r"/api/instantiate_batch", InstantiateBatchHandler)])
 app.add_handlers(r".*$", [(r"/api/rails", RailsHandler)])
 
 world_state = {}
