@@ -11,7 +11,12 @@ Handshake (stdout, first line):
     {"ready": true, "recipes": {name: {"target_anchor": ..., "target_offset": [...],
         "target_solid_name": ..., "anchor_world": [...], "ref_joints": [...] | null}}}
 
-Request  (stdin):  {"recipe": "anode", "offset": [x,y,z,a,b,c]}
+Request  (stdin):  {"recipe": "anode", "offset": [x,y,z,a,b,c],
+                    "params": {...}}   # optional per-SOLVE overrides:
+                    # base_distance / rail_step / rail_span /
+                    # left_approach / ref_joints. Session scratch for
+                    # the builder's parameter experiments — never
+                    # persisted, never mutates the recipe's own row.
 Response (stdout): {"ok": true, "status": 2, "joints": [...], "solids": {name: world_pose6}}
 """
 import importlib
@@ -120,15 +125,22 @@ def main(project_dir):
             req = json.loads(line)
             name = req["recipe"]
             row, solid = recipes[name]
+            # Per-solve overrides — copy, never mutate the stored row.
+            prm = dict(row)
+            for k in ("base_distance", "rail_step", "rail_span",
+                      "left_approach", "ref_joints"):
+                if k in (req.get("params") or {}):
+                    prm[k] = req["params"][k]
+            offset = req.get("offset") or prm["target_offset"]
             J, C = core.IK(
                 target_solid=solid,
-                target_anchor=row["target_anchor"],
-                target_offset=[float(v) for v in req["offset"]],
-                base_distance=row["base_distance"],
-                rail_step=row["rail_step"],
-                rail_span=row["rail_span"],
-                ref_joints=row["ref_joints"],
-                left_approach=row["left_approach"],
+                target_anchor=prm["target_anchor"],
+                target_offset=[float(v) for v in offset],
+                base_distance=prm["base_distance"],
+                rail_step=prm["rail_step"],
+                rail_span=prm["rail_span"],
+                ref_joints=prm["ref_joints"],
+                left_approach=prm["left_approach"],
             )
             out = {"ok": C == 2, "status": int(C)}
             if C == 2 and J is not None:

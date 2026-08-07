@@ -1326,7 +1326,8 @@ class RecipeIKHandler(tornado.web.RequestHandler):
                 w = _ik_worker_ensure()
                 w["proc"].stdin.write(json.dumps(
                     {"recipe": data.get("recipe"),
-                     "offset": data.get("offset")}) + "\n")
+                     "offset": data.get("offset"),
+                     "params": data.get("params") or None}) + "\n")
                 w["proc"].stdin.flush()
                 line = w["proc"].stdout.readline()
                 return json.loads(line) if line else {"ok": False, "error": "worker died"}

@@ -7597,21 +7597,134 @@ ensureBuilderBar();
   // Full readout for a selected recipe — every parameter the recipe's
   // core.IK call uses, plus the live offset/joints. ``joints`` may be
   // an array, a status string, or null (shows …).
-  function __ikText(ri, sr, offset, joints) {
+  function __ikText(ri, sr, offset, joints, name) {
     const f = v => Math.round(v * 10) / 10;
+    const ov = (name && __ikParams[name]) || {};
+    const pick = k => (k in ov) ? ov[k] : ri[k];
+    const star = k => (k in ov) ? "*" : "";
     const jl = Array.isArray(joints) ? "[" + joints.map(f).join(", ") + "]" : (joints || "…");
     const lines = [];
     lines.push("anchor  " + (ri.component || "—") + " · " +
       ri.target_solid_name + "/" + ri.target_anchor);
-    lines.push("prm     base " + ri.base_distance + " · step " + ri.rail_step +
-      " · span " + ri.rail_span + " · " + (ri.left_approach ? "left" : "right"));
-    if (sr && sr.ref_joints) lines.push("ref     [" + sr.ref_joints.map(f).join(", ") + "]");
+    lines.push("prm     base " + pick("base_distance") + star("base_distance") +
+      " · step " + pick("rail_step") + star("rail_step") +
+      " · span " + pick("rail_span") + star("rail_span") +
+      " · " + (pick("left_approach") ? "left" : "right") + star("left_approach"));
+    const refShown = ("ref_joints" in ov) ? ov.ref_joints : (sr && sr.ref_joints);
+    if (refShown) lines.push("ref" + (("ref_joints" in ov) ? "*" : " ") + "    [" +
+      refShown.map(f).join(", ") + "]");
     lines.push("offset  [" + offset.map(f).join(", ") + "]");
     lines.push("joints  " + jl);
     return lines.join("\n");
   }
 
+  // ── Editable recipe parameters (session scratch) ──────────────────
+  // Tap "edit" under a selected recipe: base/step/span/left/ref become
+  // inputs. Every change re-solves at the CURRENT marker offset and
+  // poses the robot. Nothing is written — refresh restores recipes.j2.
+  function __ikParamEditor(name, sub) {
+    const host = sub.parentElement;
+    if (!host) return;
+    let box = host.querySelector(".ik-prm-box");
+    if (box && box.dataset.recipe === name) return;   // already mounted
+    if (box) box.remove();
+    const ri = (window.__ikInfo || {})[name];
+    if (!ri || ri.error) return;
+    box = document.createElement("div");
+    box.className = "ik-prm-box";
+    box.dataset.recipe = name;
+    box.style.cssText = "display:flex;flex-direction:column;gap:3px;" +
+      "font-size:11px;font-family:monospace;padding:4px 0 2px;";
+    box.addEventListener("click", e => e.stopPropagation());
+
+    const ov = __ikParams[name] || {};
+    const val = k => (k in ov) ? ov[k] : ri[k];
+
+    const mkNum = (label, key, step) => {
+      const w = document.createElement("label");
+      w.style.cssText = "display:flex;align-items:center;gap:3px;";
+      w.append(label);
+      const i = document.createElement("input");
+      i.type = "number"; i.step = step; i.value = val(key);
+      i.style.cssText = "width:52px;font:inherit;padding:1px 3px;" +
+        "background:var(--sb-bg,transparent);color:inherit;" +
+        "border:1px solid var(--sb-border,#8884);border-radius:4px;";
+      i.addEventListener("change", () => {
+        (__ikParams[name] ||= {})[key] = Number(i.value);
+        __resolveNow();
+      });
+      w.appendChild(i);
+      return w;
+    };
+    const row1 = document.createElement("div");
+    row1.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;";
+    row1.appendChild(mkNum("base", "base_distance", "5"));
+    row1.appendChild(mkNum("step", "rail_step", "1"));
+    row1.appendChild(mkNum("span", "rail_span", "1"));
+    const lw = document.createElement("label");
+    lw.style.cssText = "display:flex;align-items:center;gap:3px;cursor:pointer;";
+    const lc = document.createElement("input");
+    lc.type = "checkbox"; lc.checked = !!val("left_approach");
+    lc.addEventListener("change", () => {
+      (__ikParams[name] ||= {}).left_approach = lc.checked;
+      __resolveNow();
+    });
+    lw.append(lc, "left");
+    row1.appendChild(lw);
+    box.appendChild(row1);
+
+    const row2 = document.createElement("div");
+    row2.style.cssText = "display:flex;gap:4px;align-items:center;";
+    row2.append("ref");
+    const refI = document.createElement("input");
+    refI.type = "text";
+    const sr = (__refSolve || {})[name] || {};
+    const refNow = ("ref_joints" in ov) ? ov.ref_joints : (sr.ref_joints || ri.ref_joints);
+    refI.value = Array.isArray(refNow) ? refNow.map(v => Math.round(v * 10) / 10).join(", ") : "";
+    refI.placeholder = "j0, j1, … j7";
+    refI.style.cssText = "flex:1;font:inherit;padding:1px 4px;min-width:0;" +
+      "background:var(--sb-bg,transparent);color:inherit;" +
+      "border:1px solid var(--sb-border,#8884);border-radius:4px;";
+    refI.addEventListener("change", () => {
+      const js = refI.value.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (js.some(isNaN) || !js.length) { showToast("ref: numbers only", "bad"); return; }
+      (__ikParams[name] ||= {}).ref_joints = js;
+      __resolveNow();
+    });
+    row2.appendChild(refI);
+    const clr = document.createElement("button");
+    clr.className = "btn btn-ghost btn-sm";
+    clr.style.cssText = "font-size:10px;padding:1px 6px;min-height:0;height:20px;";
+    clr.textContent = "file values";
+    clr.title = "Drop the session overrides — back to recipes.j2";
+    clr.addEventListener("click", () => {
+      delete __ikParams[name];
+      box.remove();
+      __ikParamEditor(name, sub);
+      __resolveNow();
+    });
+    row2.appendChild(clr);
+    box.appendChild(row2);
+
+    function __resolveNow() {
+      // Re-solve at the current marker offset (or the recipe's own).
+      if (__ikDrag.recipe !== name) return;
+      const T = window.__three && window.__three.THREE;
+      let off = ri.target_offset;
+      if (T && __ikDrag.marker && __ikDrag.anchorM) {
+        const local = __ikDrag.marker.position.clone()
+          .applyMatrix4(__ikDrag.anchorM.clone().invert());
+        off = [local.x, local.y, local.z,
+               __ikDrag.off[3], __ikDrag.off[4], __ikDrag.off[5]];
+      }
+      __ikSolve(off);
+    }
+
+    host.appendChild(box);
+  }
+
   function __ikDragStop() {
+    document.querySelectorAll(".ik-prm-box").forEach(b => b.remove());
     const t = window.__three;
     if (__ikDrag.marker && t) t.scene.remove(__ikDrag.marker);
     if (__ikDrag.cleanup) { try { __ikDrag.cleanup(); } catch (_) {} }
@@ -7677,7 +7790,8 @@ ensureBuilderBar();
     // offset has no solution). No solve until the user drags.
     const sr = (__refSolve || {})[name] || {};
     if (sr.ref_joints) __poseCoreAt(sr.ref_joints);
-    if (sub) sub.textContent = __ikText(ri, sr, off, sr.ref_joints);
+    if (sub) sub.textContent = __ikText(ri, sr, off, sr.ref_joints, name);
+    if (sub) __ikParamEditor(name, sub);
 
     const el = t.renderer.domElement;
     const ray = new T.Raycaster();
@@ -7798,13 +7912,19 @@ ensureBuilderBar();
     __ikDrag.cleanup = cleanup;
   }
 
+  // Session-only recipe parameter overrides (base/step/span/left/ref).
+  // Scratch for experiments: sent with every solve of that recipe,
+  // never persisted — a refresh reloads recipes.j2 truth.
+  const __ikParams = {};
+
   async function __ikSolve(offset) {
     if (__ikDrag.busy) { __ikDrag.queued = offset; return; }   // send-latest
     __ikDrag.busy = true;
     try {
       const res = await fetch(SB_API + "/recipe_ik", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipe: __ikDrag.recipe, offset }),
+        body: JSON.stringify({ recipe: __ikDrag.recipe, offset,
+                               params: __ikParams[__ikDrag.recipe] || undefined }),
       }).then(x => x.json());
       const coreName = __coreName();
       if (res.ok && res.solids) {
@@ -7813,13 +7933,17 @@ ensureBuilderBar();
         window.__setSolidPosesWorld(coreName, res.solids);
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
         if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(
-          __ikDrag.info, (__refSolve || {})[__ikDrag.recipe], offset, res.joints);
+          __ikDrag.info, (__refSolve || {})[__ikDrag.recipe], offset, res.joints,
+          __ikDrag.recipe);
+        __ikParamEditor(__ikDrag.recipe, __ikDrag.sub);
       } else {
         // genuine no-solution from the solver
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0xff8a2b);
         if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(
           __ikDrag.info, (__refSolve || {})[__ikDrag.recipe], offset,
-          "no solution (status " + (res.status ?? res.error ?? "?") + ")");
+          "no solution (status " + (res.status ?? res.error ?? "?") + ")",
+          __ikDrag.recipe);
+        __ikParamEditor(__ikDrag.recipe, __ikDrag.sub);
       }
     } catch (e) {
       // client-side failure ≠ unreachable — say so, loudly
@@ -7870,7 +7994,8 @@ ensureBuilderBar();
               new T.Vector3(o[0], o[1], o[2]).applyMatrix4(__ikDrag.anchorM));
             if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
             if (sr.ref_joints) __poseCoreAt(sr.ref_joints);
-            if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(ri, sr, o, sr.ref_joints);
+            if (__ikDrag.sub) __ikDrag.sub.textContent = __ikText(ri, sr, o, sr.ref_joints, r.name);
+            __ikParamEditor(r.name, __ikDrag.sub);
           }
         });
         head.appendChild(resetB);
