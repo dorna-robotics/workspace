@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, phaseOf } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, showScheduleView, hideScheduleView } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, showScheduleView, hideScheduleView, getScheduleEta } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -217,6 +217,27 @@ function _renderViewerSwitchRow() {
 }
 
 // ── §3 axis ribbon: joints straight from /status (machine truth) ────
+// §4.5: the same planner numbers behind the gantt become an ETA — a
+// mono row beside uptime on the desktop, "-mm:ss left" in the pendant
+// state block. Hidden whenever there is no live plan.
+function _renderEta(running) {
+  const eta = running ? getScheduleEta() : null;
+  const fmt = (v) => {
+    const m = Math.floor(v / 60), sec = Math.round(v % 60);
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  };
+  const row = $("etaRow"), val = $("etaVal");
+  if (row && val) {
+    if (eta != null && eta > 0) { row.style.display = ""; val.textContent = fmt(eta); }
+    else row.style.display = "none";
+  }
+  const pe = $("pendantEta");
+  if (pe) {
+    if (eta != null && eta > 0) { pe.style.display = ""; pe.textContent = `−${fmt(eta)} left`; }
+    else pe.style.display = "none";
+  }
+}
+
 function _renderAxisRibbon(st) {
   const el = $("axisRibbon");
   if (!el) return;
@@ -860,6 +881,7 @@ function updateStatusUI(st) {
   _applyViewerChrome();
   _renderAxisRibbon(st);
   _renderViewerSwitchRow();
+  _renderEta(running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
