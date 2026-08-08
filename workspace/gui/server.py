@@ -174,7 +174,7 @@ LANDING_HTML = """<!DOCTYPE html>
     .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
     .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
     .card-lab .card-icon { background: rgba(191,90,242,0.12); color: #bf5af2; }
-    .card-vision .card-icon { background: rgba(255,159,10,0.12); color: #ff9f0a; }
+    .card-vision .card-icon { background: var(--amber-dim); color: var(--amber); }
     [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
     [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
     [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
