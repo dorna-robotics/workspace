@@ -1234,7 +1234,20 @@ function renderDevicesPanel() {
     if (chev) chev.classList.add("open");
   }
   const now = Date.now();
-  const newHtml = list.map(d => {
+  // §4.3: when devices are down, ONE banner above the list carries the
+  // aggregate action — per-row Recover stays for the one-off case.
+  // (The design also calls for a bulk "Simulate"; sim on this platform
+  // is authored scene intent with no mutation API, and a button that
+  // cannot act is a lie about capability — deliberately omitted.)
+  const downIds = list.filter(d =>
+    (d.state || "down") !== "ok" && d.online !== false &&
+    !(_devicesPending.get(d.id)?.until > now)).map(d => d.id);
+  const bannerHtml = downIds.length ? `
+    <div class="devices-banner">
+      <span>${downIds.length} device${downIds.length === 1 ? "" : "s"} not connected</span>
+      <button class="btn btn-sm btn-warn" data-device-act="recover-all">Recover all</button>
+    </div>` : "";
+  const newHtml = bannerHtml + list.map(d => {
     const state = d.state || "down";
     const online = d.online !== false;  // default true for back-compat
     const pending = _devicesPending.get(d.id);
@@ -1334,6 +1347,25 @@ function _wireDevicesPanelDelegation() {
   if (!el || el.dataset.delegated === "1") return;
   el.dataset.delegated = "1";
   el.addEventListener("click", async (ev) => {
+    // Banner bulk action: recover every down device with one confirm.
+    const allBtn = ev.target.closest('[data-device-act="recover-all"]');
+    if (allBtn) {
+      ev.stopPropagation();
+      const now = Date.now();
+      const ids = Array.from(_devices.values())
+        .filter(d => (d.state || "down") !== "ok" && d.online !== false &&
+                     !(_devicesPending.get(d.id)?.until > now))
+        .map(d => d.id);
+      if (!ids.length) return;
+      const ok = await confirmDialog({
+        title: `Recover ${ids.length} Device${ids.length === 1 ? "" : "s"}?`,
+        message: `Re-initializes: ${ids.join(", ")}. Each device reconnects on the bus.`,
+        confirm: "Recover all", icon: "recover", variant: "danger",
+      });
+      if (!ok) return;
+      for (const id of ids) recoverDevice(id);
+      return;
+    }
     // Recover button takes priority + cancels row-click open-modal.
     const recoverBtn = ev.target.closest('[data-device-act="recover"]');
     if (recoverBtn) {
