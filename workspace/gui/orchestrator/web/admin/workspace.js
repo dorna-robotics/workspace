@@ -1314,13 +1314,21 @@ function renderDevicesPanel() {
       }
     }
 
+    // §3: device identity gets its own full-width line — name + dot on
+    // line one, status text + controls indented on line two. One flex
+    // row left ~135px for a string that needs 150, and the part that
+    // got cut (the -0, the IP) was the diagnostic payload.
     return `
-      <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
-        <span class="dot ${dotClass}"></span>
-        <span class="device-id">${escHtml(d.id)}</span>
-        ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
-        ${control}
-        ${modePill}
+      <div class="device-row two-line ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
+        <div class="device-line1">
+          <span class="dot ${dotClass}"></span>
+          <span class="device-id">${escHtml(d.id)}</span>
+        </div>
+        <div class="device-line2">
+          ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : `<span class="device-msg"></span>`}
+          ${control}
+          ${modePill}
+        </div>
       </div>`;
   }).join("");
   // Skip the DOM write when nothing visible changed. WS events stream
@@ -2285,9 +2293,11 @@ async function init() {
     wsLabelEl.textContent = wsInfo.label || "";
     _wsKwargsValues = {};
     const fullUrl = wsViewerUrl(wsInfo);
-    urlVal.textContent = fullUrl;
+    urlVal.innerHTML = "";
+    urlVal.appendChild(Object.assign(document.createElement("span"), { textContent: fullUrl }));
     urlVal.title       = fullUrl;
-    pathVal.textContent = wsInfo.path_to_file;
+    pathVal.innerHTML = "";
+    pathVal.appendChild(Object.assign(document.createElement("span"), { textContent: wsInfo.path_to_file }));
     pathVal.title       = wsInfo.path_to_file;
 
     await Promise.all([refreshStatus(), refreshLogs(), loadRunParams()]);

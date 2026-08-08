@@ -132,6 +132,14 @@
   --glow-bad:  0 0 8px  rgba(215,0,21,0.40);
 }
 
+/* ── Reduced motion: every pulse and breathe dies (design-system §5) ── */
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulse, .pill .dot.pulse,
+  [class*="pulse"], [class*="breathe"] {
+    animation: none !important;
+  }
+}
+
 /* ── Reset ────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
