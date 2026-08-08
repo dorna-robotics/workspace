@@ -116,7 +116,7 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   height: 16px;
   padding: 0 5px;
   border-radius: var(--radius-sm);
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
