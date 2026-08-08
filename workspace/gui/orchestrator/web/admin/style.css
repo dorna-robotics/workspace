@@ -362,8 +362,10 @@
 .pendant-progress > span { font-size: var(--text-xl); font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* ── Log colors ─────────────────────────────────────────────────────────── */
-.log-err  { color: var(--red); }
-.log-warn { color: var(--amber); }
+/* §3: warn/error rows read as ROWS — tinted background + a 3px inset
+   bar — not just tinted words lost in the scroll. */
+.log-err  { color: var(--red);   display: block; background: var(--red-dim);   box-shadow: inset 3px 0 0 var(--red);   padding: 0 6px; margin: 0 -6px; }
+.log-warn { color: var(--amber); display: block; background: var(--amber-dim); box-shadow: inset 3px 0 0 var(--amber); padding: 0 6px; margin: 0 -6px; }
 .log-dim  { color: var(--muted2); }
 .log-ts   { color: var(--muted2); }
 

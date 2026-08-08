@@ -539,6 +539,90 @@
     .meta-val.path { direction: rtl; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
     .meta-val.path > span { direction: ltr; unicode-bidi: isolate; }
 
+    .op-switch-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 6px 10px;
+      background: var(--bg); border-radius: var(--radius-sm);
+      font-size: var(--text-sm); margin-bottom: 4px;
+    }
+
+    /* ── §3 viewport chrome ─────────────────────────────────────── */
+    .viewer-tabs {
+      position: absolute; top: 10px; left: 12px; z-index: 6;
+      display: flex; align-items: center; gap: 2px;
+      background: var(--hud);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      backdrop-filter: blur(6px);
+    }
+    .viewer-tab {
+      border: none; background: transparent; color: var(--muted);
+      font: 600 var(--text-sm) var(--font); letter-spacing: 0.01em;
+      padding: 5px 12px; border-radius: 8px; cursor: pointer;
+      min-height: 28px;
+    }
+    .viewer-tab.active { background: var(--accent-dim); color: var(--accent); }
+    .viewer-tab:focus-visible { outline: none; box-shadow: var(--glow); }
+    .viewer-off-chip {
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: var(--text-xs);
+      padding: 4px 8px; border-radius: 8px; cursor: pointer; margin-left: 4px;
+    }
+    .viewer-off-chip:hover { color: var(--accent); border-color: var(--accent); }
+    /* tool rail: separate 34px cards, 8px gap, camera home detached */
+    .viewer-rail {
+      position: absolute; top: 10px; right: 12px; z-index: 6;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .viewer-rail-btn {
+      width: 34px; height: 34px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      background: var(--hud); color: var(--muted);
+      border: 1px solid var(--border2); box-shadow: var(--shadow-sm);
+      cursor: pointer;
+    }
+    .viewer-rail-btn:hover { color: var(--text); }
+    /* active = accent tint + ACCENT border — the tint alone is too
+       quiet to read as state (design §3). */
+    .viewer-rail-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+    .viewer-rail-btn:focus-visible { outline: none; box-shadow: var(--glow); }
+    .viewer-rail-home { margin-top: 8px; }
+    .camera-pill {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7;
+      background: var(--hud); color: var(--text);
+      border: 1px solid var(--border2); border-radius: 999px;
+      padding: 4px 12px; font-size: var(--text-xs);
+    }
+    .viewer-offstate {
+      position: absolute; inset: 0; z-index: 4;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: var(--space-3); color: var(--muted); background: var(--bg);
+      text-align: center; padding: 24px;
+    }
+    .viewer-offstate h3 { font-size: var(--text-md); font-weight: 600; color: var(--text); }
+    .viewer-offstate p { font-size: var(--text-sm); max-width: 340px; }
+    .viewer-schedule {
+      position: absolute; inset: 0; z-index: 4;
+      background: var(--bg); overflow: auto;
+      padding: 52px 16px 16px;
+    }
+    /* axis ribbon — machine state pinned at the viewport foot (36px) */
+    .axis-ribbon {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 36px; z-index: 6;
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 12px;
+      background: var(--hud);
+      border-top: 1px solid var(--border2);
+      backdrop-filter: blur(6px);
+      font-family: var(--mono); font-size: var(--text-xs);
+      color: var(--muted); overflow: hidden;
+    }
+    .axis-chip { flex: none; display: inline-flex; gap: 4px; align-items: center; }
+    .axis-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .axis-ribbon .spacer { flex: 1; }
+    .axis-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
     /* ---- 3D Viewer area ---- */
     .viewer-area {
       flex: 1;
@@ -673,7 +757,6 @@
        content view first, then mode switches, then display tweak,
        then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
-    <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="btnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
@@ -756,6 +839,7 @@
       <div id="paramsSection">
         <div class="log-header" id="btnToggleParams" title="Toggle parameters">
           <div class="section-label">Run Parameters</div>
+          <span class="step-count-badge" id="paramsCountBadge"></span>
           <svg id="paramsChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-chevron"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyParams" title="Copy parameters"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
@@ -770,6 +854,7 @@
       <div id="opActionsSection">
         <div class="log-header" id="btnToggleOpActions" title="Toggle operator controls">
           <div class="section-label">Operator Controls</div>
+          <span class="step-count-badge" id="opActionsCountBadge"></span>
           <svg id="opActionsChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
         <div id="opActionsList" class="op-actions-list" style="display:none"><div class="step-empty">No operator actions declared</div></div>
@@ -779,6 +864,7 @@
       <div>
         <div class="log-header" id="btnToggleLogs" title="Expand logs">
           <div class="section-label">Logs</div>
+          <span class="step-count-badge warn" id="logsWarnBadge" title="warning / error lines"></span>
           <svg id="logChevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-chevron"><polyline points="9 18 15 12 9 6"/></svg>
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnFollowLogs" title="Jump to latest" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
@@ -829,6 +915,35 @@
         </div>
       </div>
     </div>
+    <!-- §3 viewport chrome. Host owns MACHINE state (tabs, ribbon) and
+         the viewer on/off; camera/zoom/collision live inside the iframe. -->
+    <div class="viewer-tabs" id="viewerTabs" style="display:none">
+      <button class="viewer-tab active" data-view="3d">3D view</button>
+      <button class="viewer-tab" data-view="schedule">Schedule</button>
+      <button class="viewer-off-chip mono" id="viewerOffChip" style="display:none" title="Turn the 3D viewer back on">viewer off · turn on</button>
+    </div>
+    <div class="viewer-rail" id="viewerRail" style="display:none">
+      <button class="viewer-rail-btn active" id="railEye" title="3D viewer on/off">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="viewer-rail-btn active" id="railAxes" title="Axis ribbon on/off">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="6"/><line x1="4" y1="20" x2="18" y2="20"/><line x1="4" y1="20" x2="14" y2="10"/></svg>
+      </button>
+      <button class="viewer-rail-btn viewer-rail-home" id="railHome" title="Reset camera">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </button>
+    </div>
+    <div class="camera-pill" id="cameraPill" style="display:none">✓ camera reset</div>
+    <div class="viewer-offstate" id="viewerOffState" style="display:none">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+      <h3>3D viewer is off</h3>
+      <p>Turned off to save bandwidth on this bench. The run is unaffected.</p>
+      <button class="btn btn-primary btn-sm" id="btnViewerOn">Turn viewer on</button>
+    </div>
+    <div class="viewer-schedule" id="viewerSchedule" style="display:none">
+      <div id="ganttContainer" class="gantt-container"></div>
+    </div>
+    <div class="axis-ribbon" id="axisRibbon" style="display:none"></div>
     <iframe id="ws3dFrame" src="about:blank"></iframe>
     <div class="viewer-placeholder" id="viewerPlaceholder">
       <div class="ph-icon">⬡</div>
@@ -864,7 +979,6 @@
            the live 3D viewer while pendant is open. ``active`` class
            is applied by JS to indicate the preview is currently on. -->
       <button class="btn btn-ghost btn-sm btn-icon" id="pendantBtnPreview" title="Toggle 3D preview"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><rect x="13" y="11" width="7" height="5" rx="1" fill="currentColor" fill-opacity="0.35"/></svg></button>
-      <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="pendantBtnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
       <!-- ``active`` marks this as the currently-engaged mode toggle —
            same icon as the main page's Pendant button, but rendered
            in its "on" state since we are in pendant mode right now.
@@ -953,24 +1067,6 @@
       <div class="kwargs-form" id="paramsForm"></div>
     </div>
     <div class="modal-foot" id="paramsModalFoot"></div>
-  </div>
-</div>
-
-<!-- Schedule (Gantt) modal — clean, event-driven Gantt for the current plan. -->
-<div class="modal-overlay" id="scheduleModalOverlay">
-  <div class="modal schedule-modal">
-    <div class="modal-head">
-      <h3>Schedule</h3>
-      <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm btn-icon" id="btnScheduleClose" title="Close">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-    <div class="modal-body schedule-body">
-      <div id="ganttContainer" class="gantt-container"></div>
-    </div>
   </div>
 </div>
 

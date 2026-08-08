@@ -44,7 +44,7 @@ function _leafKey(replan_id, leaf_name) {
   return `${replan_id || 0}|${leaf_name}`;
 }
 
-let _modalEl = null;
+let _paneEl = null;   // #viewerSchedule — the viewport tab pane (was a modal)
 let _ganttEl = null;
 
 // ── public entrypoints ─────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export function resetSchedule() {
   _leafOrder.length = 0;
   _leafGeom.clear();
   // Force a re-render so the modal blanks out if currently open.
-  if (_modalEl?.classList.contains("show")) _render();
+  if (_paneVisible()) _render();
 }
 
 // Public ingest — workspace.js's mux dispatcher calls this for every
@@ -119,7 +119,7 @@ function _ingest(msg) {
 // block can't be located (e.g. modal just opened, SVG not yet built
 // — _render() builds it).
 function _patchBlockState(leafKey) {
-  if (!_modalEl?.classList.contains("show")) return;
+  if (!_paneVisible()) return;
   if (!_ganttEl) return;
   const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
   if (!g) { _render(); return; }
@@ -151,19 +151,8 @@ function _patchBlockState(leafKey) {
 }
 
 function _initDOM() {
-  _modalEl = document.getElementById("scheduleModalOverlay");
+  _paneEl = document.getElementById("viewerSchedule");
   _ganttEl = document.getElementById("ganttContainer");
-  const closeBtn = document.getElementById("btnScheduleClose");
-  if (closeBtn && !closeBtn._wired) {
-    closeBtn.addEventListener("click", closeScheduleModal);
-    closeBtn._wired = true;
-  }
-  if (_modalEl && !_modalEl._wired) {
-    _modalEl.addEventListener("click", (e) => {
-      if (e.target === _modalEl) closeScheduleModal();
-    });
-    _modalEl._wired = true;
-  }
 }
 
 // Centre the scroll viewport on whichever leaf is currently "the live
@@ -189,10 +178,12 @@ function _jumpToCurrent() {
   _ganttEl.scrollLeft = Math.max(0, blockCentre - viewportW / 2);
 }
 
-export function openScheduleModal() {
+// The schedule is a TAB of the viewport now (design §6) — workspace.js
+// shows/hides #viewerSchedule; this renders + centres when it appears.
+export function showScheduleView() {
   _initDOM();
-  if (!_modalEl) return;
-  _modalEl.classList.add("show");
+  if (!_paneEl) return;
+  _paneEl.style.display = "";
   _renderGantt();
   // Always auto-centre on the "live" block (running, else next pending,
   // else the last block once everything's done). ``_jumpToCurrent`` is
@@ -201,13 +192,17 @@ export function openScheduleModal() {
   requestAnimationFrame(_jumpToCurrent);
 }
 
-export function closeScheduleModal() {
-  if (!_modalEl) return;
-  _modalEl.classList.remove("show");
+function _paneVisible() {
+  return !!(_paneEl && _paneEl.style.display !== "none");
+}
+
+export function hideScheduleView() {
+  if (!_paneEl) return;
+  _paneEl.style.display = "none";
 }
 
 function _render() {
-  if (_modalEl?.classList.contains("show")) _renderGantt();
+  if (_paneVisible()) _renderGantt();
 }
 
 // ── SVG Gantt ──────────────────────────────────────────────────────────

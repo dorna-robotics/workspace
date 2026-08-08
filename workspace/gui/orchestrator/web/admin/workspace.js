@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, phaseOf } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, showScheduleView, hideScheduleView } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -105,14 +105,20 @@ function toast(msg, type = "ok") {
 
 // ---- Log colorizer ----
 function colorizeLogs(text) {
-  return text.split("\n").map(line => {
+  // §3: every collapsed section carries a badge — logs badge = the
+  // count of warn/error lines in the current tail.
+  let warnCount = 0;
+  const html = text.split("\n").map(line => {
     const e = esc(line);
-    if (/error|exception|traceback|critical/i.test(line)) return `<span class="log-err">${e}</span>`;
-    if (/warning|warn/i.test(line))                       return `<span class="log-warn">${e}</span>`;
+    if (/error|exception|traceback|critical/i.test(line)) { warnCount++; return `<span class="log-err">${e}</span>`; }
+    if (/warning|warn/i.test(line))                       { warnCount++; return `<span class="log-warn">${e}</span>`; }
     if (/^---/.test(line.trim()))                         return `<span class="log-dim">${e}</span>`;
     if (/^\d{4}-\d{2}-\d{2}/.test(line.trim()))          return `<span class="log-ts">${e}</span>`;
     return e;
   }).join("\n");
+  const badge = document.getElementById("logsWarnBadge");
+  if (badge) badge.textContent = warnCount ? String(warnCount) : "";
+  return html;
 }
 
 // ---- Kwargs (parameters) ----
@@ -122,6 +128,107 @@ let _wsKwargsValues = {};  // last-saved kwargs for this workspace
 const paramsModal = $("paramsModalOverlay");
 const paramsTitle = $("paramsModalTitle");
 const paramsForm  = $("paramsForm");
+
+// ── §3 viewport chrome: tabs, viewer switch, tool rail, ribbon ──────
+// Host owns machine state and the on/off; camera & friends belong to
+// the viewer iframe. Chrome renders only once launched, and the rail
+// only in 3D view (a rail whose toggles have no visible effect would
+// bank state silently — worse than no control).
+let _viewerView = "3d";           // "3d" | "schedule"
+let _viewer3dOn = true;           // seeded per workspace below
+let _axesOn = true;
+const _viewerOnKey = () => `orch_viewer3d_${wsName}`;
+try { _viewer3dOn = localStorage.getItem(_viewerOnKey()) !== "0"; } catch (_) {}
+
+function _applyViewerChrome() {
+  const launched = isLaunched(_lastState);
+  const idle = document.body.dataset.phase === "idle";
+  const show = launched && !idle;
+  const tabs = $("viewerTabs"), rail = $("viewerRail"), ribbon = $("axisRibbon");
+  const off = $("viewerOffState"), frame = $("ws3dFrame");
+  if (tabs) tabs.style.display = show ? "" : "none";
+  const in3d = _viewerView === "3d";
+  document.querySelectorAll(".viewer-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.view === _viewerView));
+  // schedule pane
+  if (show && !in3d) showScheduleView(); else hideScheduleView();
+  // rail: 3D view only, once launched
+  if (rail) rail.style.display = (show && in3d) ? "" : "none";
+  // viewer on/off, only meaningful in 3D view
+  const viewerVisible = show && in3d && _viewer3dOn;
+  if (frame) frame.style.visibility = viewerVisible ? "" : "hidden";
+  if (off) off.style.display = (show && in3d && !_viewer3dOn) ? "" : "none";
+  $("viewerOffChip") && ($("viewerOffChip").style.display = (show && !_viewer3dOn) ? "" : "none");
+  $("railEye")?.classList.toggle("active", _viewer3dOn);
+  // ribbon: machine state — 3D view only, and suppressed with the viewer off
+  if (ribbon) ribbon.style.display = (viewerVisible && _axesOn) ? "" : "none";
+  $("railAxes")?.classList.toggle("active", _axesOn);
+}
+
+function _setViewer3d(on) {
+  _viewer3dOn = on;
+  try { localStorage.setItem(_viewerOnKey(), on ? "1" : "0"); } catch (_) {}
+  // Turning it off releases the iframe's WebGL context (§14b) — the
+  // pool is capped and this page holds several.
+  const frame = $("ws3dFrame");
+  if (!on && frame) { frame.src = "about:blank"; iframeReady = false; iframeUrl = ""; }
+  if (on) { try { updateIframe(_lastState, isLaunched(_lastState), true); } catch (_) {} }
+  _applyViewerChrome();
+  _renderViewerSwitchRow();
+}
+
+document.querySelectorAll(".viewer-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    _viewerView = t.dataset.view;
+    // Switching to Schedule is the natural moment to rest the viewer's
+    // GPU; switching back re-shows it (state untouched).
+    _applyViewerChrome();
+  });
+});
+$("viewerOffChip")?.addEventListener("click", () => _setViewer3d(true));
+$("btnViewerOn")?.addEventListener("click", () => _setViewer3d(true));
+$("railEye")?.addEventListener("click", () => _setViewer3d(!_viewer3dOn));
+$("railAxes")?.addEventListener("click", () => { _axesOn = !_axesOn; _applyViewerChrome(); });
+$("railHome")?.addEventListener("click", () => {
+  // The camera belongs to the iframe — post and confirm LOCALLY (a
+  // host control must never depend on a child answering).
+  try { $("ws3dFrame")?.contentWindow?.postMessage({ type: "viewer:resetCamera" }, "*"); } catch (_) {}
+  const pill = $("cameraPill");
+  if (pill) { pill.style.display = ""; setTimeout(() => { pill.style.display = "none"; }, 1300); }
+});
+
+// Operator Controls gains the "3D viewer" switch — for operators who
+// look for settings where settings live (§3: two places on purpose).
+function _renderViewerSwitchRow() {
+  const list = $("opActionsList");
+  if (!list) return;
+  let row = document.getElementById("viewerSwitchRow");
+  if (!row) {
+    row = document.createElement("div");
+    row.id = "viewerSwitchRow";
+    row.className = "op-switch-row";
+    row.innerHTML = `<span>3D viewer</span>
+      <button class="btn btn-sm" id="btnViewerSwitch"></button>`;
+    list.prepend(row);
+    row.querySelector("#btnViewerSwitch").addEventListener("click", () => _setViewer3d(!_viewer3dOn));
+  }
+  const b = row.querySelector("#btnViewerSwitch");
+  if (b) b.textContent = _viewer3dOn ? "On" : "Off";
+}
+
+// ── §3 axis ribbon: joints straight from /status (machine truth) ────
+function _renderAxisRibbon(st) {
+  const el = $("axisRibbon");
+  if (!el) return;
+  const joints = st && st.joints;
+  if (!Array.isArray(joints) || !joints.length) { el.innerHTML = ""; return; }
+  const names = ["J0", "J1", "J2", "J3", "J4", "J5", "RAIL", "J7"];
+  const chips = joints.slice(0, 7).map((v, i) =>
+    `<span class="axis-chip">${names[i]}<b>${Number(v).toFixed(1)}</b></span>`).join("");
+  const sim = st.robot_sim ? "sim" : "live";
+  el.innerHTML = `${chips}<span class="spacer"></span><span class="axis-meta">${esc(stateLabel(st.state || ""))} · ${sim}</span>`;
+}
+
 
 // ── Lifecycle phase engine (design §4.1 / §4.5) ─────────────────────
 // idle → launching → ready → running ⇄ paused ; fault ; complete.
@@ -750,6 +857,9 @@ function updateStatusUI(st) {
   updateProgress(st?.step?.progress, launched);
   renderControls(state, launched, running);
   updatePhase(state);
+  _applyViewerChrome();
+  _renderAxisRibbon(st);
+  _renderViewerSwitchRow();
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
@@ -1667,6 +1777,11 @@ function renderOperatorActionsPanel() {
   const disabled = isRunning(_lastState);
   const html = _opActionsHtml(disabled);
   if (list) list.innerHTML = html;
+  // §3: badge on the collapsed section + the host-side viewer switch
+  // row (innerHTML write above removed it — re-mount).
+  const ob = $("opActionsCountBadge");
+  if (ob) ob.textContent = _opActions.length ? String(_opActions.length) : "";
+  _renderViewerSwitchRow();
 
   // Pendant: only show the secondary-row button when there's
   // actually something to do. The pendant row is too constrained
@@ -2077,8 +2192,11 @@ function renderControls(state, launched, running) {
   });
 }
 
-function updateIframe(state, launched) {
+function updateIframe(state, launched, force = false) {
   if (!wsInfo) return;
+  // The viewer switch (§3) owns whether the iframe loads at all — with
+  // it off the frame stays about:blank and the GPU stays released.
+  if (!_viewer3dOn && !force) return;
   const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
   if (!ready) {
     if (iframeReady) {
@@ -2387,6 +2505,8 @@ async function loadRunParams() {
       filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
     }
     paramsPre.textContent = fields.length ? formatParamsYaml(filtered) : "(no parameters defined)";
+    const pb = $("paramsCountBadge");
+    if (pb) pb.textContent = fields.length ? String(fields.length) : "";
   } catch {
     paramsPre.textContent = "(could not load)";
   }
@@ -2809,12 +2929,6 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
 $("pendantParams").addEventListener("click", () => {
   const launched = isLaunched(_lastState);
   openParamsModal(launched);
-});
-
-// Schedule buttons (top-bar + pendant nav) — share the
-// ``.js-schedule-open`` class so a single binding covers both.
-document.querySelectorAll(".js-schedule-open").forEach(b => {
-  b.addEventListener("click", () => openScheduleModal());
 });
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
