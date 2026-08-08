@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, phaseOf } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal } from "./schedule.js";
 
@@ -26,6 +26,8 @@ let iframeUrl   = "";
 // Adaptive poll: fast when active, slow when idle
 let _pollTimer  = null;
 let _lastState  = "";
+
+
 
 // Live uptime: interpolate locally between polls
 let _uptimeBase = null;   // uptime_s from last server response
@@ -120,6 +122,257 @@ let _wsKwargsValues = {};  // last-saved kwargs for this workspace
 const paramsModal = $("paramsModalOverlay");
 const paramsTitle = $("paramsModalTitle");
 const paramsForm  = $("paramsForm");
+
+// ── Lifecycle phase engine (design §4.1 / §4.5) ─────────────────────
+// idle → launching → ready → running ⇄ paused ; fault ; complete.
+// ``_everRan`` = has THIS launch seen a run start (distinguishes ready
+// from complete at runtime IDLE); cleared whenever the launch dies.
+let _everRan = false;
+let _phase = "";
+const _everLaunchedKey = () => `orch_everlaunched_${wsName}`;
+
+function updatePhase(state) {
+  const s = (state || "").toUpperCase();
+  if (["RUNNING", "ACTIVE", "PAUSED", "PARKING"].includes(s)) _everRan = true;
+  if (!isLaunched(s) || s === "LAUNCHED_NOT_READY") _everRan = false;
+  const next = phaseOf(s, _everRan);
+  if (next === _phase) return;
+  const prev = _phase;
+  _phase = next;
+  document.body.dataset.phase = next;
+  if (next !== "launching") _launchingStop();
+  // region switching — one main-region state at a time
+  const region = (id, on) => { const el = $(id); if (el) el.classList.toggle("on", on); };
+  region("prelaunchRegion", next === "idle");
+  region("launchingRegion", next === "launching");
+  region("reportRegion",   next === "complete");
+  // the 336px panel and viewer chrome exist only once launched (§4.5)
+  document.querySelector(".sidebar")?.classList.toggle("prelaunch-hidden", next === "idle");
+  if (next === "idle") buildPrelaunch();
+  if (next === "launching") buildLaunching();
+  if (next === "complete" && prev) buildReport();
+  if (next === "ready") { try { localStorage.setItem(_everLaunchedKey(), "1"); } catch (_) {} }
+}
+
+// ── Pre-launch: the setup IS the main region (§4.5) ─────────────────
+let _preflightRun = 0;
+async function buildPrelaunch() {
+  const faultEl = $("prelaunchFault");
+  // an unresolved fault from the previous run survives the strip-down
+  const lastErr = (lastErrVal.textContent || "").trim();
+  if (faultEl) {
+    if (lastErr && lastErr !== "—") {
+      faultEl.style.display = "";
+      $("prelaunchFaultText").textContent = lastErr;
+    } else faultEl.style.display = "none";
+  }
+  // returning operator: summary variant; first launch: the full form
+  let ever = false;
+  try { ever = localStorage.getItem(_everLaunchedKey()) === "1"; } catch (_) {}
+  const sum = $("prelaunchSummary"), form = $("prelaunchForm");
+  if (ever) { sum.style.display = ""; form.style.display = "none"; }
+  else { sum.style.display = "none"; form.style.display = ""; }
+  try {
+    const j = await _getLaunchConfig();
+    const schema = j.kwargs_schema || {};
+    const values = { ...(j.kwargs_values || {}) };
+    _wsKwargsValues = Object.keys(values).length ? values : _wsKwargsValues;
+    if (ever) {
+      const bits = [];
+      for (const [k, spec] of Object.entries(schema)) {
+        if (k.startsWith("_")) continue;
+        const v = values[k] !== undefined ? values[k] : (spec && spec.default);
+        if (Array.isArray(v)) bits.push(`${k} · ${v.length} set`);
+        else if (v && typeof v === "object") bits.push(`${k} · ${Object.keys(v).length} set`);
+        else bits.push(`${k} · ${v}`);
+      }
+      $("prelaunchSummaryText").textContent = bits.join("   ") || "no parameters";
+    } else {
+      renderKwargsForm(form, schema, values, false, wsName);
+    }
+    runPreflight(j);
+  } catch (e) {
+    runPreflight(null, String(e));
+  }
+}
+$("btnEditParams")?.addEventListener("click", () => {
+  $("prelaunchSummary").style.display = "none";
+  const form = $("prelaunchForm");
+  form.style.display = "";
+  _getLaunchConfig().then(j =>
+    renderKwargsForm(form, j.kwargs_schema || {}, j.kwargs_values || {}, false, wsName));
+});
+$("prelaunchFaultAck")?.addEventListener("click", () => {
+  $("prelaunchFault").style.display = "none";
+});
+
+// Pre-flight proves what CAN be proven before the runtime exists:
+// the project config parses, the setup screen loads, parameters are
+// valid. Warnings never block launch; failures do (§4.5).
+function runPreflight(cfg, err) {
+  const host = $("preflightBlock");
+  if (!host) return;
+  const run = ++_preflightRun;
+  host.innerHTML = "";
+  const rows = [];
+  const addRow = (label) => {
+    const r = document.createElement("div");
+    r.className = "preflight-row";
+    r.innerHTML = `<span class="pf-dot"></span><span>${esc(label)}</span><span class="pf-note"></span>`;
+    host.appendChild(r);
+    rows.push(r);
+    return r;
+  };
+  const checks = [
+    ["Project config", async () => {
+      if (err) return ["fail", err.slice(0, 60)];
+      const n = Object.keys(cfg.kwargs_schema || {}).filter(k => !k.startsWith("_")).length;
+      return ["pass", `${n} parameter${n === 1 ? "" : "s"}`];
+    }],
+    ["Setup screen", async () => {
+      const spec = (cfg && cfg.kwargs_schema && cfg.kwargs_schema._setup) || null;
+      if (!spec) return ["pass", "generic form"];
+      const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/${spec.src}`);
+      return r.ok ? ["pass", spec.src] : ["fail", `${spec.src} → ${r.status}`];
+    }],
+    ["Run parameters", async () => {
+      const form = $("prelaunchForm");
+      if (form.style.display === "none") return ["pass", "saved values"];
+      const errs = validateKwargsForm(form, (cfg && cfg.kwargs_schema) || {});
+      return errs.length ? ["warn", errs[0].slice(0, 40)] : ["pass", "valid"];
+    }],
+  ];
+  checks.forEach(c => addRow(c[0]));
+  const btn = $("btnSetLaunch");
+  if (btn) { btn.disabled = true; btn.style.cursor = "wait"; }
+  let failed = false;
+  (async () => {
+    for (let i = 0; i < checks.length; i++) {
+      if (run !== _preflightRun) return;      // superseded
+      const r = rows[i];
+      r.classList.add("checking");
+      await new Promise(res => setTimeout(res, 380));
+      let verdict = ["warn", "check failed"];
+      try { verdict = await checks[i][1](); } catch (e) { verdict = ["warn", String(e).slice(0, 40)]; }
+      if (run !== _preflightRun) return;
+      r.classList.remove("checking");
+      r.classList.add(verdict[0]);
+      r.querySelector(".pf-note").textContent = verdict[1] || "";
+      if (verdict[0] === "fail") failed = true;
+    }
+    if (run !== _preflightRun) return;
+    if (btn) {
+      btn.disabled = failed;
+      btn.style.cursor = failed ? "not-allowed" : "";
+      if (failed) btn.title = "A pre-flight check failed — fix it, then relaunch this page";
+    }
+  })();
+}
+
+$("btnSetLaunch")?.addEventListener("click", async () => {
+  const btn = $("btnSetLaunch");
+  const form = $("prelaunchForm");
+  try {
+    if (form && form.style.display !== "none") {
+      const j = await _getLaunchConfig();
+      const errs = validateKwargsForm(form, j.kwargs_schema || {});
+      if (errs.length) { toast(errs[0], "bad"); return; }
+      const vals = readKwargsForm(form);
+      _wsKwargsValues = { ...vals };
+      await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
+        method: "POST", body: JSON.stringify({ kwargs_values: vals }),
+      });
+    }
+    btn.disabled = true;
+    await sendCmd("launch");
+    toast("launch sent", "ok");
+    await refreshStatus();
+  } catch (e) {
+    toast(String(e), "bad");
+    btn.disabled = false;
+  }
+});
+
+// ── Launching: watch each device come up (§4.5) ─────────────────────
+// Real data, not choreography: rows appear as the runtime's device
+// snapshots arrive; the final row flips when state reaches ready.
+let _launchingTimer = null;
+const _launchingSeen = new Map();   // id -> row element
+function buildLaunching() {
+  const host = $("launchingRows");
+  if (!host) return;
+  host.innerHTML = "";
+  _launchingSeen.clear();
+  const sync = document.createElement("div");
+  sync.className = "launching-row";
+  sync.id = "launchingSyncRow";
+  sync.innerHTML = `<span class="pf-dot"></span><span>workspace process</span><span class="pf-note">starting…</span>`;
+  host.appendChild(sync);
+  _launchingTimer = setInterval(_launchingPoll, 700);
+  _launchingPoll();
+}
+function _launchingStop() {
+  if (_launchingTimer) { clearInterval(_launchingTimer); _launchingTimer = null; }
+}
+async function _launchingPoll() {
+  try {
+    const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices`);
+    if (!r.ok) return;
+    const j = await r.json();
+    const host = $("launchingRows");
+    const syncRow = $("launchingSyncRow");
+    for (const d of (j.devices || [])) {
+      const id = d.id || d.name;
+      if (!id) continue;
+      let row = _launchingSeen.get(id);
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "launching-row";
+        row.innerHTML = `<span class="pf-dot"></span><span>${esc(id)}</span><span class="pf-note">connecting…</span>`;
+        host.insertBefore(row, syncRow);
+        _launchingSeen.set(id, row);
+      }
+      const up = ["up", "ok", "connected", "sim"].includes(String(d.state || d.status || "").toLowerCase());
+      if (up && !row.classList.contains("up")) {
+        row.classList.add("up");
+        row.querySelector(".pf-note").textContent = String(d.state || "up").toLowerCase() === "sim" ? "simulated" : "up";
+      }
+    }
+  } catch (_) {}
+}
+
+// ── Run report (§4.5): a run ends in a report, not a shrug ──────────
+function buildReport() {
+  const host = $("reportStats");
+  if (!host) return;
+  const stepRows = document.querySelectorAll("#stepList .step-card, #stepList [class*=step]").length;
+  const cells = [
+    [fmtUptime(_uptimeBase) || "—", "elapsed"],
+    [String(_stepsDoneCount()), "steps"],
+    [(lastErrVal.textContent || "").trim() !== "—" && lastErrVal.textContent ? "1" : "0", "errors"],
+  ];
+  host.innerHTML = cells.map(([v, k]) =>
+    `<div class="report-cell"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`).join("");
+}
+function _stepsDoneCount() {
+  const badge = $("stepCountBadge");
+  const m = (badge && badge.textContent || "").match(/\d+/);
+  return m ? m[0] : "—";
+}
+$("btnNewRun")?.addEventListener("click", async () => {
+  // Same contract as Start: device gate, saved kwargs, fresh logs.
+  const ok = await deviceFaultGate(wsName, "Start");
+  if (!ok) return;
+  try { await clearLogs(); } catch (_) {}
+  try {
+    const kwargs = Object.keys(_wsKwargsValues).length ? _wsKwargsValues : undefined;
+    await sendCmd("start", kwargs);
+    toast("start sent", "ok");
+    await refreshStatus();
+  } catch (e) { toast(String(e), "bad"); }
+});
+$("btnExportReport")?.addEventListener("click", () => window.print());
+
 const paramsFoot  = $("paramsModalFoot");
 
 $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove("show"));
@@ -496,6 +749,7 @@ function updateStatusUI(st) {
   renderStep(st?.step, running);
   updateProgress(st?.step?.progress, launched);
   renderControls(state, launched, running);
+  updatePhase(state);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
@@ -1642,6 +1896,24 @@ function renderControls(state, launched, running) {
   _lastControlsState = s;
   controls.innerHTML = "";
 
+  // One-line phase hint beside the section label (§4.1): what this
+  // moment is, and what the next action does.
+  const hints = {
+    launching: "Bringing the workcell online…",
+    ready:     "Ready — Start begins the run",
+    running:   "Running — Pause holds between steps",
+    paused:    "Paused mid-step — Resume continues",
+    fault:     "Faulted — see Last error, then Start to retry or Kill",
+    complete:  "Run finished — New run starts another",
+  };
+  const hint = hints[phaseOf(s, _everRan)];
+  if (hint) {
+    const h = document.createElement("div");
+    h.className = "ctrl-hint";
+    h.textContent = hint;
+    controls.appendChild(h);
+  }
+
   const addBtn = (label, cmd, opts = {}) => {
     const b = document.createElement("button");
     b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}${opts.warn ? " btn-warn" : ""}`;
@@ -1725,6 +1997,25 @@ function renderControls(state, launched, running) {
     gear.textContent = "Parameters";
     gear.addEventListener("click", () => openParamsModal(launched));
     controls.appendChild(gear);
+  }
+
+  // Once launched, Launch demotes to a ghost Relaunch (§4.1) — one
+  // filled button on screen, ever. Not while a run is in flight.
+  if (launched && !running && s !== "LAUNCHED_NOT_READY" && s !== "PAUSED") {
+    const rb = document.createElement("button");
+    rb.className = "btn btn-ghost btn-sm";
+    rb.textContent = "Relaunch";
+    rb.title = "Restart the workspace process (fresh scene, fresh devices)";
+    rb.addEventListener("click", async () => {
+      if (!await confirmDialog({
+        title: "Relaunch Workspace?",
+        message: "The workspace process restarts: scene reloads, devices reconnect.",
+        confirm: "Relaunch", icon: "park", variant: "danger",
+      })) return;
+      try { await sendCmd("launch"); toast("relaunch sent", "ok"); await refreshStatus(); }
+      catch (e) { toast(String(e), "bad"); }
+    });
+    controls.appendChild(rb);
   }
 
   // Kill — separated to the right with spacer
