@@ -26,28 +26,7 @@ in the page's inline `<style>`.
 ## 2. Tokens — the vocabulary
 
 All tokens are defined on `:root` in `base.css`, with `[data-theme="light"]`
-overrides where needed (`--glow-*`, surface colours). Colour values are
-oklch (2026-08 redesign); fonts are self-hosted Barlow / IBM Plex Mono
-under `vendor/fonts/` — the controller is offline, never a fonts CDN link.
-
-### 2.0 The split rule — text vs fill
-
-**A colour that is text-on-a-tint AND a fill-under-white-text needs two
-tokens.** The two roles pull lightness in opposite directions (the text
-form wants lighter in dark theme, the fill wants darker), so one value
-cannot pass contrast in both jobs. Hence `--accent` (text/interactive)
-vs `--accent-solid` (fills carrying white text — `.btn-primary`, the
-nav badge). In light theme they share a value; both names stay so the
-dark override has somewhere to go. Every state colour has a `-dim`
-companion for its tint (`--green`/`--green-dim`, `--red-dim`,
-`--amber-dim`, `--sim`/`--sim-dim`): rules say
-`background: var(--x-dim); color: var(--x)` and need no light-theme
-override. `--orange` is Park's ACTION colour — deliberately not
-`--amber` (amber = degraded/check), one value in both themes because
-white-on-orange doesn't change with the page. **Retuning any value
-means re-measuring the whole contrast table** (README §1 of the
-redesign handoff) — every failure found came from tuning one pair in
-isolation.
+overrides where needed (`--glow-*`, surface colours).
 
 ### 2.1 Radius
 
@@ -202,19 +181,9 @@ padded `16 px 20 px`. Don't introduce a second modal shell.
 
 The pendant is operator-facing on a tablet. The rules are tighter:
 
-- **Layout (2026-08)**: navbar carries the run state + timer as one
-  SOLID block (readable across the room) plus a labelled EXIT; the
-  body scrolls; the run controls live in a BOTTOM BAR at every width —
-  six equal-flex buttons (START/RESUME · PAUSE | PARAMETERS · CONTROLS
-  | PARK · KILL), colour the only separator. While idle the bar is
-  LAUNCH alone. The earlier left-rail layout is superseded — do not
-  rebuild it.
-- **Park and Kill are press-and-holds** (900 / 1200 ms): the charge is
-  a CSS transform animation with a 135° hazard stripe in the hold's
-  own ramp (amber = graceful, red = destructive). The stripe texture
-  is RESERVED for these two holds. Release early → snap back + the
-  label teaches the gesture. No confirm dialog — the hold is the
-  confirmation.
+- **Layout**: navbar (state pill, timer, exit) is fixed; body
+  scrolls underneath. New widgets go in the body, never floated
+  over the nav.
 - **State at a glance**: the navbar must communicate "what is the
   workspace doing right now" without the operator reading any text.
   State pill background tint + dot pulse does this.
@@ -364,11 +333,6 @@ Two universal rules:
 - Minimum target **44×44 px** on anything an operator touches on
   glass (pendant, HMI, builder on a touchscreen). Desktop-only admin
   may go to 32 px.
-- **The two densities are deliberate, not an inconsistency**: the
-  workspace detail page runs desktop density (46 px header, 34–36 px
-  controls, 12.5–13 px text — §3 of the redesign handoff); the pendant
-  runs glove density (≥56 px targets, 64 px bar buttons). Never
-  propagate one into the other.
 - **Gestures are accelerators, never the only path**: hold/drag/
   double-click actions must also exist as a visible control
   (hold-to-edit needs an Edit affordance; drag-select needs Select
@@ -441,33 +405,7 @@ loss and was blocked").
 - HMI mockup pages duplicate slot CSS per page — acceptable
   (disposable), but production rack/bench widgets define the slot
   grammar once.
-- ~~Contrast audit of `--muted` on `--surface2` in light theme~~ — closed by the 2026-08 token re-value: every text/tint pair measured ≥ 4.5:1 in both themes (table in the redesign handoff README §1).
-
-## 15b. Lifecycle vocabulary (2026-08)
-
-The run is an explicit phase, derived in ONE place (`phaseOf` in
-`admin/api.js`) and carried on `body[data-phase]`:
-
-```
-idle → launching → ready → running ⇄ paused ; fault ; complete
-```
-
-| phase | chip | maps from |
-|---|---|---|
-| idle | NOT_LAUNCHED | not launched |
-| launching | LAUNCHING | LAUNCHED_NOT_READY |
-| ready | READY | runtime IDLE, no run yet this launch |
-| running | RUNNING | RUNNING / ACTIVE / PARKING |
-| paused | PAUSED | PAUSED |
-| fault | FAULT | ERROR / FAILED |
-| complete | COMPLETE | runtime IDLE after a run |
-
-Rules that ride the phase: while `idle` the setup IS the main region
-(pre-flight + the project's setup screen + Set & Launch — no panel, no
-viewer chrome); `launching` gets the device-connect interstitial; a
-finished run lands on the report. Launch demotes to a ghost Relaunch
-once launched — never two filled buttons on screen. One hint line
-above the controls says what the moment is.
+- Contrast audit of `--muted` on `--surface2` in light theme pending.
 
 ## 16. When the system feels wrong
 

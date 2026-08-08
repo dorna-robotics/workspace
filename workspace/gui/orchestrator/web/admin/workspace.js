@@ -9,9 +9,9 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, phaseOf } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, showScheduleView, hideScheduleView, getScheduleEta } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -26,8 +26,6 @@ let iframeUrl   = "";
 // Adaptive poll: fast when active, slow when idle
 let _pollTimer  = null;
 let _lastState  = "";
-
-
 
 // Live uptime: interpolate locally between polls
 let _uptimeBase = null;   // uptime_s from last server response
@@ -105,20 +103,14 @@ function toast(msg, type = "ok") {
 
 // ---- Log colorizer ----
 function colorizeLogs(text) {
-  // §3: every collapsed section carries a badge — logs badge = the
-  // count of warn/error lines in the current tail.
-  let warnCount = 0;
-  const html = text.split("\n").map(line => {
+  return text.split("\n").map(line => {
     const e = esc(line);
-    if (/error|exception|traceback|critical/i.test(line)) { warnCount++; return `<span class="log-err">${e}</span>`; }
-    if (/warning|warn/i.test(line))                       { warnCount++; return `<span class="log-warn">${e}</span>`; }
+    if (/error|exception|traceback|critical/i.test(line)) return `<span class="log-err">${e}</span>`;
+    if (/warning|warn/i.test(line))                       return `<span class="log-warn">${e}</span>`;
     if (/^---/.test(line.trim()))                         return `<span class="log-dim">${e}</span>`;
     if (/^\d{4}-\d{2}-\d{2}/.test(line.trim()))          return `<span class="log-ts">${e}</span>`;
     return e;
   }).join("\n");
-  const badge = document.getElementById("logsWarnBadge");
-  if (badge) badge.textContent = warnCount ? String(warnCount) : "";
-  return html;
 }
 
 // ---- Kwargs (parameters) ----
@@ -128,379 +120,6 @@ let _wsKwargsValues = {};  // last-saved kwargs for this workspace
 const paramsModal = $("paramsModalOverlay");
 const paramsTitle = $("paramsModalTitle");
 const paramsForm  = $("paramsForm");
-
-// ── §3 viewport chrome: tabs, viewer switch, tool rail, ribbon ──────
-// Host owns machine state and the on/off; camera & friends belong to
-// the viewer iframe. Chrome renders only once launched, and the rail
-// only in 3D view (a rail whose toggles have no visible effect would
-// bank state silently — worse than no control).
-let _viewerView = "3d";           // "3d" | "schedule"
-let _viewer3dOn = true;           // seeded per workspace below
-let _axesOn = true;
-const _viewerOnKey = () => `orch_viewer3d_${wsName}`;
-try { _viewer3dOn = localStorage.getItem(_viewerOnKey()) !== "0"; } catch (_) {}
-
-function _applyViewerChrome() {
-  const launched = isLaunched(_lastState);
-  const idle = document.body.dataset.phase === "idle";
-  const show = launched && !idle;
-  const tabs = $("viewerTabs"), rail = $("viewerRail"), ribbon = $("axisRibbon");
-  const off = $("viewerOffState"), frame = $("ws3dFrame");
-  if (tabs) tabs.style.display = show ? "" : "none";
-  const in3d = _viewerView === "3d";
-  document.querySelectorAll(".viewer-tab").forEach(t =>
-    t.classList.toggle("active", t.dataset.view === _viewerView));
-  // schedule pane
-  if (show && !in3d) showScheduleView(); else hideScheduleView();
-  // rail: 3D view only, once launched
-  if (rail) rail.style.display = (show && in3d) ? "" : "none";
-  // viewer on/off, only meaningful in 3D view
-  const viewerVisible = show && in3d && _viewer3dOn;
-  if (frame) frame.style.visibility = viewerVisible ? "" : "hidden";
-  if (off) off.style.display = (show && in3d && !_viewer3dOn) ? "" : "none";
-  $("viewerOffChip") && ($("viewerOffChip").style.display = (show && !_viewer3dOn) ? "" : "none");
-  $("railEye")?.classList.toggle("active", _viewer3dOn);
-  // ribbon: machine state — 3D view only, and suppressed with the viewer off
-  if (ribbon) ribbon.style.display = (viewerVisible && _axesOn) ? "" : "none";
-  $("railAxes")?.classList.toggle("active", _axesOn);
-}
-
-function _setViewer3d(on) {
-  _viewer3dOn = on;
-  try { localStorage.setItem(_viewerOnKey(), on ? "1" : "0"); } catch (_) {}
-  // Turning it off releases the iframe's WebGL context (§14b) — the
-  // pool is capped and this page holds several.
-  const frame = $("ws3dFrame");
-  if (!on && frame) { frame.src = "about:blank"; iframeReady = false; iframeUrl = ""; }
-  if (on) { try { updateIframe(_lastState, isLaunched(_lastState), true); } catch (_) {} }
-  _applyViewerChrome();
-  _renderViewerSwitchRow();
-}
-
-document.querySelectorAll(".viewer-tab").forEach(t => {
-  t.addEventListener("click", () => {
-    _viewerView = t.dataset.view;
-    // Switching to Schedule is the natural moment to rest the viewer's
-    // GPU; switching back re-shows it (state untouched).
-    _applyViewerChrome();
-  });
-});
-$("viewerOffChip")?.addEventListener("click", () => _setViewer3d(true));
-$("btnViewerOn")?.addEventListener("click", () => _setViewer3d(true));
-$("railEye")?.addEventListener("click", () => _setViewer3d(!_viewer3dOn));
-$("railAxes")?.addEventListener("click", () => { _axesOn = !_axesOn; _applyViewerChrome(); });
-$("railHome")?.addEventListener("click", () => {
-  // The camera belongs to the iframe — post and confirm LOCALLY (a
-  // host control must never depend on a child answering).
-  try { $("ws3dFrame")?.contentWindow?.postMessage({ type: "viewer:resetCamera" }, "*"); } catch (_) {}
-  const pill = $("cameraPill");
-  if (pill) { pill.style.display = ""; setTimeout(() => { pill.style.display = "none"; }, 1300); }
-});
-
-// Operator Controls gains the "3D viewer" switch — for operators who
-// look for settings where settings live (§3: two places on purpose).
-function _renderViewerSwitchRow() {
-  const list = $("opActionsList");
-  if (!list) return;
-  let row = document.getElementById("viewerSwitchRow");
-  if (!row) {
-    row = document.createElement("div");
-    row.id = "viewerSwitchRow";
-    row.className = "op-switch-row";
-    row.innerHTML = `<span>3D viewer</span>
-      <button class="btn btn-sm" id="btnViewerSwitch"></button>`;
-    list.prepend(row);
-    row.querySelector("#btnViewerSwitch").addEventListener("click", () => _setViewer3d(!_viewer3dOn));
-  }
-  const b = row.querySelector("#btnViewerSwitch");
-  if (b) b.textContent = _viewer3dOn ? "On" : "Off";
-}
-
-// ── §3 axis ribbon: joints straight from /status (machine truth) ────
-// §4.5: the same planner numbers behind the gantt become an ETA — a
-// mono row beside uptime on the desktop, "-mm:ss left" in the pendant
-// state block. Hidden whenever there is no live plan.
-function _renderEta(running) {
-  const eta = running ? getScheduleEta() : null;
-  const fmt = (v) => {
-    const m = Math.floor(v / 60), sec = Math.round(v % 60);
-    return `${m}:${String(sec).padStart(2, "0")}`;
-  };
-  const row = $("etaRow"), val = $("etaVal");
-  if (row && val) {
-    if (eta != null && eta > 0) { row.style.display = ""; val.textContent = fmt(eta); }
-    else row.style.display = "none";
-  }
-  const pe = $("pendantEta");
-  if (pe) {
-    if (eta != null && eta > 0) { pe.style.display = ""; pe.textContent = `−${fmt(eta)} left`; }
-    else pe.style.display = "none";
-  }
-}
-
-function _renderAxisRibbon(st) {
-  const el = $("axisRibbon");
-  if (!el) return;
-  const joints = st && st.joints;
-  if (!Array.isArray(joints) || !joints.length) { el.innerHTML = ""; return; }
-  const names = ["J0", "J1", "J2", "J3", "J4", "J5", "RAIL", "J7"];
-  const chips = joints.slice(0, 7).map((v, i) =>
-    `<span class="axis-chip">${names[i]}<b>${Number(v).toFixed(1)}</b></span>`).join("");
-  const sim = st.robot_sim ? "sim" : "live";
-  el.innerHTML = `${chips}<span class="spacer"></span><span class="axis-meta">${esc(stateLabel(st.state || ""))} · ${sim}</span>`;
-}
-
-
-// ── Lifecycle phase engine (design §4.1 / §4.5) ─────────────────────
-// idle → launching → ready → running ⇄ paused ; fault ; complete.
-// ``_everRan`` = has THIS launch seen a run start (distinguishes ready
-// from complete at runtime IDLE); cleared whenever the launch dies.
-let _everRan = false;
-let _phase = "";
-const _everLaunchedKey = () => `orch_everlaunched_${wsName}`;
-
-function updatePhase(state) {
-  const s = (state || "").toUpperCase();
-  if (["RUNNING", "ACTIVE", "PAUSED", "PARKING"].includes(s)) _everRan = true;
-  if (!isLaunched(s) || s === "LAUNCHED_NOT_READY") _everRan = false;
-  const next = phaseOf(s, _everRan);
-  if (next === _phase) return;
-  const prev = _phase;
-  _phase = next;
-  document.body.dataset.phase = next;
-  if (next !== "launching") _launchingStop();
-  // region switching — one main-region state at a time
-  const region = (id, on) => { const el = $(id); if (el) el.classList.toggle("on", on); };
-  region("prelaunchRegion", next === "idle");
-  region("launchingRegion", next === "launching");
-  region("reportRegion",   next === "complete");
-  // the 336px panel and viewer chrome exist only once launched (§4.5)
-  document.querySelector(".sidebar")?.classList.toggle("prelaunch-hidden", next === "idle");
-  if (next === "idle") buildPrelaunch();
-  if (next === "launching") buildLaunching();
-  if (next === "complete" && prev) buildReport();
-  if (next === "ready") { try { localStorage.setItem(_everLaunchedKey(), "1"); } catch (_) {} }
-}
-
-// ── Pre-launch: the setup IS the main region (§4.5) ─────────────────
-let _preflightRun = 0;
-async function buildPrelaunch() {
-  const faultEl = $("prelaunchFault");
-  // an unresolved fault from the previous run survives the strip-down
-  const lastErr = (lastErrVal.textContent || "").trim();
-  if (faultEl) {
-    if (lastErr && lastErr !== "—") {
-      faultEl.style.display = "";
-      $("prelaunchFaultText").textContent = lastErr;
-    } else faultEl.style.display = "none";
-  }
-  // returning operator: summary variant; first launch: the full form
-  let ever = false;
-  try { ever = localStorage.getItem(_everLaunchedKey()) === "1"; } catch (_) {}
-  const sum = $("prelaunchSummary"), form = $("prelaunchForm");
-  if (ever) { sum.style.display = ""; form.style.display = "none"; }
-  else { sum.style.display = "none"; form.style.display = ""; }
-  try {
-    const j = await _getLaunchConfig();
-    const schema = j.kwargs_schema || {};
-    const values = { ...(j.kwargs_values || {}) };
-    _wsKwargsValues = Object.keys(values).length ? values : _wsKwargsValues;
-    if (ever) {
-      const bits = [];
-      for (const [k, spec] of Object.entries(schema)) {
-        if (k.startsWith("_")) continue;
-        const v = values[k] !== undefined ? values[k] : (spec && spec.default);
-        if (Array.isArray(v)) bits.push(`${k} · ${v.length} set`);
-        else if (v && typeof v === "object") bits.push(`${k} · ${Object.keys(v).length} set`);
-        else bits.push(`${k} · ${v}`);
-      }
-      $("prelaunchSummaryText").textContent = bits.join("   ") || "no parameters";
-    } else {
-      renderKwargsForm(form, schema, values, false, wsName);
-    }
-    runPreflight(j);
-  } catch (e) {
-    runPreflight(null, String(e));
-  }
-}
-$("btnEditParams")?.addEventListener("click", () => {
-  $("prelaunchSummary").style.display = "none";
-  const form = $("prelaunchForm");
-  form.style.display = "";
-  _getLaunchConfig().then(j =>
-    renderKwargsForm(form, j.kwargs_schema || {}, j.kwargs_values || {}, false, wsName));
-});
-$("prelaunchFaultAck")?.addEventListener("click", () => {
-  $("prelaunchFault").style.display = "none";
-});
-
-// Pre-flight proves what CAN be proven before the runtime exists:
-// the project config parses, the setup screen loads, parameters are
-// valid. Warnings never block launch; failures do (§4.5).
-function runPreflight(cfg, err) {
-  const host = $("preflightBlock");
-  if (!host) return;
-  const run = ++_preflightRun;
-  host.innerHTML = "";
-  const rows = [];
-  const addRow = (label) => {
-    const r = document.createElement("div");
-    r.className = "preflight-row";
-    r.innerHTML = `<span class="pf-dot"></span><span>${esc(label)}</span><span class="pf-note"></span>`;
-    host.appendChild(r);
-    rows.push(r);
-    return r;
-  };
-  const checks = [
-    ["Project config", async () => {
-      if (err) return ["fail", err.slice(0, 60)];
-      const n = Object.keys(cfg.kwargs_schema || {}).filter(k => !k.startsWith("_")).length;
-      return ["pass", `${n} parameter${n === 1 ? "" : "s"}`];
-    }],
-    ["Setup screen", async () => {
-      const spec = (cfg && cfg.kwargs_schema && cfg.kwargs_schema._setup) || null;
-      if (!spec) return ["pass", "generic form"];
-      const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/${spec.src}`);
-      return r.ok ? ["pass", spec.src] : ["fail", `${spec.src} → ${r.status}`];
-    }],
-    ["Run parameters", async () => {
-      const form = $("prelaunchForm");
-      if (form.style.display === "none") return ["pass", "saved values"];
-      const errs = validateKwargsForm(form, (cfg && cfg.kwargs_schema) || {});
-      return errs.length ? ["warn", errs[0].slice(0, 40)] : ["pass", "valid"];
-    }],
-  ];
-  checks.forEach(c => addRow(c[0]));
-  const btn = $("btnSetLaunch");
-  if (btn) { btn.disabled = true; btn.style.cursor = "wait"; }
-  let failed = false;
-  (async () => {
-    for (let i = 0; i < checks.length; i++) {
-      if (run !== _preflightRun) return;      // superseded
-      const r = rows[i];
-      r.classList.add("checking");
-      await new Promise(res => setTimeout(res, 380));
-      let verdict = ["warn", "check failed"];
-      try { verdict = await checks[i][1](); } catch (e) { verdict = ["warn", String(e).slice(0, 40)]; }
-      if (run !== _preflightRun) return;
-      r.classList.remove("checking");
-      r.classList.add(verdict[0]);
-      r.querySelector(".pf-note").textContent = verdict[1] || "";
-      if (verdict[0] === "fail") failed = true;
-    }
-    if (run !== _preflightRun) return;
-    if (btn) {
-      btn.disabled = failed;
-      btn.style.cursor = failed ? "not-allowed" : "";
-      if (failed) btn.title = "A pre-flight check failed — fix it, then relaunch this page";
-    }
-  })();
-}
-
-$("btnSetLaunch")?.addEventListener("click", async () => {
-  const btn = $("btnSetLaunch");
-  const form = $("prelaunchForm");
-  try {
-    if (form && form.style.display !== "none") {
-      const j = await _getLaunchConfig();
-      const errs = validateKwargsForm(form, j.kwargs_schema || {});
-      if (errs.length) { toast(errs[0], "bad"); return; }
-      const vals = readKwargsForm(form);
-      _wsKwargsValues = { ...vals };
-      await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
-        method: "POST", body: JSON.stringify({ kwargs_values: vals }),
-      });
-    }
-    btn.disabled = true;
-    await sendCmd("launch");
-    toast("launch sent", "ok");
-    await refreshStatus();
-  } catch (e) {
-    toast(String(e), "bad");
-    btn.disabled = false;
-  }
-});
-
-// ── Launching: watch each device come up (§4.5) ─────────────────────
-// Real data, not choreography: rows appear as the runtime's device
-// snapshots arrive; the final row flips when state reaches ready.
-let _launchingTimer = null;
-const _launchingSeen = new Map();   // id -> row element
-function buildLaunching() {
-  const host = $("launchingRows");
-  if (!host) return;
-  host.innerHTML = "";
-  _launchingSeen.clear();
-  const sync = document.createElement("div");
-  sync.className = "launching-row";
-  sync.id = "launchingSyncRow";
-  sync.innerHTML = `<span class="pf-dot"></span><span>workspace process</span><span class="pf-note">starting…</span>`;
-  host.appendChild(sync);
-  _launchingTimer = setInterval(_launchingPoll, 700);
-  _launchingPoll();
-}
-function _launchingStop() {
-  if (_launchingTimer) { clearInterval(_launchingTimer); _launchingTimer = null; }
-}
-async function _launchingPoll() {
-  try {
-    const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/devices`);
-    if (!r.ok) return;
-    const j = await r.json();
-    const host = $("launchingRows");
-    const syncRow = $("launchingSyncRow");
-    for (const d of (j.devices || [])) {
-      const id = d.id || d.name;
-      if (!id) continue;
-      let row = _launchingSeen.get(id);
-      if (!row) {
-        row = document.createElement("div");
-        row.className = "launching-row";
-        row.innerHTML = `<span class="pf-dot"></span><span>${esc(id)}</span><span class="pf-note">connecting…</span>`;
-        host.insertBefore(row, syncRow);
-        _launchingSeen.set(id, row);
-      }
-      const up = ["up", "ok", "connected", "sim"].includes(String(d.state || d.status || "").toLowerCase());
-      if (up && !row.classList.contains("up")) {
-        row.classList.add("up");
-        row.querySelector(".pf-note").textContent = String(d.state || "up").toLowerCase() === "sim" ? "simulated" : "up";
-      }
-    }
-  } catch (_) {}
-}
-
-// ── Run report (§4.5): a run ends in a report, not a shrug ──────────
-function buildReport() {
-  const host = $("reportStats");
-  if (!host) return;
-  const stepRows = document.querySelectorAll("#stepList .step-card, #stepList [class*=step]").length;
-  const cells = [
-    [fmtUptime(_uptimeBase) || "—", "elapsed"],
-    [String(_stepsDoneCount()), "steps"],
-    [(lastErrVal.textContent || "").trim() !== "—" && lastErrVal.textContent ? "1" : "0", "errors"],
-  ];
-  host.innerHTML = cells.map(([v, k]) =>
-    `<div class="report-cell"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`).join("");
-}
-function _stepsDoneCount() {
-  const badge = $("stepCountBadge");
-  const m = (badge && badge.textContent || "").match(/\d+/);
-  return m ? m[0] : "—";
-}
-$("btnNewRun")?.addEventListener("click", async () => {
-  // Same contract as Start: device gate, saved kwargs, fresh logs.
-  const ok = await deviceFaultGate(wsName, "Start");
-  if (!ok) return;
-  try { await clearLogs(); } catch (_) {}
-  try {
-    const kwargs = Object.keys(_wsKwargsValues).length ? _wsKwargsValues : undefined;
-    await sendCmd("start", kwargs);
-    toast("start sent", "ok");
-    await refreshStatus();
-  } catch (e) { toast(String(e), "bad"); }
-});
-$("btnExportReport")?.addEventListener("click", () => window.print());
-
 const paramsFoot  = $("paramsModalFoot");
 
 $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove("show"));
@@ -877,11 +496,6 @@ function updateStatusUI(st) {
   renderStep(st?.step, running);
   updateProgress(st?.step?.progress, launched);
   renderControls(state, launched, running);
-  updatePhase(state);
-  _applyViewerChrome();
-  _renderAxisRibbon(st);
-  _renderViewerSwitchRow();
-  _renderEta(running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
@@ -1366,20 +980,7 @@ function renderDevicesPanel() {
     if (chev) chev.classList.add("open");
   }
   const now = Date.now();
-  // §4.3: when devices are down, ONE banner above the list carries the
-  // aggregate action — per-row Recover stays for the one-off case.
-  // (The design also calls for a bulk "Simulate"; sim on this platform
-  // is authored scene intent with no mutation API, and a button that
-  // cannot act is a lie about capability — deliberately omitted.)
-  const downIds = list.filter(d =>
-    (d.state || "down") !== "ok" && d.online !== false &&
-    !(_devicesPending.get(d.id)?.until > now)).map(d => d.id);
-  const bannerHtml = downIds.length ? `
-    <div class="devices-banner">
-      <span>${downIds.length} device${downIds.length === 1 ? "" : "s"} not connected</span>
-      <button class="btn btn-sm btn-warn" data-device-act="recover-all">Recover all</button>
-    </div>` : "";
-  const newHtml = bannerHtml + list.map(d => {
+  const newHtml = list.map(d => {
     const state = d.state || "down";
     const online = d.online !== false;  // default true for back-compat
     const pending = _devicesPending.get(d.id);
@@ -1446,21 +1047,13 @@ function renderDevicesPanel() {
       }
     }
 
-    // §3: device identity gets its own full-width line — name + dot on
-    // line one, status text + controls indented on line two. One flex
-    // row left ~135px for a string that needs 150, and the part that
-    // got cut (the -0, the IP) was the diagnostic payload.
     return `
-      <div class="device-row two-line ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
-        <div class="device-line1">
-          <span class="dot ${dotClass}"></span>
-          <span class="device-id">${escHtml(d.id)}</span>
-        </div>
-        <div class="device-line2">
-          ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : `<span class="device-msg"></span>`}
-          ${control}
-          ${modePill}
-        </div>
+      <div class="device-row ${rowClass}" data-device-id="${escAttr(d.id)}" title="Click for details">
+        <span class="dot ${dotClass}"></span>
+        <span class="device-id">${escHtml(d.id)}</span>
+        ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
+        ${control}
+        ${modePill}
       </div>`;
   }).join("");
   // Skip the DOM write when nothing visible changed. WS events stream
@@ -1487,25 +1080,6 @@ function _wireDevicesPanelDelegation() {
   if (!el || el.dataset.delegated === "1") return;
   el.dataset.delegated = "1";
   el.addEventListener("click", async (ev) => {
-    // Banner bulk action: recover every down device with one confirm.
-    const allBtn = ev.target.closest('[data-device-act="recover-all"]');
-    if (allBtn) {
-      ev.stopPropagation();
-      const now = Date.now();
-      const ids = Array.from(_devices.values())
-        .filter(d => (d.state || "down") !== "ok" && d.online !== false &&
-                     !(_devicesPending.get(d.id)?.until > now))
-        .map(d => d.id);
-      if (!ids.length) return;
-      const ok = await confirmDialog({
-        title: `Recover ${ids.length} Device${ids.length === 1 ? "" : "s"}?`,
-        message: `Re-initializes: ${ids.join(", ")}. Each device reconnects on the bus.`,
-        confirm: "Recover all", icon: "recover", variant: "danger",
-      });
-      if (!ok) return;
-      for (const id of ids) recoverDevice(id);
-      return;
-    }
     // Recover button takes priority + cancels row-click open-modal.
     const recoverBtn = ev.target.closest('[data-device-act="recover"]');
     if (recoverBtn) {
@@ -1799,11 +1373,6 @@ function renderOperatorActionsPanel() {
   const disabled = isRunning(_lastState);
   const html = _opActionsHtml(disabled);
   if (list) list.innerHTML = html;
-  // §3: badge on the collapsed section + the host-side viewer switch
-  // row (innerHTML write above removed it — re-mount).
-  const ob = $("opActionsCountBadge");
-  if (ob) ob.textContent = _opActions.length ? String(_opActions.length) : "";
-  _renderViewerSwitchRow();
 
   // Pendant: only show the secondary-row button when there's
   // actually something to do. The pendant row is too constrained
@@ -2073,30 +1642,25 @@ function renderControls(state, launched, running) {
   _lastControlsState = s;
   controls.innerHTML = "";
 
-  // One-line phase hint beside the section label (§4.1): what this
-  // moment is, and what the next action does.
-  const hints = {
-    launching: "Bringing the workcell online…",
-    ready:     "Ready — Start begins the run",
-    running:   "Running — Pause holds between steps",
-    paused:    "Paused mid-step — Resume continues",
-    fault:     "Faulted — see Last error, then Start to retry or Kill",
-    complete:  "Run finished — New run starts another",
-  };
-  const hint = hints[phaseOf(s, _everRan)];
-  if (hint) {
-    const h = document.createElement("div");
-    h.className = "ctrl-hint";
-    h.textContent = hint;
-    controls.appendChild(h);
-  }
-
   const addBtn = (label, cmd, opts = {}) => {
     const b = document.createElement("button");
     b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}${opts.warn ? " btn-warn" : ""}`;
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
+      if (cmd === "park" && !await confirmDialog({
+        title: "Park Workflow?",
+        message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
+        confirm: "Park Workflow",
+        icon: "park",
+        variant: "danger",
+      })) return;
+      if (cmd === "kill" && !await confirmDialog({
+        title: "Kill Process?",
+        message: "This will immediately terminate the workspace. Any running workflow will be aborted.",
+        confirm: "Kill Process",
+        icon: "kill",
+      })) return;
       // Device-fault gate for Start / Resume. Identical contract to
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
@@ -2124,51 +1688,6 @@ function renderControls(state, launched, running) {
     controls.appendChild(b);
   };
 
-  // Hold-to-fire builder (desktop §4.4): same charge grammar as the
-  // pendant — outline at rest, hazard stripes while held, release
-  // early → snap back + the label teaches the gesture.
-  const addHold = (label, cmd, ms, cls, disabled) => {
-    const b = document.createElement("button");
-    b.className = `btn btn-sm btn-hold ${cls}`;
-    b.dataset.holdMs = String(ms);
-    b.style.setProperty("--hold-ms", ms + "ms");
-    b.innerHTML = `<span class="hold-fill"></span><span class="hold-content"><span class="hold-label">${esc(label)}</span></span>`;
-    if (disabled) b.disabled = true;
-    let timer = null;
-    const labelEl = () => b.querySelector(".hold-label");
-    const cancel = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
-      if (!b.classList.contains("holding")) return;
-      b.classList.remove("holding");
-      const le = labelEl();
-      if (le) {
-        le.textContent = `HOLD TO ${label.toUpperCase()}`;
-        setTimeout(() => { const l2 = labelEl(); if (l2) l2.textContent = label; }, 1500);
-      }
-    };
-    b.addEventListener("pointerdown", (e) => {
-      if (b.disabled) return;
-      e.preventDefault();
-      try { b.setPointerCapture?.(e.pointerId); } catch (_) {}
-      b.classList.add("holding");
-      timer = setTimeout(async () => {
-        timer = null;
-        b.classList.remove("holding");
-        b.disabled = true;
-        try {
-          await sendCmd(cmd);
-          toast(`${cmd} sent`, "ok");
-          await refreshStatus();
-        } catch (err) { toast(String(err), "bad"); }
-        finally { b.disabled = false; }
-      }, ms);
-    });
-    b.addEventListener("pointerup", cancel);
-    b.addEventListener("pointercancel", cancel);
-    b.addEventListener("pointerleave", cancel);
-    controls.appendChild(b);
-  };
-
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
   } else if (s === "LAUNCHED_NOT_READY") {
@@ -2184,16 +1703,19 @@ function renderControls(state, launched, running) {
     // while parking is in flight). Kill remains always-on below.
     const parking   = s === "PARKING";
     const active    = running || parking;
+    // "Start" while the workspace hasn't begun a run yet; "Resume"
+    // once it has — even when disabled (i.e. RUNNING / PARKING).
+    // The slot's *meaning* is "begin or continue the run", and
+    // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    // ONE filled button, ever (§4.1/§2): the primary is what this
-    // state wants pressed — Start when ready, Pause while running,
-    // Resume when paused. The other slot stays in place, plain.
-    addBtn(startLabel, "start", { primary: !active, disabled: active });
-    addBtn("Pause",    "pause", { primary: active && s !== "PAUSED", disabled: !active });
-    // Park is a HOLD (§4.4 — desktop 700 ms), warn-OUTLINED at rest,
-    // never filled. Enabled only while a workflow is in flight (park
-    // at IDLE would run cleanup against nothing and crash).
-    addHold("Park", "park", 700, "hold-park", !active || parking);
+    addBtn(startLabel, "start", { primary: true, disabled: active });
+    addBtn("Pause",    "pause", { disabled: !active });
+    // Park only makes sense when the workflow is actually in flight.
+    // Before Start the runtime is IDLE — clicking Park there would
+    // trigger the cleanup subtree against a non-running workflow and
+    // crash. Require ``active`` (running || parking) and disable when
+    // already parking.
+    addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
   }
 
   // Gear button for parameters — only before launch
@@ -2205,32 +1727,12 @@ function renderControls(state, launched, running) {
     controls.appendChild(gear);
   }
 
-  // Once launched, Launch demotes to a ghost Relaunch (§4.1) — one
-  // filled button on screen, ever. Not while a run is in flight.
-  if (launched && !running && s !== "LAUNCHED_NOT_READY" && s !== "PAUSED") {
-    const rb = document.createElement("button");
-    rb.className = "btn btn-ghost btn-sm";
-    rb.textContent = "Relaunch";
-    rb.title = "Restart the workspace process (fresh scene, fresh devices)";
-    rb.addEventListener("click", async () => {
-      if (!await confirmDialog({
-        title: "Relaunch Workspace?",
-        message: "The workspace process restarts: scene reloads, devices reconnect.",
-        confirm: "Relaunch", icon: "park", variant: "danger",
-      })) return;
-      try { await sendCmd("launch"); toast("relaunch sent", "ok"); await refreshStatus(); }
-      catch (e) { toast(String(e), "bad"); }
-    });
-    controls.appendChild(rb);
-  }
-
-  // Kill — separated to the right with spacer; a HOLD, not a tap
-  // (§4.4 — desktop 900 ms). The hold is the confirmation.
+  // Kill — separated to the right with spacer
   if (launched) {
     const spacer = document.createElement("div");
     spacer.className = "spacer";
     controls.appendChild(spacer);
-    addHold("Kill", "kill", 900, "hold-kill", false);
+    addBtn("Kill", "kill", { danger: true });
   }
 
   // Schedule lives in the top-bar icon row (alongside Fullscreen /
@@ -2244,11 +1746,8 @@ function renderControls(state, launched, running) {
   });
 }
 
-function updateIframe(state, launched, force = false) {
+function updateIframe(state, launched) {
   if (!wsInfo) return;
-  // The viewer switch (§3) owns whether the iframe loads at all — with
-  // it off the frame stays about:blank and the GPU stays released.
-  if (!_viewer3dOn && !force) return;
   const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
   if (!ready) {
     if (iframeReady) {
@@ -2463,11 +1962,9 @@ async function init() {
     wsLabelEl.textContent = wsInfo.label || "";
     _wsKwargsValues = {};
     const fullUrl = wsViewerUrl(wsInfo);
-    urlVal.innerHTML = "";
-    urlVal.appendChild(Object.assign(document.createElement("span"), { textContent: fullUrl }));
+    urlVal.textContent = fullUrl;
     urlVal.title       = fullUrl;
-    pathVal.innerHTML = "";
-    pathVal.appendChild(Object.assign(document.createElement("span"), { textContent: wsInfo.path_to_file }));
+    pathVal.textContent = wsInfo.path_to_file;
     pathVal.title       = wsInfo.path_to_file;
 
     await Promise.all([refreshStatus(), refreshLogs(), loadRunParams()]);
@@ -2557,8 +2054,6 @@ async function loadRunParams() {
       filtered[k] = values[k] !== undefined ? values[k] : (schema[k].default ?? null);
     }
     paramsPre.textContent = fields.length ? formatParamsYaml(filtered) : "(no parameters defined)";
-    const pb = $("paramsCountBadge");
-    if (pb) pb.textContent = fields.length ? String(fields.length) : "";
   } catch {
     paramsPre.textContent = "(could not load)";
   }
@@ -2766,21 +2261,31 @@ function updatePendantUI() {
     bodyEl.classList.toggle("is-waiting", waiting);
   }
 
-  // Navbar state block (§5): one solid colour with the label and the
-  // timer inside — the largest state element on screen.
-  const blockEl = $("pendantStateBlock");
-  if (blockEl) {
-    blockEl.classList.remove("ok", "warn", "bad", "off");
-    blockEl.classList.add(variant);
-    $("pendantStateText").textContent = stateLabel(state);
+  // State pill uses the shared ``.pill`` variant classes (ok / warn
+  // / bad / off) so it looks identical to the main top-bar's pill.
+  // The inner dot pulses while *waiting* for the operator to press
+  // Start — not while running. Running = steady, waiting = blinking.
+  const stateEl = $("pendantState");
+  if (stateEl) {
+    stateEl.classList.remove("ok", "warn", "bad", "off");
+    stateEl.classList.add(variant);
+    const dotEl = stateEl.querySelector(".dot");
+    if (dotEl) {
+      dotEl.classList.remove("ok", "warn", "bad", "off", "pulse");
+      dotEl.classList.add(variant);
+      if (waiting) dotEl.classList.add("pulse");
+    }
+    const textEl = stateEl.querySelector(".pendant-state-text");
+    if (textEl) textEl.textContent = stateLabel(state);
   }
 
   // Run elapsed time — same behaviour as the sidebar's "Up" field
   // (workspace.js line ~349): always visible, shows "—" when there's
   // no uptime data, ticks live while running, freezes on the final
   // value when the run ends.
-  const timerEl = $("pendantTimerValue");
+  const timerEl = $("pendantTimer");
   if (timerEl) {
+    timerEl.style.display = "";
     if (_uptimeBase != null) {
       const live = _uptimeAt != null
         ? _uptimeBase + (performance.now() - _uptimeAt) / 1000
@@ -2863,15 +2368,12 @@ function updatePendantUI() {
   // is disabled (no new run while parking is in flight).
   const parking = state.toUpperCase() === "PARKING";
   const active  = running || parking;
-  // While idle the footer is LAUNCH alone (§4.5) — the other five are
-  // absent, not ghosted. Everything reappears on launch.
-  $("pendantBar")?.classList.toggle("idle-mode", !launched);
-  $("pendantStart").disabled   = !launched || active || state.toUpperCase() === "LAUNCHED_NOT_READY";
+  $("pendantLaunch").disabled  = launched;
+  $("pendantStart").disabled   = !launched || active;
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;
   $("pendantKill").disabled    = !launched;
-  $("pendantLaunch").disabled  = state.toUpperCase() === "LAUNCHED_NOT_READY";
 
   // Relabel the Start tile to "Resume" once the workspace has begun
   // a run — same cmd, but the slot's meaning shifts from "begin" to
@@ -2884,66 +2386,22 @@ function updatePendantUI() {
 }
 
 // Wire pendant buttons
-// ── Hold-to-fire (§4.4): Park and Kill charge under the thumb ───────
-// One state flip on pointer-down; the fill is a CSS animation the
-// compositor owns. Release early → snap back + the label teaches the
-// gesture for 1.5 s. No confirm dialog: the hold IS the confirmation —
-// it works with gloves and cannot be triggered by a brush.
-function _wirePendantHold(btn, cmd) {
-  if (!btn) return;
-  let timer = null;
-  const ms = Number(btn.dataset.holdMs) || 1200;
-  btn.style.setProperty("--hold-ms", ms + "ms");
-  const label = btn.querySelector(".hold-label");
-  const restLabel = label ? label.textContent : "";
-  const cancel = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (!btn.classList.contains("holding")) return;
-    btn.classList.remove("holding");
-    // the failed gesture teaches the successful one
-    if (label) {
-      btn.classList.add("hold-hint");
-      label.textContent = `HOLD TO ${restLabel.toUpperCase()}`;
-      setTimeout(() => { btn.classList.remove("hold-hint"); label.textContent = restLabel; }, 1500);
-    }
-  };
-  btn.addEventListener("pointerdown", (e) => {
-    if (btn.disabled) return;
-    e.preventDefault();
-    try { btn.setPointerCapture?.(e.pointerId); } catch (_) {}
-    btn.classList.add("holding");
-    pendantVibrate(20);
-    timer = setTimeout(async () => {
-      timer = null;
-      btn.classList.remove("holding");
-      pendantClickSound();
-      pendantVibrate(60);
-      // completing the hold kills/parks — and closes any open dialog
-      if (cmd === "kill") {
-        document.querySelectorAll(".modal-overlay.show").forEach(o => o.classList.remove("show"));
-      }
-      btn.disabled = true;
-      try {
-        await sendCmd(cmd);
-        toast(`${cmd} sent`, "ok");
-        await refreshStatus();
-      } catch (err) {
-        toast(String(err), "bad");
-      } finally {
-        btn.disabled = false;
-      }
-    }, ms);
-  });
-  btn.addEventListener("pointerup", cancel);
-  btn.addEventListener("pointercancel", cancel);
-  btn.addEventListener("pointerleave", cancel);
-}
-_wirePendantHold($("pendantPark"), "park");
-_wirePendantHold($("pendantKill"), "kill");
-
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   btn.addEventListener("click", async () => {
     const cmd = btn.dataset.cmd;
+    if (cmd === "park" && !await confirmDialog({
+      title: "Park Workflow?",
+      message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
+      confirm: "Park Workflow",
+      icon: "park",
+      variant: "danger",
+    })) return;
+    if (cmd === "kill" && !await confirmDialog({
+      title: "Kill Process?",
+      message: "This will immediately terminate the workspace.",
+      confirm: "Kill Process",
+      icon: "kill",
+    })) return;
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button. Pendant pressed sound/haptics
     // come AFTER the gate so a canceled prompt doesn't beep falsely.
@@ -2977,10 +2435,35 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   });
 });
 
+// Pendant Kill button (secondary, separate from pendant-btn grid)
+$("pendantKill").addEventListener("click", async () => {
+  if (!await confirmDialog({
+    title: "Emergency Stop",
+    message: "Kill the process immediately? This cannot be undone.",
+    confirm: "Kill Now",
+    icon: "kill",
+  })) return;
+  try {
+    await sendCmd("kill");
+    pendantErrorSound();
+    toast("kill sent", "ok");
+    await refreshStatus();
+    updatePendantUI();
+  } catch (err) {
+    toast(String(err), "bad");
+  }
+});
+
 // Pendant params button
 $("pendantParams").addEventListener("click", () => {
   const launched = isLaunched(_lastState);
   openParamsModal(launched);
+});
+
+// Schedule buttons (top-bar + pendant nav) — share the
+// ``.js-schedule-open`` class so a single binding covers both.
+document.querySelectorAll(".js-schedule-open").forEach(b => {
+  b.addEventListener("click", () => openScheduleModal());
 });
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));

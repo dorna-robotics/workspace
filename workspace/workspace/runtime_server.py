@@ -907,20 +907,6 @@ def _status_payload(rt, workspace) -> dict:
     summary = _compute_devices_summary(workspace)
     if summary is not None:
         out["devices_summary"] = summary
-    # Machine state for the host's axis ribbon (design §3): joints are
-    # the truth this server actually holds (cartesian would need FK the
-    # host has no business doing). Sim flag comes from the core's own
-    # simulation switch. Never raises — a workspace without a core (or
-    # mid-teardown) just omits the block.
-    try:
-        core = (getattr(workspace, "components", {}) or {}).get("core")
-        api = getattr(core, "robot_api", None)
-        joints = getattr(api, "joints", None)
-        if joints is not None:
-            out["joints"] = [round(float(v), 2) for v in list(joints)[:8]]
-            out["robot_sim"] = bool(getattr(core, "simulation", False))
-    except Exception:
-        pass
     return out
 
 

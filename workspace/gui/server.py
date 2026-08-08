@@ -174,18 +174,7 @@ LANDING_HTML = """<!DOCTYPE html>
     .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
     .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
     .card-lab .card-icon { background: rgba(191,90,242,0.12); color: #bf5af2; }
-    .card-vision .card-icon { background: var(--amber-dim); color: var(--amber); }
-    /* §6: a launcher that can't say a service is down sends the
-       operator to a blank page to find out. */
-    .card { position: relative; }
-    .card-chip {
-      position: absolute; top: 10px; right: 12px;
-      font-family: var(--mono); font-size: 10px; font-weight: 600;
-      padding: 2px 8px; border-radius: 999px;
-      background: var(--surface2); color: var(--muted);
-    }
-    .card-chip.ok  { background: var(--green-dim); color: var(--green); }
-    .card-chip.bad { background: var(--red-dim); color: var(--red); }
+    .card-vision .card-icon { background: rgba(255,159,10,0.12); color: #ff9f0a; }
     [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
     [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
     [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
@@ -228,18 +217,16 @@ LANDING_HTML = """<!DOCTYPE html>
         <a class="card card-orchestrator" href="/orchestrator/">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
           <div class="card-text"><div class="card-label">Orchestrator</div><div class="card-hint">Manage workspaces</div></div>
-          <span class="card-chip" id="orchChip" style="display:none"></span>
         </a>
         <a class="card card-lab" id="cardDornaLab" target="_blank" rel="noopener">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="11" rx="2"/><line x1="12" y1="9" x2="12" y2="5"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="9.5" cy="13.5" r="0.75" fill="currentColor"/><circle cx="14.5" cy="13.5" r="0.75" fill="currentColor"/><line x1="9" y1="17" x2="15" y2="17"/><line x1="2" y1="13" x2="5" y2="13"/><line x1="19" y1="13" x2="22" y2="13"/></svg></div>
           <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot monitoring</div></div>
-          <span class="card-chip" id="labChip" style="display:none"></span>
         </a>
       </div>
-      <button class="cards-label btn btn-ghost btn-sm" id="devToggle" title="Show developer tools" style="display:inline-flex;align-items:center;gap:6px;">
+      <div class="cards-label" id="devToggle" title="Show developer tools">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         Developer
-      </button>
+      </div>
       <div class="cards" id="devCards" hidden>
         <a class="card card-jupyter" id="cardJupyter">
           <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
@@ -269,31 +256,6 @@ LANDING_HTML = """<!DOCTYPE html>
         } else {
           lab.style.display = "none";
           vis.style.display = "none";
-        }
-
-        // §6 live status chips — same feed nav.js uses for its badge.
-        fetch("/orchestrator/api/workspaces/status")
-          .then(function (r) { return r.json(); })
-          .then(function (j) {
-            var list = (j && (j.workspaces || j)) || [];
-            var running = 0;
-            (Array.isArray(list) ? list : []).forEach(function (w) {
-              var st = String((w.status && w.status.state) || w.state || "").toUpperCase();
-              if (["RUNNING", "ACTIVE", "PAUSED", "PARKING"].indexOf(st) >= 0) running++;
-            });
-            var chip = document.getElementById("orchChip");
-            chip.style.display = "";
-            chip.textContent = running ? running + " running" : "idle";
-            chip.className = "card-chip" + (running ? " ok" : "");
-          }).catch(function () {});
-        if (m) {
-          // Reachability probe for Dorna Lab — no-cors: any response
-          // (even opaque) means the box answers; only a network error
-          // marks it down.
-          var labChip = document.getElementById("labChip");
-          fetch(lab.href, { mode: "no-cors" })
-            .then(function () { labChip.style.display = ""; labChip.textContent = "reachable"; labChip.className = "card-chip ok"; })
-            .catch(function () { labChip.style.display = ""; labChip.textContent = "unreachable"; labChip.className = "card-chip bad"; });
         }
 
         // Developer section — collapsible, collapsed by default,

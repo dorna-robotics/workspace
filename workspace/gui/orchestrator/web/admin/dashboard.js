@@ -322,14 +322,14 @@ function render() {
             <div class="wc-name">
               ${esc(ws.name)}
               ${ws.label ? `<span class="wc-label">${esc(ws.label)}</span>` : ""}
-              <span class="pill ${variant}">
-                <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
-                ${esc(stateLabel(state))}
-              </span>
             </div>
             <div class="wc-path mono">${esc(ws.path_to_file)}</div>
           </div>
         </a>
+        <span class="pill ${variant}">
+          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
+          ${esc(stateLabel(state))}
+        </span>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">
@@ -357,29 +357,34 @@ function render() {
       })()}
       <div class="wc-footer">
         <div class="wc-actions">
-          ${(() => {
-            // §2: ONE primary action per card, labeled by state — the
-            // operator reads what the card wants pressed, not a fixed
-            // set with the dead ones dimmed. Pendant opens the operator
-            // layout; Kill is a red ghost pushed right.
-            const up = state.toUpperCase();
-            const parking = up === "PARKING";
-            const active  = running || parking;
-            let primary;
-            if (!launched)                      primary = `<button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>`;
-            else if (up === "LAUNCHED_NOT_READY") primary = `<span class="wc-starting">Launching…</span>`;
-            else if (active)                    primary = `<button class="btn btn-sm btn-primary action-btn" data-cmd="pause" ${parking ? "disabled" : ""}>Pause</button>`;
-            else if (up === "PAUSED")           primary = `<button class="btn btn-sm btn-primary action-btn" data-cmd="start">Resume</button>`;
-            else if (["ERROR", "FAILED"].includes(up)) primary = `<button class="btn btn-sm btn-danger action-btn" data-cmd="start">Recover</button>`;
-            else                                primary = `<button class="btn btn-sm btn-primary action-btn" data-cmd="start">${isStarted(state) ? "Resume" : "Start"}</button>`;
-            const pendant = launched
-              ? `<a class="btn btn-sm" href="workspace.html?name=${encodeURIComponent(ws.name)}&pendant=1">Pendant</a>`
-              : `<button class="btn btn-sm kwargs-toggle-btn">Parameters</button>`;
-            const kill = launched
-              ? `<button class="btn btn-sm btn-ghost wc-kill action-btn" data-cmd="kill">Kill</button>`
-              : "";
-            return `${primary}${pendant}<div class="spacer"></div>${kill}`;
-          })()}
+          ${!launched
+            ? `<div class="spacer"></div><button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>
+               <button class="btn btn-sm kwargs-toggle-btn">Parameters</button>`
+            : state.toUpperCase() === "LAUNCHED_NOT_READY"
+            ? `<span class="wc-starting">Starting…</span>
+               <div class="spacer"></div>
+               <button class="btn btn-sm action-btn" data-cmd="kill">Kill</button>`
+            : (() => {
+                // PARKING is a *flag* — the workflow is still draining
+                // through park-cleanup, so Pause / Resume stay reachable.
+                // Park itself disables once a park is in flight; Start
+                // is disabled while any work (running or parking) is in
+                // flight.
+                const parking = state.toUpperCase() === "PARKING";
+                const active  = running || parking;
+                // Start slot reads "Resume" once a run has begun
+                // (RUNNING / PAUSED / PARKING) — even while disabled.
+                // See workspace.js / api.js for the rationale; this
+                // keeps the vocabulary consistent across sidebar,
+                // pendant, and card.
+                const startLbl = isStarted(state) ? "Resume" : "Start";
+                return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${startLbl}</button>
+               <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
+               <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
+               <div class="spacer"></div>
+               <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`;
+              })()
+          }
         </div>
       </div>
     `;

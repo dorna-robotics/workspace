@@ -4,56 +4,23 @@
    Include via: <link rel="stylesheet" href="/vendor/base.css"/>
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Self-hosted fonts ────────────────────────────────────────────────
-   The GUI runs on a local web server on the robot controller with no
-   internet — never a Google Fonts <link>; it would hang offline. */
-@font-face { font-family: Barlow; font-style: normal; font-weight: 400; font-display: swap; src: url("/vendor/fonts/barlow-400.woff2") format("woff2"); }
-@font-face { font-family: Barlow; font-style: normal; font-weight: 500; font-display: swap; src: url("/vendor/fonts/barlow-500.woff2") format("woff2"); }
-@font-face { font-family: Barlow; font-style: normal; font-weight: 600; font-display: swap; src: url("/vendor/fonts/barlow-600.woff2") format("woff2"); }
-@font-face { font-family: Barlow; font-style: normal; font-weight: 700; font-display: swap; src: url("/vendor/fonts/barlow-700.woff2") format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/vendor/fonts/plex-mono-400.woff2") format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("/vendor/fonts/plex-mono-500.woff2") format("woff2"); }
-@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("/vendor/fonts/plex-mono-600.woff2") format("woff2"); }
-
 /* ── CSS Variables (Dark) ─────────────────────────────────────────────── */
 :root {
-  --bg:         oklch(0.19 0.012 255);
-  --surface:    oklch(0.235 0.014 255);
-  --surface2:   oklch(0.28 0.015 255);
-  --surface3:   oklch(0.33 0.016 255);
-  --border:     oklch(0.38 0.018 255);
-  --border2:    oklch(0.3 0.014 255);
-  --text:       oklch(0.95 0.006 255);
-  --muted:      oklch(0.7 0.01 255);
-  --muted2:     oklch(0.67 0.012 255);
-  /* --accent does two incompatible jobs at one value: text on a tint
-     wants LIGHTER in dark theme, a fill under white text wants DARKER
-     (white on the old single value measured 3.11:1). Split: --accent
-     is text/interactive, --accent-solid is fills carrying white text.
-     Same rule produced --green/--ok-solid and --amber/--orange. */
-  --accent:       oklch(0.74 0.14 250);   /* text / interactive */
-  --accent-solid: oklch(0.54 0.19 258);   /* fills under white text */
-  --accent-h:   oklch(0.82 0.12 250);
-  --accent-dim: oklch(0.34 0.075 255);
-  --green:      oklch(0.72 0.16 152);
-  --red:        oklch(0.7 0.18 27);
-  --amber:      oklch(0.78 0.14 75);
-  /* State tints — the -dim companions. Before these, ~30 rules carried
-     hardcoded rgba() tints, each duplicated for light theme; a re-value
-     meant editing thirty literals (design-system §6 documented reason). */
-  --green-dim:  oklch(0.32 0.07 155);
-  --red-dim:    oklch(0.3 0.06 25);
-  --amber-dim:  oklch(0.31 0.055 70);
-  /* SIM — its own hue, explicitly NOT a state colour. */
-  --sim:        oklch(0.72 0.13 285);
-  --sim-dim:    oklch(0.31 0.06 285);
-  /* Park (.btn-warn) — an ACTION colour, deliberately not --amber
-     (amber = "degraded / check"). Solid under white text, so one value
-     serves both themes: white's contrast doesn't change with the page.
-     Hue separation carries state: amber 70° → orange 50° → red 27°. */
-  --orange:     oklch(0.58 0.17 50);
-  /* Translucent chip base for HUD elements over the 3D viewport. */
-  --hud:        oklch(0.24 0.014 255 / 0.88);
+  --bg:        #000000;
+  --surface:   #1c1c1e;
+  --surface2:  #2c2c2e;
+  --surface3:  #3a3a3c;
+  --border:    #3a3a3c;
+  --border2:   #2c2c2e;
+  --text:      #f5f5f7;
+  --muted:     #8e8e93;
+  --muted2:    #636366;
+  --accent:    #0a84ff;
+  --accent-h:  #409cff;
+  --accent-dim: rgba(10,132,255,0.15);
+  --green:     #34c759;
+  --red:       #ff453a;
+  --amber:     #ff9f0a;
   --radius:    14px;             /* legacy alias — prefer the named scale below */
 
   /* ── Radius scale ─────────────────────────────────────────────────── */
@@ -78,8 +45,8 @@
   --text-lg: 15px;               /* card headings, primary labels */
   --text-xl: 17px;               /* modal heads, page H1s */
 
-  --font:      Barlow, -apple-system, system-ui, sans-serif;
-  --mono:      "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font:      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  --mono:      "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.3);
   --shadow:    0 4px 16px rgba(0,0,0,0.35);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
@@ -101,28 +68,21 @@
 
 /* ── CSS Variables (Light) ────────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg:         oklch(0.945 0.004 250);
-  --surface:    #ffffff;
-  --surface2:   oklch(0.965 0.004 250);
-  --surface3:   oklch(0.925 0.006 250);
-  --border:     oklch(0.86 0.008 250);
-  --border2:    oklch(0.92 0.006 250);
-  --text:       oklch(0.24 0.015 250);
-  --muted:      oklch(0.5 0.013 250);
-  --muted2:    oklch(0.53 0.013 250);
-  --accent:       oklch(0.52 0.17 250);   /* text / interactive */
-  --accent-solid: oklch(0.52 0.17 250);   /* same value in light; the name stays so dark can override */
-  --accent-h:   oklch(0.45 0.17 250);
-  --accent-dim: oklch(0.94 0.04 250);
-  --green:      oklch(0.52 0.14 152);
-  --red:        oklch(0.5 0.18 27);
-  --amber:      oklch(0.52 0.13 70);
-  --green-dim:  oklch(0.95 0.04 152);
-  --red-dim:    oklch(0.96 0.035 27);
-  --amber-dim:  oklch(0.96 0.045 80);
-  --sim:        oklch(0.52 0.16 285);
-  --sim-dim:    oklch(0.95 0.035 280);
-  --hud:        rgba(255,255,255,0.85);
+  --bg:        #f2f2f7;
+  --surface:   #ffffff;
+  --surface2:  #f2f2f7;
+  --surface3:  #e5e5ea;
+  --border:    #d1d1d6;
+  --border2:   #e5e5ea;
+  --text:      #1d1d1f;
+  --muted:     #86868b;
+  --muted2:    #aeaeb2;
+  --accent:    #007aff;
+  --accent-h:  #0063cc;
+  --accent-dim: rgba(0,122,255,0.10);
+  --green:     #248a3d;
+  --red:       #d70015;
+  --amber:     #c77c0a;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
   --shadow:    0 2px 12px rgba(0,0,0,0.08);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
@@ -130,14 +90,6 @@
   --glow-ok:   0 0 10px rgba(36,138,61,0.40);
   --glow-warn: 0 0 8px  rgba(199,124,10,0.35);
   --glow-bad:  0 0 8px  rgba(215,0,21,0.40);
-}
-
-/* ── Reduced motion: every pulse and breathe dies (design-system §5) ── */
-@media (prefers-reduced-motion: reduce) {
-  .dot.pulse, .pill .dot.pulse,
-  [class*="pulse"], [class*="breathe"] {
-    animation: none !important;
-  }
 }
 
 /* ── Reset ────────────────────────────────────────────────────────────── */
@@ -204,17 +156,19 @@ a:hover { color: var(--accent-h); }
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.btn-primary { background: var(--accent-solid); color: #fff; font-weight: 600; }
+.btn-primary { background: var(--accent); color: #fff; font-weight: 600; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
 
-.btn-danger { background: var(--red-dim); color: var(--red); }
-.btn-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--red-dim) 80%, var(--red)); }
+.btn-danger { background: rgba(255,69,58,0.12); color: var(--red); }
+.btn-danger:hover:not(:disabled) { background: rgba(255,69,58,0.22); }
 
 /* Park-graceful — solid orange, mirrors .btn-primary's "solid accent
    + white text" shape so it reads at the same saturation as the
    pendant Park button even without an inset border. */
-.btn-warn { background: var(--orange); color: #fff; font-weight: 600; }
-.btn-warn:hover:not(:disabled) { background: color-mix(in oklch, var(--orange) 88%, black); }
+.btn-warn { background: #ff7a3f; color: #fff; font-weight: 600; }
+.btn-warn:hover:not(:disabled) { background: #ff6a2a; }
+[data-theme="light"] .btn-warn { background: #d8651e; color: #fff; }
+[data-theme="light"] .btn-warn:hover:not(:disabled) { background: #c4541a; }
 
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
@@ -267,6 +221,8 @@ a:hover { color: var(--accent-h); }
 [data-theme="light"] .btn:hover:not(:disabled) { background: rgba(0,0,0,0.08); }
 [data-theme="light"] .btn-primary { background: var(--accent); color: #fff; }
 [data-theme="light"] .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+[data-theme="light"] .btn-danger  { background: rgba(215,0,21,0.08); color: var(--red); }
+[data-theme="light"] .btn-danger:hover:not(:disabled) { background: rgba(215,0,21,0.14); }
 [data-theme="light"] .btn-ghost   { background: transparent; color: var(--muted); }
 [data-theme="light"] .btn-ghost:hover:not(:disabled) { background: rgba(0,0,0,0.04); color: var(--text); }
 [data-theme="light"] .btn.active  { background: var(--accent-dim); color: var(--accent); }
@@ -288,18 +244,23 @@ a:hover { color: var(--accent-h); }
   text-transform: uppercase;
   flex-shrink: 0;
 }
-.pill.ok   { background: var(--green-dim);  color: var(--green); }
-.pill.warn { background: var(--amber-dim); color: var(--amber); }
-.pill.bad  { background: var(--red-dim);  color: var(--red); }
+.pill.ok   { background: rgba(52,199,89,0.18);  color: var(--green); }
+.pill.warn { background: rgba(255,159,10,0.18); color: var(--amber); }
+.pill.bad  { background: rgba(255,69,58,0.18);  color: var(--red); }
 .pill.off  { background: var(--surface2); color: var(--muted); }
 
+[data-theme="light"] .pill.ok   { background: rgba(36,138,61,0.12);  color: var(--green); }
+[data-theme="light"] .pill.warn { background: rgba(199,124,10,0.12); color: var(--amber); }
+[data-theme="light"] .pill.bad  { background: rgba(215,0,21,0.12);  color: var(--red); }
 [data-theme="light"] .pill.off  { background: rgba(142,142,147,0.1); color: var(--muted); }
 
 /* SIM variant — cyan, distinct from the state colors so it never
    blends with ok/warn/bad. Used by the project-card devices pill
    when sim is the only flavor of "not pure ok". */
-.pill.sim { background: var(--sim-dim); color: var(--sim); }
-.dot.sim { background: var(--sim); }
+.pill.sim { background: rgba(94,200,255,0.15); color: #5ec8ff; }
+[data-theme="light"] .pill.sim { background: rgba(12,108,179,0.10); color: #0c6cb3; }
+.dot.sim { background: #5ec8ff; }
+[data-theme="light"] .dot.sim { background: #0c6cb3; }
 /* Devices indicator — rendered as a wc-meta-item so it lines up with
    URL / Up. Value is a small rounded pill containing just the total
    device count. Color rules:
@@ -328,11 +289,19 @@ a:hover { color: var(--accent-h); }
   color: var(--muted);
 }
 .devices-meta--warn .devices-count {
-  background: var(--amber-dim);
+  background: rgba(255,159,10,0.18);
   color: var(--amber);
 }
 .devices-meta--bad .devices-count {
-  background: var(--red-dim);
+  background: rgba(255,69,58,0.18);
+  color: var(--red);
+}
+[data-theme="light"] .devices-meta--warn .devices-count {
+  background: rgba(199,124,10,0.12);
+  color: var(--amber);
+}
+[data-theme="light"] .devices-meta--bad .devices-count {
+  background: rgba(215,0,21,0.12);
   color: var(--red);
 }
 
@@ -459,11 +428,14 @@ a:hover { color: var(--accent-h); }
   cursor: pointer;
   pointer-events: auto;
 }
-.toast.ok   { color: var(--green); background: var(--green-dim); border: 1px solid color-mix(in oklch, var(--green) 30%, transparent); }
-.toast.bad  { color: var(--red);   background: var(--red-dim); border: 1px solid color-mix(in oklch, var(--red) 30%, transparent); }
-.toast.warn { color: var(--amber); background: var(--amber-dim); border: 1px solid color-mix(in oklch, var(--amber) 30%, transparent); }
+.toast.ok   { color: var(--green); background: rgba(52,199,89,0.18); border: 1px solid rgba(52,199,89,0.25); }
+.toast.bad  { color: var(--red);   background: rgba(255,69,58,0.18); border: 1px solid rgba(255,69,58,0.25); }
+.toast.warn { color: var(--amber); background: rgba(255,159,10,0.18); border: 1px solid rgba(255,159,10,0.25); }
 
 [data-theme="light"] .toast     { background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.12); color: var(--text); }
+[data-theme="light"] .toast.ok  { background: rgba(36,138,61,0.08); color: var(--green); }
+[data-theme="light"] .toast.bad { background: rgba(215,0,21,0.08); color: var(--red); }
+[data-theme="light"] .toast.warn{ background: rgba(199,124,10,0.08); color: var(--amber); }
 
 @keyframes toast-in {
   from { transform: translateY(10px) scale(0.96); opacity: 0; }
@@ -572,8 +544,9 @@ a:hover { color: var(--accent-h); }
   width: 52px; height: 52px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
 }
-.confirm-icon[data-variant="danger"] { background: var(--red-dim); color: var(--red); }
+.confirm-icon[data-variant="danger"] { background: rgba(255,69,58,0.12); color: var(--red); }
 .confirm-icon[data-variant="default"] { background: var(--accent-dim); color: var(--accent); }
+[data-theme="light"] .confirm-icon[data-variant="danger"] { background: rgba(215,0,21,0.08); }
 [data-theme="light"] .confirm-icon[data-variant="default"] { background: rgba(0,122,255,0.08); }
 
 .confirm-title { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.3px; color: var(--text); text-align: center; }
@@ -596,10 +569,12 @@ a:hover { color: var(--accent-h); }
 .confirm-actions .btn { flex: 1; justify-content: center; padding: 10px 16px; font-size: var(--text-md); font-weight: 600; border-radius: var(--radius-md); }
 .confirm-cancel { background: var(--surface2) !important; color: var(--text) !important; }
 .confirm-cancel:hover:not(:disabled) { background: var(--surface3) !important; }
-.confirm-ok-danger { background: var(--red-dim) !important; color: var(--red) !important; }
-.confirm-ok-danger:hover:not(:disabled) { background: color-mix(in oklch, var(--red-dim) 75%, var(--red)) !important; }
+.confirm-ok-danger { background: rgba(255,69,58,0.15) !important; color: var(--red) !important; }
+.confirm-ok-danger:hover:not(:disabled) { background: rgba(255,69,58,0.28) !important; }
 [data-theme="light"] .confirm-cancel { background: rgba(0,0,0,0.05) !important; }
 [data-theme="light"] .confirm-cancel:hover:not(:disabled) { background: rgba(0,0,0,0.08) !important; }
+[data-theme="light"] .confirm-ok-danger { background: rgba(215,0,21,0.1) !important; color: var(--red) !important; }
+[data-theme="light"] .confirm-ok-danger:hover:not(:disabled) { background: rgba(215,0,21,0.18) !important; }
 
 @media (max-width: 600px) {
   .confirm-dialog { width: calc(100% - 24px); padding: 24px 20px 16px; border-radius: var(--radius-lg); }

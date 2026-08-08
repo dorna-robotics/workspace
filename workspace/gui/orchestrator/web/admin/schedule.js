@@ -44,7 +44,7 @@ function _leafKey(replan_id, leaf_name) {
   return `${replan_id || 0}|${leaf_name}`;
 }
 
-let _paneEl = null;   // #viewerSchedule — the viewport tab pane (was a modal)
+let _modalEl = null;
 let _ganttEl = null;
 
 // ── public entrypoints ─────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export function resetSchedule() {
   _leafOrder.length = 0;
   _leafGeom.clear();
   // Force a re-render so the modal blanks out if currently open.
-  if (_paneVisible()) _render();
+  if (_modalEl?.classList.contains("show")) _render();
 }
 
 // Public ingest — workspace.js's mux dispatcher calls this for every
@@ -111,21 +111,59 @@ function _ingest(msg) {
   }
 }
 
-// Patch one block in place — class + shape glyph + time text. Falls
-// back to a full re-render only when the block can't be located.
+// Patch one block in place — only the block whose state changed gets
+// its class flipped and (if just-completed) its duration text added.
+// Avoids the full SVG rebuild on every action_start / action_end /
+// swap_start / swap_end, which was the schedule modal's hottest
+// path during a run. Falls back to a full re-render only when the
+// block can't be located (e.g. modal just opened, SVG not yet built
+// — _render() builds it).
 function _patchBlockState(leafKey) {
-  if (!_paneVisible()) return;
+  if (!_modalEl?.classList.contains("show")) return;
   if (!_ganttEl) return;
-  const el = _ganttEl.querySelector(`.sched-block[data-leaf-key="${CSS.escape(leafKey)}"]`);
-  if (!el) { _render(); return; }
+  const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
+  if (!g) { _render(); return; }
   const state = _leafState.get(leafKey) || "pending";
-  el.className = `sched-block sched-${state}`;
-  _dressBlock(el, leafKey);
+  g.setAttribute("class", `sched-block sched-${state}`);
+  // If this transition just produced a finished block, add its
+  // elapsed-time label under the rect. (Done before only via a full
+  // re-render — we replicate just the duration text here.)
+  if ((state === "done" || state === "skipped") && !g.querySelector(".sched-block-elapsed")) {
+    const timing = _leafTiming.get(leafKey) || {};
+    if (timing.startedAt != null && timing.endedAt != null) {
+      const elapsed = timing.endedAt - timing.startedAt;
+      const rect = g.querySelector("rect.sched-block-fill");
+      if (rect) {
+        const x = parseFloat(rect.getAttribute("x"));
+        const y = parseFloat(rect.getAttribute("y"));
+        const w = parseFloat(rect.getAttribute("width"));
+        const h = parseFloat(rect.getAttribute("height"));
+        const dur = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        dur.setAttribute("x", String(x + w / 2));
+        dur.setAttribute("y", String(y + h + 11));
+        dur.setAttribute("text-anchor", "middle");
+        dur.setAttribute("class", "sched-block-elapsed");
+        dur.textContent = `${elapsed.toFixed(1)}s`;
+        g.appendChild(dur);
+      }
+    }
+  }
 }
 
 function _initDOM() {
-  _paneEl = document.getElementById("viewerSchedule");
+  _modalEl = document.getElementById("scheduleModalOverlay");
   _ganttEl = document.getElementById("ganttContainer");
+  const closeBtn = document.getElementById("btnScheduleClose");
+  if (closeBtn && !closeBtn._wired) {
+    closeBtn.addEventListener("click", closeScheduleModal);
+    closeBtn._wired = true;
+  }
+  if (_modalEl && !_modalEl._wired) {
+    _modalEl.addEventListener("click", (e) => {
+      if (e.target === _modalEl) closeScheduleModal();
+    });
+    _modalEl._wired = true;
+  }
 }
 
 // Centre the scroll viewport on whichever leaf is currently "the live
@@ -137,23 +175,24 @@ function _jumpToCurrent() {
   let target = _leafOrder.find(name => _leafState.get(name) === "running");
   if (!target) {
     target = _leafOrder.find(name => {
-      const st = _leafState.get(name);
-      return st !== "done" && st !== "skipped";
+      const s = _leafState.get(name);
+      return s !== "done" && s !== "skipped";
     });
   }
   if (!target) target = _leafOrder[_leafOrder.length - 1];
   const geom = _leafGeom.get(target);
   if (!geom) return;
-  const track = _ganttEl.querySelector(".sched-track");
-  if (!track) return;
-  const blockCentre = (geom.frac + geom.wfrac / 2) * track.scrollWidth;
-  _ganttEl.scrollLeft = Math.max(0, blockCentre - _ganttEl.clientWidth / 2);
+  const blockCentre = geom.x + geom.w / 2;
+  const viewportW = _ganttEl.clientWidth;
+  // Instant scroll — the modal has just opened and a smooth pan would
+  // make the chart visibly slide, which reads as a glitch.
+  _ganttEl.scrollLeft = Math.max(0, blockCentre - viewportW / 2);
 }
 
-export function showScheduleView() {
+export function openScheduleModal() {
   _initDOM();
-  if (!_paneEl) return;
-  _paneEl.style.display = "";
+  if (!_modalEl) return;
+  _modalEl.classList.add("show");
   _renderGantt();
   // Always auto-centre on the "live" block (running, else next pending,
   // else the last block once everything's done). ``_jumpToCurrent`` is
@@ -162,44 +201,13 @@ export function showScheduleView() {
   requestAnimationFrame(_jumpToCurrent);
 }
 
-function _paneVisible() {
-  return !!(_paneEl && _paneEl.style.display !== "none");
-}
-
-// §4.5: the run is estimated while it runs. ETA = the planner's own
-// numbers — estimates of pending blocks plus the remainder of the
-// running one. Null when there is no plan (pre-launch, no schedule).
-export function getScheduleEta() {
-  // Pure data walk (no DOM — the pane may never have been opened).
-  if (!_slices.length) return null;
-  let eta = 0, seen = false;
-  for (const slice of _slices) {
-    const rid = slice.replan_id || 0;
-    for (const a of (slice.actions || [])) {
-      const key = _leafKey(rid, a.leaf_name);
-      const st = _leafState.get(key) || "pending";
-      if (st === "done" || st === "skipped") continue;
-      const est = a.duration || 0;
-      if (st === "running") {
-        const t = _leafTiming.get(key) || {};
-        const gone = t.startedAt != null ? (Date.now() / 1000 - t.startedAt) : 0;
-        eta += Math.max(0, est - gone);
-      } else {
-        eta += est;
-      }
-      seen = true;
-    }
-  }
-  return seen ? eta : 0;
-}
-
-export function hideScheduleView() {
-  if (!_paneEl) return;
-  _paneEl.style.display = "none";
+export function closeScheduleModal() {
+  if (!_modalEl) return;
+  _modalEl.classList.remove("show");
 }
 
 function _render() {
-  if (_paneVisible()) _renderGantt();
+  if (_modalEl?.classList.contains("show")) _renderGantt();
 }
 
 // ── SVG Gantt ──────────────────────────────────────────────────────────
@@ -210,7 +218,10 @@ function _renderGantt() {
     return;
   }
 
-  // Resource rows: union across slices, tool resource first.
+  // tool_resource comes from the most-recent slice (the project's
+  // identity shouldn't change across replans anyway). Resource rows
+  // are the union across every slice's actions so a slice that only
+  // touches shaker_2 still gets a row drawn for it.
   const tres = _slices[_slices.length - 1].tool_resource || "robot";
   const resSet = new Set([tres]);
   for (const slice of _slices) {
@@ -221,157 +232,286 @@ function _renderGantt() {
   const rows = [...resSet];
   rows.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
 
-  // ── ONE shared time scale (design §6) ─────────────────────────────
-  // Blocks are positioned as left/width PERCENTAGES of the total plan
-  // duration — a 20s block is the same width in every lane, a lane
-  // that starts late shows empty track, idle gaps are visible, and
-  // the tick row means something. Slices (replans) are sequential:
-  // each gets a cumulative offset equal to the spans before it.
-  const spans = _slices.map(sl => Math.max(1,
-    ...((sl.actions || []).map(a => (a.start_t || 0) + (a.duration || 0)))));
-  const offsets = [];
-  let acc = 0;
-  for (const sp of spans) { offsets.push(acc); acc += sp; }
-  const T = Math.max(1, acc);
+  // ── Layout knobs ───────────────────────────────────────────────────
+  const FONT_PX   = 12;
+  const CHAR_W    = FONT_PX * 0.62;
+  const LABEL_PAD = 22;
+  const BLOCK_GAP = 18;       // gap between consecutive blocks on a row
+  const SLICE_GAP = 38;       // gap between slices (vertical divider sits at the midpoint)
+  const ROW_H     = 48;
+  const ROW_PAD   = 8;
+  const LEFT_W    = 120;
+  const TOP_PAD   = 18;
+  const BOT_PAD   = 18;
 
-  // Track width: time-proportional, floor at the viewport so short
-  // plans still fill it; ~5px/s keeps bd's 12min batch scrollable.
-  const paneW = Math.max(400, _ganttEl.clientWidth - 140);
-  const trackPx = Math.max(paneW, Math.min(T * 5, 20000));
+  function labelOf(a)     {
+    // Parameterless actions (parametrized: false) — e.g. Start / Park
+    // — appear once per plan regardless of item count, so the "(0)"
+    // suffix is misleading. Show just the class name for those.
+    const base = a.class_name || a.name;
+    return (a.parametrized === false) ? base : `${base}(${a.item})`;
+  }
+  function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
 
+  // ── Flow layout, per-slice column ─────────────────────────────────
+  // X is NOT proportional to wall-clock time. Block widths come from
+  // label length so every action's name is readable. Time data is
+  // shown separately: as a small "Δ s" line under each *done* block
+  // and in the hover tooltip.
+  const placements = new Map();    // composite key -> {a, x, w, y, h, rowIdx, replan_id}
+  const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
+  let xBase = LEFT_W + 8;
   _leafOrder.length = 0;
   _leafGeom.clear();
 
-  const frag = document.createDocumentFragment();
-  const wrap = document.createElement("div");
-  wrap.className = "sched-wrap";
-  wrap.style.setProperty("--track-w", trackPx + "px");
+  for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
+    const slice = _slices[sliceIdx];
+    const sliceActions = slice.actions || [];
+    const sliceReplanId = slice.replan_id || 0;
 
-  // tick row — answers "when"; the in-capsule number answers "how long"
-  const ticks = document.createElement("div");
-  ticks.className = "sched-ticks";
-  const step = _niceStep(T);
-  for (let t = 0; t <= T; t += step) {
-    const el = document.createElement("span");
-    el.style.left = (t / T * 100) + "%";
-    el.textContent = _fmtS(t);
-    ticks.appendChild(el);
+    // Chart time = planner's predicted ``start_t`` / ``duration``.
+    // The planner already enforces causal ordering (and same-resource
+    // mutex), so we use *its* numbers for layout decisions. Actual
+    // wall-clock timing surfaces separately — as the elapsed-time
+    // text under done blocks and in the hover tooltip.
+    const chartStart = (a) => a.start_t || 0;
+    const chartEnd   = (a) => (a.start_t || 0) + (a.duration || 0);
+
+    // Build the block records first (x left undefined; we'll fill
+    // it in the topological pass below).
+    const local = new Map();
+    for (const a of sliceActions) {
+      const rowIdx = _primaryRow(rows, a.resources, tres);
+      const w = neededWidth(a);
+      const y = TOP_PAD + rowIdx * ROW_H + ROW_PAD;
+      const h = ROW_H - ROW_PAD * 2;
+      local.set(a.leaf_name, {
+        a, x: xBase, w, y, h, rowIdx,
+        replan_id: sliceReplanId,
+      });
+    }
+
+    // Topological flow layout across ALL rows of this slice.
+    //
+    // Walk blocks in chartStart order. Each block's x is pushed past
+    // the right edge of every earlier-placed block whose chartEnd is
+    // ≤ this block's chartStart — i.e. every block that fully
+    // *precedes* this one in chart time, regardless of row. That
+    // means:
+    //   * Sequential blocks (A ends before B starts) end up visually
+    //     sequential, even when they're on different rows. So if the
+    //     autonomous shaker completes before the next robot action
+    //     starts, the robot block sits to the right of the shaker
+    //     block — no x overlap.
+    //   * Parallel blocks (their chart-time intervals overlap) don't
+    //     enforce ordering on each other, so they can land at the
+    //     same x and stack vertically across rows — which is what
+    //     parallelism *should* look like.
+    //
+    // Chart time uses actual ``wall_ts`` when available so completed
+    // runs reflect what really happened, not what the planner
+    // predicted.
+    const allByTime = [...local.values()].sort(
+      (a, b) => chartStart(a.a) - chartStart(b.a),
+    );
+    const placed = [];
+    for (const p of allByTime) {
+      let nx = xBase;
+      const ps = chartStart(p.a);
+      for (const other of placed) {
+        const sameRow = other.rowIdx === p.rowIdx;
+        // Two reasons to push past ``other``:
+        //   1. Same-row: physically the same resource, must be
+        //      sequential regardless of how the planner's start_t
+        //      values look — defensive against quirks in the chart
+        //      time fields.
+        //   2. Causal predecessor: ``other`` ends at or before this
+        //      block's chartStart, so it's strictly earlier in time.
+        if (sameRow || chartEnd(other.a) <= ps) {
+          const right = other.x + other.w + (sameRow ? BLOCK_GAP : 8);
+          if (right > nx) nx = right;
+        }
+      }
+      p.x = nx;
+      placed.push(p);
+    }
+
+    let sliceMaxX = xBase;
+    const sliceByStart = [...local.values()].sort(
+      (a, b) => chartStart(a.a) - chartStart(b.a),
+    );
+    for (const p of sliceByStart) {
+      if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
+      const key = _leafKey(sliceReplanId, p.a.leaf_name);
+      placements.set(key, p);
+      _leafOrder.push(key);
+      _leafGeom.set(key, { x: p.x, w: p.w });
+    }
+
+    if (sliceIdx + 1 < _slices.length) {
+      sliceDividerXs.push(sliceMaxX + SLICE_GAP / 2);
+    }
+    xBase = sliceMaxX + SLICE_GAP;
   }
-  wrap.appendChild(ticks);
 
-  // slice dividers on the shared scale
-  for (let i = 1; i < offsets.length; i++) {
-    const d = document.createElement("div");
-    d.className = "sched-slice-line";
-    d.style.left = (offsets[i] / T * 100) + "%";
-    d.title = `replan ${_slices[i].replan_id ?? i}`;
-    wrap.appendChild(d);
+  const W = Math.max(LEFT_W + 200, xBase - SLICE_GAP + 16);
+  const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("width",  String(W));
+  svg.setAttribute("height", String(H));
+  svg.setAttribute("class",  "sched-svg");
+
+  const gRows = document.createElementNS(svgNS, "g");
+  const gSlices = document.createElementNS(svgNS, "g");
+  const gConn = document.createElementNS(svgNS, "g");
+  const gBlocks = document.createElementNS(svgNS, "g");
+  svg.appendChild(gRows);
+  svg.appendChild(gSlices);
+  svg.appendChild(gConn);
+  svg.appendChild(gBlocks);
+
+  // Row labels + horizontal dividers.
+  rows.forEach((r, i) => {
+    const t = document.createElementNS(svgNS, "text");
+    t.setAttribute("x", String(LEFT_W - 14));
+    t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 4));
+    t.setAttribute("text-anchor", "end");
+    t.setAttribute("class", "sched-rowlabel");
+    t.textContent = r;
+    gRows.appendChild(t);
+    if (i > 0) {
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(LEFT_W - 8));
+      line.setAttribute("x2", String(W - 16));
+      line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
+      line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
+      line.setAttribute("class", "sched-rowline");
+      gRows.appendChild(line);
+    }
+  });
+
+  // Slice dividers — thin, subtle, span the full row band.
+  for (const x of sliceDividerXs) {
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", String(x));
+    line.setAttribute("x2", String(x));
+    line.setAttribute("y1", String(TOP_PAD - 4));
+    line.setAttribute("y2", String(TOP_PAD + rows.length * ROW_H + 4));
+    line.setAttribute("class", "sched-slice-divider");
+    gSlices.appendChild(line);
   }
 
-  for (const row of rows) {
-    const lane = document.createElement("div");
-    lane.className = "sched-lane";
-    const lab = document.createElement("span");
-    lab.className = "sched-lane-label";
-    lab.textContent = row;
-    lab.title = row;
-    const track = document.createElement("div");
-    track.className = "sched-track";
-    lane.appendChild(lab);
-    lane.appendChild(track);
-    wrap.appendChild(lane);
-
-    for (let si = 0; si < _slices.length; si++) {
-      const slice = _slices[si];
-      const rid = slice.replan_id || 0;
-      for (const a of (slice.actions || [])) {
-        if (_primaryRow(rows, a.resources, tres) !== rows.indexOf(row)) continue;
-        const key = _leafKey(rid, a.leaf_name);
-        const left = (offsets[si] + (a.start_t || 0)) / T * 100;
-        const width = Math.max(0.25, (a.duration || 0) / T * 100);
-        const el = document.createElement("div");
-        el.className = "sched-block sched-" + (_leafState.get(key) || "pending");
-        el.dataset.leafKey = key;
-        el.dataset.est = String(a.duration || 0);
-        el.dataset.label = _labelOf(a);
-        el.style.left = left + "%";
-        el.style.width = width + "%";
-        el.innerHTML = `<span class="sb-fill"></span><span class="sb-shape"></span>` +
-          `<span class="sb-label">${_escS(_labelOf(a))}</span><span class="sb-time"></span>`;
-        _dressBlock(el, key);
-        track.appendChild(el);
-        _leafOrder.push(key);
-        _leafGeom.set(key, { frac: left / 100, wfrac: width / 100 });
+  // Connector lines between consecutive blocks on the same row within
+  // a slice — visual hint at sequencing.
+  for (let sliceIdx = 0; sliceIdx < _slices.length; sliceIdx++) {
+    const sliceReplanId = _slices[sliceIdx].replan_id || 0;
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const arr = [...placements.values()]
+        .filter(p => p.rowIdx === rowIdx && p.replan_id === sliceReplanId)
+        .sort((a, b) => a.x - b.x);
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const A = arr[i], B = arr[i + 1];
+        const x1 = A.x + A.w;
+        const x2 = B.x;
+        if (x2 - x1 < 4) continue;
+        const yMid = A.y + A.h / 2;
+        const stA = _leafState.get(_leafKey(A.replan_id, A.a.leaf_name)) || "pending";
+        const cls = (stA === "done" || stA === "skipped")
+          ? "sched-connector done"
+          : "sched-connector pending";
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(x1));
+        line.setAttribute("x2", String(x2));
+        line.setAttribute("y1", String(yMid));
+        line.setAttribute("y2", String(yMid));
+        line.setAttribute("class", cls);
+        gConn.appendChild(line);
       }
     }
   }
 
-  frag.appendChild(wrap);
+  // Action blocks.
+  for (const p of placements.values()) {
+    const state = _leafState.get(_leafKey(p.replan_id, p.a.leaf_name)) || "pending";
+    _appendBlock(gBlocks, p, state);
+  }
+
   _ganttEl.innerHTML = "";
-  _ganttEl.appendChild(frag);
+  _ganttEl.appendChild(svg);
 }
 
-// State → shape + time, per §6 and §9 (never colour alone):
-//   done: ✓ · elapsed (accent)   running: pulsing dot · elapsed
-//   skipped: — (dashed border)   pending: ~estimate (muted)
-function _dressBlock(el, key) {
-  const state = _leafState.get(key) || "pending";
-  const est = Number(el.dataset.est) || 0;
-  const timing = _leafTiming.get(key) || {};
-  const shape = el.querySelector(".sb-shape");
-  const time = el.querySelector(".sb-time");
-  const fill = el.querySelector(".sb-fill");
-  let timeText = "~" + _fmtS(est);
-  if (state === "done" && timing.startedAt != null && timing.endedAt != null) {
-    timeText = _fmtS(timing.endedAt - timing.startedAt);
-  } else if (state === "running" && timing.startedAt != null) {
-    timeText = _fmtS((Date.now() / 1000) - timing.startedAt);
-  } else if (state === "skipped") {
-    timeText = "—";
-  }
-  if (shape) shape.textContent = state === "done" ? "✓" : "";
-  if (time) time.textContent = timeText;
-  // elapsed-vs-planned as the inner fill: a block that ran long reads
-  // as overrun without a fifth colour.
-  if (fill) {
-    let frac = 0;
-    if (state === "done" && timing.startedAt != null && timing.endedAt != null && est > 0) {
-      frac = Math.min(1, (timing.endedAt - timing.startedAt) / est);
-    } else if (state === "running" && timing.startedAt != null && est > 0) {
-      frac = Math.min(1, ((Date.now() / 1000) - timing.startedAt) / est);
-    }
-    fill.style.width = (frac * 100) + "%";
-  }
-  // full string one hover away — the container query may hide the number
-  el.title = `${el.dataset.label} · ` +
-    (state === "pending" ? `estimated ${_fmtS(est)}` :
-     state === "skipped" ? "skipped" : `elapsed ${timeText}`);
-}
+function _appendBlock(parent, p, state) {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const { a, x, y, w, h } = p;
+  const g = document.createElementNS(svgNS, "g");
+  g.setAttribute("class", `sched-block sched-${state}`);
+  // Stable key so surgical state transitions (action_start /
+  // action_end / swap_start / swap_end) can locate and patch this
+  // block in place instead of forcing a full SVG rebuild.
+  g.setAttribute("data-leaf-key", _leafKey(p.replan_id, p.a.leaf_name));
 
-function _labelOf(a) {
+  const rect = document.createElementNS(svgNS, "rect");
+  rect.setAttribute("x", String(x));
+  rect.setAttribute("y", String(y));
+  rect.setAttribute("width",  String(w));
+  rect.setAttribute("height", String(h));
+  rect.setAttribute("rx", "8");
+  rect.setAttribute("class", "sched-block-fill");
+  g.appendChild(rect);
+
+  const border = document.createElementNS(svgNS, "rect");
+  border.setAttribute("x", String(x));
+  border.setAttribute("y", String(y));
+  border.setAttribute("width",  String(w));
+  border.setAttribute("height", String(h));
+  border.setAttribute("rx", "8");
+  border.setAttribute("class", "sched-block-border");
+  g.appendChild(border);
+
+  // Same label rule as ``labelOf`` in the layout above — keep them
+  // in sync. Parameterless actions drop the "(item)" suffix.
   const base = a.class_name || a.name;
-  return (a.parametrized === false) ? base : `${base}(${a.item})`;
-}
-function _escS(t) {
-  const d = document.createElement("span"); d.textContent = t; return d.innerHTML;
-}
-function _fmtS(v) {
-  if (v >= 90) return `${Math.floor(v / 60)}m${String(Math.round(v % 60)).padStart(2, "0")}`;
-  return `${Math.round(v * 10) / 10}s`;
-}
-function _niceStep(T) {
-  const target = T / 8;
-  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
-  for (const st of steps) if (st >= target) return st;
-  return 1800;
+  const label = (a.parametrized === false) ? base : `${base}(${a.item})`;
+  const lab = document.createElementNS(svgNS, "text");
+  lab.setAttribute("x", String(x + w / 2));
+  lab.setAttribute("y", String(y + h / 2 + 4));
+  lab.setAttribute("text-anchor", "middle");
+  lab.setAttribute("class", "sched-blocklabel");
+  lab.textContent = label;
+  g.appendChild(lab);
+
+  // Duration text under DONE blocks only — pending / running blocks
+  // have nothing useful to show yet.
+  const timing = _leafTiming.get(_leafKey(p.replan_id, p.a.leaf_name)) || {};
+  const elapsed = (timing.startedAt != null && timing.endedAt != null)
+    ? (timing.endedAt - timing.startedAt)
+    : null;
+  if (elapsed != null && (state === "done" || state === "skipped")) {
+    const dur = document.createElementNS(svgNS, "text");
+    dur.setAttribute("x", String(x + w / 2));
+    dur.setAttribute("y", String(y + h + 11));
+    dur.setAttribute("text-anchor", "middle");
+    dur.setAttribute("class", "sched-block-elapsed");
+    dur.textContent = `${elapsed.toFixed(1)}s`;
+    g.appendChild(dur);
+  }
+
+  // Hover tooltip — minimal: label + key time data (or state).
+  const title = document.createElementNS(svgNS, "title");
+  title.textContent = elapsed != null
+    ? `${label} · ${elapsed.toFixed(1)}s`
+    : `${label} · ${state}`;
+  g.appendChild(title);
+
+  parent.appendChild(g);
 }
 
 function _primaryRow(rows, resources, toolRes) {
-  const rs = resources || [];
-  if (rs.includes(toolRes)) return rows.indexOf(toolRes);
-  for (const r of rs) {
-    const i = rows.indexOf(r);
-    if (i >= 0) return i;
+  if (!resources || !resources.length) return rows.indexOf(toolRes);
+  for (const r of resources) {
+    if (r !== toolRes && rows.includes(r)) return rows.indexOf(r);
   }
-  return rows.indexOf(toolRes);
+  return rows.indexOf(resources[0]);
 }

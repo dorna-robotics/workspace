@@ -41,26 +41,7 @@ export function stateLabel(state) {
   const s = String(state || "").toUpperCase();
   if (s === "IDLE") return "READY";
   if (s === "PARKING") return "PARKING";
-  if (s === "LAUNCHED_NOT_READY") return "LAUNCHING";
-  if (s === "ERROR" || s === "FAILED") return "FAULT";
   return s || "—";
-}
-
-// ── Lifecycle phase (design §4.1) ────────────────────────────────────
-// The run modeled as an explicit phase — one vocabulary everywhere:
-//   idle → launching → ready → running ⇄ paused ; parked→ready ; fault
-//   plus complete (a finished run, before the next).
-// ``everRan`` is caller state: has THIS launch seen a run start?
-export function phaseOf(state, everRan = false) {
-  const s = String(state || "").toUpperCase();
-  if (!isLaunched(s)) return "idle";
-  if (s === "LAUNCHED_NOT_READY") return "launching";
-  if (s === "RUNNING" || s === "ACTIVE") return "running";
-  if (s === "PARKING") return "running";   // parking is a flag on a live run
-  if (s === "PAUSED") return "paused";
-  if (s === "ERROR" || s === "FAILED") return "fault";
-  if (s === "IDLE" || s === "READY") return everRan ? "complete" : "ready";
-  return "ready";
 }
 
 export function isParking(state) {
