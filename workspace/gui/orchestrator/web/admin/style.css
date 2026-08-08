@@ -909,7 +909,26 @@
    progress loop. Hazard stripes are RESERVED for these two holds —
    colour separates graceful (amber Park) from destructive (red Kill),
    texture says "consequence". */
-.pendant-hold { border: 1.5px solid transparent; }
+.pendant-hold, .btn-hold { border: 1.5px solid transparent; }
+.btn-hold { position: relative; overflow: hidden; background: transparent; }
+.btn-hold.hold-park { border-color: var(--amber); color: var(--amber); }
+.btn-hold.hold-kill { border-color: var(--red); color: var(--red); }
+.btn-hold:disabled { opacity: 0.3; }
+.btn-hold .hold-content { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; }
+.btn-hold .hold-fill {
+  position: absolute; inset: 0;
+  transform: scaleX(0); transform-origin: left;
+  will-change: transform; z-index: 0;
+  transition: transform 0.18s var(--ease);
+}
+.btn-hold.hold-park .hold-fill {
+  background: repeating-linear-gradient(135deg, var(--amber) 0 10px, var(--amber-dim) 10px 20px);
+}
+.btn-hold.hold-kill .hold-fill {
+  background: repeating-linear-gradient(135deg, var(--red) 0 10px, var(--red-dim) 10px 20px);
+}
+.btn-hold.holding .hold-fill { animation: holdFill var(--hold-ms, 900ms) linear forwards; }
+.btn-hold.holding .hold-content { color: #fff; }
 .pendant-hold.hold-park { border-color: var(--amber); color: var(--amber); background: transparent; }
 .pendant-hold.hold-kill { border-color: var(--red); color: var(--red); background: transparent; }
 .pendant-hold .hold-content {
@@ -1053,6 +1072,9 @@
   container-type: inline-size;
   overflow: hidden; cursor: default;
   font-size: 11px;
+  /* pixel floor: a 2s action at a 12min scale must still hold its ✓
+     and a couple of label characters — the title carries the rest. */
+  min-width: 30px;
 }
 .sched-block .sb-fill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0;
@@ -1072,7 +1094,7 @@
 }
 @container (max-width: 74px) { .sched-block .sb-time { display: none; } }
 /* state grammar — colour AND shape (§9) */
-.sched-pending { border: 1px solid var(--border); color: var(--muted); }
+.sched-pending { border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
 .sched-pending .sb-time { color: var(--muted); }
 .sched-running { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--text); }
 .sched-running .sb-shape::before {

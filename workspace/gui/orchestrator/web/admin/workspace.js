@@ -2097,19 +2097,6 @@ function renderControls(state, launched, running) {
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     b.addEventListener("click", async () => {
-      if (cmd === "park" && !await confirmDialog({
-        title: "Park Workflow?",
-        message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
-        confirm: "Park Workflow",
-        icon: "park",
-        variant: "danger",
-      })) return;
-      if (cmd === "kill" && !await confirmDialog({
-        title: "Kill Process?",
-        message: "This will immediately terminate the workspace. Any running workflow will be aborted.",
-        confirm: "Kill Process",
-        icon: "kill",
-      })) return;
       // Device-fault gate for Start / Resume. Identical contract to
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
@@ -2137,6 +2124,51 @@ function renderControls(state, launched, running) {
     controls.appendChild(b);
   };
 
+  // Hold-to-fire builder (desktop §4.4): same charge grammar as the
+  // pendant — outline at rest, hazard stripes while held, release
+  // early → snap back + the label teaches the gesture.
+  const addHold = (label, cmd, ms, cls, disabled) => {
+    const b = document.createElement("button");
+    b.className = `btn btn-sm btn-hold ${cls}`;
+    b.dataset.holdMs = String(ms);
+    b.style.setProperty("--hold-ms", ms + "ms");
+    b.innerHTML = `<span class="hold-fill"></span><span class="hold-content"><span class="hold-label">${esc(label)}</span></span>`;
+    if (disabled) b.disabled = true;
+    let timer = null;
+    const labelEl = () => b.querySelector(".hold-label");
+    const cancel = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (!b.classList.contains("holding")) return;
+      b.classList.remove("holding");
+      const le = labelEl();
+      if (le) {
+        le.textContent = `HOLD TO ${label.toUpperCase()}`;
+        setTimeout(() => { const l2 = labelEl(); if (l2) l2.textContent = label; }, 1500);
+      }
+    };
+    b.addEventListener("pointerdown", (e) => {
+      if (b.disabled) return;
+      e.preventDefault();
+      try { b.setPointerCapture?.(e.pointerId); } catch (_) {}
+      b.classList.add("holding");
+      timer = setTimeout(async () => {
+        timer = null;
+        b.classList.remove("holding");
+        b.disabled = true;
+        try {
+          await sendCmd(cmd);
+          toast(`${cmd} sent`, "ok");
+          await refreshStatus();
+        } catch (err) { toast(String(err), "bad"); }
+        finally { b.disabled = false; }
+      }, ms);
+    });
+    b.addEventListener("pointerup", cancel);
+    b.addEventListener("pointercancel", cancel);
+    b.addEventListener("pointerleave", cancel);
+    controls.appendChild(b);
+  };
+
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
   } else if (s === "LAUNCHED_NOT_READY") {
@@ -2152,19 +2184,16 @@ function renderControls(state, launched, running) {
     // while parking is in flight). Kill remains always-on below.
     const parking   = s === "PARKING";
     const active    = running || parking;
-    // "Start" while the workspace hasn't begun a run yet; "Resume"
-    // once it has — even when disabled (i.e. RUNNING / PARKING).
-    // The slot's *meaning* is "begin or continue the run", and
-    // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    addBtn(startLabel, "start", { primary: true, disabled: active });
-    addBtn("Pause",    "pause", { disabled: !active });
-    // Park only makes sense when the workflow is actually in flight.
-    // Before Start the runtime is IDLE — clicking Park there would
-    // trigger the cleanup subtree against a non-running workflow and
-    // crash. Require ``active`` (running || parking) and disable when
-    // already parking.
-    addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
+    // ONE filled button, ever (§4.1/§2): the primary is what this
+    // state wants pressed — Start when ready, Pause while running,
+    // Resume when paused. The other slot stays in place, plain.
+    addBtn(startLabel, "start", { primary: !active, disabled: active });
+    addBtn("Pause",    "pause", { primary: active && s !== "PAUSED", disabled: !active });
+    // Park is a HOLD (§4.4 — desktop 700 ms), warn-OUTLINED at rest,
+    // never filled. Enabled only while a workflow is in flight (park
+    // at IDLE would run cleanup against nothing and crash).
+    addHold("Park", "park", 700, "hold-park", !active || parking);
   }
 
   // Gear button for parameters — only before launch
@@ -2195,12 +2224,13 @@ function renderControls(state, launched, running) {
     controls.appendChild(rb);
   }
 
-  // Kill — separated to the right with spacer
+  // Kill — separated to the right with spacer; a HOLD, not a tap
+  // (§4.4 — desktop 900 ms). The hold is the confirmation.
   if (launched) {
     const spacer = document.createElement("div");
     spacer.className = "spacer";
     controls.appendChild(spacer);
-    addBtn("Kill", "kill", { danger: true });
+    addHold("Kill", "kill", 900, "hold-kill", false);
   }
 
   // Schedule lives in the top-bar icon row (alongside Fullscreen /
