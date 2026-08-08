@@ -2584,31 +2584,21 @@ function updatePendantUI() {
     bodyEl.classList.toggle("is-waiting", waiting);
   }
 
-  // State pill uses the shared ``.pill`` variant classes (ok / warn
-  // / bad / off) so it looks identical to the main top-bar's pill.
-  // The inner dot pulses while *waiting* for the operator to press
-  // Start — not while running. Running = steady, waiting = blinking.
-  const stateEl = $("pendantState");
-  if (stateEl) {
-    stateEl.classList.remove("ok", "warn", "bad", "off");
-    stateEl.classList.add(variant);
-    const dotEl = stateEl.querySelector(".dot");
-    if (dotEl) {
-      dotEl.classList.remove("ok", "warn", "bad", "off", "pulse");
-      dotEl.classList.add(variant);
-      if (waiting) dotEl.classList.add("pulse");
-    }
-    const textEl = stateEl.querySelector(".pendant-state-text");
-    if (textEl) textEl.textContent = stateLabel(state);
+  // Navbar state block (§5): one solid colour with the label and the
+  // timer inside — the largest state element on screen.
+  const blockEl = $("pendantStateBlock");
+  if (blockEl) {
+    blockEl.classList.remove("ok", "warn", "bad", "off");
+    blockEl.classList.add(variant);
+    $("pendantStateText").textContent = stateLabel(state);
   }
 
   // Run elapsed time — same behaviour as the sidebar's "Up" field
   // (workspace.js line ~349): always visible, shows "—" when there's
   // no uptime data, ticks live while running, freezes on the final
   // value when the run ends.
-  const timerEl = $("pendantTimer");
+  const timerEl = $("pendantTimerValue");
   if (timerEl) {
-    timerEl.style.display = "";
     if (_uptimeBase != null) {
       const live = _uptimeAt != null
         ? _uptimeBase + (performance.now() - _uptimeAt) / 1000
@@ -2691,12 +2681,15 @@ function updatePendantUI() {
   // is disabled (no new run while parking is in flight).
   const parking = state.toUpperCase() === "PARKING";
   const active  = running || parking;
-  $("pendantLaunch").disabled  = launched;
-  $("pendantStart").disabled   = !launched || active;
+  // While idle the footer is LAUNCH alone (§4.5) — the other five are
+  // absent, not ghosted. Everything reappears on launch.
+  $("pendantBar")?.classList.toggle("idle-mode", !launched);
+  $("pendantStart").disabled   = !launched || active || state.toUpperCase() === "LAUNCHED_NOT_READY";
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;
   $("pendantKill").disabled    = !launched;
+  $("pendantLaunch").disabled  = state.toUpperCase() === "LAUNCHED_NOT_READY";
 
   // Relabel the Start tile to "Resume" once the workspace has begun
   // a run — same cmd, but the slot's meaning shifts from "begin" to
@@ -2709,22 +2702,66 @@ function updatePendantUI() {
 }
 
 // Wire pendant buttons
+// ── Hold-to-fire (§4.4): Park and Kill charge under the thumb ───────
+// One state flip on pointer-down; the fill is a CSS animation the
+// compositor owns. Release early → snap back + the label teaches the
+// gesture for 1.5 s. No confirm dialog: the hold IS the confirmation —
+// it works with gloves and cannot be triggered by a brush.
+function _wirePendantHold(btn, cmd) {
+  if (!btn) return;
+  let timer = null;
+  const ms = Number(btn.dataset.holdMs) || 1200;
+  btn.style.setProperty("--hold-ms", ms + "ms");
+  const label = btn.querySelector(".hold-label");
+  const restLabel = label ? label.textContent : "";
+  const cancel = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (!btn.classList.contains("holding")) return;
+    btn.classList.remove("holding");
+    // the failed gesture teaches the successful one
+    if (label) {
+      btn.classList.add("hold-hint");
+      label.textContent = `HOLD TO ${restLabel.toUpperCase()}`;
+      setTimeout(() => { btn.classList.remove("hold-hint"); label.textContent = restLabel; }, 1500);
+    }
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    if (btn.disabled) return;
+    e.preventDefault();
+    try { btn.setPointerCapture?.(e.pointerId); } catch (_) {}
+    btn.classList.add("holding");
+    pendantVibrate(20);
+    timer = setTimeout(async () => {
+      timer = null;
+      btn.classList.remove("holding");
+      pendantClickSound();
+      pendantVibrate(60);
+      // completing the hold kills/parks — and closes any open dialog
+      if (cmd === "kill") {
+        document.querySelectorAll(".modal-overlay.show").forEach(o => o.classList.remove("show"));
+      }
+      btn.disabled = true;
+      try {
+        await sendCmd(cmd);
+        toast(`${cmd} sent`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        toast(String(err), "bad");
+      } finally {
+        btn.disabled = false;
+      }
+    }, ms);
+  });
+  btn.addEventListener("pointerup", cancel);
+  btn.addEventListener("pointercancel", cancel);
+  btn.addEventListener("pointerleave", cancel);
+}
+_wirePendantHold($("pendantPark"), "park");
+_wirePendantHold($("pendantKill"), "kill");
+
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   btn.addEventListener("click", async () => {
     const cmd = btn.dataset.cmd;
-    if (cmd === "park" && !await confirmDialog({
-      title: "Park Workflow?",
-      message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
-      confirm: "Park Workflow",
-      icon: "park",
-      variant: "danger",
-    })) return;
-    if (cmd === "kill" && !await confirmDialog({
-      title: "Kill Process?",
-      message: "This will immediately terminate the workspace.",
-      confirm: "Kill Process",
-      icon: "kill",
-    })) return;
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button. Pendant pressed sound/haptics
     // come AFTER the gate so a canceled prompt doesn't beep falsely.
@@ -2756,25 +2793,6 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     }
     updatePendantUI();
   });
-});
-
-// Pendant Kill button (secondary, separate from pendant-btn grid)
-$("pendantKill").addEventListener("click", async () => {
-  if (!await confirmDialog({
-    title: "Emergency Stop",
-    message: "Kill the process immediately? This cannot be undone.",
-    confirm: "Kill Now",
-    icon: "kill",
-  })) return;
-  try {
-    await sendCmd("kill");
-    pendantErrorSound();
-    toast("kill sent", "ok");
-    await refreshStatus();
-    updatePendantUI();
-  } catch (err) {
-    toast(String(err), "bad");
-  }
 });
 
 // Pendant params button

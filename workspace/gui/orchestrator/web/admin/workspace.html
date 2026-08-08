@@ -829,11 +829,11 @@
       <a class="btn btn-ghost btn-sm btn-icon" href="/orchestrator/" title="Back to orchestrator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
       <span class="pendant-project" id="pendantProject">—</span>
     </div>
-    <div class="pendant-timer" id="pendantTimer">
-      <svg class="pendant-timer-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/>
-        <polyline points="12 7 12 12 15 14"/>
-      </svg>
+    <!-- Run state + timer as ONE solid block (§5): the largest state
+         cue on screen, readable across the room — which is why the
+         footer no longer needs a pill of its own. -->
+    <div class="pendant-state-block off" id="pendantStateBlock">
+      <span class="pendant-state-text" id="pendantStateText">—</span>
       <span class="pendant-timer-value" id="pendantTimerValue">—</span>
     </div>
     <div class="topbar-actions">
@@ -846,70 +846,16 @@
            same icon as the main page's Pendant button, but rendered
            in its "on" state since we are in pendant mode right now.
            Operators get a "you are here" cue. -->
-      <button class="btn btn-ghost btn-sm btn-icon active" id="pendantExit" title="Exit pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
+      <button class="btn btn-ghost btn-sm pendant-exit-btn" id="pendantExit" title="Exit pendant mode — back to the workspace page"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg>EXIT</button>
       <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
     </div>
   </header>
-  <!-- Landscape layout: a fixed control RAIL on the left (state,
-       timer, run controls — always in the same place under the
-       operator's thumb, never scrolls) and the content pane on the
-       right that scrolls on its own. In portrait the rail drops to
-       the bottom and the controls return to the 2x2 tile grid, which
-       is the pre-rail layout — see the media query in style.css. -->
+  <!-- Bottom bar at every width (§5 — supersedes the left rail):
+       on a bench tablet the bar sits where hands already rest, and the
+       card area keeps its full width. Six equal buttons, one shape,
+       colour the only separator. Park and Kill are HOLDS (§4.4). -->
   <div class="pendant-main">
-  <aside class="pendant-rail">
-    <!-- State sits directly above the controls: it is the fact that
-         decides WHICH control to press (READY→Start, RUNNING→Pause,
-         PAUSED→Resume), so cause and action share one glance. The
-         run timer stays in the navbar — reference, not a trigger. -->
-    <span class="pill pill-state off" id="pendantState">
-      <span class="dot"></span>
-      <span class="pendant-state-text">—</span>
-    </span>
-    <div class="pendant-buttons">
-      <button class="pendant-btn pendant-start"   id="pendantStart"   data-cmd="start">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Start</span>
-      </button>
-      <button class="pendant-btn pendant-pause"   id="pendantPause"   data-cmd="pause">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        <span>Pause</span>
-      </button>
-      <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-        <span>Launch</span>
-      </button>
-      <button class="pendant-btn pendant-park"    id="pendantPark"    data-cmd="park">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="3"/>
-          <path d="M9 17V7h4a3 3 0 0 1 0 6H9"/>
-        </svg>
-        <span>Park</span>
-      </button>
-    </div>
-    <div class="pendant-rail-gap"></div>
-    <div class="pendant-secondary-row">
-      <button class="pendant-secondary" id="pendantParams">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Parameters
-      </button>
-      <!-- Operator Actions — opens a modal with component-grouped buttons.
-           Hidden when no component declares any operator actions. -->
-      <button class="pendant-secondary" id="pendantOpActions" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Controls
-      </button>
-    </div>
-    <!-- Kill sits on its own row: it is the one irreversible control,
-         so it never shares an edge with a routine button. -->
-    <div class="pendant-kill-row">
-      <button class="pendant-secondary pendant-kill-btn" id="pendantKill" data-cmd="kill">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        Kill
-      </button>
-    </div>
-  </aside>
   <div class="pendant-body">
   <div class="pendant-alarm" id="pendantAlarm" style="display:none">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -930,6 +876,44 @@
     </div>
   </div>
   </div><!-- /.pendant-body -->
+  <div class="pendant-bar" id="pendantBar">
+    <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      <span>Launch</span>
+    </button>
+    <button class="pendant-btn pendant-start" id="pendantStart" data-cmd="start">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span>Start</span>
+    </button>
+    <button class="pendant-btn" id="pendantPause" data-cmd="pause">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      <span>Pause</span>
+    </button>
+    <div class="pendant-bar-div"></div>
+    <button class="pendant-btn" id="pendantParams">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Parameters</span>
+    </button>
+    <button class="pendant-btn" id="pendantOpActions" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Controls</span>
+    </button>
+    <div class="pendant-bar-div"></div>
+    <button class="pendant-btn pendant-hold hold-park" id="pendantPark" data-hold-ms="900">
+      <span class="hold-fill"></span>
+      <span class="hold-content">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>
+        <span class="hold-label">Park</span>
+      </span>
+    </button>
+    <button class="pendant-btn pendant-hold hold-kill" id="pendantKill" data-hold-ms="1200">
+      <span class="hold-fill"></span>
+      <span class="hold-content">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <span class="hold-label">Kill</span>
+      </span>
+    </button>
+  </div><!-- /.pendant-bar -->
   </div><!-- /.pendant-main -->
 </div>
 

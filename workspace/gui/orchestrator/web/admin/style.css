@@ -250,9 +250,6 @@
 .label-optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
 .section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
 .section-chevron.open { transform: rotate(90deg); }
-.pendant-secondary-row { display: flex; gap: 12px; align-items: center; }
-
-/* ── Kwargs form element classes ───────────────────────────────────────── */
 .kw-file-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
 .kw-file-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 12px; color: var(--muted); }
 .kw-checkbox { width: auto; }
@@ -483,8 +480,6 @@
   font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.pendant-nav .pill-state     { grid-column: 1; justify-self: start; }
-.pendant-nav .pendant-timer  { grid-column: 2; justify-self: center; }
 .pendant-nav .topbar-actions { grid-column: 3; justify-self: end; }
 
 /* Scrollable body — every pendant widget that isn't in the navbar
@@ -615,58 +610,6 @@
    resize touches one line. */
 .pendant-nav                { --chip-h: 38px; }
 .pendant-nav .pill-state,
-.pendant-nav .pendant-timer { height: var(--chip-h); }
-.pendant-nav .pill-state {
-  padding: 0 18px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-md);
-  letter-spacing: 0.08em;
-  gap: var(--space-3);
-}
-.pendant-nav .pill-state .dot { width: 10px; height: 10px; }
-/* Warn / bad get an extra coloured halo on top of the base dot
-   colour — these are the attention-grabbing states; operators
-   should feel them across the room. */
-.pendant-nav .pill-state .dot.warn { box-shadow: 0 0 8px rgba(255,159,10,0.5); }
-.pendant-nav .pill-state .dot.bad  { box-shadow: 0 0 8px rgba(255,69,58,0.5); }
-
-/* Run elapsed time — the hero number of the pendant. Mono +
-   tabular-nums, 26px, deliberately too big to miss across the
-   room. This is the *one* place in the entire app that exits the
-   type scale (see design-system.md §2.3). The chip itself is a
-   subtle translucent surface so the number does the visual work,
-   not the container. */
-.pendant-timer {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 16px;
-  border-radius: var(--radius-md);
-  background: rgba(255,255,255,0.04);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  user-select: none;
-  flex-shrink: 0;
-}
-[data-theme="light"] .pendant-timer {
-  background: rgba(0,0,0,0.04);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
-}
-.pendant-timer-icon { width: 18px; height: 18px; opacity: 0.4; flex-shrink: 0; }
-.pendant-timer-value { min-width: 5ch; text-align: center; }
-
-.pendant-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  width: min(520px, 90vw);
-}
-
 .pendant-btn {
   display: flex;
   flex-direction: column;
@@ -844,54 +787,9 @@
 .pendant-alarm svg { flex-shrink: 0; }
 
 /* Secondary action (e.g. Parameters) — smaller, below the grid */
-.pendant-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  /* Field-friendly touch target — Kill / Params / Operator Actions get
-     pressed on site tablets; 56 px minimum, generous padding. */
-  min-height: 56px;
-  padding: 16px 34px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: var(--surface);
-  color: var(--muted);
-  font-family: var(--font);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease),
-    color      var(--motion-fast) var(--ease),
-    box-shadow var(--motion-med)  var(--ease);
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow: var(--shadow-sm);
-}
-.pendant-secondary:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-.pendant-secondary:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
-.pendant-secondary:active { transform: scale(0.97); }
-/* Ghosted secondary — present but inert (design-system §4). */
-.pendant-secondary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
 .pendant-kill-btn { color: var(--red); }
 .pendant-kill-btn:hover { color: var(--red); background: rgba(255,69,58,0.12); }
 [data-theme="light"] /* Ghosted secondary — present but inert (design-system §4). */
-.pendant-secondary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
 .pendant-kill-btn { color: var(--red); }
 [data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
 
@@ -962,121 +860,101 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: stretch;
 }
-.pendant-rail {
-  width: 224px;
+.pendant-main > .pendant-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+/* ── Bottom control bar (§5) — every width, no portrait variant ────
+   Six equal-flex buttons, one shape and one size; colour is the only
+   separator. ≥64px targets for gloves; --radius-xl carries the "big
+   touch target" cue that separates pendant controls from desktop. */
+.pendant-bar {
   flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px 14px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-/* Controls stack full-width: the whole row is the target, so thumb
-   placement along it does not matter. */
-.pendant-rail .pill-state {
-  align-self: stretch;
-  justify-content: center;
-  margin-bottom: var(--space-2);
-}
-.pendant-rail .pendant-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-.pendant-rail .pendant-btn {
-  flex-direction: row;
-  justify-content: center;   /* icon + label centred as one group */
-  gap: 12px;
-  min-height: 56px;          /* > the 44px touch floor (design-system §10) */
-  padding: 0 16px;
-  border-radius: var(--radius-lg);
-  font-size: var(--text-lg);
-  letter-spacing: 0.04em;
-}
-.pendant-rail .pendant-btn svg { width: 22px; height: 22px; flex: 0 0 auto; }
-.pendant-rail-gap { flex: 1 1 auto; min-height: var(--space-4); }
-.pendant-rail .pendant-secondary-row {
-  flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  width: 100%;
+  gap: 10px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
-.pendant-rail .pendant-secondary {
+.pendant-bar .pendant-btn {
+  flex: 1 1 0;
+  flex-direction: row;
   justify-content: center;
-  /* same size and shape as the run controls above — a rail of
-     differently-sized buttons reads as unfinished, and Kill in
-     particular must be as easy to hit as the rest. */
-  min-height: 56px;
-  padding: 0 14px;
-  border-radius: var(--radius-lg);
+  gap: 10px;
+  min-height: 64px;
+  padding: 0 12px;
+  border-radius: var(--radius-xl);
+  font-size: var(--text-md);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  position: relative;
+  overflow: hidden;
+}
+.pendant-bar .pendant-btn svg { flex: 0 0 auto; }
+.pendant-bar-div { width: 1px; background: var(--border); margin: 6px 2px; flex: none; }
+
+/* While idle the footer is LAUNCH alone (§4.5): the other five are
+   ABSENT, not ghosted — there is nothing they could do yet. */
+.pendant-bar.idle-mode .pendant-btn:not(.pendant-launch),
+.pendant-bar.idle-mode .pendant-bar-div { display: none; }
+.pendant-bar:not(.idle-mode) .pendant-launch { display: none; }
+
+/* ── Hold-to-fire (§4.4): the one deliberate moment of weight ──────
+   Charge is a CSS animation (compositor-owned transform), never a JS
+   progress loop. Hazard stripes are RESERVED for these two holds —
+   colour separates graceful (amber Park) from destructive (red Kill),
+   texture says "consequence". */
+.pendant-hold { border: 1.5px solid transparent; }
+.pendant-hold.hold-park { border-color: var(--amber); color: var(--amber); background: transparent; }
+.pendant-hold.hold-kill { border-color: var(--red); color: var(--red); background: transparent; }
+.pendant-hold .hold-content {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 10px;
+}
+.pendant-hold .hold-fill {
+  position: absolute; inset: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  will-change: transform;
+  z-index: 0;
+}
+.pendant-hold.hold-park .hold-fill {
+  background: repeating-linear-gradient(135deg,
+    var(--amber) 0 14px, var(--amber-dim) 14px 28px);
+}
+.pendant-hold.hold-kill .hold-fill {
+  background: repeating-linear-gradient(135deg,
+    var(--red) 0 14px, var(--red-dim) 14px 28px);
+}
+.pendant-hold.holding .hold-fill {
+  animation: holdFill var(--hold-ms, 1200ms) linear forwards;
+}
+.pendant-hold.holding .hold-content { color: #fff; }
+@keyframes holdFill { to { transform: scaleX(1); } }
+/* release-early: snap back + the failed gesture teaches the real one */
+.pendant-hold .hold-fill { transition: transform 0.18s var(--ease); }
+.pendant-hold.hold-hint .hold-label { font-size: var(--text-xs); letter-spacing: 0.06em; }
+
+/* ── Navbar state block (§5): state + timer as one solid colour ──── */
+.pendant-state-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  min-height: 38px;
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
   font-size: var(--text-md);
 }
-/* Kill: its own row with a deliberate gap above — the one irreversible
-   control never shares an edge with a routine button. */
-.pendant-kill-row {
-  width: 100%;
-  margin-top: var(--space-3);
-  display: flex;
-}
-.pendant-kill-row .pendant-secondary { width: 100%; }
-
-/* Content pane — scrolls independently of the rail. */
-.pendant-main > .pendant-body { flex: 1 1 auto; min-width: 0; }
-
-/* Park keeps the shared control treatment — one shape for every run
-   control, colour is what separates them. Its separation from Pause
-   comes from the gap + Kill's isolation below, not a different form
-   (an odd-one-out button reads as a mistake, not a warning). */
-
-/* ── Portrait / narrow: the pre-rail layout, unchanged ───────────── */
-@media (orientation: portrait), (max-width: 860px) {
-  .pendant-main { flex-direction: column; }
-  .pendant-main > .pendant-body { order: 1; }
-  .pendant-rail {
-    order: 2;
-    width: 100%;
-    flex: 0 0 auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 20px 20px;
-    border-right: none;
-    border-top: 1px solid var(--border);
-    overflow: visible;
-  }
-  .pendant-rail .pill-state {
-  align-self: stretch;
-  justify-content: center;
-  margin-bottom: var(--space-2);
-}
-.pendant-rail .pendant-buttons {
-    flex: 1 0 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-  .pendant-rail .pendant-btn {
-    flex-direction: column;
-    justify-content: center;
-    gap: 10px;
-    padding: 26px 16px;
-    min-height: 0;
-  }
-  .pendant-rail .pendant-btn svg { width: 30px; height: 30px; }
-  .pendant-rail-gap { display: none; }
-  /* one row for the secondary actions, Kill included — ``1 1 auto``
-     made the row grow and pushed Kill onto a line of its own. */
-  .pendant-rail .pendant-secondary-row { flex: 0 1 auto; flex-direction: row; width: auto; }
-  .pendant-kill-row { flex: 0 1 auto; width: auto; margin-top: 0; margin-left: auto; }
-  .pendant-kill-row .pendant-secondary { width: auto; }
-}
+.pendant-state-block.ok   { background: var(--green); color: #08120c; }
+.pendant-state-block.warn { background: var(--amber); color: #140f05; }
+.pendant-state-block.bad  { background: var(--red); color: #fff; }
+.pendant-state-block.off  { background: var(--surface2); color: var(--muted); }
+.pendant-exit-btn { gap: 6px; font-weight: 700; letter-spacing: 0.06em; }
 
 /* Exit button — sits on the right side of the navbar. */
 /* ``#pendantExit`` is now a plain ``.btn.btn-ghost.btn-sm.btn-icon``
@@ -1087,15 +965,7 @@
 /* Pendant mobile */
 @media (max-width: 600px) {
   .pendant-nav  { padding: 0 14px; height: 64px; min-height: 64px; gap: 10px; --chip-h: 36px; }
-  .pendant-nav .pill-state { padding: 0 14px; font-size: var(--text-sm); }
-  .pendant-nav .pill-state .dot { width: 8px; height: 8px; }
-  .pendant-timer { padding: 0 12px; font-size: 18px; gap: 8px; }
-  .pendant-timer-icon { width: 14px; height: 14px; }
   .pendant-body { gap: 24px; padding: 16px 20px 20px; }
-  .pendant-buttons { width: 95vw; gap: 12px; }
-  .pendant-btn { padding: 28px 16px; font-size: 15px; border-radius: 18px; gap: 8px; }
-  .pendant-btn svg { width: 26px; height: 26px; }
-  .pendant-secondary { padding: 10px 22px; font-size: 14px; }
   .pendant-info { width: 95vw; }
   .pendant-steps { max-height: 70px; }
   .pendant-step-card { font-size: 12px; padding: 3px 12px; }
@@ -1117,7 +987,6 @@
 [data-theme="light"] .pendant-park:hover:not(:disabled) { background: rgba(214,90,38,0.2); box-shadow: inset 0 0 0 1.5px rgba(214,90,38,0.5); }
 [data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.12); color: var(--red); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.3); }
 [data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.2); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.45); }
-[data-theme="light"] .pendant-secondary { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 [data-theme="light"] .pendant-btn { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 [data-theme="light"] .pendant-steps { background: #fff; }
 
