@@ -7,7 +7,7 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 37104
+      "count": 37080
     },
     {
       "type": "VEC3",
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 40421
+      "byteLength": 40234
     }
   ],
   "buffers": [
     {
       "uri": "printer_axon_1.glb.bin",
-      "byteLength": 40421
+      "byteLength": 40234
     }
   ],
   "materials": [
