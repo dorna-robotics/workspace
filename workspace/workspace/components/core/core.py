@@ -193,8 +193,8 @@ class Core:
             self.rail_min = -159
             self.rail_max = 316.0
         elif self.rail_cfg["type"] == "rail_hd_1000mm":
-            self.rail_min = -199.0
-            self.rail_max = 801.0
+            self.rail_min = -215.0
+            self.rail_max = 775.0
         elif self.rail_cfg["type"] == "rail_hd_2000mm":
             self.rail_min = -280.0
             self.rail_max = 1720.0
