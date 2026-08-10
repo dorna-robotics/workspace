@@ -7300,7 +7300,10 @@ ensureBuilderBar();
       // spawns froze the tab for the whole import (awaits on resolved
       // promises never let the browser paint) — the page looked hung
       // on whatever was drawn last, usually "solving…".
-      if (++__spawned % 5 === 0) await new Promise(r => setTimeout(r, 0));
+      if (++__spawned % 5 === 0) {
+        __projLoadBanner(`Importing scene — ${__spawned}/${sorted.length} components…`);
+        await new Promise(r => setTimeout(r, 0));
+      }
       const it = items.find(x => x.name === cfgName);
       const pre = batch[cfgName] || {};
       if (pre.error) { console.warn("loadConfig:", cfgName, pre.error); continue; }
@@ -8129,14 +8132,24 @@ ensureBuilderBar();
     }
     // solving indicator: header phase + per-row text until the solve
     // lands, then rows go clean (values only on the SELECTED readout).
-    for (const o of Object.values(subs)) {
-      if (o.recipe.component) {
-        o.sub.style.display = "";
-        o.sub.textContent = "solving…";
+    const __markSolving = () => {
+      for (const o of Object.values(subs)) {
+        if (o.recipe.component) {
+          o.sub.style.display = "";
+          o.sub.textContent = "solving…";
+        }
       }
-    }
-    if (!__refSolve && Object.values(subs).some(o => o.recipe.component)) {
-      __projLoadBanner("Solving recipes…");
+      if (!__refSolve && Object.values(subs).some(o => o.recipe.component)) {
+        __projLoadBanner("Solving recipes…");
+      }
+    };
+    // While the import owns the page, the rows say nothing — labeling
+    // that window "solving…" made import time read as solve time.
+    if (!window.__importBusy) __markSolving();
+    else {
+      const __t = setInterval(() => {
+        if (!window.__importBusy) { clearInterval(__t); __markSolving(); }
+      }, 500);
     }
     // The first load's fetch can die mid-import ("Failed to fetch" —
     // the import storm kills the connection while the server solves
