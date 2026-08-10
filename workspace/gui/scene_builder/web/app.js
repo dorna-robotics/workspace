@@ -7463,6 +7463,11 @@ ensureBuilderBar();
   setInterval(() => { try { window.__sbPersist(); } catch (_) {} }, 3000);
 
   async function __loadProjectBundle() {
+    window.__importBusy = true;
+    try { return await __loadProjectBundleInner(); }
+    finally { window.__importBusy = false; }
+  }
+  async function __loadProjectBundleInner() {
     let j = null;
     try {
       j = await fetch(SB_API + "/project_bundle").then(r => r.json());
@@ -7631,17 +7636,28 @@ ensureBuilderBar();
   // alongside the server's start/done, so a stuck "solving…" shows
   // WHERE it died (fetch, store, or row update).
   function __solveCrumb(event, extra) {
+    try { console.log("[solve]", event, extra || ""); } catch (_) {}
     try {
       fetch(SB_API + "/perf", { method: "POST", keepalive: true,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ crumb: event, ...(extra || {}) }) }).catch(() => {});
     } catch (_) {}
   }
-  function __ensureRefSolve() {
+  window.__importBusy = false;
+  async function __ensureRefSolve() {
+    // The import storm owns the connection pool; a solve fired into
+    // it dies ("Failed to fetch") and costs a retry cycle. Wait for
+    // the import to finish first — the solve is server-cached, so
+    // this delays nothing real.
+    let __waited = 0;
+    while (window.__importBusy && __waited < 120000) {
+      await new Promise(r => setTimeout(r, 500));
+      __waited += 500;
+    }
     if (!__refSolvePromise) {
       __solveCrumb("fetch_start");
       const __ctl = new AbortController();
-      const __abortT = setTimeout(() => __ctl.abort(), 20000);
+      const __abortT = setTimeout(() => __ctl.abort(), 10000);
       __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST", signal: __ctl.signal })
         .finally(() => clearTimeout(__abortT))
         .then(x => x.json())
@@ -8150,6 +8166,9 @@ ensureBuilderBar();
         __attempts++;
         if (__attempts < 6) {
           __solveCrumb("retry", { attempt: __attempts });
+          for (const o of Object.values(subs)) {
+            if (o.recipe.component) o.sub.textContent = `solving… (retry ${__attempts})`;
+          }
           setTimeout(__attempt, 2500);
           return;
         }
