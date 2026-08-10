@@ -1066,6 +1066,15 @@ function renderDevicesPanel() {
     el.innerHTML = newHtml;
     _devicesListLastHtml = newHtml;
   }
+  // Pendant Devices tab shows the same list (same classes + the same
+  // delegated clicks); the head meta reads "n/m up".
+  const pList = $("pendantDevicesList");
+  if (pList && pList.innerHTML !== newHtml) pList.innerHTML = newHtml;
+  const pMeta = $("pdDevMeta");
+  if (pMeta) {
+    const up = list.filter(d => (d.state || "down") === "ok").length;
+    pMeta.textContent = `${up}/${list.length} up`;
+  }
 
   // Keep an open modal in sync as state events stream in.
   if (_openDeviceId && _devices.has(_openDeviceId)) {
@@ -1079,7 +1088,10 @@ function renderDevicesPanel() {
 // many. Delegated handlers also survive innerHTML rewrites; nothing
 // to re-wire.
 function _wireDevicesPanelDelegation() {
-  const el = $("devicesList");
+  for (const id of ["devicesList", "pendantDevicesList"]) _wireDeviceListClicks($(id));
+}
+
+function _wireDeviceListClicks(el) {
   if (!el || el.dataset.delegated === "1") return;
   el.dataset.delegated = "1";
   el.addEventListener("click", async (ev) => {
@@ -1390,6 +1402,10 @@ function renderOperatorActionsPanel() {
   }
   const modalBody = $("opActionsModalBody");
   if (modalBody) modalBody.innerHTML = html;
+  const pOps = $("pendantOpActionsList");
+  if (pOps) pOps.innerHTML = html;
+  const pMeta = $("pdOpMeta");
+  if (pMeta) pMeta.textContent = _opActions.length ? "manual actions" : "";
 }
 
 function updateOperatorActionsGate(state) {
@@ -1443,6 +1459,7 @@ function _wireOpActionsClicks() {
   };
   $("opActionsList")?.addEventListener("click", handler);
   $("opActionsModalBody")?.addEventListener("click", handler);
+  $("pendantOpActionsList")?.addEventListener("click", handler);
 }
 
 // Pendant Controls button — opens the modal. Modal closes via the X
@@ -2177,16 +2194,19 @@ function _positionPendant3d() {
 
 function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
+  const isDevices = _pendantTab === "devices";
   document.querySelectorAll(".pendant-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.ptab === _pendantTab));
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
+  const dev = $("pendantDevicesPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
-  if (hmi) hmi.style.display = (is3d || !hasScreen) ? "none" : "";
+  if (hmi) hmi.style.display = (is3d || isDevices || !hasScreen) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
+  if (dev) dev.style.display = isDevices ? "" : "none";
   const hero = $("pendantHero");
-  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d) ? "" : "none";
+  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d && !isDevices) ? "" : "none";
   // The 3D tab IS the desktop viewer area, chips and all.
   _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);

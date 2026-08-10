@@ -724,6 +724,7 @@
       <div class="pendant-tabs" id="pendantTabs">
         <button class="pendant-tab active" data-ptab="project" id="pendantTabProject">Project</button>
         <button class="pendant-tab" data-ptab="3d">3D View</button>
+        <button class="pendant-tab" data-ptab="devices">Devices</button>
       </div>
       <!-- ACTIVE ROUTINE — pinned under the tab strip. Current step,
            step counter, per-step progress segments, and NEXT. -->
@@ -749,6 +750,19 @@
       <div class="pendant-panes">
         <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
         <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
+        <!-- Devices tab: devices on the left, operator controls on the
+             right — the same lists the desktop sidebar renders, same
+             classes, same click delegation. -->
+        <div class="pendant-devices-pane" id="pendantDevicesPane" style="display:none">
+          <div class="pd-col">
+            <div class="pd-head"><span>Devices</span><span class="spacer"></span><span class="mono" id="pdDevMeta"></span></div>
+            <div class="devices-list" id="pendantDevicesList"></div>
+          </div>
+          <div class="pd-col">
+            <div class="pd-head"><span>Operator controls</span><span class="spacer"></span><span class="mono" id="pdOpMeta"></span></div>
+            <div class="pd-op-list" id="pendantOpActionsList"></div>
+          </div>
+        </div>
       </div>
     </div>
     <!-- Steps / event rail — collapsible via the chevron. -->
