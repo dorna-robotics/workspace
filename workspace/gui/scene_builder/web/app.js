@@ -8113,32 +8113,47 @@ ensureBuilderBar();
     if (!__refSolve && Object.values(subs).some(o => o.recipe.component)) {
       __projLoadBanner("Solving recipes…");
     }
-    __ensureRefSolve().then(sol => {
-      __solveCrumb("rows_update", { rows: Object.keys(subs).length });
-      __projLoadBanner(null);
-      for (const [name, o] of Object.entries(subs)) {
-        const sr = (sol || {})[name] || {};
-        if (sr.error) {
-          o.sub.style.display = "";
-          o.sub.textContent = "error: " + sr.error;
-        } else if (__ikDrag.recipe !== name) {
-          o.sub.style.display = "none";
-          o.sub.textContent = "";
+    // The first load's fetch can die mid-import ("Failed to fetch" —
+    // the import storm kills the connection while the server solves
+    // fine and caches). One failure used to strand the rows on
+    // "solving…" until a manual refresh; now it retries — and the
+    // retry hits the server's cache, so it lands instantly.
+    let __attempts = 0;
+    const __attempt = () => {
+      __ensureRefSolve().then(sol => {
+        __solveCrumb("rows_update", { rows: Object.keys(subs).length });
+        __projLoadBanner(null);
+        for (const [name, o] of Object.entries(subs)) {
+          const sr = (sol || {})[name] || {};
+          if (sr.error) {
+            o.sub.style.display = "";
+            o.sub.textContent = "error: " + sr.error;
+          } else if (__ikDrag.recipe !== name) {
+            o.sub.style.display = "none";
+            o.sub.textContent = "";
+          }
+          if (o.recipe.component && !sr.error) {
+            o.row.style.cursor = "pointer";
+            o.row.title += " — click to select; drag the marker to move the robot";
+          }
         }
-        if (o.recipe.component && !sr.error) {
-          o.row.style.cursor = "pointer";
-          o.row.title += " — click to select; drag the marker to move the robot";
+      }).catch(e => {
+        __attempts++;
+        if (__attempts < 6) {
+          __solveCrumb("retry", { attempt: __attempts });
+          setTimeout(__attempt, 2500);
+          return;
         }
-      }
-    }).catch(e => {
-      __projLoadBanner(null);
-      for (const o of Object.values(subs)) {
-        if (o.recipe.component) {
-          o.sub.style.display = "";
-          o.sub.textContent = "solve failed: " + (e.message || e);
+        __projLoadBanner(null);
+        for (const o of Object.values(subs)) {
+          if (o.recipe.component) {
+            o.sub.style.display = "";
+            o.sub.textContent = "solve failed: " + (e.message || e);
+          }
         }
-      }
-    });
+      });
+    };
+    __attempt();
   }
   // After the socket has had a chance to replay any existing world state
   // (connect -> scene_update), import the project. The empty-world check
