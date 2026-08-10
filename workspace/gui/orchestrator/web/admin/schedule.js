@@ -44,7 +44,6 @@ function _leafKey(replan_id, leaf_name) {
   return `${replan_id || 0}|${leaf_name}`;
 }
 
-let _modalEl = null;
 let _ganttEl = null;
 
 // ── public entrypoints ─────────────────────────────────────────────────
@@ -52,9 +51,7 @@ let _ganttEl = null;
 // Initialize the modal DOM (once per page load). Was bundled into
 // connectScheduleWS when this module owned its own WS; now exposed
 // separately because workspace.js handles transport.
-export function initSchedule() {
-  _initDOM();
-}
+
 
 // Reset state on workspace teardown — clears the in-memory Gantt so
 // the next Launch starts from a blank canvas. Replaces the old
@@ -66,8 +63,8 @@ export function resetSchedule() {
   _leafTiming.clear();
   _leafOrder.length = 0;
   _leafGeom.clear();
-  // Force a re-render so the modal blanks out if currently open.
-  if (_modalEl?.classList.contains("show")) _render();
+  // Force a re-render so a visible pane blanks out immediately.
+  _render();
 }
 
 // Public ingest — workspace.js's mux dispatcher calls this for every
@@ -119,8 +116,7 @@ function _ingest(msg) {
 // block can't be located (e.g. modal just opened, SVG not yet built
 // — _render() builds it).
 function _patchBlockState(leafKey) {
-  if (!_modalEl?.classList.contains("show")) return;
-  if (!_ganttEl) return;
+  if (!_visible()) return;
   const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
   if (!g) { _render(); return; }
   const state = _leafState.get(leafKey) || "pending";
@@ -150,22 +146,6 @@ function _patchBlockState(leafKey) {
   }
 }
 
-function _initDOM() {
-  _modalEl = document.getElementById("scheduleModalOverlay");
-  _ganttEl = document.getElementById("ganttContainer");
-  const closeBtn = document.getElementById("btnScheduleClose");
-  if (closeBtn && !closeBtn._wired) {
-    closeBtn.addEventListener("click", closeScheduleModal);
-    closeBtn._wired = true;
-  }
-  if (_modalEl && !_modalEl._wired) {
-    _modalEl.addEventListener("click", (e) => {
-      if (e.target === _modalEl) closeScheduleModal();
-    });
-    _modalEl._wired = true;
-  }
-}
-
 // Centre the scroll viewport on whichever leaf is currently "the live
 // one". Prefers a running block; otherwise scrolls to the next pending
 // block; otherwise the last leaf in the chart. No-op when the chart is
@@ -189,25 +169,28 @@ function _jumpToCurrent() {
   _ganttEl.scrollLeft = Math.max(0, blockCentre - viewportW / 2);
 }
 
-export function openScheduleModal() {
-  _initDOM();
-  if (!_modalEl) return;
-  _modalEl.classList.add("show");
+// Attach the gantt to an inline host element (the viewport's
+// Schedule pane). Renders happen only while the host is visible.
+export function attachSchedule(el) {
+  _ganttEl = el;
+  if (el) el.classList.add("gantt-container");
+}
+
+// Called when the Schedule tab activates: render and auto-centre on
+// the live block. Deferred a frame so layout exists — clientWidth is
+// 0 until then.
+export function showSchedule() {
+  if (!_ganttEl) return;
   _renderGantt();
-  // Always auto-centre on the "live" block (running, else next pending,
-  // else the last block once everything's done). ``_jumpToCurrent`` is
-  // a no-op when the chart is empty. Deferred a frame so the modal has
-  // laid out — clientWidth is 0 until then.
   requestAnimationFrame(_jumpToCurrent);
 }
 
-export function closeScheduleModal() {
-  if (!_modalEl) return;
-  _modalEl.classList.remove("show");
+function _visible() {
+  return !!(_ganttEl && _ganttEl.offsetParent !== null);
 }
 
 function _render() {
-  if (_modalEl?.classList.contains("show")) _renderGantt();
+  if (_visible()) _renderGantt();
 }
 
 // ── SVG Gantt ──────────────────────────────────────────────────────────
@@ -548,98 +531,4 @@ export function getScheduleCounts() {
   }
   return { total: acts.length, done, curIdx, frac,
            labels: acts.map(labelOf), nextLabel, nextEta };
-}
-
-// ── Pendant schedule view ──────────────────────────────────────────────
-// A time-PROPORTIONAL lane chart, one lane per resource — unlike the
-// modal's flow gantt (label-width blocks), X here IS planner time
-// (start_t/duration scaled to the pane). Rendered as plain HTML so the
-// pendant styles it with tokens. Reads the same ingested state as the
-// gantt: the LAST slice is the current plan.
-export function renderPendantSchedule(el) {
-  if (!el) return;
-  if (!_slices.length) {
-    el.innerHTML = `<div class="psched-empty">No plan yet — press Start.</div>`;
-    return;
-  }
-  const slice = _slices[_slices.length - 1];
-  const acts = slice.actions || [];
-  const rid = slice.replan_id || 0;
-  if (!acts.length) { el.innerHTML = `<div class="psched-empty">No plan yet.</div>`; return; }
-
-  const tres = slice.tool_resource || "robot";
-  const laneSet = new Set([tres]);
-  for (const a of acts) for (const r of (a.resources || [])) laneSet.add(r);
-  const lanes = [...laneSet];
-  lanes.sort((a, b) => (a === tres ? -1 : b === tres ? 1 : a.localeCompare(b)));
-
-  const span = Math.max(1, ...acts.map(a => (a.start_t || 0) + (a.duration || 0)));
-  // Readability floor: at least PX_PER_S pixels per planner second —
-  // long plans scroll horizontally instead of shrinking to slivers.
-  const PX_PER_S = 12;
-  const fitW = el.clientWidth ? Math.max(0, el.clientWidth - 140) : 0;
-  const spanPx = Math.max(span * PX_PER_S, fitW);
-  const pxPerS = spanPx / span;
-  // Tick step: one label every ~120px.
-  const steps = [1, 2, 5, 10, 20, 30, 60, 120, 300];
-  const tick = steps.find(t => t * pxPerS >= 120) || steps[steps.length - 1];
-
-  const laneOf = (a) => {
-    for (const r of (a.resources || [])) if (r !== tres) return r;
-    return (a.resources || []).includes(tres) ? tres : tres;
-  };
-  const stateOf = (a) => _leafState.get(_leafKey(rid, a.leaf_name || a.name)) || "pending";
-  const durText = (a, st) => {
-    const t = _leafTiming.get(_leafKey(rid, a.leaf_name || a.name)) || {};
-    if (st === "skipped") return "—";
-    if (st === "done" && t.startedAt != null && t.endedAt != null)
-      return (t.endedAt - t.startedAt).toFixed(1) + "s";
-    if (st === "running" && t.startedAt != null)
-      return (Date.now() / 1000 - t.startedAt).toFixed(1) + "s";
-    return a.duration != null ? "~" + Number(a.duration).toFixed(1) + "s" : "";
-  };
-  const ICONS = { done: "✓", running: "●" };
-  const label = (a) => (a.class_name || a.name || "").toString();
-
-  let ticksHtml = "";
-  for (let t = 0; t <= span; t += tick) {
-    ticksHtml += `<span class="psched-tick" style="left:${(t * pxPerS).toFixed(1)}px">${t}s</span>`;
-  }
-  const gridW = Math.ceil(spanPx) + 20;
-  let html = `
-    <div class="psched-head">
-      <span class="psched-title">Plan</span>
-      <span class="psched-n mono">${lanes.length} lane${lanes.length === 1 ? "" : "s"}</span>
-      <span class="spacer"></span>
-      <span class="psched-legend">
-        <span class="pl pl-done">✓ done</span>
-        <span class="pl pl-running">● running</span>
-        <span class="pl pl-skipped">skipped</span>
-        <span class="pl pl-pending">pending</span>
-      </span>
-    </div>
-    <div class="psched-scroll">
-    <div class="psched-grid" style="width:${gridW}px">
-      <div class="psched-row psched-axis"><span class="psched-lane"></span>
-        <div class="psched-track">${ticksHtml}</div></div>`;
-  for (const lane of lanes) {
-    let blocks = "";
-    for (const a of acts) {
-      if (laneOf(a) !== lane) continue;
-      const st = stateOf(a);
-      const x = ((a.start_t || 0) * pxPerS).toFixed(1);
-      const w = Math.max(16, (a.duration || 0) * pxPerS - 3).toFixed(1);
-      const ic = ICONS[st] ? `<i>${ICONS[st]}</i>` : "";
-      blocks += `<div class="psched-block ${st}" style="left:${x}px;width:${w}px" title="${label(a)} · ${durText(a, st)}">` +
-                `${ic}<b>${label(a).toLowerCase()}</b><span class="mono">${durText(a, st)}</span></div>`;
-    }
-    html += `<div class="psched-row"><span class="psched-lane mono">${lane}</span>` +
-            `<div class="psched-track">${blocks}</div></div>`;
-  }
-  html += `</div></div>`;
-  // Preserve the operator's scroll position across live re-renders.
-  const prev = el.querySelector(".psched-scroll");
-  const keep = prev ? prev.scrollLeft : null;
-  el.innerHTML = html;
-  if (keep != null) el.querySelector(".psched-scroll").scrollLeft = keep;
 }

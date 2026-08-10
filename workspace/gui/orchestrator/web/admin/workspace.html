@@ -433,10 +433,16 @@
     }
     .viewer-tab:hover { color: var(--text); }
     .viewer-tab.active { background: var(--accent-dim); color: var(--accent); }
-    /* The schedule pane fills the viewport below the tab strip. */
+    /* Floated from <body> while the pendant's 3D tab is up — above
+       the fixed iframe; coords synced to the pane by JS. */
+    .viewer-tabs.floating { position: fixed; z-index: 10002; }
+    /* The schedule pane fills the viewport under the tab strip —
+       in the desktop viewer area or, moved by JS, in the pendant's
+       3D pane. The original gantt renders inline here; no modal. */
     #wsSchedPane {
-      position: absolute; top: 58px; left: 16px; right: 16px; bottom: 16px;
-      overflow-y: auto;
+      position: absolute; inset: 0;
+      padding-top: 58px;
+      display: none;
     }
     #ws3dFrame {
       width: 100%;
@@ -548,7 +554,6 @@
        content view first, then mode switches, then display tweak,
        then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
-    <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="btnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
@@ -718,7 +723,6 @@
       <div class="pendant-tabs" id="pendantTabs">
         <button class="pendant-tab active" data-ptab="project" id="pendantTabProject">Project</button>
         <button class="pendant-tab" data-ptab="3d">3D View</button>
-        <button class="pendant-tab" data-ptab="sched">Schedule</button>
       </div>
       <!-- ACTIVE ROUTINE — pinned under the tab strip. Current step,
            step counter, per-step progress segments, and NEXT. -->
@@ -744,7 +748,6 @@
       <div class="pendant-panes">
         <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
         <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
-        <div class="pendant-sched-pane" id="pendantSchedPane" style="display:none"></div>
       </div>
     </div>
     <!-- Steps / event rail — collapsible via the chevron. -->
@@ -801,24 +804,6 @@
       <div class="kwargs-form" id="paramsForm"></div>
     </div>
     <div class="modal-foot" id="paramsModalFoot"></div>
-  </div>
-</div>
-
-<!-- Schedule (Gantt) modal — clean, event-driven Gantt for the current plan. -->
-<div class="modal-overlay" id="scheduleModalOverlay">
-  <div class="modal schedule-modal">
-    <div class="modal-head">
-      <h3>Schedule</h3>
-      <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm btn-icon" id="btnScheduleClose" title="Close">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-    <div class="modal-body schedule-body">
-      <div id="ganttContainer" class="gantt-container"></div>
-    </div>
   </div>
 </div>
 

@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal, getScheduleCounts, renderPendantSchedule } from "./schedule.js";
+import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -501,8 +501,6 @@ function updateStatusUI(st) {
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
-  // Desktop schedule tab ticks with status (running-block clock).
-  if (!_pendantMode && _viewerTab === "sched") renderPendantSchedule($("wsSchedPane"));
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
@@ -928,8 +926,6 @@ function _dispatchMuxMessage(env) {
       // /ws/schedule socket. Now they ride the mux; schedule.js's
       // module-level state ingests them the same way.
       ingestScheduleEvent(payload);
-      if (_pendantMode && _pendantTab === "sched") renderPendantSchedule($("pendantSchedPane"));
-      if (!_pendantMode && _viewerTab === "sched") renderPendantSchedule($("wsSchedPane"));
       break;
     }
   }
@@ -1640,12 +1636,7 @@ function renderControls(state, launched, running) {
   // changed, neither has the button set — short-circuit before
   // tearing down the DOM and reattaching listeners.
   const s = (state || "").toUpperCase();
-  if (s === _lastControlsState) {
-    // schedule visibility is class-driven (.js-schedule-open) and
-    // depends only on ``launched``, which is derived from s → also
-    // stable across this short-circuit.
-    return;
-  }
+  if (s === _lastControlsState) return;
   _lastControlsState = s;
   controls.innerHTML = "";
 
@@ -1742,15 +1733,6 @@ function renderControls(state, launched, running) {
     addBtn("Kill", "kill", { danger: true });
   }
 
-  // Schedule lives in the top-bar icon row (alongside Fullscreen /
-  // Theme / Pendant — it's a *view*, not a workflow command). The
-  // pendant overlay nav carries a twin in its action cluster; both
-  // share the ``.js-schedule-open`` class so visibility stays in
-  // sync without a per-button branch here. Show only once the
-  // workspace is launched; before then there's no plan to open.
-  document.querySelectorAll(".js-schedule-open").forEach(b => {
-    b.style.display = launched ? "" : "none";
-  });
 }
 
 function updateIframe(state, launched) {
@@ -1809,8 +1791,8 @@ function updateIframe(state, launched) {
     // Single multiplexed WS handles steps + status + devices +
     // operator_actions + schedule.
     connectWs(targetUrl);
-    // Schedule module just needs its modal DOM wired once.
-    initSchedule();
+    // Gantt renders inline into the viewport's Schedule pane.
+    attachSchedule($("wsSchedPane"));
   }
 }
 
@@ -2192,27 +2174,25 @@ function _positionPendant3d() {
     frame.style.width = r.width + "px";
     frame.style.height = r.height + "px";
   }
+  const strip = document.querySelector(".viewer-tabs.floating");
+  if (strip) {
+    strip.style.top = (r.top + 12) + "px";
+    strip.style.left = (r.left + 12) + "px";
+  }
 }
 
 function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
-  const isSched = _pendantTab === "sched";
   document.querySelectorAll(".pendant-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.ptab === _pendantTab));
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
-  const sched = $("pendantSchedPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
-  if (hmi) hmi.style.display = (is3d || isSched || !hasScreen) ? "none" : "";
+  if (hmi) hmi.style.display = (is3d || !hasScreen) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
-  if (sched) {
-    sched.style.display = isSched ? "" : "none";
-    if (isSched) renderPendantSchedule(sched);
-  }
-  const hero = $("pendantHero");
-  if (hero) hero.style.display = (isLaunched(_lastState) && !isSched) ? "" : "none";
-  applyPendantRenderState();
+  // The 3D tab carries the desktop viewer chrome (3D/Schedule chips).
+  _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);
 }
 
@@ -2220,14 +2200,41 @@ function _applyPendantTab() {
 // the pendant's tab, drawn into the main viewport.
 let _viewerTab = "3d";
 
+// The viewer chrome (chip strip + schedule pane) lives in the desktop
+// viewer area, and MOVES into the pendant's 3D pane while that tab is
+// open — the pendant's 3D VIEW is exactly the desktop viewport.
+function _placeViewerChrome() {
+  const strip = document.querySelector(".viewer-tabs");
+  const pane = $("wsSchedPane");
+  if (!strip || !pane) return;
+  const pendant3d = _pendantMode && _pendantTab === "3d";
+  // The schedule pane rides inside whichever 3D surface is active.
+  const paneHost = pendant3d ? $("pendant3dPane") : document.querySelector(".viewer-area");
+  if (paneHost && pane.parentElement !== paneHost) paneHost.appendChild(pane);
+  // The chip strip must paint ABOVE the fixed iframe (z 10001), which
+  // outranks anything inside the pendant overlay's stacking context —
+  // so while the pendant 3D tab is up the strip floats from <body>,
+  // fixed at the pane's corner (kept in sync by _positionPendant3d).
+  if (pendant3d) {
+    if (strip.parentElement !== document.body) document.body.appendChild(strip);
+    strip.classList.add("floating");
+  } else {
+    const area = document.querySelector(".viewer-area");
+    if (area && strip.parentElement !== area) area.appendChild(strip);
+    strip.classList.remove("floating");
+    strip.style.top = strip.style.left = "";
+  }
+}
+
 function _applyViewerTab() {
+  _placeViewerChrome();
   document.querySelectorAll(".viewer-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.vtab === _viewerTab));
   const isSched = _viewerTab === "sched";
   const pane = $("wsSchedPane");
   if (pane) {
-    pane.style.display = isSched ? "" : "none";
-    if (isSched) renderPendantSchedule(pane);
+    pane.style.display = isSched ? "block" : "none";
+    if (isSched) showSchedule();
   }
   if (frame) frame.style.visibility = isSched ? "hidden" : "";
   const ph = $("viewerPlaceholder");
@@ -2241,7 +2248,7 @@ function _applyViewerTab() {
 function applyPendantRenderState() {
   // The viewer renders only where it's visible: pendant closed →
   // desktop viewport owns it; pendant open → only on the 3D tab.
-  const is3d = _pendantMode && _pendantTab === "3d";
+  const is3d = _pendantMode && _pendantTab === "3d" && _viewerTab === "3d";
   document.documentElement.classList.toggle("pendant-open", _pendantMode);
   document.documentElement.classList.toggle("pendant-3d-on", is3d);
   const shouldPause = _pendantMode ? !is3d : _viewerTab === "sched";
@@ -2372,7 +2379,7 @@ function updatePendantUI() {
   // ── ACTIVE ROUTINE hero ──
   const hero = $("pendantHero");
   if (hero) {
-    hero.style.display = (launched && _pendantTab !== "sched") ? "" : "none";
+    hero.style.display = launched ? "" : "none";
     if (launched) {
       // Title: the last step line (already operator words).
       const cards = document.querySelectorAll("#stepTimeline .step-card");
@@ -2439,9 +2446,6 @@ function updatePendantUI() {
       }
     }
   }
-
-  // Schedule tab: refresh so the running block's clock ticks.
-  if (_pendantTab === "sched") renderPendantSchedule($("pendantSchedPane"));
 
   // Event-rail foot: warnings/faults counted from the rendered rows.
   const peFoot = $("peFoot");
@@ -2553,12 +2557,6 @@ $("pendantKill").addEventListener("click", async () => {
 });
 
 
-
-// Schedule buttons (top-bar + pendant nav) — share the
-// ``.js-schedule-open`` class so a single binding covers both.
-document.querySelectorAll(".js-schedule-open").forEach(b => {
-  b.addEventListener("click", () => openScheduleModal());
-});
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
