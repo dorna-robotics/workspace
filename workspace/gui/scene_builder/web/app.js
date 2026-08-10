@@ -1955,6 +1955,16 @@ if (node) {
             window.builderState.placedOrder = window.builderState.placedOrder.filter(x => x !== n);
           }
         }
+        try { if (window.updateObjectList) window.updateObjectList(); } catch(e) {}
+        try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
+        markDirty();
+      });
+
+      // Viewer exports — OUTSIDE the scene_update handler. They were
+      // trapped inside it, so a first import (empty server world → no
+      // replay event) never set window.__three and every recipe click
+      // died silently on its guard — the "works only after a refresh"
+      // bug: the refresh got a replay, the replay set the globals.
       window.upsertObject = upsertObject;
       window.__hasObject = (n) => objectsByName.has(n);
       // TCP drag support: viewer internals + a fast world-pose setter
@@ -1978,10 +1988,6 @@ if (node) {
         }
         root.userData.meshesSig = null;
       };
-        try { if (window.updateObjectList) window.updateObjectList(); } catch(e) {}
-        try { if (window.__updateConfigPreview) window.__updateConfigPreview(); } catch(e) {}
-        markDirty();
-      });
 
 // =========================
 // Builder (insert + snap + save config)
