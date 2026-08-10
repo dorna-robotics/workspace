@@ -7840,7 +7840,25 @@ ensureBuilderBar();
       info = window.__ikInfo = res.recipes || {};
     }
     const ri = info[name];
-    if (!ri || !ri.anchor_world) { showToast(name + ": no drag target"); return; }
+    if (!ri || !ri.anchor_world) {
+      // No drag marker for this recipe — still show its solution and
+      // pose the robot; the old toast vanished in 2.5s and left the
+      // "offset …/joints …" placeholder looking dead.
+      let sr0 = (__refSolve || {})[name] || {};
+      if (!sr0.ref_joints) {
+        try { const sol = await __ensureRefSolve(); sr0 = (sol || {})[name] || {}; } catch (_) {}
+      }
+      __solveCrumb("no_drag_target", { name, solved: !!sr0.ref_joints });
+      if (sr0.ref_joints) {
+        if (sub) sub.textContent = "joints  [" +
+          sr0.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") +
+          "]\n(no drag marker for this recipe)";
+        __poseCoreAt(sr0.ref_joints);
+      } else if (sub) {
+        sub.textContent = "no reference pose";
+      }
+      return;
+    }
     const T = t.THREE;
     const anchorM = new T.Matrix4().compose(
       new T.Vector3(ri.anchor_world[0], ri.anchor_world[1], ri.anchor_world[2]),
@@ -8174,8 +8192,16 @@ ensureBuilderBar();
             o.sub.style.display = "";
             o.sub.textContent = "error: " + sr.error;
           } else if (__ikDrag.recipe !== name) {
-            o.sub.style.display = "none";
-            o.sub.textContent = "";
+            // Solved rows keep their joints in small type — the visible
+            // proof the solver ran (rows going blank read as "gone").
+            if (sr.ref_joints) {
+              o.sub.style.display = "";
+              o.sub.textContent = "[" +
+                sr.ref_joints.map(v => Math.round(v * 10) / 10).join(", ") + "]";
+            } else {
+              o.sub.style.display = "none";
+              o.sub.textContent = "";
+            }
           }
           if (o.recipe.component && !sr.error) {
             o.row.style.cursor = "pointer";
