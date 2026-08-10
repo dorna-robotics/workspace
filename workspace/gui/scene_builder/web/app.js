@@ -7294,7 +7294,13 @@ ensureBuilderBar();
 
     // ── Phase 2: spawn everything (meshes load in parallel) ──────────
     const bulkSpecs = {};
+    let __spawned = 0;
     for (const [cfgName, cfgVal] of sorted) {
+      // Yield a real macrotask every few components: 341 back-to-back
+      // spawns froze the tab for the whole import (awaits on resolved
+      // promises never let the browser paint) — the page looked hung
+      // on whatever was drawn last, usually "solving…".
+      if (++__spawned % 5 === 0) await new Promise(r => setTimeout(r, 0));
       const it = items.find(x => x.name === cfgName);
       const pre = batch[cfgName] || {};
       if (pre.error) { console.warn("loadConfig:", cfgName, pre.error); continue; }
