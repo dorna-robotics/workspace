@@ -2177,7 +2177,7 @@ function _positionPendant3d() {
   const strip = document.querySelector(".viewer-tabs.floating");
   if (strip) {
     strip.style.top = (r.top + 12) + "px";
-    strip.style.left = (r.left + 12) + "px";
+    strip.style.left = (r.left + 16) + "px";
   }
 }
 
@@ -2582,6 +2582,20 @@ $("peCollapse")?.addEventListener("click", () => {
   if (_pendantTab === "3d") requestAnimationFrame(_positionPendant3d);
 });
 window.addEventListener("resize", () => { if (_pendantMode) _positionPendant3d(); });
+// The iframe + chip strip are FIXED (they must outrank the overlay),
+// but the pane they cover lives in a scrolling, reflowing column —
+// track every scroll (capture: any scroller) and pane resize (hero
+// appearing, log growth) so they never drift apart.
+window.addEventListener("scroll", () => {
+  if (_pendantMode && _pendantTab === "3d") _positionPendant3d();
+}, true);
+if (window.ResizeObserver) {
+  const _paneRO = new ResizeObserver(() => {
+    if (_pendantMode && _pendantTab === "3d") _positionPendant3d();
+  });
+  const _p3d = $("pendant3dPane");
+  if (_p3d) _paneRO.observe(_p3d);
+}
 
 // Enter pendant directly from the URL (kiosk mode):
 //   workspace.html?name=<ws>&pendant=1
