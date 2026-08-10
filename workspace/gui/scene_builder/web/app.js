@@ -7875,7 +7875,14 @@ ensureBuilderBar();
     // Selection brings the robot to ref_joints — ALWAYS available
     // (solved at boot, or pinned by hand exactly when the default
     // offset has no solution). No solve until the user drags.
-    const sr = (__refSolve || {})[name] || {};
+    let sr = (__refSolve || {})[name] || {};
+    if (!sr.ref_joints) {
+      // Click raced the solve (or a failed fetch) — wait for it and
+      // refill instead of showing "…" forever.
+      if (sub) sub.textContent = "waiting for solve…";
+      try { const sol = await __ensureRefSolve(); sr = (sol || {})[name] || {}; } catch (_) {}
+      __solveCrumb("selection_late_sr", { name, got: !!sr.ref_joints });
+    }
     if (sr.ref_joints) __poseCoreAt(sr.ref_joints);
     if (sub) sub.textContent = __ikText(ri, sr, off, sr.ref_joints, name);
     if (sub) __ikParamEditor(name, sub);
@@ -8485,11 +8492,20 @@ ensureBuilderBar();
   // while text is selected in the pre. 5s cadence is plenty for a
   // fallback.
   let __pointerHeld = false;
-  window.addEventListener("pointerdown", () => { __pointerHeld = true; }, true);
-  window.addEventListener("pointerup",   () => { __pointerHeld = false; }, true);
+  let __lastActivity = 0;
+  const __touch = () => { __lastActivity = performance.now(); };
+  window.addEventListener("pointerdown", () => { __pointerHeld = true; __touch(); }, true);
+  window.addEventListener("pointerup",   () => { __pointerHeld = false; __touch(); }, true);
   window.addEventListener("pointercancel", () => { __pointerHeld = false; }, true);
+  // Scroll/wheel/moves count as activity too: the sweep serializes a
+  // 341-component bench to YAML (~hundreds of ms) and used to fire
+  // mid-scroll — the "left panel feels laggy" report.
+  window.addEventListener("wheel", __touch, { capture: true, passive: true });
+  window.addEventListener("scroll", __touch, { capture: true, passive: true });
+  window.addEventListener("pointermove", __touch, { capture: true, passive: true });
   setInterval(() => {
     if (__pointerHeld) return;
+    if (performance.now() - __lastActivity < 2000) return;
     if (pre && pre.offsetParent === null) return;
     const sel = window.getSelection();
     if (sel && sel.rangeCount && pre && pre.contains(sel.anchorNode) && !sel.isCollapsed) return;
