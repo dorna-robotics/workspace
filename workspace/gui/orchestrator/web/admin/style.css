@@ -609,7 +609,7 @@
 }
 
 /* Tabs */
-.pendant-tabs { display: flex; gap: 26px; flex: none; padding-top: 2px; }
+.pendant-tabs { display: flex; gap: 26px; flex: none; padding-top: 2px; margin-bottom: 14px; }
 .pendant-tab {
   font: inherit; font-size: var(--text-sm); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.08em;
