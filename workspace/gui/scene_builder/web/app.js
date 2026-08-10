@@ -7585,6 +7585,33 @@ ensureBuilderBar();
     for (const [k, v] of Object.entries(meta)) {
       if (k !== "type" && !k.startsWith("__")) options[k] = v;
     }
+    // The socket-replay path registers components as bare {type} —
+    // re-instantiating the core from that loses rail_cfg and the
+    // platform defaults to the 500mm rail (the "rail shrinks when I
+    // select a recipe" bug). Backfill the core's true config from
+    // the project bundle once, and repair the registry so every
+    // later caller sees the full meta.
+    if (!options.rail_cfg || !options.rail_cfg.type) {
+      try {
+        if (!window.__coreCfgFromBundle) {
+          const pb = await fetch(SB_API + "/project_bundle").then(r => r.json());
+          for (const sc of (pb && pb.scenes) || []) {
+            for (const [n, spec] of Object.entries(sc.cfg || {})) {
+              if (spec && spec.type === "core") { window.__coreCfgFromBundle = spec; break; }
+            }
+            if (window.__coreCfgFromBundle) break;
+          }
+        }
+        const src = window.__coreCfgFromBundle;
+        if (src) {
+          for (const [k, v] of Object.entries(src)) {
+            if (k === "type" || k === "attach") continue;
+            if (!(k in options)) options[k] = v;
+          }
+          bs.components[coreName] = { type: "core", ...options };
+        }
+      } catch (_) {}
+    }
     options.joints = joints;
     try {
       const js = await fetch(SB_API + "/instantiate", {
