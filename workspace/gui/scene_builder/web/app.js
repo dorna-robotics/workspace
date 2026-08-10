@@ -7826,18 +7826,28 @@ ensureBuilderBar();
     __ikDragStop();
     let info = window.__ikInfo;
     if (!info) {
-      sub.textContent = "starting IK worker…";
+      // The worker boots the whole platform (many seconds); the first
+      // fetch often dies mid-boot and made the editor appear only on
+      // the SECOND click. Retry with a bounded per-attempt timeout.
       let res = null;
-      try {
-        const raw = await fetch(SB_API + "/recipe_ik");
-        if (raw.status === 404) throw new Error("endpoint missing — restart gui/server.py");
-        res = await raw.json();
-      } catch (e) {
-        sub.textContent = "IK worker failed: " + (e.message || e);
-        return;
+      for (let a = 1; a <= 4 && !info; a++) {
+        sub.textContent = a === 1 ? "starting IK worker…" : `starting IK worker… (retry ${a - 1})`;
+        try {
+          const ctl = new AbortController();
+          const tmo = setTimeout(() => ctl.abort(), 25000);
+          const raw = await fetch(SB_API + "/recipe_ik", { signal: ctl.signal });
+          clearTimeout(tmo);
+          if (raw.status === 404) throw new Error("endpoint missing — restart gui/server.py");
+          res = await raw.json();
+          if (!res.ok) throw new Error(res.error || "worker failed");
+          info = window.__ikInfo = res.recipes || {};
+        } catch (e) {
+          __solveCrumb("ik_fetch_retry", { attempt: a, err: String(e && e.message || e).slice(0, 80) });
+          if (a === 4) { sub.textContent = "IK worker failed: " + (e.message || e); return; }
+          await new Promise(r => setTimeout(r, 2000));
+        }
       }
-      if (!res.ok) { sub.textContent = "IK worker failed: " + (res.error || ""); return; }
-      info = window.__ikInfo = res.recipes || {};
+      if (__ikDrag.recipe && __ikDrag.recipe !== name) return; // user moved on
     }
     const ri = info[name];
     if (!ri || !ri.anchor_world) {
