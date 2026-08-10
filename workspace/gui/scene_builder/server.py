@@ -1208,6 +1208,39 @@ def _project_solve_sig(project_dir):
     return tuple(sig)
 
 
+class PerfHandler(tornado.web.RequestHandler):
+    """Browser-side render telemetry sink. The builder posts a small
+    sample every few seconds (render ms, draw calls); rows land in
+    /tmp/sb_perf.jsonl so bench-side tooling can read what the
+    OPERATOR'S browser actually experiences — the Pi cannot infer a
+    remote GPU's frame rate any other way."""
+
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    def post(self):
+        try:
+            row = json.loads(self.request.body or b"{}")
+            if not isinstance(row, dict):
+                row = {}
+        except Exception:
+            row = {}
+        row["ts"] = time.strftime("%H:%M:%S")
+        row["ip"] = self.request.remote_ip
+        try:
+            with open("/tmp/sb_perf.jsonl", "a") as f:
+                f.write(json.dumps(row) + "\n")
+        except OSError:
+            pass
+        self.write({"ok": True})
+
+
 class SolveRefHandler(tornado.web.RequestHandler):
     """Solve every recipe's reference joints for the active project.
 

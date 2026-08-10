@@ -8673,6 +8673,32 @@ ensureBuilderBar();
       renderer.domElement.addEventListener("pointermove", markDirty);
 
       // --- Animate (keep anchors & badges sticky) ---
+      // Render telemetry — what the OPERATOR'S browser actually
+      // measures (the server can't see a remote GPU). Sampled around
+      // real renders only, posted every 5s while the tab is visible,
+      // fire-and-forget. Rows land in /tmp/sb_perf.jsonl on the Pi.
+      const _perf = { renders: 0, ms: 0, worst: 0, lastSend: performance.now() };
+      function _perfSend() {
+        const now = performance.now();
+        if (now - _perf.lastSend < 5000 || !_perf.renders) return;
+        if (document.visibilityState !== "visible") { _perf.lastSend = now; return; }
+        const body = {
+          renders: _perf.renders,
+          avg_ms: +(_perf.ms / _perf.renders).toFixed(1),
+          worst_ms: +_perf.worst.toFixed(1),
+          calls: renderer.info.render.calls,
+          tris: renderer.info.render.triangles,
+          objects: objectsByName.size,
+          dpr: window.devicePixelRatio,
+        };
+        _perf.renders = 0; _perf.ms = 0; _perf.worst = 0; _perf.lastSend = now;
+        try {
+          fetch(SB_API + "/perf", { method: "POST", keepalive: true,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body) }).catch(() => {});
+        } catch (_) {}
+      }
+
       function animate() {
         const snapActive = !!snapTarget;
         if (snapActive) { updateSnap(); markDirty(); }
@@ -8681,12 +8707,17 @@ ensureBuilderBar();
 
         const now = performance.now();
         if (_needsRender || now - _lastRenderMs > IDLE_RENDER_INTERVAL) {
+          const t0 = performance.now();
           renderer.render(scene, camera);
           vcGroup.quaternion.copy(camera.quaternion).invert();
           vcRenderer.render(vcScene, vcCamera);
+          const dt = performance.now() - t0;
+          _perf.renders++; _perf.ms += dt;
+          if (dt > _perf.worst) _perf.worst = dt;
           _needsRender = false;
           _lastRenderMs = now;
         }
+        _perfSend();
         requestAnimationFrame(animate);
       }
       animate();
