@@ -253,8 +253,7 @@ function makeRenderer(opts, mountEl) {
       // Per-object edge outlines (the black lines around each component).
       // On by default; addEdgeOverlay seeds new objects from this flag.
       let _sbShowEdges = true;
-      window.__sbToggleEdges = () => {
-        _sbShowEdges = !_sbShowEdges;
+      function _applyEdgesVisible() {
         scene.traverse(o => {
           const el = o.userData && o.userData.__edgeLines;
           if (el) el.visible = _sbShowEdges;
@@ -262,6 +261,24 @@ function makeRenderer(opts, mountEl) {
         const btn = document.getElementById("btnEdges");
         if (btn) btn.classList.toggle("active", _sbShowEdges);
         markDirty();
+      }
+      window.__sbToggleEdges = () => {
+        _sbShowEdges = !_sbShowEdges;
+        _applyEdgesVisible();
+      };
+      // Big scenes drop the outlines automatically — on a 300+
+      // component bench they are a third of the draw calls for a
+      // purely cosmetic layer (bna_test: 393 of ~1100). The toolbar
+      // toggle still brings them back; auto-off fires once per
+      // import, not on every count change.
+      const EDGES_AUTO_OFF_AT = 150;
+      let _edgesAutoDropped = false;
+      window.__sbMaybeAutoDropEdges = (count) => {
+        if (_edgesAutoDropped || !_sbShowEdges || count < EDGES_AUTO_OFF_AT) return;
+        _edgesAutoDropped = true;
+        _sbShowEdges = false;
+        _applyEdgesVisible();
+        try { window.showToast?.("Edge outlines off (large scene) — EDGES button re-enables"); } catch (_) {}
       };
       // Edges start active
       const _initEdgesBtn = document.getElementById("btnEdges");
@@ -316,6 +333,13 @@ function makeRenderer(opts, mountEl) {
       }
       const objectsByName = new Map();
       window.objectsByName = objectsByName;
+      // Auto edge-drop watches the census (cheap: one size check).
+      const _obnSet = objectsByName.set.bind(objectsByName);
+      objectsByName.set = (k, v) => {
+        const r = _obnSet(k, v);
+        try { window.__sbMaybeAutoDropEdges?.(objectsByName.size); } catch (_) {}
+        return r;
+      };
 
 
       // --- Collision visuals (local boxes) ---
