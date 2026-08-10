@@ -2166,19 +2166,13 @@ let _pendantTab = localStorage.getItem("pendant_tab") || "project";
 
 function _positionPendant3d() {
   const pane = $("pendant3dPane");
-  if (!pane || !_pendantMode || _pendantTab !== "3d") return;
+  const area = document.querySelector(".viewer-area");
+  if (!pane || !area || !_pendantMode || _pendantTab !== "3d") return;
   const r = pane.getBoundingClientRect();
-  if (frame) {
-    frame.style.top = r.top + "px";
-    frame.style.left = r.left + "px";
-    frame.style.width = r.width + "px";
-    frame.style.height = r.height + "px";
-  }
-  const strip = document.querySelector(".viewer-tabs.floating");
-  if (strip) {
-    strip.style.top = (r.top + 12) + "px";
-    strip.style.left = (r.left + 16) + "px";
-  }
+  area.style.top = r.top + "px";
+  area.style.left = r.left + "px";
+  area.style.width = r.width + "px";
+  area.style.height = r.height + "px";
 }
 
 function _applyPendantTab() {
@@ -2191,7 +2185,9 @@ function _applyPendantTab() {
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
   if (hmi) hmi.style.display = (is3d || !hasScreen) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
-  // The 3D tab carries the desktop viewer chrome (3D/Schedule chips).
+  const hero = $("pendantHero");
+  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d) ? "" : "none";
+  // The 3D tab IS the desktop viewer area, chips and all.
   _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);
 }
@@ -2200,34 +2196,7 @@ function _applyPendantTab() {
 // the pendant's tab, drawn into the main viewport.
 let _viewerTab = "3d";
 
-// The viewer chrome (chip strip + schedule pane) lives in the desktop
-// viewer area, and MOVES into the pendant's 3D pane while that tab is
-// open — the pendant's 3D VIEW is exactly the desktop viewport.
-function _placeViewerChrome() {
-  const strip = document.querySelector(".viewer-tabs");
-  const pane = $("wsSchedPane");
-  if (!strip || !pane) return;
-  const pendant3d = _pendantMode && _pendantTab === "3d";
-  // The schedule pane rides inside whichever 3D surface is active.
-  const paneHost = pendant3d ? $("pendant3dPane") : document.querySelector(".viewer-area");
-  if (paneHost && pane.parentElement !== paneHost) paneHost.appendChild(pane);
-  // The chip strip must paint ABOVE the fixed iframe (z 10001), which
-  // outranks anything inside the pendant overlay's stacking context —
-  // so while the pendant 3D tab is up the strip floats from <body>,
-  // fixed at the pane's corner (kept in sync by _positionPendant3d).
-  if (pendant3d) {
-    if (strip.parentElement !== document.body) document.body.appendChild(strip);
-    strip.classList.add("floating");
-  } else {
-    const area = document.querySelector(".viewer-area");
-    if (area && strip.parentElement !== area) area.appendChild(strip);
-    strip.classList.remove("floating");
-    strip.style.top = strip.style.left = "";
-  }
-}
-
 function _applyViewerTab() {
-  _placeViewerChrome();
   document.querySelectorAll(".viewer-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.vtab === _viewerTab));
   const isSched = _viewerTab === "sched";
@@ -2248,19 +2217,19 @@ function _applyViewerTab() {
 function applyPendantRenderState() {
   // The viewer renders only where it's visible: pendant closed →
   // desktop viewport owns it; pendant open → only on the 3D tab.
-  const is3d = _pendantMode && _pendantTab === "3d" && _viewerTab === "3d";
+  const areaUp = _pendantMode && _pendantTab === "3d";
   document.documentElement.classList.toggle("pendant-open", _pendantMode);
-  document.documentElement.classList.toggle("pendant-3d-on", is3d);
-  const shouldPause = _pendantMode ? !is3d : _viewerTab === "sched";
+  document.documentElement.classList.toggle("pendant-3d-on", areaUp);
+  if (!areaUp) {
+    const area = document.querySelector(".viewer-area");
+    if (area) area.style.top = area.style.left = area.style.width = area.style.height = "";
+  }
+  const shouldPause = (_pendantMode && _pendantTab !== "3d") || _viewerTab === "sched";
   if (frame && frame.contentWindow) {
     frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
     // Full viewer UI everywhere — the pendant's 3D tab carries the
     // exact desktop canvas controls (toolbar, home, view cube).
     frame.contentWindow.postMessage({ type: "ui", value: "full" }, "*");
-  }
-  if (!_pendantMode && frame) {
-    // Back to the desktop viewport: clear the inline pane rect.
-    frame.style.top = frame.style.left = frame.style.width = frame.style.height = "";
   }
 }
 
@@ -2381,7 +2350,7 @@ function updatePendantUI() {
   // ── ACTIVE ROUTINE hero ──
   const hero = $("pendantHero");
   if (hero) {
-    hero.style.display = launched ? "" : "none";
+    hero.style.display = (launched && _pendantTab === "project") ? "" : "none";
     if (launched) {
       // Title: the last step line (already operator words).
       const cards = document.querySelectorAll("#stepTimeline .step-card");

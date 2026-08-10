@@ -433,9 +433,6 @@
     }
     .viewer-tab:hover { color: var(--text); }
     .viewer-tab.active { background: var(--accent-dim); color: var(--accent); }
-    /* Floated from <body> while the pendant's 3D tab is up — above
-       the fixed iframe; coords synced to the pane by JS. */
-    .viewer-tabs.floating { position: fixed; z-index: 10002; }
     /* The schedule pane is a white CARD under the chip strip — in
        the desktop viewer area or, moved by JS, in the pendant's 3D
        pane. The gantt scrolls INSIDE the card, so blocks never
@@ -456,18 +453,17 @@
       display: block;
     }
 
-    /* Pendant 3D tab — while the 3D tab is active the existing
-       iframe is repositioned over the pendant's 3D pane (JS keeps
-       the rect in sync); any other tab hides it entirely. One
-       iframe, one WebGL context, zero reloads. */
-    html.pendant-open.pendant-3d-on #ws3dFrame {
+    /* Pendant 3D tab — the ENTIRE desktop viewer area (iframe,
+       chip strip, placeholder, schedule card) floats over the
+       pendant's 3D pane, rect synced by JS. Same div, same
+       children, zero iframe reloads — the pendant's 3D VIEW is
+       literally the desktop viewport. */
+    html.pendant-open.pendant-3d-on .viewer-area {
       position: fixed;
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-sm);
       z-index: 10001;
-    }
-    html.pendant-open:not(.pendant-3d-on) #ws3dFrame {
-      display: none;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
     }
     .viewer-placeholder {
       position: absolute;
