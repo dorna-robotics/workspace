@@ -515,3 +515,37 @@ function _primaryRow(rows, resources, toolRes) {
   }
   return rows.indexOf(resources[0]);
 }
+
+// ── Pendant hero feed ──────────────────────────────────────────────────
+// Pure read over the ingested plan: the LAST slice is the current
+// routine. Returns step counts, the label chain, the running index,
+// a live within-step fraction (wall clock vs planned duration), and
+// the NEXT action + its ETA. Null until a plan exists.
+export function getScheduleCounts() {
+  if (!_slices.length) return null;
+  const slice = _slices[_slices.length - 1];
+  const acts = slice.actions || [];
+  if (!acts.length) return null;
+  const rid = slice.replan_id || 0;
+  const labelOf = (a) => (a.parametrized === false)
+    ? (a.class_name || a.name) : `${a.class_name || a.name}(${a.item})`;
+  let done = 0, curIdx = -1;
+  acts.forEach((a, i) => {
+    const st = _leafState.get(_leafKey(rid, a.leaf_name || a.name)) || "pending";
+    if (st === "done" || st === "skipped") done++;
+    else if (st === "running" && curIdx < 0) curIdx = i;
+  });
+  let frac = 0, nextLabel = "", nextEta = null;
+  if (curIdx >= 0) {
+    const a = acts[curIdx];
+    const t = _leafTiming.get(_leafKey(rid, a.leaf_name || a.name)) || {};
+    const now = Date.now() / 1000;
+    if (t.startedAt != null && a.duration) {
+      frac = Math.min(0.95, Math.max(0, (now - t.startedAt) / a.duration));
+      nextEta = Math.max(0, a.duration - (now - t.startedAt));
+    }
+    if (curIdx + 1 < acts.length) nextLabel = labelOf(acts[curIdx + 1]);
+  }
+  return { total: acts.length, done, curIdx, frac,
+           labels: acts.map(labelOf), nextLabel, nextEta };
+}

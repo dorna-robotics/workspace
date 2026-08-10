@@ -250,7 +250,6 @@
 .label-optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
 .section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
 .section-chevron.open { transform: rotate(90deg); }
-.pendant-secondary-row { display: flex; gap: 12px; align-items: center; }
 
 /* ── Kwargs form element classes ───────────────────────────────────────── */
 .kw-file-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
@@ -358,22 +357,6 @@
 .sidebar-progress .progress-bar { flex: 1; }
 .sidebar-progress > span { font-size: 11px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
-/* Pendant progress */
-.pendant-progress {
-  width: min(520px, 90vw);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.pendant-progress .progress-bar {
-  flex: 1;
-  height: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-.pendant-progress .progress-bar-fill { border-radius: var(--radius-sm); }
-.pendant-progress > span { font-size: var(--text-xl); font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
-
 /* ── Log colors ─────────────────────────────────────────────────────────── */
 .log-err  { color: var(--red); }
 .log-warn { color: var(--amber); }
@@ -446,692 +429,6 @@
   border-bottom-color: rgba(199, 124, 10, 0.2);
 }
 
-/* ── Pendant Mode ──────────────────────────────────────────────────────── */
-.pendant-overlay {
-  position: fixed;
-  inset: 0;
-  margin-left: 0;
-  z-index: 10000;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 0;
-  transition: background var(--motion-slow) var(--ease);
-}
-
-/* Pendant nav chrome (background, border, status-coloured
-   underline) is shared with ``.ws-header`` via the topbar
-   selector list in base.css. Pendant overrides:
-   - Height is NOT overridden: since the state pill moved into the
-     rail this bar carries the same furniture as the main page (back,
-     name, timer chip, actions), so it inherits the shared 54px and
-     the two headers line up. Keep the 3D-PiP offset in
-     workspace.html in sync with it.
-   - Layout switched from flex to a 3-column grid so the centre
-     column (timer) stays perfectly centred regardless of how
-     wide the left pill or right action cluster grow. Flex with
-     a spacer can't do this — only grid-template-columns
-     ``1fr auto 1fr`` keeps the centre item locked. */
-.pendant-nav {
-  padding: 0 24px;
-  gap: 16px;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-}
-/* Explicit grid-column for each child so positions are *pinned*,
-   not derived from sibling order. Otherwise: when the timer is
-   hidden (e.g. pre-launch), the action cluster slides into its
-   middle column and reads as "centred" instead of "right". Pinning
-   by column number keeps every child in its lane regardless of
-   which siblings are present. */
-.pendant-nav .pendant-nav-left { grid-column: 1; justify-self: start;
-  display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-/* Which workspace this pendant is driving — the operator may have
-   several benches open; the name has to be on screen, not in a tab. */
-.pendant-nav .pendant-project {
-  font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.1px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.pendant-nav .pill-state     { grid-column: 1; justify-self: start; }
-.pendant-nav .pendant-timer  { grid-column: 2; justify-self: center; }
-.pendant-nav .topbar-actions { grid-column: 3; justify-self: end; }
-
-/* Scrollable body — every pendant widget that isn't in the navbar
-   lives here. Centred vertically when content fits, scrolls when it
-   doesn't (e.g. a long steps list shouldn't disappear behind the
-   buttons). ``safe center`` keeps the top edge visible when the
-   content overflows so nothing is clipped above the fold. */
-.pendant-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  gap: 40px;
-  padding: 24px 32px 32px;
-  transition: background var(--motion-slow) var(--ease);
-}
-/* State-tinted ambient glow on the content pane. A soft radial wash
-   rising from below the visible area, fading to neutral by
-   mid-height so text never sits on a competing colour. (Before the
-   control rail it anchored the eye on the action tiles at the
-   bottom; now the tiles live in the rail and the wash is purely an
-   ambient state cue for the pane.)
-
-   This is the deliberate exception to design-system.md §6's "no
-   tinted backgrounds for state" rule: the pendant is operator-
-   facing and cross-room legibility is paramount. The radial
-   falloff + bottom anchor + breathing animation are chosen for
-   visibility *without* the flat-tint anti-pattern (no harsh edges,
-   no full-surface flood, content area stays neutral). Inspired by
-   the bottom-of-screen colour wash Apple uses in Focus Modes and
-   Now Playing. */
-.pendant-body                          { background: var(--bg); position: relative; }
-.pendant-body::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--state-glow, transparent);
-  pointer-events: none;
-  z-index: 0;
-  transition: background var(--motion-slow) var(--ease);
-}
-/* Breathing animation only fires when the workspace is waiting
-   for the operator to press Start. During an actual run the
-   glow is steady — "I'm working" reads as calm and stable.
-   ``is-waiting`` is toggled by ``updatePendantUI`` based on
-   ``isWaiting(state)`` in api.js. */
-.pendant-body.is-waiting::after {
-  animation: pendant-state-breathe 2s ease-in-out infinite;
-}
-.pendant-body > * { position: relative; z-index: 1; }
-
-/* Aggressive vignette — three layers stacked for maximum edge
-   pop without overwhelming the content area:
-     1. Outer vignette: transparent core 15% → saturated colour
-        90%. The colour ring is wide and fully present.
-     2. Bottom hotspot: extra saturation behind the action tiles.
-     3. Inset glow shadow: a sharp inner frame of colour, like an
-        LED edge around the screen — this is what makes it pop
-        from across the room.
-   Centre 15% stays transparent so buttons + step list remain
-   readable at close range. */
-.pendant-body::after { box-shadow: var(--state-frame, none); }
-
-/* Symmetric vignette: just the ring + frame shadow, no bottom-
-   biased hot-spot — all four edges get equal weight. */
-.pendant-body[data-variant="ok"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(52,199,89,0.92) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(52,199,89,0.55);
-}
-/* Waiting + ok = IDLE/READY (system fine, operator hasn't pressed
-   Start yet). We swap to blue so cross-room recognition is
-   unambiguous: green = "running, watch", blue = "primed, your
-   move". Steady running stays green; this override only fires
-   when the body is *also* in the breathing class. */
-.pendant-body.is-waiting[data-variant="ok"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(10,132,255,0.92) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(10,132,255,0.55);
-}
-.pendant-body[data-variant="warn"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(255,159,10,0.92) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(255,159,10,0.55);
-}
-.pendant-body[data-variant="bad"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(255,69,58,0.95) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(255,69,58,0.60);
-}
-[data-theme="light"] .pendant-body[data-variant="ok"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(36,138,61,0.78) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(36,138,61,0.42);
-}
-[data-theme="light"] .pendant-body.is-waiting[data-variant="ok"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(0,122,255,0.78) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(0,122,255,0.42);
-}
-[data-theme="light"] .pendant-body[data-variant="warn"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(199,124,10,0.78) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(199,124,10,0.42);
-}
-[data-theme="light"] .pendant-body[data-variant="bad"] {
-  --state-glow: radial-gradient(ellipse 130% 130% at 50% 50%, transparent 15%, rgba(215,0,21,0.82) 88%);
-  --state-frame: inset 0 0 90px 10px rgba(215,0,21,0.45);
-}
-
-/* Eased breathing — 2s cycle, opacity drifts between 0.4 and 1
-   for a strong "your move" blink visible across a workshop.
-   Only fires when ``.pendant-body.is-waiting`` (operator action
-   needed). Running uses no animation — the glow sits steady at
-   full saturation. Killed by ``@media (prefers-reduced-motion:
-   reduce)`` in base.css. */
-@keyframes pendant-state-breathe {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 1; }
-}
-
-/* State pill in the pendant nav uses the shared ``.pill`` from
-   base.css for its variant colour API (``.ok`` / ``.warn`` /
-   ``.bad`` / ``.off`` and the inner ``.dot``), but the pendant
-   pumps up the physical metrics — bigger padding, --text-md, a
-   larger dot — so an operator standing two metres from the tablet
-   can read the state at a glance. This is the deliberate
-   exception design-system.md §4 calls out: operator-scale
-   contents in an otherwise shared nav. */
-/* Pill height matches the hero timer chip so the two sit on a
-   visual baseline. Pulled through a custom property so a future
-   resize touches one line. */
-.pendant-nav                { --chip-h: 38px; }
-.pendant-nav .pill-state,
-.pendant-nav .pendant-timer { height: var(--chip-h); }
-.pendant-nav .pill-state {
-  padding: 0 18px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-md);
-  letter-spacing: 0.08em;
-  gap: var(--space-3);
-}
-.pendant-nav .pill-state .dot { width: 10px; height: 10px; }
-/* Warn / bad get an extra coloured halo on top of the base dot
-   colour — these are the attention-grabbing states; operators
-   should feel them across the room. */
-.pendant-nav .pill-state .dot.warn { box-shadow: 0 0 8px rgba(255,159,10,0.5); }
-.pendant-nav .pill-state .dot.bad  { box-shadow: 0 0 8px rgba(255,69,58,0.5); }
-
-/* Run elapsed time — the hero number of the pendant. Mono +
-   tabular-nums, 26px, deliberately too big to miss across the
-   room. This is the *one* place in the entire app that exits the
-   type scale (see design-system.md §2.3). The chip itself is a
-   subtle translucent surface so the number does the visual work,
-   not the container. */
-.pendant-timer {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 16px;
-  border-radius: var(--radius-md);
-  background: rgba(255,255,255,0.04);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text);
-  user-select: none;
-  flex-shrink: 0;
-}
-[data-theme="light"] .pendant-timer {
-  background: rgba(0,0,0,0.04);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
-}
-.pendant-timer-icon { width: 18px; height: 18px; opacity: 0.4; flex-shrink: 0; }
-.pendant-timer-value { min-width: 5ch; text-align: center; }
-
-.pendant-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  width: min(520px, 90vw);
-}
-
-.pendant-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 36px 20px;
-  border-radius: var(--radius-xl);
-  border: none;
-  background: var(--surface);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 18px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition:
-    transform  var(--motion-fast) var(--ease),
-    background var(--motion-med)  var(--ease),
-    box-shadow var(--motion-med)  var(--ease);
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  box-shadow: var(--shadow-sm);
-}
-.pendant-btn:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
-.pendant-btn:active:not(:disabled) {
-  transform: scale(0.93);
-  transition: transform 0.05s;
-}
-/* Disabled tiles: a *completely* different visual treatment from
-   enabled. The chip stays fully opaque (covers the glow), but
-   uses a neutral muted surface instead of the per-button colour
-   tint — and the icon + label are heavily dimmed. The operator
-   reads "this position is here but inert" from across the room,
-   not "is this maybe pressable?".
-   Specificity bumped on the light-theme override so it beats the
-   per-button colour rules ([data-theme="light"] .pendant-start
-   etc., which would otherwise win at equal specificity). */
-.pendant-btn:disabled {
-  cursor: not-allowed;
-  transform: none;
-  background: var(--surface2);
-  box-shadow: none;
-  filter: grayscale(0.9);
-}
-[data-theme="light"] .pendant-btn:disabled {
-  background: rgba(0,0,0,0.05);
-  box-shadow: none;
-}
-.pendant-btn:disabled svg,
-.pendant-btn:disabled span { opacity: 0.35; }
-
-/* Start — green. While the workspace is launched-and-idle this is the
-   single action the operator's about to take, so we let it breathe
-   with a slow ambient sheen (paused on hover so the hover-state can
-   express itself without competing).
-
-   The breathe colour comes from CSS vars so the light theme can
-   adjust saturation without forking the keyframes. */
-.pendant-start {
-  --start-inset:    rgba(52,199,89,0.4);
-  --start-inset-on: rgba(52,199,89,0.55);
-  --start-glow-on:  0 0 28px rgba(52,199,89,0.22);
-  color: #fff;
-  background: rgba(52,199,89,0.25);
-  box-shadow: inset 0 0 0 1.5px var(--start-inset);
-}
-.pendant-start:not(:disabled) { animation: pendant-start-breathe 3.2s ease-in-out infinite; }
-.pendant-start:hover:not(:disabled),
-.pendant-start:active:not(:disabled) {
-  background: rgba(52,199,89,0.35);
-  box-shadow: inset 0 0 0 1.5px rgba(52,199,89,0.5), 0 0 30px rgba(52,199,89,0.15);
-  animation: none;
-}
-@keyframes pendant-start-breathe {
-  0%, 100% { box-shadow: inset 0 0 0 1.5px var(--start-inset),    0 0 0 transparent; }
-  50%      { box-shadow: inset 0 0 0 1.5px var(--start-inset-on), var(--start-glow-on); }
-}
-
-/* Pause — amber */
-.pendant-pause {
-  color: #fff;
-  background: rgba(255,159,10,0.25);
-  box-shadow: inset 0 0 0 1.5px rgba(255,159,10,0.4);
-}
-.pendant-pause:hover:not(:disabled) {
-  background: rgba(255,159,10,0.35);
-  box-shadow: inset 0 0 0 1.5px rgba(255,159,10,0.5), 0 0 30px rgba(255,159,10,0.15);
-}
-
-/* Restart — blue */
-.pendant-launch {
-  color: #fff;
-  background: rgba(10,132,255,0.25);
-  box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.4);
-}
-.pendant-launch:hover:not(:disabled) {
-  background: rgba(10,132,255,0.35);
-  box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.5), 0 0 30px rgba(10,132,255,0.15);
-}
-
-/* Park — orange (between amber-pause and red-kill on the severity ramp) */
-.pendant-park {
-  color: #fff;
-  background: rgba(255,122,63,0.25);
-  box-shadow: inset 0 0 0 1.5px rgba(255,122,63,0.42);
-}
-.pendant-park:hover:not(:disabled) {
-  background: rgba(255,122,63,0.35);
-  box-shadow: inset 0 0 0 1.5px rgba(255,122,63,0.55), 0 0 30px rgba(255,122,63,0.15);
-}
-
-/* Kill — red */
-.pendant-kill {
-  color: #fff;
-  background: rgba(255,69,58,0.25);
-  box-shadow: inset 0 0 0 1.5px rgba(255,69,58,0.4);
-}
-.pendant-kill:hover:not(:disabled) {
-  background: rgba(255,69,58,0.35);
-  box-shadow: inset 0 0 0 1.5px rgba(255,69,58,0.5), 0 0 30px rgba(255,69,58,0.15);
-}
-
-/* Pressed feedback — flash effect */
-.pendant-btn.pendant-pressed {
-  animation: pendant-flash 0.3s ease-out;
-}
-@keyframes pendant-flash {
-  0%   { filter: brightness(1.4); }
-  100% { filter: brightness(1); }
-}
-
-/* Pendant info area (steps + progress) */
-.pendant-info {
-  width: min(520px, 90vw);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.pendant-steps {
-  max-height: 90px;
-  overflow-y: auto;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  padding: 10px 0;
-  box-shadow: var(--shadow-sm);
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-.pendant-steps:empty { display: none; }
-/* Pendant density — large. Shared identity (states, dot glow,
-   transitions) lives in base.css's ``:is(.step-card, .pendant-step-card)``
-   block; the rules below are pendant-only overrides for spacing
-   and size. */
-.pendant-step-card { padding: 4px 16px; font-size: var(--text-md); }
-.pendant-step-dot  { width: 8px; height: 8px; margin-top: 6px; }
-
-.pendant-alarm {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 28px;
-  background: rgba(255, 69, 58, 0.12);
-  border: none;
-  border-radius: var(--radius-lg);
-  color: var(--red);
-  font-size: var(--text-xl);
-  font-weight: 600;
-  width: min(90vw, 500px);
-  animation: alarm-pulse 1.5s ease-in-out infinite;
-  box-shadow: var(--shadow-sm);
-}
-.pendant-alarm svg { flex-shrink: 0; }
-
-/* Secondary action (e.g. Parameters) — smaller, below the grid */
-.pendant-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  /* Field-friendly touch target — Kill / Params / Operator Actions get
-     pressed on site tablets; 56 px minimum, generous padding. */
-  min-height: 56px;
-  padding: 16px 34px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: var(--surface);
-  color: var(--muted);
-  font-family: var(--font);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease),
-    color      var(--motion-fast) var(--ease),
-    box-shadow var(--motion-med)  var(--ease);
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow: var(--shadow-sm);
-}
-.pendant-secondary:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-.pendant-secondary:focus-visible { outline: none; box-shadow: var(--shadow-sm), var(--glow); }
-.pendant-secondary:active { transform: scale(0.97); }
-/* Ghosted secondary — present but inert (design-system §4). */
-.pendant-secondary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
-.pendant-kill-btn { color: var(--red); }
-.pendant-kill-btn:hover { color: var(--red); background: rgba(255,69,58,0.12); }
-[data-theme="light"] /* Ghosted secondary — present but inert (design-system §4). */
-.pendant-secondary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-.pendant-secondary:disabled:hover { background: var(--surface); color: var(--muted); }
-.pendant-kill-btn { color: var(--red); }
-[data-theme="light"] .pendant-kill-btn:hover { background: rgba(215,0,21,0.08); }
-
-
-/* ── HMI widgets (declared in hmi.j2, rendered by the platform) ────
-   Operator scale: this is read across a room, not at a desk. Tokens
-   only — a project ships no CSS, so it cannot drift from the system. */
-.pendant-hmi {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  width: min(680px, 92vw);
-}
-.hmi-state {
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  line-height: 1.15;
-  text-align: center;
-}
-.hmi-stat-row { display: flex; gap: var(--space-4); flex-wrap: wrap; }
-.hmi-stat {
-  flex: 1 1 130px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
-  box-shadow: var(--shadow-sm);
-}
-.hmi-stat-v {
-  font-size: 28px; font-weight: 800;
-  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
-}
-.hmi-stat-v small { font-size: var(--text-lg); color: var(--muted); margin-left: 3px; }
-.hmi-stat-l {
-  color: var(--muted); font-weight: 700; font-size: var(--text-xs);
-  text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;
-}
-/* Rack widget — one dot grammar: filled = occupied, hollow = empty,
-   colour = process state. Muted for done, saturated only for active
-   and attention (§9), and every state also differs in FORM so colour
-   is never the only signal. */
-/* Done reads as GREEN at a glance. Muted-for-done (§9) exists so it
-   does not compete with active — not so it becomes ambiguous; the
-   distinction from active is hue + the breathing ring, not weakness. */
-/* Icon redundancy: state is never carried by colour alone (§9). */
-/* In progress but not the position the robot is touching right now.
-   A batch interleaves items, so several are underway at once —
-   without this they would all read as "active" and the operator
-   could not see where the robot actually is. */
-/* Tappable positions + the detail pane (master-detail). */
-.hmi-progress { display: flex; align-items: center; gap: var(--space-4); }
-.hmi-progress .progress-bar { flex: 1; }
-.hmi-progress-label {
-  font-family: var(--mono); font-weight: 800; font-size: var(--text-lg);
-  font-variant-numeric: tabular-nums; min-width: 52px; text-align: right;
-}
-
-/* ══ Pendant control rail (landscape) ═══════════════════════════════
-   The four run controls live in a FIXED left rail: they occupy the
-   same screen position no matter how much the project's content pane
-   grows, and they sit under the thumb when the tablet is held in
-   landscape. The content pane scrolls on its own beside them.
-
-   Portrait falls back to the pre-rail layout (controls along the
-   bottom, 2x2 tiles) — see the media query at the end of this block,
-   so nothing regresses on a portrait tablet. */
-.pendant-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: stretch;
-}
-.pendant-rail {
-  width: 224px;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px 14px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-/* Controls stack full-width: the whole row is the target, so thumb
-   placement along it does not matter. */
-.pendant-rail .pill-state {
-  align-self: stretch;
-  justify-content: center;
-  margin-bottom: var(--space-2);
-}
-.pendant-rail .pendant-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-.pendant-rail .pendant-btn {
-  flex-direction: row;
-  justify-content: center;   /* icon + label centred as one group */
-  gap: 12px;
-  min-height: 56px;          /* > the 44px touch floor (design-system §10) */
-  padding: 0 16px;
-  border-radius: var(--radius-lg);
-  font-size: var(--text-lg);
-  letter-spacing: 0.04em;
-}
-.pendant-rail .pendant-btn svg { width: 22px; height: 22px; flex: 0 0 auto; }
-.pendant-rail-gap { flex: 1 1 auto; min-height: var(--space-4); }
-.pendant-rail .pendant-secondary-row {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  width: 100%;
-}
-.pendant-rail .pendant-secondary {
-  justify-content: center;
-  /* same size and shape as the run controls above — a rail of
-     differently-sized buttons reads as unfinished, and Kill in
-     particular must be as easy to hit as the rest. */
-  min-height: 56px;
-  padding: 0 14px;
-  border-radius: var(--radius-lg);
-  font-size: var(--text-md);
-}
-/* Kill: its own row with a deliberate gap above — the one irreversible
-   control never shares an edge with a routine button. */
-.pendant-kill-row {
-  width: 100%;
-  margin-top: var(--space-3);
-  display: flex;
-}
-.pendant-kill-row .pendant-secondary { width: 100%; }
-
-/* Content pane — scrolls independently of the rail. */
-.pendant-main > .pendant-body { flex: 1 1 auto; min-width: 0; }
-
-/* Park keeps the shared control treatment — one shape for every run
-   control, colour is what separates them. Its separation from Pause
-   comes from the gap + Kill's isolation below, not a different form
-   (an odd-one-out button reads as a mistake, not a warning). */
-
-/* ── Portrait / narrow: the pre-rail layout, unchanged ───────────── */
-@media (orientation: portrait), (max-width: 860px) {
-  .pendant-main { flex-direction: column; }
-  .pendant-main > .pendant-body { order: 1; }
-  .pendant-rail {
-    order: 2;
-    width: 100%;
-    flex: 0 0 auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 20px 20px;
-    border-right: none;
-    border-top: 1px solid var(--border);
-    overflow: visible;
-  }
-  .pendant-rail .pill-state {
-  align-self: stretch;
-  justify-content: center;
-  margin-bottom: var(--space-2);
-}
-.pendant-rail .pendant-buttons {
-    flex: 1 0 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-  .pendant-rail .pendant-btn {
-    flex-direction: column;
-    justify-content: center;
-    gap: 10px;
-    padding: 26px 16px;
-    min-height: 0;
-  }
-  .pendant-rail .pendant-btn svg { width: 30px; height: 30px; }
-  .pendant-rail-gap { display: none; }
-  /* one row for the secondary actions, Kill included — ``1 1 auto``
-     made the row grow and pushed Kill onto a line of its own. */
-  .pendant-rail .pendant-secondary-row { flex: 0 1 auto; flex-direction: row; width: auto; }
-  .pendant-kill-row { flex: 0 1 auto; width: auto; margin-top: 0; margin-left: auto; }
-  .pendant-kill-row .pendant-secondary { width: auto; }
-}
-
-/* Exit button — sits on the right side of the navbar. */
-/* ``#pendantExit`` is now a plain ``.btn.btn-ghost.btn-sm.btn-icon``
-   (see workspace.html) so it inherits the same hover, focus ring,
-   and sizing as every other icon in the navbar action cluster. No
-   bespoke styles needed here. */
-
-/* Pendant mobile */
-@media (max-width: 600px) {
-  .pendant-nav  { padding: 0 14px; height: 64px; min-height: 64px; gap: 10px; --chip-h: 36px; }
-  .pendant-nav .pill-state { padding: 0 14px; font-size: var(--text-sm); }
-  .pendant-nav .pill-state .dot { width: 8px; height: 8px; }
-  .pendant-timer { padding: 0 12px; font-size: 18px; gap: 8px; }
-  .pendant-timer-icon { width: 14px; height: 14px; }
-  .pendant-body { gap: 24px; padding: 16px 20px 20px; }
-  .pendant-buttons { width: 95vw; gap: 12px; }
-  .pendant-btn { padding: 28px 16px; font-size: 15px; border-radius: 18px; gap: 8px; }
-  .pendant-btn svg { width: 26px; height: 26px; }
-  .pendant-secondary { padding: 10px 22px; font-size: 14px; }
-  .pendant-info { width: 95vw; }
-  .pendant-steps { max-height: 70px; }
-  .pendant-step-card { font-size: 12px; padding: 3px 12px; }
-}
-
-/* Light theme pendant overrides */
-[data-theme="light"] .pendant-start {
-  --start-inset:    rgba(36,138,61,0.3);
-  --start-inset-on: rgba(36,138,61,0.45);
-  --start-glow-on:  0 0 22px rgba(36,138,61,0.20);
-  background: rgba(36,138,61,0.12);
-  color: var(--green);
-  box-shadow: inset 0 0 0 1.5px var(--start-inset);
-}
-[data-theme="light"] .pendant-start:hover:not(:disabled) { background: rgba(36,138,61,0.2); box-shadow: inset 0 0 0 1.5px rgba(36,138,61,0.45); }
-[data-theme="light"] .pendant-pause { background: rgba(199,124,10,0.12); color: var(--amber); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.3); }
-[data-theme="light"] .pendant-pause:hover:not(:disabled) { background: rgba(199,124,10,0.2); box-shadow: inset 0 0 0 1.5px rgba(199,124,10,0.45); }
-[data-theme="light"] .pendant-launch { background: rgba(0,122,255,0.12); color: var(--accent); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.3); }
-[data-theme="light"] .pendant-launch:hover:not(:disabled) { background: rgba(0,122,255,0.2); box-shadow: inset 0 0 0 1.5px rgba(0,122,255,0.45); }
-[data-theme="light"] .pendant-park { background: rgba(214,90,38,0.12); color: #c64a1a; box-shadow: inset 0 0 0 1.5px rgba(214,90,38,0.32); }
-[data-theme="light"] .pendant-park:hover:not(:disabled) { background: rgba(214,90,38,0.2); box-shadow: inset 0 0 0 1.5px rgba(214,90,38,0.5); }
-[data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.12); color: var(--red); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.3); }
-[data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.2); box-shadow: inset 0 0 0 1.5px rgba(215,0,21,0.45); }
-[data-theme="light"] .pendant-secondary { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-[data-theme="light"] .pendant-btn { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-[data-theme="light"] .pendant-steps { background: #fff; }
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
@@ -1261,4 +558,301 @@
   font-size: 10px;
   font-family: var(--mono, monospace);
   fill: var(--muted);
+}
+
+/* ══ Pendant Mode ═══════════════════════════════════════════════════
+   Full-screen operator layout: top nav (EXIT · project · state block),
+   tabbed main section with the pinned ACTIVE ROUTINE hero, a
+   collapsible event rail on the right, and the four run controls in a
+   bottom bar. */
+.pendant-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+
+/* ── Nav ── */
+.pendant-nav {
+  display: flex; align-items: center; gap: 14px;
+  height: 54px; padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.pendant-exit-btn { gap: 7px; font-weight: 700; letter-spacing: 0.06em; }
+.pendant-project {
+  font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* The state block: the loudest cue on screen — a solid fill carrying
+   state text + the run clock. Colour by state, white text always. */
+.pendant-state-block {
+  display: flex; align-items: center; gap: 12px;
+  height: 54px; margin: 0 -14px 0 0; padding: 0 22px;
+  color: #fff;
+}
+.pendant-state-block .dot { width: 10px; height: 10px; background: #fff; opacity: 0.9; }
+.pendant-state-block.ok   { background: rgb(36,138,61); }
+.pendant-state-block.warn { background: rgb(199,124,10); }
+.pendant-state-block.bad  { background: rgb(215,0,21); }
+.pendant-state-block.off  { background: var(--surface3); color: var(--muted); }
+.pendant-state-block.off .dot { background: var(--muted); }
+.pendant-state-text {
+  font-size: var(--text-lg); font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.pendant-timer { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+.pendant-timer-value {
+  font-family: var(--mono); font-size: 24px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+}
+.pendant-timer-eta {
+  font-family: var(--mono); font-size: 11px; opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+.pendant-timer-eta:empty { display: none; }
+
+/* ── Region: body + event rail ── */
+.pendant-region { flex: 1; display: flex; min-height: 0; }
+.pendant-body {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  overflow-y: auto; padding: 0 24px 24px;
+}
+
+/* Tabs */
+.pendant-tabs { display: flex; gap: 26px; flex: none; padding-top: 2px; }
+.pendant-tab {
+  font: inherit; font-size: var(--text-sm); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); background: none; border: none; cursor: pointer;
+  padding: 15px 2px 13px; position: relative;
+}
+.pendant-tab.active { color: var(--accent); }
+.pendant-tab.active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+  height: 3px; background: var(--accent);
+}
+
+/* ACTIVE ROUTINE hero */
+.pendant-hero {
+  flex: none;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 22px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  margin-bottom: 20px;
+}
+.ph-head { display: flex; align-items: center; }
+.ph-label {
+  font-size: var(--text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+}
+.ph-step {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--green); background: var(--green-dim);
+  padding: 3px 10px; border-radius: 6px;
+}
+.ph-row { display: flex; align-items: flex-end; gap: 18px; }
+.ph-title {
+  flex: 1; min-width: 0;
+  font-size: 32px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ph-pct {
+  font-size: 42px; font-weight: 800; letter-spacing: -1px; line-height: 1;
+  color: var(--green);
+}
+.ph-pct:empty { display: none; }
+.pendant-hero .progress-bar { flex: none; height: 8px; background: var(--surface2); }
+/* Segmented: one span per plan step */
+.pendant-hero .progress-bar.segmented { display: flex; gap: 8px; background: transparent; overflow: visible; }
+.pendant-hero .progress-bar.segmented .progress-bar-fill { display: none; }
+.ph-seg { flex: 1; height: 100%; border-radius: 999px; background: var(--surface3); overflow: hidden; }
+.ph-seg.done { background: var(--green); }
+.ph-seg .ph-seg-fill { display: block; height: 100%; background: var(--green); border-radius: 999px; }
+.ph-chain { font-size: 11.5px; color: var(--muted); letter-spacing: 0.02em; }
+.ph-chain b { color: var(--text); font-weight: 700; }
+.ph-next {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface2); border-radius: var(--radius-md);
+  padding: 9px 14px; font-size: var(--text-md);
+}
+.ph-next-k {
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.ph-next-eta { color: var(--muted); }
+
+/* Tab panes */
+.pendant-panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pendant-hmi {
+  display: flex; flex-direction: column; gap: var(--space-5);
+  width: min(680px, 100%);
+}
+.pendant-3d-pane { flex: 1; min-height: 320px; border-radius: var(--radius-lg); }
+
+/* ── Event rail ── */
+.pendant-events {
+  width: 340px; flex: none;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.pe-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; flex: none;
+  font-size: var(--text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.pe-collapse {
+  margin-left: auto;
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: none; border: none; color: var(--muted); cursor: pointer;
+}
+.pe-collapse:hover { background: var(--surface2); color: var(--text); }
+.pendant-events .pendant-steps {
+  flex: 1; overflow-y: auto; padding: 4px 0;
+}
+.pe-foot {
+  flex: none; border-top: 1px solid var(--border);
+  padding: 10px 16px; font-size: 11px; color: var(--muted);
+  display: flex; justify-content: space-between;
+}
+.pe-foot:empty { display: none; }
+/* Collapsed: a slim reopen strip */
+.pendant-events.collapsed { width: 44px; }
+.pendant-events.collapsed .pendant-steps,
+.pendant-events.collapsed .pe-foot,
+.pendant-events.collapsed .pe-head .pe-title,
+.pendant-events.collapsed .pe-head .dot { display: none; }
+.pendant-events.collapsed .pe-head { border-bottom: none; padding: 14px 8px; justify-content: center; }
+.pendant-events.collapsed .pe-collapse { margin: 0; }
+.pendant-events.collapsed .pe-collapse svg { transform: rotate(180deg); }
+
+/* Event rows — mono time + text; levels tint the row */
+.pendant-step-card {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 10px 16px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  border-bottom: 1px solid var(--border2);
+  color: var(--text);
+}
+.pendant-step-dot { display: none; }
+.pendant-step-card.active {
+  background: var(--green-dim);
+  box-shadow: inset 3px 0 0 var(--green);
+  font-weight: 700;
+}
+.pendant-step-card[data-level="warning"] {
+  background: var(--amber-dim);
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+.pendant-step-card[data-level="error"] {
+  background: var(--red-dim);
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+/* ── Bottom bar: the four run controls ── */
+.pendant-bar {
+  flex: none;
+  display: flex; align-items: stretch; gap: 16px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.pendant-bar-div { width: 1px; background: var(--border); margin: 6px 0; }
+.pendant-btn {
+  flex: 1; min-width: 0; min-height: 78px;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  font: inherit; font-size: var(--text-lg); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease),
+              box-shadow var(--motion-fast) var(--ease),
+              opacity var(--motion-fast) var(--ease);
+}
+.pendant-btn:disabled { cursor: default; opacity: 0.45; }
+.pendant-btn:hover:not(:disabled) { background: var(--surface2); }
+/* Start / Launch — solid green when armed, pale green when not */
+.pendant-start:not(:disabled), .pendant-launch:not(:disabled) {
+  background: rgb(36,138,61); border-color: transparent; color: #fff;
+}
+.pendant-start:hover:not(:disabled), .pendant-launch:hover:not(:disabled) { background: rgb(31,120,53); }
+.pendant-start:disabled, .pendant-launch:disabled {
+  background: var(--green-dim); border-color: transparent; color: var(--green); opacity: 0.55;
+}
+/* Kill — red outline, never filled */
+.pendant-kill { color: var(--red); border: 1.5px solid var(--red); }
+.pendant-kill:hover:not(:disabled) { background: var(--red-dim); }
+.pendant-kill:disabled { opacity: 0.4; }
+.pendant-btn.pendant-pressed { animation: pendant-flash 0.4s ease; }
+@keyframes pendant-flash { 0% { box-shadow: 0 0 0 3px var(--accent-dim); } 100% { box-shadow: none; } }
+
+/* ── Alarm (the one banner the pendant carries) ── */
+.pendant-alarm {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px 24px 0;
+  padding: 12px 18px;
+  background: rgba(255, 69, 58, 0.12);
+  border-radius: var(--radius-lg);
+  color: var(--red);
+  font-size: var(--text-xl); font-weight: 600;
+  animation: alarm-pulse 1.5s ease-in-out infinite;
+  box-shadow: var(--shadow-sm);
+  flex: none;
+}
+.pendant-alarm svg { flex-shrink: 0; }
+
+/* Project-screen widget classes (hmi.j2 fallback widgets) */
+.hmi-state {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.15;
+  text-align: center;
+}
+.hmi-stat-row { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.hmi-stat {
+  flex: 1 1 130px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+.hmi-stat-v {
+  font-size: 28px; font-weight: 800;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+}
+.hmi-stat-v small { font-size: var(--text-lg); color: var(--muted); margin-left: 3px; }
+.hmi-stat-l {
+  color: var(--muted); font-weight: 700; font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;
+}
+/* Rack widget — one dot grammar: filled = occupied, hollow = empty,
+   colour = process state. Muted for done, saturated only for active
+   and attention (§9), and every state also differs in FORM so colour
+   is never the only signal. */
+/* Done reads as GREEN at a glance. Muted-for-done (§9) exists so it
+   does not compete with active — not so it becomes ambiguous; the
+   distinction from active is hue + the breathing ring, not weakness. */
+/* Icon redundancy: state is never carried by colour alone (§9). */
+/* In progress but not the position the robot is touching right now.
+   A batch interleaves items, so several are underway at once —
+   without this they would all read as "active" and the operator
+   could not see where the robot actually is. */
+/* Tappable positions + the detail pane (master-detail). */
+.hmi-progress { display: flex; align-items: center; gap: var(--space-4); }
+.hmi-progress .progress-bar { flex: 1; }
+.hmi-progress-label {
+  font-family: var(--mono); font-weight: 800; font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums; min-width: 52px; text-align: right;
 }

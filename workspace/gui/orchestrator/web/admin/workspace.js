@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal, getScheduleCounts } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -90,6 +90,9 @@ wsNameEl.textContent = wsName;
 // which one this is.
 const pendantProjectEl = $("pendantProject");
 if (pendantProjectEl) pendantProjectEl.textContent = wsName;
+// First tab carries the project's name — it IS the project's screen.
+const pendantTabProjectEl = $("pendantTabProject");
+if (pendantTabProjectEl) pendantTabProjectEl.textContent = wsName;
 
 // ---- Toast ----
 function toast(msg, type = "ok") {
@@ -2170,54 +2173,61 @@ function pendantVibrate(ms = 30) {
   try { navigator.vibrate?.(ms); } catch(_) {}
 }
 
-// Whether the pendant shows a live floating 3D preview (top-right
-// PiP) or hides the viewer entirely. Persisted so the operator's
-// preference survives reloads. Default ON — the situational
-// awareness is the main reason to keep this feature at all; if you
-// don't want the resource cost, flip it off and we revert to the
-// full pause.
-let _pendantPreview = localStorage.getItem("pendant_preview_3d") !== "off";
+// Pendant main-section tab: "project" (the project's screen) or
+// "3d" (the live viewer, repositioned over the pane — one iframe,
+// one WebGL context, zero reloads). Persisted per browser.
+let _pendantTab = localStorage.getItem("pendant_tab") || "project";
 
-function applyPendantRenderState() {
-  // Three combined flags decide whether the iframe is rendering:
-  //   - _pendantMode: is the operator in pendant view at all?
-  //   - _pendantPreview: do they want the PiP preview right now?
-  //   - the iframe's own _renderEnabled (eye toggle, untouched here)
-  // We pause when pendant is open AND preview is off. Pendant
-  // closed = always resume. Pendant open + preview on = resume
-  // (so the PiP shows live frames).
-  document.documentElement.classList.toggle("pendant-open", _pendantMode);
-  document.documentElement.classList.toggle("pendant-preview-on", _pendantMode && _pendantPreview);
-  const shouldPause = _pendantMode && !_pendantPreview;
-  // While in pendant PiP mode also strip the iframe's internal UI
-  // (toolbar, ViewCube) — they'd dominate the 280×210 floating
-  // preview. Full UI returns the moment pendant closes.
-  const uiMode = (_pendantMode && _pendantPreview) ? "minimal" : "full";
-  if (frame && frame.contentWindow) {
-    frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
-    frame.contentWindow.postMessage({ type: "ui",     value: uiMode }, "*");
+function _positionPendant3d() {
+  const pane = $("pendant3dPane");
+  if (!pane || !_pendantMode || _pendantTab !== "3d") return;
+  const r = pane.getBoundingClientRect();
+  if (frame) {
+    frame.style.top = r.top + "px";
+    frame.style.left = r.left + "px";
+    frame.style.width = r.width + "px";
+    frame.style.height = r.height + "px";
   }
 }
 
-function togglePendantPreview() {
-  _pendantPreview = !_pendantPreview;
-  localStorage.setItem("pendant_preview_3d", _pendantPreview ? "on" : "off");
+function _applyPendantTab() {
+  const is3d = _pendantTab === "3d";
+  document.querySelectorAll(".pendant-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.ptab === _pendantTab));
+  const hmi = $("pendantHmi");
+  const pane = $("pendant3dPane");
+  // The hmi div stays display:none until a project screen mounts;
+  // _pendantHmiLoaded-style visibility is handled by its own code —
+  // here we only gate by tab.
+  // Project screens mount into a SHADOW root — check both trees.
+  const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
+  if (hmi) hmi.style.display = (is3d || !hasScreen) ? "none" : "";
+  if (pane) pane.style.display = is3d ? "" : "none";
   applyPendantRenderState();
-  updatePendantPreviewBtn();
+  if (is3d) requestAnimationFrame(_positionPendant3d);
 }
 
-function updatePendantPreviewBtn() {
-  const btn = $("pendantBtnPreview");
-  if (!btn) return;
-  btn.title = _pendantPreview ? "Hide 3D preview" : "Show 3D preview";
-  btn.classList.toggle("active", _pendantPreview);
+function applyPendantRenderState() {
+  // The viewer renders only where it's visible: pendant closed →
+  // desktop viewport owns it; pendant open → only on the 3D tab.
+  const is3d = _pendantMode && _pendantTab === "3d";
+  document.documentElement.classList.toggle("pendant-open", _pendantMode);
+  document.documentElement.classList.toggle("pendant-3d-on", is3d);
+  const shouldPause = _pendantMode && !is3d;
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
+    frame.contentWindow.postMessage({ type: "ui", value: is3d ? "minimal" : "full" }, "*");
+  }
+  if (!_pendantMode && frame) {
+    // Back to the desktop viewport: clear the inline pane rect.
+    frame.style.top = frame.style.left = frame.style.width = frame.style.height = "";
+  }
 }
 
 function togglePendant(on) {
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
-  applyPendantRenderState();
-  updatePendantPreviewBtn();
+  _applyPendantTab();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
   // history entries added, back button untouched) so kiosk tablets can
@@ -2249,34 +2259,15 @@ function updatePendantUI() {
   const navEl = document.querySelector(".pendant-nav");
   if (navEl) navEl.setAttribute("data-state", variant);
 
-  // Ambient state wash on the body (gradient lives there now, not on
-  // the navbar — base.css keeps the nav chrome clean). The
-  // ``is-waiting`` class drives the breathing animation: ON when
-  // we're idle/ready (operator's move), OFF when actually running
-  // (system working — visuals stay steady).
+  // The nav state block — solid fill by variant, state text + the
+  // run clock inside. The dot pulses while waiting on the operator.
   const waiting = isWaiting(state);
-  const bodyEl = document.querySelector(".pendant-body");
-  if (bodyEl) {
-    bodyEl.setAttribute("data-variant", variant);
-    bodyEl.classList.toggle("is-waiting", waiting);
-  }
-
-  // State pill uses the shared ``.pill`` variant classes (ok / warn
-  // / bad / off) so it looks identical to the main top-bar's pill.
-  // The inner dot pulses while *waiting* for the operator to press
-  // Start — not while running. Running = steady, waiting = blinking.
-  const stateEl = $("pendantState");
-  if (stateEl) {
-    stateEl.classList.remove("ok", "warn", "bad", "off");
-    stateEl.classList.add(variant);
-    const dotEl = stateEl.querySelector(".dot");
-    if (dotEl) {
-      dotEl.classList.remove("ok", "warn", "bad", "off", "pulse");
-      dotEl.classList.add(variant);
-      if (waiting) dotEl.classList.add("pulse");
-    }
-    const textEl = stateEl.querySelector(".pendant-state-text");
-    if (textEl) textEl.textContent = stateLabel(state);
+  const blockEl = $("pendantStateBlock");
+  if (blockEl) {
+    blockEl.classList.remove("ok", "warn", "bad", "off");
+    blockEl.classList.add(variant);
+    $("pendantStateText").textContent = stateLabel(state);
+    $("pendantStateDot")?.classList.toggle("pulse", waiting);
   }
 
   // Run elapsed time — same behaviour as the sidebar's "Up" field
@@ -2347,20 +2338,91 @@ function updatePendantUI() {
     }
   }
 
-  // Pendant progress bar
-  const pendantProg = $("pendantProgress");
-  const pendantFill = $("pendantProgressFill");
-  const pendantLabel = $("pendantProgressLabel");
-  if (pendantProg && pendantFill && pendantLabel) {
-    if (_lastProgress >= 0 && launched) {
-      pendantProg.style.display = "";
-      pendantFill.style.width = _lastProgress + "%";
-      pendantFill.classList.toggle("done", _lastProgress >= 100);
-      pendantLabel.textContent = _lastProgress + "%";
-    } else {
-      pendantProg.style.display = "none";
+  // ── ACTIVE ROUTINE hero ──
+  const hero = $("pendantHero");
+  if (hero) {
+    hero.style.display = launched ? "" : "none";
+    if (launched) {
+      // Title: the last step line (already operator words).
+      const cards = document.querySelectorAll("#stepTimeline .step-card");
+      const lastCard = cards.length ? cards[cards.length - 1] : null;
+      $("phTitle").textContent =
+        (lastCard && lastCard.querySelector(".step-text")?.textContent) ||
+        (running ? "Running…" : stateLabel(state));
+      $("phPct").textContent = (_lastProgress >= 0 && running) ? `${_lastProgress}%` : "";
+
+      const counts = getScheduleCounts();
+      const stepEl = $("phStep");
+      const chainEl = $("phChain");
+      const bar = $("pendantProgressBar");
+      const fill = $("pendantProgressFill");
+      if (counts && running) {
+        // STEP n / N chip
+        stepEl.style.display = "";
+        stepEl.textContent = `STEP ${Math.min(counts.done + 1, counts.total)} / ${counts.total}`;
+        // Step chain — current action bold
+        chainEl.style.display = "";
+        chainEl.innerHTML = counts.labels.map((l, i) =>
+          i === counts.curIdx ? `<b>${esc(l)}</b>` : esc(l)).join(" › ");
+        // Segments — one per plan step; current carries the live frac
+        const n = Math.min(counts.total, 60);
+        bar.classList.add("segmented");
+        if (bar.querySelectorAll(".ph-seg").length !== n) {
+          bar.querySelectorAll(".ph-seg").forEach(el => el.remove());
+          for (let i = 0; i < n; i++) {
+            const seg = document.createElement("span");
+            seg.className = "ph-seg";
+            bar.appendChild(seg);
+          }
+        }
+        bar.querySelectorAll(".ph-seg").forEach((seg, i) => {
+          seg.classList.toggle("done", i < counts.done);
+          if (i === counts.curIdx && counts.frac > 0) {
+            let f = seg.querySelector(".ph-seg-fill");
+            if (!f) {
+              f = document.createElement("span");
+              f.className = "ph-seg-fill";
+              seg.appendChild(f);
+            }
+            f.style.width = (counts.frac * 100).toFixed(0) + "%";
+          } else seg.querySelector(".ph-seg-fill")?.remove();
+        });
+        // NEXT row
+        const nextEl = $("phNext");
+        if (counts.nextLabel) {
+          nextEl.style.display = "";
+          $("phNextLabel").textContent = counts.nextLabel;
+          $("phNextEta").textContent = counts.nextEta != null ? `~${Math.round(counts.nextEta)}s` : "";
+        } else nextEl.style.display = "none";
+      } else {
+        // No plan (or idle): plain fill bar, no chip/chain/next.
+        stepEl.style.display = "none";
+        chainEl.style.display = "none";
+        $("phNext").style.display = "none";
+        bar.classList.remove("segmented");
+        bar.querySelectorAll(".ph-seg").forEach(el => el.remove());
+        if (_lastProgress >= 0) {
+          fill.style.width = _lastProgress + "%";
+          fill.classList.toggle("done", _lastProgress >= 100);
+        } else fill.style.width = "0%";
+      }
     }
   }
+
+  // Event-rail foot: warnings/faults counted from the rendered rows.
+  const peFoot = $("peFoot");
+  if (peFoot) {
+    const rail = $("pendantSteps");
+    let warns = 0, faults = 0;
+    if (rail) for (const c of rail.children) {
+      if (c.dataset.level === "warning") warns++;
+      else if (c.dataset.level === "error") faults++;
+    }
+    peFoot.textContent = (rail && rail.children.length)
+      ? `${warns} warning${warns === 1 ? "" : "s"} · ${faults} fault${faults === 1 ? "" : "s"}` : "";
+  }
+  const peDot = $("peDot");
+  if (peDot) peDot.className = "dot " + variant + (running ? " pulse" : "");
 
   // PARKING is a *flag* — the robot keeps working through its current
   // step and the park-cleanup subtree, so Pause / Resume stay reachable.
@@ -2368,6 +2430,8 @@ function updatePendantUI() {
   // is disabled (no new run while parking is in flight).
   const parking = state.toUpperCase() === "PARKING";
   const active  = running || parking;
+  $("pendantLaunch").style.display = launched ? "none" : "";
+  $("pendantStart").style.display  = launched ? "" : "none";
   $("pendantLaunch").disabled  = launched;
   $("pendantStart").disabled   = !launched || active;
   $("pendantPause").disabled   = !active;
@@ -2454,11 +2518,7 @@ $("pendantKill").addEventListener("click", async () => {
   }
 });
 
-// Pendant params button
-$("pendantParams").addEventListener("click", () => {
-  const launched = isLaunched(_lastState);
-  openParamsModal(launched);
-});
+
 
 // Schedule buttons (top-bar + pendant nav) — share the
 // ``.js-schedule-open`` class so a single binding covers both.
@@ -2468,7 +2528,20 @@ document.querySelectorAll(".js-schedule-open").forEach(b => {
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
-$("pendantBtnPreview")?.addEventListener("click", togglePendantPreview);
+document.querySelectorAll(".pendant-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    _pendantTab = t.dataset.ptab;
+    try { localStorage.setItem("pendant_tab", _pendantTab); } catch (_) {}
+    _applyPendantTab();
+  });
+});
+$("peCollapse")?.addEventListener("click", () => {
+  const rail = $("pendantEvents");
+  const collapsed = rail.classList.toggle("collapsed");
+  $("peCollapse").title = collapsed ? "Expand event log" : "Collapse event log";
+  if (_pendantTab === "3d") requestAnimationFrame(_positionPendant3d);
+});
+window.addEventListener("resize", () => { if (_pendantMode) _positionPendant3d(); });
 
 // Enter pendant directly from the URL (kiosk mode):
 //   workspace.html?name=<ws>&pendant=1

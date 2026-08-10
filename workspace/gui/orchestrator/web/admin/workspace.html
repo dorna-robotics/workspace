@@ -425,33 +425,17 @@
       display: block;
     }
 
-    /* Pendant 3D preview — when pendant is open AND the preview
-       toggle is on, the existing iframe gets repositioned/resized
-       as a floating PiP in the top-right corner of the viewport.
-       z-index sits above .pendant-overlay (10000) so the preview
-       floats on top of the pendant body. ``pointer-events:none``
-       keeps the iframe's internal controls (zoom, home, eye)
-       non-interactive in PiP mode — it's a view-only window;
-       full controls return when the user exits pendant. */
-    html.pendant-open.pendant-preview-on #ws3dFrame {
+    /* Pendant 3D tab — while the 3D tab is active the existing
+       iframe is repositioned over the pendant's 3D pane (JS keeps
+       the rect in sync); any other tab hides it entirely. One
+       iframe, one WebGL context, zero reloads. */
+    html.pendant-open.pendant-3d-on #ws3dFrame {
       position: fixed;
-      top: 70px;   /* below pendant nav (54px) + a 16px gap */
-      right: 24px;
-      width: 280px;
-      height: 210px;
       border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-lg);
+      box-shadow: var(--shadow-sm);
       z-index: 10001;
-      pointer-events: none;
-      transition: width var(--motion-med) var(--ease),
-                  height var(--motion-med) var(--ease),
-                  top var(--motion-med) var(--ease),
-                  right var(--motion-med) var(--ease);
     }
-    /* Pendant open but preview toggled off → hide the iframe
-       entirely. Combined with the render pause this gives the
-       cleanest "no 3D at all" state. */
-    html.pendant-open:not(.pendant-preview-on) #ws3dFrame {
+    html.pendant-open:not(.pendant-3d-on) #ws3dFrame {
       display: none;
     }
     .viewer-placeholder {
@@ -676,119 +660,105 @@
 
 <!-- Pendant mode overlay -->
 <div class="pendant-overlay" id="pendantOverlay" style="display:none">
-  <!-- Top navbar — literally the same chrome as the main ``.ws-header``
-       (it's even included in the shared selector in base.css so
-       background, height, border, etc. are inherited). The only
-       difference: where ws-header puts the title block, pendant puts
-       the run timer chip. Layout, action order, and behaviour are
-       identical. -->
+  <!-- Top nav: EXIT + project identity left, the state block (state +
+       run timer + time left) as the loudest cue right, then fullscreen
+       and theme. -->
   <header class="pendant-nav ws-header-like" data-state="off">
-    <div class="pendant-nav-left">
-      <a class="btn btn-ghost btn-sm btn-icon" href="/orchestrator/" title="Back to orchestrator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
-      <span class="pendant-project" id="pendantProject">—</span>
-    </div>
-    <div class="pendant-timer" id="pendantTimer">
-      <svg class="pendant-timer-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/>
-        <polyline points="12 7 12 12 15 14"/>
-      </svg>
-      <span class="pendant-timer-value" id="pendantTimerValue">—</span>
+    <button class="btn btn-ghost btn-sm pendant-exit-btn" id="pendantExit" title="Exit pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>EXIT</button>
+    <span class="pendant-project" id="pendantProject">—</span>
+    <div class="spacer"></div>
+    <div class="pendant-state-block off" id="pendantStateBlock">
+      <span class="dot" id="pendantStateDot"></span>
+      <span class="pendant-state-text" id="pendantStateText">—</span>
+      <span class="pendant-timer" id="pendantTimer">
+        <span class="pendant-timer-value" id="pendantTimerValue">—</span>
+        <span class="pendant-timer-eta" id="pendantEta"></span>
+      </span>
     </div>
     <div class="topbar-actions">
-      <!-- 3D preview toggle: shows/hides a floating top-right PiP of
-           the live 3D viewer while pendant is open. ``active`` class
-           is applied by JS to indicate the preview is currently on. -->
-      <button class="btn btn-ghost btn-sm btn-icon" id="pendantBtnPreview" title="Toggle 3D preview"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><rect x="13" y="11" width="7" height="5" rx="1" fill="currentColor" fill-opacity="0.35"/></svg></button>
-      <button class="btn btn-ghost btn-sm btn-icon js-schedule-open" id="pendantBtnSchedule" title="Open schedule view" style="display:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="3" rx="1.2"/><rect x="7" y="10.5" width="12" height="3" rx="1.2"/><rect x="3" y="16" width="8" height="3" rx="1.2"/></svg></button>
-      <!-- ``active`` marks this as the currently-engaged mode toggle —
-           same icon as the main page's Pendant button, but rendered
-           in its "on" state since we are in pendant mode right now.
-           Operators get a "you are here" cue. -->
-      <button class="btn btn-ghost btn-sm btn-icon active" id="pendantExit" title="Exit pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
       <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
     </div>
   </header>
-  <!-- Landscape layout: a fixed control RAIL on the left (state,
-       timer, run controls — always in the same place under the
-       operator's thumb, never scrolls) and the content pane on the
-       right that scrolls on its own. In portrait the rail drops to
-       the bottom and the controls return to the 2x2 tile grid, which
-       is the pre-rail layout — see the media query in style.css. -->
-  <div class="pendant-main">
-  <aside class="pendant-rail">
-    <!-- State sits directly above the controls: it is the fact that
-         decides WHICH control to press (READY→Start, RUNNING→Pause,
-         PAUSED→Resume), so cause and action share one glance. The
-         run timer stays in the navbar — reference, not a trigger. -->
-    <span class="pill pill-state off" id="pendantState">
-      <span class="dot"></span>
-      <span class="pendant-state-text">—</span>
-    </span>
-    <div class="pendant-buttons">
-      <button class="pendant-btn pendant-start"   id="pendantStart"   data-cmd="start">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Start</span>
-      </button>
-      <button class="pendant-btn pendant-pause"   id="pendantPause"   data-cmd="pause">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        <span>Pause</span>
-      </button>
-      <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-        <span>Launch</span>
-      </button>
-      <button class="pendant-btn pendant-park"    id="pendantPark"    data-cmd="park">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="3"/>
-          <path d="M9 17V7h4a3 3 0 0 1 0 6H9"/>
-        </svg>
-        <span>Park</span>
-      </button>
-    </div>
-    <div class="pendant-rail-gap"></div>
-    <div class="pendant-secondary-row">
-      <button class="pendant-secondary" id="pendantParams">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Parameters
-      </button>
-      <!-- Operator Actions — opens a modal with component-grouped buttons.
-           Hidden when no component declares any operator actions. -->
-      <button class="pendant-secondary" id="pendantOpActions" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Controls
-      </button>
-    </div>
-    <!-- Kill sits on its own row: it is the one irreversible control,
-         so it never shares an edge with a routine button. -->
-    <div class="pendant-kill-row">
-      <button class="pendant-secondary pendant-kill-btn" id="pendantKill" data-cmd="kill">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        Kill
-      </button>
-    </div>
-  </aside>
-  <div class="pendant-body">
+
   <div class="pendant-alarm" id="pendantAlarm" style="display:none">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     <span id="pendantAlarmText">Robot alarm</span>
   </div>
-  <!-- HMI widgets — rendered from the project's hmi.j2 declaration.
-       Empty (and invisible) for a project that declares none, which is
-       every project until it ships one: the default pendant is
-       unchanged. -->
-  <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
-  <div class="pendant-info" id="pendantInfo">
-    <div class="pendant-steps" id="pendantSteps"></div>
-    <div class="pendant-progress" id="pendantProgress" style="display:none">
-      <div class="progress-bar">
-        <div class="progress-bar-fill" id="pendantProgressFill" style="width:0%"></div>
+
+  <div class="pendant-region">
+    <div class="pendant-body">
+      <!-- Main-section tabs: the project screen is the first tab, the
+           live 3D view the second. -->
+      <div class="pendant-tabs" id="pendantTabs">
+        <button class="pendant-tab active" data-ptab="project" id="pendantTabProject">Project</button>
+        <button class="pendant-tab" data-ptab="3d">3D View</button>
       </div>
-      <span id="pendantProgressLabel">0%</span>
+      <!-- ACTIVE ROUTINE — pinned under the tab strip. Current step,
+           step counter, per-step progress segments, and NEXT. -->
+      <div class="pendant-hero" id="pendantHero" style="display:none">
+        <div class="ph-head">
+          <span class="ph-label">Active routine</span>
+          <div class="spacer"></div>
+          <span class="ph-step mono" id="phStep" style="display:none"></span>
+        </div>
+        <div class="ph-row">
+          <div class="ph-title" id="phTitle">—</div>
+          <div class="ph-pct mono" id="phPct"></div>
+        </div>
+        <div class="progress-bar" id="pendantProgressBar"><div class="progress-bar-fill" id="pendantProgressFill" style="width:0%"></div></div>
+        <div class="ph-chain mono" id="phChain" style="display:none"></div>
+        <div class="ph-next" id="phNext" style="display:none">
+          <span class="ph-next-k">NEXT</span>
+          <span class="mono" id="phNextLabel"></span>
+          <span class="spacer"></span>
+          <span class="ph-next-eta mono" id="phNextEta"></span>
+        </div>
+      </div>
+      <div class="pendant-panes">
+        <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
+        <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
+      </div>
     </div>
+    <!-- Steps / event rail — collapsible via the chevron. -->
+    <aside class="pendant-events" id="pendantEvents">
+      <div class="pe-head">
+        <span class="pe-title">Event log</span>
+        <span class="dot ok" id="peDot"></span>
+        <button class="pe-collapse" id="peCollapse" title="Collapse event log"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+      </div>
+      <div class="pendant-steps" id="pendantSteps"></div>
+      <div class="pe-foot mono" id="peFoot"></div>
+    </aside>
   </div>
-  </div><!-- /.pendant-body -->
-  </div><!-- /.pendant-main -->
+
+  <!-- Bottom bar: the four run controls (Launch takes Start's slot
+       until the workspace is launched). Kill stands apart on the
+       right; a hairline divider separates the run pair from the
+       ending pair. -->
+  <div class="pendant-bar">
+    <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      <span>Launch</span>
+    </button>
+    <button class="pendant-btn pendant-start" id="pendantStart" data-cmd="start">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span>Start</span>
+    </button>
+    <button class="pendant-btn pendant-pause" id="pendantPause" data-cmd="pause">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      <span>Pause</span>
+    </button>
+    <div class="pendant-bar-div"></div>
+    <button class="pendant-btn pendant-park" id="pendantPark" data-cmd="park">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/></svg>
+      <span>Park</span>
+    </button>
+    <button class="pendant-btn pendant-kill" id="pendantKill" data-cmd="kill">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <span>Kill</span>
+    </button>
+  </div>
 </div>
 
 <!-- Parameters Modal -->
