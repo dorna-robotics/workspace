@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal, getScheduleCounts } from "./schedule.js";
+import { initSchedule, resetSchedule, ingestScheduleEvent, openScheduleModal, getScheduleCounts, renderPendantSchedule } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -926,6 +926,7 @@ function _dispatchMuxMessage(env) {
       // /ws/schedule socket. Now they ride the mux; schedule.js's
       // module-level state ingests them the same way.
       ingestScheduleEvent(payload);
+      if (_pendantMode && _pendantTab === "sched") renderPendantSchedule($("pendantSchedPane"));
       break;
     }
   }
@@ -2192,17 +2193,22 @@ function _positionPendant3d() {
 
 function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
+  const isSched = _pendantTab === "sched";
   document.querySelectorAll(".pendant-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.ptab === _pendantTab));
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
-  // The hmi div stays display:none until a project screen mounts;
-  // _pendantHmiLoaded-style visibility is handled by its own code —
-  // here we only gate by tab.
+  const sched = $("pendantSchedPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
-  if (hmi) hmi.style.display = (is3d || !hasScreen) ? "none" : "";
+  if (hmi) hmi.style.display = (is3d || isSched || !hasScreen) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
+  if (sched) {
+    sched.style.display = isSched ? "" : "none";
+    if (isSched) renderPendantSchedule(sched);
+  }
+  const hero = $("pendantHero");
+  if (hero) hero.style.display = (isLaunched(_lastState) && !isSched) ? "" : "none";
   applyPendantRenderState();
   if (is3d) requestAnimationFrame(_positionPendant3d);
 }
@@ -2341,7 +2347,7 @@ function updatePendantUI() {
   // ── ACTIVE ROUTINE hero ──
   const hero = $("pendantHero");
   if (hero) {
-    hero.style.display = launched ? "" : "none";
+    hero.style.display = (launched && _pendantTab !== "sched") ? "" : "none";
     if (launched) {
       // Title: the last step line (already operator words).
       const cards = document.querySelectorAll("#stepTimeline .step-card");
@@ -2408,6 +2414,9 @@ function updatePendantUI() {
       }
     }
   }
+
+  // Schedule tab: refresh so the running block's clock ticks.
+  if (_pendantTab === "sched") renderPendantSchedule($("pendantSchedPane"));
 
   // Event-rail foot: warnings/faults counted from the rendered rows.
   const peFoot = $("peFoot");
