@@ -90,9 +90,6 @@ wsNameEl.textContent = wsName;
 // which one this is.
 const pendantProjectEl = $("pendantProject");
 if (pendantProjectEl) pendantProjectEl.textContent = wsName;
-// First tab carries the project's name — it IS the project's screen.
-const pendantTabProjectEl = $("pendantTabProject");
-if (pendantTabProjectEl) pendantTabProjectEl.textContent = wsName;
 
 // ---- Toast ----
 function toast(msg, type = "ok") {
