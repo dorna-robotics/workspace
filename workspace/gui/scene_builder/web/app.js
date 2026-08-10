@@ -7645,7 +7645,6 @@ ensureBuilderBar();
   // alongside the server's start/done, so a stuck "solving…" shows
   // WHERE it died (fetch, store, or row update).
   function __solveCrumb(event, extra) {
-    try { console.log("[solve]", event, extra || ""); } catch (_) {}
     try {
       fetch(SB_API + "/perf", { method: "POST", keepalive: true,
         headers: { "content-type": "application/json" },
