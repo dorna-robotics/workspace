@@ -1439,7 +1439,11 @@ async def connect(sid, environ, auth):
 @sio.event
 async def upstream_update(sid, payload):
     merge_into_state(world_state, payload)
-    await sio.emit("scene_update", payload)
+    # skip_sid: never echo a client's own update back at it. The
+    # sender already holds this state — echoing the post-import bulk
+    # (341 specs) made the page rebuild every object it had just
+    # built, one by one, while the solve banner took the blame.
+    await sio.emit("scene_update", payload, skip_sid=sid)
 
 @sio.event
 async def reset_scene(sid):
