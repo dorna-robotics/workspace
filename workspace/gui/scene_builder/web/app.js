@@ -1519,6 +1519,8 @@ if (node) {
       }
 
       // ---- Add edge overlay to all meshes (updated: uses userData) ----
+      // source BufferGeometry -> EdgesGeometry (see comment in addEdgeOverlay)
+      const __edgeGeoCache = new WeakMap();
       function addEdgeOverlay(node, edgeColor) {
         const _edgeColor = edgeColor || 0x555555;
         node.traverse(obj => {
@@ -1530,16 +1532,24 @@ if (node) {
           }
           obj.material = obj.userData.__originalMat;
 
-          // remove old if exists
+          // remove old if exists (geometry is cache-shared — never
+          // disposed here; see __edgeGeoCache)
           if (obj.userData.__edgeLines) {
             obj.remove(obj.userData.__edgeLines);
-            obj.userData.__edgeLines.geometry.dispose();
             obj.userData.__edgeLines.material.dispose();
             obj.userData.__edgeLines = null;
           }
 
-          // add new edge overlay
-          const edgesGeo = new THREE.EdgesGeometry(obj.geometry, 75);
+          // add new edge overlay. EdgesGeometry is the single most
+          // expensive call in a project import, and instances of the
+          // same component type SHARE their BufferGeometry (clone()
+          // copies nodes, not buffers) — so cache the result per
+          // source geometry: 168 tubes cost one computation, not 168.
+          let edgesGeo = __edgeGeoCache.get(obj.geometry);
+          if (!edgesGeo) {
+            edgesGeo = new THREE.EdgesGeometry(obj.geometry, 75);
+            __edgeGeoCache.set(obj.geometry, edgesGeo);
+          }
           const edgesMat = new THREE.LineBasicMaterial({
             color: _edgeColor,
             toneMapped: false
