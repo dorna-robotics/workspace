@@ -7621,16 +7621,29 @@ ensureBuilderBar();
   // row moves the viewer robot to those joints.
   let __refSolve = null;
   let __refSolvePromise = null;
+  // Breadcrumbs for the solve lifecycle — rows in /tmp/sb_perf.jsonl
+  // alongside the server's start/done, so a stuck "solving…" shows
+  // WHERE it died (fetch, store, or row update).
+  function __solveCrumb(event, extra) {
+    try {
+      fetch(SB_API + "/perf", { method: "POST", keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ crumb: event, ...(extra || {}) }) }).catch(() => {});
+    } catch (_) {}
+  }
   function __ensureRefSolve() {
     if (!__refSolvePromise) {
+      __solveCrumb("fetch_start");
       __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST" })
         .then(x => x.json())
         .then(res => {
           if (!res || !res.ok) throw new Error((res && res.error) || "solve failed");
           __refSolve = res.recipes || {};
+          __solveCrumb("stored", { n: Object.keys(__refSolve).length });
           return __refSolve;
         })
-        .catch(e => { __refSolvePromise = null; throw e; });
+        .catch(e => { __solveCrumb("fetch_failed", { err: String(e && e.message || e).slice(0, 120) });
+                      __refSolvePromise = null; throw e; });
     }
     return __refSolvePromise;
   }
@@ -8101,6 +8114,7 @@ ensureBuilderBar();
       __projLoadBanner("Solving recipes…");
     }
     __ensureRefSolve().then(sol => {
+      __solveCrumb("rows_update", { rows: Object.keys(subs).length });
       __projLoadBanner(null);
       for (const [name, o] of Object.entries(subs)) {
         const sr = (sol || {})[name] || {};
