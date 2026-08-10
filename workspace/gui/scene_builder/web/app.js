@@ -1456,8 +1456,17 @@ if (node) {
       }
 
       let __hoveredAnchorPick = null;
+      let __hoverPickAt = 0;
       renderer.domElement.addEventListener("pointermove", (e) => {
         setPointerFromEvent(e);
+        // Hover picking raycasts the full mesh set (1.4M triangles on a
+        // big bench) — during a camera drag the cursor cue is useless
+        // and this raycast was throttling the render loop to ~15 fps.
+        // Skip while any button is held; rate-limit to ~20 Hz idle.
+        if (e.buttons !== 0) return;
+        const __now = performance.now();
+        if (__now - __hoverPickAt < 50) return;
+        __hoverPickAt = __now;
         const hit = pickFirstMesh();
         const isAnchorHit = hit?.object?.userData?.__isAnchorPick;
         renderer.domElement.style.cursor =
