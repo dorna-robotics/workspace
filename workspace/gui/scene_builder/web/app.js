@@ -1555,6 +1555,12 @@ if (node) {
             toneMapped: false
           });
           const edgeLines = new THREE.LineSegments(edgesGeo, edgesMat);
+          // Edge overlays are CHILDREN of their mesh, so the recursive
+          // pointer-move raycast descends into them — and Line raycast
+          // tests every segment. At bna_test scale that's millions of
+          // segment checks per mouse move (the orbit/hover lag). They
+          // are decoration, never pick targets: opt out entirely.
+          edgeLines.raycast = () => {};
           edgeLines.renderOrder = 10;
           // Respect the current toggle so objects added while edges are
           // hidden don't pop back in with outlines.
