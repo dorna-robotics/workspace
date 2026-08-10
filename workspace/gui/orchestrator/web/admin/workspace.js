@@ -501,6 +501,8 @@ function updateStatusUI(st) {
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
+  // Desktop schedule tab ticks with status (running-block clock).
+  if (!_pendantMode && _viewerTab === "sched") renderPendantSchedule($("wsSchedPane"));
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
@@ -927,6 +929,7 @@ function _dispatchMuxMessage(env) {
       // module-level state ingests them the same way.
       ingestScheduleEvent(payload);
       if (_pendantMode && _pendantTab === "sched") renderPendantSchedule($("pendantSchedPane"));
+      if (!_pendantMode && _viewerTab === "sched") renderPendantSchedule($("wsSchedPane"));
       break;
     }
   }
@@ -2213,13 +2216,35 @@ function _applyPendantTab() {
   if (is3d) requestAnimationFrame(_positionPendant3d);
 }
 
+// Desktop viewer tab: "3d" or "sched" — same schedule renderer as
+// the pendant's tab, drawn into the main viewport.
+let _viewerTab = "3d";
+
+function _applyViewerTab() {
+  document.querySelectorAll(".viewer-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.vtab === _viewerTab));
+  const isSched = _viewerTab === "sched";
+  const pane = $("wsSchedPane");
+  if (pane) {
+    pane.style.display = isSched ? "" : "none";
+    if (isSched) renderPendantSchedule(pane);
+  }
+  if (frame) frame.style.visibility = isSched ? "hidden" : "";
+  const ph = $("viewerPlaceholder");
+  if (ph) {
+    if (isSched) ph.style.display = "none";
+    else if (!frame || !frame.src || frame.src === "about:blank") ph.style.display = "";
+  }
+  applyPendantRenderState();
+}
+
 function applyPendantRenderState() {
   // The viewer renders only where it's visible: pendant closed →
   // desktop viewport owns it; pendant open → only on the 3D tab.
   const is3d = _pendantMode && _pendantTab === "3d";
   document.documentElement.classList.toggle("pendant-open", _pendantMode);
   document.documentElement.classList.toggle("pendant-3d-on", is3d);
-  const shouldPause = _pendantMode && !is3d;
+  const shouldPause = _pendantMode ? !is3d : _viewerTab === "sched";
   if (frame && frame.contentWindow) {
     frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
     frame.contentWindow.postMessage({ type: "ui", value: is3d ? "minimal" : "full" }, "*");
@@ -2537,6 +2562,12 @@ document.querySelectorAll(".js-schedule-open").forEach(b => {
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
 $("pendantExit").addEventListener("click", () => togglePendant(false));
+document.querySelectorAll(".viewer-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    _viewerTab = t.dataset.vtab;
+    _applyViewerTab();
+  });
+});
 document.querySelectorAll(".pendant-tab").forEach(t => {
   t.addEventListener("click", () => {
     _pendantTab = t.dataset.ptab;
