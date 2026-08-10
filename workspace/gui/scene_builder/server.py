@@ -1259,21 +1259,37 @@ class SolveRefHandler(tornado.web.RequestHandler):
         self.finish()
 
     async def post(self):
+        def _log(event, **kw):
+            try:
+                with open("/tmp/sb_perf.jsonl", "a") as f:
+                    f.write(json.dumps({"solve_ref": event,
+                                        "ts": time.strftime("%H:%M:%S"), **kw}) + "\n")
+            except OSError:
+                pass
         if not _project_path:
+            _log("rejected", reason="no project path set")
             self.write({"ok": False, "error": "no project path set"})
             return
         sig = _project_solve_sig(_project_path)
         cached = _ref_solve_cache.get(_project_path)
         if cached and cached[0] == sig:
+            _log("cache_hit")
             self.write(cached[1])
             return
+        _log("start")
+        _t0 = time.time()
         script = os.path.join(BASE_DIR, "ref_solve.py")
 
         def _run():
             import subprocess
-            r = subprocess.run([sys.executable, script, _project_path],
-                               capture_output=True, text=True, timeout=600,
-                               cwd=PARENT_DIR)
+            try:
+                r = subprocess.run([sys.executable, script, _project_path],
+                                   capture_output=True, text=True, timeout=180,
+                                   cwd=PARENT_DIR)
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "error": "solve timed out (180s)"}
+            except Exception as ex:
+                return {"ok": False, "error": f"solve spawn failed: {ex}"}
             line = (r.stdout or "").strip().splitlines()
             try:
                 return json.loads(line[-1]) if line else {"ok": False, "error": "no output"}
@@ -1282,6 +1298,8 @@ class SolveRefHandler(tornado.web.RequestHandler):
                         "error": (r.stderr or r.stdout or "solve failed")[-800:]}
 
         result = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        _log("done", secs=round(time.time() - _t0, 1), ok=bool(result.get("ok")),
+             err=(result.get("error") or "")[:120])
         if result.get("ok"):
             _ref_solve_cache[_project_path] = (sig, result)
         self.write(result)
