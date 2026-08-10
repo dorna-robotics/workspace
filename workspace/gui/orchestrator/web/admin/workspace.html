@@ -436,13 +436,18 @@
     /* Floated from <body> while the pendant's 3D tab is up — above
        the fixed iframe; coords synced to the pane by JS. */
     .viewer-tabs.floating { position: fixed; z-index: 10002; }
-    /* The schedule pane fills the viewport under the tab strip —
-       in the desktop viewer area or, moved by JS, in the pendant's
-       3D pane. The original gantt renders inline here; no modal. */
+    /* The schedule pane is a white CARD under the chip strip — in
+       the desktop viewer area or, moved by JS, in the pendant's 3D
+       pane. The gantt scrolls INSIDE the card, so blocks never
+       slide beneath the chips. No modal. */
     #wsSchedPane {
-      position: absolute; inset: 0;
-      padding-top: 58px;
+      position: absolute;
+      top: 58px; left: 16px; right: 16px; bottom: 16px;
       display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
     }
     #ws3dFrame {
       width: 100%;

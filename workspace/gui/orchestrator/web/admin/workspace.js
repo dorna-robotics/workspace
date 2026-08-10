@@ -2254,7 +2254,9 @@ function applyPendantRenderState() {
   const shouldPause = _pendantMode ? !is3d : _viewerTab === "sched";
   if (frame && frame.contentWindow) {
     frame.contentWindow.postMessage({ type: "render", value: shouldPause ? "pause" : "resume" }, "*");
-    frame.contentWindow.postMessage({ type: "ui", value: is3d ? "minimal" : "full" }, "*");
+    // Full viewer UI everywhere — the pendant's 3D tab carries the
+    // exact desktop canvas controls (toolbar, home, view cube).
+    frame.contentWindow.postMessage({ type: "ui", value: "full" }, "*");
   }
   if (!_pendantMode && frame) {
     // Back to the desktop viewport: clear the inline pane rect.
