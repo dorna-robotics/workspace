@@ -8401,12 +8401,24 @@ ensureBuilderBar();
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
-  // Update every 1.5 seconds — skip if user is selecting text inside the pre
+  // Safety-net refresh (mutation sites call __updateConfigPreview
+  // directly). Serializing a 300+ component bench to YAML costs
+  // hundreds of ms, so the sweep must never fire mid-interaction:
+  // skip while a pointer button is down (orbit/drag — this WAS the
+  // "2s smooth, 0.5s hitch" cycle), while the pane is hidden, or
+  // while text is selected in the pre. 5s cadence is plenty for a
+  // fallback.
+  let __pointerHeld = false;
+  window.addEventListener("pointerdown", () => { __pointerHeld = true; }, true);
+  window.addEventListener("pointerup",   () => { __pointerHeld = false; }, true);
+  window.addEventListener("pointercancel", () => { __pointerHeld = false; }, true);
   setInterval(() => {
+    if (__pointerHeld) return;
+    if (pre && pre.offsetParent === null) return;
     const sel = window.getSelection();
     if (sel && sel.rangeCount && pre && pre.contains(sel.anchorNode) && !sel.isCollapsed) return;
     updateConfigPreview();
-  }, 1500);
+  }, 5000);
   window.__updateConfigPreview = updateConfigPreview;
   // Initial render
   if (pre) updateConfigPreview();
