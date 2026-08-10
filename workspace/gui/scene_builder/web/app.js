@@ -7648,15 +7648,6 @@ ensureBuilderBar();
   }
   window.__importBusy = false;
   async function __ensureRefSolve() {
-    // The import storm owns the connection pool; a solve fired into
-    // it dies ("Failed to fetch") and costs a retry cycle. Wait for
-    // the import to finish first — the solve is server-cached, so
-    // this delays nothing real.
-    let __waited = 0;
-    while (window.__importBusy && __waited < 120000) {
-      await new Promise(r => setTimeout(r, 500));
-      __waited += 500;
-    }
     if (!__refSolvePromise) {
       __solveCrumb("fetch_start");
       const __ctl = new AbortController();
@@ -8178,14 +8169,7 @@ ensureBuilderBar();
         __projLoadBanner("Solving recipes…");
       }
     };
-    // While the import owns the page, the rows say nothing — labeling
-    // that window "solving…" made import time read as solve time.
-    if (!window.__importBusy) __markSolving();
-    else {
-      const __t = setInterval(() => {
-        if (!window.__importBusy) { clearInterval(__t); __markSolving(); }
-      }, 500);
-    }
+    __markSolving();
     // The first load's fetch can die mid-import ("Failed to fetch" —
     // the import storm kills the connection while the server solves
     // fine and caches). One failure used to strand the rows on
