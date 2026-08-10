@@ -964,7 +964,7 @@ class InstantiateBatchHandler(tornado.web.RequestHandler):
     Blueprints here are a few ms each server-side, so the whole batch
     answers in well under a second."""
 
-    def post(self):
+    async def post(self):
         try:
             data = json.loads(self.request.body.decode("utf-8") or "{}")
         except Exception:
@@ -972,25 +972,35 @@ class InstantiateBatchHandler(tornado.web.RequestHandler):
             self.write({"ok": False, "error": "invalid json"})
             return
         items = data.get("items") or []
-        out = {}
-        for it in items:
-            name = str((it or {}).get("name") or "")
-            t = (it or {}).get("type") or ""
-            opts = (it or {}).get("options") or {}
-            if not isinstance(opts, dict):
-                opts = {}
-            opts.pop("simulation", None)
-            joints = opts.pop("joints", None)
-            if not name:
-                continue
-            if t not in COMPONENT_MAP:
-                out[name] = {"error": f"unknown type: {t}"}
-                continue
-            try:
-                out[name] = {"blueprint": instantiate_component_blueprint(t, opts, joints=joints)}
-            except Exception as e:
-                print(f"[builder] batch instantiate {t} ({name}) failed: {type(e).__name__}: {e}")
-                out[name] = {"error": str(e)}
+
+        # OFF the event loop: a 341-item bench takes minutes of pure
+        # Python on the Pi, and running it inline froze the loop — no
+        # other response could even flush (the solve_ref reply sat in
+        # the send buffer until the browser gave up: the "solving…
+        # hangs until refresh" bug). Same code, worker thread.
+        def _build():
+            out = {}
+            for it in items:
+                name = str((it or {}).get("name") or "")
+                t = (it or {}).get("type") or ""
+                opts = (it or {}).get("options") or {}
+                if not isinstance(opts, dict):
+                    opts = {}
+                opts.pop("simulation", None)
+                joints = opts.pop("joints", None)
+                if not name:
+                    continue
+                if t not in COMPONENT_MAP:
+                    out[name] = {"error": f"unknown type: {t}"}
+                    continue
+                try:
+                    out[name] = {"blueprint": instantiate_component_blueprint(t, opts, joints=joints)}
+                except Exception as e:
+                    print(f"[builder] batch instantiate {t} ({name}) failed: {type(e).__name__}: {e}")
+                    out[name] = {"error": str(e)}
+            return out
+
+        out = await tornado.ioloop.IOLoop.current().run_in_executor(None, _build)
         self.write({"ok": True, "results": out})
 
 

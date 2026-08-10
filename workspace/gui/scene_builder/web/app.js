@@ -7634,7 +7634,10 @@ ensureBuilderBar();
   function __ensureRefSolve() {
     if (!__refSolvePromise) {
       __solveCrumb("fetch_start");
-      __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST" })
+      const __ctl = new AbortController();
+      const __abortT = setTimeout(() => __ctl.abort(), 20000);
+      __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST", signal: __ctl.signal })
+        .finally(() => clearTimeout(__abortT))
         .then(x => x.json())
         .then(res => {
           if (!res || !res.ok) throw new Error((res && res.error) || "solve failed");
