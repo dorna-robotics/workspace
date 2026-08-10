@@ -1062,15 +1062,15 @@ function renderDevicesPanel() {
   if (newHtml !== _devicesListLastHtml) {
     el.innerHTML = newHtml;
     _devicesListLastHtml = newHtml;
-  }
-  // Pendant Devices tab shows the same list (same classes + the same
-  // delegated clicks); the head meta reads "n/m up".
-  const pList = $("pendantDevicesList");
-  if (pList && pList.innerHTML !== newHtml) pList.innerHTML = newHtml;
-  const pMeta = $("pdDevMeta");
-  if (pMeta) {
-    const up = list.filter(d => (d.state || "down") === "ok").length;
-    pMeta.textContent = `${up}/${list.length} up`;
+    // Pendant Devices tab shows the same list (same classes + the
+    // same delegated clicks); one cache guards both writes.
+    const pList = $("pendantDevicesList");
+    if (pList) pList.innerHTML = newHtml;
+    const pMeta = $("pdDevMeta");
+    if (pMeta) {
+      const up = list.filter(d => (d.state || "down") === "ok").length;
+      pMeta.textContent = `${up}/${list.length} up`;
+    }
   }
 
   // Keep an open modal in sync as state events stream in.
@@ -1377,6 +1377,7 @@ function _opActionsHtml(disabled) {
   return rows.join("");
 }
 
+let _opActionsLastHtml = null;
 function renderOperatorActionsPanel() {
   // Sidebar section is always visible — mirrors Devices, so the
   // operator can see the surface exists even when no actions are
@@ -1384,6 +1385,8 @@ function renderOperatorActionsPanel() {
   const list = $("opActionsList");
   const disabled = isRunning(_lastState);
   const html = _opActionsHtml(disabled);
+  if (html === _opActionsLastHtml) return;
+  _opActionsLastHtml = html;
   if (list) list.innerHTML = html;
 
   // Pendant: only show the secondary-row button when there's
