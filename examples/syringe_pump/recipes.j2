@@ -1,0 +1,32 @@
+{%- set sf = 20 -%}
+
+# Robot (generic): the base Recipe with NO component — the stable handle
+# for robot-level calls Start/Park make.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
+# The needle, parked in the tool rack. Actions declare tool = "needle"
+# and the engine handles pickup/return.
+needle:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_192mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# The vial rack, driven by the EXISTING PipettingSite recipe — motion
+# targets the vessel, aspirate/dispense resolve through the carried
+# tool. No pumping-specific recipe family exists or is needed: the
+# needle's fluid API uses the pipettor's names on purpose.
+vials:
+  class: workspace.recipes.pipetting.PipettingSite
+  kwargs: {component: rack_amber_40ml_1x6_1, left_approach: true, base_distance: 200, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}
+
+# The fixed nozzle — the arm's own recipe. dispense(ul) now goes to the
+# pump through the arm's port instead of the old timed hold.
+arm:
+  class: workspace.recipes.dispense_arm.DispenseArm
+  kwargs: {component: syringe_dispense_arm_1, speed_factor: {{ sf }}}
+
+# The pump itself, for prime/status/volume at the workflow level.
+pump:
+  class: workspace.recipes.syringe_pump.SyringePump
+  kwargs: {component: syringe_pump_1}

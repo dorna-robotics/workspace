@@ -1,0 +1,41 @@
+# syringe_pump example — launch config.
+#
+# One Hamilton PSD/4 syringe pump feeding TWO nozzles, to show the
+# whole point of the fluid-path capability: the pump is one device with
+# one bus row, and each nozzle is just "a tube on valve port N".
+#
+#   - gripper_syringe_needle_1  a needle the robot CARRIES (port 3)
+#   - syringe_dispense_arm_1    a FIXED nozzle over the rack (port 2)
+#
+# For each of batch_size vials the robot dips the carried needle, doses
+# from it, parks the needle, then the fixed arm doses into the same
+# vial — same pump, two paths, no recipe family of its own.
+#
+# The pump runs in sim by default (volume bookkeeping in memory). Set
+# port + simulation:false on syringe_pump_1 for the real PSD/4.
+
+project_name: syringe_pump
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+default:
+  batch_size:
+    type: int
+    default: 3
+    label: Batch size
+    hint: How many vials to dose (needle dose -> arm dose).
+    min: 1
+    max: 6
+  dose_ul:
+    type: float
+    default: 150.0
+    label: Dose (uL)
+    hint: Volume dispensed by each nozzle into every vial.
+    min: 1.0
+    max: 1000.0

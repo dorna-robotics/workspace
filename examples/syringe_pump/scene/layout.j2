@@ -1,0 +1,116 @@
+# syringe_pump example — layout on the shared core_500 chassis.
+#
+# ONE pump, TWO nozzles — the point of the fluid-path capability:
+#
+#   syringe_pump_1            the device: driver, bus row, sim, recovery
+#   gripper_syringe_needle_1  carried nozzle, valve port 3
+#   syringe_dispense_arm_1    fixed nozzle over the rack, valve port 2
+#
+# Neither nozzle claims a device id; each only declares WHICH pump
+# feeds it and WHICH valve port its tube lands on (device-guide §4,
+# components/pump/pump_link.py). Two entries, one pump.
+
+# ── The pump (the device) ───────────────────────────────────────────
+# Sim by default: port "" -> no bus claim, volume bookkeeping in
+# memory. For the real PSD/4 set the by-id port and simulation: false.
+syringe_pump_1:
+  type: "syringe_pump_psd4"
+  port: ""
+  address: 1
+  baud: 9600
+  syringe_volume_ul: 1000.0
+  simulation: true
+  critical: true
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D4"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Tooling: the carried needle ─────────────────────────────────────
+tool_rack_192mm_1:
+  type: "tool_rack_192mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+gripper_syringe_needle_1:
+  type: "gripper_syringe_needle"
+  has_tool_changer: true
+  pump: "syringe_pump_1"      # fed by the pump above
+  pump_port: 3                # its tube is on valve port 3
+  attach:
+    parent_name: "tool_rack_192mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Vials on plate 4 ────────────────────────────────────────────────
+adapter_plate_amber_40ml_1x6_1:
+  type: "adapter_plate_amber_40ml_1x6"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D6"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+rack_amber_40ml_1x6_1:
+  type: "rack_amber_40ml_1x6"
+  attach:
+    parent_name: "adapter_plate_amber_40ml_1x6_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+{% for c in range(1, 6+1) %}
+tube_amber_40ml_A{{ c }}:
+  type: "tube_amber_40ml"
+  attach:
+    parent_name: "rack_amber_40ml_1x6_1"
+    parent_solid: "body"
+    parent_anchor: "A{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}
+
+# ── The fixed nozzle, over its own cup ──────────────────────────────
+# Same pump, different valve port. A stationary nozzle can only dose
+# into whatever sits beneath it, so it gets its own cup — this is the
+# flush/waste path, used once per run. (A project that wants the fixed
+# nozzle to fill VIALS brings each vial under it with the gripper;
+# that's vial handling, not fluid-path wiring, so it stays out of this
+# example.)
+rack_liquid_1:
+  type: "rack_liquid"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D12"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+syringe_dispense_arm_1:
+  type: "syringe_dispense_arm"
+  pump: "syringe_pump_1"
+  pump_port: 2
+  attach:
+    parent_name: "rack_liquid_1"
+    parent_solid: "body"
+    parent_anchor: "top"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 60, 0, 0, 0]

@@ -1,7 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
-from workspace.recipes.recipe import Recipe
-import time
+from workspace.recipes.recipe import Recipe, RecipeError
 
 class DosingSite(Recipe):
     DEFAULTS = dict(
@@ -43,14 +42,39 @@ class DosingSite(Recipe):
         return super().retract(dist=dist, anchor=anchor, solid_name=solid_name, component=component, **kwargs)
 
 
-    def aspirate(self, vol, speed=200):
-        """Aspirate ``vol`` µL at ``speed``. Placeholder (blocks 0.5s), returns 0."""
-        time.sleep(0.5)
-        return 0
+    # ── Fluid path ────────────────────────────────────────────────────
+    # A dosing site has a nozzle at one of two places, and the SCENE
+    # says which: a fixed nozzle plumbed to this site's own component,
+    # or a needle the robot carried here. Resolve in that order — a
+    # site with its own plumbing owns its liquid; otherwise whatever
+    # the arm is holding does. Both end at the same pump component,
+    # which is the sole owner of the device (component-guide §7).
 
+    def _fluid(self):
+        link = getattr(self.component, "fluid", None)
+        if link is not None and link.linked:
+            return link
+        tool = self.core.current_tool()
+        link = getattr(tool, "fluid", None) if tool is not None else None
+        if link is not None and link.linked:
+            return link
+        raise RecipeError(
+            f"no fluid path for dosing site {getattr(self.component, 'name', '?')}: "
+            f'neither the site nor the mounted tool declares `pump:` in the scene'
+        )
 
-    def dispense(self, vol, speed=500, blowout=False):
-        """Dispense ``vol`` µL at ``speed`` (optional ``blowout``). Placeholder."""
-        time.sleep(0.5)
-        return 0
+    def aspirate(self, vol, **kwargs):
+        """Draw ``vol`` µL in through this site's fluid path."""
+        self.rt.checkpoint()
+        return self._fluid().aspirate(vol, **kwargs)
+
+    def dispense(self, vol, **kwargs):
+        """Push ``vol`` µL out through this site's fluid path."""
+        self.rt.checkpoint()
+        return self._fluid().dispense(vol, **kwargs)
+
+    def prime(self, cycles=2, **kwargs):
+        """Flush air out of the path before dosing."""
+        self.rt.checkpoint()
+        return self._fluid().prime(cycles, **kwargs)
 
