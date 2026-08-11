@@ -35,6 +35,8 @@ mistake that silently dispenses down the wrong line is not typeable::
 Method names match the pipettor's on purpose: a carried needle then
 rides the existing ``PipettingSite`` recipe unchanged instead of
 growing a parallel recipe family.
+
+Full guide: ``docs/liquid-handling.md``.
 """
 
 from __future__ import annotations

@@ -30,9 +30,12 @@ reports steps, never volume, and cannot detect which syringe is fitted
 — if this does not match the barrel on the bench, every aspirate and
 dispense is wrong by the same ratio, silently.
 
-See ``docs/device-guide.md`` for the device contract and
-``docs/component-guide.md`` §7 (atomic ops on the component, not the
-recipe) / §8 (operator actions).
+Full operating guide — settings that are silently wrong if guessed
+(``syringe_volume_ul``, ``variant``, ``output_right``), the valve DIP
+table, plumbing nozzles to ports, and which recipe drives what:
+``docs/liquid-handling.md``. See also ``docs/device-guide.md`` for the
+device contract and ``docs/component-guide.md`` §7 (atomic ops on the
+component, not the recipe) / §8 (operator actions).
 """
 
 from __future__ import annotations

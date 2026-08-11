@@ -33,6 +33,8 @@ Every skill points back to `docs/`:
 - `docs/bt-framework-guide.md` — BT projects, PDDL planning, actions, slicing
 - `docs/design-system.md` — UI tokens, surfaces, theme
 - `docs/parameter-guidelines.md` — recipe parameter heuristics
+- `docs/liquid-handling.md` — pumps, nozzles, plumbing a fluid path, PSD/4 settings
+- `docs/vision-guide.md` — cameras, the vision server, inspection
 
 ## Conventions every skill assumes
 
