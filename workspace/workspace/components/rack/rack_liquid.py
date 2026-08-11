@@ -27,13 +27,9 @@ class RackLiquid(Rack):
                 "hole_1": [0.0, -26.5, 0.0, 0.0, 0.0, 0.0],
         }},
         collision_box =
-            {"body":[
-                {"pose":[0.0, 0.0, 8.0/2, 0.0, 0.0, 0.0], "scale":[30.0, 85.0, 8.0], "padding_enabled": True},        #[xyzabc] , [lx,ly,lz]
-                {"pose":[14.0, 0.0, 8.0+30.0/2, 0.0, 0.0, 0.0], "scale":[2.0, 85.0, 30.0], "padding_enabled": True},
-                {"pose":[-14.0, 0.0, 8.0+30.0/2, 0.0, 0.0, 0.0], "scale":[2.0, 85.0, 30.0], "padding_enabled": True},
-                {"pose":[0.0, 41.5, 8.0+30.0/2, 0.0, 0.0, 0.0], "scale":[26.0, 2.0, 30.0], "padding_enabled": True},
-                {"pose":[0.0, -41.5, 8.0+30.0/2, 0.0, 0.0, 0.0], "scale":[26.0, 2.0, 30.0], "padding_enabled": True},
-        ]},
+                    {"body":[
+                        {"pose":[0.0, 0.0, 192.1/2, 0.0, 0.0, 0.0], "scale":[47.6, 47.6, 192.1]},
+                ]},
         offset=[0, 0, 45],
         pitch=[0, 0, 0],
         rvec_safe = [0, 0, 0],
