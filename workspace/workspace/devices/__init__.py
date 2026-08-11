@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any, Callable, Optional
 
 from workspace.devices.orchestrator import (
@@ -103,16 +104,49 @@ class _StubDevice:
         return None
 
 
+# Seconds between idle liveness checks. Only devices that opt in (by
+# implementing ``ping()``) are polled, and only while genuinely idle —
+# see DeviceAttachment's heartbeat docstring.
+HEARTBEAT_INTERVAL_S = 5.0
+
+
 class DeviceAttachment:
     """Handle returned by :func:`attach_device`.
 
-    Owns the MQTT adapter (always present) and the AutoRecover loop
-    (present only when ``sim=False``). Closing the handle cleans both
-    up, mirroring what a service teardown needs.
+    Owns the MQTT adapter (always present), the AutoRecover loop
+    (present only when ``sim=False``) and the idle heartbeat (only for
+    devices that implement ``ping()``). Closing the handle cleans all
+    three up, mirroring what a service teardown needs.
 
     The ``set_sim`` method handles the operator-toggled-mid-run case:
-    flipping a real device into sim suspends AutoRecover and republishes
-    info with ``sim=true``; flipping back re-arms AutoRecover.
+    flipping a real device into sim suspends AutoRecover + heartbeat and
+    republishes info with ``sim=true``; flipping back re-arms both.
+
+    **The heartbeat** exists because a request/response device (serial
+    meter, TCP balance, pH circuit) is only *touched* when an action
+    reads it: unplug one between reads and the panel keeps showing the
+    last known state — green — until something happens to talk to it.
+    The robot doesn't have this problem because motion traffic exercises
+    its link constantly.
+
+    The contract keeps it cheap enough to be invisible:
+
+      * **Opt-in.** No ``ping()`` on the device object → no thread, no
+        behaviour change. Existing devices are untouched.
+      * **Idle-only.** ``ping()`` is expected to no-op (return True)
+        when the device has seen real traffic within the interval, so a
+        busy device pays NOTHING — the run's own reads are the
+        heartbeat. Only a genuinely idle link gets a probe.
+      * **Never collides.** ``ping()`` must take the device's I/O lock
+        non-blockingly and report alive if the lock is held: a probe
+        must never interleave with a real read on the same port.
+      * **Off in sim**, off while the device is not ``ok`` (a down
+        device is AutoRecover's business, not the heartbeat's).
+
+    On a failed probe the device transitions itself to ``down`` (the
+    same path any failed op takes) and the heartbeat nudges
+    ``AutoRecover`` — so a serial device now comes back by itself after
+    a replug instead of waiting for an operator's Recover press.
     """
 
     def __init__(
@@ -120,10 +154,59 @@ class DeviceAttachment:
         adapter: MQTTDeviceAdapter,
         recover: Optional[AutoRecover],
         recover_factory: Optional[Callable[[], AutoRecover]] = None,
+        device: Any = None,
+        heartbeat_interval: float = HEARTBEAT_INTERVAL_S,
     ):
         self.adapter = adapter
         self.recover = recover
         self._recover_factory = recover_factory
+        self._device = device
+        self._hb_interval = float(heartbeat_interval)
+        self._hb_stop = threading.Event()
+        self._hb_thread: Optional[threading.Thread] = None
+        if not self.adapter.sim:
+            self._start_heartbeat()
+
+    # ── Idle heartbeat ────────────────────────────────────────────────
+
+    def _start_heartbeat(self) -> None:
+        dev = self._device
+        if dev is None or not callable(getattr(dev, "ping", None)):
+            return                      # device didn't opt in
+        if self._hb_thread is not None and self._hb_thread.is_alive():
+            return
+        self._hb_stop.clear()
+        self._hb_thread = threading.Thread(
+            target=self._heartbeat_loop, name=f"heartbeat-{self.adapter.device_id}",
+            daemon=True,
+        )
+        self._hb_thread.start()
+
+    def _stop_heartbeat(self) -> None:
+        self._hb_stop.set()
+        self._hb_thread = None
+
+    def _heartbeat_loop(self) -> None:
+        dev = self._device
+        while not self._hb_stop.wait(self._hb_interval):
+            try:
+                if self.adapter.sim:
+                    continue
+                state = getattr(dev, "state", None)
+                if state == "ok":
+                    # ping() reports False only when it actually reached
+                    # the hardware and got silence; it also set the
+                    # device's own state to down on the way out.
+                    if dev.ping() is False and self.recover is not None:
+                        self.recover.trigger()
+                elif state == "down" and self.recover is not None:
+                    # Missed trigger (e.g. the failure came from an op
+                    # that had no recovery hook) — nudge the loop; it
+                    # no-ops when already running.
+                    self.recover.trigger()
+            except Exception:
+                log.exception("DeviceAttachment[%s]: heartbeat raised",
+                              getattr(self.adapter, "device_id", "?"))
 
     @property
     def sim(self) -> bool:
@@ -143,7 +226,8 @@ class DeviceAttachment:
             return
         self.adapter.set_sim(new_sim)
         if new_sim:
-            # Suspend recovery — sim has nothing to recover.
+            # Suspend recovery + heartbeat — sim has nothing to poll.
+            self._stop_heartbeat()
             if self.recover is not None:
                 try:
                     self.recover.stop()
@@ -158,9 +242,11 @@ class DeviceAttachment:
                 except Exception:
                     log.exception("DeviceAttachment: recover_factory raised")
                     self.recover = None
+            self._start_heartbeat()
 
     def close(self) -> None:
-        """Stop AutoRecover and the adapter. Safe to call twice."""
+        """Stop the heartbeat, AutoRecover and the adapter. Safe twice."""
+        self._stop_heartbeat()
         if self.recover is not None:
             try:
                 self.recover.stop()
@@ -284,6 +370,7 @@ def attach_device(
         adapter=adapter,
         recover=recover,
         recover_factory=recover_factory,
+        device=device,
     )
 
 

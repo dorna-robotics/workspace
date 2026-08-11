@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Callable, Optional
 
 from workspace.components.ph_meter.ezo_ph_driver import AtlasPH, Reading, Slope
@@ -81,6 +83,17 @@ class EzoPHStation:
         # Real driver instance; None in sim, or until connect() succeeds.
         self._driver: Optional[AtlasPH] = None
 
+        # ONE conversation at a time on the port. The EZO protocol is
+        # request/response with no framing: two overlapping commands
+        # (a BT action reading while the operator presses Read pH, or
+        # the idle heartbeat probing mid-read) interleave their replies
+        # and corrupt BOTH. Every method that touches the driver takes
+        # this lock; ``ping`` takes it non-blockingly and yields.
+        self._io_lock = threading.RLock()
+        # Monotonic stamp of the last real I/O — the heartbeat uses it
+        # to stay silent while the run is already exercising the link.
+        self._last_io = 0.0
+
     # ── Device protocol ────────────────────────────────────────────────
 
     @property
@@ -106,45 +119,89 @@ class EzoPHStation:
             except Exception:
                 log.exception("EzoPHStation[%s]: listener raised", self.label)
 
+    def _touch(self) -> None:
+        self._last_io = time.monotonic()
+
     def recover(self) -> bool:
         """(Re)establish the serial link. ALWAYS attempts the real
         connect — sim does not change this (device-guide §16). Fires a
         ``recovering → result`` transition so the bus/UI always see an
         event even when the outcome matches the previous state."""
         self._set_state("recovering", "reconnecting")
-        try:
-            # Rebuild from scratch. After a USB unplug the old
-            # serial.Serial still reports ``is_open == True`` (pyserial
-            # doesn't know the kernel ripped the device away), so
-            # ``connect()`` would short-circuit onto a dead fd. A fresh
-            # driver re-opens through the by-id symlink, which udev
-            # re-resolves to whatever ttyUSB* the chip landed on.
-            if self._driver is not None:
-                try:
-                    self._driver.close()
-                except Exception:
-                    pass
-                self._driver = None
-            self._driver = AtlasPH(port=self.port, baud=self.baud, timeout=self.timeout)
-            if not self._driver.connect():
-                self._set_state("down", "connect failed")
+        with self._io_lock:
+            self._touch()
+            try:
+                # Rebuild from scratch. After a USB unplug the old
+                # serial.Serial still reports ``is_open == True``
+                # (pyserial doesn't know the kernel ripped the device
+                # away), so ``connect()`` would short-circuit onto a
+                # dead fd. A fresh driver re-opens through the by-id
+                # symlink, which udev re-resolves to whatever ttyUSB*
+                # the chip landed on.
+                if self._driver is not None:
+                    try:
+                        self._driver.close()
+                    except Exception:
+                        pass
+                    self._driver = None
+                self._driver = AtlasPH(port=self.port, baud=self.baud,
+                                       timeout=self.timeout)
+                if not self._driver.connect():
+                    self._set_state("down", "connect failed")
+                    return False
+                # connect() already killed continuous mode + drained;
+                # this handshake proves the circuit is actually
+                # answering rather than the port merely being open.
+                if not self._driver.check_connection():
+                    self._set_state("down", "no response to 'i'")
+                    return False
+                self._set_state("ok", "")
+                return True
+            except Exception as ex:
+                self._set_state("down", f"connect failed: {type(ex).__name__}: {ex}")
                 return False
-            # connect() already killed continuous mode + drained; this
-            # is the handshake that proves the circuit is actually
-            # answering rather than the port merely being open.
-            if not self._driver.check_connection():
-                self._set_state("down", "no response to 'i'")
-                return False
-            self._set_state("ok", "")
+
+    def ping(self) -> bool:
+        """Idle liveness probe for the shared heartbeat (see
+        ``DeviceAttachment``). Costs the link NOTHING while a run is
+        using it:
+
+          * returns True immediately if the port is busy — a real
+            conversation IS the liveness proof, and a probe must never
+            interleave with it;
+          * returns True immediately if any real I/O happened within
+            the heartbeat window, for the same reason;
+          * otherwise sends one ``i`` (~300 ms on-chip) and reports
+            whether the circuit answered, transitioning to ``down``
+            itself on silence so recovery starts.
+        """
+        if self.simulation or not self.port:
             return True
-        except Exception as ex:
-            self._set_state("down", f"connect failed: {type(ex).__name__}: {ex}")
+        # Busy = alive, and never interleave.
+        if not self._io_lock.acquire(blocking=False):
+            return True
+        try:
+            if time.monotonic() - self._last_io < 4.0:
+                return True             # the run is already exercising it
+            drv = self._driver
+            if drv is None or not drv.is_connected():
+                return False
+            self._touch()
+            if drv.info():
+                return True
+            self._set_state("down", "no response to 'i'")
             return False
+        except Exception as ex:
+            self._set_state("down", f"ping failed: {type(ex).__name__}: {ex}")
+            return False
+        finally:
+            self._io_lock.release()
 
     def release(self) -> None:
         """Close the serial port + drop the driver. Does not branch on
         sim — release frees the real handle if one exists."""
-        drv, self._driver = self._driver, None
+        with self._io_lock:
+            drv, self._driver = self._driver, None
         if drv is not None:
             try:
                 drv.close()
@@ -199,16 +256,20 @@ class EzoPHStation:
         disconnected and not in sim. In sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            r = self._driver.read()
-            if not r.connected:
-                self._set_state("down", "no reading")
-            return r
-        except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                r = self._driver.read()
+                if not r.connected:
+                    self._set_state("down", "no reading")
+                return r
+            except Exception as ex:
+                self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+                return None
+            finally:
+                self._touch()
 
     def read_at_temperature(self, celsius: float,
                             sim_return: Reading = Reading(status="ok", ph=7.000, raw="sim")) -> Optional[Reading]:
@@ -216,16 +277,20 @@ class EzoPHStation:
         one round-trip. In sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            r = self._driver.read_at_temperature(celsius)
-            if not r.connected:
-                self._set_state("down", "no reading")
-            return r
-        except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                r = self._driver.read_at_temperature(celsius)
+                if not r.connected:
+                    self._set_state("down", "no reading")
+                return r
+            except Exception as ex:
+                self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+                return None
+            finally:
+                self._touch()
 
     def read_stable(self, n: int = 3, tolerance: float = 0.02, max_readings: int = 20,
                     sim_return: Reading = Reading(status="ok", ph=7.000, raw="sim")) -> Optional[Reading]:
@@ -235,16 +300,21 @@ class EzoPHStation:
         electrode needs seconds. In sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            r = self._driver.read_stable(n=n, tolerance=tolerance, max_readings=max_readings)
-            if not r.connected:
-                self._set_state("down", "no reading")
-            return r
-        except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                r = self._driver.read_stable(n=n, tolerance=tolerance,
+                                             max_readings=max_readings)
+                if not r.connected:
+                    self._set_state("down", "no reading")
+                return r
+            except Exception as ex:
+                self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+                return None
+            finally:
+                self._touch()
 
     def ph(self, stable: bool = True, sim_return: float = 7.000) -> Optional[float]:
         """Convenience: just the pH value (or None). ``stable=True``
@@ -261,13 +331,17 @@ class EzoPHStation:
         sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            return self._driver.slope()
-        except Exception as ex:
-            self._op_failed("slope", ex)
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                return self._driver.slope()
+            except Exception as ex:
+                self._op_failed("slope", ex)
+                return None
+            finally:
+                self._touch()
 
     # ── Calibration ────────────────────────────────────────────────────
     # Writes, not reads — but they still return a value, so they follow
@@ -280,13 +354,17 @@ class EzoPHStation:
         sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            return self._driver.calibration_points()
-        except Exception as ex:
-            self._op_failed("calibration_points", ex)
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                return self._driver.calibration_points()
+            except Exception as ex:
+                self._op_failed("calibration_points", ex)
+                return None
+            finally:
+                self._touch()
 
     def calibrate(self, value: float, sim_return: bool = True) -> bool:
         """Calibrate against the buffer currently on the probe. The point
@@ -299,28 +377,36 @@ class EzoPHStation:
         (declarative retry, project-guide §8)."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return False
-        try:
-            self._driver.calibrate(value)
-            return True
-        except Exception as ex:
-            self._op_failed("calibrate", ex)
-            return False
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return False
+            self._touch()
+            try:
+                self._driver.calibrate(value)
+                return True
+            except Exception as ex:
+                self._op_failed("calibrate", ex)
+                return False
+            finally:
+                self._touch()
 
     def calibrate_clear(self, sim_return: bool = True) -> bool:
         """Wipe all stored calibration points. Same contract as
         :meth:`calibrate`."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return False
-        try:
-            self._driver.calibrate_clear()
-            return True
-        except Exception as ex:
-            self._op_failed("calibrate_clear", ex)
-            return False
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return False
+            self._touch()
+            try:
+                self._driver.calibrate_clear()
+                return True
+            except Exception as ex:
+                self._op_failed("calibrate_clear", ex)
+                return False
+            finally:
+                self._touch()
 
     # ── Temperature compensation ───────────────────────────────────────
 
@@ -329,24 +415,32 @@ class EzoPHStation:
         across power cycles. Same contract as :meth:`calibrate`."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return False
-        try:
-            self._driver.set_temperature_compensation(celsius)
-            return True
-        except Exception as ex:
-            self._op_failed("set_temperature_compensation", ex)
-            return False
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return False
+            self._touch()
+            try:
+                self._driver.set_temperature_compensation(celsius)
+                return True
+            except Exception as ex:
+                self._op_failed("set_temperature_compensation", ex)
+                return False
+            finally:
+                self._touch()
 
     def get_temperature_compensation(self, sim_return: float = 25.0) -> Optional[float]:
         """The temperature the chip is currently compensating for (°C).
         In sim, returns ``sim_return``."""
         if self.simulation:
             return sim_return
-        if self._driver is None or not self._driver.is_connected():
-            return None
-        try:
-            return self._driver.get_temperature_compensation()
-        except Exception as ex:
-            self._op_failed("get_temperature_compensation", ex)
-            return None
+        with self._io_lock:
+            if self._driver is None or not self._driver.is_connected():
+                return None
+            self._touch()
+            try:
+                return self._driver.get_temperature_compensation()
+            except Exception as ex:
+                self._op_failed("get_temperature_compensation", ex)
+                return None
+            finally:
+                self._touch()
