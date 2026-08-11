@@ -28,7 +28,7 @@ import logging
 import os
 from typing import Callable, Optional
 
-from workspace.components.ph.ezo_ph_driver import AtlasPH, Reading, Slope
+from workspace.components.ph_meter.ezo_ph_driver import AtlasPH, Reading, Slope
 
 
 log = logging.getLogger(__name__)

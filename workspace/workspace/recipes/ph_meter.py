@@ -23,7 +23,7 @@ on simulation. See ``docs/recipe-guide.md`` §1 and
 from copy import deepcopy
 from mergedeep import merge
 
-from workspace.components.ph.ezo_ph_driver import Reading, Slope
+from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
 from workspace.recipes.recipe import Recipe, RecipeError
 
 
@@ -109,7 +109,7 @@ class PhMeterSite(Recipe):
         target_offset=[0, 0, 150, 0, 180, 0],
         # IK
         rail_step=20,
-        rail_span=5,
+        rail_span=1,
     )
 
     def __init__(self, workspace, core, component, **kwargs):

@@ -42,8 +42,8 @@ from mergedeep import merge
 
 from workspace.components.factory import register
 from workspace.components.gripper.gripper import Gripper
-from workspace.components.ph.ezo_ph_driver import Reading, Slope
-from workspace.components.ph.ezo_ph_station import EzoPHStation
+from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
+from workspace.components.ph_meter.ezo_ph_station import EzoPHStation
 from workspace.devices import AutoRecover, attach_device
 
 
