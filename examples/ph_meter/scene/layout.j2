@@ -1,0 +1,50 @@
+# ph_meter example — layout on the shared core_500 chassis.
+# Devices attach to the fixture plates from scene/core_500.j2.
+#
+# Contents:
+#   - tool rack + Atlas pH probe (a tool-changer tool the robot picks)
+#   - 3 storage-solution cups (rack_liquid) on plate 4, one per sample
+#
+# The EZO circuit runs in sim by default — canned pH (~7.000). For the
+# real circuit set port to its /dev/serial/by-id/... symlink and
+# simulation: false. Empty port means no bus claim: no Devices-panel
+# row, sim reads still work (device-guide §16).
+
+# ── Tooling ─────────────────────────────────────────────────────────
+tool_rack_144mm_1:
+  type: "tool_rack_144mm"
+  attach:
+    parent_name: "fixture_plate_5"
+    parent_solid: "body"
+    parent_anchor: "B18"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+ph_meter_atlas_1:
+  type: "ph_meter_atlas"
+  has_tool_changer: true
+  port: ""
+  simulation: true
+  critical: true
+  attach:
+    parent_name: "tool_rack_144mm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "tool_changer_tool_side"
+    child_anchor: "tool_rack_connection"
+    offset: [0, 0, 0, 0, 0, 0]
+
+# ── Sample cups on plate 4 — one rack_liquid per sample ─────────────
+# 100 mm apart along the plate so the probe has clear approaches.
+{% for i in range(3) %}
+rack_liquid_{{ i }}:
+  type: "rack_liquid"
+  attach:
+    parent_name: "fixture_plate_4"
+    parent_solid: "body"
+    parent_anchor: "D{{ 4 + i * 4 }}"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+{% endfor %}

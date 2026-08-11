@@ -1,0 +1,26 @@
+# ph_meter example — launch config.
+#
+# For each of batch_size cups: dip the Atlas pH probe into the cup,
+# wait for a settled reading, log the pH, and lift clear. The probe is
+# a tool-changer tool parked in the tool rack; the EZO circuit runs in
+# sim by default (canned pH). Set port + simulation:false on
+# ph_meter_atlas_1 in the layout for the real circuit.
+
+project_name: ph_meter
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py
+checks:       checks.py
+
+plan_window:  4
+scheduler:    cpsat
+
+default:
+  batch_size:
+    type: int
+    default: 3
+    label: Batch size
+    hint: How many cups to measure (immerse -> read -> retract).
+    min: 1
+    max: 3

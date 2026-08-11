@@ -1,0 +1,24 @@
+{%- set sf = 20 -%}
+
+# Robot (generic): the base Recipe with NO component. It owns no station
+# and does no boot-time IK — it's just the stable handle for robot-level
+# calls Start/Park make (park(joint=...), motor, axis homing via
+# set_axis_with_stop / set_axis_with_encoder). Same across every project.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
+# Atlas pH probe, parked in the tool rack. Actions declare
+# ``tool = "probe"`` and the engine handles pickup/return.
+probe:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# One dip site per cup — PhMeterSite: motion (immerse/retract) targets
+# the cup, device ops (read/calibrate) resolve through the mounted
+# probe (core.current_tool()).
+{% for i in range(3) %}
+cup_{{ i }}:
+  class: workspace.recipes.ph_meter.PhMeterSite
+  kwargs: {component: rack_liquid_{{ i }}, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}
+{% endfor %}
