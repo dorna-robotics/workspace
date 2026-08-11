@@ -105,8 +105,10 @@ class PhMeterSite(Recipe):
     it dips into."""
 
     DEFAULTS = dict(
-        # ref joints
-        target_offset=[0, 0, 150, 0, 180, 0],
+        # ref joints — z 192 = the probe's own length (tip anchor at
+        # 192.1), so the reference pose puts the TIP at the target
+        # anchor with the flange probe-length above it.
+        target_offset=[0, 0, 192, 0, 180, 0],
         # IK
         rail_step=20,
         rail_span=1,
