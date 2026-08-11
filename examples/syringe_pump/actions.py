@@ -52,7 +52,10 @@ def _slot(action, vial):
 
 
 def _dose_ul(action) -> float:
-    return float(action.ctx.kwargs.get("dose_ul", 150.0))
+    """The run's dose, from the Start form. Operator kwargs live in
+    ``ctx.meta["kwargs"]`` — the launcher puts them there; there is no
+    ``ctx.kwargs``."""
+    return float((action.ctx.meta.get("kwargs") or {}).get("dose_ul", 150.0))
 
 
 def _progress_pct(action):
@@ -163,9 +166,12 @@ class NeedleDose(Action):
         if rcp["pump"].aspirate(ul, port="input") is False:
             rt.step(f"vial {vial + 1}: aspirate failed — retry after recover")
             return False
-        rcp["vials"].immerse(anchor=slot, depth=60)
+        # Straight dive with clearance, like the pH probe into the same
+        # vials: an approach corridor around a 157 mm needle inside a
+        # 6-vial rack has nowhere to go.
+        rcp["vials"].immerse(anchor=slot, depth=60, approach=False, padding=70)
         ok = rcp["vials"].dispense(ul)
-        rcp["vials"].retract(anchor=slot)
+        rcp["vials"].retract(anchor=slot, padding=70)
         if ok is False:
             # Pump refused / offline: no fact, so the planner re-selects
             # this dose once the device is back (declarative retry).

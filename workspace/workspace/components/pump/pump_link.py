@@ -112,11 +112,20 @@ class PumpLink:
     # the flag. ``sim_return`` rides through unchanged (device-guide
     # §17) for callers that want to inject a specific sim outcome.
 
-    def aspirate(self, volume_ul: float, port=None, **kw):
+    # ``speed`` / ``blowout`` are swallowed on purpose: they are the
+    # air-displacement pipettor's per-move arguments, and PipettingSite
+    # passes them positionally-by-name to whatever tool is mounted. A
+    # syringe drive has neither — its speed is a pump-level setting in
+    # PERCENT (``set_speed`` / the scene), not µL/s per move, and there
+    # is no blowout stroke. Accepting and ignoring them is what lets a
+    # needle ride the stock pipetting recipe unchanged; silently
+    # FORWARDING them would raise a TypeError deep in the pump instead.
+
+    def aspirate(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
         """Draw ``volume_ul`` in through this link's port."""
         return self.pump.aspirate(volume_ul, port=self._port(port), **kw)
 
-    def dispense(self, volume_ul: float, port=None, **kw):
+    def dispense(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
         """Push ``volume_ul`` out through this link's port."""
         return self.pump.dispense(volume_ul, port=self._port(port), **kw)
 
@@ -189,10 +198,10 @@ class PumpedTool:
     def pump(self):
         return self.fluid.pump
 
-    def aspirate(self, volume_ul: float, port=None, **kw):
+    def aspirate(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
         return self.fluid.aspirate(volume_ul, port=port, **kw)
 
-    def dispense(self, volume_ul: float, port=None, **kw):
+    def dispense(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
         return self.fluid.dispense(volume_ul, port=port, **kw)
 
     def move_to_volume(self, volume_ul: float, port=None, **kw):
