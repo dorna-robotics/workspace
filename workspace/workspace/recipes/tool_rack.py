@@ -5,6 +5,10 @@ from workspace.recipes.recipe import Recipe, RecipeError
 
 class ToolRack(Recipe):
     DEFAULTS = dict(
+        # ref joints
+        target_solid_name="body",
+        target_anchor="clb_0",
+        target_offset=[0, 0, 0, 0, 180, 0],
         # motion
         lmove_vaj=[150, 350, 1500],
         # calibration
