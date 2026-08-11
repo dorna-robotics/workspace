@@ -14,11 +14,14 @@ probe:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# One dip site per cup — PhMeterSite: motion (immerse/retract) targets
-# the cup, device ops (read/calibrate) resolve through the mounted
-# probe (core.current_tool()).
-{% for i in range(3) %}
-cup_{{ i }}:
+# The amber rack — ONE PhMeterSite over the adapter; per-vial dips pass
+# the slot anchor (A1..A6). Motion targets the rack, device ops resolve
+# through the mounted probe (core.current_tool()).
+vials:
   class: workspace.recipes.ph_meter.PhMeterSite
-  kwargs: {component: rack_liquid_{{ i }}, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}
-{% endfor %}
+  kwargs: {component: adapter_plate_amber_40ml_1x6_1, left_approach: true, base_distance: 200, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}
+
+# The storage-solution cup — rinse/rest dips between vials.
+storage:
+  class: workspace.recipes.ph_meter.PhMeterSite
+  kwargs: {component: rack_liquid_1, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}

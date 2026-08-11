@@ -1,29 +1,32 @@
-"""ph_meter protocol — Start → [Immerse → ReadPH → Retract] ×N → Park.
+"""ph_meter protocol — Start → [Immerse → ReadPH → Retract → Rinse] ×N → Park.
 
-For each of ``batch_size`` cups, the robot (carrying the Atlas pH
-probe from the tool rack):
-  1. Immerse — dip the probe into the cup's well
+For each of ``batch_size`` amber 40 ml vials (open, in the 1x6 rack),
+the robot — carrying the Atlas pH probe from the tool rack:
+  1. Immerse — dip the probe into the vial (slot anchor A1..A6)
   2. ReadPH  — wait for a settled reading (NO motion — a pure device read)
-  3. Retract — lift the probe clear of the cup
+  3. Retract — lift the probe clear of the vial
+  4. Rinse   — dip into the storage-solution cup and lift out, so the
+               probe never travels dry between samples
 
-Each is its own BT action, gated by facts so they run in order per cup;
-the planner sequences cups (windowed by plan_window). Cups are the
-single objects dim → slicing auto-engages.
+Each is its own BT action, gated by facts so they run in order per
+vial; the planner sequences vials (windowed by plan_window). Vials are
+the single objects dim → slicing auto-engages.
 
 WHY ReadPH is split out as its own read-only action — declarative retry
 =======================================================================
 Same reference pattern as examples/scale's Weigh (project-guide §8
 "Device reads + declarative retry"): ``ReadPH`` asserts
-``measured(cup)`` ONLY when it gets a valid number. On a failed read it
-``return False`` → the leaf FAILS → no effect applies → the engine
-replans from the observed world, where ``immersed(cup) &
-~measured(cup)`` still holds → the planner re-selects ReadPH. The probe
-stays in the liquid (no motion repeated) — only the read retries.
+``measured(vial)`` ONLY when it gets a valid number. On a failed read
+it ``return False`` → the leaf FAILS → no effect applies → the engine
+replans from the observed world, where ``immersed(vial) &
+~measured(vial)`` still holds → the planner re-selects ReadPH. The
+probe stays in the liquid (no motion repeated) — only the read
+retries.
 Meanwhile a real, ``critical`` EZO going down pauses the runtime until
 it recovers; the retry then runs against the reconnected circuit.
 
 The probe runs in sim by default → ``ph()`` returns the canned value
-(injected per-cup via ``sim_return`` so a sim run exercises per-cup
+(injected per-vial via ``sim_return`` so a sim run exercises per-vial
 logic). Point ph_meter_atlas_1 at the real circuit (port +
 simulation:false in the layout) for live readings.
 
@@ -38,52 +41,64 @@ from workspace.bt import Action, predicate
 
 
 started  = predicate("started")
-immersed = predicate("immersed")   # probe is in this cup's liquid
-measured = predicate("measured")   # a valid pH was read for this cup
-done     = predicate("done")       # probe lifted clear of this cup
+immersed = predicate("immersed")   # probe is in this vial's liquid
+measured = predicate("measured")   # a valid pH was read for this vial
+lifted   = predicate("lifted")     # probe clear of this vial
+rinsed   = predicate("rinsed")     # probe dipped in storage after this vial
+
 parked   = predicate("parked")
 
 # ── Single-occupancy resource (capacity-1, no args) ───────────────────
-# One probe: it can only be in one cup at a time. Consumed on Immerse,
-# restored on Retract — forcing strictly one-cup-at-a-time through the
-# dip/read/lift chain. See project-guide §8 "Single-occupancy resources".
+# One probe: it is in at most one vessel at a time. Consumed on Immerse,
+# restored by Rinse (the storage dip closes each vial's cycle) — forcing
+# strictly one-vial-at-a-time through dip/read/lift/rinse. See
+# project-guide §8 "Single-occupancy resources".
 probe_free = predicate("probe_free", capacity=True)
 
-# How many per-cup steps the progress bar spans (Immerse, ReadPH, Retract).
-_STEPS = 3
+RACK = "rack_amber_40ml_1x6_1"
+
+# How many per-vial steps the progress bar spans
+# (Immerse, ReadPH, Retract, Rinse).
+_STEPS = 4
+
+
+def _slot(action, vial):
+    """Rack slot anchor (A1..A6) for vial index ``vial`` — read from the
+    rack component so the order matches the scene, not a hardcoded list."""
+    return action.ctx.workspace.components[RACK].slot["body"][vial]
 
 
 def _progress_pct(action):
     """Monotonic % over all per-cup steps. Reads the live fact set
     (``action.ctx.state["facts"]``; ``action.state`` is None in execute).
     This action's eff hasn't applied yet, so count it as +1."""
-    cups = action._ctx_all_objects().get("cup", [])
-    total = (len(cups) or 1) * _STEPS
+    vials = action._ctx_all_objects().get("vial", [])
+    total = (len(vials) or 1) * _STEPS
     ctx_state = getattr(action.ctx, "state", None) or {}
     facts = ctx_state.get("facts") or set()
     n = sum(
-        ((immersed.name, c) in facts) + ((measured.name, c) in facts)
-        + ((done.name, c) in facts)
-        for c in cups
+        ((immersed.name, v) in facts) + ((measured.name, v) in facts)
+        + ((lifted.name, v) in facts) + ((rinsed.name, v) in facts)
+        for v in vials
     )
     return int((n + 1) / total * 100)
 
 
 def setup(**kwargs):
-    cups = list(range(int(kwargs.get("batch_size", 3))))
+    vials = list(range(int(kwargs.get("batch_size", 3))))
 
-    def item_done(state, cup):
-        return (done.name, cup) in state
+    def item_done(state, vial):
+        return (rinsed.name, vial) in state
 
     def goal(state):
         return (
             (started.name,) in state
-            and all(item_done(state, c) for c in cups)
+            and all(item_done(state, v) for v in vials)
             and (parked.name,) in state
         )
 
     goal_facts = frozenset(
-        [(done.name, c) for c in cups]
+        [(rinsed.name, v) for v in vials]
         + [(started.name,), (parked.name,)]
     )
 
@@ -92,7 +107,7 @@ def setup(**kwargs):
         "goal":          goal,
         "item_done":     item_done,
         "goal_facts":    goal_facts,
-        "objects":       {"cup": cups},
+        "objects":       {"vial": vials},
     }
 
 
@@ -128,25 +143,28 @@ class Start(Action):
 
 
 class Immerse(Action):
-    """Dip the probe into the cup's well — deep enough to submerge the
-    glass bulb (a dry electrode reads garbage)."""
-    params   = ["cup"]
+    """Dip the probe into the vial — deep enough to submerge the glass
+    bulb (a dry electrode reads garbage)."""
+    params   = ["vial"]
     duration = 10
     resource = "robot"
     tool     = "probe"
 
-    def pre(self, cup):
-        # probe_free gates one-at-a-time: the probe is in at most one cup.
-        return started() & probe_free() & ~immersed(cup)
+    def pre(self, vial):
+        # probe_free gates one-at-a-time: the probe is in at most one vessel.
+        return started() & probe_free() & ~immersed(vial)
 
-    def eff(self, cup):
-        return {"immersed": (+immersed(cup), -probe_free())}   # probe now busy
+    def eff(self, vial):
+        return {"immersed": (+immersed(vial), -probe_free())}   # probe now busy
 
-    def execute(self, cup):
+    def execute(self, vial):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        rt.step(f"cup {cup + 1}: immerse probe")
+        slot = _slot(self, vial)
+        rt.step(f"vial {vial + 1}: immerse probe in rack[{slot}]")
         rt.step(_progress_pct(self), level="progress")
-        rcp[f"cup_{cup}"].immerse()
+        # The vial mouth is the slot anchor; dive far enough to submerge
+        # the bulb inside the 40 ml vial.
+        rcp["vials"].immerse(anchor=slot, depth=60)
         return "immersed"
 
 
@@ -158,7 +176,7 @@ class ReadPH(Action):
     the leaf FAILS, no effect is applied, and the planner re-selects
     this action after the device recovers. The retry is declarative —
     see this module's docstring."""
-    params   = ["cup"]
+    params   = ["vial"]
     duration = 10
     # The probe sits in the liquid; the arm is genuinely idle during the
     # settling wait. "ph_meter" is the honest scheduling lock — the
@@ -166,49 +184,74 @@ class ReadPH(Action):
     # is none in this minimal example, but the shape is the reference).
     resource = "ph_meter"
 
-    def pre(self, cup):
-        return immersed(cup) & ~measured(cup)
+    def pre(self, vial):
+        return immersed(vial) & ~measured(vial)
 
-    def eff(self, cup):
-        return {"measured": (+measured(cup),)}
+    def eff(self, vial):
+        return {"measured": (+measured(vial),)}
 
-    def execute(self, cup):
+    def execute(self, vial):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         rt.step(_progress_pct(self), level="progress")
         # Settled reading through the mounted tool. ``sim_return``
-        # (device-guide §17) injects a distinct fake pH per cup so a sim
-        # run exercises per-cup logic; the real circuit ignores it.
-        value = rcp[f"cup_{cup}"].ph(sim_return=6.5 + cup * 0.5)
+        # (device-guide §17) injects a distinct fake pH per vial so a
+        # sim run exercises per-vial logic; the real circuit ignores it.
+        value = rcp["vials"].ph(sim_return=6.5 + vial * 0.3)
         if value is None:
-            # Read failed (circuit offline). Do NOT assert measured(cup):
+            # Read failed (circuit offline). Do NOT assert measured(vial):
             # FAIL the leaf so the engine replans and re-selects ReadPH
             # once the device is back. The probe stays immersed (immersed
             # holds) so no motion is repeated — only the read retries.
-            rt.step(f"cup {cup + 1}: pH unavailable — will retry after recover")
+            rt.step(f"vial {vial + 1}: pH unavailable — will retry after recover")
             return False
-        rt.step(f"cup {cup + 1}: pH = {value:.3f}")
+        rt.step(f"vial {vial + 1}: pH = {value:.3f}")
         return "measured"
 
 
 class Retract(Action):
-    """Lift the probe clear of the cup."""
-    params   = ["cup"]
+    """Lift the probe clear of the vial."""
+    params   = ["vial"]
     duration = 10
     resource = "robot"
     tool     = "probe"
 
-    def pre(self, cup):
-        return measured(cup) & ~done(cup)
+    def pre(self, vial):
+        return measured(vial) & ~lifted(vial)
 
-    def eff(self, cup):
-        return {"done": (+done(cup), +probe_free())}   # probe free again
+    def eff(self, vial):
+        return {"lifted": (+lifted(vial),)}   # probe still "busy" until rinsed
 
-    def execute(self, cup):
+    def execute(self, vial):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
-        rt.step(f"cup {cup + 1}: retract probe")
+        slot = _slot(self, vial)
+        rt.step(f"vial {vial + 1}: retract probe")
         rt.step(_progress_pct(self), level="progress")
-        rcp[f"cup_{cup}"].retract()
-        return "done"
+        rcp["vials"].retract(anchor=slot)
+        return "lifted"
+
+
+class Rinse(Action):
+    """Dip the probe into the storage-solution cup and lift out — the
+    probe never travels dry between samples, and each vial's cycle
+    closes by restoring ``probe_free``."""
+    params   = ["vial"]
+    duration = 10
+    resource = "robot"
+    tool     = "probe"
+
+    def pre(self, vial):
+        return lifted(vial) & ~rinsed(vial)
+
+    def eff(self, vial):
+        return {"rinsed": (+rinsed(vial), +probe_free())}   # probe free again
+
+    def execute(self, vial):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        rt.step(f"vial {vial + 1}: rinse in storage cup")
+        rt.step(_progress_pct(self), level="progress")
+        rcp["storage"].immerse()
+        rcp["storage"].retract()
+        return "rinsed"
 
 
 class Park(Action):
@@ -220,10 +263,10 @@ class Park(Action):
     PARK_JOINTS = [0, 90, 0, 0, 0, 0, 100]
 
     def pre(self):
-        cups = self._ctx_all_objects().get("cup", [])
+        vials = self._ctx_all_objects().get("vial", [])
         expr = ~parked() & started()
-        for c in cups:
-            expr = expr & done(c)
+        for v in vials:
+            expr = expr & rinsed(v)
         return expr
 
     def eff(self):

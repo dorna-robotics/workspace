@@ -1,8 +1,9 @@
 # ph_meter example — launch config.
 #
-# For each of batch_size cups: dip the Atlas pH probe into the cup,
-# wait for a settled reading, log the pH, and lift clear. The probe is
-# a tool-changer tool parked in the tool rack; the EZO circuit runs in
+# For each of batch_size amber 40 ml vials (open, in the 1x6 rack):
+# dip the Atlas pH probe in, wait for a settled reading, log the pH,
+# lift clear, and rinse in the storage-solution cup. The probe is a
+# tool-changer tool parked in the tool rack; the EZO circuit runs in
 # sim by default (canned pH). Set port + simulation:false on
 # ph_meter_atlas_1 in the layout for the real circuit.
 
@@ -21,6 +22,6 @@ default:
     type: int
     default: 3
     label: Batch size
-    hint: How many cups to measure (immerse -> read -> retract).
+    hint: How many vials to measure (immerse -> read -> retract -> rinse).
     min: 1
-    max: 3
+    max: 6
