@@ -165,7 +165,14 @@ class DeviceAttachment:
         self._hb_stop = threading.Event()
         self._hb_thread: Optional[threading.Thread] = None
         if not self.adapter.sim:
-            self._start_heartbeat()
+            try:
+                self._start_heartbeat()
+            except Exception:
+                # Never let an optional liveness probe abort the
+                # attachment: the adapter has already published by now,
+                # and a raised __init__ would strand a device on the bus
+                # with no recovery wiring at all.
+                log.exception("DeviceAttachment: heartbeat start failed")
 
     # ── Idle heartbeat ────────────────────────────────────────────────
 
@@ -176,11 +183,21 @@ class DeviceAttachment:
         if self._hb_thread is not None and self._hb_thread.is_alive():
             return
         self._hb_stop.clear()
+        # Name from the DEVICE, not the adapter: the adapter keeps its
+        # id private (``_device_id``) and reaching for a public one
+        # raised inside __init__ — which aborted the whole attachment
+        # after the adapter had already published, leaving a device
+        # visible on the bus with no heartbeat and no AutoRecover.
         self._hb_thread = threading.Thread(
-            target=self._heartbeat_loop, name=f"heartbeat-{self.adapter.device_id}",
+            target=self._heartbeat_loop,
+            name=f"heartbeat-{self._label()}",
             daemon=True,
         )
         self._hb_thread.start()
+
+    def _label(self) -> str:
+        return str(getattr(self._device, "id", None)
+                   or getattr(self.adapter, "_device_id", "device"))
 
     def _stop_heartbeat(self) -> None:
         self._hb_stop.set()
@@ -205,8 +222,7 @@ class DeviceAttachment:
                     # no-ops when already running.
                     self.recover.trigger()
             except Exception:
-                log.exception("DeviceAttachment[%s]: heartbeat raised",
-                              getattr(self.adapter, "device_id", "?"))
+                log.exception("DeviceAttachment[%s]: heartbeat raised", self._label())
 
     @property
     def sim(self) -> bool:
