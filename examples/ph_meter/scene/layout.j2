@@ -8,10 +8,10 @@
 #   - one storage-solution cup (rack_liquid) beside it — the probe
 #     rinses/rests there between vials
 #
-# The EZO circuit runs in sim by default — canned pH (~7.000). For the
-# real circuit set port to its /dev/serial/by-id/... symlink and
-# simulation: false. Empty port means no bus claim: no Devices-panel
-# row, sim reads still work (device-guide §16).
+# The EZO circuit is wired to the REAL probe here (port + simulation:
+# false) — the Devices panel shows its row and reads are live. Set
+# port: "" + simulation: true to go back to canned readings; an empty
+# port means no bus claim at all (device-guide §16).
 
 # ── Tooling ─────────────────────────────────────────────────────────
 tool_rack_192mm_1:
@@ -27,8 +27,10 @@ tool_rack_192mm_1:
 ph_meter_atlas_1:
   type: "ph_meter_atlas"
   has_tool_changer: true
-  port: ""
-  simulation: true
+  # The bench EZO circuit (FTDI FT230X, serial DK0M0MHH). The by-id
+  # symlink survives replugs and port changes — device-guide §9.
+  port: "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DK0M0MHH-if00-port0"
+  simulation: false
   critical: true
   attach:
     parent_name: "tool_rack_192mm_1"
