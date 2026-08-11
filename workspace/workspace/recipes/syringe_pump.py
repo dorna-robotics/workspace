@@ -1,7 +1,7 @@
 """Syringe-pump recipe.
 
 The pump component (today
-``workspace/components/pump/syringe_pump_psd4.py``, future
+``workspace/components/pump/pump_psd4.py``, future
 ``syringe_pump_<model>.py`` siblings) already exposes the atomic
 pumping API in µL — sim/real branching happens once inside the
 ``PSD4Station`` it holds, so callers always get the same shape.
@@ -77,7 +77,7 @@ class SyringePump(Recipe):
 
     # ── Plunger ──
 
-    def aspirate(self, volume_ul: float, port=None, sim_return: bool = True):
+    def aspirate(self, volume_ul: float, port=None, speed=None, sim_return: bool = True):
         """Draw ``volume_ul`` in from ``port`` — a logical name
         (``"input"``), a numbered port (``3``), or an angle
         (``"90deg"``). The valve moves there first; omit ``port`` to use
@@ -87,12 +87,14 @@ class SyringePump(Recipe):
         overfill the barrel") or is unreachable — the BT action should
         ``return False`` and let the planner re-select (declarative
         retry, project-guide §8)."""
-        return self.component.aspirate(volume_ul, port=port, sim_return=sim_return)
+        return self.component.aspirate(volume_ul, port=port, speed=speed,
+                                      sim_return=sim_return)
 
-    def dispense(self, volume_ul: float, port=None, sim_return: bool = True):
+    def dispense(self, volume_ul: float, port=None, speed=None, sim_return: bool = True):
         """Push ``volume_ul`` out through ``port``. Same addressing and
         contract as :meth:`aspirate`."""
-        return self.component.dispense(volume_ul, port=port, sim_return=sim_return)
+        return self.component.dispense(volume_ul, port=port, speed=speed,
+                                      sim_return=sim_return)
 
     def move_to_volume(self, volume_ul: float, port=None, sim_return: bool = True):
         """Absolute: leave exactly this much in the barrel. The

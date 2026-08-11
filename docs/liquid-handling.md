@@ -53,7 +53,7 @@ physical pump — exactly the failure the device bus refuses
 
 ```yaml
 syringe_pump_1:
-  type: "syringe_pump_psd4"
+  type: "pump_psd4"
   port: ""                      # "" → no bus claim; set the by-id path for real
   address: 1                    # rotary switch on the back
   baud: 9600
@@ -78,7 +78,7 @@ What each setting means and how to get it right:
 | `address` | rotary switch **position** on the back, 0-9 / A-F | read it off the switch; 0 is factory |
 | `syringe_volume_ul` | µL the pump's fixed 30 mm stroke **sweeps** | NOT always the barrel label: PSD-specific syringes sweep their full nominal volume, but 1700-series gastights have ~60 mm of travel, so the stroke sweeps only half of nominal (a 1725/250 µL sweeps ~125). Wrong value = every volume off by the same ratio, silently |
 | `variant` | which pump drive this is | `'standard'` = PSD/4, PSD/6 high-torque; `'smooth_flow'` = PSD/4 SF / PSD/6 SF (PN 97709-xx). The pump cannot report it; wrong value scales every move 8x, silently |
-| `high_resolution` | step mode | leave `False`. High-res gives 8x finer steps but 8x slower strokes (~18 s vs ~2.3 s at full speed), and standard already resolves ~0.004 µL on a 100 µL sweep — far below the barrel's ±1% accuracy |
+| `high_resolution` | step mode | defaults to `True` (8x finer steps). The cost is stroke time — a full stroke is ~18 s instead of ~2.3 s at full speed — so set `False` when throughput matters more than granularity; standard mode already resolves ~0.004 µL on a 100 µL sweep, far below the barrel's ±1% accuracy |
 | `simulation` | sim intent | sim tracks the plunger and refuses overflows, so protocols test for real; the connection dot keeps showing hardware truth either way (`device-guide.md` §16) |
 | `output_right` | which side "output" means | matches the plumbing: `True` = output on the right (viewed from the front). Wrong value sends fluid the wrong way with no error |
 
@@ -180,6 +180,7 @@ speed.
 
 ```python
 pump.aspirate(50, port=1)        # valve to port 1, draw 50 µL more
+pump.aspirate(50, port=1, speed=25)   # …slowly (percent, see Speed)
 pump.dispense(20, port=2)        # valve to port 2, push 20 µL out
 pump.move_to_volume(30, port=3)  # absolute: end up holding exactly 30
 pump.empty(port=3)               # move_to_volume(0), named for the common case
@@ -216,8 +217,12 @@ pump.initialize(syringe_volume_ul=125.0)   # barrel swap without touching the sc
 ```
 
 Homes the plunger and valve. Required after every power-up and after any
-stop or stall — until then the pump refuses syringe moves. `recover()`
-runs it as part of connecting. Homing moves the valve and expels the
+stop or stall — until then the pump refuses syringe moves. **The
+component initializes on construction**, so a protocol never has to
+remember: `recover()` does the whole configure-and-home for a claimed
+pump, and an unclaimed / sim pump gets the explicit call. It stays a
+public method for barrel swaps and post-stall recovery. `half_force`
+defaults to `True` (homes at reduced plunger force). Homing moves the valve and expels the
 barrel through the output port, **so clear the deck first**. The last
 speed set (default 100) is re-applied, so a freshly homed pump is always
 at a known speed.
@@ -225,8 +230,26 @@ at a known speed.
 ### Speed
 
 ```python
-pump.set_speed(100)   # 0-100: 100 = fastest preset, 0 = slowest
+pump.set_speed(100)              # 0-100: 100 = fastest preset, 0 = slowest
+pump.aspirate(200, speed=25)     # or per move — same register, same units
 ```
+
+`speed` on `aspirate` / `dispense` is a convenience for the common
+"draw viscous liquid slowly, push it back fast" pair. The drive has ONE
+speed register, so a per-move value **stays in effect** afterwards —
+"for this move" is as close as the hardware gets.
+
+Through a plumbed nozzle the parameter is called **`pump_speed`**:
+
+```python
+tool.dispense(200, pump_speed=40)
+```
+
+because `PipettingSite` passes an air-displacement pipettor's
+`speed=` in **µL/s** to whatever tool is mounted, and forwarding that
+to a drive that reads percent would turn `speed=500` into "100%" — the
+opposite of slow. A nozzle therefore swallows `speed` / `blowout` and
+takes its own `pump_speed` (0-100).
 
 Normalized across variants and resolution modes. At 100 a full stroke is
 ~2.3 s on this bench; the 40-preset ladder is roughly geometric, so

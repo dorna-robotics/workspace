@@ -10,7 +10,7 @@ regardless of sim or real.
 Scene yaml::
 
     syringe_pump_1:
-      type: "syringe_pump_psd4"
+      type: "pump_psd4"
       port: "/dev/serial/by-id/usb-..."   # "" → no bus claim
       address: 0                          # rotary switch position
       baud: 9600
@@ -54,13 +54,13 @@ from workspace.devices import AutoRecover, attach_device
 log = logging.getLogger(__name__)
 
 
-@register("syringe_pump_psd4")
-class SyringePumpPsd4:
+@register("pump_psd4")
+class PumpPsd4:
 
     DEFAULTS = dict(
         # Body sized from the manual's specification table (§2-1):
         # 5.00" H x 1.75" W x 4.20" D -> 127.0 x 44.45 x 106.68 mm.
-        # Measured off static/CAD/syringe_pump_psd4.glb (mm, z from the
+        # Measured off static/CAD/pump_psd4.glb (mm, z from the
         # base plane): x -22.5..22.4, y -67.5..101.2, z 0..135. The y
         # asymmetry is real — the body extends further forward of the
         # attachment origin than behind it.
@@ -90,7 +90,9 @@ class SyringePumpPsd4:
         #                   stroke, 24000 in high resolution
         #   "smooth_flow" → PSD/4 SF / PSD/6 SF: 24000 / 192000
         variant="smooth_flow",
-        high_resolution=False,     # True → high-res step mode (see variant for the scales)
+        # True → high-res step mode: 8x finer steps, 8x slower full
+        # strokes (see ``variant`` for the per-drive scales).
+        high_resolution=True,
         # Which physical side "output" means, assigned during
         # initialization: true = right (Z), false = left (Y), viewed
         # from the front of the pump. A property of the plumbing — get
@@ -150,8 +152,18 @@ class SyringePumpPsd4:
 
         # Always attempt the initial real connect, regardless of sim
         # (device-guide §16). Failure does NOT raise.
+        #
+        # A pump is unusable until it has been configured and homed, so
+        # initialization is part of construction rather than something
+        # a protocol must remember. ``recover()`` already does the whole
+        # configure-and-home for a claimed pump, so only the unclaimed /
+        # sim path needs the explicit call — homing twice would re-expel
+        # the barrel for nothing. ``initialize()`` stays a public method
+        # for barrel swaps and post-stall recovery.
         if self._port:
             self.pump.recover()
+        else:
+            self.pump.initialize()
 
         # Bus attachment — gated on ``port``, same rule as Core's ip.
         self._attachment = None
@@ -175,7 +187,7 @@ class SyringePumpPsd4:
                 )
             except Exception:
                 # Adapter wiring must NOT take down the component.
-                log.exception("SyringePumpPsd4[%s]: attach_device failed", self.name)
+                log.exception("PumpPsd4[%s]: attach_device failed", self.name)
 
     # ── DeviceComponent contract ──────────────────────────────────────
 
@@ -207,7 +219,7 @@ class SyringePumpPsd4:
         """The syringe size currently in effect, µL."""
         return self.pump.syringe_volume(sim_return=sim_return)
 
-    def initialize(self, output_right=None, half_force: bool = False,
+    def initialize(self, output_right=None, half_force: bool = True,
                    syringe_volume_ul=None, sim_return: bool = True):
         """Home the plunger and valve, and assign valve addressing.
 
@@ -235,17 +247,25 @@ class SyringePumpPsd4:
         return self.pump.valve(position, shortest=shortest,
                                direction=direction, sim_return=sim_return)
 
-    def aspirate(self, volume_ul: float, port=None, sim_return: bool = True):
+    def aspirate(self, volume_ul: float, port=None, speed=None, sim_return: bool = True):
         """Draw ``volume_ul`` in from ``port`` — a logical name
         (``"input"``), a numbered port (``3``), or an angle
         (``"90deg"``). The valve moves there first. Omit ``port`` to
-        draw through wherever the valve already is."""
-        return self.pump.aspirate(volume_ul, port=port, sim_return=sim_return)
+        draw through wherever the valve already is.
 
-    def dispense(self, volume_ul: float, port=None, sim_return: bool = True):
-        """Push ``volume_ul`` out through ``port``. Same addressing as
-        :meth:`aspirate`."""
-        return self.pump.dispense(volume_ul, port=port, sim_return=sim_return)
+        ``speed`` is 0-100 PERCENT of the drive's fastest preset, not
+        µL/s. It applies to this move and stays set afterwards (the
+        pump has one speed register), so a viscous draw reads
+        ``aspirate(200, speed=25)`` followed by ``dispense(200,
+        speed=80)``."""
+        return self.pump.aspirate(volume_ul, port=port, speed=speed,
+                                  sim_return=sim_return)
+
+    def dispense(self, volume_ul: float, port=None, speed=None, sim_return: bool = True):
+        """Push ``volume_ul`` out through ``port``. Same addressing and
+        same ``speed`` semantics as :meth:`aspirate`."""
+        return self.pump.dispense(volume_ul, port=port, speed=speed,
+                                  sim_return=sim_return)
 
     def move_to_volume(self, volume_ul: float, port=None, sim_return: bool = True):
         """Absolute: leave exactly this much in the barrel. The
@@ -341,7 +361,7 @@ class SyringePumpPsd4:
             if self._attachment is not None:
                 self._attachment.close()
         except Exception:
-            log.exception("SyringePumpPsd4[%s]: attachment close raised", self.name)
+            log.exception("PumpPsd4[%s]: attachment close raised", self.name)
         finally:
             self._attachment = None
             self.pump.release()

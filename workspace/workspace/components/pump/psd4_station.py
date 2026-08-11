@@ -1,5 +1,5 @@
 """Hamilton PSD/4 station — the thin wrapper the workspace's
-``SyringePumpPsd4`` component holds and that the device bus attaches.
+``PumpPsd4`` component holds and that the device bus attaches.
 
 Same shape as ``KeytoStation`` (pipettor), ``BK879BStation``
 (multimeter) and ``EzoPHStation`` (pH probe):
@@ -73,7 +73,7 @@ class PSD4Station:
         timeout: float = 2.0,
         syringe_volume_ul: float = 1000.0,
         variant: str = "smooth_flow",
-        high_resolution: bool = False,
+        high_resolution: bool = True,
         output_right: bool = True,
         simulation: bool = True,
         label: str = "",
@@ -285,7 +285,7 @@ class PSD4Station:
 
     # ── Initialization ──
 
-    def initialize(self, output_right=None, half_force: bool = False,
+    def initialize(self, output_right=None, half_force: bool = True,
                    syringe_volume_ul=None, sim_return: bool = True) -> bool:
         """Configure the pump for this bench and home it. One call.
 
@@ -419,7 +419,8 @@ class PSD4Station:
 
     # ── Plunger ──
 
-    def aspirate(self, volume_ul: float, port=None, sim_return: bool = True) -> bool:
+    def aspirate(self, volume_ul: float, port=None, speed=None,
+                 sim_return: bool = True) -> bool:
         """Draw ``volume_ul`` in, from ``port``.
 
         ``port`` is any address the valve understands — a logical name
@@ -427,9 +428,18 @@ class PSD4Station:
         or an angle (``"90deg"``). The valve moves there first. Omit it
         to draw through wherever the valve already is.
 
+        ``speed`` (0-100 percent) applies to THIS move and stays in
+        effect afterwards — the pump has one speed register, not a
+        per-command one, so "for this move" is as close as the hardware
+        gets. Omit it to keep whatever speed is set. Viscous liquid
+        drawn slowly and pushed back fast is the usual reason to pass
+        it here rather than calling :meth:`set_speed` around the pair.
+
         Returns False if the valve move fails, if the barrel cannot hold
         that much, or if the pump is unreachable.
         """
+        if speed is not None and not self.set_speed(speed, sim_return=sim_return):
+            return False
         if port is not None and not self.valve(port, sim_return=sim_return):
             return False
         if self.simulation:
@@ -445,12 +455,16 @@ class PSD4Station:
         return bool(self._guard(
             "aspirate", lambda: (self._driver.aspirate(volume_ul), True)[1], False))
 
-    def dispense(self, volume_ul: float, port=None, sim_return: bool = True) -> bool:
+    def dispense(self, volume_ul: float, port=None, speed=None,
+                 sim_return: bool = True) -> bool:
         """Push ``volume_ul`` out through ``port``.
 
-        Same addressing as :meth:`aspirate`. Omit ``port`` to push
-        through wherever the valve already is.
+        Same addressing and same ``speed`` semantics as
+        :meth:`aspirate`. Omit ``port`` to push through wherever the
+        valve already is.
         """
+        if speed is not None and not self.set_speed(speed, sim_return=sim_return):
+            return False
         if port is not None and not self.valve(port, sim_return=sim_return):
             return False
         if self.simulation:

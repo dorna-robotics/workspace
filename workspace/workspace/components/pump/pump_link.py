@@ -16,7 +16,7 @@ it and *which* valve port its tube lands on.
 Scene yaml declares the plumbing, because the tube is physical::
 
     syringe_pump_1:
-      type: "syringe_pump_psd4"
+      type: "pump_psd4"
       port: "/dev/serial/by-id/usb-..."
       syringe_volume_ul: 1000.0
 
@@ -112,22 +112,30 @@ class PumpLink:
     # the flag. ``sim_return`` rides through unchanged (device-guide
     # §17) for callers that want to inject a specific sim outcome.
 
-    # ``speed`` / ``blowout`` are swallowed on purpose: they are the
-    # air-displacement pipettor's per-move arguments, and PipettingSite
-    # passes them positionally-by-name to whatever tool is mounted. A
-    # syringe drive has neither — its speed is a pump-level setting in
-    # PERCENT (``set_speed`` / the scene), not µL/s per move, and there
-    # is no blowout stroke. Accepting and ignoring them is what lets a
-    # needle ride the stock pipetting recipe unchanged; silently
-    # FORWARDING them would raise a TypeError deep in the pump instead.
+    # ``speed`` / ``blowout`` are the air-displacement pipettor's
+    # per-move arguments — ``PipettingSite`` passes both by name to
+    # whatever tool is mounted — and they are swallowed here. A syringe
+    # drive has no blowout stroke, and its speed is a PERCENT of the
+    # drive's fastest preset, not µL/s: forwarding a pipettor's
+    # ``speed=500`` would silently mean "100%", the opposite of slow.
+    # Swallowing is what lets a needle ride the stock pipetting recipe
+    # unchanged.
+    #
+    # To set the pump's speed through a nozzle, say so in its own
+    # units: ``pump_speed`` (0-100) is forwarded, and like every speed
+    # on this drive it stays in effect after the move.
 
-    def aspirate(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
+    def aspirate(self, volume_ul: float, port=None, pump_speed=None,
+                 speed=None, blowout=None, **kw):
         """Draw ``volume_ul`` in through this link's port."""
-        return self.pump.aspirate(volume_ul, port=self._port(port), **kw)
+        return self.pump.aspirate(volume_ul, port=self._port(port),
+                                  speed=pump_speed, **kw)
 
-    def dispense(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
+    def dispense(self, volume_ul: float, port=None, pump_speed=None,
+                 speed=None, blowout=None, **kw):
         """Push ``volume_ul`` out through this link's port."""
-        return self.pump.dispense(volume_ul, port=self._port(port), **kw)
+        return self.pump.dispense(volume_ul, port=self._port(port),
+                                  speed=pump_speed, **kw)
 
     def move_to_volume(self, volume_ul: float, port=None, **kw):
         """Absolute barrel volume; the difference moves through the port."""
@@ -198,11 +206,13 @@ class PumpedTool:
     def pump(self):
         return self.fluid.pump
 
-    def aspirate(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
-        return self.fluid.aspirate(volume_ul, port=port, **kw)
+    def aspirate(self, volume_ul: float, port=None, pump_speed=None,
+                 speed=None, blowout=None, **kw):
+        return self.fluid.aspirate(volume_ul, port=port, pump_speed=pump_speed, **kw)
 
-    def dispense(self, volume_ul: float, port=None, speed=None, blowout=None, **kw):
-        return self.fluid.dispense(volume_ul, port=port, **kw)
+    def dispense(self, volume_ul: float, port=None, pump_speed=None,
+                 speed=None, blowout=None, **kw):
+        return self.fluid.dispense(volume_ul, port=port, pump_speed=pump_speed, **kw)
 
     def move_to_volume(self, volume_ul: float, port=None, **kw):
         return self.fluid.move_to_volume(volume_ul, port=port, **kw)
