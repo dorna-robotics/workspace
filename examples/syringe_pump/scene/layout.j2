@@ -93,24 +93,28 @@ tube_amber_40ml_A{{ c }}:
 # nozzle to fill VIALS brings each vial under it with the gripper;
 # that's vial handling, not fluid-path wiring, so it stays out of this
 # example.)
-rack_liquid_1:
-  type: "rack_liquid"
-  attach:
-    parent_name: "fixture_plate_4"
-    parent_solid: "body"
-    parent_anchor: "D12"
-    child_solid: "body"
-    child_anchor: "hole_0"
-    offset: [0, 0, 0, 0, 0, 0]
-
+# The arm is a POST: it bolts to the plate through its base holes, and
+# its ``place`` anchor is the spot 75 mm out where the vessel stands
+# under the nozzle. So the arm mounts to the plate and the cup mounts
+# to the arm's place — not the other way round.
 syringe_dispense_arm_1:
   type: "syringe_dispense_arm"
   pump: "syringe_pump_1"
   pump_port: 2
   attach:
-    parent_name: "rack_liquid_1"
+    parent_name: "fixture_plate_4"
     parent_solid: "body"
-    parent_anchor: "top"
+    parent_anchor: "B14"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]
+
+rack_liquid_1:
+  type: "rack_liquid"
+  attach:
+    parent_name: "syringe_dispense_arm_1"
+    parent_solid: "body"
+    parent_anchor: "place"
     child_solid: "body"
     child_anchor: "center"
-    offset: [0, 0, 60, 0, 0, 0]
+    offset: [0, 0, 0, 0, 0, 0]
