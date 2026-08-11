@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 19781
+      "byteLength": 19902
     }
   ],
   "buffers": [
     {
       "uri": "microtube_gripper.glb.bin",
-      "byteLength": 19781
+      "byteLength": 19902
     }
   ],
   "materials": [

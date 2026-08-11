@@ -64,13 +64,13 @@
     {
       "buffer": 0,
       "byteOffset": 757,
-      "byteLength": 1157
+      "byteLength": 1170
     }
   ],
   "buffers": [
     {
       "uri": "tube_micronic_075ml.glb.bin",
-      "byteLength": 1914
+      "byteLength": 1927
     }
   ],
   "materials": [

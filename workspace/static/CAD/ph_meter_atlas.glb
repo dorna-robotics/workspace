@@ -7,54 +7,77 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4212
+      "count": 67650
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1247,
+      "count": 22356,
       "max": [
-        1.9000000953674316,
-        0.5997477173805237,
-        1.9000455141067505
+        2.2798988819122314,
+        19.209999084472656,
+        2.2798988819122314
       ],
       "min": [
-        -7.073212146759033,
+        -2.2798988819122314,
         0,
-        -1.899999976158142
+        -2.2798988819122314
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1247
+      "count": 22356
+    },
+    {
+      "type": "VEC2",
+      "componentType": 5126,
+      "count": 22356
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4392
+      "byteLength": 65248
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9728,
+      "minFilter": 9728,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "textures": [
+    {
+      "source": 0,
+      "sampler": 0
+    }
+  ],
+  "images": [
+    {
+      "name": "PaletteBaseColor",
+      "mimeType": "image/png",
+      "uri": "PaletteBaseColor.png"
     }
   ],
   "buffers": [
     {
-      "uri": "probe_horizontal.glb.bin",
-      "byteLength": 4392
+      "uri": "ph_meter_atlas.glb.bin",
+      "byteLength": 65248
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.003",
+      "name": "PaletteMaterial001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
-        "baseColorFactor": [
-          0.6274510025978088,
-          0.6274510025978088,
-          0.6274510025978088,
-          1
-        ],
-        "metallicFactor": 0
+        "metallicFactor": 0,
+        "baseColorTexture": {
+          "index": 0
+        }
       },
       "extensions": {
         "KHR_materials_specular": {
@@ -65,12 +88,13 @@
   ],
   "meshes": [
     {
-      "name": "Probe 90 CNCd",
+      "name": "ph meter origin",
       "primitives": [
         {
           "attributes": {
             "POSITION": 1,
-            "NORMAL": 2
+            "NORMAL": 2,
+            "TEXCOORD_0": 3
           },
           "mode": 4,
           "material": 0,
@@ -80,7 +104,8 @@
               "bufferView": 0,
               "attributes": {
                 "POSITION": 0,
-                "NORMAL": 1
+                "NORMAL": 1,
+                "TEXCOORD_0": 2
               }
             }
           }
@@ -90,7 +115,7 @@
   ],
   "nodes": [
     {
-      "name": "Probe 90 CNCd",
+      "name": "ph meter origin",
       "rotation": [
         0.7071068286895752,
         0,

@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 73038
+      "count": 69894
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 23483,
+      "count": 22887,
       "max": [
-        3.299999952316284,
+        3.2995922565460205,
         15.775099754333496,
-        3.299999952316284
+        3.2995922565460205
       ],
       "min": [
         -3.299999952316284,
@@ -27,19 +27,19 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 23483
+      "count": 22887
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 23483
+      "count": 22887
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 68198
+      "byteLength": 65064
     }
   ],
   "samplers": [
@@ -66,7 +66,7 @@
   "buffers": [
     {
       "uri": "gripper_syringe_needle.glb.bin",
-      "byteLength": 68198
+      "byteLength": 65064
     }
   ],
   "materials": [

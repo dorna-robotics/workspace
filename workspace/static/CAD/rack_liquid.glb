@@ -7,45 +7,45 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4212
+      "count": 1332
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1247,
+      "count": 432,
       "max": [
-        1.9000000953674316,
-        0.5997477173805237,
-        1.9000455141067505
+        1.5,
+        3.799999952316284,
+        4.25
       ],
       "min": [
-        -7.073212146759033,
+        -1.5,
         0,
-        -1.899999976158142
+        -4.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1247
+      "count": 432
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4392
+      "byteLength": 1344
     }
   ],
   "buffers": [
     {
-      "uri": "probe_horizontal.glb.bin",
-      "byteLength": 4392
+      "uri": "rack_liquid.glb.bin",
+      "byteLength": 1344
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.003",
+      "name": "Steel_-_Satin.001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "Probe 90 CNCd",
+      "name": "storage liquid",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "Probe 90 CNCd",
+      "name": "storage liquid",
       "rotation": [
         0.7071068286895752,
         0,

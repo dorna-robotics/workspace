@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 26235
+      "byteLength": 26122
     }
   ],
   "buffers": [
     {
       "uri": "hotel_sbs_4lvl.glb.bin",
-      "byteLength": 26235
+      "byteLength": 26122
     }
   ],
   "materials": [
