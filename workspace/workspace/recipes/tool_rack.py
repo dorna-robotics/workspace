@@ -8,7 +8,7 @@ class ToolRack(Recipe):
         # ref joints
         target_solid_name="body",
         target_anchor="clb_0",
-        target_offset=[0, 0, 192, 0, 180, 0],
+        target_offset=[0, 0, 0, 0, 180, 0],
         # motion
         lmove_vaj=[150, 350, 1500],
         # calibration
