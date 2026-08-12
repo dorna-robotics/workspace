@@ -4,22 +4,10 @@ A needle is consumable and interchangeable — the same dispense head
 takes a 22G x 2" one day and a 16G x 4" the next — so it belongs in the
 scene next to the component that wears it, not baked into a CAD model.
 
-The two numbers do very different jobs, and it matters which:
-
-* ``needle_length`` is GEOMETRY. It moves the tool's working point:
-  a 50 mm needle puts the tip 50 mm further from the flange, and every
-  ``immerse`` / ``above`` / IK solve follows it. Get this wrong and the
-  arm dives the difference — into the bottom of a vial, or short of the
-  liquid.
-* ``needle_gauge`` is a PROPERTY. Its outer diameter is a fraction of a
-  millimetre, far under any collision padding, so it changes no motion.
-  It is carried for the fluid side (flow, dead volume, what the
-  operator is looking at in the panel) and for provenance.
-
-Reference plane: ``needle_length`` is measured from the nozzle face the
-component's CAD already ends at — its existing ``tip`` plane. The
-default is therefore ``0.0``: the component as its GLB models it, with
-nothing added. Declare the real needle to extend it.
+Both are DECLARATIVE — what is fitted, nothing more. Neither touches
+the component's geometry: anchors, tcp/tip and collision boxes are the
+CAD's business and stay exactly as modelled. These two answer "what
+needle is on it", for the fluid side, the panel and provenance.
 """
 
 from __future__ import annotations
@@ -83,31 +71,3 @@ class Needle:
         od = self.od
         od_s = f" ({od:.3f} mm od)" if od is not None else ""
         return f"{g} x {self.length:.1f} mm{od_s}"
-
-    # ── Geometry helpers ─────────────────────────────────────────────
-
-    def extend_anchor(self, anchor, axis: int = 2):
-        """Push an ``[x, y, z, a, b, c]`` anchor out by the needle's
-        length along ``axis`` (z by default). Returns a new list; the
-        caller decides which anchors move (``tcp`` / ``tip``) and which
-        stay (mounting holes, ``center``)."""
-        out = list(anchor)
-        out[axis] = out[axis] + self.length
-        return out
-
-    def collision_box(self, base_z: float, axis_scale=None) -> Optional[dict]:
-        """A box for the needle itself, starting at ``base_z`` and
-        running its length. ``None`` when no needle is fitted, so a
-        caller can splice the result in unconditionally.
-
-        The box is at least 1 mm wide even for a 27G: sub-millimetre
-        obstacles are noise to the motion planner, and a hair-thin box
-        is more likely to slip between voxels than to protect anything.
-        """
-        if not self.length:
-            return None
-        w = max(1.0, (self.od or 1.0))
-        return {
-            "pose": [0.0, 0.0, base_z + self.length / 2.0, 0.0, 0.0, 0.0],
-            "scale": [w if axis_scale is None else axis_scale, w, self.length],
-        }

@@ -118,37 +118,29 @@ syringe_dispense_arm_1:          # bolted to the bench
 ### The fitted needle
 
 A needle is a consumable — the same head takes 22G x 2" today and
-16G x 4" tomorrow — so it is declared beside the nozzle, not modelled
-in CAD:
+16G x 4" tomorrow — so it is declared beside the nozzle rather than
+modelled in CAD:
 
 ```yaml
 gripper_syringe_needle_1:
-  needle_gauge: 22          # property: od 0.718 mm (ISO 9626 table)
-  needle_length: 50.8       # GEOMETRY: mm past the tool's own tip plane
+  needle_gauge: 22
+  needle_length: 50.8
 
 syringe_dispense_arm_1:
   needle_gauge: 16
-  needle_length: 40.0       # mm below the nozzle face
-  nozzle_z: 150.0           # how high the nozzle sits; adds `needle_tip`
+  needle_length: 40.0
 ```
 
-The two do different jobs, and the difference matters:
+Both are **declarative**: they record what is fitted and change no
+geometry — anchors, tcp/tip and collision boxes stay exactly as the CAD
+models them. Read them off the component:
 
-* **`needle_length` is geometry.** The tool's `tcp` / `tip` travel with
-  it, so every `immerse`, `above` and IK solve follows. Wrong by 20 mm
-  and the arm dives 20 mm — into the bottom of a vial, or short of the
-  liquid. It also gets its own collision box. Measured from the plane
-  the component's GLB already ends at, so the default `0.0` means "as
-  modelled" and nothing moves until you declare a needle.
-* **`needle_gauge` is a property.** Its outer diameter is a fraction of
-  a millimetre — under any collision padding — so it changes no motion.
-  It is carried for the fluid side and for provenance:
-  `tool.needle.od`, `tool.needle.gauge`, `str(tool.needle)`.
-
-The fixed arm doses *downward*, so its length hangs below the nozzle.
-The GLB does not model that nozzle, so `nozzle_z` declares its height;
-with it the component gains a `needle_tip` anchor — where liquid
-actually leaves — and without it no anchor is invented.
+```python
+tool.needle.gauge     # 22
+tool.needle.length    # 50.8
+tool.needle.od        # 0.718 mm, from the ISO 9626 table (None if unknown)
+str(tool.needle)      # "22G x 50.8 mm (0.718 mm od)"
+```
 
 The tube is real hardware, so it is described where hardware is
 described — in the scene, not in project code. Both keys are optional:
