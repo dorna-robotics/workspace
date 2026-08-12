@@ -27,6 +27,7 @@ pneumatics, ``dispense(ul)`` for the pump.
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
+from workspace.components.pump.needle import Needle
 from workspace.components.pump.pump_link import PumpedTool
 from workspace.components.syringe.arm import Arm
 
@@ -47,6 +48,18 @@ class SyringeDispenseArm(PumpedTool, Arm):
             # ── fluid path ───────────────────────────────────────────
             pump="",
             pump_port=None,
+            # ── the fitted needle ────────────────────────────────────
+            # Same two numbers as the carried needle, same meanings
+            # (components/pump/needle.py). The difference is where the
+            # length points: this arm is stationary and doses DOWNWARD
+            # into whatever stands under it, so the needle hangs from
+            # the nozzle and ``needle_tip`` is where liquid actually
+            # leaves. ``nozzle_z`` says how high that nozzle sits above
+            # the arm's base plane — the GLB does not model the nozzle,
+            # so it has to be declared to be usable.
+            needle_gauge=None,     # e.g. 16
+            needle_length=0.0,     # mm below the nozzle face
+            nozzle_z=None,         # mm above the base plane; None -> unknown
         )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
@@ -59,6 +72,17 @@ class SyringeDispenseArm(PumpedTool, Arm):
         # update type
         prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
         
+        # Where the liquid leaves, as an anchor a recipe can target:
+        # the nozzle, over the ``place`` spot, minus the needle. Added
+        # only when ``nozzle_z`` is declared — an invented height would
+        # be a number that reads like a measurement.
+        nz = prm.get("nozzle_z")
+        if nz is not None:
+            body = prm["anchors"]["body"]
+            place = body.get("place", [0, 0, 0, 0, 0, 0])
+            drop = float(nz) - float(prm.get("needle_length", 0.0) or 0.0)
+            body["needle_tip"] = [place[0], place[1], drop, 0, 0, 0]
+
         super().__init__(
             name=name,
             workspace=workspace,
@@ -67,3 +91,6 @@ class SyringeDispenseArm(PumpedTool, Arm):
 
         # Bind the fluid path (lazy: the pump may be built after us).
         self._init_pump_link(workspace, prm)
+        self.needle = Needle(gauge=prm.get("needle_gauge"),
+                             length=prm.get("needle_length", 0.0))
+        self.nozzle_z = prm.get("nozzle_z")
