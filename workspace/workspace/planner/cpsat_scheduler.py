@@ -15,18 +15,19 @@ schedules under three constraints:
     The solver naturally clusters same-tool actions to minimise the
     number of swaps.
 
-The CP-SAT model uses OR-tools' ``AddCircuit`` to express the
-"sequence on a resource with sequence-dependent setup" pattern
-(textbook job-shop with setup times).
+Setup costs use the disjunctive form — one boolean per pair of
+tool-opinionated actions wanting different tools, fixing which of the
+two runs first — rather than a permutation circuit. See the "Tool
+setup" section for why the circuit was replaced.
 
 Lab-sized problems (a few dozen tasks per slice) solve in tens of
-milliseconds; the time limit defaults to 5s as a safety net.
+milliseconds; the time limit defaults to 30s as a safety net.
 """
 
 from __future__ import annotations
 
+import heapq
 import logging
-import threading
 import time as _time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -42,10 +43,8 @@ log = logging.getLogger(__name__)
 class _ImprovementTracker(cp_model.CpSolverSolutionCallback):
     """Tracks the wall-time of the last objective improvement.
 
-    A separate watchdog thread polls this and calls ``solver.StopSearch()``
-    once the gap since the last improvement exceeds a threshold — that
-    way we get an optimal-or-near-optimal answer fast without burning
-    the entire fixed time budget proving optimality.
+    Kept for the solution count in the solve log; the search itself is
+    bounded by ``max_deterministic_time``, not by this.
     """
 
     def __init__(self):
@@ -62,39 +61,31 @@ class _ImprovementTracker(cp_model.CpSolverSolutionCallback):
             self.last_improve = _time.monotonic()
 
 
-def _start_watchdog(
-    solver: cp_model.CpSolver,
-    tracker: _ImprovementTracker,
-    idle_seconds: float,
-) -> threading.Event:
-    """Spawn a daemon thread that stops the solver after ``idle_seconds``
-    of no objective improvement. Returns the stop event used to cancel
-    the watchdog when the solver returns normally."""
-    stop_event = threading.Event()
+def _precedence_closure(
+    predecessors: Optional[List[set]], n: int
+) -> List[frozenset]:
+    """Transitive closure of the precedence graph, as ``closure[i] =
+    every action that must finish before i can start``.
 
-    def _watch():
-        while not stop_event.wait(0.25):
-            # Never stop before a solution EXISTS. ``last_improve`` is
-            # seeded at construction, so without this the watchdog
-            # counts idle time against a search that simply hasn't
-            # found its first answer yet — on a batch big enough to
-            # need more than ``idle_seconds`` to get there, it killed
-            # the solve, schedule_cpsat raised, and the launcher
-            # silently fell back to greedy. Greedy never reorders, so
-            # the whole batch then ran in raw plan order (item by
-            # item, tool swap each way) with nothing in the logs
-            # beyond one warning. The watchdog's job is "stop
-            # polishing once we've plateaued" — that presupposes
-            # something to polish.
-            if tracker.num_solutions == 0:
-                continue
-            if _time.monotonic() - tracker.last_improve > idle_seconds:
-                solver.StopSearch()
-                return
+    ``build_precedence`` returns DIRECT predecessors and is not
+    guaranteed closed, so a two-hop "j precedes i" is invisible to a
+    membership test on the raw sets. The tool circuit uses this to drop
+    arcs it can prove impossible, and that proof has to see every hop.
 
-    thread = threading.Thread(target=_watch, daemon=True)
-    thread.start()
-    return stop_event
+    Computed in plan order, which is a topological order by
+    construction, so one forward pass suffices — no fixpoint loop.
+    """
+    if not predecessors:
+        return [frozenset()] * n
+    closure: List[set] = [set() for _ in range(n)]
+    for i in range(n):
+        acc: set = set()
+        for p in predecessors[i]:
+            if p < n:
+                acc.add(p)
+                acc |= closure[p]
+        closure[i] = acc
+    return [frozenset(s) for s in closure]
 
 
 def _phase_batched_order(
@@ -164,6 +155,98 @@ def _phase_batched_order(
     pre = [i for i in itemless if i < first_item_idx]
     post = [i for i in itemless if i >= first_item_idx]
     return pre + order + post
+
+
+def _augment_with_capacity_spans(
+    predecessors: Optional[List[set]],
+    capacity_spans: "Optional[dict[str, List[Tuple[int, int]]]]",
+    n: int,
+) -> List[set]:
+    """``predecessors`` plus edges that serialise each capacity
+    resource's spans, for use when building the warm-start hint.
+
+    :func:`_add_capacity_mutex` forbids two items' spans on the same
+    ``capacity=True`` resource from overlapping, but expresses it as
+    ``AddNoOverlap`` over derived intervals — deliberately, so the
+    solver may pick any order among them. That freedom means the
+    constraint corresponds to NO precedence edge, so
+    :func:`_simulate_order`, which knows only about ``predecessors`` and
+    per-action resources, cannot see it and happily interleaves spans.
+
+    The resulting hint is then infeasible, and CP-SAT discards an
+    infeasible hint wholesale. Measured on bna batch 4: pinning the
+    hint's arcs made the model INFEASIBLE, and dropping the capacity
+    mutex made that same pinned model solve OPTIMAL in 0.16s — i.e. the
+    capacity spans were the only thing wrong with the hint, and they
+    were costing the full 19s cold search.
+
+    For the hint only, we pick ONE order — plan order, by each span's
+    first action — and chain the spans: ``last(span_i)`` precedes
+    ``first(span_i+1)``. That is a valid choice, not a new constraint on
+    the solve; the real model still gets the free-order NoOverlap.
+    Chaining in plan order cannot create a cycle, because the spans are
+    derived from a plan in which they already ran one after another.
+    """
+    aug: List[set] = [set(predecessors[i]) if predecessors else set()
+                      for i in range(n)]
+    for spans in (capacity_spans or {}).values():
+        if len(spans) < 2:
+            continue
+        for (_, prev_last), (nxt_first, _) in zip(
+            sorted(spans), sorted(spans)[1:]
+        ):
+            if 0 <= prev_last < n and 0 <= nxt_first < n:
+                aug[nxt_first].add(prev_last)
+    return aug
+
+
+def _topological_by_priority(
+    order: List[int], predecessors: Optional[List[set]], n: int
+) -> List[int]:
+    """``order`` repaired into a precedence-respecting sequence, staying
+    as close to it as possible.
+
+    :func:`_phase_batched_order` interleaves items to cluster tool use,
+    but it only preserves each item's order relative to ITSELF — it is
+    blind to cross-item edges (phase barriers, capacity spans, a shaker
+    pair). So it routinely emits an order in which some action precedes
+    its own predecessor.
+
+    That is not a harmless imperfection. :func:`_simulate_order` reads an
+    unscheduled predecessor's end as ``0.0``, so such an order yields
+    ``starts`` that violate the model; CP-SAT then rejects the whole hint
+    and searches cold. Measured on bna batch 4: 14 violated edges, and
+    the solver's first feasible solution landed at 21.9s of a 24.0s
+    solve — the warm start was contributing nothing.
+
+    Greedy topological sort with ``order`` as the tie-break priority:
+    among the actions whose predecessors are all placed, take whichever
+    ``order`` wanted soonest. Precedence is respected exactly; the
+    batching survives wherever it was compatible with it.
+    """
+    if not predecessors:
+        return list(order)
+    prio = {idx: pos for pos, idx in enumerate(order)}
+    unplaced = [set(p for p in predecessors[i] if p < n) for i in range(n)]
+    dependents: List[List[int]] = [[] for _ in range(n)]
+    for i in range(n):
+        for p in unplaced[i]:
+            dependents[p].append(i)
+    ready = [(prio.get(i, n), i) for i in range(n) if not unplaced[i]]
+    heapq.heapify(ready)
+    out: List[int] = []
+    while ready:
+        _, i = heapq.heappop(ready)
+        out.append(i)
+        for d in dependents[i]:
+            unplaced[d].discard(i)
+            if not unplaced[d]:
+                heapq.heappush(ready, (prio.get(d, n), d))
+    if len(out) != n:                      # cycle — fall back untouched
+        log.warning("CP-SAT hint: precedence graph has a cycle; "
+                    "hinting the raw batched order.")
+        return list(order)
+    return out
 
 
 def _simulate_order(
@@ -257,7 +340,7 @@ def schedule_cpsat(
     capacity_spans: Optional["dict[str, List[Tuple[int, int]]]"] = None,
     tool_resource: str = "robot",
     time_limit_s: float = 30.0,
-    no_improvement_s: float = 2.0,
+    deterministic_limit: float = 0.25,
 ) -> Tuple[
     List[Tuple[str, int, float]],
     List[Tuple[float, Optional[str], Optional[str], int]],
@@ -286,9 +369,13 @@ def schedule_cpsat(
             for the failure mode this replaces).
         tool_resource: Name of the resource that holds the tool changer.
             Sequence-dependent setup costs apply only to this resource.
-        time_limit_s: Solver wall-clock budget. Lab batches solve far
-            below this; the limit just guards against pathological
-            instances.
+        time_limit_s: Wall-clock SAFETY WALL only. The deterministic
+            budget below is what normally stops the search; wall-clock
+            must not be the binding limit or the result stops being
+            reproducible.
+        deterministic_limit: Search budget in the solver's own
+            deterministic time units. Reproducible run to run, which
+            wall-clock is not — see the note at ``interleave_search``.
 
     Returns:
         Same shape as :func:`schedule_greedy`:
@@ -375,104 +462,122 @@ def schedule_cpsat(
         if len(ivs) > 1:
             model.AddNoOverlap(ivs)
 
-    # ── Tool circuit: AddCircuit with sequence-dependent setup ─────────
-    # Every action that participates in the tool sequence joins the
-    # circuit. Membership is *not* gated on which resource the action
-    # uses — declaring ``tool=X`` on a shaker action also pulls it
-    # into the tool sequence so the swap to X is properly reserved.
-    # Tool-agnostic robot actions (``Start``-like) also join so their
-    # interval anchors the chain at t=0 without forcing a swap.
+    # ── Tool setup: pairwise disjunctive separation ────────────────────
+    # Every action that participates in the tool sequence is considered —
+    # membership is *not* gated on which resource the action uses, since
+    # declaring ``tool=X`` on a shaker action also has to reserve the
+    # swap to X.
     #
-    # Setup cost on arc i→j (see swap-derivation pass for emission):
+    # For each PAIR of tool-opinionated actions wanting DIFFERENT tools,
+    # whichever runs second cannot start until the first has finished
+    # plus its own ``tool_swap_duration``. One boolean picks the
+    # direction; when precedence already fixes it, no boolean is needed
+    # at all. Same-tool pairs cost nothing, which is exactly the pressure
+    # that makes the solver cluster same-tool work.
     #
-    #     i agnostic, j agnostic : 0   (no tool change matters)
-    #     i agnostic, j opinion  : swap_durations[j]
-    #     i opinion,  j agnostic : 0   (j inherits the tool i set)
-    #     i opinion,  j opinion  : 0 if same tool, else swap_durations[j]
+    # This is equivalent to charging the swap only between ADJACENT
+    # actions: for a run i(gripper) k(gripper) j(needle), the (i,j) and
+    # (k,j) constraints both hold, but only the adjacent (k,j) one binds
+    # — the other is slack. So the count of swaps charged is the count
+    # actually performed.
     #
-    # Cost: O(k^2) arc variables. For k ~ 30 the model gets slow enough
-    # to need the warm-start hint below; we feed it the greedy schedule
-    # as a feasible starting point so CP-SAT has something to improve
-    # from t=0 rather than searching cold.
+    # WAS ``AddCircuit`` over a k-node graph with O(k^2) arc literals and
+    # a reified time constraint on each. That is the textbook encoding
+    # and it is correct, but a Hamiltonian circuit over k~94 nodes that
+    # must simultaneously agree with precedence and no-overlap is a hard
+    # FEASIBILITY problem, and CP-SAT spent its whole budget there rather
+    # than on optimising. Measured on bna batch 4: 9'171 variables, first
+    # feasible solution at 19.2s of a 22.6s solve. The disjunctive form
+    # is 1'033 variables and solves in ~8s — and lands a BETTER makespan
+    # at every batch size (3590 -> 3545 at batch 4), because the budget
+    # goes into search instead of into finding any answer at all.
+    #
+    # The swap EVENTS are derived below from the solved start times, so
+    # nothing downstream needed the circuit's arcs.
     tool_actions = [
         i for i in range(n)
         if tool_resource in resources_list[i] or tool_required[i]
     ]
     k = len(tool_actions)
-    arc_lits: List[cp_model.IntVar] = []          # all arc literals
-    arc_pair: List[Tuple[int, int]] = []          # (from_node, to_node)
     if k > 0:
-        arcs: List[Tuple[int, int, cp_model.IntVar]] = []
+        closure = _precedence_closure(predecessors, n)
+
+        def _setup(lead: int, follow: int) -> int:
+            """Gap owed between ``lead`` and ``follow`` when adjacent —
+            the same table the circuit encoded on its arcs."""
+            if not tool_required[follow]:
+                return 0                       # follow doesn't care
+            if not tool_required[lead]:
+                return swap_durations[follow]  # agnostic -> opinionated
+            return (0 if tools[lead] == tools[follow]
+                    else swap_durations[follow])
+
+        on_tool_res = [tool_resource in resources_list[t]
+                       for t in tool_actions]
         for a_idx in range(k):
             i = tool_actions[a_idx]
-            # dummy -> i: i is the first robot action
-            arc_in = model.NewBoolVar(f"arc_dummy_{i}")
-            arcs.append((0, a_idx + 1, arc_in))
-            arc_lits.append(arc_in); arc_pair.append((0, a_idx + 1))
-            # Reserve swap time only if the first robot action is
-            # itself tool-opinionated. A tool-agnostic first action
-            # (e.g. ``Start``) doesn't need anything mounted, so the
-            # circuit starts at t=0 with no setup penalty.
+            # The robot starts holding nothing, so the first tool-
+            # opinionated action of the run cannot begin before its own
+            # swap has happened. Slack for every later one.
             if tool_required[i]:
-                model.Add(starts[i] >= swap_durations[i]).OnlyEnforceIf(arc_in)
-            # i -> dummy: i is the last robot action
-            arc_out = model.NewBoolVar(f"arc_{i}_dummy")
-            arcs.append((a_idx + 1, 0, arc_out))
-            arc_lits.append(arc_out); arc_pair.append((a_idx + 1, 0))
-            for b_idx in range(k):
-                if a_idx == b_idx:
-                    continue
+                model.Add(starts[i] >= swap_durations[i])
+            for b_idx in range(a_idx + 1, k):
                 j = tool_actions[b_idx]
-                arc = model.NewBoolVar(f"arc_{i}_{j}")
-                arcs.append((a_idx + 1, b_idx + 1, arc))
-                arc_lits.append(arc); arc_pair.append((a_idx + 1, b_idx + 1))
-                # See the table in the section header for the rule.
-                if not tool_required[j]:
-                    setup = 0                            # j doesn't care
-                elif not tool_required[i]:
-                    setup = swap_durations[j]            # agnostic → opinion
-                else:
-                    setup = 0 if tools[i] == tools[j] else swap_durations[j]
-                model.Add(starts[j] >= ends[i] + setup).OnlyEnforceIf(arc)
-        model.AddCircuit(arcs)
+                # A PAIR IS SKIPPED ONLY WHEN IT IS PROVABLY REDUNDANT:
+                # both actions sit on ``tool_resource``, so AddNoOverlap
+                # already forbids them overlapping, AND neither ordering
+                # owes a setup gap. Then this constraint would say
+                # nothing NoOverlap does not already say.
+                #
+                # Skipping more than that is a real bug, not a
+                # relaxation: dropping the tool-agnostic pairs lets a
+                # swap run underneath a tool-agnostic move, which
+                # shortened every example's makespan by exactly one swap
+                # (feeder 40 -> 35, capping 90 -> 85, ...). The circuit
+                # put ALL of tool_actions on one cycle and thereby
+                # totally ordered them, including the ones that are not
+                # on ``tool_resource`` at all (a shaker action that
+                # declares ``tool=``); those keep their pair constraint.
+                if (on_tool_res[a_idx] and on_tool_res[b_idx]
+                        and _setup(i, j) == 0 and _setup(j, i) == 0):
+                    continue
+                i_can_lead = j not in closure[i]
+                j_can_lead = i not in closure[j]
+                if i_can_lead and j_can_lead:
+                    b = model.NewBoolVar(f"tool_prec_{i}_{j}")
+                    model.Add(starts[j] >= ends[i] + _setup(i, j)
+                              ).OnlyEnforceIf(b)
+                    model.Add(starts[i] >= ends[j] + _setup(j, i)
+                              ).OnlyEnforceIf(b.Not())
+                elif i_can_lead:
+                    model.Add(starts[j] >= ends[i] + _setup(i, j))
+                elif j_can_lead:
+                    model.Add(starts[i] >= ends[j] + _setup(j, i))
 
-        # Warm-start: hint both the tool circuit and the capacity
-        # circuits from ONE phase-batched reference order (see
-        # _phase_batched_order) rather than the raw (unbatched) plan
-        # order. Hinting the unbatched order is a valid, cheap-to-find
-        # starting point, but it's exactly the solution the fix exists
-        # to move the solver AWAY from — with a same-resource circuit
-        # now sized like a second tool circuit (a real batch's
-        # hand_empty circuit has as many nodes as the tool circuit
-        # itself) and given nothing but that starting point, the
-        # solver was spending 10s of seconds re-discovering the
-        # clustering from scratch. Hinting the already-batched order
-        # instead gives it something to confirm/polish.
+        # Warm-start from a phase-batched reference order (see
+        # _phase_batched_order) — something close to the batched answer
+        # for the solver to confirm and polish rather than rediscover.
         try:
-            hint_order = _phase_batched_order(actions, tools, tool_required)
+            # The hint must satisfy the capacity mutex too, so both the
+            # ordering and the timing pass run against the augmented
+            # graph — see _augment_with_capacity_spans.
+            hint_preds = _augment_with_capacity_spans(
+                predecessors, capacity_spans, n)
+            hint_order = _topological_by_priority(
+                _phase_batched_order(actions, tools, tool_required),
+                hint_preds, n,
+            )
             hint_starts = _simulate_order(
                 hint_order, durations, resources_list, tools, tool_required,
-                swap_durations, predecessors, tool_resource,
+                swap_durations, hint_preds, tool_resource,
             )
             for i in range(n):
                 model.AddHint(starts[i], int(hint_starts[i]))
-            hinted_tool_order = [i for i in hint_order if i in set(tool_actions)]
-            pos = {ti: idx + 1 for idx, ti in enumerate(tool_actions)}
-            prev_node = 0
-            for i in hinted_tool_order:
-                cur_node = pos[i]
-                key = (prev_node, cur_node)
-                if key in arc_pair:
-                    model.AddHint(arc_lits[arc_pair.index(key)], 1)
-                prev_node = cur_node
-            if hinted_tool_order:
-                final_key = (pos[hinted_tool_order[-1]], 0)
-                if final_key in arc_pair:
-                    model.AddHint(arc_lits[arc_pair.index(final_key)], 1)
             # Capacity resources use AddNoOverlap (see _add_capacity_mutex),
-            # not a permutation circuit — it needs no arc hints of its
-            # own; the starts[i] hint above already places every span
-            # at the batched position _phase_batched_order chose.
+            # Capacity resources use AddNoOverlap (see
+            # _add_capacity_mutex); the starts[i] hint above already
+            # places every span at the batched position
+            # _phase_batched_order chose.
         except Exception:
             log.debug("CP-SAT warm-start hint failed; solving cold.",
                       exc_info=True)
@@ -536,18 +641,21 @@ def schedule_cpsat(
     # schedules, which makes a bench run irreproducible and the replay
     # gate's makespan drift between runs.
     solver.parameters.random_seed = 0
-
-    # Watchdog: stop the solver after ``no_improvement_s`` of no
-    # objective improvement, even if there's budget left. Saves us from
-    # burning 25+ seconds proving optimality on solutions we already
-    # found. ``time_limit_s`` is the hard cap; the watchdog is the
-    # soft cap that activates earlier when search has plateaued.
+    # ...AND THE SEED IS NOT ENOUGH ON ITS OWN. With several workers,
+    # which one lands a solution first depends on thread timing, so the
+    # returned schedule varied run to run (bna batch 4 came back at
+    # 3520 / 3590 / 3610 / 3620 across four runs). ``interleave_search``
+    # makes the portfolio round-robin deterministically, and the budget
+    # below is counted in the solver's own deterministic time rather
+    # than wall-clock, so the cutoff falls in the same place every run.
+    solver.parameters.interleave_search = True
+    solver.parameters.max_deterministic_time = float(deterministic_limit)
+    # Wall-clock stays as a hard safety wall only; on a well-behaved
+    # instance the deterministic budget is what actually stops the
+    # search. A wall-clock stop is what made the result irreproducible,
+    # so it must never be the binding limit.
     tracker = _ImprovementTracker()
-    stop_event = _start_watchdog(solver, tracker, no_improvement_s)
-    try:
-        status = solver.Solve(model, tracker)
-    finally:
-        stop_event.set()
+    status = solver.Solve(model, tracker)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(
