@@ -801,8 +801,16 @@ def derive_capacity_spans(
     metas = _walk_plan_metas(plan, registry, initial_state, ctx)
     spans: Dict[str, List[Tuple[int, int]]] = {}
     open_at: Dict[str, int] = {}
+    # SORTED, and that is load-bearing. ``_CAPACITY_PREDICATE_NAMES`` is
+    # a set of STRINGS, and Python randomises string hashing per
+    # process, so iterating it directly made the returned dict's
+    # insertion order differ on every launch. The contents were always
+    # identical — only the order changed — but the scheduler walks this
+    # dict to add constraints, so CP-SAT received a differently-ordered
+    # model each run and returned a different (equally valid) schedule.
+    # See the determinism note in cpsat_scheduler.schedule_cpsat.
     for i, m in enumerate(metas):
-        for name in _CAPACITY_PREDICATE_NAMES:
+        for name in sorted(_CAPACITY_PREDICATE_NAMES):
             acquires = any(f[0] == name for f in m["pre_pos"]) and \
                 any(f[0] == name for f in m["removed"])
             releases = any(f[0] == name for f in m["added"])

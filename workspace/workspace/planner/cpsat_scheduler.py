@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import heapq
 import logging
-import time as _time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ortools.sat.python import cp_model
@@ -38,27 +37,6 @@ from workspace.planner.plan_scheduler import ActionMeta, ActionMetaMap, _resourc
 
 
 log = logging.getLogger(__name__)
-
-
-class _ImprovementTracker(cp_model.CpSolverSolutionCallback):
-    """Tracks the wall-time of the last objective improvement.
-
-    Kept for the solution count in the solve log; the search itself is
-    bounded by ``max_deterministic_time``, not by this.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._best: Optional[float] = None
-        self.last_improve: float = _time.monotonic()
-        self.num_solutions: int = 0
-
-    def on_solution_callback(self) -> None:
-        self.num_solutions += 1
-        obj = self.ObjectiveValue()
-        if self._best is None or obj < self._best:
-            self._best = obj
-            self.last_improve = _time.monotonic()
 
 
 def _precedence_closure(
@@ -340,7 +318,7 @@ def schedule_cpsat(
     capacity_spans: Optional["dict[str, List[Tuple[int, int]]]"] = None,
     tool_resource: str = "robot",
     time_limit_s: float = 30.0,
-    deterministic_limit: float = 0.25,
+    deterministic_limit: float = 0.15,
 ) -> Tuple[
     List[Tuple[str, int, float]],
     List[Tuple[float, Optional[str], Optional[str], int]],
@@ -438,9 +416,15 @@ def schedule_cpsat(
         intervals.append(iv)
 
     # ── Causal precedence ──────────────────────────────────────────────
+    # SORTED — see the determinism note above ``all_resources``. These
+    # are plain int sets, but their ITERATION order follows their
+    # INSERTION order, and build_precedence fills them while walking
+    # frozensets of fact tuples whose first element is a string. Hash
+    # randomisation therefore reached all the way down here and permuted
+    # the order these constraints entered the model.
     if predecessors is not None:
         for i in range(n):
-            for j in predecessors[i]:
+            for j in sorted(predecessors[i]):
                 model.Add(starts[i] >= ends[j])
 
     # ── Capacity-resource mutual exclusion ─────────────────────────────
@@ -454,10 +438,19 @@ def schedule_cpsat(
     # circuit below adds sequence-dependent setup times on top, but is
     # an *additional* constraint, not a replacement — actions on the
     # robot still need to non-overlap with each other on the resource.
+    # SORTED, and that is load-bearing. Resource names are strings, and
+    # Python randomises string hashing per process, so iterating the set
+    # directly added these constraints to the model in a different order
+    # on every launch. Same plan, same data, different model — and CP-SAT
+    # then searched a different path and returned a different (equally
+    # valid) schedule. That is what made bna batch 4 alternate between
+    # 3611 and 3620; running under PYTHONHASHSEED=0 pinned it. The order
+    # is now fixed in code, so the guarantee does not depend on how the
+    # server happens to be launched.
     all_resources: set = set()
     for rs in resources_list:
         all_resources.update(rs)
-    for r in all_resources:
+    for r in sorted(all_resources):
         ivs = [intervals[i] for i in range(n) if r in resources_list[i]]
         if len(ivs) > 1:
             model.AddNoOverlap(ivs)
@@ -634,7 +627,7 @@ def schedule_cpsat(
     solver.parameters.max_time_in_seconds = float(time_limit_s)
     # All cores. Pi 5 has 4. CP-SAT parallelises well on disjunctive
     # scheduling.
-    solver.parameters.num_search_workers = 4
+    solver.parameters.num_workers = 4
     solver.parameters.relative_gap_limit = 0.01
     # Same plan in, same schedule out. Without a fixed seed two launches
     # of the identical batch could return different (equally optimal)
@@ -654,8 +647,11 @@ def schedule_cpsat(
     # instance the deterministic budget is what actually stops the
     # search. A wall-clock stop is what made the result irreproducible,
     # so it must never be the binding limit.
-    tracker = _ImprovementTracker()
-    status = solver.Solve(model, tracker)
+    # NO SOLUTION CALLBACK. A callback is invoked from the worker
+    # threads, which is a documented way to lose determinism, and this
+    # one's count was never read. Measured: with the callback attached a
+    # 0.15 budget returned 3611 and 3620 on two identical runs.
+    status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(
