@@ -245,7 +245,18 @@ class ActionTemplate:
     effects: Callable[[State, Tuple[Any, ...]], State]
 
     def instantiate(self, state: State) -> Iterable[Action]:
+        """Ground this template against ``state``, yielding only the
+        actions whose preconditions already hold.
+
+        THE PRECONDITION IS TESTED BEFORE THE ``Action`` IS BUILT. This
+        used to build an Action plus two closures for every candidate
+        and let the caller filter, but only a handful of candidates per
+        state are ever applicable — on a bna batch-4 plan that was
+        ~560k objects constructed to discard ~440k of them.
+        """
         for params in self.param_iter(state):
+            if not self.preconditions(state, params):
+                continue
             # Capture params in default-arg so the closure binds eagerly.
             pre = (lambda s, p=params: self.preconditions(s, p))
             eff = (lambda s, p=params: self.effects(s, p))
@@ -266,8 +277,7 @@ def domain_from_templates(templates: Iterable[ActionTemplate]) -> Domain:
 
     def _domain(state: State) -> Iterable[Action]:
         for t in tlist:
-            for action in t.instantiate(state):
-                if action.preconditions(state):
-                    yield action
+            # instantiate() already applies the precondition filter.
+            yield from t.instantiate(state)
 
     return _domain

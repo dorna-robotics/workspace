@@ -169,12 +169,18 @@ class Fact:
     predicates: ``has_cap(tube_3)`` returns ``Fact("has_cap", (tube_3,))``.
     """
 
-    __slots__ = ("pred", "args", "polarity")
+    # ``_tuple`` and ``_expr`` are memo slots, not state: the PDDL search
+    # re-derives both on the order of a million times per plan (every
+    # grounded action's pre() is rebuilt for every state expanded), and
+    # they are pure functions of the other three fields.
+    __slots__ = ("pred", "args", "polarity", "_tuple", "_expr")
 
     def __init__(self, pred: str, args: Tuple[Any, ...], polarity: bool = True):
         self.pred = pred
         self.args = args
         self.polarity = polarity
+        self._tuple: Optional[Tuple[Any, ...]] = None
+        self._expr: Optional["_FactExpr"] = None
 
     # Polarity operators. The unary ``+`` and ``-`` are sugar for "add"
     # and "remove" when used inside an ``eff()`` return value.
@@ -188,23 +194,38 @@ class Fact:
     # Fact to an Expr via these ops lets authors write
     # ``a & b & ~c`` naturally without thinking about wrapping.
     def __invert__(self) -> "Expr":
-        return Expr.not_(_FactExpr(self))
+        return Expr.not_(self.expr())
 
     def __and__(self, other) -> "Expr":
-        return Expr.and_(_FactExpr(self), _ensure_expr(other))
+        return Expr.and_(self.expr(), _ensure_expr(other))
 
     def __rand__(self, other) -> "Expr":
-        return Expr.and_(_ensure_expr(other), _FactExpr(self))
+        return Expr.and_(_ensure_expr(other), self.expr())
 
     def __or__(self, other) -> "Expr":
-        return Expr.or_(_FactExpr(self), _ensure_expr(other))
+        return Expr.or_(self.expr(), _ensure_expr(other))
 
     def __ror__(self, other) -> "Expr":
-        return Expr.or_(_ensure_expr(other), _FactExpr(self))
+        return Expr.or_(_ensure_expr(other), self.expr())
 
     def as_tuple(self) -> Tuple[Any, ...]:
         """The (predicate_name, *args) tuple used in PDDL state sets."""
-        return (self.pred,) + self.args
+        t = self._tuple
+        if t is None:
+            t = self._tuple = (self.pred,) + self.args
+        return t
+
+    def expr(self) -> "_FactExpr":
+        """This fact as an :class:`Expr`, built once and reused.
+
+        Every ``&``/``|``/``~`` on a Fact used to allocate a fresh
+        ``_FactExpr`` wrapper; at ~1.4M wrappers per bna batch-4 plan
+        that was one of the three largest costs in the search.
+        """
+        e = self._expr
+        if e is None:
+            e = self._expr = _FactExpr(self)
+        return e
 
     def __repr__(self) -> str:
         sign = "" if self.polarity else "¬"
@@ -235,11 +256,21 @@ class Expr:
     # ── Factories ───────────────────────────────────────────────────────
     @classmethod
     def and_(cls, a: "Expr", b: "Expr") -> "Expr":
-        return cls("and", (a, b))
+        # FLATTENED. ``x & y & z`` built a left-nested binary tree, so a
+        # ten-term precondition cost ten nodes and ten levels of
+        # recursion in evaluate(). Merging same-op children keeps it one
+        # node with ten args — same semantics, and evaluate()'s ``all``
+        # short-circuits across the whole conjunction instead of once
+        # per level.
+        args = (a.args if a.op == "and" else (a,)) + \
+               (b.args if b.op == "and" else (b,))
+        return cls("and", args)
 
     @classmethod
     def or_(cls, a: "Expr", b: "Expr") -> "Expr":
-        return cls("or", (a, b))
+        args = (a.args if a.op == "or" else (a,)) + \
+               (b.args if b.op == "or" else (b,))
+        return cls("or", args)
 
     @classmethod
     def not_(cls, a: "Expr") -> "Expr":
@@ -297,7 +328,7 @@ def _ensure_expr(x: Any) -> Expr:
     if isinstance(x, Expr):
         return x
     if isinstance(x, Fact):
-        return _FactExpr(x)
+        return x.expr()
     if isinstance(x, bool):
         return Expr.true() if x else Expr.false()
     raise TypeError(
@@ -337,18 +368,33 @@ class Predicate:
     module docstring's "Capacity facts" section for the full picture.
     """
 
-    __slots__ = ("name", "capacity")
+    __slots__ = ("name", "capacity", "_cache")
 
     def __init__(self, name: str, *, capacity: bool = False):
         if not isinstance(name, str) or not name.isidentifier():
             raise ValueError(f"predicate name must be a Python identifier, got {name!r}")
         self.name = name
         self.capacity = capacity
+        self._cache: "Dict[Tuple[Any, ...], Fact]" = {}
         if capacity:
             _CAPACITY_PREDICATE_NAMES.add(name)
 
     def __call__(self, *args: Any) -> Fact:
-        return Fact(self.name, tuple(args), polarity=True)
+        """The positive fact for these arguments — one shared instance.
+
+        Facts are immutable value objects (``+f``/``-f`` return new
+        ones), so handing out the same instance twice is safe, and it
+        turns the search's hottest allocation into a dict hit: the PDDL
+        expansion loop called this ~1.9M times for one bna batch-4 plan.
+        Unhashable arguments simply skip the cache.
+        """
+        try:
+            f = self._cache.get(args)
+            if f is None:
+                f = self._cache[args] = Fact(self.name, args, polarity=True)
+            return f
+        except TypeError:                 # unhashable arg — don't cache
+            return Fact(self.name, args, polarity=True)
 
     def condition(self, *args: Any) -> py_trees.behaviour.Behaviour:
         """Build a BT ``PredicateCondition`` checking this predicate.
