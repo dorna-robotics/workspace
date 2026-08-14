@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -56,6 +57,47 @@ from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
 
 
 log = logging.getLogger(__name__)
+
+# Set once, by _configure_logging below.
+_LOGGING_CONFIGURED = False
+
+
+def _configure_logging() -> None:
+    """Send the platform's ``log.info`` to stdout, once per process.
+
+    Nothing in the platform ever configured a logging handler, so Python
+    fell back to its last-resort handler — which emits WARNING and above
+    only. Every ``log.info`` call went nowhere: 31 sites, including the
+    launcher's slice windows, the MQTT connect/disconnect pair, and the
+    CP-SAT summary line (action count, makespan, solver status, wall
+    time). The orchestrator captures a launched project's stdout into
+    ``<project_dir>/status/workspace.log`` and the dashboard tails that
+    file, so making these visible costs nothing but this handler.
+
+    SCOPED TO THE ``workspace`` LOGGER, NEVER THE ROOT. ``basicConfig``
+    would raise the level for every third-party library too, and Tornado
+    logs one ``tornado.access`` line per HTTP request — with the GUI
+    polling the runtime server, the run log would become an access log
+    with the useful lines buried in it. paho-mqtt is nearly as chatty.
+    Third-party loggers stay on the WARNING fallback, exactly as before.
+
+    ``propagate = False`` matters: without it every record is emitted
+    twice, once here and once by the root fallback.
+
+    Idempotent — run_protocol is called per workflow run, and a second
+    handler would double every line.
+    """
+    global _LOGGING_CONFIGURED
+    if _LOGGING_CONFIGURED:
+        return
+    _LOGGING_CONFIGURED = True
+    pkg = logging.getLogger("workspace")
+    if not pkg.handlers:
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        pkg.addHandler(h)
+    pkg.setLevel(logging.INFO)
+    pkg.propagate = False
 
 
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
@@ -327,6 +369,8 @@ def run_protocol(
         the engine rebuilds for the next window. When the batch
         already fits in one window, slicing is a no-op.
     """
+    _configure_logging()
+
     if project_name is None:
         project_name = actions_module.__name__.split(".")[-1]
 
