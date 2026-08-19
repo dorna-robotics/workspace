@@ -318,7 +318,7 @@ def schedule_cpsat(
     capacity_spans: Optional["dict[str, List[Tuple[int, int]]]"] = None,
     tool_resource: str = "robot",
     time_limit_s: float = 30.0,
-    deterministic_limit: float = 0.15,
+    deterministic_limit: float = 0.4,
 ) -> Tuple[
     List[Tuple[str, int, float]],
     List[Tuple[float, Optional[str], Optional[str], int]],
@@ -354,6 +354,16 @@ def schedule_cpsat(
         deterministic_limit: Search budget in the solver's own
             deterministic time units. Reproducible run to run, which
             wall-clock is not — see the note at ``interleave_search``.
+
+            0.4 is the knee of the curve, re-measured on bna batch 4
+            after the item-ordering fix below tightened the model:
+            0.15 and 0.25 both return 5334, while 0.4, 0.6 and 0.8 all
+            return 5274. The earlier 0.15 was calibrated against a bna
+            scene that no longer exists. It costs nothing on instances
+            that prove optimality — capping and scale are 0.7s at either
+            value — and only bites where the search cannot converge:
+            bna +6.7s of planning to save 60s of bench time, bd +2.6s
+            for the same makespan.
 
     Returns:
         Same shape as :func:`schedule_greedy`:
@@ -492,8 +502,9 @@ def schedule_cpsat(
         if tool_resource in resources_list[i] or tool_required[i]
     ]
     k = len(tool_actions)
+    # Hoisted: both the tool setup below and the item-ordering block use it.
+    closure = _precedence_closure(predecessors, n)
     if k > 0:
-        closure = _precedence_closure(predecessors, n)
 
         def _setup(lead: int, follow: int) -> int:
             """Gap owed between ``lead`` and ``follow`` when adjacent —
@@ -602,20 +613,54 @@ def schedule_cpsat(
         sig = tuple(actions[i].name for i in idxs)
         _by_signature.setdefault(sig, []).append(key)
 
-    _first_start: "Dict[int, Any]" = {}
+    # EVERY ACTION IS ORDERED, NOT JUST THE FIRST ONE.
+    #
+    # This used to constrain ``min(starts of item a) <= min(starts of
+    # item b)`` — one derived variable per item, ordered pairwise. That
+    # pins only each item's EARLIEST action, so the very first phase
+    # satisfies it and every later phase is left free. Measured on bd
+    # batch 4: the decap phase ran 0,1,2,3 (first starts 15, 64, 113,
+    # 162 — constraint satisfied), and the pipetting phase that follows
+    # it then came back 2,0,3,1. All four pipetting chains are the same
+    # 38 s on the same resource, so every permutation ties on makespan
+    # and the solver returned whichever it landed on. That is exactly
+    # the "robot skipping around" this block exists to prevent.
+    #
+    # Ordering each ACTION NAME across the group fixes it at the level
+    # the symmetry actually lives at. It also SUBSUMES the old
+    # constraint — if every named action of a precedes b's, then a's
+    # minimum precedes b's — so the derived min-variables are gone
+    # rather than kept alongside.
+    #
+    # THE PRECEDENCE GUARD IS WHAT KEEPS THIS SOUND. Identical
+    # signatures make two items interchangeable in the abstract, but a
+    # project may still impose a real causal edge between them (bna's
+    # phase barriers order tube n behind tube n-1). Where the closure
+    # already forces b's action ahead of a's, the pair is skipped: those
+    # two are not interchangeable for that action, so the symmetry does
+    # not apply and asserting it would contradict the model.
+    _occurrences: "Dict[int, Dict[str, List[int]]]" = {}
+    for key, idxs in _item_actions.items():
+        per_name = _occurrences.setdefault(key, {})
+        for i in idxs:                  # idxs are in plan order
+            per_name.setdefault(actions[i].name, []).append(i)
+
     _sym_pairs = 0
     for group in _by_signature.values():
         if len(group) < 2:
             continue
         group.sort()                    # declared order == item index order
-        for key in group:
-            if key not in _first_start:
-                v = model.NewIntVar(0, horizon, f"first_start_i{key}")
-                model.AddMinEquality(v, [starts[i] for i in _item_actions[key]])
-                _first_start[key] = v
         for a_key, b_key in zip(group, group[1:]):
-            model.Add(_first_start[a_key] <= _first_start[b_key])
-            _sym_pairs += 1
+            a_names = _occurrences.get(a_key, {})
+            b_names = _occurrences.get(b_key, {})
+            for name, a_idxs in a_names.items():
+                # Same signature => same names, same counts; the k-th
+                # occurrence of a name pairs with the k-th of the other.
+                for ai, bi in zip(a_idxs, b_names.get(name, ())):
+                    if bi in closure[ai]:
+                        continue        # b's already forced first — not symmetric
+                    model.Add(starts[ai] <= starts[bi])
+                    _sym_pairs += 1
 
     # ── Objective: minimise makespan ──────────────────────────────────
     makespan = model.NewIntVar(0, horizon, "makespan")
