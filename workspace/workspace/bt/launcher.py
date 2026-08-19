@@ -425,6 +425,7 @@ def run_protocol(
     # predicate. When present, the launcher enables slicing along
     # ``slice_dim`` so the planner only thinks about ``plan_window``
     # items at a time. Without it, all items must fit in one plan.
+    islands_spec = spec.get("islands")
     item_done = spec.get("item_done")
     if item_done is not None and not callable(item_done):
         raise TypeError(
@@ -524,17 +525,155 @@ def run_protocol(
     #   * ``ctx.meta["objects"][slice_dim]`` — current window the
     #     planner thinks about. Re-assigned each rebuild.
     all_items: list = list(objects.get(slice_dim, [])) if slice_dim else []
+
+    # ── Islands (phases) ──────────────────────────────────────────────
+    #
+    # An ISLAND is a goal the whole batch reaches before any item moves
+    # past it: "every tube barcoded", then "every tube weighed", and so
+    # on. It exists because BOTH halves of the pipeline grow with how
+    # much work is in flight at once, and item-windowing only bounds one
+    # of them. Measured on bd: the full protocol at 12 items is a
+    # 230-action plan and CP-SAT returns UNKNOWN on it, while one stage
+    # over the same 12 items is ~60 actions and schedules fine. Cutting
+    # the HORIZON is what item windows cannot do — a window of 4 still
+    # carries each of those 4 all the way to the end.
+    #
+    # AUTHORED AS A GOAL, NOT AS A PREDICATE NAME. A bare name is sugar
+    # for "this fact holds for every item in scope"; a callable
+    # ``(state, items) -> bool`` says anything. That is deliberate: the
+    # nested case (every tube in rack r, then the next rack) is the same
+    # list with a different callable, not a new mechanism.
+    #
+    # SCOPED PER OBJECT DIM. ``islands`` may be a bare list (applies to
+    # slice_dim) or ``{dim: [...]}``. Every project on the bench has one
+    # dim today, so the bare form is what they will write; the keyed
+    # form is what a rack/tube hierarchy needs later.
+    #
+    # ORDER IS DECLARED, NOT SEARCHED. Stage order in a protocol is
+    # chemistry — decap before dispense — so there is nothing to
+    # discover and searching it would only burn time. Validation below
+    # is the guard that the declared order is achievable at all.
+    def _normalise_islands(spec_val, dim):
+        """Normalise to ``[(name, scope_fn, goal_fn)]``.
+
+        SCOPE AND GOAL ARE SEPARATE, and that separation is what makes
+        hierarchy expressible. Scope answers "which items does this
+        phase concern"; goal answers "have they reached it". Fusing them
+        into one ``(state, items) -> bool`` looks tidier and breaks the
+        moment a phase covers a SUBSET: the window picker has to ask
+        "is THIS item past the phase", and a rack-scoped predicate given
+        one tube ignores the tube and answers about the whole rack, so
+        every item is filtered or none is.
+
+        With them split, a rack/tube hierarchy needs no nesting
+        machinery at all — the project emits a FLAT list of scoped
+        phases and the launcher walks it:
+
+            "islands": [
+                {"name": f"rack{r}_{stage}",
+                 "scope": (lambda st, _r=r: tubes_in(_r)),
+                 "goal":  stage}
+                for r in racks for stage in ("returned", "ejected")
+            ]
+
+        Levels are just more entries. A third level is more entries
+        again. Nothing in the launcher counts levels.
+        """
+        if not spec_val:
+            return []
+        if isinstance(spec_val, dict) and not any(
+            isinstance(v, (list, tuple)) for v in spec_val.values()
+        ):
+            spec_val = [spec_val]           # a single dict entry
+        elif isinstance(spec_val, dict):
+            spec_val = spec_val.get(dim) or []
+        out = []
+        for entry in spec_val:
+            if isinstance(entry, dict):
+                name = str(entry.get("name") or entry.get("goal") or "island")
+                scope = entry.get("scope")
+                goal = entry.get("goal")
+            elif callable(entry):
+                name, scope, goal = getattr(entry, "__name__", "island"), None, entry
+            else:
+                name, scope, goal = str(entry), None, str(entry)
+            # scope: None means "every item still live"
+            scope_fn = scope if callable(scope) else (lambda st, _s=scope: _s)
+            if scope is None:
+                scope_fn = None
+            # goal: a name is sugar for "that fact holds for every item
+            # in scope"; a callable gets (state, items).
+            if callable(goal):
+                goal_fn = goal
+            else:
+                goal_fn = (lambda st, items, _n=str(goal):
+                           all((_n, it) in st for it in items))
+            out.append((name, scope_fn, goal_fn))
+        return out
+
+    islands = _normalise_islands(islands_spec, slice_dim)
+
+    if islands:
+        # A NON-MONOTONIC ISLAND CANNOT BE A PHASE BOUNDARY. If some
+        # action removes the fact again, "everyone has reached it" is
+        # not a line the batch crosses once — it can un-cross, the
+        # island never closes, and the run stalls with no error. This is
+        # the classic Sussman trap (achieving goal B undoes goal A);
+        # catching it at launch beats discovering it mid-batch.
+        mono = registry.monotonic_predicates()
+        for nm, _scope, _fn in islands:
+            if nm not in mono and nm != "island":
+                log.warning(
+                    "Launcher: island %r is not monotonic — some action "
+                    "removes it, so the phase may never close. Islands "
+                    "must be facts that only ever get added.", nm,
+                )
+        log.info("Launcher: %d island(s): %s",
+                 len(islands), " -> ".join(nm for nm, _s, _g in islands))
+
+    def _current_island(state):
+        """First unmet island as ``(name, items_in_scope, goal_fn)``.
+
+        Scope is resolved here, once, so both the planning goal and the
+        window picker see the same item set.
+        """
+        live = [it for it in all_items if not item_done(state, it)] \
+            if item_done is not None else list(all_items)
+        for nm, scope_fn, goal_fn in islands:
+            items = list(scope_fn(state)) if scope_fn is not None else (live or all_items)
+            if not items:
+                continue                     # scope empty — phase vacuous
+            if not goal_fn(state, items):
+                return nm, items, goal_fn
+        return None
+
+    # Islands make windowing worthwhile even when the window covers the
+    # whole batch, so the "batch bigger than the window" test no longer
+    # decides it on its own.
     slicing_active = (
         item_done is not None
-        and len(all_items) > int(plan_window)
+        and (len(all_items) > int(plan_window) or bool(islands))
     )
 
     def _pick_window(state) -> list:
-        """Next ``plan_window`` items that aren't done yet, in order."""
+        """Next ``plan_window`` items still outstanding, in order.
+
+        "Outstanding" means not finished; while an island is open it
+        also means not yet past THAT island, so a tube that already
+        cleared the current phase drops out of the window and the
+        planner stops reasoning about it.
+        """
+        cur = _current_island(state) if islands else None
+        scope = set(cur[1]) if cur is not None else None
         out: list = []
         for it in all_items:
             if item_done(state, it):
                 continue
+            if scope is not None:
+                if it not in scope:
+                    continue        # this phase does not concern it
+                if cur[2](state, [it]):
+                    continue        # already past this phase
             out.append(it)
             if len(out) >= int(plan_window):
                 break
@@ -555,6 +694,22 @@ def run_protocol(
         """
         if item_done is None:
             return goal_fn(state)
+        # ISLANDS TAKE PRECEDENCE OVER THE WINDOW TEST. While an island
+        # is open the planner's target is that island, not "these items
+        # are finished" — that is the whole point: it stops the plan at
+        # the phase boundary instead of carrying every item to the end.
+        # Only when the last island has closed do we fall through to the
+        # window/tail logic below.
+        if islands:
+            cur = _current_island(state)
+            if cur is not None:
+                _nm, items, goal_fn = cur
+                window = ctx.meta["objects"].get(slice_dim, [])
+                # Target the island over the items actually in the
+                # window, so a window smaller than the scope still
+                # terminates.
+                scoped = [it for it in (window or all_items) if it in items]
+                return goal_fn(state, scoped or items)
         window = ctx.meta["objects"].get(slice_dim, [])
         if not all(item_done(state, it) for it in window):
             return False
