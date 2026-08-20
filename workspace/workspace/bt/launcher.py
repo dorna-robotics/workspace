@@ -726,6 +726,17 @@ def run_protocol(
             out.append((name, scope_fn, _always_ready, goal_fn, None))
         return out
 
+    # The monotonic set is invariant for a given action registry, but it
+    # costs a probe of every action against every binding (~1.2 ms at 28
+    # items). Three sites want it and two of those only want its LENGTH
+    # for a log line, so compute it lazily and at most once — paying it
+    # three times to print a number is the wrong trade.
+    _mono_memo = []
+    def _mono():
+        if not _mono_memo:
+            _mono_memo.append(registry.monotonic_predicates(ctx))
+        return _mono_memo[0]
+
     phases = _normalise_phases(phases_spec)
 
     if phases:
@@ -735,7 +746,7 @@ def run_protocol(
         # phase never closes, and the run stalls with no error. This is
         # the classic Sussman trap (achieving goal B undoes goal A);
         # catching it at launch beats discovering it mid-batch.
-        mono = registry.monotonic_predicates(ctx)
+        mono = _mono()
         for nm, _scope, _pre, _fn, _w in phases:
             if nm not in mono and nm != "phase":
                 log.warning(
@@ -899,13 +910,13 @@ def run_protocol(
             log.info(
                 "Launcher: goal_facts will be re-derived per slice "
                 "(%d monotonic predicates)",
-                len(registry.monotonic_predicates(ctx)),
+                len(_mono()),
             )
         else:
             goal_facts = registry.derive_goal_facts(ctx)
             log.info(
                 "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
-                len(goal_facts), len(registry.monotonic_predicates(ctx)),
+                len(goal_facts), len(_mono()),
             )
     # Precedence-aware scheduling — actions whose pre()/eff() are
     # causally independent overlap on different resources. We thread
