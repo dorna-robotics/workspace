@@ -1,5 +1,6 @@
 # workspace/components/core.py
 from copy import deepcopy
+import logging
 from mergedeep import merge
 import json
 import math
@@ -12,6 +13,8 @@ from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
 from path_planning import Planner
+
+log = logging.getLogger(__name__)
 from workspace.components.calibration import Calibration
 from workspace.components.core.robot_station import RobotStation
 from workspace.devices import AutoRecover, attach_device
@@ -1395,6 +1398,26 @@ class Core:
 
 
             if not R:
+                # SAY WHICH RAIL POSITION WAS WANTED. Status -1 alone
+                # ("no rail satisfies the distance") does not say whether
+                # the station is 5 mm past the end of travel or 500, and
+                # that is the whole difference between nudging it and
+                # rebuilding the bench. Note dz is forced to 0 and dy is
+                # unused above, so root == base_distance and the only way
+                # to land here is the [rmin, rmax] filter.
+                if base_distance is not None:
+                    sign = -1.0 if left_approach else 1.0
+                    want = [px + sign * base_distance + k * rail_step
+                            for k in range(-rail_span, rail_span + 1)]
+                    log.warning(
+                        "IK: no rail position in range — wanted carriage at %s "
+                        "mm (target x=%.1f, base_distance=%s, rail_step=%s, "
+                        "rail_span=%s, left_approach=%s) but rail travel is "
+                        "[%.1f, %.1f]. Move the station along the rail, or "
+                        "reach it from the other side.",
+                        [round(v, 1) for v in want], px, base_distance,
+                        rail_step, rail_span, left_approach, rmin, rmax,
+                    )
                 return (None, -1)
 
             # # r0: exact-distance candidate closest to current rail

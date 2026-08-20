@@ -165,7 +165,31 @@ class Recipe:
                     left_approach=self.left_approach,
                 )
                 if C != 2:
-                    raise RecipeError(f"could not find a valid reference joint for {self.component.name}")
+                    # SAY WHICH FAILURE IT WAS. The three IK status
+                    # codes need three different fixes — a rail-envelope
+                    # miss is solved by moving the station or changing
+                    # base_distance/rail_span, an unreachable pose by
+                    # re-orienting it — and reporting none of them sent
+                    # people to re-measure geometry that was already fine.
+                    why = {
+                        -1: (f"no rail position puts the robot base "
+                             f"{self.base_distance} mm from the target within "
+                             f"the rail limits — the station is out of the "
+                             f"rail envelope"),
+                        -2: "the IK solver raised on every attempt",
+                        -3: ("the IK solver ran but found no solution for any "
+                             "attempt — the pose is unreachable or the "
+                             "approach orientation is wrong"),
+                    }.get(C, f"IK returned status {C}")
+                    raise RecipeError(
+                        f"could not find a valid reference joint for "
+                        f"{self.component.name}: {why} "
+                        f"(anchor={prm['target_anchor']!r}, "
+                        f"base_distance={self.base_distance}, "
+                        f"rail_step={self.rail_step}, "
+                        f"rail_span={self.rail_span}, "
+                        f"left_approach={self.left_approach})"
+                    )
                 self.ref_joints = J
         else:
             # No station component (bare robot handle, device-only
