@@ -105,7 +105,8 @@ else is either:
   `scene` (list of scene files), `recipes` (recipes file path),
   `actions` (protocol module path — default `actions.py`),
   `checks` (Checks module path — default `checks.py`),
-  `plan_window` (optional, default 4 — see §12 on slicing), and
+  `plan_window` (optional, default 4 — WIDTH, see §13), `phases`
+  (optional, path to a phases file — DEPTH, see §13), and
   `kwargs` (the GUI form schema rendered into the operator's
   Parameters modal). main.py reads everything from here via
   `LAUNCH["..."]` lookups and uses `importlib` to load the
@@ -1404,7 +1405,22 @@ SUCCESS / FAILURE / INVALID (aborted)
 
 ---
 
-## 13. Performance characteristics and slicing
+## 13. Scaling a batch — width, depth, and hardware
+
+Three different limits govern how big a batch can be. Confusing them is
+the single most common way to get "no plan" or a solver timeout, so they
+are named separately here and everywhere in the code.
+
+| | Bounds | Set in | Wrong tool for |
+|---|---|---|---|
+| **`plan_window`** | **WIDTH** — how many items the planner holds at once | `launch.yaml` | expressing hardware |
+| **Phases** | **DEPTH** — how far an item is carried before the batch regroups | `phases.py` | limiting concurrency |
+| **Capacity facts** | **HARDWARE** — how many fit in a station | `actions.py` | bounding the search |
+
+"Shake four at a time" is the third one. It is four `shaker_free_*`
+predicates over two 2-slot shakers, so re-benching to three shakers
+changes the number with no code edit. Writing `4` in a window would be
+a lie that outlives the bench.
 
 ### Per-layer cost
 
@@ -1413,108 +1429,185 @@ On a Pi 5, lab-sized problems:
 | Layer | Cost | Notes |
 |---|---|---|
 | BT tick (10 Hz) | <1 ms | Pure-Python tree walk |
-| PDDL plan (window of 4) | <30 ms | GBFS forward search with auto-derived heuristic |
-| PDDL plan (window of 8) | ~130 ms | scales mildly super-linear with window size |
-| Greedy schedule | <10 ms | Linear over plan length |
-| Replanning total | <200 ms | observe → plan → schedule → rebuild tree |
+| PDDL plan, template expansion | ~10 ms | Constant in item count — see below |
+| PDDL plan, search, 8 items | ~4.5 s | With object-symmetry reduction |
+| CP-SAT schedule, ~100 actions | ~1 s | Grows fast past ~200 actions |
+| CP-SAT schedule, ~300 actions | ~30 s | This is usually the real bottleneck |
 
-Robot motions (1-10 s per move) and lab equipment (5 s to minutes per
-action) dwarf all of these. The framework is never the bottleneck.
+Robot motions (1-10 s per move) and dwells (5 s to minutes) dwarf the
+first three. **CP-SAT is the layer that bites**, and phases are what
+keep its models small.
 
-### Slicing — handling large batches
+### Why planning used to explode, and what fixed it
 
-The in-house GBFS planner OOMs around batch ≈ 16+ on a Pi 5 — the
-closed set of visited frozensets grows too fast. To handle larger
-operator-supplied batches (48, 100, 200) without changing planners,
-the launcher slices work into windows of `plan_window` items
-(default 4).
+Two independent problems, both now handled by the platform with no
+project change:
 
-Two concepts, intentionally separate:
+**Object symmetry.** With twelve tubes still in the rack, `pick(0) ..
+pick(11)` are twelve spellings of one move; the plans they lead to
+differ only by relabeling. The search expanded all of them, chasing
+12! equivalent orderings to rediscover one plan. `domain_from_templates`
+now expands one representative per group, where a "group" is
+(action name, the set of predicates currently true of the item).
+Measured on a 19-action-per-item protocol: the wall moved from 7 items
+to 19, and batch 8 from >90 s to 4.5 s, with the **same plan out**.
 
-| Knob | Who sets it | Where | Meaning |
+> The state guard is the whole correctness argument. Collapsing by
+> action name alone forces a rigid item order into the plan, and
+> `build_precedence` derives its edges FROM the plan, so that rigidity
+> reaches the schedule — measured as makespan 734 → 818 on an otherwise
+> valid plan.
+
+**Redundant search.** When items are independent the plan is not
+something to search for — it is one item's chain, stamped N times. The
+Replanner plans one item, re-grounds the chain for every item, and
+searches only for the tail. Planning becomes **constant** in N (~10 ms
+at 4, 8 or 19 items) rather than merely faster.
+
+> Nothing is trusted: the replicated plan is SIMULATED against the real
+> `preconditions`/`effects` before it is used, and the ordinary search
+> runs if that fails. A protocol whose phase barriers genuinely couple
+> items falls back automatically — the fallback is the mechanism, not
+> an escape hatch.
+
+### Phases — bounding DEPTH
+
+`plan_window` bounds how many items are in flight; it does **not** bound
+how far each is carried. A window of 4 still plans all 4 to the end of
+the protocol, so both the search and the CP-SAT model grow with the
+protocol's full depth. Measured: a 12-item batch of a 19-step protocol
+is a 230-action plan and CP-SAT returns `UNKNOWN` on it, while the same
+12 items through one stage is ~60 actions and schedules in 0.2 s.
+
+A **phase** is a goal the whole batch reaches before any item moves past
+it. Authored like an Action, in a file named by `launch.yaml`:
+
+```yaml
+# launch.yaml
+phases: phases.py
+```
+
+```python
+# phases.py
+from workspace.bt.phase import Phase
+from actions import dispensed, unloaded, racked
+
+class Dispensed(Phase):
+    """Barcode, weigh, decap and dose — every tube."""
+    def pre(self, state, items):  return True
+    def eff(self, items):         return [dispensed(t) for t in items]
+
+class Unloaded(Phase):
+    """Shake, four at a time, then back to the rack."""
+    def pre(self, state, items):
+        return all(dispensed(t).as_tuple() in state for t in items)
+    def eff(self, items):         return [unloaded(t) for t in items]
+```
+
+#### The Phase surface
+
+| | Kind | Default | Meaning |
 |---|---|---|---|
-| `batch_size` (or whatever the project calls it) | operator | `launch.yaml`'s `kwargs` | "I have N samples" — scientific quantity |
-| `plan_window` | platform / project | `launch.yaml` top-level (default 4) | "plan this many at once" — planner-shaped tuning |
+| `name` | attr | class name lowercased | display name |
+| `fact` | attr | `None` | sugar: `eff` becomes "this fact for every item in scope" |
+| `plan_window` | attr | `None` | WIDTH while this phase is open; `None` inherits launch.yaml's value. Same name on purpose — one concept. |
+| `scope(state, items)` | hook | all items | which items this phase concerns |
+| `pre(state, items)` | hook | `True` | may this phase open |
+| `eff(items)` | hook | from `fact` | facts that must hold for it to be done |
 
-If `batch_size ≤ plan_window`, slicing is a no-op — one plan, one
-tree, identical to non-slicing behavior.
+There is deliberately **no `execute`**. A phase performs no motion; its
+execution is the planner reaching `eff`, which is exactly why it can
+bound the horizon.
 
-#### Enabling slicing in a project
+`eff` returns **facts, not a boolean**, because the launcher uses them
+twice — to ask whether the phase is reached, and to hand the planner
+`goal_facts` so GBFS has a heuristic for the phase. A boolean answers
+the first question and leaves the search blind.
 
-Add `item_done(state, item)` to `setup()`'s return dict. It's the
-per-item completion predicate:
+#### Order is derived, not declared
+
+The launcher runs the first phase that is **ready** (`pre` holds) and
+**not yet reached** (`eff` does not hold). Declaration order is only a
+tiebreak, so a list written out of dependency order still runs
+correctly, and a phase whose `pre` is unmet is skipped rather than
+selected. If every outstanding phase is blocked, the launcher warns
+rather than silently falling through to the global goal.
+
+That gives three things from the same two hooks:
+
+- **Conditional phases** — `scope` returns `[]` and the phase is skipped
+  entirely. A rework pass sits in the list permanently and activates
+  only when some item populates its scope.
+- **Hierarchy** — `scope` returns one rack of a hotel. A rack/tube/stage
+  hierarchy is a FLAT generated list of scoped phases; nothing in the
+  launcher counts levels, so a third level is simply more entries.
+  Verified to three levels.
+- **Explicit dependencies** — `pre` states what order alone cannot.
+
+#### Monotonicity is the one hard rule
+
+Every fact a phase's `eff` names must be one **no action removes**. "The
+batch has crossed this line" has to stay crossed; otherwise the phase
+re-opens, the planner re-targets it, and the run stalls with no error.
+That is the classic Sussman trap. The launcher checks each name against
+`monotonic_predicates()` at startup and warns.
+
+A bounded loop (dose, measure, dose again) is expressed by **unrolling**
+it into separate phases — `shaken_pass1`, `shaken_pass2` — not by
+re-opening one. An unbounded loop cannot be a phase boundary.
+
+### Slicing — bounding WIDTH
+
+Enable it by returning `item_done(state, item)` from `setup()`:
 
 ```python
 def setup(**kwargs):
-    batch_size = int(kwargs.get("batch_size", 1))
-    tubes = list(range(batch_size))
+    tubes = list(range(int(kwargs.get("batch_size", 1))))
 
     def item_done(state, tube):
-        return (in_done.name, tube) in state \
-           and (vial_2ml_capped.name, tube) in state
-
-    def goal(state):
-        return all(item_done(state, t) for t in tubes)
+        return (racked.name, tube) in state
 
     return {
-        "initial_facts": frozenset(...),
+        "initial_facts": frozenset(),
         "goal":          goal,
         "item_done":     item_done,        # ← opts in to slicing
         "objects":       {"tube": tubes},
     }
 ```
 
-The launcher then:
+| Knob | Who sets it | Meaning |
+|---|---|---|
+| `batch_size` (project's own name) | operator | "I have N samples" — a scientific quantity |
+| `plan_window` | project | "plan this many at once" — planner tuning |
 
-1. Splits `all_items` into windows of `plan_window` items.
-2. Restricts `ctx.meta["objects"][slice_dim]` (default `"tube"`) to
-   the current window before each rebuild — so `param_iter` only
-   enumerates current-slice items, and the planner only thinks about
-   them.
-3. Appends a `slice_check` leaf to the tree. After the window
-   completes: if the global `goal` is met → engine exits; otherwise
-   raise `ReplanRequested` so the framework picks the next window.
-4. Re-derives `goal_facts` (heuristic hint) lazily per slice so the
-   GBFS heuristic matches the active window.
-5. Window-completion replans don't erode the safety cap: the engine's
-   replan cap (50) counts *consecutive replans with zero forward
-   progress* — any fact-state change between replans (i.e. any action
-   succeeding, including a completed window) resets it. Only a run
-   that is failing and going nowhere hits the cap; operator-recovered
-   device failures (pause → fix → Resume, see project-guide §8) never
-   accumulate toward an abort over a long batch.
+With no phases and `batch_size <= plan_window`, slicing is a no-op.
+Phases keep windowing active even when the window covers the whole
+batch, because depth still needs bounding.
 
-#### Choosing `plan_window`
+### Worked example
 
-* **Stay with default 4** unless you have a specific reason. It's the
-  sweet spot for the in-house GBFS planner on a Pi 5: <30 ms per
-  plan, no memory pressure.
-* If you wire in Fast Downward or another industrial-strength planner
-  later, raise `plan_window` to 50–500 — that planner won't choke and
-  the per-slice overhead disappears.
-* If your project has hardware reasons to slice differently (e.g. the
-  source rack has exactly 6 slots), set `plan_window: 6`.
+A 28-sample protocol, 19 steps per sample, on a Pi 5:
 
-The operator never sees `plan_window`. They see `batch_size`. The
-project advertises a sensible `max` for `batch_size` based on lab
-capacity (rack slots, time available), not planner capacity.
+```
+phase        mode      actions   plan     cpsat    makespan
+dispensed    template     309    0.01s   29.40s      3273
+unloaded     template      84    0.00s    0.29s       850
+racked       template     140    0.00s    0.18s      1830
+                          534                        5968  (99 min)
+TOTAL PLANNING 29.9s
+```
 
-### Where slicing comes apart
+Planning is 0.5 % of the run. Note where the cost sits: template
+expansion makes the search free, and essentially all remaining time is
+CP-SAT on the largest phase. If that ever matters, split the phase or
+set its `plan_window` — both shrink the model.
 
-* **Per-slice slot tables.** If your project uses fixed slot tables
-  like `SOURCE = [("rack","A1"), ("rack","A2"), ...]` indexed by
-  tube number, those tables must cover the full operator-supplied
-  range — not just one window. Otherwise `SOURCE[tube]` is an
-  `IndexError` when tube ≥ table length. Make the table generator
-  parametric on `batch_size`, or accept a hard cap matching the
-  table.
-* **Cross-slice resource state.** A predicate like `shaker_shaken(s)`
-  that persists across slices needs explicit clearing logic
-  (state-aware `Retrieved.eff()` checking "is this the last tube on
-  the shaker", or a per-slice transient predicate scheme). Without
-  it, the next slice's loads will be blocked.
-
----
+Before this work the same protocol was **infeasible above 4 samples**,
+because each sample held one of four working slots from first pick to
+last place. **The layout change came first and mattered most**: samples
+that hold no shared seat between stations are independent, which is what
+makes template expansion apply at all. No amount of planner work
+substitutes for it.
 
 ## 14. Checks (pre_check / post_check) — pace_or-compatible
 

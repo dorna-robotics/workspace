@@ -48,6 +48,7 @@ from workspace.bt.builder import (
 )
 from workspace.bt.dsl import (
     ActionRegistry,
+    RecipeUnavailable,
     build_precedence,
     derive_capacity_spans,
     state_to_frozen,
@@ -100,6 +101,52 @@ def _configure_logging() -> None:
     pkg.propagate = False
 
 
+def _load_phases(ref: Any, kwargs: Optional[dict] = None) -> Any:
+    """Resolve ``launch.yaml``'s ``phases:`` into a phase list.
+
+    Accepts what the key can reasonably hold:
+
+      * ``None``                  — no phases; the launcher behaves as before.
+      * a list                    — used as-is (inline in launch.yaml).
+      * ``"phases.py"`` / dotted  — imported; the module must expose
+        ``PHASES`` (a list) or ``phases`` (a list, or a callable taking
+        the run kwargs so the list can depend on batch size).
+
+    A path is resolved the same way ``actions:`` and ``checks:`` are —
+    by module name, with the project directory already on sys.path
+    because main.py imported ``actions`` from it.
+    """
+    if ref is None or isinstance(ref, (list, tuple)):
+        return ref
+    if not isinstance(ref, str):
+        log.warning("Launcher: phases: expected a path or list, got %s — ignored.",
+                    type(ref).__name__)
+        return None
+    name = ref.removesuffix(".py").replace("/", ".")
+    try:
+        mod = importlib.import_module(name)
+    except Exception:
+        log.exception("Launcher: phases: could not import %r — running without phases.", ref)
+        return None
+    # PHASE CLASSES FIRST. A module that declares Phase subclasses is
+    # the authored form; PHASES/phases as a plain list stays supported
+    # for a short static sequence, and for anything generated.
+    from workspace.bt.phase import collect as _collect_phases
+    spec_val = _collect_phases(mod) or None
+    if spec_val is None:
+        spec_val = getattr(mod, "PHASES", None)
+    if spec_val is None:
+        spec_val = getattr(mod, "phases", None)
+    if callable(spec_val):
+        try:
+            spec_val = spec_val(**(kwargs or {}))
+        except TypeError:
+            spec_val = spec_val()
+    if spec_val is None:
+        log.warning("Launcher: %r defines no PHASES — running without phases.", ref)
+    return spec_val
+
+
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
 
 
@@ -144,6 +191,38 @@ def read_yaml_or_j2(path: Path, **render_vars: Any) -> Optional[dict]:
 _read_yaml_or_j2 = read_yaml_or_j2
 
 
+class _RecipeDict(dict):
+    """Alias -> recipe, remembering the ones that failed to build.
+
+    Skipping a broken recipe and carrying on is deliberate (an alias no
+    action uses must not stop the bench). What was NOT deliberate is
+    what the skip turned into: the first action to reach for the alias
+    died on a bare ``KeyError``, which the engine could not tell apart
+    from a normal step failure, so it replanned — forever, into the
+    identical plan, because the cause was in the scene file, not the
+    world state.
+
+    Recording the reason here fixes both halves: the error names the
+    real cause, and its type marks it non-replannable.
+    """
+
+    def __init__(self, *a, **kw) -> None:
+        super().__init__(*a, **kw)
+        self.failed: Dict[str, str] = {}
+
+    def __missing__(self, alias):
+        why = self.failed.get(alias)
+        if why:
+            raise RecipeUnavailable(
+                f"recipe {alias!r} failed to load at launch ({why}) — "
+                f"replanning cannot fix it; fix the scene or the recipes file"
+            )
+        raise RecipeUnavailable(
+            f"recipe {alias!r} is not defined in the recipes file "
+            f"(defined: {sorted(self)})"
+        )
+
+
 def load_recipes(
     workspace: Any,
     core: Any,
@@ -186,7 +265,7 @@ def load_recipes(
     defs = _read_yaml_or_j2(Path(recipes_path), **render_vars)
     if defs is None:
         return {}
-    rcp: Dict[str, Any] = {}
+    rcp = _RecipeDict()
     for alias, defn in defs.items():
         try:
             cls = _import_class(defn["class"])
@@ -202,12 +281,14 @@ def load_recipes(
                         "recipes.yaml[%s]: component %r not in scene — skipping",
                         alias, comp_name,
                     )
+                    rcp.failed[alias] = f"component {comp_name!r} not in scene"
                     continue
                 rcp[alias] = cls(workspace, core, comp, **kwargs)
             else:
                 rcp[alias] = cls(workspace, core, **kwargs)
-        except Exception:
+        except Exception as exc:
             log.exception("recipes.yaml[%s]: instantiation failed — skipping", alias)
+            rcp.failed[alias] = f"{type(exc).__name__}: {exc}"
     return rcp
 
 
@@ -309,6 +390,7 @@ def run_protocol(
     plan_window: int = 4,
     slice_dim: Optional[str] = None,
     scheduler: str = "cpsat",
+    phases: Any = None,
     **kwargs,
 ) -> py_trees.common.Status:
     """Default plan → schedule → BT tick lifecycle for any BT project.
@@ -425,7 +507,18 @@ def run_protocol(
     # predicate. When present, the launcher enables slicing along
     # ``slice_dim`` so the planner only thinks about ``plan_window``
     # items at a time. Without it, all items must fit in one plan.
-    islands_spec = spec.get("islands")
+    # PHASES MAY COME FROM launch.yaml OR FROM setup(). The launch.yaml
+    # form matches how ``actions:`` and ``checks:`` are already named —
+    # a path to a project file — which keeps a long generated phase list
+    # out of actions.py:
+    #
+    #     launch.yaml:   phases: phases.py
+    #     phases.py:     PHASES = [...]        # or def phases(**kwargs)
+    #
+    # setup() returning "phases" still works and wins if both are given,
+    # because setup() can see the kwargs and a static file cannot.
+    # Passing nothing keeps the old behaviour exactly.
+    phases_spec = spec.get("phases") or _load_phases(phases, kwargs)
     item_done = spec.get("item_done")
     if item_done is not None and not callable(item_done):
         raise TypeError(
@@ -526,9 +619,9 @@ def run_protocol(
     #     planner thinks about. Re-assigned each rebuild.
     all_items: list = list(objects.get(slice_dim, [])) if slice_dim else []
 
-    # ── Islands (phases) ──────────────────────────────────────────────
+    # ── Phases ────────────────────────────────────────────────────────
     #
-    # An ISLAND is a goal the whole batch reaches before any item moves
+    # An PHASE is a goal the whole batch reaches before any item moves
     # past it: "every tube barcoded", then "every tube weighed", and so
     # on. It exists because BOTH halves of the pipeline grow with how
     # much work is in flight at once, and item-windowing only bounds one
@@ -544,17 +637,21 @@ def run_protocol(
     # nested case (every tube in rack r, then the next rack) is the same
     # list with a different callable, not a new mechanism.
     #
-    # SCOPED PER OBJECT DIM. ``islands`` may be a bare list (applies to
-    # slice_dim) or ``{dim: [...]}``. Every project on the bench has one
-    # dim today, so the bare form is what they will write; the keyed
-    # form is what a rack/tube hierarchy needs later.
+    # ONE OBJECT DIM. A phase always windows the project's ``slice_dim``;
+    # a rack-scoped phase still windows TUBES, just a subset, which is
+    # what ``scope`` is for.
     #
-    # ORDER IS DECLARED, NOT SEARCHED. Stage order in a protocol is
-    # chemistry — decap before dispense — so there is nothing to
-    # discover and searching it would only burn time. Validation below
+    # ORDER IS DERIVED FROM ``pre``, not from list position. The launcher
+    # runs the first phase that is ready and not yet reached, so a list
+    # written out of dependency order still runs correctly and a phase
+    # whose ``pre`` is unmet is skipped rather than selected. Validation below
     # is the guard that the declared order is achievable at all.
-    def _normalise_islands(spec_val, dim):
-        """Normalise to ``[(name, scope_fn, goal_fn)]``.
+    def _always_ready(_st, _items):
+        """A phase with no ``pre`` is ready as soon as its turn comes."""
+        return True
+
+    def _normalise_phases(spec_val):
+        """Normalise to ``[(name, scope, pre, reached, plan_window)]``.
 
         SCOPE AND GOAL ARE SEPARATE, and that separation is what makes
         hierarchy expressible. Scope answers "which items does this
@@ -569,32 +666,50 @@ def run_protocol(
         machinery at all — the project emits a FLAT list of scoped
         phases and the launcher walks it:
 
-            "islands": [
+            "phases": [
                 {"name": f"rack{r}_{stage}",
                  "scope": (lambda st, _r=r: tubes_in(_r)),
-                 "goal":  stage}
+                 "goal":  stage}          # or a Phase subclass
                 for r in racks for stage in ("returned", "ejected")
             ]
 
         Levels are just more entries. A third level is more entries
         again. Nothing in the launcher counts levels.
+
+        THERE IS NO PER-PHASE OBJECT DIM. A phase always windows the
+        project's one ``slice_dim``; a rack-scoped phase still windows
+        TUBES, just a subset of them, which is what ``scope`` is for. A
+        second dim would only be needed by a project whose actions span
+        two object kinds — LoadRack(rack) alongside Dispense(tube) — and
+        none does. A ``{dim: [...]}`` form used to be accepted here and
+        silently dropped every phase keyed to any other dim, which
+        promised multi-dim support that did not exist.
         """
         if not spec_val:
             return []
-        if isinstance(spec_val, dict) and not any(
-            isinstance(v, (list, tuple)) for v in spec_val.values()
-        ):
+        if isinstance(spec_val, dict):
             spec_val = [spec_val]           # a single dict entry
-        elif isinstance(spec_val, dict):
-            spec_val = spec_val.get(dim) or []
+        from workspace.bt.phase import Phase as _Phase
         out = []
         for entry in spec_val:
+            if isinstance(entry, _Phase):
+                # An authored Phase: scope / pre / eff, same shape as an
+                # Action one level up. ``pre`` folds into the goal —
+                # a phase that may not open yet is simply not reached.
+                out.append((
+                    entry.name,
+                    (lambda st, _e=entry: _e.scope(st, all_items)),
+                    (lambda st, items, _e=entry: bool(_e.pre(st, items))),
+                    (lambda st, items, _e=entry: _e.reached(st, items)),
+                    getattr(entry, "plan_window", None),
+                ))
+                continue
             if isinstance(entry, dict):
-                name = str(entry.get("name") or entry.get("goal") or "island")
+                name = str(entry.get("name") or entry.get("goal") or "phase")
                 scope = entry.get("scope")
                 goal = entry.get("goal")
             elif callable(entry):
-                name, scope, goal = getattr(entry, "__name__", "island"), None, entry
+                name, scope, goal = getattr(entry, "__name__", "phase"), None, entry
             else:
                 name, scope, goal = str(entry), None, str(entry)
             # scope: None means "every item still live"
@@ -608,63 +723,76 @@ def run_protocol(
             else:
                 goal_fn = (lambda st, items, _n=str(goal):
                            all((_n, it) in st for it in items))
-            out.append((name, scope_fn, goal_fn))
+            out.append((name, scope_fn, _always_ready, goal_fn, None))
         return out
 
-    islands = _normalise_islands(islands_spec, slice_dim)
+    phases = _normalise_phases(phases_spec)
 
-    if islands:
-        # A NON-MONOTONIC ISLAND CANNOT BE A PHASE BOUNDARY. If some
+    if phases:
+        # A NON-MONOTONIC PHASE CANNOT BE A PHASE BOUNDARY. If some
         # action removes the fact again, "everyone has reached it" is
         # not a line the batch crosses once — it can un-cross, the
-        # island never closes, and the run stalls with no error. This is
+        # phase never closes, and the run stalls with no error. This is
         # the classic Sussman trap (achieving goal B undoes goal A);
         # catching it at launch beats discovering it mid-batch.
-        mono = registry.monotonic_predicates()
-        for nm, _scope, _fn in islands:
-            if nm not in mono and nm != "island":
+        mono = registry.monotonic_predicates(ctx)
+        for nm, _scope, _pre, _fn, _w in phases:
+            if nm not in mono and nm != "phase":
                 log.warning(
-                    "Launcher: island %r is not monotonic — some action "
-                    "removes it, so the phase may never close. Islands "
+                    "Launcher: phase %r is not monotonic — some action "
+                    "removes it, so the phase may never close. Phases "
                     "must be facts that only ever get added.", nm,
                 )
-        log.info("Launcher: %d island(s): %s",
-                 len(islands), " -> ".join(nm for nm, _s, _g in islands))
+        log.info("Launcher: %d phase(s): %s",
+                 len(phases), " -> ".join(nm for nm, _s, _p, _g, _w in phases))
 
-    def _current_island(state):
-        """First unmet island as ``(name, items_in_scope, goal_fn)``.
+    def _current_phase(state):
+        """First unmet phase as ``(name, items_in_scope, goal_fn)``.
 
         Scope is resolved here, once, so both the planning goal and the
         window picker see the same item set.
         """
         live = [it for it in all_items if not item_done(state, it)] \
             if item_done is not None else list(all_items)
-        for nm, scope_fn, goal_fn in islands:
+        blocked = []
+        for nm, scope_fn, pre_fn, reached_fn, _win in phases:
             items = list(scope_fn(state)) if scope_fn is not None else (live or all_items)
             if not items:
                 continue                     # scope empty — phase vacuous
-            if not goal_fn(state, items):
-                return nm, items, goal_fn
+            if reached_fn(state, items):
+                continue                     # already crossed
+            if not pre_fn(state, items):
+                blocked.append(nm)
+                continue                     # not ready — try the next
+            return nm, items, reached_fn, _win
+        if blocked:
+            # Every outstanding phase is waiting on something no other
+            # phase will provide. Say so loudly: silently returning None
+            # here would fall through to the global goal and plan the
+            # whole protocol, which is the failure this exists to avoid.
+            log.warning("Launcher: phases %s are all blocked by their pre() "
+                        "— check their order and conditions.", blocked)
         return None
 
-    # Islands make windowing worthwhile even when the window covers the
+    # Phases make windowing worthwhile even when the window covers the
     # whole batch, so the "batch bigger than the window" test no longer
     # decides it on its own.
     slicing_active = (
         item_done is not None
-        and (len(all_items) > int(plan_window) or bool(islands))
+        and (len(all_items) > int(plan_window) or bool(phases))
     )
 
     def _pick_window(state) -> list:
         """Next ``plan_window`` items still outstanding, in order.
 
-        "Outstanding" means not finished; while an island is open it
-        also means not yet past THAT island, so a tube that already
+        "Outstanding" means not finished; while an phase is open it
+        also means not yet past THAT phase, so a tube that already
         cleared the current phase drops out of the window and the
         planner stops reasoning about it.
         """
-        cur = _current_island(state) if islands else None
+        cur = _current_phase(state) if phases else None
         scope = set(cur[1]) if cur is not None else None
+        width = int(cur[3]) if (cur is not None and cur[3]) else int(plan_window)
         out: list = []
         for it in all_items:
             if item_done(state, it):
@@ -675,7 +803,7 @@ def run_protocol(
                 if cur[2](state, [it]):
                     continue        # already past this phase
             out.append(it)
-            if len(out) >= int(plan_window):
+            if len(out) >= width:
                 break
         return out
 
@@ -694,22 +822,25 @@ def run_protocol(
         """
         if item_done is None:
             return goal_fn(state)
-        # ISLANDS TAKE PRECEDENCE OVER THE WINDOW TEST. While an island
-        # is open the planner's target is that island, not "these items
+        # PHASES TAKE PRECEDENCE OVER THE WINDOW TEST. While an phase
+        # is open the planner's target is that phase, not "these items
         # are finished" — that is the whole point: it stops the plan at
         # the phase boundary instead of carrying every item to the end.
-        # Only when the last island has closed do we fall through to the
+        # Only when the last phase has closed do we fall through to the
         # window/tail logic below.
-        if islands:
-            cur = _current_island(state)
+        if phases:
+            cur = _current_phase(state)
             if cur is not None:
-                _nm, items, goal_fn = cur
+                # NOT ``goal_fn`` — binding that name here would make
+                # it local to this whole function and turn every other
+                # ``goal_fn(state)`` read below into an UnboundLocalError.
+                _nm, items, phase_reached, _w = cur
                 window = ctx.meta["objects"].get(slice_dim, [])
-                # Target the island over the items actually in the
+                # Target the phase over the items actually in the
                 # window, so a window smaller than the scope still
                 # terminates.
                 scoped = [it for it in (window or all_items) if it in items]
-                return goal_fn(state, scoped or items)
+                return phase_reached(state, scoped or items)
         window = ctx.meta["objects"].get(slice_dim, [])
         if not all(item_done(state, it) for it in window):
             return False
@@ -737,6 +868,12 @@ def run_protocol(
         if slicing_active:
             window = _pick_window(state)
             c.meta["objects"][slice_dim] = window
+            # Stamp the phase this window belongs to, so the schedule
+            # event can carry it and the Gantt can band consecutive
+            # slices under their phase name. Resolved here rather than
+            # in build_tree because _observe already did the work.
+            _cur = _current_phase(state) if phases else None
+            c.meta["current_phase"] = _cur[0] if _cur else None
             log.info(
                 "Launcher: slice window = %s (%d/%d done)",
                 window,
@@ -762,13 +899,13 @@ def run_protocol(
             log.info(
                 "Launcher: goal_facts will be re-derived per slice "
                 "(%d monotonic predicates)",
-                len(registry.monotonic_predicates()),
+                len(registry.monotonic_predicates(ctx)),
             )
         else:
             goal_facts = registry.derive_goal_facts(ctx)
             log.info(
                 "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
-                len(goal_facts), len(registry.monotonic_predicates()),
+                len(goal_facts), len(registry.monotonic_predicates(ctx)),
             )
     # Precedence-aware scheduling — actions whose pre()/eff() are
     # causally independent overlap on different resources. We thread
@@ -838,6 +975,10 @@ def run_protocol(
                     "replan_id": replan_counter["n"],
                     "wall_ts": _time.time(),
                     "tool_resource": "robot",
+                    # Which phase this slice belongs to, or None when the
+                    # project declares no phases. The Gantt groups
+                    # consecutive slices sharing a phase under one band.
+                    "phase": ctx.meta.get("current_phase"),
                     "actions": [
                         {
                             "leaf_name": f"{n}(t{i})",

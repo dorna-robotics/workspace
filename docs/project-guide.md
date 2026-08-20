@@ -81,12 +81,14 @@ Defines the physical hardware: robots, racks, tools, peripherals. Built using th
 
 ## 3. Launch config — `launch.yaml`
 
-Two top-level keys:
+Top-level keys:
 
 | Key | Description |
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
+| `phases` | *Optional.* Path to a phases file (e.g. `phases.py`) declaring the ordered goals the whole batch passes through. Bounds planning DEPTH — how far an item is carried before the batch regroups — which is a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). Omit it and behaviour is unchanged. See bt-framework-guide.md §13. |
+| `plan_window` | *Optional, default 4.* How many items the planner holds at once. A `Phase` may override it for the span it is open (`Phase.plan_window`). See bt-framework-guide.md §13. |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]

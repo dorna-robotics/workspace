@@ -110,6 +110,24 @@ from workspace.planner.plan_scheduler import ActionMeta
 log = logging.getLogger(__name__)
 
 
+class RecipeUnavailable(KeyError):
+    """A recipe alias that could not be built at launch was used at run time.
+
+    Distinct from a plain ``KeyError`` because the two need OPPOSITE
+    handling. A step that fails because the world moved is replannable
+    — that is what the replanner is for. A recipe that failed to
+    instantiate at launch is not: the plan is already correct and comes
+    out byte-identical every cycle, so replanning just burns a
+    scheduling pass per attempt until the no-progress cap trips.
+    Measured on bna: 6 s of CP-SAT per useless cycle.
+
+    It also carries the CAUSE. ``rcp["in_rack"]`` raising bare
+    ``KeyError: 'in_rack'`` names the symptom and hides the reason the
+    alias is missing, which was logged minutes earlier during recipe
+    loading and has scrolled away by then.
+    """
+
+
 # ── State-aware eff() detection ────────────────────────────────────────────
 
 
@@ -1294,7 +1312,7 @@ class ActionRegistry:
         )
 
     # ── Output: planner heuristic hint (auto-derived) ──────────────────
-    def monotonic_predicates(self) -> set:
+    def monotonic_predicates(self, ctx=None) -> set:
         """Predicate names that no action ever removes (across all branches).
 
         A predicate is "monotonic" iff every action that touches it does
@@ -1309,6 +1327,7 @@ class ActionRegistry:
         """
         added: set = set()
         removed: set = set()
+        unprobed: list = []
         for cls in self._actions.values():
             if _is_park_trigger(cls):
                 continue
@@ -1318,18 +1337,65 @@ class ActionRegistry:
             # currently loaded simply produce fewer facts here — those
             # the project should list in ``goal_facts`` explicitly.
             instance.state = frozenset()
-            dummy = tuple(object() for _ in cls.params)
-            try:
-                effs = _normalise_eff(instance.eff(*dummy), cls.__name__)
-            except Exception:
-                log.debug("monotonic_predicates: skip %s — eff() raised",
-                          cls.__name__, exc_info=True)
-                continue
-            for branch_facts in effs.values():
-                for f in branch_facts:
-                    if not isinstance(f, Fact):
-                        continue
-                    (added if f.polarity else removed).add(f.pred)
+            if ctx is not None:
+                instance.ctx = ctx  # type: ignore[attr-defined]
+            # PROBE WITH REAL PARAMETERS WHEN WE CAN. Polarity doesn't
+            # depend on parameter VALUES, so one binding is enough — but
+            # it has to be a binding the eff can actually RUN on. Opaque
+            # ``object()`` sentinels break any eff that does real work on
+            # its param (``tube % N``, a dict lookup, an f-string), and
+            # a broken probe makes the action contribute NOTHING: its
+            # predicates never reach ``added``, so a perfectly monotonic
+            # fact looks non-monotonic AND drops out of the derived
+            # goal_facts, quietly weakening the planner heuristic.
+            # Measured on bna: ``_seat(tube) = tube % 4`` raised on the
+            # sentinel, which cost ``unloaded`` both its phase boundary
+            # and its place in the heuristic.
+            # EVERY BINDING, not just one. Polarity doesn't depend on
+            # parameter values, but WHICH PREDICATES an eff touches can:
+            # ``SHAKER_FREE[_seat(tube)]`` names a different capacity
+            # predicate per seat. Probing one tube saw only seat 0, so
+            # ``shaker_free_1..3`` kept looking monotonic and stayed in
+            # the derived goal_facts — the heuristic was chasing
+            # capacity flags as if they were progress.
+            probed = []
+            if ctx is not None:
+                try:
+                    for params in instance.param_iter(frozenset()):
+                        try:
+                            probed.append(_normalise_eff(
+                                instance.eff(*params), cls.__name__,
+                            ))
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+            if not probed:
+                dummy = tuple(object() for _ in cls.params)
+                try:
+                    probed.append(
+                        _normalise_eff(instance.eff(*dummy), cls.__name__),
+                    )
+                except Exception:
+                    unprobed.append(cls.__name__)
+                    continue
+            for effs in probed:
+                for branch_facts in effs.values():
+                    for f in branch_facts:
+                        if not isinstance(f, Fact):
+                            continue
+                        (added if f.polarity else removed).add(f.pred)
+        if unprobed:
+            # NOT debug. An unprobeable action silently shrinks the
+            # monotonic set, which mislabels phases and weakens the
+            # heuristic — both failures are invisible at the call site.
+            log.warning(
+                "monotonic_predicates: could not probe eff() for %s — their "
+                "predicates are missing from the monotonic set, so phase "
+                "checks and derived goal_facts are incomplete. Give the "
+                "action a param_iter that enumerates on an empty state.",
+                ", ".join(sorted(unprobed)),
+            )
         return added - removed
 
     def derive_goal_facts(
@@ -1349,7 +1415,7 @@ class ActionRegistry:
         monotonic predicates can still override by returning
         ``goal_facts`` from setup() explicitly.
         """
-        mono = self.monotonic_predicates()
+        mono = self.monotonic_predicates(ctx)
         if not mono:
             return frozenset()
 
@@ -1663,6 +1729,14 @@ class _DSLActionLeaf(RecipeAction):
         #    execute() doesn't freeze the engine tick loop.
         try:
             rv = self._instance.execute(*self._params())
+        except RecipeUnavailable as ex:
+            # FATAL, NOT REPLANNABLE — see RecipeUnavailable. Same exit
+            # as a "killed" return: stop the run and state the cause,
+            # instead of replanning into the identical plan until the
+            # no-progress cap.
+            log.error("BT leaf FATAL: %s — %s", self.name, ex)
+            self._kill_runtime()
+            return False
         except Exception as ex:
             # exc_info=True attaches the traceback so we can see WHICH
             # line raised inside execute() — without it the operator
@@ -1695,10 +1769,7 @@ class _DSLActionLeaf(RecipeAction):
             return False
         if rv == "killed":
             log.warning('BT leaf KILL : %s (execute returned "killed")', self.name)
-            rt = getattr(self.ctx, "runtime", None)
-            kill = getattr(rt, "kill", None)
-            if callable(kill):
-                kill()
+            self._kill_runtime()
             return False
         if not isinstance(rv, str):
             effs = self._call_eff()
@@ -1717,6 +1788,13 @@ class _DSLActionLeaf(RecipeAction):
 
         log.info("BT leaf DONE : %s (branch=%s)", self.name, rv)
         return True
+
+    def _kill_runtime(self) -> None:
+        """Fatal, no-motion abort — the run ends INVALID / KILLED."""
+        rt = getattr(self.ctx, "runtime", None)
+        kill = getattr(rt, "kill", None)
+        if callable(kill):
+            kill()
 
     def _call_eff(self, state_snapshot: Optional[FrozenSet[Tuple[Any, ...]]] = None) -> Dict[str, Any]:
         """Call the action's eff(); state-aware effs receive a snapshot.
