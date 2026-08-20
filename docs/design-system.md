@@ -177,6 +177,67 @@ the primitive:
 shared `attachModalIn` keyframe. Body padding `20 px`. Head/foot
 padded `16 px 20 px`. Don't introduce a second modal shell.
 
+### 3.9 Schedule Gantt — phase bands and X-only zoom
+
+**Two elements, not one.** The panel positions; an inner div scrolls:
+
+```
+.gantt-panel      position:relative, overflow:hidden   -> .sched-zoom
+  └ .gantt-container  overflow:auto, max-height:100%   -> the SVG
+```
+
+The controls MUST NOT live inside the scroller. An absolutely-positioned
+child of an `overflow:auto` box scrolls with its content, so pinning them
+to the element that also owns the scroll makes them drift under the chart
+and lets blocks slide across them. The scroller takes its height from the
+chart (`max-height`, never `flex:1`) so the horizontal scrollbar hugs the
+plot instead of sitting at the bottom of the panel with dead space above.
+Floating controls also need their own opaque ground — without it, fills
+and row labels read through the gaps between the buttons.
+
+
+The live schedule (`admin/schedule.js`) is a flow Gantt: X is layout
+order, **not** wall-clock. Two grammars sit on top of the action pills.
+
+**Phase band.** Consecutive slices that share a `phase` are wrapped in a
+single rounded rect behind the pills, with the phase name above its
+left edge.
+
+| Class | Token | Notes |
+|---|---|---|
+| `.sched-phase-band` | `--surface2` @ 40% (dark) / `--surface3` @ 55% (light) | Behind everything. Structural, not stateful — see §6. Light needs a different TOKEN, not a different opacity: `--surface2` is `#f2f2f7` there and vanishes against the white card. |
+| `.sched-phase-label` | `--muted`, mono 10 px, tracked caps | Same family as `.sched-rowlabel`, so it reads as chrome. |
+
+The band is the ONE permitted tinted background in the plot. It is
+allowed because it encodes structure (which slices belong together),
+never state; state stays entirely in the pill colours. Do not tint it
+by phase — that would put colour on something the operator cannot act
+on, against §9.
+
+**Zoom is X-only.** Split the layout constants in two and scale only
+the second group:
+
+```
+FIXED   ROW_H, BLOCK_H, TOP_PAD, rx, LEFT_W, font size, label padding
+SCALED  block widths, BLOCK_GAP, SLICE_GAP, band padding
+```
+
+Scaling both axes shrinks the type and moves the rows, which is exactly
+what an operator scanning for a running block does not want. Rows must
+stay where they are.
+
+**Label-drop rule.** A pill hides its label when its box is narrower
+than the label needs — compare against the same `neededWidth()` the
+layout already uses, never a second measurement. Phase names follow the
+identical rule. Nothing is ever clipped or ellipsised.
+
+**Controls.** Three icon buttons, top-right of the chart, absolutely
+positioned over it: minus, plus, home (reuse the house path from
+`workspace.html`). Zoom percentage sits to their left in mono. Steps are
+multiplicative (1.25x), clamped, and the buttons **disable at the
+limits** — §8 applies to zoom controls like anything else. A scroll or
+pinch gesture may be added, never as the only path (§10).
+
 ## 4. Pendant-specific guidelines
 
 The pendant is operator-facing on a tablet. The rules are tighter:

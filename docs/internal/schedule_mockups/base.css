@@ -1,0 +1,634 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Dorna Workspace — Shared Base Styles
+   Single source of truth for variables, reset, buttons, pills, toasts, etc.
+   Include via: <link rel="stylesheet" href="/vendor/base.css"/>
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── CSS Variables (Dark) ─────────────────────────────────────────────── */
+:root {
+  --bg:        #000000;
+  --surface:   #1c1c1e;
+  --surface2:  #2c2c2e;
+  --surface3:  #3a3a3c;
+  --border:    #3a3a3c;
+  --border2:   #2c2c2e;
+  --text:      #f5f5f7;
+  --muted:     #8e8e93;
+  --muted2:    #636366;
+  --accent:    #0a84ff;
+  --accent-h:  #409cff;
+  --accent-dim: rgba(10,132,255,0.15);
+  --green:     #34c759;
+  --red:       #ff453a;
+  --amber:     #ff9f0a;
+  --radius:    14px;             /* legacy alias — prefer the named scale below */
+
+  /* ── Radius scale ─────────────────────────────────────────────────── */
+  --radius-xs: 6px;              /* tags, mini chips */
+  --radius-sm: 10px;             /* buttons, inputs, small pills */
+  --radius-md: 12px;             /* meta rows, info pills, list cells */
+  --radius-lg: 16px;             /* cards, modals, large surfaces */
+  --radius-xl: 22px;             /* pendant cinematic tiles */
+
+  /* ── Spacing scale (4 / 6 / 8 / 12 / 16 / 24) ─────────────────────── */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  /* ── Type scale (5 steps) ─────────────────────────────────────────── */
+  --text-xs: 11px;               /* tracked-caps section labels, hints */
+  --text-sm: 12px;               /* meta values, secondary text */
+  --text-md: 13px;               /* body, buttons */
+  --text-lg: 15px;               /* card headings, primary labels */
+  --text-xl: 17px;               /* modal heads, page H1s */
+
+  --font:      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  --mono:      "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.3);
+  --shadow:    0 4px 16px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
+  --glow:      0 0 0 4px rgba(10,132,255,0.25);
+  /* State-coloured glows — used by .ws-card status rails, .stat-item
+     accents, etc. Tokens so saturation can change in one place. */
+  --glow-ok:   0 0 12px rgba(52,199,89,0.55);
+  --glow-warn: 0 0 10px rgba(255,159,10,0.4);
+  --glow-bad:  0 0 10px rgba(255,69,58,0.4);
+
+  /* Motion tokens — every transition / animation in the app should
+     pull from these so timing feels deliberate. Don't hardcode 0.15s /
+     0.2s / ease values directly anymore. */
+  --motion-fast: 0.12s;
+  --motion-med:  0.2s;
+  --motion-slow: 0.4s;
+  --ease:        cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* ── CSS Variables (Light) ────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:        #f2f2f7;
+  --surface:   #ffffff;
+  --surface2:  #f2f2f7;
+  --surface3:  #e5e5ea;
+  --border:    #d1d1d6;
+  --border2:   #e5e5ea;
+  --text:      #1d1d1f;
+  --muted:     #86868b;
+  --muted2:    #aeaeb2;
+  --accent:    #007aff;
+  --accent-h:  #0063cc;
+  --accent-dim: rgba(0,122,255,0.10);
+  --green:     #248a3d;
+  --red:       #d70015;
+  --amber:     #c77c0a;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow:    0 2px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --glow:      0 0 0 4px rgba(0,122,255,0.20);
+  --glow-ok:   0 0 10px rgba(36,138,61,0.40);
+  --glow-warn: 0 0 8px  rgba(199,124,10,0.35);
+  --glow-bad:  0 0 8px  rgba(215,0,21,0.40);
+}
+
+/* ── Reset ────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-h); }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: var(--radius-xs); }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* Touch contexts (tablets, the pendant deployment) — bump scrollbar so
+   it's actually grabbable with a finger; on desktop the thin track is
+   the right call. */
+@media (hover: none) and (pointer: coarse) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────── */
+.mono   { font-family: var(--mono); font-size: 11px; }
+.muted  { color: var(--muted); }
+.spacer { flex: 1; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--surface2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background  var(--motion-fast) var(--ease),
+    color       var(--motion-fast) var(--ease),
+    opacity     var(--motion-fast) var(--ease),
+    transform   var(--motion-fast) var(--ease),
+    box-shadow  var(--motion-fast) var(--ease);
+  white-space: nowrap;
+  line-height: 1;
+  user-select: none;
+  letter-spacing: -0.01em;
+}
+.btn:hover:not(:disabled) { background: var(--surface3); }
+.btn:focus-visible { outline: none; box-shadow: var(--glow); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.btn-primary { background: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+
+.btn-danger { background: rgba(255,69,58,0.12); color: var(--red); }
+.btn-danger:hover:not(:disabled) { background: rgba(255,69,58,0.22); }
+
+/* Park-graceful — solid orange, mirrors .btn-primary's "solid accent
+   + white text" shape so it reads at the same saturation as the
+   pendant Park button even without an inset border. */
+.btn-warn { background: #ff7a3f; color: #fff; font-weight: 600; }
+.btn-warn:hover:not(:disabled) { background: #ff6a2a; }
+[data-theme="light"] .btn-warn { background: #d8651e; color: #fff; }
+[data-theme="light"] .btn-warn:hover:not(:disabled) { background: #c4541a; }
+
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+
+/* Size variants — all in the .btn family share ``--radius-sm`` so a
+   smaller button doesn't end up squarer than its larger sibling. */
+.btn-sm   { padding: 5px 12px; font-size: var(--text-sm); border-radius: var(--radius-sm); }
+
+/* Navbar tap targets — every icon button that lives inside a
+   topbar / ws-header / sb-header / pendant-nav grows to the
+   Apple-HIG-minimum 44×44 (vs the dense 28×31 elsewhere). The
+   SVG icon inside stays its normal 15×15 — only the clickable
+   chip grows, so the hover/active feedback area also gets bigger.
+   Scoped to navbar context so modal close buttons, card actions,
+   and other dense .btn-icon uses keep their compact sizing.
+
+   Sizing only — no ``display`` declaration here, since burger-btn
+   is mobile-only (``display: none`` by default in nav.css, flipped
+   to flex by its media query). Forcing inline-flex here would
+   leak the burger onto desktop. The button's own selector handles
+   alignment via its base styles. */
+.topbar      .btn-icon,
+.ws-header   .btn-icon,
+.sb-header   .btn-icon,
+.pendant-nav .btn-icon,
+.topbar      .burger-btn,
+.ws-header   .burger-btn,
+.sb-header   .burger-btn {
+  /* 48px tap target so a tablet operator's thumb lands cleanly on
+     navbar icons. Apple's HIG and Material both recommend 44pt+;
+     48px adds comfortable margin without stealing layout space. */
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+.topbar      .btn-icon,
+.ws-header   .btn-icon,
+.sb-header   .btn-icon,
+.pendant-nav .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-lg   { padding: 10px 16px; font-size: var(--text-lg); border-radius: var(--radius-md); }
+.btn-icon { padding: 5px 8px; }
+.btn.active { background: var(--accent-dim); color: var(--accent); }
+
+/* Button light overrides */
+[data-theme="light"] .btn       { background: rgba(0,0,0,0.04); color: var(--text); }
+[data-theme="light"] .btn:hover:not(:disabled) { background: rgba(0,0,0,0.08); }
+[data-theme="light"] .btn-primary { background: var(--accent); color: #fff; }
+[data-theme="light"] .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+[data-theme="light"] .btn-danger  { background: rgba(215,0,21,0.08); color: var(--red); }
+[data-theme="light"] .btn-danger:hover:not(:disabled) { background: rgba(215,0,21,0.14); }
+[data-theme="light"] .btn-ghost   { background: transparent; color: var(--muted); }
+[data-theme="light"] .btn-ghost:hover:not(:disabled) { background: rgba(0,0,0,0.04); color: var(--text); }
+[data-theme="light"] .btn.active  { background: var(--accent-dim); color: var(--accent); }
+
+/* ── Status Pills ─────────────────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 12px;
+  border-radius: 999px;          /* fully pill-rounded — radius-md left a flat-ish bevel */
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: none;
+  background: var(--surface2);
+  color: var(--muted);
+  white-space: nowrap;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.pill.ok   { background: rgba(52,199,89,0.18);  color: var(--green); }
+.pill.warn { background: rgba(255,159,10,0.18); color: var(--amber); }
+.pill.bad  { background: rgba(255,69,58,0.18);  color: var(--red); }
+.pill.off  { background: var(--surface2); color: var(--muted); }
+
+[data-theme="light"] .pill.ok   { background: rgba(36,138,61,0.12);  color: var(--green); }
+[data-theme="light"] .pill.warn { background: rgba(199,124,10,0.12); color: var(--amber); }
+[data-theme="light"] .pill.bad  { background: rgba(215,0,21,0.12);  color: var(--red); }
+[data-theme="light"] .pill.off  { background: rgba(142,142,147,0.1); color: var(--muted); }
+
+/* SIM variant — cyan, distinct from the state colors so it never
+   blends with ok/warn/bad. Used by the project-card devices pill
+   when sim is the only flavor of "not pure ok". */
+.pill.sim { background: rgba(94,200,255,0.15); color: #5ec8ff; }
+[data-theme="light"] .pill.sim { background: rgba(12,108,179,0.10); color: #0c6cb3; }
+.dot.sim { background: #5ec8ff; }
+[data-theme="light"] .dot.sim { background: #0c6cb3; }
+/* Devices indicator — rendered as a wc-meta-item so it lines up with
+   URL / Up. Value is a small rounded pill containing just the total
+   device count. Color rules:
+     gray (default) = nothing needs attention (all ok, all sim, or any
+                      mix that doesn't require operator action)
+     orange         = degraded — at least one device down/offline/recovering
+                      that does NOT block Start (e.g. non-critical or sim)
+     red            = blocking — at least one critical down/offline that
+                      will gate Start/Resume
+   The pill stays at total count regardless, so the visual ID of the
+   project is stable; only color changes. Hover tooltip is the full
+   breakdown ("3 devices: 1 ok, 1 in simulation, 1 down"). */
+.devices-count {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+[data-theme="light"] .devices-count {
+  background: rgba(0,0,0,0.05);
+  color: var(--muted);
+}
+.devices-meta--warn .devices-count {
+  background: rgba(255,159,10,0.18);
+  color: var(--amber);
+}
+.devices-meta--bad .devices-count {
+  background: rgba(255,69,58,0.18);
+  color: var(--red);
+}
+[data-theme="light"] .devices-meta--warn .devices-count {
+  background: rgba(199,124,10,0.12);
+  color: var(--amber);
+}
+[data-theme="light"] .devices-meta--bad .devices-count {
+  background: rgba(215,0,21,0.12);
+  color: var(--red);
+}
+
+/* ── Status Dots ──────────────────────────────────────────────────────── */
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--muted2);
+  flex-shrink: 0;
+}
+.dot.ok   { background: var(--green); }
+.dot.warn { background: var(--amber); }
+.dot.bad  { background: var(--red); }
+
+/* Pulse halo expands and fades. Colour is driven by
+   ``--dot-pulse``, set per variant so amber and red dots glow in
+   their own colour instead of inheriting green. Default is green
+   for any ``.dot.pulse`` without a variant class. */
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 var(--dot-pulse, rgba(52,199,89,0.5)); }
+  50%       { box-shadow: 0 0 0 5px transparent; }
+}
+.dot.pulse      { animation: pulse-dot 2s ease-in-out infinite; }
+.dot.ok.pulse   { --dot-pulse: rgba(52,199,89,0.5); }
+.dot.warn.pulse { --dot-pulse: rgba(255,159,10,0.5); }
+.dot.bad.pulse  { --dot-pulse: rgba(255,69,58,0.5); }
+
+/* The workflow's "IDLE/READY → operator's move" state uses a pulsing
+   ok dot inside a ``.pill`` — that one specific surface goes blue.
+   Scoped via ``.pill .dot`` so device-row dots (which also pulse on
+   ok for the "alive" cue) stay green. */
+.pill .dot.ok.pulse { --dot-pulse: rgba(10,132,255,0.5); background: var(--accent); }
+
+/* A pulsing OK dot means IDLE/READY (waiting for the operator's
+   first Start). Recolour the surrounding pill blue too so the
+   colour-coded state cue stays consistent: green = running, blue
+   = primed, amber = paused, red = error. ``:has()`` is supported
+   across all modern browsers we target. */
+.pill.ok:has(.dot.pulse) {
+  background: rgba(10,132,255,0.18);
+  color: var(--accent);
+}
+[data-theme="light"] .pill.ok:has(.dot.pulse) {
+  background: rgba(0,122,255,0.10);
+  color: var(--accent);
+}
+
+/* ── Input ────────────────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 14px;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  outline: none;
+  transition: border-color var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease);
+}
+.input:focus { border-color: var(--accent); box-shadow: var(--glow); }
+.input::placeholder { color: var(--muted2); }
+[data-theme="light"] .input { background: var(--surface); border-color: var(--border); }
+
+/* ── Section Label ────────────────────────────────────────────────────── */
+/* Section label — tracked caps, no decorative accent bar. Dropped
+   the ``::before`` so this is the single visual identity for any
+   "section title" across the app (sidebar + dashboard). */
+.section-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+
+/* ── Meta List ────────────────────────────────────────────────────────── */
+.meta-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface2);
+  border: none;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border2);
+  gap: var(--space-3);
+}
+.meta-row:last-child { border-bottom: none; }
+.meta-key { color: var(--muted); font-size: var(--text-sm); font-weight: 500; flex-shrink: 0; }
+.meta-val {
+  color: var(--text); font-weight: 500; text-align: right;
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: var(--text-sm); font-family: var(--mono);
+}
+.meta-val.err { color: var(--red); font-size: var(--text-xs); }
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+.toast-area {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 99999;
+  pointer-events: none;
+}
+.toast {
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  font-size: var(--text-md);
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.2s cubic-bezier(0.2,0.9,0.3,1);
+  max-width: 340px;
+  color: var(--text);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.toast.ok   { color: var(--green); background: rgba(52,199,89,0.18); border: 1px solid rgba(52,199,89,0.25); }
+.toast.bad  { color: var(--red);   background: rgba(255,69,58,0.18); border: 1px solid rgba(255,69,58,0.25); }
+.toast.warn { color: var(--amber); background: rgba(255,159,10,0.18); border: 1px solid rgba(255,159,10,0.25); }
+
+[data-theme="light"] .toast     { background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.12); color: var(--text); }
+[data-theme="light"] .toast.ok  { background: rgba(36,138,61,0.08); color: var(--green); }
+[data-theme="light"] .toast.bad { background: rgba(215,0,21,0.08); color: var(--red); }
+[data-theme="light"] .toast.warn{ background: rgba(199,124,10,0.08); color: var(--amber); }
+
+@keyframes toast-in {
+  from { transform: translateY(10px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+/* ── Topbar (shared header bar) ───────────────────────────────────────── */
+.topbar, .ws-header, .sb-header, .pendant-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 54px;
+  min-height: 54px;
+  border-bottom: 1px solid var(--border2);
+  background: rgba(28,28,30,0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+[data-theme="light"] .topbar,
+[data-theme="light"] .ws-header,
+[data-theme="light"] .sb-header,
+[data-theme="light"] .pendant-nav {
+  background: rgba(255,255,255,0.85);
+}
+
+/* Status-coloured underline. Either nav (main workspace or pendant)
+   tints its bottom border to match ``data-state`` (ok / warn / bad).
+   Off / unset keeps the default grey border. Transition is slow on
+   purpose — state changes should feel like the nav is "settling"
+   into a new colour, not snapping.
+   Plus: when the navbar's state pill is pulsing (IDLE/READY → "your
+   move"), the border turns blue to match the body wash + pill. */
+.ws-header, .pendant-nav { transition: border-bottom-color var(--motion-slow) var(--ease); }
+.ws-header[data-state="ok"],
+.pendant-nav[data-state="ok"]   { border-bottom-color: var(--green); }
+.ws-header[data-state="warn"],
+.pendant-nav[data-state="warn"] { border-bottom-color: var(--amber); }
+.ws-header[data-state="bad"],
+.pendant-nav[data-state="bad"]  { border-bottom-color: var(--red); }
+.ws-header[data-state="ok"]:has(.pill.ok .dot.pulse),
+.pendant-nav[data-state="ok"]:has(.pill.ok .dot.pulse) {
+  border-bottom-color: var(--accent);
+}
+.topbar-actions { display: flex; align-items: center; gap: 4px; }
+
+@media (max-width: 768px) {
+  .topbar, .ws-header, .sb-header {
+    height: 48px; min-height: 48px;
+    padding: 0 12px;
+    gap: 8px;
+  }
+}
+
+/* ── Progress Bar ─────────────────────────────────────────────────────── */
+.progress-bar {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+  flex: 1;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width var(--motion-slow) var(--ease);
+}
+.progress-bar-fill.done { background: var(--green); }
+
+/* ── Confirm Dialog ───────────────────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: none; align-items: center; justify-content: center;
+  z-index: 60000;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transition: opacity var(--motion-med) var(--ease);
+}
+.confirm-overlay.show { display: flex; }
+.confirm-overlay.hiding { opacity: 0; }
+
+.confirm-dialog {
+  width: min(340px, calc(100% - 40px));
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 28px 24px 20px; gap: 6px;
+  animation: confirmIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+.confirm-dialog.confirm-out { animation: confirmOut 0.16s ease-in forwards; }
+[data-theme="light"] .confirm-dialog { box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+
+@keyframes confirmIn {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes confirmOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: scale(0.95) translateY(4px); }
+}
+
+.confirm-icon {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
+}
+.confirm-icon[data-variant="danger"] { background: rgba(255,69,58,0.12); color: var(--red); }
+.confirm-icon[data-variant="default"] { background: var(--accent-dim); color: var(--accent); }
+[data-theme="light"] .confirm-icon[data-variant="danger"] { background: rgba(215,0,21,0.08); }
+[data-theme="light"] .confirm-icon[data-variant="default"] { background: rgba(0,122,255,0.08); }
+
+.confirm-title { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.3px; color: var(--text); text-align: center; }
+.confirm-message { font-size: var(--text-md); color: var(--muted); text-align: center; line-height: 1.5; max-width: 280px; }
+
+/* Optional bullet list for structured warnings (e.g. listing devices
+   that would block a Start). Mono font so device ids align. */
+.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); color: var(--text); text-align: left; }
+.confirm-list li { padding: 3px 6px; line-height: 1.4; word-break: break-all; }
+.confirm-list li + li { border-top: 1px solid rgba(255,255,255,0.04); }
+[data-theme="light"] .confirm-list { background: rgba(0,0,0,0.04); }
+[data-theme="light"] .confirm-list li + li { border-top: 1px solid rgba(0,0,0,0.05); }
+
+.confirm-remember { display: none; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+.confirm-remember:has(input) { display: flex; }
+.confirm-remember[style*="display: none"] { display: none !important; }
+.confirm-remember-cb { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+
+.confirm-actions { display: flex; gap: 10px; margin-top: 16px; width: 100%; }
+.confirm-actions .btn { flex: 1; justify-content: center; padding: 10px 16px; font-size: var(--text-md); font-weight: 600; border-radius: var(--radius-md); }
+.confirm-cancel { background: var(--surface2) !important; color: var(--text) !important; }
+.confirm-cancel:hover:not(:disabled) { background: var(--surface3) !important; }
+.confirm-ok-danger { background: rgba(255,69,58,0.15) !important; color: var(--red) !important; }
+.confirm-ok-danger:hover:not(:disabled) { background: rgba(255,69,58,0.28) !important; }
+[data-theme="light"] .confirm-cancel { background: rgba(0,0,0,0.05) !important; }
+[data-theme="light"] .confirm-cancel:hover:not(:disabled) { background: rgba(0,0,0,0.08) !important; }
+[data-theme="light"] .confirm-ok-danger { background: rgba(215,0,21,0.1) !important; color: var(--red) !important; }
+[data-theme="light"] .confirm-ok-danger:hover:not(:disabled) { background: rgba(215,0,21,0.18) !important; }
+
+@media (max-width: 600px) {
+  .confirm-dialog { width: calc(100% - 24px); padding: 24px 20px 16px; border-radius: var(--radius-lg); }
+  .confirm-title { font-size: 16px; }
+  .confirm-actions .btn { padding: 12px 14px; font-size: 15px; }
+}
+
+/* ── Step list ────────────────────────────────────────────────────────
+   Shared primitive used by the sidebar's ``.step-card`` and the
+   pendant's ``.pendant-step-card``. Common visual identity (color
+   states, dot glow, opacity ladder) lives here so the two density
+   variants can drift only on size / spacing — not on look. */
+:is(.step-card, .pendant-step-card) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0.45;
+  transition: opacity var(--motion-med) var(--ease);
+}
+:is(.step-card, .pendant-step-card).active { color: var(--text); opacity: 1; font-weight: 600; }
+:is(.step-card, .pendant-step-card).done   { opacity: 0.55; }
+:is(.step-card, .pendant-step-card)[data-level="warning"] { color: var(--amber); }
+:is(.step-card, .pendant-step-card)[data-level="error"]   { color: var(--red); }
+
+:is(.step-dot, .pendant-step-dot) {
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.4;
+  transition: background var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease);
+}
+:is(.step-card, .pendant-step-card).active :is(.step-dot, .pendant-step-dot) {
+  background: var(--accent); opacity: 1; box-shadow: 0 0 8px var(--accent);
+}
+:is(.step-card, .pendant-step-card).active[data-level="success"] :is(.step-dot, .pendant-step-dot) { background: var(--green); box-shadow: var(--glow-ok); }
+:is(.step-card, .pendant-step-card).active[data-level="warning"] :is(.step-dot, .pendant-step-dot) { background: var(--amber); box-shadow: var(--glow-warn); }
+:is(.step-card, .pendant-step-card).active[data-level="error"]   :is(.step-dot, .pendant-step-dot) { background: var(--red);   box-shadow: var(--glow-bad); }
+:is(.step-card, .pendant-step-card).done :is(.step-dot, .pendant-step-dot) { opacity: 0.6; }
+:is(.step-card, .pendant-step-card).done[data-level="success"] :is(.step-dot, .pendant-step-dot) { background: var(--green); opacity: 0.85; }
+:is(.step-card, .pendant-step-card).done[data-level="warning"] :is(.step-dot, .pendant-step-dot) { background: var(--amber); opacity: 0.85; }
+:is(.step-card, .pendant-step-card).done[data-level="error"]   :is(.step-dot, .pendant-step-dot) { background: var(--red);   opacity: 0.85; }
+
+/* ── Reduced motion ───────────────────────────────────────────────────
+   Respect the OS-level "reduce motion" preference: kill the ambient
+   breathe / pulse / blink loops and shorten every transition to near-
+   zero. Hover / focus state changes still happen (they're functional
+   feedback) — only decorative motion is suppressed. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

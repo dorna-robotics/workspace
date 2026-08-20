@@ -441,12 +441,26 @@
 [data-theme="light"] .btn.btn-warn { background: #d8651e; color: #fff; }
 [data-theme="light"] .btn.btn-warn:hover:not(:disabled) { background: #c4541a; }
 
-.gantt-container {
+.gantt-panel {
   flex: 1;
-  overflow: auto;
+  position: relative;      /* anchors .sched-zoom OUTSIDE the scroller */
+  overflow: hidden;
+  /*  NO display:flex here. #wsSchedPane is toggled with an inline
+      style.display = "block", which would beat it, so the layout must
+      hold under plain block flow — the single .gantt-container child
+      caps itself with max-height instead of flexing. */
   padding: 22px 22px 24px;
   background: var(--bg);
   min-height: 220px;
+}
+/*  The scroller. NOT flex:1 — it takes its height from the chart and is
+    only capped by the panel, so the horizontal scrollbar hugs the
+    bottom of the plot rather than sitting at the bottom of the panel
+    with dead space above it. */
+.gantt-container {
+  overflow: auto;
+  max-height: 100%;
+  min-height: 0;
 }
 .sched-empty {
   padding: 88px 24px;
@@ -488,6 +502,84 @@
   stroke-dasharray: 4 6;
   opacity: 0.5;
 }
+
+/* ── Phase band — groups the slices belonging to one phase ─────────── */
+/*  The one permitted tinted background in the plot. It encodes
+    STRUCTURE (which slices belong together), never state — state stays
+    entirely in the pill colours, so §6's "no tinted state backgrounds"
+    still holds. Never tint it per-phase: that puts colour on something
+    the operator cannot act on (§9). design-system.md §3.9.            */
+.sched-phase-band {
+  fill: var(--surface2);
+  opacity: 0.40;
+}
+/*  LIGHT THEME NEEDS A DIFFERENT TOKEN, not a different opacity.
+    --surface2 is #2c2c2e on dark (reads against the #1c1c1e card) but
+    #f2f2f7 on light, which is all but invisible against the white
+    card. --surface3 (#e5e5ea) is the first light token that separates
+    from the surface, and it wants slightly more opacity to match the
+    dark band's weight.                                                */
+[data-theme="light"] .sched-phase-band {
+  fill: var(--surface3);
+  opacity: 0.55;
+}
+.sched-phase-label {
+  font: 600 10px/1 var(--mono);
+  fill: var(--muted);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* ── Zoom controls — top-right, floating over the chart ────────────── */
+.sched-zoom {
+  position: absolute;
+  /*  Inset to match the panel's own content padding. An absolutely
+      positioned box resolves top/right against the PADDING BOX, so the
+      panel's padding adds no distance of its own — at --space-3 the
+      controls sat 8px off the panel edge while the chart was inset 22,
+      reading as stuck to the corner and out of line with the plot. */
+  top: var(--space-6);
+  right: var(--space-6);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /*  OPAQUE BACKDROP. The controls float over a chart that scrolls
+      under them; without a ground of its own, block fills and row
+      labels read straight through the gaps between the buttons and
+      behind the percentage. */
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.sched-zoom-pct {
+  font: 600 10px/1 var(--mono);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  min-width: 4ch;
+  text-align: right;
+}
+.sched-zoom-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease),
+              border-color var(--motion-fast) var(--ease);
+}
+.sched-zoom-btn:hover  { background: var(--surface3); }
+.sched-zoom-btn:active { background: var(--accent-dim); border-color: var(--accent); }
+.sched-zoom-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sched-zoom-btn[disabled] { opacity: 0.40; cursor: default; }
+.sched-zoom-btn[disabled]:hover { background: var(--surface2); }
+.sched-zoom-btn svg { display: block; }
 
 /* ── Action blocks ───────────────────────────────────────────────────── */
 /*  Semantic-colour states. Pending and done are SOLID fills (no

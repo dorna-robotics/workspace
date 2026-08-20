@@ -36,6 +36,35 @@ const _leafOrder = [];
 // as ``_leafOrder`` — overwritten each render.
 const _leafGeom = new Map();
 
+// ── X-only zoom ──────────────────────────────────────────────────────
+// Scales HORIZONTAL layout only: block widths and the gaps between
+// them. Row height, block height, corner radius and font size are
+// fixed, because shrinking those moves the rows and the type — exactly
+// what an operator scanning for the running block does not want.
+// design-system.md §3.9.
+// Label metrics — module-scope because BOTH the layout pass and
+// _appendBlock's label-drop test must measure with the same numbers.
+// They were duplicated once; that is how a drop rule and a width rule
+// drift apart.
+const FONT_PX   = 12;
+const CHAR_W    = FONT_PX * 0.62;
+const LABEL_PAD = 22;
+
+let _zoom = 1;
+const ZOOM_MIN = 0.25, ZOOM_MAX = 2.5, ZOOM_STEP = 1.25;
+
+export function setZoom(z) {
+  const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  if (next === _zoom) return;
+  _zoom = next;
+  _syncZoomControls();
+  _render();
+}
+export function zoomIn()    { setZoom(_zoom * ZOOM_STEP); }
+export function zoomOut()   { setZoom(_zoom / ZOOM_STEP); }
+export function zoomReset() { setZoom(1); }
+export function zoomLevel() { return _zoom; }
+
 // Compose the (replan_id, leaf_name) lookup key. Defaults replan_id to
 // 0 for safety against older publishers; new publishers always supply
 // it. Keeps every site that hashes a leaf consistent — change here
@@ -172,8 +201,90 @@ function _jumpToCurrent() {
 // Attach the gantt to an inline host element (the viewport's
 // Schedule pane). Renders happen only while the host is visible.
 export function attachSchedule(el) {
-  _ganttEl = el;
-  if (el) el.classList.add("gantt-container");
+  if (!el) { _ganttEl = null; return; }
+  // TWO ELEMENTS, DELIBERATELY. The controls must not live inside the
+  // element that scrolls: an absolutely-positioned child of a scroll
+  // container scrolls WITH its content, so pinning them to the host
+  // that also owns `overflow: auto` made them drift away under the
+  // chart and let blocks and labels slide across them.
+  //
+  //   el  .gantt-panel      position:relative, no scroll  -> controls
+  //     └ div .gantt-container  overflow:auto             -> the chart
+  //
+  // The scroller also shrink-wraps its content (max-height, not flex:1)
+  // so the horizontal scrollbar sits directly under the chart instead
+  // of at the bottom of the whole panel.
+  el.classList.add("gantt-panel");
+  let inner = el.querySelector(":scope > .gantt-container");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "gantt-container";
+    el.appendChild(inner);
+  }
+  _ganttEl = inner;
+  _mountZoomControls(el);
+}
+
+// Minus / plus / home, floating top-right over the chart. Built once
+// per host; the SVG is re-rendered underneath them, so they live on the
+// host rather than inside the chart. design-system.md §3.9.
+const _ICON = {
+  out:  '<line x1="5" y1="12" x2="19" y2="12"/>',
+  in:   '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  // Same house path the sidebar uses — one glyph, one meaning.
+  home: '<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>' +
+        '<polyline points="9 22 9 12 15 12 15 22"/>',
+};
+
+function _svgIcon(paths) {
+  return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
+         'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+         'stroke-linejoin="round">' + paths + '</svg>';
+}
+
+let _zoomPctEl = null, _zoomInEl = null, _zoomOutEl = null;
+
+// Clear the CHART. The zoom bar lives on the PANEL, not on this
+// scroller, so emptying the scroller can no longer unmount it — the
+// guard is kept anyway because _clearChart is also called with the
+// panel in older paths and losing the controls is silent.
+function _clearChart(host) {
+  if (!host) return;
+  for (const child of [...host.children]) {
+    if (!child.classList.contains("sched-zoom")) child.remove();
+  }
+}
+
+function _mountZoomControls(host) {
+  if (host.querySelector(".sched-zoom")) return;   // already mounted
+  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+  const bar = document.createElement("div");
+  bar.className = "sched-zoom";
+  bar.innerHTML =
+    '<span class="sched-zoom-pct"></span>' +
+    '<button class="sched-zoom-btn" data-z="out"  title="Zoom out"   aria-label="Zoom out">'  + _svgIcon(_ICON.out)  + '</button>' +
+    '<button class="sched-zoom-btn" data-z="in"   title="Zoom in"    aria-label="Zoom in">'   + _svgIcon(_ICON.in)   + '</button>' +
+    '<button class="sched-zoom-btn" data-z="home" title="Reset zoom" aria-label="Reset zoom">'+ _svgIcon(_ICON.home) + '</button>';
+  host.appendChild(bar);
+  _zoomPctEl = bar.querySelector(".sched-zoom-pct");
+  _zoomOutEl = bar.querySelector('[data-z="out"]');
+  _zoomInEl  = bar.querySelector('[data-z="in"]');
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-z]");
+    if (!b) return;
+    if (b.dataset.z === "in")   zoomIn();
+    if (b.dataset.z === "out")  zoomOut();
+    if (b.dataset.z === "home") zoomReset();
+  });
+  _syncZoomControls();
+}
+
+// Buttons disable at the limits — §8 wants every state shipped, and
+// that applies to zoom controls like anything else.
+function _syncZoomControls() {
+  if (_zoomPctEl) _zoomPctEl.textContent = Math.round(_zoom * 100) + "%";
+  if (_zoomInEl)  _zoomInEl.disabled  = _zoom >= ZOOM_MAX - 1e-6;
+  if (_zoomOutEl) _zoomOutEl.disabled = _zoom <= ZOOM_MIN + 1e-6;
 }
 
 // Called when the Schedule tab activates: render and auto-centre on
@@ -197,7 +308,11 @@ function _render() {
 function _renderGantt() {
   if (!_ganttEl) return;
   if (_slices.length === 0) {
-    _ganttEl.innerHTML = `<div class="sched-empty">No plan yet.</div>`;
+    _clearChart(_ganttEl);
+    const empty = document.createElement("div");
+    empty.className = "sched-empty";
+    empty.textContent = "No plan yet.";
+    _ganttEl.appendChild(empty);
     return;
   }
 
@@ -219,8 +334,9 @@ function _renderGantt() {
   const FONT_PX   = 12;
   const CHAR_W    = FONT_PX * 0.62;
   const LABEL_PAD = 22;
-  const BLOCK_GAP = 18;       // gap between consecutive blocks on a row
-  const SLICE_GAP = 38;       // gap between slices (vertical divider sits at the midpoint)
+  // SCALED by zoom (horizontal only).
+  const BLOCK_GAP = 18 * _zoom;   // gap between consecutive blocks on a row
+  const SLICE_GAP = 38 * _zoom;   // gap between slices (divider sits at the midpoint)
   const ROW_H     = 48;
   const ROW_PAD   = 8;
   const LEFT_W    = 120;
@@ -234,7 +350,10 @@ function _renderGantt() {
     const base = a.class_name || a.name;
     return (a.parametrized === false) ? base : `${base}(${a.item})`;
   }
-  function neededWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
+  // Natural width at 100% — the label-drop rule below compares against
+  // this, never a second measurement.
+  function naturalWidth(a) { return labelOf(a).length * CHAR_W + LABEL_PAD; }
+  function neededWidth(a)  { return Math.max(naturalWidth(a) * _zoom, 10); }
 
   // ── Flow layout, per-slice column ─────────────────────────────────
   // X is NOT proportional to wall-clock time. Block widths come from
@@ -243,6 +362,8 @@ function _renderGantt() {
   // and in the hover tooltip.
   const placements = new Map();    // composite key -> {a, x, w, y, h, rowIdx, replan_id}
   const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
+  // Per-slice x-extent + phase name, merged into bands after layout.
+  const sliceSpans = [];
   let xBase = LEFT_W + 8;
   _leafOrder.length = 0;
   _leafGeom.clear();
@@ -319,6 +440,7 @@ function _renderGantt() {
       placed.push(p);
     }
 
+    const sliceMinX = xBase;
     let sliceMaxX = xBase;
     const sliceByStart = [...local.values()].sort(
       (a, b) => chartStart(a.a) - chartStart(b.a),
@@ -334,6 +456,9 @@ function _renderGantt() {
     if (sliceIdx + 1 < _slices.length) {
       sliceDividerXs.push(sliceMaxX + SLICE_GAP / 2);
     }
+    sliceSpans.push({
+      phase: slice.phase || null, x0: sliceMinX, x1: sliceMaxX,
+    });
     xBase = sliceMaxX + SLICE_GAP;
   }
 
@@ -346,14 +471,50 @@ function _renderGantt() {
   svg.setAttribute("height", String(H));
   svg.setAttribute("class",  "sched-svg");
 
+  const gBands = document.createElementNS(svgNS, "g");
   const gRows = document.createElementNS(svgNS, "g");
   const gSlices = document.createElementNS(svgNS, "g");
   const gConn = document.createElementNS(svgNS, "g");
   const gBlocks = document.createElementNS(svgNS, "g");
+  svg.appendChild(gBands);   // behind everything — structural, not stateful
   svg.appendChild(gRows);
   svg.appendChild(gSlices);
   svg.appendChild(gConn);
   svg.appendChild(gBlocks);
+
+  // ── Phase bands ────────────────────────────────────────────────────
+  // Consecutive slices sharing a phase merge into one rounded rect
+  // behind the pills, named above its left edge. Projects that declare
+  // no phases send phase=null and get no bands at all.
+  // design-system.md §3.9.
+  const BAND_PAD = 8 * _zoom;
+  const bands = [];
+  for (const sp of sliceSpans) {
+    if (!sp.phase) continue;
+    const last = bands[bands.length - 1];
+    if (last && last.phase === sp.phase) last.x1 = sp.x1;
+    else bands.push({ phase: sp.phase, x0: sp.x0, x1: sp.x1 });
+  }
+  for (const b of bands) {
+    const w = b.x1 - b.x0;
+    const r = document.createElementNS(svgNS, "rect");
+    r.setAttribute("x", String(b.x0 - BAND_PAD));
+    r.setAttribute("y", String(TOP_PAD - 6));
+    r.setAttribute("width",  String(w + 2 * BAND_PAD));
+    r.setAttribute("height", String(rows.length * ROW_H + 8));
+    r.setAttribute("rx", "12");
+    r.setAttribute("class", "sched-phase-band");
+    gBands.appendChild(r);
+    // Same drop rule as the pills: no clipping, no ellipsis.
+    if (w > b.phase.length * 6.2 + 14) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", String(b.x0 - BAND_PAD + 8));
+      t.setAttribute("y", String(TOP_PAD - 12));
+      t.setAttribute("class", "sched-phase-label");
+      t.textContent = b.phase;
+      gBands.appendChild(t);
+    }
+  }
 
   // Row labels + horizontal dividers.
   rows.forEach((r, i) => {
@@ -421,7 +582,7 @@ function _renderGantt() {
     _appendBlock(gBlocks, p, state);
   }
 
-  _ganttEl.innerHTML = "";
+  _clearChart(_ganttEl);
   _ganttEl.appendChild(svg);
 }
 
@@ -457,13 +618,18 @@ function _appendBlock(parent, p, state) {
   // in sync. Parameterless actions drop the "(item)" suffix.
   const base = a.class_name || a.name;
   const label = (a.parametrized === false) ? base : `${base}(${a.item})`;
-  const lab = document.createElementNS(svgNS, "text");
-  lab.setAttribute("x", String(x + w / 2));
-  lab.setAttribute("y", String(y + h / 2 + 4));
-  lab.setAttribute("text-anchor", "middle");
-  lab.setAttribute("class", "sched-blocklabel");
-  lab.textContent = label;
-  g.appendChild(lab);
+  // LABEL-DROP: a pill that is narrower than its own text simply has
+  // no text. Never clipped, never ellipsised. design-system.md §3.9.
+  const _natural = label.length * CHAR_W + LABEL_PAD;
+  const lab = (w >= _natural * 0.92) ? document.createElementNS(svgNS, "text") : null;
+  if (lab) {
+    lab.setAttribute("x", String(x + w / 2));
+    lab.setAttribute("y", String(y + h / 2 + 4));
+    lab.setAttribute("text-anchor", "middle");
+    lab.setAttribute("class", "sched-blocklabel");
+    lab.textContent = label;
+    g.appendChild(lab);
+  }
 
   // Duration text under DONE blocks only — pending / running blocks
   // have nothing useful to show yet.

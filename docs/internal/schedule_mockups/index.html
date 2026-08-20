@@ -1,0 +1,158 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Schedule — phase bands + X zoom</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: var(--bg); color: var(--text); margin: 0; padding: var(--space-6);
+         font: 13px/1.5 -apple-system, system-ui, sans-serif; }
+  h1 { font-size: var(--text-xl); margin: 0 0 var(--space-2); }
+  p.note { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-5); max-width: 64ch; }
+  .frame { background: var(--surface); border: 1px solid var(--border);
+           border-radius: var(--radius-lg); padding: var(--space-5); overflow-x: auto; }
+  .schedwrap { position: relative; }
+  .zoombar { position: absolute; top: var(--space-3); right: var(--space-3);
+             z-index: 2; display:flex; gap: var(--space-2); align-items:center; }
+  .zbtn { width:32px; height:32px; display:grid; place-items:center;
+          background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+          border-radius: var(--radius-sm); font-size: var(--text-md); cursor: pointer;
+          transition: background var(--motion-fast) var(--ease); }
+  .zbtn:hover { background: var(--surface3); }
+  .zbtn:active { background: var(--accent-dim); border-color: var(--accent); }
+  .zbtn[disabled] { opacity: .4; cursor: default; }
+  .zbtn svg { display:block; }
+  .zpct { color: var(--muted); font: 600 10px/1 var(--mono); letter-spacing: .08em;
+          min-width: 4ch; text-align: right; }
+
+  /* ── Real schedule grammar, copied from admin/style.css ─────────── */
+  .sched-rowlabel { font: 600 10px/1 var(--mono); fill: var(--muted);
+                    letter-spacing: .10em; text-transform: uppercase; }
+  .sched-rowline  { stroke: var(--border2); stroke-width: 1; opacity: .45; }
+  .sched-connector { stroke-width: 1.5; stroke-linecap: round; fill: none; }
+  .sched-connector.pending { stroke: var(--border); opacity: .65; stroke-dasharray: 3 4; }
+  .sched-connector.done    { stroke: rgba(10,132,255,0.32); }
+  .sched-block-border { fill: none; stroke-width: 1; }
+  .sched-blocklabel   { font: 600 12px/1 var(--mono); letter-spacing: .01em; }
+  .sched-block.sched-pending .sched-block-fill   { fill: var(--surface2); }
+  .sched-block.sched-pending .sched-block-border { stroke: var(--border); }
+  .sched-block.sched-pending .sched-blocklabel   { fill: var(--muted); }
+  .sched-block.sched-done .sched-block-fill   { fill: rgba(10,132,255,0.10); }
+  .sched-block.sched-done .sched-block-border { stroke: rgba(10,132,255,0.32); }
+  .sched-block.sched-done .sched-blocklabel   { fill: var(--accent-h); opacity: .85; }
+  .sched-block.sched-running .sched-block-fill   { fill: var(--accent-dim); }
+  .sched-block.sched-running .sched-block-border { stroke: var(--accent); stroke-width: 2; }
+  .sched-block.sched-running .sched-blocklabel   { fill: var(--accent-h); }
+
+  /* ── NEW: phase band (treatment A) ──────────────────────────────── */
+  .sched-phase-band  { fill: var(--surface2); opacity: .40; }
+  .sched-phase-label { font: 600 10px/1 var(--mono); fill: var(--muted);
+                       letter-spacing: .10em; text-transform: uppercase; }
+</style>
+
+<h1>Schedule — phase bands, X-only zoom</h1>
+<p class="note">Treatment A. Zoom scales the X axis only — pill height, corner radius,
+label size and row spacing are fixed, so text stays legible and rows never move.
+A pill drops its label when it gets narrower than the label needs.</p>
+
+<div class="schedwrap">
+  <div class="zoombar">
+    <span class="zpct" id="pct">100%</span>
+    <button class="zbtn" id="out" title="Zoom out" aria-label="Zoom out">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button class="zbtn" id="in" title="Zoom in" aria-label="Zoom in">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button class="zbtn" id="home" title="Reset zoom" aria-label="Reset zoom">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </button>
+  </div>
+  <div class="frame"><svg id="g"></svg></div>
+</div>
+
+<script>
+const PHASES = [
+  { name:"dispensed", slices:[
+      [["Intake",0,"done"],["Scan",0,"done"],["Weigh",0,"done"],["Decap",0,"done"]],
+      [["Intake",1,"done"],["Scan",1,"running"],["Weigh",1,"pending"],["Decap",1,"pending"]]]},
+  { name:"unloaded", slices:[
+      [["LoadShaker",0,"pending"],["Shake",null,"pending"],["UnloadShaker",0,"pending"]]]},
+  { name:"racked", slices:[
+      [["PickForCap",0,"pending"],["Cap",0,"pending"],["ReturnCapped",0,"pending"]]]},
+];
+const NS="http://www.w3.org/2000/svg";
+const el=(n,a={})=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+// FIXED (never scaled): everything vertical, plus type.
+const ROW_H=48, BLOCK_H=26, TOP=34, RX=8, LEFT=96, FONT=12, CHAR_W=FONT*0.62, PAD=22;
+// SCALED by zoom: horizontal only.
+const BLOCK_GAP=18, SLICE_GAP=38, BAND_PAD=8;
+let z=1;
+
+function render(){
+  const svg=document.getElementById("g"); svg.innerHTML="";
+  document.getElementById("pct").textContent=Math.round(z*100)+"%";
+  document.getElementById("in").disabled  = z>=2.5;
+  document.getElementById("out").disabled = z<=0.25;
+
+  const gBand=el("g"), gRow=el("g"), gConn=el("g"), gBlk=el("g");
+  let x=LEFT; const bands=[];
+  for(const ph of PHASES){
+    const x0=x;
+    ph.slices.forEach((slice,si)=>{
+      let prev=null;
+      slice.forEach(([name,item,state])=>{
+        const label = item===null ? `${name}()` : `${name}(${item})`;
+        const natural = label.length*CHAR_W + PAD;      // width at 100%
+        const w = Math.max(natural*z, 10);
+        const row = name==="Shake" ? 1 : 0;
+        const y = TOP + row*ROW_H;
+        if(prev && prev.row===row){
+          const c=el("line",{x1:prev.x2,y1:prev.y+BLOCK_H/2,x2:x,y2:y+BLOCK_H/2});
+          c.setAttribute("class",`sched-connector ${state==="done"?"done":"pending"}`);
+          gConn.appendChild(c);
+        }
+        const g=el("g"); g.setAttribute("class",`sched-block sched-${state}`);
+        const f=el("rect",{x,y,width:w,height:BLOCK_H,rx:RX}); f.setAttribute("class","sched-block-fill");
+        const b=el("rect",{x,y,width:w,height:BLOCK_H,rx:RX}); b.setAttribute("class","sched-block-border");
+        g.appendChild(f); g.appendChild(b);
+        // LABEL-DROP: hide when the pill is narrower than the text needs.
+        if(w >= natural*0.92){
+          const t=el("text",{x:x+w/2,y:y+BLOCK_H/2+4,"text-anchor":"middle"});
+          t.setAttribute("class","sched-blocklabel"); t.textContent=label; g.appendChild(t);
+        }
+        gBlk.appendChild(g);
+        prev={x2:x+w,y,row}; x += w + BLOCK_GAP*z;
+      });
+      if(si<ph.slices.length-1) x += SLICE_GAP*z*0.5;
+    });
+    bands.push({name:ph.name,x0,x1:x-BLOCK_GAP*z});
+    x += SLICE_GAP*z;
+  }
+  const W=x+16, H=TOP+2*ROW_H+18;
+  svg.setAttribute("width",W); svg.setAttribute("height",H);
+
+  ["robot","shaker"].forEach((r,i)=>{
+    const ln=el("line",{x1:LEFT-8,x2:W-16,y1:TOP+i*ROW_H,y2:TOP+i*ROW_H});
+    ln.setAttribute("class","sched-rowline"); gRow.appendChild(ln);
+    const t=el("text",{x:8,y:TOP+i*ROW_H+BLOCK_H/2+3});
+    t.setAttribute("class","sched-rowlabel"); t.textContent=r; gRow.appendChild(t);
+  });
+  for(const bd of bands){
+    const w=bd.x1-bd.x0;
+    const r=el("rect",{x:bd.x0-BAND_PAD*z,y:TOP-16,width:w+2*BAND_PAD*z,
+                       height:2*ROW_H+2,rx:12});
+    r.setAttribute("class","sched-phase-band"); gBand.appendChild(r);
+    // Phase name drops on the same rule as pill labels.
+    if(w > bd.name.length*6.2 + 14){
+      const t=el("text",{x:bd.x0-BAND_PAD*z+8,y:TOP-22});
+      t.setAttribute("class","sched-phase-label"); t.textContent=bd.name; gBand.appendChild(t);
+    }
+  }
+  svg.appendChild(gBand); svg.appendChild(gRow); svg.appendChild(gConn); svg.appendChild(gBlk);
+}
+const STEP=1.25;
+document.getElementById("in").onclick  =()=>{z=Math.min(2.5,z*STEP);render();};
+document.getElementById("out").onclick =()=>{z=Math.max(0.25,z/STEP);render();};
+document.getElementById("home").onclick=()=>{z=1;render();};
+render();
+</script>
