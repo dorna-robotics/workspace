@@ -1942,7 +1942,7 @@ if (node) {
           // Sync builder state from server so object list + config work after refresh
           if (s && !s.delete && s.type) {
             if (!window.builderState.components[n]) {
-              window.builderState.components[n] = { type: s.type };
+              window.builderState.components[n] = { type: s.type, __file: __activeFileName() };
               if (!window.builderState.placedOrder.includes(n)) {
                 window.builderState.placedOrder.push(n);
               }
@@ -2935,7 +2935,7 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
 
   // include create options (stored for config save)
   const optionsOut = (options && typeof options === "object") ? options : {};
-  window.builderState.components[name] = { type, ...optionsOut };
+  window.builderState.components[name] = { type, ...optionsOut, __file: __activeFileName() };
 
   try { socket.emit("upstream_update", { [name]: spec }); } catch (e) {}
   try { upsertObject(name, spec); } catch (e) {}
@@ -3085,7 +3085,7 @@ async function spawnComponentSilent(type, meta=null, options=null, customName=nu
   };
 
   const optionsOut = (options && typeof options === "object") ? options : {};
-  window.builderState.components[name] = { type, ...optionsOut };
+  window.builderState.components[name] = { type, ...optionsOut, __file: __activeFileName() };
 
   if (extra && extra.collect) extra.collect[name] = spec;
   else { try { socket.emit("upstream_update", { [name]: spec }); } catch (e) {} }
@@ -3785,7 +3785,7 @@ function placePlateRelative(name, spec, lastName, dx, dy) {
   try { upsertObject(name, spec); } catch (e) {}
 
   window.builderState.lastFixturePlate = name;
-  window.builderState.components[name] = { type: "fixture_plate", attach };
+  window.builderState.components[name] = { type: "fixture_plate", attach, __file: __activeFileName() };
   window.builderState.placedOrder.push(name);
   showToast("Placed fixture plate relative to last.");
 }
@@ -6786,10 +6786,27 @@ function __sbTextModal({ title = "", label = "", value = "", placeholder = "", o
 // Lazily tag any component that doesn't have a ``__file`` yet with the
 // currently-active file. Called from the preview tick + save, so a
 // component created while a given file is "checked" gets bound to it.
+// The file a component is born into. Ownership is decided AT SPAWN and
+// written on the component, never inferred later — see __assignUntagged.
+function __activeFileName() {
+  const bs = window.builderState;
+  return (bs && bs.activeFile) || (bs && bs.files && bs.files[0]) || "scene.j2";
+}
+
+// Stamp any component that still has no file — legacy state restored
+// from localStorage, or anything spawned before this ran.
+//
+// NEVER CALL THIS FROM A RENDER PATH. It MUTATES ownership, and the
+// preview used to call it on every refresh: clicking a file set
+// activeFile and then refreshed, so the first file you looked at
+// permanently claimed every untagged component. After that "selected
+// config" and "all configs" showed the same thing, which reads as a
+// dead toggle. Spawn sites tag their own components now; this is only
+// for the save path, where every component must land in a real file.
 function __assignUntaggedToActive() {
   const bs = window.builderState;
   if (!bs || !bs.components) return;
-  const active = bs.activeFile || (bs.files && bs.files[0]) || "scene.j2";
+  const active = __activeFileName();
   for (const meta of Object.values(bs.components)) {
     if (meta && !meta.__file) meta.__file = active;
   }
@@ -6810,7 +6827,9 @@ function __fileForName(name) {
 // Every declared file is represented (even if empty) so the file
 // structure is preserved on save.
 function buildConfigByFile() {
-  __assignUntaggedToActive();
+  // No __assignUntaggedToActive() here — this is a READ, and the preview
+  // calls it. Untagged components resolve through __fileForName's
+  // activeFile fallback, which is pure.
   const merged = buildConfigObject();
   const bs = window.builderState;
   const files = (bs && bs.files && bs.files.length) ? bs.files.slice() : ["scene.j2"];
@@ -6992,6 +7011,11 @@ function __activeFileName() {
 
 function saveConfig() {
   // Download the currently selected file (its components only).
+  // Writing is the one moment ownership must be explicit: anything still
+  // untagged (legacy localStorage state) is claimed by the active file
+  // here, rather than resolving through a fallback that follows whatever
+  // file happens to be selected.
+  __assignUntaggedToActive();
   const active = __activeFileName();
   const comps = buildConfigByFile()[active] || {};
   __downloadTextFile(active, toYamlString(comps));
@@ -8438,12 +8462,16 @@ ensureBuilderBar();
   let __previewScope = "all";   // "all" | "file"
   const __scopeAllBtn  = document.getElementById("sbScopeAll");
   const __scopeFileBtn = document.getElementById("sbScopeFile");
-  function __syncScopeButtons() {
+  // COUNTS ON THE LABELS. Without them "selected config" showing the
+  // same text as "all configs" is indistinguishable from a broken
+  // toggle, when usually it means every component really does live in
+  // one file. The numbers make that legible at a glance.
+  function __syncScopeButtons(allN, fileN) {
     if (!__scopeAllBtn || !__scopeFileBtn) return;
     __scopeAllBtn.classList.toggle("active", __previewScope === "all");
     __scopeFileBtn.classList.toggle("active", __previewScope === "file");
-    // Static tags ("all files" / "selected file"); the file list above
-    // already shows which file is selected.
+    if (typeof allN === "number")  __scopeAllBtn.textContent  = `all configs (${allN})`;
+    if (typeof fileN === "number") __scopeFileBtn.textContent = `selected config (${fileN})`;
     __scopeFileBtn.title = "Show only " + (window.builderState.activeFile || "the selected file");
   }
   __scopeAllBtn?.addEventListener("click", () => { __previewScope = "all"; updateConfigPreview(); });
@@ -8452,11 +8480,11 @@ ensureBuilderBar();
   function updateConfigPreview() {
     try {
       renderFilesList();
-      __syncScopeButtons();
       const bs = window.builderState;
-      const cfg = (__previewScope === "file")
-        ? (buildConfigByFile()[bs.activeFile] || {})
-        : buildConfigObject();
+      const allCfg  = buildConfigObject();
+      const fileCfg = buildConfigByFile()[bs.activeFile] || {};
+      __syncScopeButtons(Object.keys(allCfg).length, Object.keys(fileCfg).length);
+      const cfg = (__previewScope === "file") ? fileCfg : allCfg;
       const keys = Object.keys(cfg);
       if (!keys.length) {
         pre.textContent = (__previewScope === "file")
