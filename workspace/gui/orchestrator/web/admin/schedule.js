@@ -51,7 +51,7 @@ const CHAR_W    = FONT_PX * 0.62;
 const LABEL_PAD = 22;
 
 let _zoom = 1;
-const ZOOM_MIN = 0.25, ZOOM_MAX = 2.5, ZOOM_STEP = 1.25;
+const ZOOM_MIN = 0.10, ZOOM_MAX = 2.5, ZOOM_STEP = 1.25;
 
 export function setZoom(z) {
   const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -153,7 +153,9 @@ function _patchBlockState(leafKey) {
   // If this transition just produced a finished block, add its
   // elapsed-time label under the rect. (Done before only via a full
   // re-render — we replicate just the duration text here.)
-  if ((state === "done" || state === "skipped") && !g.querySelector(".sched-block-elapsed")) {
+  if ((state === "done" || state === "skipped")
+      && g.querySelector("text.sched-blocklabel")       // label shown => wide enough
+      && !g.querySelector(".sched-block-elapsed")) {
     const timing = _leafTiming.get(leafKey) || {};
     if (timing.startedAt != null && timing.endedAt != null) {
       const elapsed = timing.endedAt - timing.startedAt;
@@ -201,28 +203,51 @@ function _jumpToCurrent() {
 // Attach the gantt to an inline host element (the viewport's
 // Schedule pane). Renders happen only while the host is visible.
 export function attachSchedule(el) {
-  if (!el) { _ganttEl = null; return; }
-  // TWO ELEMENTS, DELIBERATELY. The controls must not live inside the
-  // element that scrolls: an absolutely-positioned child of a scroll
-  // container scrolls WITH its content, so pinning them to the host
-  // that also owns `overflow: auto` made them drift away under the
-  // chart and let blocks and labels slide across them.
+  if (!el) { _ganttEl = null; _gutterEl = null; _stickyEl = null; return; }
+  // FOUR ELEMENTS, EACH WITH ONE JOB. A single scrolling SVG loses the
+  // row labels and the phase name the moment you pan, and lets blocks
+  // slide under the floating controls.
   //
-  //   el  .gantt-panel      position:relative, no scroll  -> controls
-  //     └ div .gantt-container  overflow:auto             -> the chart
+  //   el .gantt-panel            positions, never scrolls
+  //     ├ .sched-topbar          phase readout + zoom controls
+  //     └ .gantt-body
+  //         ├ .gantt-gutter      row labels — FROZEN
+  //         └ .gantt-container   the plot — scrolls
   //
-  // The scroller also shrink-wraps its content (max-height, not flex:1)
-  // so the horizontal scrollbar sits directly under the chart instead
-  // of at the bottom of the whole panel.
+  // The controls live in the topbar, not over the plot, so nothing can
+  // pass beneath them.
   el.classList.add("gantt-panel");
-  let inner = el.querySelector(":scope > .gantt-container");
-  if (!inner) {
-    inner = document.createElement("div");
-    inner.className = "gantt-container";
-    el.appendChild(inner);
+  let bar = el.querySelector(":scope > .sched-topbar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.className = "sched-topbar";
+
+    el.appendChild(bar);
   }
-  _ganttEl = inner;
-  _mountZoomControls(el);
+  let body = el.querySelector(":scope > .gantt-body");
+  if (!body) {
+    body = document.createElement("div");
+    body.className = "gantt-body";
+    body.innerHTML = '<div class="gantt-gutter"></div>' +
+                     '<div class="gantt-plot">' +
+                       '<span class="sched-phase-sticky" hidden></span>' +
+                       '<div class="gantt-container"></div>' +
+                     '</div>';
+    el.appendChild(body);
+  }
+  if (!el.querySelector(":scope > .sched-tip")) {
+    const tip = document.createElement("div");
+    tip.className = "sched-tip";
+    tip.hidden = true;
+    el.appendChild(tip);
+  }
+  _tipEl    = el.querySelector(":scope > .sched-tip");
+  _gutterEl = body.querySelector(".gantt-gutter");
+  _ganttEl  = body.querySelector(".gantt-container");
+  _stickyEl = body.querySelector(".sched-phase-sticky");
+  _ganttEl.addEventListener("scroll", _syncStickyBands, { passive: true });
+  _wireTip(_ganttEl, el);
+  _mountZoomControls(bar);
 }
 
 // Minus / plus / home, floating top-right over the chart. Built once
@@ -243,6 +268,132 @@ function _svgIcon(paths) {
 }
 
 let _zoomPctEl = null, _zoomInEl = null, _zoomOutEl = null;
+let _gutterEl = null, _tipEl = null, _tipPinned = null, _stickyEl = null;
+// Bands of the CURRENT render, in plot coordinates, for the readout.
+
+// THE PHASE LABEL DOES NOT MOVE. It used to be an SVG <text> inside the
+// scroller, slid along its band each frame to stay at the left edge.
+// That fights the scroll: the compositor moves the layer, then the main
+// thread moves the label back, and the two are not synchronised — so
+// every frame the label is briefly in the wrong place. It reads as
+// blinking, and it settles only when scrolling stops. rAF tightens the
+// timing but cannot fix it, because the compositor scrolls without the
+// main thread at all.
+//
+// So the label is now an HTML element OUTSIDE the scroller, parked at
+// the plot's left edge. It never moves; only its TEXT changes, and only
+// when the phase under that edge changes — a handful of times per run
+// instead of sixty times a second.
+let _bands = [];          // [{phase, x0, x1}] in plot coordinates
+let _stickyRaf = 0;
+let _stickyIdx = -2;   // -2 = never synced; -1 = no bands
+
+function _syncStickyBands() {
+  if (_stickyRaf) return;                 // one update per frame, no more
+  _stickyRaf = requestAnimationFrame(() => {
+    _stickyRaf = 0;
+    _applyStickyBands();
+  });
+}
+
+function _applyStickyBands() {
+  if (!_ganttEl) return;
+  // Keep the frozen column vertically in step. It has overflow:hidden,
+  // but scrollTop is still settable.
+  if (_gutterEl) _gutterEl.scrollTop = _ganttEl.scrollTop;
+  if (!_stickyEl) return;
+  const x = _ganttEl.scrollLeft;
+  // THE LAST BAND YOU HAVE REACHED, not the one strictly under the edge.
+  // Containment leaves two holes: at rest the viewport sits at x=0,
+  // which is before the first band starts, and between two bands there
+  // is a slice gap. Both made the label blank out — at rest it looked
+  // like it only appeared once you scrolled, and crossing a boundary
+  // flashed. A band owns everything from its left edge until the next
+  // one begins, so there are no holes to fall into.
+  let idx = _bands.length ? 0 : -1;
+  for (let i = 0; i < _bands.length; i++) { if (x >= _bands[i].x0) idx = i; else break; }
+  const cur = idx >= 0 ? _bands[idx].phase : null;
+  if (idx === _stickyIdx) return;         // nothing changed — no DOM write
+  _stickyIdx = idx;
+  _stickyEl.textContent = cur || "";
+  _stickyEl.hidden = !cur;
+  // The pinned label STANDS IN FOR one band's own label — hide just
+  // that one, or the two collide at the left edge showing the same word
+  // twice. Every other band keeps its label. Runs on phase change only,
+  // a handful of times per run, never per frame.
+  for (let i = 0; i < _bands.length; i++) {
+    const el = _bands[i].el;
+    if (el) el.style.display = (i === idx) ? "none" : "";
+  }
+}
+
+// ── Block detail: hover on a mouse, TAP on glass ──────────────────────
+// The pill labels drop as you zoom out, which is the point — shape over
+// text. The detail has to come back on demand, and on a tablet there is
+// no hover, so tap is the primary path and hover only a desktop
+// convenience. An SVG <title> is neither: it never fires on touch.
+function _hideTip() { if (_tipEl) { _tipEl.hidden = true; } _tipPinned = null; }
+
+function _showTip(g, pinned) {
+  if (!_tipEl || !_ganttEl) return;
+  const d = g.dataset;
+  const st = (g.getAttribute("class") || "").split(/\s+/)
+    .find(c => c.startsWith("sched-") && c !== "sched-block");
+  const rows = [];
+  if (d.res)   rows.push(["resource", d.res]);
+  if (d.plan)  rows.push(["planned", `${d.plan}s`]);
+  const el = g.querySelector(".sched-block-elapsed");
+  if (el)      rows.push(["actual", el.textContent]);
+  if (d.phase) rows.push(["phase", d.phase]);
+  if (st)      rows.push(["state", st.replace("sched-", "")]);
+  _tipEl.innerHTML =
+    `<div class="sched-tip-title"></div>` +
+    rows.map(([k, v]) => `<div class="sched-tip-row"><span></span><b></b></div>`).join("");
+  _tipEl.querySelector(".sched-tip-title").textContent = d.label || "";
+  _tipEl.querySelectorAll(".sched-tip-row").forEach((r, i) => {
+    r.querySelector("span").textContent = rows[i][0];
+    r.querySelector("b").textContent    = rows[i][1];
+  });
+  _tipEl.hidden = false;
+  // Position against the PANEL, clamped inside it — the block lives in a
+  // scrolled child, so its viewport rect is the only honest source.
+  const panel = _tipEl.parentElement;
+  const pr = panel.getBoundingClientRect();
+  const br = g.getBoundingClientRect();
+  const tw = _tipEl.offsetWidth, th = _tipEl.offsetHeight;
+  let left = br.left - pr.left + br.width / 2 - tw / 2;
+  let top  = br.top  - pr.top  - th - 10;
+  if (top < 0) top = br.bottom - pr.top + 10;         // flip below
+  left = Math.max(6, Math.min(left, pr.width - tw - 6));
+  _tipEl.style.left = `${Math.round(left)}px`;
+  _tipEl.style.top  = `${Math.round(top)}px`;
+  _tipPinned = pinned ? g : null;
+}
+
+function _wireTip(host, panel) {
+  host.addEventListener("pointerover", (e) => {
+    if (e.pointerType === "touch" || _tipPinned) return;
+    const g = e.target.closest?.(".sched-block");
+    if (g) _showTip(g, false);
+  });
+  host.addEventListener("pointerout", (e) => {
+    if (_tipPinned) return;
+    const g = e.target.closest?.(".sched-block");
+    if (g && !g.contains(e.relatedTarget)) _hideTip();
+  });
+  // Tap / click pins it, so it survives the finger leaving the pill.
+  host.addEventListener("click", (e) => {
+    const g = e.target.closest?.(".sched-block");
+    if (!g) return;
+    if (_tipPinned === g) { _hideTip(); return; }
+    _showTip(g, true);
+    e.stopPropagation();
+  });
+  panel.addEventListener("click", () => { if (_tipPinned) _hideTip(); });
+  // A pinned card would otherwise float away from its pill.
+  host.addEventListener("scroll", () => { if (_tipPinned) _showTip(_tipPinned, true); },
+                        { passive: true });
+}
 
 // Clear the CHART. The zoom bar lives on the PANEL, not on this
 // scroller, so emptying the scroller can no longer unmount it — the
@@ -264,7 +415,7 @@ function _mountZoomControls(host) {
     '<span class="sched-zoom-pct"></span>' +
     '<button class="sched-zoom-btn" data-z="out"  title="Zoom out"   aria-label="Zoom out">'  + _svgIcon(_ICON.out)  + '</button>' +
     '<button class="sched-zoom-btn" data-z="in"   title="Zoom in"    aria-label="Zoom in">'   + _svgIcon(_ICON.in)   + '</button>' +
-    '<button class="sched-zoom-btn" data-z="home" title="Reset zoom" aria-label="Reset zoom">'+ _svgIcon(_ICON.home) + '</button>';
+    '<button class="sched-zoom-btn" data-z="home" title="Reset zoom and jump to the running action" aria-label="Reset zoom and jump to the running action">'+ _svgIcon(_ICON.home) + '</button>';
   host.appendChild(bar);
   _zoomPctEl = bar.querySelector(".sched-zoom-pct");
   _zoomOutEl = bar.querySelector('[data-z="out"]');
@@ -274,7 +425,14 @@ function _mountZoomControls(host) {
     if (!b) return;
     if (b.dataset.z === "in")   zoomIn();
     if (b.dataset.z === "out")  zoomOut();
-    if (b.dataset.z === "home") zoomReset();
+    if (b.dataset.z === "home") {
+      // HOME IS "TAKE ME BACK TO THE WORK", not merely 100%. Resetting
+      // the zoom alone leaves you wherever you had panned to, which on a
+      // 500-action plan is nowhere useful. zoomReset() re-renders (and
+      // no-ops when already 1:1), then we centre the live block.
+      zoomReset();
+      _jumpToCurrent();
+    }
   });
   _syncZoomControls();
 }
@@ -308,6 +466,10 @@ function _render() {
 function _renderGantt() {
   if (!_ganttEl) return;
   if (_slices.length === 0) {
+    if (_gutterEl) _gutterEl.textContent = "";
+    _bands = [];
+    _stickyIdx = -2;
+    if (_stickyEl) { _stickyEl.textContent = ""; _stickyEl.hidden = true; }
     _clearChart(_ganttEl);
     const empty = document.createElement("div");
     empty.className = "sched-empty";
@@ -337,9 +499,15 @@ function _renderGantt() {
   // SCALED by zoom (horizontal only).
   const BLOCK_GAP = 18 * _zoom;   // gap between consecutive blocks on a row
   const SLICE_GAP = 38 * _zoom;   // gap between slices (divider sits at the midpoint)
+  // A band is drawn BAND_PAD wider than the blocks it wraps, on both
+  // sides. The plot has to reserve that much at each end, or the first
+  // band's left edge is clipped by the viewport and the margins read
+  // lopsided — 8px on the left, 16 + a band pad on the right.
+  const BAND_PAD  = 8 * _zoom;
   const ROW_H     = 48;
   const ROW_PAD   = 8;
-  const LEFT_W    = 120;
+  // 10px mono, letter-spacing .10em — measured, not guessed.
+  const ROWLABEL_CHAR_W = 7.0;
   const TOP_PAD   = 18;
   const BOT_PAD   = 18;
 
@@ -364,7 +532,7 @@ function _renderGantt() {
   const sliceDividerXs = [];        // x positions of dividers BETWEEN slices
   // Per-slice x-extent + phase name, merged into bands after layout.
   const sliceSpans = [];
-  let xBase = LEFT_W + 8;
+  let xBase = BAND_PAD + 8;   // the gutter owns the label column now
   _leafOrder.length = 0;
   _leafGeom.clear();
 
@@ -447,6 +615,7 @@ function _renderGantt() {
     );
     for (const p of sliceByStart) {
       if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
+      p.phase = slice.phase || null;
       const key = _leafKey(sliceReplanId, p.a.leaf_name);
       placements.set(key, p);
       _leafOrder.push(key);
@@ -462,7 +631,7 @@ function _renderGantt() {
     xBase = sliceMaxX + SLICE_GAP;
   }
 
-  const W = Math.max(LEFT_W + 200, xBase - SLICE_GAP + 16);
+  const W = Math.max(200, xBase - SLICE_GAP + BAND_PAD + 8);
   const H = TOP_PAD + rows.length * ROW_H + BOT_PAD;
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -487,7 +656,7 @@ function _renderGantt() {
   // behind the pills, named above its left edge. Projects that declare
   // no phases send phase=null and get no bands at all.
   // design-system.md §3.9.
-  const BAND_PAD = 8 * _zoom;
+  _bands = [];
   const bands = [];
   for (const sp of sliceSpans) {
     if (!sp.phase) continue;
@@ -495,7 +664,7 @@ function _renderGantt() {
     if (last && last.phase === sp.phase) last.x1 = sp.x1;
     else bands.push({ phase: sp.phase, x0: sp.x0, x1: sp.x1 });
   }
-  for (const b of bands) {
+  bands.forEach((b, bandIdx) => {
     const w = b.x1 - b.x0;
     const r = document.createElementNS(svgNS, "rect");
     r.setAttribute("x", String(b.x0 - BAND_PAD));
@@ -503,31 +672,37 @@ function _renderGantt() {
     r.setAttribute("width",  String(w + 2 * BAND_PAD));
     r.setAttribute("height", String(rows.length * ROW_H + 8));
     r.setAttribute("rx", "12");
-    r.setAttribute("class", "sched-phase-band");
+    // Alternate the wash so a boundary is visible without reading the
+    // label; the outline is on every band either way.
+    r.setAttribute("class",
+                   "sched-phase-band" + (bandIdx % 2 ? " is-alt" : ""));
     gBands.appendChild(r);
     // Same drop rule as the pills: no clipping, no ellipsis.
+    // EVERY BAND NAMES ITSELF, at its own left edge. This label scrolls
+    // WITH its band, which is why it cannot flicker — only a label
+    // moving AGAINST the scroll fights the compositor. The pinned
+    // overlay handles the band under the viewport edge, whose own label
+    // has scrolled out of reach; this handles every other visible band,
+    // which the overlay alone left anonymous.
+    let lab = null;
     if (w > b.phase.length * 6.2 + 14) {
-      const t = document.createElementNS(svgNS, "text");
-      t.setAttribute("x", String(b.x0 - BAND_PAD + 8));
-      t.setAttribute("y", String(TOP_PAD - 12));
-      t.setAttribute("class", "sched-phase-label");
-      t.textContent = b.phase;
-      gBands.appendChild(t);
+      lab = document.createElementNS(svgNS, "text");
+      lab.setAttribute("x", String(b.x0 - BAND_PAD + 8));
+      lab.setAttribute("y", String(TOP_PAD - 12));
+      lab.setAttribute("class", "sched-phase-label");
+      lab.textContent = b.phase;
+      gBands.appendChild(lab);
     }
-  }
+    _bands.push({ phase: b.phase, x0: b.x0 - BAND_PAD, x1: b.x1 + BAND_PAD,
+                  el: lab });
+  });
 
-  // Row labels + horizontal dividers.
+  // Horizontal dividers stay in the plot; the LABELS go to the frozen
+  // gutter so panning cannot take them off screen.
   rows.forEach((r, i) => {
-    const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("x", String(LEFT_W - 14));
-    t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 4));
-    t.setAttribute("text-anchor", "end");
-    t.setAttribute("class", "sched-rowlabel");
-    t.textContent = r;
-    gRows.appendChild(t);
     if (i > 0) {
       const line = document.createElementNS(svgNS, "line");
-      line.setAttribute("x1", String(LEFT_W - 8));
+      line.setAttribute("x1", "0");
       line.setAttribute("x2", String(W - 16));
       line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
       line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
@@ -535,6 +710,33 @@ function _renderGantt() {
       gRows.appendChild(line);
     }
   });
+
+  if (_gutterEl) {
+    _gutterEl.textContent = "";
+    // FLUSH LEFT, and the column is only as wide as the longest name.
+    // Right-aligned labels left a ragged left edge and a pool of dead
+    // space beside the short ones, so the component read as three
+    // different left margins. Now every label starts on the same line
+    // as the panel's own inset, and one fixed gap separates them from
+    // the plot.
+    const GUTTER_GAP = 16;
+    const gutterW = Math.ceil(
+      Math.max(...rows.map(r => r.length * ROWLABEL_CHAR_W))) + GUTTER_GAP;
+    const gsvg = document.createElementNS(svgNS, "svg");
+    gsvg.setAttribute("width",  String(gutterW));
+    gsvg.setAttribute("height", String(H));
+    gsvg.setAttribute("class",  "sched-svg");
+    rows.forEach((r, i) => {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", "0");
+      t.setAttribute("y", String(TOP_PAD + i * ROW_H + ROW_H / 2 + 4));
+      t.setAttribute("text-anchor", "start");
+      t.setAttribute("class", "sched-rowlabel");
+      t.textContent = r;
+      gsvg.appendChild(t);
+    });
+    _gutterEl.appendChild(gsvg);
+  }
 
   // Slice dividers — thin, subtle, span the full row band.
   for (const x of sliceDividerXs) {
@@ -584,6 +786,10 @@ function _renderGantt() {
 
   _clearChart(_ganttEl);
   _ganttEl.appendChild(svg);
+  // Synchronous: a rAF here would paint the labels at their band-start
+  // x for one frame and then snap them, which is the very flash this
+  // whole mechanism exists to avoid.
+  _applyStickyBands();
 }
 
 function _appendBlock(parent, p, state) {
@@ -620,6 +826,13 @@ function _appendBlock(parent, p, state) {
   const label = (a.parametrized === false) ? base : `${base}(${a.item})`;
   // LABEL-DROP: a pill that is narrower than its own text simply has
   // no text. Never clipped, never ellipsised. design-system.md §3.9.
+  // Facts for the detail popover, read straight off the element so the
+  // handler needs no parallel index that could fall out of step. MUST
+  // come after `label` — it is a const in this scope.
+  g.dataset.label = label;
+  if (a.resources && a.resources.length) g.dataset.res = a.resources.join(", ");
+  if (a.duration != null) g.dataset.plan = String(a.duration);
+  if (p.phase) g.dataset.phase = p.phase;
   const _natural = label.length * CHAR_W + LABEL_PAD;
   const lab = (w >= _natural * 0.92) ? document.createElementNS(svgNS, "text") : null;
   if (lab) {
@@ -637,7 +850,10 @@ function _appendBlock(parent, p, state) {
   const elapsed = (timing.startedAt != null && timing.endedAt != null)
     ? (timing.endedAt - timing.startedAt)
     : null;
-  if (elapsed != null && (state === "done" || state === "skipped")) {
+  // SAME DROP RULE AS THE LABEL. When the pill is too narrow to name
+  // itself, a duration underneath is noise at exactly the zoom level
+  // where the operator wants shape, not numbers. One rule, not two.
+  if (elapsed != null && lab && (state === "done" || state === "skipped")) {
     const dur = document.createElementNS(svgNS, "text");
     dur.setAttribute("x", String(x + w / 2));
     dur.setAttribute("y", String(y + h + 11));
@@ -647,12 +863,8 @@ function _appendBlock(parent, p, state) {
     g.appendChild(dur);
   }
 
-  // Hover tooltip — minimal: label + key time data (or state).
-  const title = document.createElementNS(svgNS, "title");
-  title.textContent = elapsed != null
-    ? `${label} · ${elapsed.toFixed(1)}s`
-    : `${label} · ${state}`;
-  g.appendChild(title);
+  // NO <title> HERE. The native tooltip never fires on touch and cannot
+  // be styled; _showTip covers both pointer kinds. See _wireTip.
 
   parent.appendChild(g);
 }

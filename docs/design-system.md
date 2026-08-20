@@ -179,21 +179,88 @@ padded `16 px 20 px`. Don't introduce a second modal shell.
 
 ### 3.9 Schedule Gantt — phase bands and X-only zoom
 
-**Two elements, not one.** The panel positions; an inner div scrolls:
+**Four elements, each with one job.** A single scrolling SVG loses its
+row labels and its phase name the moment you pan, and lets blocks slide
+under any floating control:
 
 ```
-.gantt-panel      position:relative, overflow:hidden   -> .sched-zoom
-  └ .gantt-container  overflow:auto, max-height:100%   -> the SVG
+.gantt-panel            positions, never scrolls
+  ├ .sched-topbar       phase readout (left) + zoom controls (right)
+  └ .gantt-body
+      ├ .gantt-gutter     row labels — FROZEN, outside the scroller
+      └ .gantt-container  the plot — scrolls
 ```
 
-The controls MUST NOT live inside the scroller. An absolutely-positioned
-child of an `overflow:auto` box scrolls with its content, so pinning them
-to the element that also owns the scroll makes them drift under the chart
-and lets blocks slide across them. The scroller takes its height from the
-chart (`max-height`, never `flex:1`) so the horizontal scrollbar hugs the
-plot instead of sitting at the bottom of the panel with dead space above.
-Floating controls also need their own opaque ground — without it, fills
-and row labels read through the gaps between the buttons.
+Three rules fall out of this, and each was a reported bug first:
+
+- **Controls belong in the topbar, not over the plot.** Anything
+  absolutely positioned above a horizontally scrolling chart eventually
+  has blocks pass beneath it. In the strip they cannot overlap at all,
+  and need no backdrop.
+- **The label column is frozen.** It is a sibling of the scroller, not
+  content inside it, and tracks `scrollTop` so rows stay aligned on a
+  chart taller than the panel.
+- **Two labels, and neither one chases the scroll.** Every band carries
+  its own label at its own left edge, inside the SVG — that one moves
+  WITH its band, which is why it cannot flicker. A single HTML overlay
+  outside the scroller names the band under the viewport's left edge,
+  whose own label has scrolled out of reach; it never moves, only its
+  text changes, on phase change. The overlay hides the one label it
+  stands in for, so the same word never appears twice.
+
+  Do NOT implement stickiness by sliding an SVG label along its band
+  each frame. That fights the scroll: the compositor moves the layer,
+  the main thread moves the label back, the two are not synchronised,
+  and it visibly blinks while scrolling, settling only when it stops.
+  `requestAnimationFrame` tightens the timing but cannot fix it, because
+  the compositor scrolls without the main thread. **Anything that must
+  hold still over a scroller belongs outside the scroller; anything
+  inside it must move with it.**
+
+The scroller takes its height from the chart (never `flex:1` in the
+cross axis) so the horizontal scrollbar hugs the plot rather than the
+panel floor.
+
+**One inset for the whole component.** Topbar, gutter, plot and
+scrollbar share the panel's single padding. Inside the plot, both ends
+reserve `BAND_PAD` — a band is drawn wider than the blocks it wraps, so
+without that reservation the first band's left edge is clipped and the
+margins read lopsided.
+
+**Bands are outlined, not colour-coded — and not alternately tinted.**
+A phase boundary has to be obvious, and two attempts at that failed on
+measurement rather than taste:
+
+- *Alternating two strengths of one neutral token* gives **1.12:1** on
+  dark and **1.07:1** on light. Invisible. It cannot be pushed further
+  without the heavier band competing with the pills in front of it.
+- *Two hues* is not available: `--accent` is the pills' own state
+  language (running / done) and green/red/amber are status, so a
+  coloured band claims a meaning the phase does not have (§9).
+
+A hairline outline turns each phase into a bounded region — **1.50:1**
+dark, **1.52:1** light against the ground it separates — and costs no
+colour at all. Measure this kind of choice; a tint that looks fine in a
+mockup can be a 1.1:1 nothing on the bench.
+
+**Home means "take me back to the work".** The reset control restores
+1:1 *and* centres the running action — resetting zoom alone leaves the
+operator wherever they had panned, which on a 500-action plan is nowhere
+useful. Zoom floor is 0.10 so a whole batch fits on one screen.
+
+**One drop rule, and detail on demand.** A pill narrower than its own
+text simply has no text — never clipped, never ellipsised. The duration
+underneath obeys the SAME rule: when the pill cannot name itself, a
+number below it is noise at exactly the zoom where the operator wants
+shape, not values. Two drop rules would drift apart; there is one.
+
+The detail comes back on demand, and **tap is the primary path** — the
+bench runs on tablets, where there is no hover. A tap pins a card,
+tapping the pill again or anywhere off it dismisses, and hover is a
+desktop convenience layered on top. The card is `pointer-events: none`
+so it can never eat the tap that dismisses it, and it re-anchors while
+a pinned pill is scrolled. Do not use SVG `<title>` for this: it never
+fires on touch and cannot be styled.
 
 
 The live schedule (`admin/schedule.js`) is a flow Gantt: X is layout
