@@ -632,3 +632,21 @@ a:hover { color: var(--accent-h); }
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Theme switch — instant, never animated ─────────────────────────────
+   Surfaces transition their colours on purpose: a schedule pill
+   cross-fades pending -> running -> done, buttons ease on hover. A
+   theme change rewrites every token at once, so without this every one
+   of those elements animates from its old-theme colour to its
+   new-theme colour at the same moment — a wave of pills flickering
+   through wrong colours that reads as a glitch.
+
+   theme.js sets this class, swaps the attribute, forces one style
+   recalc, and clears it on the next frame. TRANSITIONS ONLY: keyframe
+   animations (the running pill's blink) are left alone, because
+   suppressing them here would restart them on every switch. */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}

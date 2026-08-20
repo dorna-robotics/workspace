@@ -13,7 +13,27 @@ const MOON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke
 
 function setTheme(theme) {
   localStorage.setItem(KEY, theme);
-  document.documentElement.setAttribute("data-theme", theme);
+
+  // SUPPRESS TRANSITIONS FOR THE SWITCH ITSELF. Surfaces animate their
+  // colours on purpose — a schedule pill cross-fades pending -> running
+  // -> done, cards ease their hover. A theme change rewrites every
+  // token at once, so without this EVERY one of those elements animates
+  // from its old-theme colour to its new-theme colour simultaneously:
+  // a half-second of pills flickering through wrong colours that reads
+  // as a glitch. The switch should be instant; only state changes
+  // animate.
+  //
+  // Class on first, attribute second, then one forced style recalc so
+  // the new colours are committed while transitions are still off.
+  // Cleared on the next frame, which restores normal animation before
+  // anything the operator does can need it.
+  var root = document.documentElement;
+  root.classList.add("theme-switching");
+  root.setAttribute("data-theme", theme);
+  void root.offsetWidth;                    // force the recalc, do not remove
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { root.classList.remove("theme-switching"); });
+  });
 
   // Notify embedded 3D viewer iframe (orchestrator workspace page)
   var viewer = document.getElementById("ws3dFrame");
