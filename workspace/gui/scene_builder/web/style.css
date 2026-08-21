@@ -709,3 +709,31 @@ select.input { cursor: pointer; }
   .sidebar-scroll { overflow: visible; }
   .viewer-area { height: 50vh; flex: none; }
 }
+
+/* ── Ruler ─────────────────────────────────────────────────────────────
+   Shift-click two anchors in the 3D view. Bottom-left so it never
+   collides with the toasts (top-right) or the right-hand panels, and
+   pointer-events:none so it can't intercept a click meant for the
+   scene underneath it. */
+.sb-ruler-hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 60;
+  pointer-events: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(17, 17, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font: 600 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.sb-ruler-mag  { font-size: 18px; letter-spacing: 0.01em; }
+/*  The per-axis line is the one people actually act on — a station that
+    is 3 mm out is out along ONE axis, and the magnitude alone hides
+    which. Kept at full contrast rather than dimmed like the captions. */
+.sb-ruler-axes { margin-top: 2px; color: #7fe7ff; }
+.sb-ruler-pts  { margin-top: 6px; font-weight: 400; color: rgba(255,255,255,0.72); }
+.sb-ruler-pt   { margin-top: 2px; font-weight: 400; color: rgba(255,255,255,0.86); }
+.sb-ruler-hint { margin-top: 6px; font-weight: 400; font-size: 11px; color: rgba(255,255,255,0.45); }

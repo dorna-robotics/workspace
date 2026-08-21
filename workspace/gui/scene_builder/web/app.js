@@ -494,18 +494,49 @@ function makeRenderer(opts, mountEl) {
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
 
-        // Fill color — no outline
         ctx.fillStyle = color;
         ctx.fillText(text, pad, pad);
 
+        // A SECOND, PLATED TEXTURE — used only while hovered/selected.
+        // Plain is right at rest: a plate on every label turns a dense
+        // rack into a wall of white. But the one you are pointing at has
+        // to be readable over whatever is behind it (these draw with
+        // depthTest off), so it gets a greyish-white plate and a
+        // hairline. Built once, here, rather than per hover event.
+        const plate = document.createElement("canvas");
+        plate.width = canvas.width; plate.height = canvas.height;
+        const pctx = plate.getContext("2d");
+        const r = 14;
+        pctx.beginPath();
+        pctx.moveTo(r, 0);
+        pctx.arcTo(plate.width, 0, plate.width, plate.height, r);
+        pctx.arcTo(plate.width, plate.height, 0, plate.height, r);
+        pctx.arcTo(0, plate.height, 0, 0, r);
+        pctx.arcTo(0, 0, plate.width, 0, r);
+        pctx.closePath();
+        pctx.fillStyle = "rgba(232,232,236,0.94)";
+        pctx.fill();
+        pctx.lineWidth = 3;
+        pctx.strokeStyle = "rgba(0,0,0,0.35)";
+        pctx.stroke();
+        pctx.font = font;
+        pctx.textAlign = "left";
+        pctx.textBaseline = "top";
+        pctx.fillStyle = color;
+        pctx.fillText(text, pad, pad);
+
         const tex = new THREE.CanvasTexture(canvas);
         tex.colorSpace = THREE.SRGBColorSpace;
+        const texPlate = new THREE.CanvasTexture(plate);
+        texPlate.colorSpace = THREE.SRGBColorSpace;
         const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
         const spr = new THREE.Sprite(mat);
         const scale = 0.09;
         spr.scale.set(canvas.width * scale, canvas.height * scale, 1);
         spr.renderOrder = 999;
         spr.frustumCulled = false;
+        spr.userData.__texPlain = tex;
+        spr.userData.__texPlate = texPlate;
         return spr;
       }
 
@@ -773,7 +804,291 @@ function makeRenderer(opts, mountEl) {
         );
       }
 
-      function pickFirstMesh() {
+      // ── Ruler ────────────────────────────────────────────────────
+      // Shift-click two anchors: straight-line distance plus the per-axis
+      // deltas. BOTH numbers matter and neither substitutes for the
+      // other — the line distance answers "will it reach", the XYZ
+      // deltas answer "which way is it off", which is the one you need
+      // when a station is 3 mm out along a single axis.
+      //
+      // Measured in WORLD space between anchor origins, which is what
+      // the pick sphere's world position already is.
+      let __rulerA = null;          // {pos, label}
+      let __rulerObjs = [];         // everything drawn for the current measure
+
+      function __rulerName(mesh) {
+        const o = mesh.userData.ownerName || "";
+        const a = mesh.userData.anchorName || "?";
+        return o ? `${o}/${a}` : a;
+      }
+
+      function __rulerClear() {
+        for (const o of __rulerObjs) {
+          anchorsLayer.remove(o);
+          o.geometry?.dispose?.();
+          o.material?.map?.dispose?.();
+          o.material?.dispose?.();
+        }
+        __rulerObjs = [];
+        __rulerMarkClear();
+        __rulerDone = false;
+        __rulerA = null;
+        window.__rulerHUD?.(null);
+      }
+      window.__rulerClear = __rulerClear;
+
+      // Swap a label between its plain and plated textures. The pair is
+      // built once in makeAnchorLabel; this only moves a reference.
+      function __labelPlate(sprite, on) {
+        const u = sprite?.userData; if (!u?.__texPlain) return;
+        const want = on ? u.__texPlate : u.__texPlain;
+        if (sprite.material.map !== want) {
+          sprite.material.map = want;
+          sprite.material.needsUpdate = true;
+        }
+      }
+
+      // THE FIRST PICK STAYS LIT. Between the two clicks there is
+      // nothing on screen saying where the measurement started — and
+      // the hover highlight moves away with the cursor the moment you
+      // go looking for the second anchor.
+      let __rulerMarks = [];
+      let __rulerDone = false;   // measurement complete; next click restarts
+      function __rulerIsMarked(mesh) { return __rulerMarks.indexOf(mesh) !== -1; }
+      function __rulerMarkSet(mesh) {
+        if (!mesh || __rulerIsMarked(mesh)) return;
+        const d = mesh.userData.__dotMesh, l = mesh.userData.__labelSprite;
+        if (d) { d.scale.setScalar(3.0); d.material.opacity = 1.0; d.material.color.set(RULER_HL); }
+        if (l) { l.renderOrder = 1007; __labelPlate(l, true); l.material.opacity = 1.0; }
+        __rulerMarks.push(mesh);
+
+        // AND A MARKER WE OWN. Recolouring the anchor's own dot is not
+        // durable: anchors are torn down and rebuilt on right-click and
+        // on every re-render, which recreates the dots at their original
+        // colour and silently loses the endpoints mid-measurement. This
+        // sphere belongs to the measurement, lives in __rulerObjs, and
+        // therefore survives exactly as long as the measurement does.
+        const at = new THREE.Vector3();
+        mesh.getWorldPosition(at);
+        const m = new THREE.Mesh(
+          new THREE.SphereGeometry(3.2, 20, 20),
+          new THREE.MeshBasicMaterial({ color: RULER_HL, depthTest: false,
+                                        transparent: true, opacity: 0.95 }));
+        m.position.copy(at);
+        m.renderOrder = 1004;
+        m.frustumCulled = false;
+        anchorsLayer.add(m);
+        __rulerObjs.push(m);
+      }
+      function __rulerMarkClear() {
+        for (const mesh of __rulerMarks) {
+          const d = mesh.userData.__dotMesh, l = mesh.userData.__labelSprite;
+          if (d) {
+            d.scale.setScalar(__rulerShift ? RULER_DOT_SCALE : 1);
+            d.material.opacity = 0.6;
+            d.material.color.set(mesh.userData.__dotColor);
+          }
+          if (l) { l.renderOrder = 999; __labelPlate(l, false); l.material.opacity = 0.9; }
+        }
+        __rulerMarks = [];
+      }
+
+      // A measurement tag: white text on a solid plate in the axis
+      // colour, so the number and the leg it belongs to are the same
+      // thing at a glance — no legend to read. Proportions mirror
+      // makeAnchorLabel (72px, pad 12, scale 0.09) so tags and anchor
+      // labels look like one family at bench distances.
+      function __rulerTag(text, bgCss) {
+        const fontPx = 72, pad = 12;
+        const c = document.createElement("canvas");
+        const ctx0 = c.getContext("2d");
+        const font = `bold ${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx0.font = font;
+        c.width  = Math.ceil(ctx0.measureText(text).width + pad * 2);
+        c.height = Math.ceil(fontPx * 1.3 + pad * 2);
+        const ctx = c.getContext("2d");
+        const r = 16;
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.arcTo(c.width, 0, c.width, c.height, r);
+        ctx.arcTo(c.width, c.height, 0, c.height, r);
+        ctx.arcTo(0, c.height, 0, 0, r);
+        ctx.arcTo(0, 0, c.width, 0, r);
+        ctx.closePath();
+        ctx.fillStyle = bgCss;
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.stroke();
+        ctx.font = font;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text, pad, pad);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: tex, depthTest: false, transparent: true }));
+        sp.renderOrder = 1005;
+        sp.frustumCulled = false;
+        const k = 0.09;
+        sp.scale.set(c.width * k, c.height * k, 1);
+        return sp;
+      }
+
+      function __rulerPick(mesh) {
+        const pos = new THREE.Vector3();
+        mesh.getWorldPosition(pos);
+        const label = __rulerName(mesh);
+
+        // Third click starts a fresh measurement rather than accumulating
+        // — a ruler with memory is a ruler you have to remember to clear.
+        //
+        // TESTS AN EXPLICIT FLAG, not "have we drawn anything". Both
+        // earlier versions inferred this from side-effects and both
+        // broke: first a stale __rulerLine that no longer existed, then
+        // __rulerObjs.length — which became true on the FIRST pick once
+        // the endpoint marker started living there, so every second
+        // click cleared and restarted instead of completing the
+        // measurement. The question is "is a measurement finished", so
+        // store exactly that.
+        if (__rulerDone) __rulerClear();
+
+        if (!__rulerA) {
+          __rulerA = { pos: pos.clone(), label };
+          __rulerMarkSet(mesh);
+          window.__rulerHUD?.({ from: label });
+          return;
+        }
+
+        const a = __rulerA.pos, b = pos;
+        const d  = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+        const mag = Math.hypot(d.x, d.y, d.z);
+        const f1 = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+
+        const addTag = (text, bg, at) => {
+          const sp = __rulerTag(text, bg);
+          sp.position.copy(at);
+          anchorsLayer.add(sp); __rulerObjs.push(sp);
+          return sp;
+        };
+        const addLine = (p0, p1, color, width) => {
+          const g = new THREE.BufferGeometry().setFromPoints([p0.clone(), p1.clone()]);
+          const l = new THREE.Line(g, new THREE.LineBasicMaterial({
+            color, depthTest: false, transparent: true, opacity: 0.95, linewidth: width || 1 }));
+          l.renderOrder = 999; l.frustumCulled = false;
+          anchorsLayer.add(l); __rulerObjs.push(l);
+          return l;
+        };
+
+        // Black hypotenuse, R/G/B legs. The legs carry the axis meaning
+        // and match the builder's own AxesHelper; the direct line must
+        // not compete with them for colour.
+        addLine(a, b, 0x000000);
+
+        // THE THREE LEGS, as a staircase A -> x -> y -> z -> B, in the
+        // builder's own axis colours (X red, Y green, Z blue). This is
+        // the "which way is it off" answer, and seeing it in the scene
+        // beats reading three signed numbers off a panel: a station
+        // that is out along one axis shows up as one long leg.
+        const p0 = a.clone();
+        const p1 = new THREE.Vector3(b.x, a.y, a.z);
+        const p2 = new THREE.Vector3(b.x, b.y, a.z);
+        const p3 = b.clone();
+        const legs = [
+          // `color` draws the leg; `bg` plates its tag. The tag colour is
+          // DARKER than the line: a line only has to be seen, a plate
+          // has to carry white text, and #4ddd6a under white is
+          // unreadable.
+          { from: p0, to: p1, v: d.x, color: 0xff4d4d, bg: "#c62828" },
+          { from: p1, to: p2, v: d.y, color: 0x4ddd6a, bg: "#1f7a37" },
+          { from: p2, to: p3, v: d.z, color: 0x5599ff, bg: "#1f5fbf" },
+        ];
+        for (const leg of legs) {
+          // A zero leg is not a leg. Drawing a degenerate segment and a
+          // "+0.00" label is clutter that hides the axes that DID move.
+          if (Math.abs(leg.v) < 0.005) continue;
+          addLine(leg.from, leg.to, leg.color);
+          // NUMBER ONLY. The plate colour already says which axis, and
+          // the unit never changes — "dx" and "mm" are pure width on a
+          // tag that has to sit on a line in a crowded scene. The HUD
+          // spells both out for anyone who wants them.
+          addTag(f1(leg.v), leg.bg,
+                 leg.from.clone().add(leg.to).multiplyScalar(0.5));
+        }
+
+        // Total on the hypotenuse, black to match its line.
+        addTag(mag.toFixed(2), "#111318",
+               a.clone().add(b).multiplyScalar(0.5));
+
+        // NO NUMBERS IN THE SCENE. Sprites here fought the anchor labels
+        // for space, sat behind geometry at some angles, and scaled
+        // wrongly at bench distances. The geometry shows the SHAPE of
+        // the offset; the HUD carries the values, in one place, always
+        // legible. Two renderings of the same numbers is one too many.
+
+        __rulerMarkSet(mesh);
+        __rulerDone = true;
+        window.__rulerHUD?.({ from: __rulerA.label, to: label, mag, d });
+        __rulerA = { pos: a, label: __rulerA.label };   // keep for the clear-on-next-click
+      }
+
+      // Shift is held -> the ruler wants anchors, whatever the current
+      // mode is. Measuring is a question you ask WHILE doing something
+      // else ("is that hole where I think it is?"), so making it a mode
+      // you enter and leave would be the wrong shape.
+      let __rulerShift = false;
+
+      // ANCHORS GROW WHILE SHIFT IS HELD. The pick sphere is r=8 and the
+      // visible dot smaller still — fine when a mode has already told
+      // you to click an anchor, far too small to hit casually while
+      // measuring. Holding shift is an unambiguous "I am aiming at
+      // anchors", so make them a target worth aiming at: bigger hit
+      // zone, and a bigger visible dot so you can see what you will hit.
+      // Modest, deliberately. Picking is now nearest-to-cursor, so a bigger
+      // sphere no longer helps you hit the right anchor — it only makes
+      // more of them overlap. The dot grows so you can SEE the targets.
+      const RULER_PICK_SCALE = 1.6, RULER_DOT_SCALE = 2.2;
+      // ONE COLOUR FOR THE WHOLE RULER INTERACTION. The anchor you are
+      // hovering with shift down turns magenta, and it KEEPS that
+      // colour once picked — so "what will be selected" and "what is
+      // selected" look the same, and the two endpoints stay visible
+      // while you hunt for the second one. Nothing else in the builder
+      // uses magenta, so it never reads as a normal state.
+      const RULER_HL = 0xff3ec8;
+      function __rulerAnchorEmphasis(on) {
+        for (const o of anchorsLayer.children) {
+          if (!o.userData?.__isAnchorPick) continue;
+          o.scale.setScalar(on ? RULER_PICK_SCALE : 1);
+          // A MARKED ENDPOINT IS NOT TOUCHED. This runs on every shift
+          // press AND release, so without the guard, letting go of shift
+          // to orbit the camera shrank the picked anchors back to normal
+          // and the measurement lost the very thing showing where it
+          // started. The mark outlives the modifier.
+          if (__rulerIsMarked(o)) continue;
+          const dot = o.userData.__dotMesh;
+          if (dot) dot.scale.setScalar(on ? RULER_DOT_SCALE : 1);
+        }
+      }
+      function __rulerSetShift(on) {
+        if (on === __rulerShift) return;      // key auto-repeat fires keydown repeatedly
+        __rulerShift = on;
+        try {
+          __rulerAnchorEmphasis(on);
+          // Releasing shift while hovering must drop the "will be
+          // picked" preview, or an untouched anchor stays magenta.
+          const h = __hoveredAnchorPick;
+          if (h && !__rulerIsMarked(h)) {
+            const d = h.userData.__dotMesh;
+            if (d) d.material.color.set(on ? RULER_HL : h.userData.__dotColor);
+          }
+        } catch (_) {}
+      }
+      window.addEventListener("keydown", (e) => { if (e.key === "Shift") __rulerSetShift(true); });
+      window.addEventListener("keyup",   (e) => { if (e.key === "Shift") __rulerSetShift(false); });
+      window.addEventListener("blur",    ()  => __rulerSetShift(false));
+
+      function pickFirstMesh(forceAnchors) {
         raycaster.setFromCamera(pointer, camera);
         const targets = pickableMeshes.size
           ? Array.from(pickableMeshes)
@@ -781,7 +1096,42 @@ function makeRenderer(opts, mountEl) {
         const hits = raycaster.intersectObjects(targets, true);
         if (!hits.length) return null;
 
-        const allowAnchor = wantAnchorHitZones();
+        const allowAnchor = forceAnchors || wantAnchorHitZones() || __rulerShift;
+
+        // NEAREST TO THE CURSOR, not first along the ray. Anchor pick
+        // spheres are deliberately larger than their dots, so in a dense
+        // rack several overlap under one cursor — and the ray ENTERS a
+        // neighbour's sphere before the one you are aiming at whenever
+        // that neighbour is nearer the camera. Depth order is the wrong
+        // question; "which dot is the cursor on" is the right one, so
+        // compare the anchors' screen-space distance to the pointer.
+        const anchorHits = allowAnchor
+          ? hits.filter(h => h.object?.isMesh && h.object.userData?.__isAnchorPick)
+          : [];
+        if (anchorHits.length) {
+          let best = null, bestD = Infinity;
+          const v = new THREE.Vector3();
+          for (const h of anchorHits) {
+            h.object.getWorldPosition(v);
+            v.project(camera);
+            const dx = v.x - pointer.x, dy = v.y - pointer.y;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = h; }
+          }
+          // DEPTH IS NOT CONSULTED, DELIBERATELY. Anchor dots and their
+          // pick spheres draw with depthTest off — they are always
+          // visible through geometry, which is the point: you need to
+          // see the anchor inside a rack. Picking has to agree with
+          // that. Honouring occlusion here meant an anchor you could
+          // plainly see refused to be clicked because a tube sat in
+          // front of it, which reads as a broken control.
+          //
+          // The tolerance is the pick sphere's radius: the ray only
+          // reaches this code if it passed through one, so "an anchor
+          // hit exists" already means "the cursor is on it".
+          return best;
+        }
+
         for (const h of hits) {
           if (!h.object?.isMesh) continue;
           const isAnchorPick = !!(h.object.userData && h.object.userData.__isAnchorPick);
@@ -1035,6 +1385,12 @@ function makeRenderer(opts, mountEl) {
                 downInfo=null;
                 return;
               }
+            }
+
+if (hit.object.userData && hit.object.userData.__isAnchorPick && e.shiftKey) {
+              try { __rulerPick(hit.object); } catch (err) { console.error(err); }
+              downInfo = null;
+              return;
             }
 
 if (hit.object.userData && hit.object.userData.__isAnchorPick) {
@@ -1446,32 +1802,55 @@ if (node) {
         const __now = performance.now();
         if (__now - __hoverPickAt < 50) return;
         __hoverPickAt = __now;
-        const hit = pickFirstMesh();
+        // forceAnchors: HOVER always considers anchors, whatever the
+        // mode. Highlighting what is under the cursor costs nothing and
+        // is how you find the anchor you want; only CLICKING stays
+        // gated, so an anchor cannot swallow a click meant for a part.
+        const hit = pickFirstMesh(true);
         const isAnchorHit = hit?.object?.userData?.__isAnchorPick;
         renderer.domElement.style.cursor =
           isAnchorHit ? "pointer" : (hit && hit.object?.isMesh) ? "pointer" : "default";
 
-        // Anchor hover effect
-        if (wantAnchorHitZones()) {
+        // Anchor hover effect — ALWAYS. Seeing which anchor is under the
+        // cursor is useful whether or not you are about to click it.
+        if (true) {
           const newHover = isAnchorHit ? hit.object : null;
           if (newHover !== __hoveredAnchorPick) {
             // Unhover previous — shrink back, dim label
-            if (__hoveredAnchorPick) {
+            if (__hoveredAnchorPick && !__rulerIsMarked(__hoveredAnchorPick)) {
               const d = __hoveredAnchorPick.userData.__dotMesh;
               const r = __hoveredAnchorPick.userData.__ringMesh;
               const l = __hoveredAnchorPick.userData.__labelSprite;
-              if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
+              // A picked endpoint keeps its magenta and its plate — the
+              // cursor moving on must not undress the measurement.
+              if (d) {
+                d.scale.setScalar(__rulerShift ? RULER_DOT_SCALE : 1);
+                d.material.opacity = 0.6;
+                d.material.color.set(__hoveredAnchorPick.userData.__dotColor);
+              }
               if (r) { r.material.opacity = 0.0; }
               if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
+              if (l) { l.renderOrder = 999; __labelPlate(l, false); }
             }
             // Hover new — grow dot, glow ring, enlarge label
             if (newHover) {
               const d = newHover.userData.__dotMesh;
               const r = newHover.userData.__ringMesh;
               const l = newHover.userData.__labelSprite;
-              if (d) { d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0; }
+              if (d) {
+                d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0;
+                // Shift down => this click WILL take it, so preview the
+                // picked colour. Without shift it is ordinary hover.
+                d.material.color.set(__rulerShift ? RULER_HL : newHover.userData.__dotColor);
+              }
               if (r) { r.material.opacity = 0.4; }
               if (l && l.userData.__baseScale) { l.material.opacity = 1.0; l.scale.copy(l.userData.__baseScale).multiplyScalar(1.5); }
+              // TO THE FRONT. Every anchor label is renderOrder 999, so
+              // overlapping ones sort by scene-graph order — arbitrary,
+              // and in a dense rack the one you are pointing at is as
+              // likely as not to be behind its neighbours. Growing it
+              // does not help if it is drawn underneath them.
+              if (l) { l.renderOrder = 1006; __labelPlate(l, true); }
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1480,13 +1859,14 @@ if (node) {
             }
             __hoveredAnchorPick = newHover;
           }
-        } else if (__hoveredAnchorPick) {
+        } else if (__hoveredAnchorPick && !__rulerIsMarked(__hoveredAnchorPick)) {
           const d = __hoveredAnchorPick.userData.__dotMesh;
           const r = __hoveredAnchorPick.userData.__ringMesh;
           const l = __hoveredAnchorPick.userData.__labelSprite;
           if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
           if (r) { r.material.opacity = 0.0; }
           if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
+          if (l) { l.renderOrder = 999; __labelPlate(l, false); }
           __hoveredAnchorPick = null;
           __clearGhost();
         }
@@ -2363,6 +2743,37 @@ window.__undo = __undo;
 window.__redo = __redo;
 
 
+
+// ── Ruler HUD ────────────────────────────────────────────────────────
+// Sits beside the 3D label so the numbers are readable without hunting
+// for the sprite, and because the sprite disappears behind geometry at
+// some angles. Null hides it.
+window.__rulerHUD = function (m) {
+  let el = document.getElementById("sbRulerHud");
+  if (!m) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sbRulerHud";
+    el.className = "sb-ruler-hud";
+    document.body.appendChild(el);
+  }
+  const f = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+  if (m.to === undefined) {
+    el.innerHTML = '<div class="sb-ruler-hint">shift-click a second anchor</div>' +
+                   '<div class="sb-ruler-pt"></div>';
+    el.querySelector(".sb-ruler-pt").textContent = m.from;
+    return;
+  }
+  el.innerHTML =
+    '<div class="sb-ruler-mag"></div>' +
+    '<div class="sb-ruler-axes"></div>' +
+    '<div class="sb-ruler-pts"></div>' +
+    '<div class="sb-ruler-hint">esc clears \u00b7 shift-click to start again</div>';
+  el.querySelector(".sb-ruler-mag").textContent = m.mag.toFixed(2) + " mm";
+  el.querySelector(".sb-ruler-axes").textContent =
+    "dx " + f(m.d.x) + "   dy " + f(m.d.y) + "   dz " + f(m.d.z);
+  el.querySelector(".sb-ruler-pts").textContent = m.from + "  \u2192  " + m.to;
+};
 
 function showToast(msg, type="") {
   const area = document.getElementById("toastArea");
@@ -4305,6 +4716,7 @@ document.addEventListener("keydown", (e) => {
 
     // Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Y, Ctrl/Cmd+Shift+Z)
     const key = String(e.key || "").toLowerCase();
+    if (e.key === "Escape") { try { window.__rulerClear?.(); } catch (_) {} }
     const mod = (e.ctrlKey || e.metaKey);
     if (mod && key === "z") {
       if (e.shiftKey) window.__redo?.(); else window.__undo?.();
