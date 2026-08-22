@@ -13,9 +13,17 @@ class Shaker2slot(Shaker):
                 "clb_0": [0, 0, 206, 0, 0, 0]},
                 "rotating": {"center": [0, 0, 0, 0, 0, 0], "input":[0, 0, 0, 0, 0, 0], 
                     "A1": [48, 25, 25.3, 0, 0, 0], "A2": [-48, 25, 25.3, 0, 0, 0], "top": [0, 25, 40.3, 0, 0, 0], "place": [0, 0, 25.3, 0, 0, 0],}},
+        # Measured from shaker_body.glb / shaker_rotating.glb.
+        # The head box is taller than the part: it pivots about b at the
+        # `output` anchor, so a gripper on it sweeps above 206.
         collision_box =
             {"body":[
-                {"pose":[0.0, 32.75, (242.048/2), 0.0, 0.0, 0.0], "scale":[166, 130.5, 242.048], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 3.0, 0.0, 0.0, 0.0],
+                 "scale":[65.0, 65.0, 6.0], "padding_enabled": True},          # base plate
+                {"pose":[0.0, 23.5, 106.0, 0.0, 0.0, 0.0],
+                 "scale":[55.4, 59.0, 200.0], "padding_enabled": True},        # post + head mount
+                {"pose":[0.0, 72.025, (242.048/2), 0.0, 0.0, 0.0],
+                 "scale":[166.0, 51.95, 242.048], "padding_enabled": True},    # swept head
         ]},
     )
 
