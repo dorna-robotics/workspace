@@ -360,10 +360,16 @@ class Core:
                     "hole_2": [400.0, -25/2, 0.0, 0.0, 0.0, 0.0],
                     "hole_3": [0.0, -25/2, 0.0, 0.0, 0.0, 0.0],
                 }
+                # Same treatment as the 1000mm below. Measured from
+                # rail_hd_500mm_base.glb: the beam spans x -295..466 and
+                # centres at 85.5 (offset was -84), and the motor reaches
+                # y=168.4 — shallower than the 1000mm's 179.4, so it gets
+                # its own depth rather than a shared constant. Both long
+                # boxes stop at y=125, the fixture plate edge.
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [170.0-84, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 183.5, 82]},
-                    {"pose": [-176.105-84, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [170.0-84, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [761.0, 66, 82]}
+                    {"pose": [170.0-84.5, 36.125, 40.0, 0.0, 0.0, 0.0], "scale": [761.0, 177.75, 82]},
+                    {"pose": [-176.105-84.5, 111.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 115.0, 82]},
+                    {"pose": [170.0-84.5, 92.25, 41.0, 0.0, 0.0, 0.0], "scale": [761.0, 65.5, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_500mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -379,10 +385,12 @@ class Core:
                 # x offset was -119; the mesh centres at 280.5, not 301
                 # (rail_hd_1000mm_base.glb spans x -350..911), so the
                 # boxes sat 20.5 down the rail from the rail itself.
+                # Both long boxes stop at y=125, the fixture plate edge —
+                # past that they claim air over the next plate's row.
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [420.0-139.5, 39.0, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
+                    {"pose": [420.0-139.5, 36.125, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 177.75, 82]},
                     {"pose": [-176.105-139.5, 116.7, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 126.0, 82]},
-                    {"pose": [420.0-139.5, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
+                    {"pose": [420.0-139.5, 92.25, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 65.5, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_1000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
@@ -395,10 +403,14 @@ class Core:
                     "hole_2": [1600.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                     "hole_3": [0.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                 }
+                # Same treatment again. rail_hd_2000mm_base.glb: beam
+                # x -550..1711 centres at 580.5, and the motor matches the
+                # 1000mm's (y 54.1..179.4). Both long boxes stop at y=125,
+                # the fixture plate edge.
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [920.0-340, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 183.5, 82]},
-                    {"pose": [-176.105-340, 120, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [920.0-340, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [2261.0, 66, 82]}
+                    {"pose": [920.0-339.5, 36.125, 40.0, 0.0, 0.0, 0.0], "scale": [2261.0, 177.75, 82]},
+                    {"pose": [-176.105-339.5, 116.7, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 126.0, 82]},
+                    {"pose": [920.0-339.5, 92.25, 41.0, 0.0, 0.0, 0.0], "scale": [2261.0, 65.5, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_2000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
