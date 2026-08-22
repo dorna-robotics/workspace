@@ -376,10 +376,13 @@ class Core:
                     "hole_2": [800.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                     "hole_3": [0.0, -12.5, 0.0, 0.0, 0.0, 0.0],
                 }
+                # x offset was -119; the mesh centres at 280.5, not 301
+                # (rail_hd_1000mm_base.glb spans x -350..911), so the
+                # boxes sat 20.5 down the rail from the rail itself.
                 rail_collision_boxes = {"rail_base": [
-                    {"pose": [420.0-119, 33.63, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
-                    {"pose": [-176.105-119, 116.3, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 120.5, 82]},
-                    {"pose": [420.0-119, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
+                    {"pose": [420.0-139.5, 39.0, 40.0, 0.0, 0.0, 0.0], "scale": [1261.0, 183.5, 82]},
+                    {"pose": [-176.105-139.5, 116.7, 40.0, 0.0, 0.0, 0.0], "scale": [68.6, 126.0, 82]},
+                    {"pose": [420.0-139.5, 92.5, 41.0, 0.0, 0.0, 0.0], "scale": [1261.0, 66, 82]}
                 ]}
                 self.rail_base = Solid(name="rail_base", type="rail_hd_1000mm_base", anchors=rail_base_anchors, component=self.name, collision_box=rail_collision_boxes)
 
