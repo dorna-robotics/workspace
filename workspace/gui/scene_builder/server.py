@@ -1251,6 +1251,26 @@ class PerfHandler(tornado.web.RequestHandler):
         self.write({"ok": True})
 
 
+def _solve_log_paths():
+    """Where the scene-builder log may be written, best first.
+
+    The project's own status/ dir is the durable one — it survives the
+    reboot `upgrade` performs, and sits beside workspace.log so there is
+    a single place to look after an upgrade. /tmp is the fallback for
+    when no project is open or the dir is not writable.
+    """
+    out = []
+    if _project_path:
+        try:
+            d = os.path.join(_project_path, "status")
+            os.makedirs(d, exist_ok=True)
+            out.append(os.path.join(d, "scene_builder.jsonl"))
+        except OSError:
+            pass
+    out.append("/tmp/sb_perf.jsonl")
+    return out
+
+
 class SolveRefHandler(tornado.web.RequestHandler):
     """Solve every recipe's reference joints for the active project.
 
@@ -1269,13 +1289,21 @@ class SolveRefHandler(tornado.web.RequestHandler):
         self.finish()
 
     async def post(self):
+        # NOT /tmp. `upgrade` reboots the unit when it finishes, and /tmp
+        # is tmpfs on some of them — so the one log that explains a
+        # post-upgrade failure was being erased by the upgrade itself.
+        # status/ sits next to the project and is where workspace.log
+        # already lives, so there is one place to look.
         def _log(event, **kw):
-            try:
-                with open("/tmp/sb_perf.jsonl", "a") as f:
-                    f.write(json.dumps({"solve_ref": event,
-                                        "ts": time.strftime("%H:%M:%S"), **kw}) + "\n")
-            except OSError:
-                pass
+            rec = json.dumps({"solve_ref": event,
+                              "ts": time.strftime("%Y-%m-%d %H:%M:%S"), **kw})
+            for path in _solve_log_paths():
+                try:
+                    with open(path, "a") as f:
+                        f.write(rec + "\n")
+                    return
+                except OSError:
+                    continue
         if not _project_path:
             _log("rejected", reason="no project path set")
             self.write({"ok": False, "error": "no project path set"})
@@ -1302,14 +1330,34 @@ class SolveRefHandler(tornado.web.RequestHandler):
                 return {"ok": False, "error": f"solve spawn failed: {ex}"}
             line = (r.stdout or "").strip().splitlines()
             try:
-                return json.loads(line[-1]) if line else {"ok": False, "error": "no output"}
+                res = json.loads(line[-1]) if line else {
+                    "ok": False, "error": "solver produced no output"}
             except Exception:
-                return {"ok": False,
-                        "error": (r.stderr or r.stdout or "solve failed")[-800:]}
+                res = {"ok": False,
+                       "error": (r.stderr or r.stdout or "solve failed")[-800:]}
+            # ALWAYS carry the subprocess's own account. Previously
+            # stderr was read only when the JSON failed to parse, so a
+            # solver that exited non-zero, or warned its way to a bad
+            # answer, left nothing behind to read.
+            res["_rc"] = r.returncode
+            if r.stderr:
+                res["_stderr"] = r.stderr[-2000:]
+            return res
 
         result = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        # Per-recipe reasons, not just a pass/fail count. ref_solve.py
+        # already puts the reason on each row; without logging it, "the
+        # recipes are not solving" has no answer anywhere on the box.
+        failed = {n: (row or {}).get("error")
+                  for n, row in (result.get("recipes") or {}).items()
+                  if isinstance(row, dict) and row.get("error")}
         _log("done", secs=round(time.time() - _t0, 1), ok=bool(result.get("ok")),
-             err=(result.get("error") or "")[:120])
+             rc=result.pop("_rc", None),
+             n_recipes=len(result.get("recipes") or {}),
+             n_failed=len(failed),
+             failed=failed or None,
+             stderr=result.pop("_stderr", None),
+             err=(result.get("error") or "")[:400] or None)
         if result.get("ok"):
             _ref_solve_cache[_project_path] = (sig, result)
         self.write(result)
