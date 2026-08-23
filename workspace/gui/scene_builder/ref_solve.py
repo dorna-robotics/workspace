@@ -106,12 +106,27 @@ def main(project_dir):
             pass
 
 
+def _exit(code=0):
+    """Leave NOW — a normal exit would hang.
+
+    Building a Workspace starts background threads that outlive the
+    solve, and not all of them are daemons (dorna2's simulation-api
+    server thread is not), so once the answer is already on stdout the
+    interpreter can sit waiting on them forever. The builder's
+    subprocess.run() would then sit out its full timeout and report a
+    timeout for a solve that succeeded seconds earlier.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(json.dumps({"ok": False, "error": "usage: ref_solve.py <project_dir>"}))
-        sys.exit(1)
+        _exit(1)
     try:
         main(sys.argv[1])
     except Exception as ex:
         print(json.dumps({"ok": False, "error": f"{type(ex).__name__}: {ex}"}))
-        sys.exit(0)
+    _exit(0)
