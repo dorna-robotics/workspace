@@ -8091,10 +8091,30 @@ ensureBuilderBar();
   async function __ensureRefSolve() {
     if (!__refSolvePromise) {
       __solveCrumb("fetch_start");
+      // MATCH THE SERVER'S OWN BUDGET (180s). This was 10s, which is
+      // shorter than the work: one call reference-solves EVERY recipe,
+      // and a 25-station bench measures ~8s here with a warm ik.json —
+      // longer on a slower machine, and far longer whenever the cache is
+      // discarded ("scene changed since it was built"), which is exactly
+      // when you are editing the scene. The client was killing a request
+      // the server would have answered.
+      //
+      // Every row shows the same failure because they all await this one
+      // cached promise, so a single abort reads as "the solver is
+      // broken" rather than "this took too long".
+      const __SOLVE_TIMEOUT_MS = 180000;
       const __ctl = new AbortController();
-      const __abortT = setTimeout(() => __ctl.abort(), 10000);
+      let __timedOut = false;
+      const __abortT = setTimeout(() => { __timedOut = true; __ctl.abort(); }, __SOLVE_TIMEOUT_MS);
       __refSolvePromise = fetch(SB_API + "/solve_ref", { method: "POST", signal: __ctl.signal })
         .finally(() => clearTimeout(__abortT))
+        .catch(e => {
+          // An abort surfaces as DOMException "signal is aborted without
+          // reason", which says nothing actionable. Say what happened.
+          if (__timedOut) throw new Error(
+            `reference solve timed out after ${__SOLVE_TIMEOUT_MS / 1000}s`);
+          throw new Error("could not reach the solver: " + (e && e.message || e));
+        })
         .then(x => x.json())
         .then(res => {
           if (!res || !res.ok) throw new Error((res && res.error) || "solve failed");
