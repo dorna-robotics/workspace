@@ -107,15 +107,8 @@ def main(project_dir):
 
 
 def _exit(code=0):
-    """Leave NOW — a normal exit would hang.
-
-    Building a Workspace starts background threads that outlive the
-    solve, and not all of them are daemons (dorna2's simulation-api
-    server thread is not), so once the answer is already on stdout the
-    interpreter can sit waiting on them forever. The builder's
-    subprocess.run() would then sit out its full timeout and report a
-    timeout for a solve that succeeded seconds earlier.
-    """
+    """Leave now — a normal exit joins dorna2's non-daemon sim-api
+    thread and hangs with the answer already on stdout."""
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(code)
