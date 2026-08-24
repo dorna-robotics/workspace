@@ -1,4 +1,4 @@
-"""syringe_pump example — vision/sensor checks. Empty in this minimal example."""
+"""pump example — vision/sensor checks. Empty in this minimal example."""
 
 
 class Checks:

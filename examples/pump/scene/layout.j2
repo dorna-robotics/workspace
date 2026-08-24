@@ -1,10 +1,10 @@
-# syringe_pump example — layout on the shared core_500 chassis.
+# pump example — layout on the shared core_500 chassis.
 #
 # ONE pump, TWO nozzles — the point of the fluid-path capability:
 #
-#   syringe_pump_1            the device: driver, bus row, sim, recovery
-#   gripper_syringe_needle_1  carried nozzle, valve port 3
-#   syringe_dispense_arm_1    fixed nozzle over the rack, valve port 2
+#   pump_1                    the device: driver, bus row, sim, recovery
+#   needle_gripper_1          carried nozzle, valve port 3 ("needle")
+#   needle_dispense_arm_1    fixed nozzle over the rack, valve port 2 ("flush")
 #
 # Neither nozzle claims a device id; each only declares WHICH pump
 # feeds it and WHICH valve port its tube lands on (device-guide §4,
@@ -12,15 +12,35 @@
 
 # ── The pump (the device) ───────────────────────────────────────────
 # Sim by default: port "" -> no bus claim, volume bookkeeping in
-# memory. For the real PSD/4 set the by-id port and simulation: false.
-syringe_pump_1:
-  type: "pump_psd4"
+# memory (with real move timing, modeled from the manual's speed
+# table). For the real PSD/4 set the by-id port and simulation: false.
+#
+# valve_ports maps the valve's NUMBERED positions to what hangs on
+# them; tube_volume_ul is that line's WHOLE dead volume (an outlet's
+# includes the fitted needle's bore — valve to tip), which prime() sizes
+# its cycle count from. Ports in `outlets` are nozzles; the rest are
+# sources. syringe_volume_ul, valve_type and variant are hardware
+# facts the pump cannot report — silently wrong if guessed
+# (docs/liquid-handling.md).
+pump_1:
+  type: "pump"
+  driver: "psd4"
   port: ""
   address: 1
   baud: 9600
-  syringe_volume_ul: 1000.0
   simulation: true
   critical: true
+  syringe_volume_ul: 1000.0
+  valve_type: 3
+  variant: "standard"
+  high_resolution: true
+  output_right: true
+  default_speed: 100
+  valve_ports:
+    1: {name: reservoir, tube_volume_ul: 0}
+    2: {name: flush,     tube_volume_ul: 150}
+    3: {name: needle,    tube_volume_ul: 150}
+  outlets: [2, 3]
   attach:
     parent_name: "fixture_plate_1"
     parent_solid: "body"
@@ -40,11 +60,12 @@ tool_rack_192mm_1:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
 
-gripper_syringe_needle_1:
-  type: "gripper_syringe_needle"
+needle_gripper_1:
+  type: "needle_gripper"
   has_tool_changer: true
-  pump: "syringe_pump_1"      # fed by the pump above
+  pump: "pump_1"      # fed by the pump above
   pump_port: 3                # its tube is on valve port 3
+  lock_j5: 0                  # stripper rods: wrist roll pinned during dips
   attach:
     parent_name: "tool_rack_192mm_1"
     parent_solid: "body"
@@ -97,9 +118,9 @@ tube_amber_40ml_A{{ c }}:
 # its ``place`` anchor is the spot 75 mm out where the vessel stands
 # under the nozzle. So the arm mounts to the plate and the cup mounts
 # to the arm's place — not the other way round.
-syringe_dispense_arm_1:
-  type: "syringe_dispense_arm"
-  pump: "syringe_pump_1"
+needle_dispense_arm_1:
+  type: "needle_dispense_arm"
+  pump: "pump_1"
   pump_port: 2
   attach:
     parent_name: "fixture_plate_4"
@@ -112,7 +133,7 @@ syringe_dispense_arm_1:
 rack_liquid_1:
   type: "rack_liquid"
   attach:
-    parent_name: "syringe_dispense_arm_1"
+    parent_name: "needle_dispense_arm_1"
     parent_solid: "body"
     parent_anchor: "place"
     child_solid: "body"

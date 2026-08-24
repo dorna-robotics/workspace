@@ -1,4 +1,4 @@
-"""Syringe dispense arm — the FIXED end of a fluid path.
+"""Needle dispense arm — the FIXED end of a fluid path.
 
 Geometry + the pneumatic down/up IO come from ``Arm``; the fluidics
 come from ``PumpedTool``, which binds this nozzle to one pump component
@@ -7,7 +7,7 @@ no device and takes no bus row — the pump component is the sole owner
 of the device id (device-guide §4). See
 ``components/pump/pump_link.py``.
 
-Kinematically this is the mirror of ``gripper_syringe_needle``: the
+Kinematically this is the mirror of ``needle_gripper``: the
 robot carries the needle to the liquid, whereas here the robot brings
 the vessel under a stationary nozzle. They share no base class — a
 carried tool and a bench fixture are different things — only the fluid
@@ -15,10 +15,11 @@ capability, which is why it is composed in rather than inherited.
 
 Scene yaml::
 
-    syringe_dispense_arm_1:
-      type: "syringe_dispense_arm"
-      pump: "syringe_pump_1"     # "" -> unplumbed, geometry + IO only
-      pump_port: "output"        # valve port this tube lands on
+    needle_dispense_arm_1:
+      type: "needle_dispense_arm"
+      pump: "pump_1"     # "" -> unplumbed, geometry + IO only
+      pump_port: 2               # valve port this tube lands on (number
+                                 # or a name from the pump's valve_ports)
 
 The ``DispenseArm`` recipe drives it: ``down()`` / ``up()`` for the
 pneumatics, ``dispense(ul)`` for the pump.
@@ -27,13 +28,13 @@ pneumatics, ``dispense(ul)`` for the pump.
 from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
-from workspace.components.pump.needle import Needle
+from workspace.components.needle.needle import Needle
 from workspace.components.pump.pump_link import PumpedTool
-from workspace.components.syringe.arm import Arm
+from workspace.components.needle.arm import Arm
 
 
-@register("syringe_dispense_arm")
-class SyringeDispenseArm(PumpedTool, Arm):
+@register("needle_dispense_arm")
+class NeedleDispenseArm(PumpedTool, Arm):
     DEFAULTS = dict(
             anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "place": [75, 0, 0, 0, 0, 0], "top": [0, 0, 120, 0, 0, 0],
                     "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0]}},
@@ -50,7 +51,7 @@ class SyringeDispenseArm(PumpedTool, Arm):
             pump_port=None,
             # ── the fitted needle ────────────────────────────────────
             # Same two numbers as the carried needle, same meaning:
-            # declarative only (components/pump/needle.py).
+            # declarative only (components/needle/needle.py).
             needle_gauge=None,     # e.g. 16
             needle_length=0.0,     # mm
         )

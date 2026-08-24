@@ -7,7 +7,14 @@ scene next to the component that wears it, not baked into a CAD model.
 Both are DECLARATIVE — what is fitted, nothing more. Neither touches
 the component's geometry: anchors, tcp/tip and collision boxes are the
 CAD's business and stay exactly as modelled. These two answer "what
-needle is on it", for the fluid side, the panel and provenance.
+needle is on it", for the panel and provenance.
+
+They do not feed the fluid math either: the needle's internal bore is
+real dead volume (~7 µL for a 22G x 2", ~44 µL for a 16G x 4"), and it
+is accounted for in the outlet's ``tube_volume_ul`` on the PUMP's
+scene entry, whose definition is valve→needle tip. Swapping the needle
+therefore means updating that number too — see
+``docs/liquid-handling.md`` §3.
 """
 
 from __future__ import annotations

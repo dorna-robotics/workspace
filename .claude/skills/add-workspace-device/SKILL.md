@@ -1,6 +1,6 @@
 ---
 name: add-workspace-device
-description: "Use when adding a USB / serial / TCP device whose hardware handle lives in the workspace process itself (robot, multimeter, in-process pump, syringe). For cameras served by a vision server or any other daemon-owned device, use add-daemon-device instead."
+description: "Use when adding a USB / serial / TCP device whose hardware handle lives in the workspace process itself (robot, multimeter, in-process pump). For cameras served by a vision server or any other daemon-owned device, use add-daemon-device instead."
 ---
 
 # Add a workspace-owned device

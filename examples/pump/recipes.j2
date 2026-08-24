@@ -28,9 +28,9 @@ vials:
 # pump through the arm's port instead of the old timed hold.
 arm:
   class: workspace.recipes.dispense_arm.DispenseArm
-  kwargs: {component: syringe_dispense_arm_1, speed_factor: {{ sf }}}
+  kwargs: {component: needle_dispense_arm_1, speed_factor: {{ sf }}}
 
 # The pump itself, for prime/status/volume at the workflow level.
 pump:
-  class: workspace.recipes.syringe_pump.SyringePump
-  kwargs: {component: syringe_pump_1}
+  class: workspace.recipes.pump.Pump
+  kwargs: {component: pump_1}

@@ -15,14 +15,18 @@ it and *which* valve port its tube lands on.
 
 Scene yaml declares the plumbing, because the tube is physical::
 
-    syringe_pump_1:
-      type: "pump_psd4"
+    pump_1:
+      type: "pump"
       port: "/dev/serial/by-id/usb-..."
-      syringe_volume_ul: 1000.0
+      syringe_volume_ul: 100.0
+      valve_ports:
+        1: reservoir
+        3: {name: needle, tube_volume_ul: 150}
+      outlets: [3]
 
-    gripper_syringe_needle_1:
-      type: "gripper_syringe_needle"
-      pump: "syringe_pump_1"      # which pump feeds this needle
+    needle_gripper_1:
+      type: "needle_gripper"
+      pump: "pump_1"            # which pump feeds this needle
       pump_port: 3                # which valve port its tube is on
 
 Call sites never repeat the port — the link binds it, so the one
@@ -145,14 +149,17 @@ class PumpLink:
         """Plunger home, contents out through this link's port."""
         return self.pump.empty(port=self._port(port), **kw)
 
-    def prime(self, cycles: int = 2, volume_ul=None, from_port="input", **kw):
-        """Flush air out of the path, ending through THIS port."""
+    def prime(self, cycles=None, volume_ul=None, from_port=None, **kw):
+        """Flush air out of the path, ending through THIS port.
+        Defaults let the pump decide: ``from_port=None`` resolves the
+        single declared source, ``cycles=None`` is computed from the
+        declared tube volumes."""
         return self.pump.prime(cycles, volume_ul=volume_ul, from_port=from_port,
                                to_port=self._port(), **kw)
 
-    def valve(self, position=None, **kw):
+    def valve(self, port=None, **kw):
         """Point the valve at this link's port (or an explicit one)."""
-        return self.pump.valve(self._port(position), **kw)
+        return self.pump.valve(self._port(port), **kw)
 
     def volume(self, **kw):
         """µL currently in the barrel (shared across every port)."""
@@ -176,7 +183,7 @@ class PumpedTool:
     Mix it in FIRST so its ``__init__`` runs before the kinematic base
     (``Gripper`` / ``Arm``) that owns the geometry::
 
-        class GripperSyringeNeedle(PumpedTool, Gripper):
+        class NeedleGripper(PumpedTool, Gripper):
             ...
             super().__init__(name=name, workspace=workspace, **prm)
 
@@ -220,7 +227,7 @@ class PumpedTool:
     def empty(self, port=None, **kw):
         return self.fluid.empty(port=port, **kw)
 
-    def prime(self, cycles: int = 2, volume_ul=None, **kw):
+    def prime(self, cycles=None, volume_ul=None, **kw):
         return self.fluid.prime(cycles, volume_ul=volume_ul, **kw)
 
     def pump_volume(self, **kw):

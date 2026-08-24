@@ -512,13 +512,48 @@ class Recipe:
             left_approach=self.left_approach,
         )
 
-        if j5_override is not None:
-            J[5] = j5_override
-
         if C != 2:
             raise RecipeError("could not find a valid pose")
 
+        if j5_override is not None:
+            J[5] = j5_override
+
         return J
+
+    @staticmethod
+    def _pin_j5(points, j5_override):
+        """Force j5 on every TARGET point of an executed path. The
+        first point is the robot's live position and stays untouched —
+        the wrist rolls to the pinned value over the first segment.
+        j5 is the roll about the tool axis, so the pinned path drives
+        the same tip trajectory with the wrist held.
+        """
+        if j5_override is None or not points:
+            return points
+        pts = [list(p) for p in points]
+        for p in pts[1:]:
+            p[5] = j5_override
+        return pts
+
+    def _tool_lock_j5(self):
+        """The mounted tool's declared ``lock_j5`` (degrees), or None.
+
+        A tool whose hardware needs the wrist roll pinned during
+        vertical entry/exit — the needle gripper's stripper-weight rods
+        clash with j4 / the robot body unless j5 stays at 0 — declares
+        ``lock_j5`` in its scene entry. ``immerse`` / ``retract`` read
+        it here and pin every joint target they execute. Explicit
+        ``approach_j5`` / ``exit_j5`` kwargs at the call site win.
+        """
+        try:
+            tool = self.core.current_tool()
+        except Exception:
+            return None
+        v = getattr(tool, "lock_j5", None)
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
 
     def _padding(self, padding, default=50):
         """Resolve an approach padding: per-call > recipe (recipes.j2
@@ -625,7 +660,7 @@ class Recipe:
             return False, unplanned, "smove"
         return bool(flag), "jmove", "smove"
 
-    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None):
+    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None, j5_override=None):
         """Execute a single motion — with optional motion planning for collision avoidance.
 
         ``use_planning`` accepts the full ``has_motion_plan`` grammar —
@@ -649,6 +684,11 @@ class Recipe:
                 points = self.core.motion_plan(joint=J)
             if not points:
                 raise RecipeError("no proper path was found")
+            # j5_override pins the goal already (it came through
+            # _solve_ik); the planner's intermediate waypoints are
+            # pinned here so a locked wrist stays locked for the whole
+            # hop, not just at its end.
+            points = self._pin_j5(points, j5_override)
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
         else:
@@ -754,6 +794,10 @@ class Recipe:
                     prev = J
             if folded:
                 points.extend(rest)
+                # Pin BEFORE blending so the fillets are generated (and
+                # validated) on the wrist-locked path, not corrected
+                # after the fact.
+                points = self._pin_j5(points, j5_override)
                 if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
                     # corner of the fused path — travel and approach
@@ -772,7 +816,8 @@ class Recipe:
             if plan_on and points:
                 # Fold sampling failed mid-way — execute the planned
                 # travel, then the remaining offsets as classic lmoves.
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
+                self._run_path_motion(rt, self._pin_j5(points, j5_override), vaj_map["jmove"],
+                                      planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
@@ -786,7 +831,7 @@ class Recipe:
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
             if i == 0 and first_approach:
-                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs, tool_dict=tool_dict)
+                self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs, tool_dict=tool_dict, j5_override=j5_override)
             else:
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
@@ -2147,6 +2192,11 @@ class Recipe:
         No attach / no IO — the held item stays attached, the
         component's IO is not triggered.
 
+        A mounted tool that declares ``lock_j5`` (needle gripper's
+        stripper rods) gets the wrist roll pinned to that value on
+        every joint target of both phases — pass ``approach_j5=`` /
+        ``exit_j5=`` explicitly to override per call.
+
         Required state:
             The robot must be holding a load (otherwise the
             tip-height math doesn't apply). Inherited from
@@ -2175,6 +2225,15 @@ class Recipe:
         tool_tcp_z_offset = height_load - dist
         tool_tip_z_offset = height_load - dist
 
+        # A tool that declares ``lock_j5`` (e.g. the needle gripper's
+        # stripper-weight rods) gets the wrist roll pinned on every
+        # joint target of the hover and the dive. Explicit
+        # approach_j5 / exit_j5 kwargs at the call site win.
+        lock = self._tool_lock_j5()
+        if lock is not None:
+            kwargs.setdefault("approach_j5", lock)
+            kwargs.setdefault("exit_j5", lock)
+
         if approach:
             return self.pick(
                 anchor=anchor, solid_name=solid_name, component=component,
@@ -2201,6 +2260,9 @@ class Recipe:
         dive's lmove class. If you have obstacles above the workspace,
         pass ``has_motion_plan=True`` explicitly.
 
+        A mounted tool that declares ``lock_j5`` gets the wrist roll
+        pinned for the lift, same as ``immerse``.
+
         Required state:
             The robot must be holding a load (same as ``immerse``).
 
@@ -2222,6 +2284,13 @@ class Recipe:
 
         tool_tcp_z_offset = height_load + dist
         tool_tip_z_offset = height_load + dist
+
+        # Same wrist lock as ``immerse`` — the lift out of a septum
+        # vial is exactly where the rods must stay clear of j4.
+        lock = self._tool_lock_j5()
+        if lock is not None:
+            kwargs.setdefault("approach_j5", lock)
+
         return self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, has_motion_plan=has_motion_plan, **kwargs)
 
     # ── Calibration ─────────────────────────────────────────────────────────

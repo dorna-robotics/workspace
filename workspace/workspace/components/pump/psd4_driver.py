@@ -114,6 +114,10 @@ SPEED_CODES = {
     40: 600.0,
 }
 
+# Valve drive speed per the specification table (§2-1): 250 ms per
+# 120° of rotation. Used by the station's sim timing model.
+VALVE_SECONDS_PER_120_DEG = 0.25
+
 # Steps per full 30 mm stroke, (standard, high_resolution), per pump
 # variant. The serial protocol is identical across variants and the
 # pump cannot report which one it is — declare it, like the syringe
@@ -128,6 +132,32 @@ VARIANTS = {
     "standard":    (3000, 24000),
     "smooth_flow": (24000, 192000),
 }
+
+
+def speed_percent_to_code(percent: float) -> int:
+    """0-100 percent → the pump's preset speed code 1-40.
+
+    100 = code 1 (fastest), 0 = code 40 (slowest), linear over the
+    codes in between. The ladder itself is roughly geometric in
+    seconds, so mid-scale sits much closer to the slow end.
+    """
+    p = min(100.0, max(0.0, float(percent)))
+    return 1 + round((100.0 - p) / 100.0 * 39)
+
+
+def stroke_seconds(percent: float, variant: str, high_resolution: bool) -> float:
+    """Seconds one FULL stroke takes at ``percent`` speed — the timing
+    model behind the sim, straight from table 8-33.
+
+    On plain pumps the table holds directly in either resolution mode.
+    On SF firmware a code fixes the motor STEP RATE and the table's
+    seconds apply per 24000 steps, so an SF high-resolution stroke
+    (192000 steps) takes 8x the table's time.
+    """
+    secs = SPEED_CODES[speed_percent_to_code(percent)]
+    if variant == "smooth_flow":
+        secs *= VARIANTS[variant][1 if high_resolution else 0] / 24000.0
+    return secs
 
 
 class PSD4Error(RuntimeError):
@@ -737,8 +767,7 @@ class PSD4:
         full stroke at 100 measured ~2.3 s in standard resolution, 8x
         that (~18 s) in high resolution. The ladder is roughly
         geometric, so mid-scale sits much closer to the slow end."""
-        p = min(100.0, max(0.0, float(percent)))
-        code = 1 + round((100.0 - p) / 100.0 * 39)
+        code = speed_percent_to_code(percent)
         self.set_speed_code(code)
         return code
 

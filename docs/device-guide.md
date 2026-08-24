@@ -540,7 +540,7 @@ Blessed kinds (use these names verbatim when applicable):
 | `camera`      | Cameras (RealSense, USB webcams, etc.)               |
 | `printer`     | Label / barcode / inkjet printers                    |
 | `pipette`     | Liquid-handling pipettes                             |
-| `syringe`     | Syringe pumps                                        |
+| `pump`        | Syringe / dosing pumps                               |
 | `scale`       | Mass / weight balances                               |
 | `shaker`      | Plate shakers / mixers                               |
 | `decapper`    | Cap removers                                         |

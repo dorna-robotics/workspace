@@ -1,4 +1,4 @@
-"""syringe_pump protocol — Start → Prime → [NeedleDose] ×N → Flush → Park.
+"""pump protocol — Start → Prime → [NeedleDose] ×N → Flush → Park.
 
 The point of this example is the FLUID PATH, not the choreography: one
 pump device feeds two nozzles, and each nozzle is nothing more than a
@@ -134,7 +134,11 @@ class Prime(Action):
     def execute(self):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         rt.step("priming the fluid path")
-        if rcp["pump"].prime(cycles=1) is False:
+        # From the single source (reservoir) out through the flush
+        # line into its cup — the needle line stays dry because the
+        # needle is parked in the tool rack. Cycle count comes from
+        # the tube volumes declared in the scene.
+        if rcp["pump"].prime(to_port="flush") is False:
             rt.step("prime failed — will retry after recover")
             return False
         return "primed"
@@ -160,10 +164,10 @@ class NeedleDose(Action):
         slot, ul = _slot(self, vial), _dose_ul(self)
         rt.step(f"vial {vial + 1}: needle dose {ul:g} uL into rack[{slot}]")
         rt.step(_progress_pct(self), level="progress")
-        # Draw from the reservoir (valve "input"), then push out through
-        # the needle's own port — the link binds port 3, so the call
-        # site never repeats it.
-        if rcp["pump"].aspirate(ul, port="input") is False:
+        # Draw from the reservoir (a named source in the scene's
+        # valve_ports), then push out through the needle's own port —
+        # the link binds port 3, so the call site never repeats it.
+        if rcp["pump"].aspirate(ul, port="reservoir") is False:
             rt.step(f"vial {vial + 1}: aspirate failed — retry after recover")
             return False
         # Straight dive with clearance, like the pH probe into the same
