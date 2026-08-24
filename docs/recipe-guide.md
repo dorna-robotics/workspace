@@ -789,17 +789,39 @@ API, read the source file's docstrings.
   parameter to select shelf anchor (`place_0`, `place_1`, …).
 
 ### Liquid handling
+
+Which one to use where — the decision table and a composed protocol
+example live in `docs/liquid-handling.md` §4. In one line: robot
+travels to the liquid → `PipettingSite`; liquid location is fixed →
+`DosingSite` (vessels come to it) or `DispenseArm` (mounted nozzle);
+nothing moves → `Pump`.
+
+- **`Pump`** ([pump.py](../workspace/workspace/recipes/pump.py)) —
+  thin pass-throughs to the syringe-pump component's atomic ops
+  (`aspirate` / `dispense` / `prime` / `empty` / `valve`, named ports,
+  material reads). No robot motion of its own.
 - **`DosingSite`** ([doser.py](../workspace/workspace/recipes/doser.py))
-  — dosing-site holder. Resolves the attached plate, provides
-  `immerse` / `retract` wrappers. Placeholder `aspirate` / `dispense`
-  methods (real device not yet wired).
+  — a fixed dosing spot. Resolves the attached plate for `immerse` /
+  `retract`; `aspirate` / `dispense` / `prime` resolve the fluid path
+  site-first-then-carried-tool via `PumpLink`, refusing plainly when
+  neither declares a `pump:`.
 - **`PipettingSite`** ([pipetting.py](../workspace/workspace/recipes/pipetting.py))
-  — pipette tip exchange + liquid handling. `pick_tip`, `eject_tip`
-  (with shake + tip-presence verification), `immerse`, `aspirate`,
-  `dispense`. **Note**: currently has sim-flag checks inline that
-  belong in the component constructor — pending cleanup.
+  — the robot dips the carried tool into vessels, slot by slot.
+  `pick_tip`, `eject_tip` (with shake + tip-presence verification),
+  `immerse`, `aspirate`, `dispense`. Speaks the air-displacement
+  pipettor's vocabulary (`speed` in µL/s, `blowout`); a plumbed needle
+  rides it unchanged because `PumpLink` matches the method names (and
+  swallows the pipettor-unit args). **Note**: currently has sim-flag
+  checks inline that belong in the component constructor — pending
+  cleanup.
 - **`DispenseArm`** ([dispense_arm.py](../workspace/workspace/recipes/dispense_arm.py))
-  — pneumatic dispense arm. `down` / `up` / `dispense` (sleep-based).
+  — bench-mounted nozzle head. `down` / `up` (pneumatic IO);
+  `dispense(volume_ul=…)` pushes through the arm's pump port when the
+  scene plumbs one, else falls back to the historical timed hold.
+
+A tool that declares `lock_j5` (the needle gripper's stripper rods)
+gets its wrist roll pinned automatically by `immerse` / `retract` —
+see `docs/liquid-handling.md` §3.
 
 ### Cap handling
 - **`Decapper`** ([decapper.py](../workspace/workspace/recipes/decapper.py))

@@ -267,6 +267,49 @@ valve/solenoid rigs that have no pump. `DosingSite` resolves the site's
 own plumbing first and the carried tool second, and refuses with a clear
 message when neither declares a `pump:`.
 
+### Picking one — the question each recipe answers
+
+| Recipe | Ask yourself | `recipes.j2` component |
+|---|---|---|
+| `Pump` (`pump.py`) | no robot motion — just move the plunger? | the pump (`pump_1`) |
+| `PipettingSite` (`pipetting.py`) | does the robot carry the needle **to** vessels in a rack? | the adapter holding the vessels |
+| `DosingSite` (`doser.py`) | is there **one fixed spot** where dosing happens? | the site fixture |
+| `DispenseArm` (`dispense_arm.py`) | is the nozzle **bolted down**, dosing into whatever sits under it? | the arm (`needle_dispense_arm_1`) |
+
+Rules of thumb: robot travels to the liquid → `PipettingSite`
+(per-slot anchors). Liquid location is fixed → `DosingSite` if
+vessels come to it, `DispenseArm` if it is a mounted nozzle head.
+Nothing moves → `Pump`. Every fluid call ends at the same pump either
+way — the recipes only decide *motion* and *which port*.
+
+In a typical protocol they compose like this (this is
+`examples/pump` — its `recipes.j2` wires exactly `Pump` +
+`PipettingSite` + `DispenseArm`; `DosingSite` only enters when a
+project has a dedicated dosing station, like bna):
+
+```python
+rcp["pump"].prime(to_port="flush")           # Pump: fluid prep, no motion
+rcp["pump"].aspirate(150, port="reservoir")  # Pump: fill barrel from source
+
+rcp["vials"].immerse(anchor="A3", depth=60)  # PipettingSite: dip carried needle
+rcp["vials"].dispense(150)                   #   dose this vial
+rcp["vials"].retract(anchor="A3")            #   pull out (lock_j5 applies, §3)
+
+rcp["arm"].dispense(volume_ul=50)            # DispenseArm: fixed nozzle doses
+```
+
+**Do not merge the sites.** `PipettingSite` and `DosingSite` look
+similar because all motion (immerse / retract / IK / `lock_j5`) is
+already shared in the base `Recipe`; what remains differs for real.
+`PipettingSite` speaks the air-displacement pipettor's vocabulary
+(`speed` in µL/s, `blowout`) and calls the mounted tool directly — the
+pipettor is its own device with no `PumpLink`. `DosingSite` resolves
+plumbing (site first, tool second) and forwards to a `PumpLink`, whose
+speed is 0-100 percent. One merged class would carry both unit systems
+in one signature — the exact silent-unit-bug the `pump_speed` swallow
+in `pump_link.py` exists to prevent. Four names, one engine
+underneath.
+
 ---
 
 ## 5. Moving liquid
