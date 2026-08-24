@@ -165,6 +165,15 @@ class Core:
             "output_detach": [[1, 0, 0], [0, 1, 0], [2, 1, 0.25]],
         },
         has_motion_plan = False, # enable or disable path planing
+        # Whether this robot's j5 rotates without the ±180° travel
+        # limit (the infinite-wrist variant). When True, every j5
+        # target the workspace commands is unwrapped to the nearest
+        # 360°-equivalent of the live j5 (see ``unwrap_j5``), so the
+        # wrist never winds back to reach a canonical angle, and the
+        # decapper runs its screw in ONE shot with no gripper re-bites.
+        # The firmware speaks absolute counter values and is never
+        # touched — no set_joint, ever.
+        j5_infinite = False,
     )
 
 
@@ -188,6 +197,9 @@ class Core:
 
         # assembly
         self.assembly = {}
+
+        # -------- j5 travel
+        self.j5_infinite = bool(prm["j5_infinite"])
 
         # -------- rail
         self.has_rail = prm["has_rail"]
@@ -293,7 +305,8 @@ class Core:
                     kind="dorna",
                     sim=self._simulation_mode,
                     critical=True,
-                    meta={"ip": self.robot_ip, "model": prm.get("model", "dorna_ta")},
+                    meta={"ip": self.robot_ip, "model": prm.get("model", "dorna_ta"),
+                          "j5_infinite": self.j5_infinite},
                     recover_factory=_make_recover,
                 )
             except Exception:
@@ -1260,6 +1273,33 @@ class Core:
         except Exception:
             pass
 
+    def unwrap_j5(self, target, ref=None):
+        """Map a j5 target to its nearest 360°-equivalent relative to
+        ``ref`` (default: the live j5). Identity unless ``j5_infinite``.
+
+        The firmware takes ABSOLUTE joint counter values: at 720,
+        commanding 0 rotates two full turns backward. On the
+        infinite-wrist variant 720 and 0 are the same shaft angle, so
+        every j5 target must be re-based near wherever the winding
+        left the wrist — the commanded move is then always ≤ 180° of
+        rotation and the counter is never physically unwound.
+        """
+        if not self.j5_infinite or target is None:
+            return target
+        if ref is None:
+            ref = float(self.robot_api.joint()[5])
+        return float(target) + 360.0 * round((float(ref) - float(target)) / 360.0)
+
+    def _ik_finish(self, J, cur):
+        """Re-base an IK result's j5 near the live j5 (copy — cached
+        entries stay canonical so a later call re-bases them against
+        ITS live j5)."""
+        if J is None or not self.j5_infinite:
+            return J
+        J = list(J)
+        J[5] = J[5] + 360.0 * round((cur[5] - J[5]) / 360.0)
+        return J
+
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
          rail_step=10.0, rail_span=0, ref_joints=None, left_approach=True):
 
@@ -1313,7 +1353,7 @@ class Core:
         if _ck is not None:
             _hit = self._ik_cache_get(_ck, cur, aux)
             if _hit is not None:
-                return (_hit, 2)
+                return (self._ik_finish(_hit, cur), 2)
 
         if ref_joints is None:
             ref_joints = list(cur)
@@ -1349,6 +1389,11 @@ class Core:
         def joint_distance(q):
             W = np.array([1,1,1,4,1,0.25])
             dq = (np.array(q[:6]) - ref_joints[:6])
+            if self.j5_infinite:
+                # j5 is circular on the infinite-wrist variant: a wound
+                # reference (e.g. 720) must not penalize canonical
+                # candidates — compare the wrapped difference.
+                dq[5] = (dq[5] + 180.0) % 360.0 - 180.0
             return np.linalg.norm(W * dq)
 
         
@@ -1385,7 +1430,7 @@ class Core:
             if best:
                 if _ck is not None:
                     self._ik_cache_put(_ck, best[1], aux, with_rail=False)
-                return (best[1], 2)
+                return (self._ik_finish(best[1], cur), 2)
 
             else:
                 return (None, -2)
@@ -1516,7 +1561,7 @@ class Core:
             if best:
                 if _ck is not None:
                     self._ik_cache_put(_ck, best[1], aux, with_rail=True)
-                return (best[1], 2)
+                return (self._ik_finish(best[1], cur), 2)
 
             else:
                 return(None, -2)

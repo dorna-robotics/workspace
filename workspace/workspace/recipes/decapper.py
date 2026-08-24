@@ -121,7 +121,11 @@ class Decapper(Recipe):
         if not self.touch(**motion_prm):
             raise RecipeError("decap failed — touch motion failed")
 
-        # chunked unscrew (j5 rotates backward while z rises)
+        # unscrew (j5 rotates backward while z rises). On the
+        # infinite-wrist robot (core.j5_infinite) the whole twist runs
+        # in ONE shot — no gripper re-bites; a limited wrist keeps the
+        # chunk-and-rebite loop.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,
@@ -131,6 +135,7 @@ class Decapper(Recipe):
             lmove_vaj=lmove_vaj,
             jmove_vaj=jmove_vaj,
             j5_start=j5_start,
+            rebite=not one_shot,
         )
 
         # exit (gripper stays ON — we're carrying the cap out). The
@@ -163,11 +168,16 @@ class Decapper(Recipe):
             vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
             rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
 
-            # unwind the screw turns: normalize j5 into ±180 (same tool
-            # pose mod 360 — the free cap just spins in place) so the
-            # outgoing carry plans from a centered wrist and the next
-            # screw op has full winding room.
-            self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
+            # Limited wrist: unwind the screw turns — normalize j5 into
+            # ±180 (same tool pose mod 360, the free cap just spins in
+            # place) so the outgoing carry plans from a centered wrist
+            # and the next screw op has full winding room. The
+            # infinite wrist skips the unwind entirely: j5 stays where
+            # the screw left it and every later target is unwrapped to
+            # its nearest equivalent (core.unwrap_j5), so nothing ever
+            # rotates extra.
+            if not one_shot:
+                self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
 
         # attach
         solid_cap.attach_to(
@@ -274,7 +284,9 @@ class Decapper(Recipe):
         if not self.touch(**place_prm):
             raise RecipeError("cap failed — touch motion failed")
 
-        # chunked tighten (j5 rotates forward while z descends)
+        # tighten (j5 rotates forward while z descends) — one shot on
+        # the infinite wrist, chunk-and-rebite on a limited one.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,
@@ -284,6 +296,7 @@ class Decapper(Recipe):
             lmove_vaj=lmove_vaj,
             jmove_vaj=jmove_vaj,
             j5_start=j5_start,
+            rebite=not one_shot,
         )
 
         # release the cap (gripper OFF) so the exit clears without dragging it
@@ -319,10 +332,13 @@ class Decapper(Recipe):
             vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
             rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
 
-            # unwind the screw turns: normalize j5 into ±180 (same tool
-            # pose mod 360 — the gripper is already empty here) so the
-            # outgoing carry plans from a centered wrist.
-            self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
+            # Limited wrist: unwind the screw turns — normalize j5 into
+            # ±180 (same tool pose mod 360, the gripper is already
+            # empty here) so the outgoing carry plans from a centered
+            # wrist. The infinite wrist skips it: later targets unwrap
+            # to the nearest equivalent instead (core.unwrap_j5).
+            if not one_shot:
+                self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
 
         # attach cap to body
         solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")

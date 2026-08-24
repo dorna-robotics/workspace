@@ -822,9 +822,16 @@ see `docs/liquid-handling.md` §3.
 
 ### Cap handling
 - **`Decapper`** ([decapper.py](../workspace/workspace/recipes/decapper.py))
-  — cap twist/untwist with chunked screw motion and gripper re-bite.
-  `decap` (unscrew in chunks), `cap` (screw on chunks). Targets the
-  tube's `cap_seat` anchor for cap-on motion.
+  — cap twist/untwist. On a limited wrist: chunked screw motion with
+  gripper re-bites between chunks, plus a physical j5 unwind after.
+  On the infinite-wrist robot (`j5_infinite: true` on the core scene
+  entry) both `decap` and `cap` run the whole twist in ONE shot — no
+  re-bites, no unwind: j5 stays wound and every later j5 target is
+  unwrapped to its nearest 360°-equivalent (`core.unwrap_j5`, applied
+  inside IK / `lock_j5` pins / `park`), so the wrist never rotates
+  extra to "come home". Targets the tube's `cap_seat` anchor for
+  cap-on motion. No `set_joint` is ever used — the firmware counter
+  is honest and untouched.
 
 ### Feeders & shakers
 - **`Feeder`** ([feeder.py](../workspace/workspace/recipes/feeder.py))

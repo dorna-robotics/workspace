@@ -516,7 +516,10 @@ class Recipe:
             raise RecipeError("could not find a valid pose")
 
         if j5_override is not None:
-            J[5] = j5_override
+            # On an infinite-wrist robot the pin is re-based to the
+            # nearest 360°-equivalent of the live j5 (same shaft
+            # angle, no unwinding); identity on a limited robot.
+            J[5] = self.core.unwrap_j5(j5_override)
 
         return J
 
@@ -1106,7 +1109,7 @@ class Recipe:
         return height_load, height_container, height_tool, pose_offset, tool_body
 
     def _screw_motion(self, tool, pitch, total_twist, max_rotation, direction,
-                      lmove_vaj, jmove_vaj, j5_start):
+                      lmove_vaj, jmove_vaj, j5_start, rebite=True):
         """Chunked screw/unscrew motion around the tool TCP's Z-axis.
 
         Each chunk rotates j5 by ``direction * chunk`` degrees while z
@@ -1115,6 +1118,16 @@ class Recipe:
         The gripper is engaged during each screw lmove and released during
         the rewind jmove. After the final chunk no rewind happens — the
         caller is responsible for the exit motion and the final gripper state.
+
+        ``rebite=False`` — the infinite-wrist (``core.j5_infinite``)
+        mode: the grip is never released and j5 ACCUMULATES across the
+        chunks (`j5_start + direction * running_total`), so the whole
+        twist runs in one shot with no rewind jmoves. The waypoints
+        stay chunked (each ≤ ``max_rotation``) purely so z keeps pace
+        with the thread. ``j5_start`` itself is re-based to the
+        nearest equivalent of the live j5 first, so a wound wrist
+        screws from where it is instead of unwinding to a canonical
+        angle.
 
         Chunk order: for ``direction = -1`` (unscrew) the small remainder
         chunk runs first (small initial nudge, then full chunks); for
@@ -1143,6 +1156,10 @@ class Recipe:
         tool_body = tool.assembly[next(iter(tool.assembly))]
         total_twist = int(total_twist)
 
+        # A wound wrist screws from where it is — same shaft angle,
+        # no unwinding (identity on a limited robot).
+        j5_start = self.core.unwrap_j5(j5_start)
+
         # build chunk list: [remainder, max, max, ...]
         chunks = ([total_twist % max_rotation] if total_twist % max_rotation else []) + \
                  [max_rotation] * (total_twist // max_rotation)
@@ -1152,6 +1169,7 @@ class Recipe:
         # pre-solve joint list so any IK failure aborts before motion
         joint_list = []
         z_offset = 0
+        wound = 0
         for chunk in chunks:
             z_offset += direction * pitch * chunk / max_rotation
             J, C = self.core.IK(
@@ -1169,10 +1187,15 @@ class Recipe:
             )
             if C != 2:
                 raise RecipeError("could not find valid joints for screw motion")
-            J[5] = j5_start + direction * chunk
+            if rebite:
+                J[5] = j5_start + direction * chunk
+            else:
+                wound += direction * chunk
+                J[5] = j5_start + wound
             joint_list.append(J[:])
 
-        # execute: gripper on during screw, off during rewind
+        # execute: gripper on during screw, off during rewind (one-shot
+        # mode never releases and never rewinds)
         for i in range(len(joint_list)):
             if tool.output_state() != 1:
                 rt.checkpoint()
@@ -1182,7 +1205,7 @@ class Recipe:
             rt.checkpoint()
             rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
 
-            if i < len(joint_list) - 1:
+            if rebite and i < len(joint_list) - 1:
                 if tool.output_state() != 0:
                     rt.checkpoint()
                     rt.output(config=tool.output_disable)
@@ -2152,6 +2175,9 @@ class Recipe:
         # single index.
         target = list(rt.joint())
         target[:len(joint)] = list(joint)
+        # Infinite-wrist robots reach the park roll via the nearest
+        # equivalent — a wound wrist parks where it is, mod 360.
+        target[5] = self.core.unwrap_j5(target[5])
 
         vaj_map = {
             "jmove": self.jmove_vaj,
