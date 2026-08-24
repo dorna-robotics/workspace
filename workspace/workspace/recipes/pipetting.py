@@ -100,15 +100,17 @@ class PipettingSite(Recipe):
         )
 
 
-    def retract(self, anchor="place", padding=50, **kwargs):
+    def retract(self, anchor="place", padding=50, dist=0, **kwargs):
         """Lift the tip out of the well — inverse of ``immerse``.
 
-        Thin wrapper: resolves the plate attached to the site and delegates
-        to ``Recipe.retract`` with ``dist=0`` (tip rises exactly by its own length).
+        Thin wrapper: resolves the plate attached to the site and
+        delegates to ``Recipe.retract``. ``dist`` is extra lift above
+        the natural load-height clearance (mm); at the default 0 the
+        tip rises exactly by its own length.
         """
         component, solid_name = self._resolve_attached_component()
         return super().retract(
-            dist=0, anchor=anchor, solid_name=solid_name, component=component,
+            dist=dist, anchor=anchor, solid_name=solid_name, component=component,
             padding=padding, **kwargs,
         )
 
