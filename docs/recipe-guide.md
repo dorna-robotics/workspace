@@ -792,21 +792,18 @@ API, read the source file's docstrings.
 
 Which one to use where — the decision table and a composed protocol
 example live in `docs/liquid-handling.md` §4. In one line: robot
-travels to the liquid → `PipettingSite`; liquid location is fixed →
-`DosingSite` (vessels come to it) or `DispenseArm` (mounted nozzle);
-nothing moves → `Pump`.
+travels to the liquid → `PipettingSite` (racks and fixed dosing spots
+alike); mounted nozzle → `DispenseArm`; nothing moves → `Pump`.
+(`DosingSite` was folded into `PipettingSite` — migrate with a
+one-word class swap in `recipes.j2`.)
 
 - **`Pump`** ([pump.py](../workspace/workspace/recipes/pump.py)) —
   thin pass-throughs to the syringe-pump component's atomic ops
   (`aspirate` / `dispense` / `prime` / `empty` / `valve`, named ports,
   material reads). No robot motion of its own.
-- **`DosingSite`** ([doser.py](../workspace/workspace/recipes/doser.py))
-  — a fixed dosing spot. Resolves the attached plate for `immerse` /
-  `retract`; `aspirate` / `dispense` / `prime` resolve the fluid path
-  site-first-then-carried-tool via `PumpLink`, refusing plainly when
-  neither declares a `pump:`.
 - **`PipettingSite`** ([pipetting.py](../workspace/workspace/recipes/pipetting.py))
-  — the robot dips the carried tool into vessels, slot by slot.
+  — the robot dips the carried tool into vessels, slot by slot (or at
+  a single-place dosing site).
   `pick_tip`, `eject_tip` (with shake + tip-presence verification),
   `immerse`, `aspirate`, `dispense`. Speaks the air-displacement
   pipettor's vocabulary (`speed` in µL/s, `blowout`); a plumbed needle

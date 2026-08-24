@@ -76,3 +76,30 @@ class NeedleDispenseArm(PumpedTool, Arm):
         self._init_pump_link(workspace, prm)
         self.needle = Needle(gauge=prm.get("needle_gauge"),
                              length=prm.get("needle_length", 0.0))
+
+    # ── atomic ops (component-guide §7) ───────────────────────────────
+    # The component owns the pneumatics, same as Gripper.enable /
+    # Decapper.open; the DispenseArm recipe adds the workflow
+    # checkpoint and delegates here. The fluid verbs (aspirate /
+    # dispense / prime) come from PumpedTool. Idempotent: a repeated
+    # call in the reached state is a no-op.
+
+    def down(self) -> bool:
+        """Extend the arm (pneumatic output HIGH)."""
+        if self.output_state() != 1:
+            self.workspace.rt.output(config=self.output_enable)
+            self.output_state(1)
+        return True
+
+    def up(self) -> bool:
+        """Retract the arm (pneumatic output LOW)."""
+        if self.output_state() != 0:
+            self.workspace.rt.output(config=self.output_disable)
+            self.output_state(0)
+        return True
+
+    def operator_actions(self) -> list[dict]:
+        return [
+            {"label": "Down", "method": "down", "icon": "arrow-down", "group": "arm"},
+            {"label": "Up",   "method": "up",   "icon": "arrow-up",   "group": "arm"},
+        ]

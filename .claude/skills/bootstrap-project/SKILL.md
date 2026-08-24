@@ -40,11 +40,11 @@ One entry per station the protocol touches:
 
 ```yaml
 source_rack_1: {class: Rack,       component: adapter_plate_amber_40ml_4x7_in_1, tool: gripper_tube_large_1}
-doser_40ml:    {class: DosingSite, component: adapter_plate_amber_40ml_1x6_1,    tool: gripper_needle_1}
+doser_40ml:    {class: PipettingSite, component: adapter_plate_amber_40ml_1x6_1,    tool: gripper_needle_1}
 decapper:      {class: Decapper,   component: decapper_1,                        tool: gripper_tube_large_1}
 ```
 
-Class inference is mechanical: adapter+rack → `Rack` (+ `DosingSite`
+Class inference is mechanical: adapter+rack → `Rack` (+ `PipettingSite`
 if dosed into), tool_rack+gripper → `ToolRack`, decapper → `Decapper`,
 scale + top → `Scale` + base-`Recipe` holder (the bd split), shaker →
 `Shaker` with `target_solid_name: rotating`, feeder → `Feeder`,

@@ -10,8 +10,8 @@ Code involved: `workspace/components/pump/` (driver, station,
 component, the `PumpLink` capability), the plumbed nozzle components
 in `workspace/components/needle/` (`needle_gripper`,
 `needle_dispense_arm`, the `Needle` fitted-needle helper) and the
-recipes that sequence them (`pipetting.py`, `dispense_arm.py`,
-`doser.py`, `pump.py`). Runnable reference: `examples/pump`. The
+recipes that sequence them (`pipetting.py`, `dispense_arm.py`, `pump.py`).
+Runnable reference: `examples/pump`. The
 PSD/4 manual lives at `docs/manuals/PSD4_Manual_8892-01b.pdf`.
 
 ---
@@ -258,34 +258,32 @@ what differs is only *who holds the nozzle*:
 |---|---|---|---|---|
 | Carried needle | robot's tool | the vessel | `core.current_tool()` | `PipettingSite` |
 | Fixed arm | bench fixture | the arm's own anchor | the arm component | `DispenseArm` |
-| Dosing site | either | the site | site first, then carried tool | `DosingSite` |
 | No motion at all | — | — | the pump component | `Pump` |
 
 `DispenseArm.dispense(volume_ul=…)` pushes through the arm's port when
 the arm is plumbed, and falls back to its historical timed hold for
-valve/solenoid rigs that have no pump. `DosingSite` resolves the site's
-own plumbing first and the carried tool second, and refuses with a clear
-message when neither declares a `pump:`.
+valve/solenoid rigs that have no pump. A dedicated dosing *site* is
+just a `PipettingSite` pointed at that site's fixture — the carried
+needle doses whatever sits there. (`DosingSite` used to exist for
+this; it was folded into `PipettingSite`, which now carries its
+`prime`, kwargs forwarding, and checkpoints.)
 
 ### Picking one — the question each recipe answers
 
 | Recipe | Ask yourself | `recipes.j2` component |
 |---|---|---|
 | `Pump` (`pump.py`) | no robot motion — just move the plunger? | the pump (`pump_1`) |
-| `PipettingSite` (`pipetting.py`) | does the robot carry the needle **to** vessels in a rack? | the adapter holding the vessels |
-| `DosingSite` (`doser.py`) | is there **one fixed spot** where dosing happens? | the site fixture |
+| `PipettingSite` (`pipetting.py`) | does the robot carry the needle **to** the liquid — a rack of vessels or a fixed dosing spot? | the adapter or site fixture holding the vessels |
 | `DispenseArm` (`dispense_arm.py`) | is the nozzle **bolted down**, dosing into whatever sits under it? | the arm (`needle_dispense_arm_1`) |
 
 Rules of thumb: robot travels to the liquid → `PipettingSite`
-(per-slot anchors). Liquid location is fixed → `DosingSite` if
-vessels come to it, `DispenseArm` if it is a mounted nozzle head.
-Nothing moves → `Pump`. Every fluid call ends at the same pump either
-way — the recipes only decide *motion* and *which port*.
+(per-slot anchors — a rack or a single-place site alike). The nozzle
+is fixed → `DispenseArm`. Nothing moves → `Pump`. Every fluid call
+ends at the same pump either way — the recipes only decide *motion*
+and *which port*.
 
 In a typical protocol they compose like this (this is
-`examples/pump` — its `recipes.j2` wires exactly `Pump` +
-`PipettingSite` + `DispenseArm`; `DosingSite` only enters when a
-project has a dedicated dosing station, like bna):
+`examples/pump` — its `recipes.j2` wires exactly these three):
 
 ```python
 rcp["pump"].prime(to_port="flush")           # Pump: fluid prep, no motion
@@ -298,17 +296,18 @@ rcp["vials"].retract(anchor="A3")            #   pull out (lock_j5 applies, §3)
 rcp["arm"].dispense(volume_ul=50)            # DispenseArm: fixed nozzle doses
 ```
 
-**Do not merge the sites.** `PipettingSite` and `DosingSite` look
-similar because all motion (immerse / retract / IK / `lock_j5`) is
-already shared in the base `Recipe`; what remains differs for real.
-`PipettingSite` speaks the air-displacement pipettor's vocabulary
-(`speed` in µL/s, `blowout`) and calls the mounted tool directly — the
-pipettor is its own device with no `PumpLink`. `DosingSite` resolves
-plumbing (site first, tool second) and forwards to a `PumpLink`, whose
-speed is 0-100 percent. One merged class would carry both unit systems
-in one signature — the exact silent-unit-bug the `pump_speed` swallow
-in `pump_link.py` exists to prevent. Four names, one engine
-underneath.
+**Why three, not fewer.** All motion (immerse / retract / IK /
+`lock_j5`) already lives once, in the base `Recipe` — the recipes are
+thin shims that differ where it matters: `PipettingSite` speaks the
+air-displacement pipettor's vocabulary (`speed` in µL/s, `blowout`;
+a plumbed needle swallows those and takes `pump_speed` 0-100 —
+`pump_link.py` explains why the two never share a name), `DispenseArm`
+is IO + fluid with no robot motion at all, and `Pump` is the bare
+device. The former `DosingSite` was the fourth shim; it added nothing
+`PipettingSite` doesn't do now, so it is gone — migrate old
+`recipes.j2` entries with a one-word class swap
+(`workspace.recipes.doser.DosingSite` →
+`workspace.recipes.pipetting.PipettingSite`).
 
 ---
 

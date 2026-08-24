@@ -114,8 +114,13 @@ class PipettingSite(Recipe):
 
 
     
-    def aspirate(self, vol, speed=200):
+    def aspirate(self, vol, speed=200, **kwargs):
         """Aspirate ``vol`` µL at ``speed`` µL/s.
+
+        ``speed`` is the air-displacement pipettor's µL/s; a plumbed
+        needle swallows it and takes ``pump_speed`` (0-100 percent)
+        instead — pass it through ``**kwargs`` (pump_link.py explains
+        why the two never share a name).
 
         Sim-agnostic: the component branches internally (canned True in
         sim). Returns False when the pump refused or is unreachable —
@@ -124,15 +129,34 @@ class PipettingSite(Recipe):
         pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
-        return bool(pipette.aspirate(vol, speed=speed, sim_return=True))
+        self.rt.checkpoint()
+        return bool(pipette.aspirate(vol, speed=speed, sim_return=True, **kwargs))
 
 
-    def dispense(self, vol, speed=500, blowout=False):
+    def dispense(self, vol, speed=500, blowout=False, **kwargs):
         """Dispense ``vol`` µL at ``speed`` µL/s; ``blowout=True`` expels
         residual volume. Same contract as :meth:`aspirate`."""
         pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")
-        return bool(pipette.dispense(vol, speed=speed, blowout=blowout, sim_return=True))
+        self.rt.checkpoint()
+        return bool(pipette.dispense(vol, speed=speed, blowout=blowout,
+                                     sim_return=True, **kwargs))
+
+
+    def prime(self, cycles=None, **kwargs):
+        """Flush air out of the mounted tool's fluid path — plumbed
+        needles only; the air-displacement pipettor has no prime.
+        ``cycles=None`` lets the pump size the count from the declared
+        tube volumes (liquid-handling.md §5)."""
+        pipette = self.core.current_tool()
+        if pipette is None:
+            raise RecipeError("no pipette attached to the robot")
+        if not hasattr(pipette, "prime"):
+            raise RecipeError(
+                f"{getattr(pipette, 'name', 'the mounted tool')} has no prime — "
+                f"only nozzles plumbed to a pump do")
+        self.rt.checkpoint()
+        return bool(pipette.prime(cycles, **kwargs))
 
 
