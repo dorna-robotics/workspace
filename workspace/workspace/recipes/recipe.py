@@ -1126,14 +1126,12 @@ class Recipe:
         caller is responsible for the exit motion and the final gripper state.
 
         ``rebite=False`` — the infinite-wrist (``core.j5_infinite``)
-        mode: the grip is never released and j5 ACCUMULATES across the
-        chunks (`j5_start + direction * running_total`), so the whole
-        twist runs in one shot with no rewind jmoves. The waypoints
-        stay chunked (each ≤ ``max_rotation``) purely so z keeps pace
-        with the thread. ``j5_start`` itself is re-based to the
-        nearest equivalent of the live j5 first, so a wound wrist
-        screws from where it is instead of unwinding to a canonical
-        angle.
+        mode: ONE continuous lmove drives the whole twist, j5 and z
+        advancing together as a single helix — no chunks, no rewinds,
+        the grip never released. ``max_rotation`` then only scales the
+        z math (the thread advances ``pitch`` mm per ``max_rotation``
+        degrees, same as the chunked path), it no longer splits the
+        motion.
 
         Chunk order: for ``direction = -1`` (unscrew) the small remainder
         chunk runs first (small initial nudge, then full chunks); for
@@ -1171,11 +1169,22 @@ class Recipe:
             # a limited robot).
             j5_start = self.core.unwrap_j5(j5_start)
 
-        # build chunk list: [remainder, max, max, ...]
-        chunks = ([total_twist % max_rotation] if total_twist % max_rotation else []) + \
-                 [max_rotation] * (total_twist // max_rotation)
-        if direction > 0:
-            chunks = chunks[::-1]
+        if rebite:
+            # build chunk list: [remainder, max, max, ...] — each chunk
+            # bounded by the gripper's re-bite swing.
+            chunks = ([total_twist % max_rotation] if total_twist % max_rotation else []) + \
+                     [max_rotation] * (total_twist // max_rotation)
+            if direction > 0:
+                chunks = chunks[::-1]
+        else:
+            # One-shot: the WHOLE twist as a single lmove — one
+            # continuous helix, j5 and z advancing together. The z
+            # total is identical to the chunked path (pitch scaled by
+            # twist/max_rotation); the firmware already rotates j5
+            # hundreds of degrees within one lmove on the chunked path,
+            # so a single longer one is the same mechanism, not a new
+            # assumption.
+            chunks = [total_twist]
 
         # pre-solve joint list so any IK failure aborts before motion
         joint_list = []
