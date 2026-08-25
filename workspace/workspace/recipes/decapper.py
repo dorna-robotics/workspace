@@ -111,21 +111,23 @@ class Decapper(Recipe):
         # tool
         tool = motion_prm["tool"]
 
-        # j5_start
-        j5_start = max_rotation / 2
-
-        # adjust j5 in the approach
-        motion_prm["approach_j5"] = j5_start
+        # j5 staging: a LIMITED wrist pre-rotates to +max_rotation/2 so
+        # every chunk has winding room within ±180°. The infinite wrist
+        # (core.j5_infinite) needs none of that — the screw runs
+        # RELATIVE from wherever the approach leaves the wrist, so no
+        # staging rotation happens at all.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
+        j5_start = None if one_shot else max_rotation / 2
+        if not one_shot:
+            motion_prm["approach_j5"] = j5_start
 
         # run the motion (touch already uses runtime internally in your updated Recipe)
         if not self.touch(**motion_prm):
             raise RecipeError("decap failed — touch motion failed")
 
-        # unscrew (j5 rotates backward while z rises). On the
-        # infinite-wrist robot (core.j5_infinite) the whole twist runs
-        # in ONE shot — no gripper re-bites; a limited wrist keeps the
-        # chunk-and-rebite loop.
-        one_shot = bool(getattr(self.core, "j5_infinite", False))
+        # unscrew (j5 rotates backward while z rises). One shot on the
+        # infinite wrist — no re-bites, screwing relative from the
+        # current wrist angle; chunk-and-rebite on a limited one.
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,
@@ -257,8 +259,11 @@ class Decapper(Recipe):
         # total height
         height_total = height_tube + height_cap
 
-        # j5_start
-        j5_start = -max_rotation / 2
+        # j5 staging — same rule as decap: explicit -max_rotation/2 only
+        # for the limited wrist; the infinite wrist tightens relative
+        # from wherever the place approach leaves j5.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
+        j5_start = None if one_shot else -max_rotation / 2
 
         # place setting
         place_prm = self.place_setting(
@@ -279,14 +284,14 @@ class Decapper(Recipe):
         if not place_prm:
             raise RecipeError("cap failed — could not compute place parameters")
 
-        # adjust j5 in the approach
-        place_prm["approach_j5"] = j5_start
+        # adjust j5 in the approach (limited wrist only)
+        if not one_shot:
+            place_prm["approach_j5"] = j5_start
         if not self.touch(**place_prm):
             raise RecipeError("cap failed — touch motion failed")
 
         # tighten (j5 rotates forward while z descends) — one shot on
         # the infinite wrist, chunk-and-rebite on a limited one.
-        one_shot = bool(getattr(self.core, "j5_infinite", False))
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,

@@ -1109,8 +1109,14 @@ class Recipe:
         return height_load, height_container, height_tool, pose_offset, tool_body
 
     def _screw_motion(self, tool, pitch, total_twist, max_rotation, direction,
-                      lmove_vaj, jmove_vaj, j5_start, rebite=True):
+                      lmove_vaj, jmove_vaj, j5_start=None, rebite=True):
         """Chunked screw/unscrew motion around the tool TCP's Z-axis.
+
+        ``j5_start=None`` — RELATIVE mode: the screw runs from wherever
+        the wrist currently is (the live j5), with no staging rotation.
+        This is the natural mode for the infinite wrist; a limited
+        wrist passes an explicit ``j5_start`` (±max_rotation/2) so each
+        chunk has winding room within ±180°.
 
         Each chunk rotates j5 by ``direction * chunk`` degrees while z
         advances by ``direction * pitch * chunk / max_rotation``. Between
@@ -1156,9 +1162,14 @@ class Recipe:
         tool_body = tool.assembly[next(iter(tool.assembly))]
         total_twist = int(total_twist)
 
-        # A wound wrist screws from where it is — same shaft angle,
-        # no unwinding (identity on a limited robot).
-        j5_start = self.core.unwrap_j5(j5_start)
+        if j5_start is None:
+            # Relative: screw from the wrist's live angle, zero staging.
+            j5_start = float(rt.joint()[5])
+        else:
+            # A wound wrist reaches an explicit start via its nearest
+            # equivalent — same shaft angle, no unwinding (identity on
+            # a limited robot).
+            j5_start = self.core.unwrap_j5(j5_start)
 
         # build chunk list: [remainder, max, max, ...]
         chunks = ([total_twist % max_rotation] if total_twist % max_rotation else []) + \
