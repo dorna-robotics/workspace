@@ -14,8 +14,11 @@ class RackLiquid(Rack):
         well             26.0 x 81.0, floor at z=8.0, open rim at z=38.0
         mounting holes   5.0 dia, 6.1 deep, at y=+23.5 and y=-26.5
 
-    The collision boxes are the floor plus the four walls, not one solid
-    block — the probe has to be able to descend into the well.
+    One solid collision box, measured off rack_liquid.glb: the body is
+    30 x 85 x 38 mm, origin at the XY centre with z = 0 the bottom
+    face. Nothing dips into this rack — nozzles dispense from above —
+    so a solid block is correct (and the previous 192 mm-tall box was
+    from some other part entirely).
     """
 
     DEFAULTS = dict(
@@ -28,7 +31,7 @@ class RackLiquid(Rack):
         }},
         collision_box =
                     {"body":[
-                        {"pose":[0.0, 0.0, 192.1/2, 0.0, 0.0, 0.0], "scale":[47.6, 47.6, 192.1]},
+                        {"pose":[0.0, 0.0, 38.0/2, 0.0, 0.0, 0.0], "scale":[30.0, 85.0, 38.0]},
                 ]},
         offset=[0, 0, 45],
         pitch=[0, 0, 0],
