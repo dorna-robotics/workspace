@@ -29,7 +29,7 @@ class ToolRack(Recipe):
         )
 
 
-    def pick(self, anchor="place", solid_name="body", padding=100, gap=2, **kwargs):
+    def pick(self, anchor="place", solid_name="body", padding=50, gap=2, **kwargs):
         """Pick a tool from the rack via the tool-changer interface.
 
         Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
@@ -76,8 +76,8 @@ class ToolRack(Recipe):
             # stop+verify boundary.
             "approach": [
                             [
-                                [-padding, 0, -padding-height_offset, 0, 0, 0],
-                                [0, 0, -padding-height_offset, 0, 0, 0],
+                                [-2*padding, 0, -2*padding-height_offset, 0, 0, 0],
+                                [0, 0, -2*padding-height_offset, 0, 0, 0],
                                 [0, 0, -12-gap-height_offset, 0, 0, 0],
                             ],
                             [
@@ -93,10 +93,11 @@ class ToolRack(Recipe):
                         [0, 0, -gap-height_offset, 0, 0, 0]
                     ],
                     [
-                        [-padding,0,-gap-height_offset,0,0,0]
+                        [-padding,0,-gap-height_offset,0,0,0],
                     ],
                     [
-                        [-padding,0,-padding-height_offset,0,0,0]
+                        [-padding,0,-padding-height_offset,0,0,0],
+                        [-2*padding,0,-2*padding-height_offset,0,0,0]
                     ]
                 ],
         }
@@ -158,8 +159,8 @@ class ToolRack(Recipe):
             # into the rack slot is the contact group after the stop.
             "approach": [
                             [
-                                [-padding,0,-padding-height_offset,0,0,0],
-                                [-padding,0,-gap-height_offset,0,0,0],
+                                [-2*padding,0,-2*padding-height_offset,0,0,0],
+                                [-2*padding,0,-gap-height_offset,0,0,0],
                             ],
                             [
                                 [0, 0, -gap-height_offset, 0, 0, 0]
@@ -176,7 +177,7 @@ class ToolRack(Recipe):
             "exit": [[
                             [0, 0, -12-gap-height_offset, 0, 0, 0],
                             [0, 0, -padding-height_offset, 0, 0, 0],
-                            [-padding, 0, -padding-height_offset, 0, 0, 0],
+                            [-2*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
             "output_exit": output_exit
         }
