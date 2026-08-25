@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1307
+      "byteLength": 1236
     }
   ],
   "buffers": [
     {
       "uri": "rack_liquid.glb.bin",
-      "byteLength": 1307
+      "byteLength": 1236
     }
   ],
   "materials": [

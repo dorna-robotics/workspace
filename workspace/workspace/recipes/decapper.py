@@ -63,7 +63,7 @@ class Decapper(Recipe):
         lmove_vaj=[1000, 3000, 15000],
         jmove_vaj=[500, 3000, 15000],
         max_rotation=500,
-        twist=500,
+        twist=None,
         **kwargs,
     ):
         """Unscrew the cap off a tube sitting at ``anchor``.
@@ -79,7 +79,8 @@ class Decapper(Recipe):
                 cap ends ``padding + gap`` above the tube.
             lmove_vaj, jmove_vaj: [vel, accel, jerk] for linear / joint moves.
             max_rotation: Maximum j5 swing per chunk (degrees).
-            twist: Total rotation to unscrew (degrees). Defaults to component's.
+            twist: Total rotation to unscrew (degrees). None (default)
+                uses the cap component's declared ``twist``.
         """
         rt = self.rt
 

@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 6296
+      "byteLength": 6320
     }
   ],
   "buffers": [
     {
       "uri": "probe_vertical.glb.bin",
-      "byteLength": 6296
+      "byteLength": 6320
     }
   ],
   "materials": [

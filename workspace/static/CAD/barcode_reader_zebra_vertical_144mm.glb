@@ -82,12 +82,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 112818
+      "count": 112800
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36420,
+      "count": 36416,
       "max": [
         8.000106811523438,
         15.5,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 36420
+      "count": 36416
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2400
+      "byteLength": 2393
     },
     {
       "buffer": 0,
-      "byteOffset": 2400,
-      "byteLength": 9105
+      "byteOffset": 2393,
+      "byteLength": 9115
     },
     {
       "buffer": 0,
-      "byteOffset": 11505,
-      "byteLength": 8046
+      "byteOffset": 11508,
+      "byteLength": 7732
     },
     {
       "buffer": 0,
-      "byteOffset": 19551,
-      "byteLength": 101878
+      "byteOffset": 19240,
+      "byteLength": 101508
     }
   ],
   "buffers": [
     {
       "uri": "barcode_reader_zebra_vertical_144mm.glb.bin",
-      "byteLength": 121429
+      "byteLength": 120748
     }
   ],
   "materials": [

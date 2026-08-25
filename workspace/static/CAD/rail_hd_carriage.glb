@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 19747
+      "byteLength": 19780
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_carriage.glb.bin",
-      "byteLength": 19747
+      "byteLength": 19780
     }
   ],
   "materials": [

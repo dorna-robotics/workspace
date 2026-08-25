@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 23862
+      "count": 23856
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7978,
+      "count": 7977,
       "max": [
         2.15006685256958,
         3.5,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 7978
+      "count": 7977
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 20943
+      "byteLength": 20753
     }
   ],
   "buffers": [
     {
       "uri": "gripper_tube_large.glb.bin",
-      "byteLength": 20943
+      "byteLength": 20753
     }
   ],
   "materials": [
