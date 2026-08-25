@@ -1459,7 +1459,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=True,
+        soft_approach=False,
         compliant=True,
         **kwargs,
     ):
@@ -1893,7 +1893,7 @@ class Recipe:
         gap=2,
         load_anchor="center",
         gravity_offset=1,
-        soft_approach=True,
+        soft_approach=False,
         **kwargs,
     ):
         """Place the held item at ``anchor``: approach, release, detach, exit.
