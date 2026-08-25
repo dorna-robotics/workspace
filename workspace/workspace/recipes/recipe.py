@@ -1329,6 +1329,16 @@ class Recipe:
             True on success.
         """
         rt = self.rt
+        # "keep" — pin j5 at its CURRENT angle for this whole touch: the
+        # roll-doesn't-matter pin for round payloads (tubes, caps) on
+        # the infinite wrist, where IK would otherwise "correct" the
+        # wrist back to the anchor's nominal roll after a screw op.
+        # Resolved to a number here, once, so every downstream consumer
+        # (_solve_ik, planner-point pinning) sees a plain float.
+        if isinstance(approach_j5, str) and approach_j5 == "keep":
+            approach_j5 = float(rt.joint()[5])
+        if isinstance(exit_j5, str) and exit_j5 == "keep":
+            exit_j5 = float(rt.joint()[5])
         if has_motion_plan is None:
             has_motion_plan = (self.has_motion_plan if self.has_motion_plan is not None
                                else self.core.has_motion_plan)

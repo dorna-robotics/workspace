@@ -22,6 +22,16 @@ class Decapper(Recipe):
             **prm,
         )
 
+    def _keep_wrist(self, kwargs):
+        """On the infinite wrist, everything this station grips is round
+        (tubes, caps), so no verb here has a reason to roll the wrist:
+        default approach_j5/exit_j5 to "keep" (the current angle),
+        letting an explicit caller value win."""
+        if bool(getattr(self.core, "j5_infinite", False)):
+            kwargs.setdefault("approach_j5", "keep")
+            kwargs.setdefault("exit_j5", "keep")
+        return kwargs
+
     def place(self, approach=True, exit=True, padding=None, **kwargs):
         """Place a tube into the decapper's ``place`` anchor.
 
@@ -29,7 +39,8 @@ class Decapper(Recipe):
         decapper holds the tube directly — no lift compensation) and a
         shorter default padding of 30 mm.
         """
-        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0, **kwargs)
+        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0,
+                             **self._keep_wrist(kwargs))
 
     def pick(self, approach=True, exit=True, padding=None, compliant=False, **kwargs):
         """Pick a tube from the decapper's ``place`` anchor. Padding defaults to 30 mm.
@@ -39,7 +50,7 @@ class Decapper(Recipe):
         moves the tube on the tool and must fold into the attach offset (the
         base Recipe defaults compliant=True for suction/soft tools)."""
         return super().pick(anchor="place", approach=approach, exit=exit, padding=padding,
-                            compliant=compliant, **kwargs)
+                            compliant=compliant, **self._keep_wrist(kwargs))
 
     def decap(
         self,
@@ -118,8 +129,7 @@ class Decapper(Recipe):
         # staging rotation happens at all.
         one_shot = bool(getattr(self.core, "j5_infinite", False))
         j5_start = None if one_shot else max_rotation / 2
-        if not one_shot:
-            motion_prm["approach_j5"] = j5_start
+        motion_prm["approach_j5"] = "keep" if one_shot else j5_start
 
         # run the motion (touch already uses runtime internally in your updated Recipe)
         if not self.touch(**motion_prm):
@@ -284,9 +294,9 @@ class Decapper(Recipe):
         if not place_prm:
             raise RecipeError("cap failed — could not compute place parameters")
 
-        # adjust j5 in the approach (limited wrist only)
-        if not one_shot:
-            place_prm["approach_j5"] = j5_start
+        # adjust j5 in the approach — the staging angle on a limited
+        # wrist, the current angle (no roll at all) on the infinite one
+        place_prm["approach_j5"] = "keep" if one_shot else j5_start
         if not self.touch(**place_prm):
             raise RecipeError("cap failed — touch motion failed")
 
