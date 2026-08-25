@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 66228
+      "count": 66066
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 22013,
+      "count": 21959,
       "max": [
         2.280174970626831,
         19.209999084472656,
@@ -27,19 +27,19 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 22013
+      "count": 21959
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 22013
+      "count": 21959
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 63896
+      "byteLength": 63720
     }
   ],
   "samplers": [
@@ -66,7 +66,7 @@
   "buffers": [
     {
       "uri": "ph_meter_atlas.glb.bin",
-      "byteLength": 63896
+      "byteLength": 63720
     }
   ],
   "materials": [

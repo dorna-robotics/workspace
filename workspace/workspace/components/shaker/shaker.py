@@ -12,14 +12,8 @@ class Shaker:
         # cfg
         output_start = [[None, None, 0.1]], # [[pin, index, time]]
         output_end = [[None, None, 0.1]], # [[pin, index, time]]
-        output_close = {
-            "A1": [[None, None, 0.1]], # [[pin, index, time]]
-            "A2": [[None, None, 0.1]], # [[pin, index, time]]
-        },
-        output_open ={
-            "A1": [[None, None, 0.1]], # [[pin, index, time]]
-            "A2": [[None, None, 0.1]], # [[pin, index, time]]
-        },
+        output_close = [[None, None, 0.1]], # [[pin, index, time]],
+        output_open =[[None, None, 0.1]], # [[pin, index, time]],
     )
     def __init__(self, name: str, workspace, type=None, **kwargs):
         # prm

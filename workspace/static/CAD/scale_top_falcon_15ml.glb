@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4659
+      "byteLength": 4657
     }
   ],
   "buffers": [
     {
       "uri": "scale_top_falcon_15ml.glb.bin",
-      "byteLength": 4659
+      "byteLength": 4657
     }
   ],
   "materials": [

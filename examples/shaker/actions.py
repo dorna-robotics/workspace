@@ -1,6 +1,6 @@
 """shaker example — Start → [Load(t) ×2 → Shake → Unload(t) ×2] → Park.
 
-Pick 40 ml amber tubes from the rack, load them onto the 2-slot
+Pick 40 ml amber tubes from the rack, load them onto the 4-slot
 shaker, shake, and return them — split into separate BT actions so
 the planner's resource management is visible on the Gantt:
 
