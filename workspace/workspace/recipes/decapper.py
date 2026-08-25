@@ -333,6 +333,14 @@ class Decapper(Recipe):
             if C != 2:
                 raise RecipeError("could not find valid joints for exit")
 
+            if one_shot:
+                # Keep the j5 the tighten ended on — the gripper is
+                # empty and the lift is pure z, so the infinite wrist
+                # has no reason to reorient on the way out (IK's
+                # preferred roll could be up to ~180° away). Mirrors
+                # decap's exit.
+                J[5] = last_J[5]
+
             rt.checkpoint()
             vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
             rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
