@@ -206,6 +206,62 @@ def _ray_clearance(ws, solid, anchor):
     return d_in, label, h_stack, h_container
 
 
+def _payload_height_guess(ws, solid, anchor):
+    """Best-known height of the payload this anchor seats, for the
+    LOADED-frame numbers. The solver cannot know what a run will carry,
+    but the scene usually does: (1) the stock at this very anchor,
+    else (2) stock at any sibling anchor of the same solid, else
+    (3) stock anywhere on a component of the same TYPE (the staging
+    racks are empty but in_1 of the same rack type is populated).
+    Returns (height, source_note) — (0, "") when nothing in the scene
+    reveals it, which falls back to the empty-handed math.
+    """
+    import numpy as np
+
+    def h_at(sld, anc):
+        try:
+            origin, direction = _anchor_ray(sld, anc)
+            _, pts = _stack_members(sld, anc)
+            h = 0.0
+            for pt in pts:
+                h = max(h, float(np.dot(pt - origin, direction)))
+            return h
+        except Exception:
+            return 0.0
+
+    h = h_at(solid, anchor)
+    if h > 0:
+        return h, "this anchor"
+    try:
+        sib_anchors = list(solid.children.keys()) if isinstance(solid.children, dict) else []
+    except Exception:
+        sib_anchors = []
+    for a2 in sib_anchors:
+        if a2 == anchor:
+            continue
+        h = max(h, h_at(solid, a2))
+    if h > 0:
+        return h, "sibling anchor"
+    try:
+        my_type = ws.components[solid.component].type
+    except Exception:
+        return 0.0, ""
+    for cname, comp in ws.components.items():
+        if getattr(comp, "type", None) != my_type or cname == getattr(solid, "component", None):
+            continue
+        for sname, sld in (getattr(comp, "assembly", {}) or {}).items():
+            try:
+                ancs = list(sld.children.keys()) if isinstance(sld.children, dict) else []
+            except Exception:
+                ancs = []
+            for a2 in ancs:
+                h2 = h_at(sld, a2)
+                if h2 > h:
+                    h = h2
+                    src = cname
+    return (h, src) if h > 0 else (0.0, "")
+
+
 # Per-class probe: which anchor(s) represent the station's target.
 def _probe_anchors(recipe_obj, comp):
     try:
@@ -341,7 +397,7 @@ def solve(project_dir, skeleton_path=None, port=5999):
                   f"geometry probe failed: {type(ex).__name__}")
             solved[name] = {"class": e["class"], "kwargs": kw}
             continue
-        need_pad, need_end, note = 0.0, 0.0, ""
+        need_pad, need_end, need_load, clear_h, h_pay, pay_src, note = 0.0, 0.0, 0.0, 0.0, 0.0, "", ""
         for a in anchors:
             try:
                 d_in, blabel, h_stack, h_cont = _ray_clearance(ws, solid, a)
@@ -349,26 +405,44 @@ def solve(project_dir, skeleton_path=None, port=5999):
                 continue
             if d_in <= 0:
                 continue
+            h_guess, src = _payload_height_guess(ws, solid, a)
             h_base = max(h_stack, h_cont)
-            np_ = max(0.0, d_in + MARGIN - h_base)
+            np_ = max(0.0, d_in + MARGIN - h_base)                       # empty-handed
+            nl_ = max(0.0, d_in + MARGIN - max(h_guess, h_cont))         # carrying the payload
             ne_ = max(0.0, d_in + MARGIN - h_stack)
-            if np_ > need_pad or ne_ > need_end:
+            if np_ > need_pad or ne_ > need_end or nl_ > need_load:
                 need_pad, need_end = max(need_pad, np_), max(need_end, ne_)
-                note = f"{blabel} holds the ray to {d_in:.0f} @ {a}"
+                need_load = max(need_load, nl_)
+                clear_h, h_pay, pay_src = d_in, h_guess, src
+                note = f"{blabel} @ {a}"
         if need_pad > 0 or need_end > 0:
-            geom = (f"min pad {need_pad:.0f} / min end {need_end:.0f} above load "
-                    f"({note}; incl {MARGIN:.0f} margin)")
+            if h_pay > 0:
+                geom = (f"beam clears @ {clear_h:.0f} | pad {need_load:.0f} loaded "
+                        f"(payload {h_pay:.0f}, {pay_src}) / {need_pad:.0f} empty | "
+                        f"end {need_end:.0f} ({note}; incl {MARGIN:.0f} margin)")
+            else:
+                geom = (f"beam clears @ {clear_h:.0f} | pad {need_pad:.0f} (no payload "
+                        f"in scene — empty-handed frame) | end {need_end:.0f} "
+                        f"({note}; incl {MARGIN:.0f} margin)")
         else:
             geom = f"ray clear (incl {MARGIN:.0f} margin)"
         print(f"{name:22s} la={str(la):5s} bd={kw['base_distance']!s:>4s} ({how})   {geom}")
         solved[name] = {"class": e["class"], "kwargs": kw}
 
     print(f"\nGeometry notes (all numbers include the {MARGIN:.0f} mm margin):")
-    print("  min pad — what any pick/place/immerse hover padding at that station")
-    print("            must reach (pick/place default 50, immerse default 10).")
-    print("  min end — how far above the payload ANY motion must END there")
-    print("            (retract distances, exit heights): an arm stranded")
-    print("            inside an inflated box poisons the next plan's start.")
+    print("  beam clears @ H — the raw height above the anchor where the ray")
+    print("            exits every inflated collision box (the occupancy")
+    print("            envelope top). Attribute it yourself; the pads below")
+    print("            are that height translated into each operation's frame.")
+    print("  pad loaded — the padding a LOADED place/pick-exit needs: the")
+    print("            carried payload's own height (taken from the scene's")
+    print("            stock) already reaches most of the envelope, so only")
+    print("            the remainder lands on the knob.")
+    print("  pad empty — what an EMPTY-tool hover needs (TCP frame); also the")
+    print("            fallback when no payload exists anywhere in the scene.")
+    print("  end — how far above the station's CURRENT stock any motion must")
+    print("            END (an arm stranded inside an inflated box poisons")
+    print("            the next plan's start).")
     print("  Measured along the anchor's approach ray, tilted stations included.")
     return solved
 
