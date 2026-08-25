@@ -170,10 +170,16 @@ class NeedleDose(Action):
         if rcp["pump"].aspirate(ul, port="reservoir") is False:
             rt.step(f"vial {vial + 1}: aspirate failed — retry after recover")
             return False
-        # Straight dive with clearance, like the pH probe into the same
-        # vials: an approach corridor around a 157 mm needle inside a
-        # 6-vial rack has nowhere to go.
-        rcp["vials"].immerse(anchor=slot, depth=60, approach=False, padding=70)
+        # Corridor entry (EXPERIMENT — flip approach=False, padding=70
+        # for the straight dive): the depth offset applies to the whole
+        # corridor, so padding must comfortably exceed depth — at 70
+        # the padded waypoint sat on the planner's inflated box surface
+        # and the goal was rejected ("AITstar: Skipping invalid goal
+        # state", measured). 130 clears it: one blended smove sweeps
+        # travel -> pad -> gap (2 mm above depth) with no hover stop,
+        # then the short slow press to depth.
+        rcp["vials"].immerse(anchor=slot, depth=60, approach=True,
+                             soft_approach=True, padding=130)
         ok = rcp["vials"].dispense(ul)
         rcp["vials"].retract(anchor=slot, padding=70)
         if ok is False:
