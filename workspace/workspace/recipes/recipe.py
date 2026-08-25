@@ -1459,7 +1459,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        soft_approach=True,
         compliant=True,
         **kwargs,
     ):
@@ -1639,7 +1639,7 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=True,
+        soft_approach=False,
         compliant=True,
         **kwargs,
     ):
