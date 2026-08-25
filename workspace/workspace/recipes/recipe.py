@@ -1893,7 +1893,7 @@ class Recipe:
         gap=2,
         load_anchor="center",
         gravity_offset=1,
-        soft_approach=False,
+        soft_approach=True,
         **kwargs,
     ):
         """Place the held item at ``anchor``: approach, release, detach, exit.
