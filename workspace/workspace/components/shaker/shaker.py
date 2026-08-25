@@ -7,7 +7,7 @@ class Shaker:
     DEFAULTS = dict(
         anchors={},
         # limit
-        toggle_range = [0, 180], # [start, end] angle in degree
+        toggle_range = [0, -180], # [start, end] angle in degree
         toggle_period = 1, # second, time to toggle from one state to another
         # cfg
         output_start = [[None, None, 0.1]], # [[pin, index, time]]
