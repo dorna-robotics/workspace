@@ -41,14 +41,29 @@ from workspace.components.pump.pump_link import PumpedTool
 
 @register("needle_gripper")
 class NeedleGripper(PumpedTool, Gripper):
+    # Geometry measured off needle_gripper.glb (solid cross-sections
+    # every 0.25 mm; needle bore by least-squares circle fit), z = 0 at
+    # the tool-changer flange, +z toward the tip:
+    #   0     -  41.50  tool changer + body (43 x 43 at the flange,
+    #                   tapering to 33.56 x 32.28 — boxed at flange width)
+    #   41.50 -  55.75  upper plate      40.00 x 66.00
+    #   55.75 -  67.50  collar           23.21 x 62.35
+    #   67.50 - 154.00  column bar        6.35 x 62.35
+    #   154.00- 168.00  bottom plate     40.00 x 66.00
+    #   168.00- 169.10  needle, exposed  d 0.711 (22 ga: OD 0.711 / ID 0.406)
+    # The needle runs on the centreline (axis fitted to (0.0, 0.0)) and
+    # stands 1.10 mm proud of the bottom plate, so tcp/tip is z = 169.10
+    # — 11.35 mm below the previous model's flush tip at 157.751.
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 157.751, 0, 0, 0],  "tip":[0, 0, 157.751, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 169.10, 0, 0, 0],  "tip":[0, 0, 169.10, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 31.50/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 31.50]},
-                {"pose":[0.0, 0.0, 31.50+(14.0/2), 0.0, 0.0, 0.0], "scale":[40.0, 66.0, 14.0]},
-                {"pose":[0.0, 0.0, 45.50+(98.251/2), 0.0, 0.0, 0.0], "scale":[7.0, 63.0, 98.251]},
-                {"pose":[0.0, 0.0, 143.751+(14.0/2), 0.0, 0.0, 0.0], "scale":[66.0, 66.0, 14.0]},
+                {"pose":[0.0, 0.0, 41.50/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 41.50]},
+                {"pose":[0.0, 0.0, 41.50+(14.25/2), 0.0, 0.0, 0.0], "scale":[40.0, 66.0, 14.25]},
+                {"pose":[0.0, 0.0, 55.75+(11.75/2), 0.0, 0.0, 0.0], "scale":[23.22, 62.35, 11.75]},
+                {"pose":[0.0, 0.0, 67.50+(86.50/2), 0.0, 0.0, 0.0], "scale":[6.35, 62.35, 86.50]},
+                {"pose":[0.0, 0.0, 154.00+(14.0/2), 0.0, 0.0, 0.0], "scale":[40.0, 66.0, 14.0]},
+                {"pose":[0.0, 0.0, 168.00+(1.10/2), 0.0, 0.0, 0.0], "scale":[0.72, 0.72, 1.10]},
 
         ]},
         #cfg
