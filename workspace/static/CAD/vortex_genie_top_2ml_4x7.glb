@@ -7,51 +7,51 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3486
+      "count": 10398
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1169,
+      "count": 3641,
       "max": [
-        3.250091552734375,
-        5.9995880126953125,
-        15.399999618530273
+        6.025000095367432,
+        2.5999999046325684,
+        3.549999952316284
       ],
       "min": [
-        -3.25,
-        -3.25,
-        0
+        -6.025000095367432,
+        0,
+        -3.549999952316284
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1169
+      "count": 3641
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3075
+      "byteLength": 7656
     }
   ],
   "buffers": [
     {
-      "uri": "tool_rack.glb.bin",
-      "byteLength": 3075
+      "uri": "vortex_genie_top_2ml_4x7.glb.bin",
+      "byteLength": 7656
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.003",
+      "name": "ABS_(White)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.6274510025978088,
-          0.6274510025978088,
-          0.6274510025978088,
+          0.9647060036659241,
+          0.9647060036659241,
+          0.9529410004615784,
           1
         ],
         "metallicFactor": 0
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "tool_rack",
+      "name": "vortex origin top",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,13 @@
   ],
   "nodes": [
     {
-      "name": "tool_rack",
+      "name": "vortex origin top",
+      "rotation": [
+        0.500000034,
+        0.500000034,
+        0.500000034,
+        0.500000034
+      ],
       "scale": [
         10,
         10,

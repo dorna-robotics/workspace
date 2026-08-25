@@ -12,8 +12,8 @@ class VortexGenie2:
         anchors={
             "body": {
                 "center": [0, 0, 0, 0, 0, 0],
-                "top":    [0, 0, 156, 0, 0, 0],     # cup platform, top face
-                "place":  [0, 37, 151.6, 0, 0, 0],     # item sits on the cup
+                "top":    [0, 0, 164.4, 0, 0, 0],   # cup platform, top face
+                "place":  [0, 37, 160.0, 0, 0, 0],  # item sits on the cup
                 "hole_0": [ 25,  75, 0, 0, 0, 0],  # placeholder
                 "hole_1": [-25,  75, 0, 0, 0, 0],  # placeholder
                 "hole_2": [-25, -75, 0, 0, 0, 0],  # placeholder

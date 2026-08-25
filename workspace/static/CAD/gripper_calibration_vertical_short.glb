@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10607
+      "byteLength": 10615
     }
   ],
   "buffers": [
     {
       "uri": "gripper_calibration_vertical_short.glb.bin",
-      "byteLength": 10607
+      "byteLength": 10615
     }
   ],
   "materials": [
