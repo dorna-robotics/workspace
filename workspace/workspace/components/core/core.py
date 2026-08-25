@@ -1273,31 +1273,47 @@ class Core:
         except Exception:
             pass
 
-    def unwrap_j5(self, target, ref=None):
-        """Map a j5 target to its nearest 360°-equivalent relative to
-        ``ref`` (default: the live j5). Identity unless ``j5_infinite``.
+    @staticmethod
+    def _wrap180(x):
+        """Canonical name of a shaft angle: (-180, 180]."""
+        return -((-float(x) + 180.0) % 360.0 - 180.0)
 
-        The firmware takes ABSOLUTE joint counter values: at 720,
-        commanding 0 rotates two full turns backward. On the
-        infinite-wrist variant 720 and 0 are the same shaft angle, so
-        every j5 target must be re-based near wherever the winding
-        left the wrist — the commanded move is then always ≤ 180° of
-        rotation and the counter is never physically unwound.
+    def unwrap_j5(self, target, ref=None):
+        """Re-base a CANONICAL j5 target onto the wound counter with
+        LIMITED-WRIST semantics. Identity unless ``j5_infinite``.
+
+        The firmware takes ABSOLUTE counter values, and on the infinite
+        wrist the counter accumulates turns (a 1000° tighten leaves it
+        near 980). Motion, however, must behave exactly as it would on
+        a limited wrist: 170 → -170 travels the long -340° through 0 —
+        NEVER the 20° shortcut across the ±180 seam, which would sweep
+        the tool through a region no bench-validated path ever crosses.
+
+        So: keep the counter's accumulated FULL TURNS, express the
+        target in canonical (-180, 180] terms, and command
+        ``canonical(target) + 360 x turns``. The signed delta is then
+        identical to what a limited wrist would execute from the same
+        canonical position; the turns ride along untouched (only the
+        screw ops change them, deliberately, with raw targets that
+        bypass this).
         """
         if not self.j5_infinite or target is None:
             return target
         if ref is None:
             ref = float(self.robot_api.joint()[5])
-        return float(target) + 360.0 * round((float(ref) - float(target)) / 360.0)
+        turns = round((float(ref) - self._wrap180(ref)) / 360.0)
+        return self._wrap180(target) + 360.0 * turns
 
     def _ik_finish(self, J, cur):
-        """Re-base an IK result's j5 near the live j5 (copy — cached
+        """Re-base an IK result's j5 onto the live counter's turn count
+        (limited-wrist semantics — see ``unwrap_j5``). Copy: cached
         entries stay canonical so a later call re-bases them against
-        ITS live j5)."""
+        ITS live j5."""
         if J is None or not self.j5_infinite:
             return J
         J = list(J)
-        J[5] = J[5] + 360.0 * round((cur[5] - J[5]) / 360.0)
+        turns = round((cur[5] - self._wrap180(cur[5])) / 360.0)
+        J[5] = self._wrap180(J[5]) + 360.0 * turns
         return J
 
     def IK(self, target_solid, target_anchor, target_offset=[0,0,0,0,0,0], tool_solid=None, tool_anchor=None, tool_offset=[0,0,0,0,0,0], base_distance=None,
@@ -1390,10 +1406,11 @@ class Core:
             W = np.array([1,1,1,4,1,0.25])
             dq = (np.array(q[:6]) - ref_joints[:6])
             if self.j5_infinite:
-                # j5 is circular on the infinite-wrist variant: a wound
-                # reference (e.g. 720) must not penalize canonical
-                # candidates — compare the wrapped difference.
-                dq[5] = (dq[5] + 180.0) % 360.0 - 180.0
+                # Candidates are canonical; a wound reference must be
+                # compared by its CANONICAL name (limited-wrist
+                # semantics — plain difference, no shortest-path wrap),
+                # so branch choice matches what a limited wrist picks.
+                dq[5] = q[5] - self._wrap180(ref_joints[5])
             return np.linalg.norm(W * dq)
 
         
