@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 78570
+      "count": 78510
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 24146,
+      "count": 24138,
       "max": [
         2.149625778198242,
         12.651000022888184,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 24146
+      "count": 24138
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4393
+      "byteLength": 4436
     },
     {
       "buffer": 0,
-      "byteOffset": 4393,
-      "byteLength": 76185
+      "byteOffset": 4436,
+      "byteLength": 75929
     }
   ],
   "buffers": [
     {
       "uri": "gripper_suction.glb.bin",
-      "byteLength": 80578
+      "byteLength": 80365
     }
   ],
   "materials": [

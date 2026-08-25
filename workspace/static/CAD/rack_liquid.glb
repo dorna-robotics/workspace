@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 1272
+      "count": 1266
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 422,
+      "count": 421,
       "max": [
         1.4998779296875,
         3.799914598464966,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 422
+      "count": 421
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1255
+      "byteLength": 1307
     }
   ],
   "buffers": [
     {
       "uri": "rack_liquid.glb.bin",
-      "byteLength": 1255
+      "byteLength": 1307
     }
   ],
   "materials": [
