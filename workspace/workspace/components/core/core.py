@@ -2286,6 +2286,38 @@ class Core:
         # planner.plan(start, goal): start should match goal dimensionality
         start = start_full[:len(goal)]
 
+        # j5 lives on a circle; the planner's joint space is the
+        # canonical (-180, 180]. A wound wrist (j5_infinite, after
+        # capping) sits outside it — and OMPL silently CLAMPS an
+        # out-of-bounds start to the limit, so every waypoint comes
+        # back at ±179 and executing the path unwinds the wrist by
+        # whole turns. The wrist roll is mod-360 symmetric, so the
+        # geometry of the canonical query is EXACTLY the wound one:
+        # plan canonical, then re-carry the turns onto the result.
+        # (The goal's carry equals the start's by construction — every
+        # target is unwrapped against the live joints, delta ≤ 360 —
+        # so subtracting the same carry lands it in canonical range;
+        # a mismatched carry fails the plan loudly instead of moving
+        # wrong.) Identity on a limited wrist (carry = 0).
+        j5_turns = 0
+        if len(goal) > 5:
+            j5_turns = round((float(start[5]) - self._wrap180(start[5])) / 360.0)
+            if j5_turns:
+                start = list(start)
+                goal = list(goal)
+                start[5] = self._wrap180(start[5])
+                goal[5] = float(goal[5]) - 360.0 * j5_turns
+
+        def _recarry(path):
+            """Wound frame back onto a canonical-space path."""
+            if not j5_turns or path is None or not len(path):
+                return path
+            out = [list(p) for p in path]
+            for p in out:
+                if len(p) > 5:
+                    p[5] = float(p[5]) + 360.0 * j5_turns
+            return out
+
         # -------------------------
         # Path cache (core_path.json) — hit = return (validated at creation)
         # -------------------------
@@ -2295,7 +2327,7 @@ class Core:
         if path_sig is not None:
             cached = self._path_cache_get(start, goal, path_sig)
             if cached is not None:
-                return cached
+                return _recarry(cached)
 
         start_time = time.perf_counter()
 
@@ -2379,7 +2411,7 @@ class Core:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
                   f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")
 
-        return res
+        return _recarry(res)
 
     def check_collision(self, j, internal=True):
         scene = []
