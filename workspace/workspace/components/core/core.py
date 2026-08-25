@@ -2458,6 +2458,15 @@ class Core:
             base_in_world=list(base_in_world)
         )
 
+        # State-space queries speak canonical j5 (same rule as IK
+        # candidates and motion_plan): a wound wrist (j5_infinite)
+        # would trip the planner's ±179 limit check as a phantom
+        # "j5_limit" hit even though the geometry — roll is mod-360
+        # symmetric — is identical. Identity on a limited wrist.
+        j = list(j)
+        if len(j) > 5:
+            j[5] = self._wrap180(j[5])
+
         return self.planner.check_collision(j,internal)
 
 
