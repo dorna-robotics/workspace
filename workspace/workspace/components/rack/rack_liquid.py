@@ -31,7 +31,7 @@ class RackLiquid(Rack):
         }},
         collision_box =
                     {"body":[
-                        {"pose":[0.0, 0.0, 38.0/2, 0.0, 0.0, 0.0], "scale":[30.0, 85.0, 38.0]},
+                        {"pose":[0.0, 0.0, 38.0/2, 0.0, 0.0, 0.0], "scale":[30.0, 85.0, 38.0], "padding_enabled": True},
                 ]},
         offset=[0, 0, 45],
         pitch=[0, 0, 0],
