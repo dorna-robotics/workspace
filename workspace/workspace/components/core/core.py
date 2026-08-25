@@ -319,11 +319,14 @@ class Core:
                 )
 
         # Robot api selection follows the authored sim flag verbatim.
+        # On an infinite wrist the api is wrapped in J5WindingGuard —
+        # a non-blocking tripwire for the turn-carry invariant (no
+        # commanded j5 more than one turn from live).
         if not self._simulation_mode:
             print(f"🟡 {self.name} simulation api disabled")
-            self.robot_api = self.dorna
+            self.robot_api = self._guard_api(self.dorna)
         else:
-            self.robot_api = SimulationAPI()
+            self.robot_api = self._guard_api(SimulationAPI())
             print(f"🔵 {self.name} simulation api enabled")
 
 
@@ -760,6 +763,11 @@ class Core:
             actions += [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]
         return actions
 
+    def _guard_api(self, api):
+        """Wrap a robot api in the j5 winding tripwire on an infinite
+        wrist (see ``J5WindingGuard``); pass-through on a limited one."""
+        return J5WindingGuard(api) if self.j5_infinite else api
+
     def simulation(self, on: bool = True):
         """Live sim/real flip — parity with ``MultiMeter.simulation``
         (see device-guide.md §16).
@@ -783,12 +791,12 @@ class Core:
         if self._simulation_mode and not on:
             # sim → real: route recipes through the real client
             self._simulation_mode = False
-            self.robot_api = self.dorna
+            self.robot_api = self._guard_api(self.dorna)
             print(f"🟡 {self.name} simulation api disabled")
         else:
             # real → sim: route recipes through SimulationAPI
             self._simulation_mode = True
-            self.robot_api = SimulationAPI(joints=self.robot_api.joint())
+            self.robot_api = self._guard_api(SimulationAPI(joints=self.robot_api.joint()))
             print(f"🔵 {self.name} simulation api enabled")
 
         self.dorna.set_simulation(self._simulation_mode)
@@ -3248,6 +3256,60 @@ def _fw_path_pose(paths, qq):
             return _fw_curve_point(data, qe, kind == "curve1")
         acc += pd
     return list(paths[-1][1][1]) if paths[-1][0] == "line" else _fw_curve_point(paths[-1][1], paths[-1][2], False)
+
+
+class J5WindingGuard:
+    """Transparent proxy over the robot api on an infinite wrist.
+
+    The turn-carry invariant: every joint target the workspace executes
+    is unwrapped against the live joints first (``core.unwrap_j5``), so
+    no commanded j5 may ever differ from the live j5 by more than one
+    turn (360°). A larger delta means some layer leaked a canonical /
+    raw j5 to the firmware — the multi-turn unwind. The guard never
+    blocks motion (a refused move mid-protocol strands the bench); it
+    prints the offending command WITH the call stack, so a single
+    reproduction names the leaking layer.
+    """
+
+    def __init__(self, api):
+        object.__setattr__(self, "_api", api)
+
+    def __getattr__(self, name):
+        attr = getattr(self._api, name)
+        if callable(attr) and name in ("jmove", "cjmove", "smove", "tmove"):
+            def _watched(*a, **k):
+                self._audit(name, a, k)
+                return attr(*a, **k)
+            _watched.__name__ = name
+            return _watched
+        return attr
+
+    def _audit(self, name, a, k):
+        try:
+            live = float(self._api.joint()[5])
+            t5s = []
+            if name == "jmove":
+                if k.get("rel"):
+                    return
+                j = k.get("joint", a[0] if a else None)
+                if j is not None and len(j) > 5 and j[5] is not None:
+                    t5s = [float(j[5])]
+                elif k.get("j5") is not None:
+                    t5s = [float(k["j5"])]
+            elif name in ("cjmove", "smove"):
+                pts = a[0] if a else k.get("joints", k.get("points", []))
+                t5s = [float(p[5]) for p in pts if len(p) > 5 and p[5] is not None]
+            elif name == "tmove":
+                pts = a[0] if a else k.get("samples", [])
+                t5s = [float(p[6]) for p in pts if len(p) > 6 and p[6] is not None]
+            worst = max(t5s, key=lambda t: abs(t - live), default=None)
+            if worst is not None and abs(worst - live) > 360.5:
+                import traceback
+                print(f"[j5-guard] {name} commands j5={worst:.1f} while live j5={live:.1f} "
+                      f"(Δ{worst - live:+.1f}° > one turn) — turn-carry invariant violated at:\n"
+                      + "".join(traceback.format_stack(limit=14)))
+        except Exception:
+            pass
 
 
 class SimulationAPI:
