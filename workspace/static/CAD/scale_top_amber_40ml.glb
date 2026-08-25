@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 5304
+      "count": 6594
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1730,
+      "count": 2077,
       "max": [
         4.150000095367432,
-        7.000006198883057,
-        4.138299465179443
+        8.300000190734863,
+        4.1383957862854
       ],
       "min": [
         -4.150000095367432,
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1730
+      "count": 2077
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4670
+      "byteLength": 5692
     }
   ],
   "buffers": [
     {
-      "uri": "scale_top_falcon_15ml.glb.bin",
-      "byteLength": 4670
+      "uri": "scale_top_amber_40ml.glb.bin",
+      "byteLength": 5692
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin.005",
+      "name": "Opaque(160,160,160)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "scaletop_falcon",
+      "name": "scaletop bottomg",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "scaletop_falcon",
+      "name": "scaletop bottomg",
       "rotation": [
         0.7071068286895752,
         0,

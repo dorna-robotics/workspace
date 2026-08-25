@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5125,
-      "count": 436530
+      "count": 411102
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 134640,
+      "count": 128556,
       "max": [
         3.4620065689086914,
         7.632474422454834,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 134640
+      "count": 128556
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6942
+      "count": 6888
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2307,
+      "count": 2298,
       "max": [
         -3.095918655395508,
         1.4629989862442017,
@@ -52,17 +52,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2307
+      "count": 2298
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4110
+      "count": 4104
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1300,
+      "count": 1298,
       "max": [
         -4.104383945465088,
         1.3860249519348145,
@@ -77,17 +77,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1300
+      "count": 1298
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 7434
+      "count": 7416
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1383,
+      "count": 1380,
       "max": [
         -4.125207901000977,
         1.371246099472046,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1383
+      "count": 1380
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 463696
+      "byteLength": 441640
     },
     {
       "buffer": 0,
-      "byteOffset": 463696,
-      "byteLength": 8156
+      "byteOffset": 441640,
+      "byteLength": 7931
     },
     {
       "buffer": 0,
-      "byteOffset": 471852,
-      "byteLength": 5056
+      "byteOffset": 449571,
+      "byteLength": 4978
     },
     {
       "buffer": 0,
-      "byteOffset": 476908,
-      "byteLength": 6763
+      "byteOffset": 454549,
+      "byteLength": 6749
     }
   ],
   "buffers": [
     {
       "uri": "shaker_rotating.glb.bin",
-      "byteLength": 483671
+      "byteLength": 461298
     }
   ],
   "materials": [
