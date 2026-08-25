@@ -523,19 +523,27 @@ class Recipe:
 
         return J
 
-    @staticmethod
-    def _pin_j5(points, j5_override):
+    def _pin_j5(self, points, j5_override):
         """Force j5 on every TARGET point of an executed path. The
         first point is the robot's live position and stays untouched —
         the wrist rolls to the pinned value over the first segment.
         j5 is the roll about the tool axis, so the pinned path drives
         the same tip trajectory with the wrist held.
+
+        The pin is unwrapped against the live wrist (turn-carry —
+        ``core.unwrap_j5``): a canonical pin like the needle gripper's
+        ``lock_j5: 0`` names the SHAFT angle, not the firmware
+        counter. Stamping the raw 0 onto a wound wrist (after
+        decapping) would command a multi-turn unwind to firmware
+        zero. Identity on a limited wrist, and idempotent for a pin
+        that is already wound (the "keep" mode passes live j5).
         """
         if j5_override is None or not points:
             return points
+        pin = self.core.unwrap_j5(j5_override)
         pts = [list(p) for p in points]
         for p in pts[1:]:
-            p[5] = j5_override
+            p[5] = pin
         return pts
 
     def _tool_lock_j5(self):
