@@ -6,7 +6,7 @@ tube on a valve port declared in the scene.
 
   * NeedleDose (per vial) — the robot dips the CARRIED needle into the
     vial and doses through valve port 3. Motion is the stock
-    ``PipettingSite`` recipe; no pumping-specific recipe family exists,
+    ``DosingSite`` recipe; no pumping-specific recipe family exists,
     because the needle's fluid API deliberately uses the pipettor's
     method names.
   * Flush (once, at the end) — the FIXED nozzle pushes the barrel out

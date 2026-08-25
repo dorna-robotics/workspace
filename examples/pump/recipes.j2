@@ -12,7 +12,7 @@ needle:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_192mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# The vial rack, driven by the EXISTING PipettingSite recipe — no
+# The vial rack, driven by the EXISTING DosingSite recipe — no
 # pumping-specific recipe family exists or is needed: the needle's
 # fluid API uses the pipettor's names on purpose.
 #
@@ -21,7 +21,7 @@ needle:
 # _resolve_attached_component), so pointing it at the rack directly
 # leaves it with nothing to dip into.
 vials:
-  class: workspace.recipes.pipetting.PipettingSite
+  class: workspace.recipes.doser.DosingSite
   kwargs: {component: adapter_plate_amber_40ml_1x6_1, left_approach: true, base_distance: 200, rail_step: 25, rail_span: 1, speed_factor: {{ sf }}}
 
 # The fixed nozzle — the arm's own recipe. dispense(ul) now goes to the

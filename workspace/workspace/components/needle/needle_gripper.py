@@ -26,7 +26,7 @@ Scene yaml::
       lock_j5: 0                 # wrist roll during entry/exit; null = free
 
 Because the fluid method names match the pipettor's, a project can
-drive this needle with the existing ``PipettingSite`` recipe — motion
+drive this needle with the existing ``DosingSite`` recipe — motion
 targets the vessel, ``aspirate`` / ``dispense`` resolve through
 ``core.current_tool()`` — instead of a parallel recipe family.
 """

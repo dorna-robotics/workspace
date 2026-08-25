@@ -13,10 +13,10 @@ fully loaded (20 tubes).
 
 | Pattern | Where |
 |---|---|
-| **`PipettingSite` recipe** | One recipe alias per pipetting target: `tip_rack`, `waste_bin`, `falcon_pipette`. The recipe class has `pick_tip` / `eject_tip` / `aspirate` / `dispense` / `immerse` / `retract` — all the building blocks. |
+| **`DosingSite` recipe** | One recipe alias per pipetting target: `tip_rack`, `waste_bin`, `falcon_pipette`. The recipe class has `pick_tip` / `eject_tip` / `aspirate` / `dispense` / `immerse` / `retract` — all the building blocks. |
 | **immerse / aspirate / retract triple** | The aspirate side of a transfer: descend tip below the liquid surface (`immerse(depth=N)`), suck up `vol` µL, lift back out (`retract`). Mirror it on the dispense side. |
-| **Fresh tip per transfer** | Every `Transfer(t)` action picks a different tip slot (`TIP_ANCHORS[t]`) to avoid cross-contamination. The framework's tool-changer doesn't enter here — tips are handled by the PipettingSite recipe. |
-| **Adapter-resolver pattern** | All three PipettingSite recipes target an `adapter_plate_*` component. The resolver walks the kinematic tree down to whatever rack (`rack_falcon_15ml`, `rack_axygen_180ul`, `rack_tip_waste_bin`) is sitting on it. Same trick the capping example uses with `cap_holder`. |
+| **Fresh tip per transfer** | Every `Transfer(t)` action picks a different tip slot (`TIP_ANCHORS[t]`) to avoid cross-contamination. The framework's tool-changer doesn't enter here — tips are handled by the DosingSite recipe. |
+| **Adapter-resolver pattern** | All three DosingSite recipes target an `adapter_plate_*` component. The resolver walks the kinematic tree down to whatever rack (`rack_falcon_15ml`, `rack_axygen_180ul`, `rack_tip_waste_bin`) is sitting on it. Same trick the capping example uses with `cap_holder`. |
 | **Per-transfer PDDL planning** | One `Transfer(t)` action per t in 0..transfer_count-1, scheduled in order by the `~transferred(t)` precondition. |
 
 ## Per-transfer flow (one cycle, 6 calls)
@@ -65,7 +65,7 @@ rule 6.
    A2→B2, …) build them off the transfer index.
 4. **Real pipettor**: flip `pipettor.simulation: true` to `false`
    and set `port: "/dev/ttyUSB0"` (or wherever it lands). The
-   `PipettingSite` recipe is sim-agnostic — same workflow runs
+   `DosingSite` recipe is sim-agnostic — same workflow runs
    against the real Keyto pipettor with no edits.
 
 ## Files
@@ -83,4 +83,4 @@ rule 6.
 ## See also
 
 - [`feeder/`](../feeder/), [`capping/`](../capping/), [`hotel_swap/`](../hotel_swap/) — other examples on the same fixture footprint
-- [`recipe-guide.md`](../../../../docs/recipe-guide.md) — §8 catalog entry for `PipettingSite`
+- [`recipe-guide.md`](../../../../docs/recipe-guide.md) — §8 catalog entry for `DosingSite`

@@ -792,16 +792,16 @@ API, read the source file's docstrings.
 
 Which one to use where — the decision table and a composed protocol
 example live in `docs/liquid-handling.md` §4. In one line: robot
-travels to the liquid → `PipettingSite` (racks and fixed dosing spots
+travels to the liquid → `DosingSite` (racks and fixed dosing spots
 alike); mounted nozzle → `DispenseArm`; nothing moves → `Pump`.
-(`DosingSite` was folded into `PipettingSite` — migrate with a
-one-word class swap in `recipes.j2`.)
+(The old pipetting/dosing split is merged into this one class —
+old `workspace.recipes.doser.DosingSite` entries resolve unchanged.)
 
 - **`Pump`** ([pump.py](../workspace/workspace/recipes/pump.py)) —
   thin pass-throughs to the syringe-pump component's atomic ops
   (`aspirate` / `dispense` / `prime` / `empty` / `valve`, named ports,
   material reads). No robot motion of its own.
-- **`PipettingSite`** ([pipetting.py](../workspace/workspace/recipes/pipetting.py))
+- **`DosingSite`** ([doser.py](../workspace/workspace/recipes/doser.py))
   — the robot dips the carried tool into vessels, slot by slot (or at
   a single-place dosing site).
   `pick_tip`, `eject_tip` (with shake + tip-presence verification),

@@ -11,21 +11,21 @@ gripper:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_192mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# PipettingSite on the falcon adapter — aspirate / dispense / immerse
+# DosingSite on the falcon adapter — aspirate / dispense / immerse
 # / retract for the tubes sitting in the rack below the adapter
 # resolver. Same params the printer project uses (base_distance=200,
 # no rail sweep).
 falcon_pipette:
-  class: workspace.recipes.pipetting.PipettingSite
+  class: workspace.recipes.doser.DosingSite
   kwargs: {component: adapter_falcon, base_distance: 200, speed_factor: {{ sf }}}
 
 # Tip rack — pick_tip pulls a fresh tip onto the pipettor.
 # Printer params: base_distance=250.
 tip_rack:
-  class: workspace.recipes.pipetting.PipettingSite
+  class: workspace.recipes.doser.DosingSite
   kwargs: {component: adapter_sbs_0, base_distance: 250, speed_factor: {{ sf }}}
 
 # Waste bin — eject_tip drops the used tip here. base_distance=250.
 waste_bin:
-  class: workspace.recipes.pipetting.PipettingSite
+  class: workspace.recipes.doser.DosingSite
   kwargs: {component: adapter_sbs_1, base_distance: 250, speed_factor: {{ sf }}}

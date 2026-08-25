@@ -3,7 +3,7 @@ from mergedeep import merge
 from workspace.recipes.recipe import Recipe, RecipeError
 import time
 
-class PipettingSite(Recipe):
+class DosingSite(Recipe):
     DEFAULTS = dict(
         # ref joints
         target_offset=[0, 0, 150, 0, 180, 0],

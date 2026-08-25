@@ -49,7 +49,7 @@ recipes. Copy the folder, rename, edit. No cross-folder coupling.
 | [`feeder/`](feeder/) | Cap feeder + suction tool → cap holder. Tool-rack swap, feeder rotation, rack placement, vision-driven `present_cap`. |
 | [`capping/`](capping/) | Full cap + decap roundtrip with the decapper + 4-finger gripper. Tube rack + cap holder + decapper, split-action planning (`Cap` then `Decap`). |
 | [`hotel_swap/`](hotel_swap/) | Swap plates pairwise between two SBS hotels via two plate holders. `Hotel` recipe (lateral slide-in) + `Adapter` recipe (biased approach) + `gripper_sbs_width`. |
-| [`pipetting/`](pipetting/) | Pick fresh tip → aspirate from a falcon tube → dispense in another → eject tip. `PipettingSite` recipe with `pick_tip` / `aspirate` / `dispense` / `eject_tip`, fully-loaded 4×5 falcon rack + 8×12 tip rack + waste bin. |
+| [`pipetting/`](pipetting/) | Pick fresh tip → aspirate from a falcon tube → dispense in another → eject tip. `DosingSite` recipe with `pick_tip` / `aspirate` / `dispense` / `eject_tip`, fully-loaded 4×5 falcon rack + 8×12 tip rack + waste bin. |
 | [`shaker/`](shaker/) | Load 40 ml tubes onto a 2-slot shaker, shake, return. Non-robot resource (`resource="shaker"`), batched device action, `plan_window` = device capacity. |
 
 More examples will be added incrementally as common patterns emerge

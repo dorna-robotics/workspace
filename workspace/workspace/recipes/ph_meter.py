@@ -11,7 +11,7 @@ recipe's component is what it dips into: the storage-solution cup
 rack of sample tubes. Motion (``immerse`` / ``retract``) targets this
 recipe's component; the device ops go to the probe the robot is
 currently holding (``core.current_tool()``). Same shape as
-``PipettingSite``.
+``DosingSite``.
 
 Either way the device ops land on the ``ph_meter_atlas`` component,
 which already exposes the sim-agnostic atomic API — sim/real branching

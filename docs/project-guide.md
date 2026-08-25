@@ -334,7 +334,7 @@ gripper:
     speed_factor: {{ speed_factor }}
 
 pipette:
-  class: workspace.components.pipetting_site.PipettingSite
+  class: workspace.components.pipetting_site.DosingSite
   kwargs:
     component: pipette_1
     base_distance: {{ base_distance }}

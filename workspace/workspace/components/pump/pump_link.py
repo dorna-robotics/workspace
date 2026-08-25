@@ -37,7 +37,7 @@ mistake that silently dispenses down the wrong line is not typeable::
     tool.dispense(200)
 
 Method names match the pipettor's on purpose: a carried needle then
-rides the existing ``PipettingSite`` recipe unchanged instead of
+rides the existing ``DosingSite`` recipe unchanged instead of
 growing a parallel recipe family.
 
 Full guide: ``docs/liquid-handling.md``.
@@ -117,7 +117,7 @@ class PumpLink:
     # §17) for callers that want to inject a specific sim outcome.
 
     # ``speed`` / ``blowout`` are the air-displacement pipettor's
-    # per-move arguments — ``PipettingSite`` passes both by name to
+    # per-move arguments — ``DosingSite`` passes both by name to
     # whatever tool is mounted — and they are swallowed here. A syringe
     # drive has no blowout stroke, and its speed is a PERCENT of the
     # drive's fastest preset, not µL/s: forwarding a pipettor's

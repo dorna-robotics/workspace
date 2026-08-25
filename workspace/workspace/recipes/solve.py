@@ -378,7 +378,7 @@ _DEFAULT_CLASS_PATHS = {
     "Rack":           "workspace.recipes.rack.Rack",
     "ToolRack":       "workspace.recipes.tool_rack.ToolRack",
     "Decapper":       "workspace.recipes.decapper.Decapper",
-    "PipettingSite":  "workspace.recipes.pipetting.PipettingSite",
+    "DosingSite":  "workspace.recipes.doser.DosingSite",
     "Shaker":         "workspace.recipes.shaker.Shaker",
     "Scale":          "workspace.recipes.scale.Scale",
     "Feeder":         "workspace.recipes.feeder.Feeder",

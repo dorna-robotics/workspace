@@ -10,7 +10,7 @@ Code involved: `workspace/components/pump/` (driver, station,
 component, the `PumpLink` capability), the plumbed nozzle components
 in `workspace/components/needle/` (`needle_gripper`,
 `needle_dispense_arm`, the `Needle` fitted-needle helper) and the
-recipes that sequence them (`pipetting.py`, `dispense_arm.py`, `pump.py`).
+recipes that sequence them (`doser.py`, `dispense_arm.py`, `pump.py`).
 Runnable reference: `examples/pump`. The
 PSD/4 manual lives at `docs/manuals/PSD4_Manual_8892-01b.pdf`.
 
@@ -256,27 +256,27 @@ what differs is only *who holds the nozzle*:
 
 | Case | Nozzle | Motion targets | Fluid resolves via | Recipe |
 |---|---|---|---|---|
-| Carried needle | robot's tool | the vessel | `core.current_tool()` | `PipettingSite` |
+| Carried needle | robot's tool | the vessel | `core.current_tool()` | `DosingSite` |
 | Fixed arm | bench fixture | the arm's own anchor | the arm component | `DispenseArm` |
 | No motion at all | — | — | the pump component | `Pump` |
 
 `DispenseArm.dispense(volume_ul=…)` pushes through the arm's port when
 the arm is plumbed, and falls back to its historical timed hold for
 valve/solenoid rigs that have no pump. A dedicated dosing *site* is
-just a `PipettingSite` pointed at that site's fixture — the carried
-needle doses whatever sits there. (`DosingSite` used to exist for
-this; it was folded into `PipettingSite`, which now carries its
-`prime`, kwargs forwarding, and checkpoints.)
+just a `DosingSite` pointed at that site's fixture — the carried
+needle doses whatever sits there. (Historically these were two
+recipes — a `PipettingSite` and a separate dosing shim; they were
+merged, and the merged class is named `DosingSite`.)
 
 ### Picking one — the question each recipe answers
 
 | Recipe | Ask yourself | `recipes.j2` component |
 |---|---|---|
 | `Pump` (`pump.py`) | no robot motion — just move the plunger? | the pump (`pump_1`) |
-| `PipettingSite` (`pipetting.py`) | does the robot carry the needle **to** the liquid — a rack of vessels or a fixed dosing spot? | the adapter or site fixture holding the vessels |
+| `DosingSite` (`doser.py`) | does the robot carry the needle **to** the liquid — a rack of vessels or a fixed dosing spot? | the adapter or site fixture holding the vessels |
 | `DispenseArm` (`dispense_arm.py`) | is the nozzle **bolted down**, dosing into whatever sits under it? | the arm (`needle_dispense_arm_1`) |
 
-Rules of thumb: robot travels to the liquid → `PipettingSite`
+Rules of thumb: robot travels to the liquid → `DosingSite`
 (per-slot anchors — a rack or a single-place site alike). The nozzle
 is fixed → `DispenseArm`. Nothing moves → `Pump`. Every fluid call
 ends at the same pump either way — the recipes only decide *motion*
@@ -289,7 +289,7 @@ In a typical protocol they compose like this (this is
 rcp["pump"].prime(to_port="flush")           # Pump: fluid prep, no motion
 rcp["pump"].aspirate(150, port="reservoir")  # Pump: fill barrel from source
 
-rcp["vials"].immerse(anchor="A3", depth=60)  # PipettingSite: dip carried needle
+rcp["vials"].immerse(anchor="A3", depth=60)  # DosingSite: dip carried needle
 rcp["vials"].dispense(150)                   #   dose this vial
 rcp["vials"].retract(anchor="A3")            #   pull out (lock_j5 applies, §3)
 
@@ -298,16 +298,14 @@ rcp["arm"].dispense(volume_ul=50)            # DispenseArm: fixed nozzle doses
 
 **Why three, not fewer.** All motion (immerse / retract / IK /
 `lock_j5`) already lives once, in the base `Recipe` — the recipes are
-thin shims that differ where it matters: `PipettingSite` speaks the
+thin shims that differ where it matters: `DosingSite` speaks the
 air-displacement pipettor's vocabulary (`speed` in µL/s, `blowout`;
 a plumbed needle swallows those and takes `pump_speed` 0-100 —
 `pump_link.py` explains why the two never share a name), `DispenseArm`
 is IO + fluid with no robot motion at all, and `Pump` is the bare
-device. The former `DosingSite` was the fourth shim; it added nothing
-`PipettingSite` doesn't do now, so it is gone — migrate old
-`recipes.j2` entries with a one-word class swap
-(`workspace.recipes.doser.DosingSite` →
-`workspace.recipes.pipetting.PipettingSite`).
+device. A fourth shim once split "dosing" from "pipetting"; the two
+were merged into today's `DosingSite`, so old
+`workspace.recipes.doser.DosingSite` entries resolve unchanged.
 
 ---
 
@@ -407,7 +405,7 @@ Through a plumbed nozzle the parameter is called **`pump_speed`**:
 tool.dispense(200, pump_speed=40)
 ```
 
-because `PipettingSite` passes an air-displacement pipettor's
+because `DosingSite` passes an air-displacement pipettor's
 `speed=` in **µL/s** to whatever tool is mounted, and forwarding that
 to a drive that reads percent would turn `speed=500` into "100%" — the
 opposite of slow. A nozzle therefore swallows `speed` / `blowout` and

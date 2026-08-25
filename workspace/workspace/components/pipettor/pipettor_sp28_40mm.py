@@ -158,7 +158,7 @@ class PipettorSP2840mm(Gripper):
 
     def eject_tip(self, speed: int = 64000, sim_return: bool = True):
         """Home + eject the mounted tip (pump action only — the waste
-        bin MOTION lives in the PipettingSite recipe)."""
+        bin MOTION lives in the DosingSite recipe)."""
         return self.pump.eject_tip(speed=speed, sim_return=sim_return)
 
     def has_tip(self, sim_return: bool = True):
