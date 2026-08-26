@@ -1471,6 +1471,19 @@ class Core:
         aux = self.rail_cfg["axis"]
         r_cur = cur[aux]
 
+        # Canonicalize the reference wrist. On the infinite wrist the
+        # caller's reference can carry accumulated full turns (recipes
+        # re-anchor their reference to the live counter at Start, so it
+        # winds +360 per run) — and a wound reference both changes the
+        # cache key and seeds the numeric solver 360° away, which can
+        # converge to a DIFFERENT branch for the same station run to
+        # run. Solves must be winding-invariant: strip the turns here;
+        # the result's j5 is re-based onto the live counter by
+        # _ik_finish on the way out, so motion semantics are untouched.
+        if ref_joints is not None and self.j5_infinite:
+            ref_joints = list(ref_joints)
+            ref_joints[5] = self._wrap180(ref_joints[5])
+
         # Cache lookup — see _ik_cache_init above. Key is None (never
         # cached) when ref_joints wasn't given, since that solve depends
         # on live joints.
