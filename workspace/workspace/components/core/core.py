@@ -1919,10 +1919,24 @@ class Core:
         # cruise-section + brake-section. The knot lies ON the
         # validated segment — geometry unchanged.
         out = [pts[0]]
-        for k in range(len(pts) - 1):
+        n_in = len(pts)
+        for k in range(n_in - 1):
             A, B = pts[k], pts[k + 1]
             L = _fw_norm(_fw_vec(B, A, 1.0, -1.0))
-            if k + 2 < len(pts):
+            # ENTRY-SIDE CUT: the plateau model crosses the entry
+            # corner's second half at THIS section's speed, so the
+            # whole section is capped at the entry corner speed (the
+            # 'e' bind — bench: a 229 travel after a r=9 corner ran the
+            # corner's 73 for its whole length). A collinear stub just
+            # past the corner pays that price alone; the rest ramps.
+            ent_stub = None
+            if k > 0 and _turn_dot(pts[k - 1], A, B) >= -0.999:
+                leg0 = _fw_norm(_fw_vec(A, pts[k - 1], 1.0, -1.0))
+                c_in = min(float(corner_cap), 0.4 * min(leg0, L))
+                ent_stub = max(2.5 * c_in, 10.0)
+            # EXIT-SIDE CUT (cruise/brake): unchanged logic.
+            exit_tail = None
+            if k + 2 < n_in:
                 leg2 = _fw_norm(_fw_vec(pts[k + 2], B, 1.0, -1.0))
                 if _turn_dot(A, B, pts[k + 2]) < -0.999:
                     # STRAIGHT junction — no corner stub needed, but the
@@ -1934,7 +1948,7 @@ class Core:
                     # FAR corner's speed for its whole length.)
                     c_est = 0.0
                     c_next = 0.0
-                    if k + 3 < len(pts):
+                    if k + 3 < n_in:
                         leg3 = _fw_norm(_fw_vec(pts[k + 3], pts[k + 2], 1.0, -1.0))
                         c_next = min(float(corner_cap), 0.4 * min(leg2, leg3))
                     v_exit_est = math.sqrt(max(a_budget_est * c_next, 1.0))
@@ -1942,10 +1956,18 @@ class Core:
                     c_est = min(float(corner_cap), 0.4 * min(L, leg2))
                     v_exit_est = math.sqrt(max(a_budget_est * c_est, 1.0))
                 brake = max(0.0, (float(vel) ** 2 - v_exit_est ** 2) / (2.0 * a_budget_est))
-                tail = brake + max(2.5 * c_est, 10.0)
-                if L > tail + 20.0:
-                    f = (L - tail) / L
-                    out.append(_fw_vec(A, B, 1.0 - f, f))
+                exit_tail = brake + max(2.5 * c_est, 10.0)
+            # Place the cuts that fit; both when the leg is long enough.
+            cuts = []
+            if (ent_stub is not None and exit_tail is not None
+                    and L > ent_stub + exit_tail + 20.0):
+                cuts = [ent_stub / L, (L - exit_tail) / L]
+            elif exit_tail is not None and L > exit_tail + 20.0:
+                cuts = [(L - exit_tail) / L]
+            elif ent_stub is not None and L > ent_stub + 20.0:
+                cuts = [ent_stub / L]
+            for f in cuts:
+                out.append(_fw_vec(A, B, 1.0 - f, f))
             out.append(list(B))
         pts = out
         n_sec = len(pts) - 1
