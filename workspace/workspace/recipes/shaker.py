@@ -53,7 +53,7 @@ class Shaker(Recipe):
         # The head is about to MOVE: any held motion tail executes to
         # its stop first, so the robot is guaranteed clear of the swept
         # volume (defense in depth on top of fuse=False above).
-        self.core.tail_flush()
+        self.core.tail_flush(reason="shaker head about to move")
         # Workflow: clamp the vessels, swing until done, home the head,
         # release. The component owns each atomic op (IO + model); this
         # loop owns the order and the duration.

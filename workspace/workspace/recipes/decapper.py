@@ -178,8 +178,15 @@ class Decapper(Recipe):
             J[5] = last_J[5]
 
             rt.checkpoint()
-            vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
-            rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
+            vaj = self.scaled_vaj(self.lmove_vaj)
+            if one_shot and self.fuse:
+                # The cap lift fuses with the next verb's travel (the
+                # ride to the cap rack) — held, not executed. Chunked
+                # decaps must execute it (the unwind below needs the
+                # lift done).
+                self._tail_deposit_lift(rt, J, vaj, owner="Decapper.decap lift")
+            else:
+                rt.lmove(joint=J, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
 
             # Limited wrist: unwind the screw turns — normalize j5 into
             # ±180 (same tool pose mod 360, the free cap just spins in
@@ -353,8 +360,13 @@ class Decapper(Recipe):
                 J[5] = last_J[5]
 
             rt.checkpoint()
-            vel, accel, jerk = self.scaled_vaj(self.lmove_vaj)
-            rt.lmove(joint=J, vel=vel, accel=accel, jerk=jerk)
+            vaj = self.scaled_vaj(self.lmove_vaj)
+            if one_shot and self.fuse:
+                # Same as decap: the post-tighten lift rides into the
+                # next verb's travel as a held tail.
+                self._tail_deposit_lift(rt, J, vaj, owner="Decapper.cap lift")
+            else:
+                rt.lmove(joint=J, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
 
             # Limited wrist: unwind the screw turns — normalize j5 into
             # ±180 (same tool pose mod 360, the gripper is already

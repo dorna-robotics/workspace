@@ -1818,7 +1818,7 @@ class _DSLActionLeaf(RecipeAction):
             if getattr(rt, "killed", False):
                 core.tail_consume()   # drop — never move after a kill
             else:
-                core.tail_flush()
+                core.tail_flush(reason="action failed")
         except Exception:
             log.warning("BT leaf: motion-tail settle failed", exc_info=True)
 
@@ -1875,7 +1875,7 @@ class _DSLActionLeaf(RecipeAction):
             try:
                 _core = self.ctx.workspace.components.get("core")
                 if _core is not None:
-                    _core.tail_flush()
+                    _core.tail_flush(reason="replanning")
             except Exception:
                 log.warning("motion-tail flush before replan failed", exc_info=True)
             # Local import to avoid circular dependency at module load.

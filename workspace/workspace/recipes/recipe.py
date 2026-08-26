@@ -601,6 +601,25 @@ class Recipe:
         })
         return True
 
+    def _tail_deposit_lift(self, rt, J, vaj, owner=None):
+        """Hold a single pre-solved exit target as a deferred tail —
+        for hand-rolled exits that don't go through ``touch`` (the
+        decapper's post-screw lift). The flush closure replays the
+        exact lmove the verb would have run."""
+        J = [float(v) for v in J]
+        vel, accel, jerk = vaj
+
+        def _flush():
+            rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk)
+
+        self.core.tail_deposit({
+            "points": [[float(v) for v in self._cur_joints()], list(J)],
+            "motion_class": "lmove",
+            "tool_pose": [0, 0, 0, 0, 0, 0],
+            "owner": owner or type(self).__name__,
+            "flush_fn": _flush,
+        })
+
     def _fuse_tail_points(self, tail, points, primitive):
         """Splice a held tail onto the front of a fold path — ONE fused
         chain. ``points[0]`` is the frontier (== the tail's endpoint)
@@ -770,7 +789,7 @@ class Recipe:
                 and self.core._motion_tail is not None):
             fuse_tail = self.core._motion_tail   # peek — frontier stays armed
         else:
-            self.core.tail_flush()
+            self.core.tail_flush(reason="direct hop can't fuse")
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -786,6 +805,8 @@ class Recipe:
             if fuse_tail is not None:
                 points = self._fuse_tail_points(fuse_tail, points, planned)
                 self.core.tail_consume()
+                print(f"[fusion] merge: {fuse_tail.get('owner')} + "
+                      f"{type(self).__name__} planned hop -> one {planned} chain")
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
         else:
@@ -826,8 +847,14 @@ class Recipe:
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
             fuse_tail = self.core._motion_tail
+        elif (first_approach and len(path) == 1 and plan_on
+                and planned in ("smove", "tmove", "cjmove", "clmove")):
+            # Single-point planned travel (above, hover phases): the
+            # classic loop routes it through _execute_motion_planned,
+            # which merges the tail itself — keep the frontier armed.
+            fuse_tail = self.core._motion_tail
         if fuse_tail is None:
-            self.core.tail_flush()
+            self.core.tail_flush(reason="next motion is not a fusable travel fold")
 
         if not first_approach and len(path) > 1:
             # Grouping IS continuity: a multi-point non-travel group
@@ -914,6 +941,8 @@ class Recipe:
                     # path leaves the tail held for a clean flush.
                     points = self._fuse_tail_points(fuse_tail, points, planned)
                     self.core.tail_consume()
+                    print(f"[fusion] merge: {fuse_tail.get('owner')} + "
+                          f"{type(self).__name__} travel -> one {planned} chain")
                     fuse_tail = None
                 if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
@@ -935,7 +964,7 @@ class Recipe:
                 # (planned from its endpoint, so geometry stays right),
                 # then execute the planned travel and the remaining
                 # offsets as classic lmoves.
-                self.core.tail_flush()
+                self.core.tail_flush(reason="fold failed")
                 self._run_path_motion(rt, self._pin_j5(points, j5_override), vaj_map["jmove"],
                                       planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
@@ -947,15 +976,16 @@ class Recipe:
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
 
-        # Classic sequence — never fuses: whatever is still held runs
-        # to its stop first.
-        self.core.tail_flush()
+        # Classic sequence: only the planned first hop can merge a held
+        # tail (_execute_motion_planned settles it either way); every
+        # other step flushes before moving.
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
             if i == 0 and first_approach:
                 self._execute_motion_planned(rt, J, vaj_map, use_planning=has_motion_plan, motion_plan_kwargs=motion_plan_kwargs, tool_dict=tool_dict, j5_override=j5_override)
             else:
+                self.core.tail_flush(reason="classic sequence")
                 self._do_motion(rt, J, tool_dict, vaj_map)
 
     def _do_motion(self, rt, J, tool_dict, vaj_map, motion_type=None):
@@ -1278,7 +1308,7 @@ class Recipe:
         """
         rt = self.rt
         # A screw is a precision motion — never fused; flush any tail.
-        self.core.tail_flush()
+        self.core.tail_flush(reason="screw motion")
         tool_body = tool.assembly[next(iter(tool.assembly))]
         total_twist = int(total_twist)
 

@@ -1307,8 +1307,10 @@ class Core:
         [0] = the live pose), ``motion_class``, ``tool_pose``,
         ``owner``, ``flush_fn`` (executes the tail exactly as the verb
         would have). An already-held tail is flushed first — never two."""
-        self.tail_flush()
+        self.tail_flush(reason="replaced by next hold")
         self._motion_tail = tail
+        print(f"[fusion] hold: {tail.get('owner')} "
+              f"({len(tail.get('points', [])) - 1} leg(s))")
 
     def tail_consume(self):
         """Take the held tail — the caller now owns its execution."""
@@ -1316,7 +1318,7 @@ class Core:
         self._motion_tail = None
         return t
 
-    def tail_flush(self):
+    def tail_flush(self, reason=""):
         """Execute the held tail to its normal stop, if any. The record
         is dropped BEFORE the closure runs: a flush aborted by a kill
         or pause must not retry a half-executed tail. A tail whose
@@ -1335,6 +1337,8 @@ class Core:
                 return
         except Exception:
             pass
+        print(f"[fusion] flush({reason or 'barrier'}): {t.get('owner')} "
+              f"runs to its stop")
         t["flush_fn"]()
 
     @staticmethod
