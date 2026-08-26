@@ -361,7 +361,14 @@ latency.
   bit for bit.
 * **Deposit**: a fusing verb's LAST exit group is IK-solved and held
   on `core` (`tail_deposit`) instead of executed — unless `output_exit`
-  IO follows it (IO is a barrier by definition).
+  IO follows it (IO is a barrier by definition). Deferring the exit IO
+  as its own background chain was tried and REVERTED (bench-measured):
+  it ran concurrently with the next verb's approach IO on the SAME
+  tool-changer pins and the pin verification caught the race
+  (`expected 1, actual 0`). The stop serializes them — IO chains must
+  stay strictly ordered. The principled removal is ONE ordered
+  background chain (exit IO + next approach IO in a single worker,
+  joined before contact) — designed, not yet built.
 * **Merge**: the next verb's fold consumes the tail —
   `tail + planned travel + first approach group` run as ONE chain in
   the fold's planned primitive (`smove`/`tmove` sample the tail like
