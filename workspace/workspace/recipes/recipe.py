@@ -66,9 +66,12 @@ class Recipe:
         # phase 1). True: this recipe's verbs DEPOSIT their last exit
         # group as a deferred tail instead of stopping there — the next
         # verb's fold fuses it with its planned travel into ONE chain;
-        # any barrier (exit IO, an unfusable path, action end) executes
-        # it to today's stop instead. Per-call ``fuse_exit`` wins.
-        fuse=False,
+        # any barrier (exit IO, an unfusable path, a failed action)
+        # executes it to today's stop instead. Per-call ``fuse_exit``
+        # wins; set ``fuse: false`` in recipes.j2 to opt a station out
+        # (a scale that wants the arm parked clear before reading, a
+        # station whose exit stop is deliberate).
+        fuse=True,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
