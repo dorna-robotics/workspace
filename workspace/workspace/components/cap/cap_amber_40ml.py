@@ -14,8 +14,8 @@ class CapFalcon40ml(Cap):
             ]
         },
         cap_type="screw",
-        twist=900,
-        pitch=3.6
+        twist=450,
+        pitch=3.33
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
