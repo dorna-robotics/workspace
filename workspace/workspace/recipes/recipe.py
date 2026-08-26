@@ -1238,6 +1238,15 @@ class Recipe:
     def _build_io_config(self, tool, component, trigger_io):
         """Build the four IO building-block lists for pick / place.
 
+        ``trigger_io`` grammar (explicit, like has_motion_plan):
+
+            True         both sides — the classic behavior
+            False        no IO at all
+            "component"  station side only — jaws open/close, the TOOL
+                         IS NEVER TOUCHED (a decapper place that keeps
+                         the gripper closed on the cap for the screw)
+            "tool"       tool side only
+
         Returns:
             Tuple ``(tool_enable, tool_disable, component_enable,
             component_disable)``. Each element is a list of
@@ -1250,14 +1259,19 @@ class Recipe:
             - **place**: approach = ``component_disable + tool_enable``,
               touch = ``component_enable + tool_disable``.
 
-            If ``trigger_io`` is False, returns four empty lists.
+            Unwanted sides come back as empty lists.
         """
         if not trigger_io:
             return [], [], [], []
+        if trigger_io not in (True, "component", "tool"):
+            raise RecipeError(
+                f"trigger_io must be True, False, 'component' or 'tool', got {trigger_io!r}")
+        want_tool = trigger_io in (True, "tool")
+        want_component = trigger_io in (True, "component")
 
         component_enable = []
         component_disable = []
-        if getattr(component, "output_state", False):
+        if want_component and getattr(component, "output_state", False):
             component_enable = [[
                 component.output_enable,
                 (component.output_state, ()),
@@ -1271,7 +1285,7 @@ class Recipe:
 
         tool_enable = []
         tool_disable = []
-        if getattr(tool, "output_state", False):
+        if want_tool and getattr(tool, "output_state", False):
             tool_enable = [[
                 tool.output_enable,
                 (tool.output_state, ()),

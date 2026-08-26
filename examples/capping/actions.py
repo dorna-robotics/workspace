@@ -180,7 +180,11 @@ class Decap(Action):
         rt.step(_progress_pct(self, kind="decap"), level="progress")
 
         rcp["tube_rack"].pick(slot)
-        rcp["decapper"].place(exit=False)
+        # exit=False: decap takes over right in the jaws.
+        # trigger_io="component": the decapper jaws close around the
+        # tube but the GRIPPER NEVER OPENS — it keeps its grip on the
+        # cap so the unscrew starts immediately.
+        rcp["decapper"].place(exit=False, trigger_io="component")
         rcp["decapper"].decap(approach=False)
         rcp["cap_holder"].place(slot, soft_approach=True, gravity_offset=4)
         rcp["decapper"].pick()
