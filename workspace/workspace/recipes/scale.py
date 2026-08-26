@@ -10,6 +10,9 @@ class Scale(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5 
+        # No fusing at the balance: the arm parks CLEAR before a
+        # reading — a held exit would leave it hovering over the pan.
+        fuse=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):

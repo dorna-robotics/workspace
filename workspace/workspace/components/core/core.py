@@ -1920,8 +1920,23 @@ class Core:
             L = _fw_norm(_fw_vec(B, A, 1.0, -1.0))
             if k + 2 < len(pts):
                 leg2 = _fw_norm(_fw_vec(pts[k + 2], B, 1.0, -1.0))
-                c_est = min(float(corner_cap), 0.4 * min(L, leg2))
-                v_exit_est = math.sqrt(max(a_budget_est * c_est, 1.0))
+                if _turn_dot(A, B, pts[k + 2]) < -0.999:
+                    # STRAIGHT junction — no corner stub needed, but the
+                    # exit speed is the DOWNSTREAM plateau, which may be
+                    # corner-bound: estimate it from the junction after
+                    # next. (Bench: a fused exit leg made this junction
+                    # collinear; the old corner-based estimate said "no
+                    # split needed" and the 210 travel crawled at the
+                    # FAR corner's speed for its whole length.)
+                    c_est = 0.0
+                    c_next = 0.0
+                    if k + 3 < len(pts):
+                        leg3 = _fw_norm(_fw_vec(pts[k + 3], pts[k + 2], 1.0, -1.0))
+                        c_next = min(float(corner_cap), 0.4 * min(leg2, leg3))
+                    v_exit_est = math.sqrt(max(a_budget_est * c_next, 1.0))
+                else:
+                    c_est = min(float(corner_cap), 0.4 * min(L, leg2))
+                    v_exit_est = math.sqrt(max(a_budget_est * c_est, 1.0))
                 brake = max(0.0, (float(vel) ** 2 - v_exit_est ** 2) / (2.0 * a_budget_est))
                 tail = brake + max(2.5 * c_est, 10.0)
                 if L > tail + 20.0:

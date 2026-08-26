@@ -760,9 +760,17 @@ class Recipe:
         unconstrained failure raises: that is a genuine reachability /
         collision problem, not a constraint one.
         """
-        # Direct planned hops (park etc.) never fuse — flush any tail.
-        self.core.tail_flush()
         use_planning, unplanned, planned = self._motion_plan_mode(use_planning)
+        # Deferred-tail merge (motion-guide §12): a planned chain hop
+        # (park, direct planned moves) fuses a held tail exactly like
+        # the fold does — the tail rides in front of the planner's
+        # waypoints as one chain. Anything unfusable flushes first.
+        fuse_tail = None
+        if (use_planning and planned in ("smove", "tmove", "cjmove", "clmove")
+                and self.core._motion_tail is not None):
+            fuse_tail = self.core._motion_tail   # peek — frontier stays armed
+        else:
+            self.core.tail_flush()
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -774,7 +782,10 @@ class Recipe:
             # _solve_ik); the planner's intermediate waypoints are
             # pinned here so a locked wrist stays locked for the whole
             # hop, not just at its end.
-            points = self._pin_j5(points, j5_override)
+            points = self._pin_j5([list(p) for p in points], j5_override)
+            if fuse_tail is not None:
+                points = self._fuse_tail_points(fuse_tail, points, planned)
+                self.core.tail_consume()
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
         else:

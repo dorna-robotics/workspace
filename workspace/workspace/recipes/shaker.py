@@ -12,6 +12,10 @@ class Shaker(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5
+        # NEVER fuse at the shaker: the head ROTATES after a place — a
+        # held exit would leave the robot parked inside the swept
+        # volume when the shake starts (bench-observed hazard).
+        fuse=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -46,6 +50,10 @@ class Shaker(Recipe):
         early (e.g. operator kill).
         """
         self._stop_event.clear()
+        # The head is about to MOVE: any held motion tail executes to
+        # its stop first, so the robot is guaranteed clear of the swept
+        # volume (defense in depth on top of fuse=False above).
+        self.core.tail_flush()
         # Workflow: clamp the vessels, swing until done, home the head,
         # release. The component owns each atomic op (IO + model); this
         # loop owns the order and the duration.
