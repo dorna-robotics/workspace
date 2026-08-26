@@ -782,9 +782,9 @@ class Core:
         return actions
 
     def _guard_api(self, api):
-        """Wrap a robot api in the j5 winding tripwire on an infinite
-        wrist (see ``J5WindingGuard``); pass-through on a limited one."""
-        return J5WindingGuard(api) if self.j5_infinite else api
+        """Wrap a robot api in the motion gate (see ``J5WindingGuard``):
+        tail settle for every robot, j5 audit on an infinite wrist."""
+        return J5WindingGuard(api, core=self)
 
     def simulation(self, on: bool = True):
         """Live sim/real flip — parity with ``MultiMeter.simulation``
@@ -3368,26 +3368,36 @@ def _fw_path_pose(paths, qq):
 
 
 class J5WindingGuard:
-    """Transparent proxy over the robot api on an infinite wrist.
+    """The robot-api GATE — every motion command crosses it. Two rules:
 
-    The turn-carry invariant: every joint target the workspace executes
-    is unwrapped against the live joints first (``core.unwrap_j5``), so
-    no commanded j5 may ever differ from the live j5 by more than one
-    turn (360°). A larger delta means some layer leaked a canonical /
-    raw j5 to the firmware — the multi-turn unwind. The guard never
-    blocks motion (a refused move mid-protocol strands the bench); it
-    prints the offending command WITH the call stack, so a single
-    reproduction names the leaking layer.
+    1. TAIL SETTLE (always): a motion command issued while a deferred
+       tail is held, that did not come from a merge, settles the tail
+       first — merges consume the tail BEFORE executing, so they pass
+       untouched. This is the DERIVED form of the fusion barrier: no
+       motion path needs to know about fusion; anything that moves the
+       robot while a tail is pending flushes it, including hand-rolled
+       motions no one taught about the buffer.
+    2. J5 AUDIT (infinite wrist only): the turn-carry invariant — no
+       commanded j5 may differ from the live j5 by more than one turn.
+       Never blocks; prints the offending command with the call stack.
     """
 
-    def __init__(self, api):
+    _MOTION = ("jmove", "lmove", "cjmove", "clmove", "smove", "tmove")
+
+    def __init__(self, api, core=None):
         object.__setattr__(self, "_api", api)
+        object.__setattr__(self, "_core", core)
 
     def __getattr__(self, name):
         attr = getattr(self._api, name)
-        if callable(attr) and name in ("jmove", "cjmove", "smove", "tmove"):
+        if callable(attr) and name in self._MOTION:
             def _watched(*a, **k):
-                self._audit(name, a, k)
+                core = self._core
+                if core is not None and core._motion_tail is not None:
+                    core.tail_flush(reason="unmerged motion command")
+                if (core is not None and core.j5_infinite
+                        and name in ("jmove", "cjmove", "smove", "tmove")):
+                    self._audit(name, a, k)
                 return attr(*a, **k)
             _watched.__name__ = name
             return _watched
