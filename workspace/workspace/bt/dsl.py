@@ -1747,6 +1747,18 @@ class _DSLActionLeaf(RecipeAction):
                 exc_info=True,
             )
             return False
+        finally:
+            # Continuous-motion phase 1 boundary (motion-guide §12): no
+            # deferred motion tail crosses an action — whatever the
+            # action left held executes to its normal stop here. A
+            # flush aborted by kill/pause drops the tail with the robot
+            # stationary at a valid pose.
+            try:
+                _core = self._instance.ctx.workspace.components.get("core")
+                if _core is not None:
+                    _core.tail_flush()
+            except Exception:
+                log.warning("BT leaf: motion-tail flush failed", exc_info=True)
 
         # execute() must return:
         #   * str          — name of the chosen eff branch (the

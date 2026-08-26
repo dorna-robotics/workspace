@@ -351,6 +351,12 @@ class Core:
         self._ik_cache_path = None
 
         # --------- planned-path cache (core/path.json in the project folder)
+        # --------- deferred motion tail (continuous motion, phase 1)
+        # docs/motion-guide.md §12. Holds at most ONE verb's last exit
+        # group, deposited by the recipe layer instead of executed;
+        # consumed by the next fold or flushed by any barrier.
+        self._motion_tail = None
+
         # Same lifecycle as the IK cache: lazy on the first motion_plan(),
         # every failure mode degrades to planning from scratch.
         self._path_cache = None        # {key: [[j0..jN], ...]}
@@ -1281,6 +1287,43 @@ class Core:
         except Exception:
             pass
 
+    # ── deferred motion tail — cross-verb continuous motion ──────────
+    # docs/motion-guide.md §12, phase 1. A verb's LAST exit group can be
+    # deposited here instead of executed; the next verb's fold consumes
+    # it into one fused chain, and every other motion path flushes it
+    # (executes it to today's stop) first. While a tail is held,
+    # ``_live_joints`` answers with its endpoint — the FRONTIER — so IK
+    # references, j5 unwrapping and motion_plan all reason from where
+    # the robot WILL be, never from the stale live pose.
+
+    def _live_joints(self):
+        """Live joints, or the held tail's endpoint (the frontier)."""
+        if self._motion_tail is not None:
+            return list(self._motion_tail["points"][-1])
+        return list(self.robot_api.joint())
+
+    def tail_deposit(self, tail):
+        """Hold a solved tail: dict with ``points`` (joint waypoints,
+        [0] = the live pose), ``motion_class``, ``tool_pose``,
+        ``owner``, ``flush_fn`` (executes the tail exactly as the verb
+        would have). An already-held tail is flushed first — never two."""
+        self.tail_flush()
+        self._motion_tail = tail
+
+    def tail_consume(self):
+        """Take the held tail — the caller now owns its execution."""
+        t = self._motion_tail
+        self._motion_tail = None
+        return t
+
+    def tail_flush(self):
+        """Execute the held tail to its normal stop, if any. The record
+        is dropped BEFORE the closure runs: a flush aborted by a kill
+        or pause must not retry a half-executed tail."""
+        t = self.tail_consume()
+        if t is not None:
+            t["flush_fn"]()
+
     @staticmethod
     def _wrap180(x):
         """Canonical name of a shaft angle: (-180, 180]."""
@@ -1308,7 +1351,7 @@ class Core:
         if not self.j5_infinite or target is None:
             return target
         if ref is None:
-            ref = float(self.robot_api.joint()[5])
+            ref = float(self._live_joints()[5])
         turns = round((float(ref) - self._wrap180(ref)) / 360.0)
         return self._wrap180(target) + 360.0 * turns
 
@@ -1361,7 +1404,7 @@ class Core:
         # Refresh all poses/frames
         self.update_pose()
         # Live joints & indices
-        cur = list(self.robot_api.joint())   # expect length 8
+        cur = self._live_joints()   # frontier-aware; expect length 8
         aux = self.rail_cfg["axis"]
         r_cur = cur[aux]
 
@@ -2288,7 +2331,7 @@ class Core:
         # -------------------------
         # Plan and execute
         # -------------------------
-        start_full = list(self.robot_api.joint())
+        start_full = self._live_joints()   # frontier-aware (held tail = its endpoint)
         goal = list(joint)
 
         # planner.plan(start, goal): start should match goal dimensionality

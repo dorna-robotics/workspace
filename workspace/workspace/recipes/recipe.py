@@ -62,6 +62,13 @@ class Recipe:
         # verifies BEFORE the motion starts — no interleaving, costs
         # the chain's duration (~1.35 s for a pneumatic gripper).
         io_overlap=True,
+        # Cross-verb continuous motion (docs/motion-guide.md §12,
+        # phase 1). True: this recipe's verbs DEPOSIT their last exit
+        # group as a deferred tail instead of stopping there — the next
+        # verb's fold fuses it with its planned travel into ONE chain;
+        # any barrier (exit IO, an unfusable path, action end) executes
+        # it to today's stop instead. Per-call ``fuse_exit`` wins.
+        fuse=False,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
@@ -134,6 +141,7 @@ class Recipe:
         self.blend = prm["blend"]
         self.has_motion_plan = prm["has_motion_plan"]
         self.io_overlap = prm["io_overlap"]
+        self.fuse = prm["fuse"]
         self.speed_factor = prm["speed_factor"]
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -546,6 +554,68 @@ class Recipe:
             p[5] = pin
         return pts
 
+    # ── deferred motion tail (docs/motion-guide.md §12, phase 1) ─────
+
+    def _cur_joints(self):
+        """Live joints, or the frontier of a held motion tail — the
+        ONE reference every motion build must use (never rt.joint()
+        directly), so a deferred tail keeps downstream IK honest."""
+        return self.core._live_joints()
+
+    def _tail_deposit(self, rt, group, target_solid, target_anchor,
+                      tool_dict, j5_override, vaj_map):
+        """Hold the verb's LAST exit group as a deferred tail instead of
+        executing it. Solved NOW (IK + j5 pin, exactly what execution
+        would command); the flush closure replays the group through the
+        normal path — the robot has not moved since deposit, so the
+        replay reproduces today's motion bit for bit. Returns False if
+        the group doesn't solve (caller executes normally)."""
+        try:
+            pts = [[float(v) for v in self._cur_joints()]]
+            for offset in group:
+                J = self._solve_ik(target_solid, target_anchor, offset,
+                                   tool_dict, j5_override)
+                pts.append([float(v) for v in J])
+        except Exception:
+            return False
+        tp = [0, 0, 0, 0, 0, 0]
+        if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+            tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
+                                         in_frame=self.core.robot_flange,
+                                         offset=tool_dict["offset"])
+
+        def _flush():
+            self._move_along_path(rt, group, target_solid, target_anchor,
+                                  tool_dict=tool_dict, j5_override=j5_override,
+                                  vaj_map=vaj_map)
+
+        self.core.tail_deposit({
+            "points": pts,
+            "motion_class": self.motion_type,
+            "tool_pose": [float(v) for v in tp],
+            "owner": type(self).__name__,
+            "flush_fn": _flush,
+        })
+        return True
+
+    def _fuse_tail_points(self, tail, points, primitive):
+        """Splice a held tail onto the front of a fold path — ONE fused
+        chain. ``points[0]`` is the frontier (== the tail's endpoint)
+        and the tail is already exit-pinned, so the splice is exact.
+        Knot primitives carry the tail as bare knots (the same coercion
+        the fold applies to approach offsets); sampled primitives
+        densify each tail segment like an approach leg."""
+        tpts = [list(p) for p in tail["points"]]
+        if primitive in ("smove", "tmove"):
+            dense = [tpts[0]]
+            for a, b in zip(tpts, tpts[1:]):
+                seg = None
+                if tail["motion_class"] == "lmove":
+                    seg = self.core.lmove_points(a, b, tool_pose=tail["tool_pose"], step=5.0)
+                dense.extend(seg if seg is not None else [list(b)])
+            tpts = dense
+        return tpts + [list(p) for p in points[1:]]
+
     def _tool_lock_j5(self):
         """The mounted tool's declared ``lock_j5`` (degrees), or None.
 
@@ -687,6 +757,8 @@ class Recipe:
         unconstrained failure raises: that is a genuine reachability /
         collision problem, not a constraint one.
         """
+        # Direct planned hops (park etc.) never fuse — flush any tail.
+        self.core.tail_flush()
         use_planning, unplanned, planned = self._motion_plan_mode(use_planning)
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
@@ -730,6 +802,18 @@ class Recipe:
         plan_on, unplanned, planned = self._motion_plan_mode(
             has_motion_plan if has_motion_plan is not None else False)
         plan_on = plan_on and first_approach
+
+        # Deferred-tail barrier / merge (docs/motion-guide.md §12):
+        # only the fold can absorb a held tail — PEEK here (the
+        # frontier must stay armed for the IK/planning below) and
+        # consume at the successful splice; every other path executes
+        # the tail to its normal stop before moving.
+        fuse_tail = None
+        if (first_approach and len(path) > 1 and blend and blend > 0
+                and planned in ("smove", "tmove", "cjmove", "clmove")):
+            fuse_tail = self.core._motion_tail
+        if fuse_tail is None:
+            self.core.tail_flush()
 
         if not first_approach and len(path) > 1:
             # Grouping IS continuity: a multi-point non-travel group
@@ -775,7 +859,7 @@ class Recipe:
                     raise RecipeError("no proper path was found")
                 points = [list(p) for p in points]
             else:
-                cur = [float(v) for v in rt.joint()]
+                cur = [float(v) for v in self._cur_joints()]
                 if unplanned == "lmove":
                     seg0 = self.core.lmove_points(cur, J0, tool_pose=tool_pose, step=5.0)
                     points = ([cur] + seg0) if seg0 is not None else None
@@ -807,8 +891,16 @@ class Recipe:
                 points.extend(rest)
                 # Pin BEFORE blending so the fillets are generated (and
                 # validated) on the wrist-locked path, not corrected
-                # after the fact.
+                # after the fact. The pin covers only THIS verb's part
+                # — a spliced tail is already exit-pinned.
                 points = self._pin_j5(points, j5_override)
+                if fuse_tail is not None:
+                    # THE SPLICE: held tail + travel + first group, one
+                    # chain. Consume only now — every earlier failure
+                    # path leaves the tail held for a clean flush.
+                    points = self._fuse_tail_points(fuse_tail, points, planned)
+                    self.core.tail_consume()
+                    fuse_tail = None
                 if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
                     # corner of the fused path — travel and approach
@@ -825,8 +917,11 @@ class Recipe:
                                       padding=motion_plan_kwargs.get("padding", 10))
                 return
             if plan_on and points:
-                # Fold sampling failed mid-way — execute the planned
-                # travel, then the remaining offsets as classic lmoves.
+                # Fold sampling failed mid-way — flush the held tail
+                # (planned from its endpoint, so geometry stays right),
+                # then execute the planned travel and the remaining
+                # offsets as classic lmoves.
+                self.core.tail_flush()
                 self._run_path_motion(rt, self._pin_j5(points, j5_override), vaj_map["jmove"],
                                       planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
@@ -838,6 +933,9 @@ class Recipe:
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
 
+        # Classic sequence — never fuses: whatever is still held runs
+        # to its stop first.
+        self.core.tail_flush()
         for i, offset in enumerate(path):
             J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
             rt.checkpoint()
@@ -1165,6 +1263,8 @@ class Recipe:
             RecipeError: If IK can't find a valid configuration for a chunk.
         """
         rt = self.rt
+        # A screw is a precision motion — never fused; flush any tail.
+        self.core.tail_flush()
         tool_body = tool.assembly[next(iter(tool.assembly))]
         total_twist = int(total_twist)
 
@@ -1277,6 +1377,7 @@ class Recipe:
         has_motion_plan=None,
         motion_plan_kwargs={},
         blend=None,
+        fuse_exit=None,
         **kwargs,
     ):
         """Universal motion primitive used by pick/place/above/stand/immerse/retract.
@@ -1344,9 +1445,9 @@ class Recipe:
         # Resolved to a number here, once, so every downstream consumer
         # (_solve_ik, planner-point pinning) sees a plain float.
         if isinstance(approach_j5, str) and approach_j5 == "keep":
-            approach_j5 = float(rt.joint()[5])
+            approach_j5 = float(self._cur_joints()[5])
         if isinstance(exit_j5, str) and exit_j5 == "keep":
-            exit_j5 = float(rt.joint()[5])
+            exit_j5 = float(self._cur_joints()[5])
         if has_motion_plan is None:
             has_motion_plan = (self.has_motion_plan if self.has_motion_plan is not None
                                else self.core.has_motion_plan)
@@ -1437,7 +1538,18 @@ class Recipe:
         # plan-padded station box, or the next planner start is
         # invalid (the [plan] START diagnostic names this when a
         # padding is set too low).
-        for group in exit:
+        if fuse_exit is None:
+            fuse_exit = self.fuse
+        for gi, group in enumerate(exit):
+            # Deferred tail (docs/motion-guide.md §12): the LAST exit
+            # group can be held for fusion with the next verb's travel
+            # — but only when nothing after it needs a stopped robot
+            # (exit IO is a barrier by definition).
+            if (fuse_exit and gi == len(exit) - 1 and not output_exit
+                    and self._tail_deposit(rt, group, target_solid,
+                                           target_anchor, exit_tool,
+                                           exit_j5, vaj_map)):
+                break
             self._move_along_path(
                 rt, group, target_solid, target_anchor,
                 tool_dict=exit_tool,

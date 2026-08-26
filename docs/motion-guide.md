@@ -338,10 +338,39 @@ and `pad empty`. Planner boxes are inflated by the plan padding
 (default 10) + margin. Tune per recipe in `recipes.j2`; defaults are
 50.
 
-## 12. DESIGN: cross-verb continuous motion (the fusion buffer)
+## 12. Cross-verb continuous motion (the fusion buffer)
 
-**Status: agreed design, NOT yet implemented.** The next major motion
-feature; recorded here so implementation starts from one text.
+**Status: PHASE 1 IMPLEMENTED** (deferred tail on `core`, recipe-layer
+deposit/merge, action-boundary flush). Phase 2 (the engine holding the
+window across action boundaries, streaming commit) is design-only.
+
+### Phase 1 — what ships
+
+* **Knob**: recipe kwarg `fuse: true` (recipes.j2, default false) or
+  per-call `fuse_exit=True/False` on any verb. Off = today's motion,
+  bit for bit.
+* **Deposit**: a fusing verb's LAST exit group is IK-solved and held
+  on `core` (`tail_deposit`) instead of executed — unless `output_exit`
+  IO follows it (IO is a barrier by definition).
+* **Merge**: the next verb's fold consumes the tail —
+  `tail + planned travel + first approach group` run as ONE chain in
+  the fold's planned primitive (`smove`/`tmove` sample the tail like
+  approach legs; `cjmove`/`clmove` carry it as bare knots — the same
+  coercion the fold already applies to approach offsets), certified
+  and blended as one path.
+* **Frontier**: while a tail is held, `core._live_joints()` answers
+  with its endpoint — IK `cur`, `unwrap_j5` refs and `motion_plan`
+  start all reason from where the robot WILL be. Recipes must read
+  joints via `self._cur_joints()`, never `rt.joint()`.
+* **Flush** (execute the tail to today's stop): any non-fold motion
+  path (`_move_along_path` non-merge branches, `_execute_motion_planned`
+  — park, `_screw_motion`), a second deposit, discrete planned
+  primitives, fold failure, and the **action boundary** (the BT leaf
+  flushes after every `execute()`, success or failure). A flush
+  aborted by kill drops the tail with the robot stationary.
+
+The original design (kept below — it is the contract phase 2 builds
+on):
 
 Today's continuity boundary is the group (§3): the planned chain
 absorbs the first approach group, and every verb ends at a stop after
