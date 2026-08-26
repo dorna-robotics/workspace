@@ -57,29 +57,16 @@ _status_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="orch-status
 _cmd_pool    = ThreadPoolExecutor(max_workers=4, thread_name_prefix="orch-cmd")
 
 # Workspace registry persistence — the dashboard's project cards.
-# Lives in the INVOKING user's home (~/.workspace/): NOT /tmp (tmpfs,
-# wiped on reboot — silently emptied the dashboard after every power
-# cycle) and NOT inside the package (an install dir — a re-clone, a
-# git clean, or a non-editable pip upgrade replaces the directory and
-# the cards silently vanish on "system upgrade"). SUDO_USER resolves
-# to the same file for the sudo-run server and plain dev runs, so
-# both share one registry; save_registry hands ownership back to the
-# invoking user for the same reason.
-def _reg_home() -> str:
-    user = os.environ.get("SUDO_USER", "").strip()
-    if user:
-        try:
-            import pwd
-            return pwd.getpwnam(user).pw_dir
-        except Exception:
-            pass
-    return os.path.expanduser("~")
+# Lives in ~/.workspace (gui.data_home — the one machine-local data
+# dir): NOT /tmp (tmpfs, wiped on reboot — silently emptied the
+# dashboard after every power cycle) and NOT inside the package (an
+# install dir — a re-clone, a git clean, or a non-editable pip
+# upgrade replaces the directory and the cards silently vanish on
+# "system upgrade"). save_registry hands ownership back to the
+# invoking user so the sudo-run server and plain dev runs share it.
+from gui.data_home import data_path
 
-
-REG_PATH = os.environ.get(
-    "ORCH_REG_PATH",
-    os.path.join(_reg_home(), ".workspace", "registry.json"),
-)
+REG_PATH = os.environ.get("ORCH_REG_PATH", data_path("registry.json"))
 
 # Registries written before the move live next to this package —
 # load_registry reads one once when the new path has nothing, then
@@ -128,8 +115,15 @@ class Orchestrator:
 
     def load_registry(self) -> None:
         # Prefer the real home; fall back to a pre-move registry left
-        # in the package dir (one-shot migration — the save below
-        # re-homes it).
+        # in the package dir (one-shot migration).
+        #
+        # LOADING NEVER DESTROYS THE FILE. The old shape (silent
+        # per-item pass + unconditional save at the end) meant one
+        # transient add failure quietly rewrote the registry with the
+        # failing cards dropped — the dashboard's "cards sometimes
+        # vanish" class of bug. Now failures are loud, and the ONLY
+        # write a load performs is the one-shot legacy migration,
+        # gated on every card loading.
         src = REG_PATH if os.path.isfile(REG_PATH) else _LEGACY_REG_PATH
         if not os.path.isfile(src):
             return
@@ -139,6 +133,7 @@ class Orchestrator:
             arr = data.get("workspaces", [])
             if not isinstance(arr, list):
                 return
+            failed = 0
             for item in arr:
                 try:
                     self.add_workspace(
@@ -148,14 +143,18 @@ class Orchestrator:
                         node_url=item.get("node_url") or None,
                         label=item.get("label", "") or "",
                         sync_remote=False,   # IMPORTANT: don't re-add remotely on startup
-                        persist=False,       # we'll persist once after bulk load
+                        persist=False,       # never write during load
                     )
-                except Exception:
-                    # keep loading others
-                    pass
-            self.save_registry()
-        except Exception:
-            pass
+                except Exception as e:
+                    failed += 1
+                    print(f"[orch] registry: could not load workspace "
+                          f"{item.get('name')!r}: {type(e).__name__}: {e} "
+                          f"(kept in {src}; fix and restart)")
+            if src != REG_PATH and not failed:
+                self.save_registry()   # one-shot migration to the new home
+        except Exception as e:
+            print(f"[orch] registry: load failed from {src}: "
+                  f"{type(e).__name__}: {e} (file untouched)")
 
     # ---------------- Workspace management ----------------
 

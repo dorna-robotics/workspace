@@ -28,6 +28,13 @@ from typing import Dict, Optional
 
 import yaml
 
+from gui.data_home import data_path
+
+# Status/log home for workspaces with no local project dir (remote or
+# bare-name). Files are namespaced by workspace name — the dir is
+# shared across all of them.
+FALLBACK_STATUS_DIR = data_path("status")
+
 
 MAX_LOG_BYTES = int(os.environ.get("ORCH_MAX_LOG_BYTES", str(2 * 1024 * 1024)))  # 2MB
 
@@ -226,12 +233,14 @@ class WorkspaceInfo:
 
         # Log file lives in <project_dir>/status/workspace.log. Fixed
         # name regardless of the workspace's registered identifier so
-        # renaming or re-registering doesn't orphan files. ``/tmp``
-        # fallback applies for remote workspaces and the rare case
-        # where path_to_file isn't a real local file (namespace by
-        # ``<name>`` there because /tmp is shared).
+        # renaming or re-registering doesn't orphan files. The
+        # ``~/.workspace/status`` fallback applies for remote
+        # workspaces and the rare case where path_to_file isn't a real
+        # local file (namespace by ``<name>`` there because the dir is
+        # shared — it was /tmp once, but tmpfs loses the logs on every
+        # reboot; machine-local state lives in gui.data_home now).
         self._status_dir: str = self._compute_status_dir(path_to_file)
-        if self._status_dir == "/tmp":
+        if self._status_dir == FALLBACK_STATUS_DIR:
             self.log_path: str = os.path.join(self._status_dir, f"{name}.log")
         else:
             self.log_path: str = os.path.join(self._status_dir, "workspace.log")
@@ -243,15 +252,21 @@ class WorkspaceInfo:
 
     @staticmethod
     def _compute_status_dir(path_to_file: str) -> str:
-        """Project's status/ directory, or a /tmp fallback for remote /
-        bare-name workspaces. Created lazily on first launch."""
+        """Project's status/ directory, or the ~/.workspace/status
+        fallback for remote / bare-name workspaces. Created lazily on
+        first launch."""
         try:
-            parent = Path(path_to_file).parent
-            if str(parent) and parent.exists():
-                return str(parent / "status")
+            # An empty path_to_file (remote / bare-name) must NOT fall
+            # into Path("").parent == "." — that "exists" and used to
+            # yield a RELATIVE status/ dir wherever the server happened
+            # to be launched from.
+            if path_to_file:
+                parent = Path(path_to_file).parent
+                if str(parent) and parent.exists():
+                    return str(parent / "status")
         except Exception:
             pass
-        return "/tmp"
+        return FALLBACK_STATUS_DIR
 
     def ensure_status_dir(self) -> None:
         """Create <project_dir>/status/ on demand. Safe to call repeatedly."""

@@ -1244,7 +1244,8 @@ class PerfHandler(tornado.web.RequestHandler):
         row["ts"] = time.strftime("%H:%M:%S")
         row["ip"] = self.request.remote_ip
         try:
-            with open("/tmp/sb_perf.jsonl", "a") as f:
+            from gui.data_home import data_path
+            with open(data_path("sb_perf.jsonl"), "a") as f:
                 f.write(json.dumps(row) + "\n")
         except OSError:
             pass
@@ -1271,7 +1272,8 @@ class SolveRefHandler(tornado.web.RequestHandler):
     async def post(self):
         def _log(event, **kw):
             try:
-                with open("/tmp/sb_perf.jsonl", "a") as f:
+                from gui.data_home import data_path
+                with open(data_path("sb_perf.jsonl"), "a") as f:
                     f.write(json.dumps({"solve_ref": event,
                                         "ts": time.strftime("%H:%M:%S"), **kw}) + "\n")
             except OSError:
