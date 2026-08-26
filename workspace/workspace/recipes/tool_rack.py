@@ -13,10 +13,20 @@ class ToolRack(Recipe):
         lmove_vaj=[150, 350, 1500],
         # The tool-changer corridor is a PRECISION path: the changer
         # must ride the slide-in axis. Bound the chain fillets so the
-        # fused corridor keeps near-sharp corners (the platform default
-        # of 60 let fusion's longer legs earn 45 mm cuts — visibly
-        # off-axis at the dock).
+        # corridor keeps near-sharp corners (the platform default of 60
+        # let long legs earn 45 mm cuts — visibly off-axis at the dock).
         corner=12.0,
+        # And do NOT fuse the corridors at all: they are lmove-class —
+        # TCP-STRAIGHT lines. A deferred tail rides the next travel as
+        # bare knots in a cjmove chain, which is JOINT-interpolated —
+        # a joint segment bows in Cartesian space, and over the
+        # corridor's legs that bow is millimeters of lateral drift at
+        # the dock (bench: 'off in x from the first tool place').
+        # Free-air lifts tolerate the bow; docking corridors don't.
+        # Lift when the chain machinery can carry mixed-class sections
+        # (lmove sections inside a cjmove chain — firmware queues
+        # support it; the host machinery doesn't yet).
+        fuse=False,
         # calibration
         calibrate_abc=True,
     )
