@@ -11,14 +11,6 @@ class ToolRack(Recipe):
         target_offset=[0, 0, 0, 0, 180, 0],
         # motion
         lmove_vaj=[150, 350, 1500],
-        # The tool-changer corridors are PRECISION paths — TCP-straight
-        # by design. The fold's smove primitive SAMPLES corridor legs
-        # and fused tails every 5 mm, so the executed spline stays on
-        # the straight lines (measured: cjmove coercion bowed the long
-        # corridor leg 6.5 mm — visibly off-axis at the dock). smove
-        # here overrides a project-wide chain primitive; fusing stays
-        # ON because sampled fusion preserves the geometry.
-        has_motion_plan=[True, "smove"],
         # calibration
         calibrate_abc=True,
     )
