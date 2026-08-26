@@ -56,14 +56,36 @@ from gui.orchestrator.workspace_info import (
 _status_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="orch-status")
 _cmd_pool    = ThreadPoolExecutor(max_workers=4, thread_name_prefix="orch-cmd")
 
-# Workspace registry persistence. Lives next to this package — NOT /tmp:
-# tmpfs is wiped on reboot, which silently emptied the dashboard (all
-# cards gone) after every power cycle. The repo dir is writable by both
-# the sudo-run server and plain dev runs, so both share one file.
+# Workspace registry persistence — the dashboard's project cards.
+# Lives in the INVOKING user's home (~/.workspace/): NOT /tmp (tmpfs,
+# wiped on reboot — silently emptied the dashboard after every power
+# cycle) and NOT inside the package (an install dir — a re-clone, a
+# git clean, or a non-editable pip upgrade replaces the directory and
+# the cards silently vanish on "system upgrade"). SUDO_USER resolves
+# to the same file for the sudo-run server and plain dev runs, so
+# both share one registry; save_registry hands ownership back to the
+# invoking user for the same reason.
+def _reg_home() -> str:
+    user = os.environ.get("SUDO_USER", "").strip()
+    if user:
+        try:
+            import pwd
+            return pwd.getpwnam(user).pw_dir
+        except Exception:
+            pass
+    return os.path.expanduser("~")
+
+
 REG_PATH = os.environ.get(
     "ORCH_REG_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json"),
+    os.path.join(_reg_home(), ".workspace", "registry.json"),
 )
+
+# Registries written before the move live next to this package —
+# load_registry reads one once when the new path has nothing, then
+# save_registry re-homes it.
+_LEGACY_REG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "registry.json")
 
 # Auth token. ``""`` (default) disables auth entirely. When set, every
 # write endpoint requires an ``X-Orch-Token`` header that matches.
@@ -92,12 +114,27 @@ class Orchestrator:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, REG_PATH)
+        # The sudo-run server must not lock a plain dev run out of the
+        # shared file: hand dir + file back to the invoking user.
+        user = os.environ.get("SUDO_USER", "").strip()
+        if user and os.geteuid() == 0:
+            try:
+                import pwd
+                pw = pwd.getpwnam(user)
+                os.chown(os.path.dirname(REG_PATH), pw.pw_uid, pw.pw_gid)
+                os.chown(REG_PATH, pw.pw_uid, pw.pw_gid)
+            except Exception:
+                pass
 
     def load_registry(self) -> None:
-        if not os.path.isfile(REG_PATH):
+        # Prefer the real home; fall back to a pre-move registry left
+        # in the package dir (one-shot migration — the save below
+        # re-homes it).
+        src = REG_PATH if os.path.isfile(REG_PATH) else _LEGACY_REG_PATH
+        if not os.path.isfile(src):
             return
         try:
-            with open(REG_PATH, "r", encoding="utf-8") as f:
+            with open(src, "r", encoding="utf-8") as f:
                 data = json.load(f)
             arr = data.get("workspaces", [])
             if not isinstance(arr, list):
