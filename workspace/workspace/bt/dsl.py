@@ -1736,6 +1736,7 @@ class _DSLActionLeaf(RecipeAction):
             # no-progress cap.
             log.error("BT leaf FATAL: %s — %s", self.name, ex)
             self._kill_runtime()
+            self._settle_motion_tail()
             return False
         except Exception as ex:
             # exc_info=True attaches the traceback so we can see WHICH
@@ -1746,19 +1747,8 @@ class _DSLActionLeaf(RecipeAction):
                 self.name, type(ex).__name__, ex,
                 exc_info=True,
             )
+            self._settle_motion_tail()
             return False
-        finally:
-            # Continuous-motion phase 1 boundary (motion-guide §12): no
-            # deferred motion tail crosses an action — whatever the
-            # action left held executes to its normal stop here. A
-            # flush aborted by kill/pause drops the tail with the robot
-            # stationary at a valid pose.
-            try:
-                _core = self._instance.ctx.workspace.components.get("core")
-                if _core is not None:
-                    _core.tail_flush()
-            except Exception:
-                log.warning("BT leaf: motion-tail flush failed", exc_info=True)
 
         # execute() must return:
         #   * str          — name of the chosen eff branch (the
@@ -1778,10 +1768,12 @@ class _DSLActionLeaf(RecipeAction):
         # eff()'s "always a dict" rule: one way to pick a branch.
         if rv is False:
             log.warning("BT leaf FAIL : %s (execute returned False)", self.name)
+            self._settle_motion_tail()
             return False
         if rv == "killed":
             log.warning('BT leaf KILL : %s (execute returned "killed")', self.name)
             self._kill_runtime()
+            self._settle_motion_tail()
             return False
         if not isinstance(rv, str):
             effs = self._call_eff()
@@ -1790,12 +1782,14 @@ class _DSLActionLeaf(RecipeAction):
                 "BT leaf FAIL : %s.execute returned %r — expected one of %r",
                 self._cls.__name__, rv, keys,
             )
+            self._settle_motion_tail()
             return False
         self._branch_choice = rv
 
         # 4. post_check — runs AFTER execute. False = action FAILED.
         if not self._run_checks(self._cls.post_check):
             log.warning("BT leaf FAIL : %s (post_check failed)", self.name)
+            self._settle_motion_tail()
             return False
 
         log.info("BT leaf DONE : %s (branch=%s)", self.name, rv)
@@ -1807,6 +1801,26 @@ class _DSLActionLeaf(RecipeAction):
         kill = getattr(rt, "kill", None)
         if callable(kill):
             kill()
+
+    def _settle_motion_tail(self) -> None:
+        """Continuous-motion window, phase 2 (motion-guide §12): a
+        SUCCESSFUL leaf leaves the held tail armed — the next robot
+        action's fold fuses it. Every FAILURE path calls this instead:
+        a killed runtime DROPS the tail (no motion after a kill — the
+        operator may move the robot before the next command, and core
+        drops a drifted tail anyway), anything else flushes it to its
+        normal stop so replanning sees a settled robot."""
+        try:
+            core = self.ctx.workspace.components.get("core")
+            if core is None:
+                return
+            rt = getattr(self.ctx, "runtime", None)
+            if getattr(rt, "killed", False):
+                core.tail_consume()   # drop — never move after a kill
+            else:
+                core.tail_flush()
+        except Exception:
+            log.warning("BT leaf: motion-tail settle failed", exc_info=True)
 
     def _call_eff(self, state_snapshot: Optional[FrozenSet[Tuple[Any, ...]]] = None) -> Dict[str, Any]:
         """Call the action's eff(); state-aware effs receive a snapshot.
@@ -1855,6 +1869,15 @@ class _DSLActionLeaf(RecipeAction):
         # tell the engine to rebuild the tree so downstream actions
         # re-evaluate against the observed state.
         if chosen != default:
+            # Replanning re-derives everything from OBSERVED state —
+            # settle the robot first: a held motion tail executes to
+            # its normal stop before the tree is rebuilt.
+            try:
+                _core = self.ctx.workspace.components.get("core")
+                if _core is not None:
+                    _core.tail_flush()
+            except Exception:
+                log.warning("motion-tail flush before replan failed", exc_info=True)
             # Local import to avoid circular dependency at module load.
             from workspace.bt.engine import ReplanRequested
             raise ReplanRequested(

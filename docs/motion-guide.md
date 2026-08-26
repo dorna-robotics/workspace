@@ -340,9 +340,19 @@ and `pad empty`. Planner boxes are inflated by the plan padding
 
 ## 12. Cross-verb continuous motion (the fusion buffer)
 
-**Status: PHASE 1 IMPLEMENTED** (deferred tail on `core`, recipe-layer
-deposit/merge, action-boundary flush). Phase 2 (the engine holding the
-window across action boundaries, streaming commit) is design-only.
+**Status: PHASES 1 + 2 IMPLEMENTED.** Phase 1: deferred tail on
+`core`, recipe-layer deposit/merge, verb-level barriers. Phase 2: the
+window stays open ACROSS action boundaries — a successful leaf leaves
+the tail armed (it survives no-motion actions like a weigh), and the
+seams that must break it do: any failure path flushes, a non-default
+branch flushes before `ReplanRequested`, and a killed runtime DROPS
+the tail (never move after a kill). Core-level safety invariant: a
+flush whose deposit pose no longer matches the live robot (kill +
+jog, any out-of-band motion) drops the tail loudly instead of
+executing it. Streaming commit (overlap tail execution with the next
+plan solve) is phase 3, design-only — with the single-tail design,
+chains stay bounded, so it buys only planning overlap, not pause
+latency.
 
 ### Phase 1 — what ships
 
@@ -365,9 +375,12 @@ window across action boundaries, streaming commit) is design-only.
 * **Flush** (execute the tail to today's stop): any non-fold motion
   path (`_move_along_path` non-merge branches, `_execute_motion_planned`
   — park, `_screw_motion`), a second deposit, discrete planned
-  primitives, fold failure, and the **action boundary** (the BT leaf
-  flushes after every `execute()`, success or failure). A flush
-  aborted by kill drops the tail with the robot stationary.
+  primitives, and fold failure. At the ACTION level (phase 2): a
+  successful leaf keeps the tail armed for the next robot action;
+  every leaf failure path flushes it; a non-default branch flushes
+  before the replan; a killed runtime drops it. A flush whose deposit
+  pose no longer matches the live robot drops the tail loudly instead
+  of executing it.
 
 The original design (kept below — it is the contract phase 2 builds
 on):

@@ -1319,10 +1319,23 @@ class Core:
     def tail_flush(self):
         """Execute the held tail to its normal stop, if any. The record
         is dropped BEFORE the closure runs: a flush aborted by a kill
-        or pause must not retry a half-executed tail."""
+        or pause must not retry a half-executed tail. A tail whose
+        deposit pose no longer matches the live robot (a kill + jog,
+        any out-of-band motion) is DROPPED loudly instead of executed —
+        replaying it from somewhere else would jump."""
         t = self.tail_consume()
-        if t is not None:
-            t["flush_fn"]()
+        if t is None:
+            return
+        try:
+            live = list(self.robot_api.joint())
+            if any(abs(float(a) - float(b)) > 1.0
+                   for a, b in zip(live, t["points"][0])):
+                print(f"[fusion] held tail from {t.get('owner')} dropped — "
+                      f"robot moved since deposit; executing it would jump")
+                return
+        except Exception:
+            pass
+        t["flush_fn"]()
 
     @staticmethod
     def _wrap180(x):
