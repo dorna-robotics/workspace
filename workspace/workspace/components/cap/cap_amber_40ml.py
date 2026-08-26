@@ -14,7 +14,7 @@ class CapFalcon40ml(Cap):
             ]
         },
         cap_type="screw",
-        twist=450,
+        twist=900,
         pitch=3.33
     )
 
