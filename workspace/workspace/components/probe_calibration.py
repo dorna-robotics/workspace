@@ -169,6 +169,11 @@ class ProbeCalibration:
         # measured pocket tilt (see _calibrate_small_pocket / SMALL_POCKET_ABC_PROBE).
         self._probe_orient_abc = None
 
+        # The assembly solid carrying the clb anchor currently being probed,
+        # set by calibrate_clb_anchor. None until then -> _body() falls back
+        # to "body", which is what every single-solid component wants.
+        self._solid = None
+
     # ── helpers ───────────────────────────────────────────────────────
     @property
     def rt(self):
@@ -183,7 +188,26 @@ class ProbeCalibration:
         return self.core.current_tool()
     
     def _body(self):
-        return self.component.assembly["body"]
+        """The solid carrying the clb anchor being probed."""
+        return self._solid if self._solid is not None else self.component.assembly["body"]
+
+    def _solid_for(self, clb_anchor):
+        """Find which assembly solid owns `clb_anchor`.
+
+        Scans every solid rather than assuming "body": a component can put
+        its calibration features on a sub-solid — shaker_4slot's two clb
+        holes are on `rotating`, the head the gripper actually works on.
+        "body" wins a tie, so single-solid components are unaffected.
+        """
+        body = self.component.assembly.get("body")
+        if body is not None and clb_anchor in body.anchors:
+            return body
+        for sol in self.component.assembly.values():
+            if clb_anchor in sol.anchors:
+                return sol
+        raise ValueError(
+            f"{self.component.name}: no assembly solid carries anchor "
+            f"{clb_anchor!r} (looked in {list(self.component.assembly)})")
 
     def _part_clearance(self):
         """Vertical extent of the part (top anchor above its place plane).
@@ -668,6 +692,7 @@ class ProbeCalibration:
         fuse into one measured pose, map it back to the anchor, and store a
         single raw/corrected point under the recipe's calibration_name. In
         "simple" mode probe a single large pocket for XY + floor Z only."""
+        self._solid = self._solid_for(clb_anchor)
         if self.mode == "simple":
             return self._calibrate_clb_anchor_simple(clb_anchor)
 
