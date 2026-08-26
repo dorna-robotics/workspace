@@ -1619,12 +1619,19 @@ class Recipe:
             # Deferred tail (docs/motion-guide.md §12): the LAST exit
             # group can be held for fusion with the next verb's travel
             # — but only when nothing after it needs a stopped robot
-            # (exit IO is a barrier by definition).
-            if (fuse_exit and gi == len(exit) - 1 and not output_exit
-                    and self._tail_deposit(rt, group, target_solid,
-                                           target_anchor, exit_tool,
-                                           exit_j5, vaj_map)):
-                break
+            # (exit IO is a barrier by definition). Refusals are LOUD:
+            # a silent non-hold reads as a fusion bug on the bench.
+            if fuse_exit and gi == len(exit) - 1:
+                if output_exit:
+                    print(f"[fusion] no hold: {type(self).__name__} exit "
+                          f"IO is a barrier (fires at the corridor end)")
+                elif self._tail_deposit(rt, group, target_solid,
+                                        target_anchor, exit_tool,
+                                        exit_j5, vaj_map):
+                    break
+                else:
+                    print(f"[fusion] no hold: {type(self).__name__} exit "
+                          f"group did not solve — executing normally")
             self._move_along_path(
                 rt, group, target_solid, target_anchor,
                 tool_dict=exit_tool,
