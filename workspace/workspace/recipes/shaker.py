@@ -46,6 +46,10 @@ class Shaker(Recipe):
         early (e.g. operator kill).
         """
         self._stop_event.clear()
+        # Workflow: clamp the vessels, swing until done, home the head,
+        # release. The component owns each atomic op (IO + model); this
+        # loop owns the order and the duration.
+        self.component.close()
         start = time.time()
         while not self._stop_event.is_set():
             # exit when duration elapsed and back at start position
@@ -53,6 +57,7 @@ class Shaker(Recipe):
                 break
             self.component.toggle(stop_event=self._stop_event)
         self._go_to_start()
+        self.component.open()
 
     def stop_shaking(self):
         """Signal an in-flight :meth:`shake` to exit early.
@@ -64,11 +69,8 @@ class Shaker(Recipe):
         self._stop_event.set()
 
     def _go_to_start(self):
-        """Move shaker to start position."""
-        comp = self.component
-        comp.joint = comp.toggle_range[0]
-        comp.toggle_state("start")
-        comp.update_pose()
+        """Home the head — fires the real output, not just the model."""
+        self.component.go_start()
 
     def pick(self, anchor="A1", solid_name="rotating", **kwargs):
         """Pick from a shaker well — targets the ``rotating`` solid so the
