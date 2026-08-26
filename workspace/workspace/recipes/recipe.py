@@ -67,9 +67,9 @@ class Recipe:
         # group as a deferred tail instead of stopping there — the next
         # verb's fold fuses it with its planned travel into ONE chain;
         # any barrier (exit IO, an unfusable path, a failed action)
-        # executes it to today's stop instead. Per-call ``fuse_exit``
+        # executes it to today's stop instead. A per-call ``fuse``
         # wins; set ``fuse: false`` in recipes.j2 to opt a station out
-        # (a scale that wants the arm parked clear before reading, a
+        # (a station that wants the arm parked clear before reading, a
         # station whose exit stop is deliberate).
         fuse=True,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
@@ -1527,7 +1527,7 @@ class Recipe:
         has_motion_plan=None,
         motion_plan_kwargs={},
         blend=None,
-        fuse_exit=None,
+        fuse=None,
         **kwargs,
     ):
         """Universal motion primitive used by pick/place/above/stand/immerse/retract.
@@ -1688,8 +1688,10 @@ class Recipe:
         # plan-padded station box, or the next planner start is
         # invalid (the [plan] START diagnostic names this when a
         # padding is set too low).
-        if fuse_exit is None:
-            fuse_exit = self.fuse
+        # Same resolution as padding: per-call > recipe (recipes.j2 /
+        # class DEFAULTS).
+        if fuse is None:
+            fuse = self.fuse
         exit_io_deferred = False
         for gi, group in enumerate(exit):
             # Deferred tail (docs/motion-guide.md §12): the LAST exit
@@ -1697,7 +1699,7 @@ class Recipe:
             # — but only when nothing after it needs a stopped robot
             # (exit IO is a barrier by definition). Refusals are LOUD:
             # a silent non-hold reads as a fusion bug on the bench.
-            if fuse_exit and gi == len(exit) - 1:
+            if fuse and gi == len(exit) - 1:
                 if self._tail_deposit(rt, group, target_solid,
                                       target_anchor, exit_tool,
                                       exit_j5, vaj_map,

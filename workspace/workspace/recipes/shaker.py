@@ -87,7 +87,7 @@ class Shaker(Recipe):
         pick follows the shaker's current orientation. Fuses its exit
         (the head is parked and stays parked after an unload); only
         PLACE keeps the recipe's fuse=False stop."""
-        kwargs.setdefault("fuse_exit", True)
+        kwargs.setdefault("fuse", True)
         return super().pick(anchor=anchor, solid_name=solid_name, **kwargs)
 
 

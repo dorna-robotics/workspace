@@ -357,7 +357,7 @@ latency.
 ### Phase 1 — what ships
 
 * **Knob**: recipe kwarg `fuse: true` (recipes.j2, default false) or
-  per-call `fuse_exit=True/False` on any verb. Off = today's motion,
+  per-call `fuse=True/False` on any verb (per-call wins — same two-scope pattern as `padding`). Off = today's motion,
   bit for bit.
 * **Deposit**: a fusing verb's LAST exit group is IK-solved and held
   on `core` (`tail_deposit`) instead of executed. `output_exit` IO
@@ -452,7 +452,7 @@ the frontier.
 adaptive): approach/exit corridors and planned travel are fusible;
 precision segments never are — the soft-approach press, screw helix,
 the immerse dive below its hover, gap stops, anything ending at IO.
-Verbs get a `fuse_exit`-style flag for stations that want their stop
+Verbs get a per-call `fuse` flag for stations that want their stop
 regardless (scale, decapper).
 
 **Determinism.** No timing in flush decisions — the buffer never
