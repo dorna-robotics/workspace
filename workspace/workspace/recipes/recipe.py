@@ -437,8 +437,20 @@ class Recipe:
                 setters.append(set_call)
         state = {"exc": None}
 
+        # ONE ordered lane for all background chains (core comment):
+        # this chain runs only after its predecessor finishes, and the
+        # channel's expected-pin ledger advances in submission order.
+        core = self.core
+        prev_done = core._io_prev_done
+        done = threading.Event()
+        core._io_prev_done = done
+        for pin, val in expected.items():
+            core._io_expected[pin] = val
+
         def _run():
             try:
+                if prev_done is not None and not prev_done.wait(timeout=30.0):
+                    raise RecipeError("predecessor IO chain never finished")
                 for pin, val, delay in seq:
                     api.raw_output(pin, val)
                     if delay > 0:
@@ -447,11 +459,14 @@ class Recipe:
                     set_call[0](*set_call[1])
             except Exception as ex:  # surfaced at the join barrier
                 state["exc"] = ex
+            finally:
+                done.set()
 
         t = threading.Thread(target=_run, daemon=True, name="approach-io")
         t.start()
         return {
             "thread": t,
+            "done": done,
             "expected": expected,
             "state": state,
             "duration": sum(d for _, _, d in seq),
@@ -463,7 +478,9 @@ class Recipe:
         before any contact motion can run on a bad chain."""
         if handle is None:
             return
-        handle["thread"].join(timeout=handle["duration"] + 5.0)
+        # Generous timeout: the ordered lane may put predecessors ahead
+        # of this chain.
+        handle["thread"].join(timeout=handle["duration"] + 35.0)
         if handle["thread"].is_alive():
             raise RecipeError("approach IO chain did not finish in time")
         if handle["state"]["exc"] is not None:
@@ -483,10 +500,16 @@ class Recipe:
                 "approach IO verification impossible — could not read "
                 f"output states (got {type(states).__name__})"
             )
+        # Verify against the CHANNEL's latest commanded intent for the
+        # pins this chain touched: an ordered successor that already
+        # (legitimately) overwrote a shared pin must not fail this
+        # chain's barrier — the world matching the newest command IS
+        # correct.
+        ledger = self.core._io_expected
         bad = {
-            pin: {"expected": val, "actual": states[pin]}
+            pin: {"expected": ledger.get(pin, val), "actual": states[pin]}
             for pin, val in handle["expected"].items()
-            if pin < len(states) and states[pin] != val
+            if pin < len(states) and states[pin] != ledger.get(pin, val)
         }
         if bad:
             raise RecipeError(f"approach IO verification failed: {bad}")

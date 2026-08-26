@@ -351,6 +351,18 @@ class Core:
         self._ik_cache_path = None
 
         # --------- planned-path cache (core/path.json in the project folder)
+        # --------- background IO channel (one ordered lane)
+        # Every async IO chain (approach overlap, deferred exit IO)
+        # waits for its predecessor: submission order IS execution
+        # order, so two chains can never race on shared pins — the
+        # bench-measured failure mode of independent workers.
+        # _io_expected tracks the LATEST commanded value per pin, in
+        # submission order; join barriers verify against it, so an
+        # ordered successor legitimately overwriting a shared pin does
+        # not fail its predecessor's verification.
+        self._io_prev_done = None
+        self._io_expected = {}
+
         # --------- deferred motion tail (continuous motion, phase 1)
         # docs/motion-guide.md §12. Holds at most ONE verb's last exit
         # group, deposited by the recipe layer instead of executed;
