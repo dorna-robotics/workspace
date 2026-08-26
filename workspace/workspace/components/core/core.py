@@ -1401,7 +1401,7 @@ class Core:
             pass
         return 0
 
-    def _chain_key(self, pts, vel, accel, jerk, corner_cap, padding, sig, turns):
+    def _chain_key(self, pts, vel, accel, jerk, corner_cap, padding, sig, turns, label):
         kp = []
         for q in pts:
             q = [round(float(v), 3) for v in q]
@@ -1409,6 +1409,7 @@ class Core:
                 q[5] = round(q[5] - 360.0 * turns, 3)
             kp.append(q)
         return json.dumps([
+            label,   # the chain's point SPACE (cjmove: joints, clmove: xyzj)
             kp,
             round(float(vel), 3), round(float(accel), 3), round(float(jerk), 3),
             round(float(corner_cap), 3),
@@ -2020,7 +2021,7 @@ class Core:
             except Exception:
                 _sig = None
         _turns = self._chain_j5_turns(pts)
-        _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns)
+        _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns, label)
         _hit = self._chain_cache.get(_ck)
         if _hit is not None:
             try:
