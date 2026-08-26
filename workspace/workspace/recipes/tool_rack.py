@@ -11,6 +11,12 @@ class ToolRack(Recipe):
         target_offset=[0, 0, 0, 0, 180, 0],
         # motion
         lmove_vaj=[150, 350, 1500],
+        # The tool-changer corridor is a PRECISION path: the changer
+        # must ride the slide-in axis. Bound the chain fillets so the
+        # fused corridor keeps near-sharp corners (the platform default
+        # of 60 let fusion's longer legs earn 45 mm cuts — visibly
+        # off-axis at the dock).
+        corner=12.0,
         # calibration
         calibrate_abc=True,
     )
