@@ -589,7 +589,7 @@ class Recipe:
         return self.core._live_joints()
 
     def _tail_deposit(self, rt, group, target_solid, target_anchor,
-                      tool_dict, j5_override, vaj_map):
+                      tool_dict, j5_override, vaj_map, output_exit=None):
         """Hold the verb's LAST exit group as a deferred tail instead of
         executing it. Solved NOW (IK + j5 pin, exactly what execution
         would command); the flush closure replays the group through the
@@ -610,18 +610,35 @@ class Recipe:
                                          in_frame=self.core.robot_flange,
                                          offset=tool_dict["offset"])
 
+        # Deferred exit IO: rides with the tail, fired as a BACKGROUND
+        # chain when the fused motion starts and joined + pin-verified
+        # at its end — same overlap contract as approach IO. Any
+        # clearance lead the station needs is a declared delay row in
+        # its own IO config. A plain flush keeps today's order: motion
+        # first, IO synchronously after.
+        io_sync = None
+        if output_exit:
+            io_sync = lambda: self._apply_output_config(rt, output_exit)
+
         def _flush():
             self._move_along_path(rt, group, target_solid, target_anchor,
                                   tool_dict=tool_dict, j5_override=j5_override,
                                   vaj_map=vaj_map)
+            if io_sync is not None:
+                io_sync()
 
-        self.core.tail_deposit({
+        tail = {
             "points": pts,
             "motion_class": self.motion_type,
             "tool_pose": [float(v) for v in tp],
             "owner": type(self).__name__,
             "flush_fn": _flush,
-        })
+        }
+        if output_exit:
+            tail["io_start"] = lambda: self._output_async(output_exit)
+            tail["io_join"] = lambda h: self._output_join(h)
+            tail["io_sync"] = io_sync
+        self.core.tail_deposit(tail)
         return True
 
     def _tail_deposit_lift(self, rt, J, vaj, owner=None):
@@ -643,25 +660,33 @@ class Recipe:
             "flush_fn": _flush,
         })
 
-    def _tail_deposit_chain(self, rt, points, primitive, vaj_map, motion_plan_kwargs):
+    def _tail_deposit_chain(self, rt, points, primitive, vaj_map, motion_plan_kwargs, io=None):
         """Hold a WHOLE planned hop (park, direct planned moves) as a
         deferred tail — its arrival has no settle semantics, so the hop
         rides into the next fold instead of stopping at its target.
         Planner waypoints are straight joint segments, so the chain
-        carries jmove class."""
+        carries jmove class. ``io`` carries a merged tail's deferred
+        exit IO forward: (io_start, io_join, io_sync)."""
         pts = [[float(v) for v in p] for p in points]
 
         def _flush():
+            io_h = io[0]() if io else None
             self._run_path_motion(rt, pts, vaj_map["jmove"], primitive,
                                   padding=motion_plan_kwargs.get("padding"))
+            if io:
+                io[1](io_h)
 
-        self.core.tail_deposit({
+        tail = {
             "points": pts,
             "motion_class": "jmove",
             "tool_pose": [0, 0, 0, 0, 0, 0],
             "owner": f"{type(self).__name__} planned hop",
             "flush_fn": _flush,
-        })
+        }
+        if io:
+            tail["io_start"], tail["io_join"] = io[0], io[1]
+            tail["io_sync"] = io[2]
+        self.core.tail_deposit(tail)
 
     def _fuse_tail_points(self, tail, points, primitive):
         """Splice a held tail onto the front of a fold path — ONE fused
@@ -850,6 +875,10 @@ class Recipe:
                 self.core.tail_consume()
                 print(f"[fusion] merge: {fuse_tail.get('owner')} + "
                       f"{type(self).__name__} planned hop -> one {planned} chain")
+            merged_io = None
+            if fuse_tail is not None and fuse_tail.get("io_start"):
+                merged_io = (fuse_tail["io_start"], fuse_tail["io_join"],
+                             fuse_tail.get("io_sync"))
             if (self.fuse and planned in ("smove", "tmove", "cjmove", "clmove")
                     and rt._is_workflow_thread()):
                 # The hop itself defers: arrival at a travel target has
@@ -859,10 +888,15 @@ class Recipe:
                 # an operator pressing Park wants motion, not a hold.
                 # The run's end flushes whatever is still held
                 # (launcher), so a deferred final Park still parks.
-                self._tail_deposit_chain(rt, points, planned, vaj_map, motion_plan_kwargs)
+                # Deferred exit IO from the merged tail rides along.
+                self._tail_deposit_chain(rt, points, planned, vaj_map,
+                                         motion_plan_kwargs, io=merged_io)
                 return
+            io_h = merged_io[0]() if merged_io else None
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
+            if merged_io:
+                merged_io[1](io_h)
         else:
             self._do_motion(
                 rt, J,
@@ -989,6 +1023,7 @@ class Recipe:
                 # after the fact. The pin covers only THIS verb's part
                 # — a spliced tail is already exit-pinned.
                 points = self._pin_j5(points, j5_override)
+                pending_io = None
                 if fuse_tail is not None:
                     # THE SPLICE: held tail + travel + first group, one
                     # chain. Consume only now — every earlier failure
@@ -997,6 +1032,8 @@ class Recipe:
                     self.core.tail_consume()
                     print(f"[fusion] merge: {fuse_tail.get('owner')} + "
                           f"{type(self).__name__} travel -> one {planned} chain")
+                    if fuse_tail.get("io_start"):
+                        pending_io = (fuse_tail["io_start"], fuse_tail["io_join"])
                     fuse_tail = None
                 if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
@@ -1010,8 +1047,11 @@ class Recipe:
                         padding=motion_plan_kwargs.get("padding", 10))
                     if blended is not None:
                         points = blended
+                io_h = pending_io[0]() if pending_io else None
                 self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
+                if pending_io:
+                    pending_io[1](io_h)
                 return
             if plan_on and points:
                 # Fold sampling failed mid-way — flush the held tail
@@ -1638,6 +1678,7 @@ class Recipe:
         # padding is set too low).
         if fuse_exit is None:
             fuse_exit = self.fuse
+        exit_io_deferred = False
         for gi, group in enumerate(exit):
             # Deferred tail (docs/motion-guide.md §12): the LAST exit
             # group can be held for fusion with the next verb's travel
@@ -1645,16 +1686,14 @@ class Recipe:
             # (exit IO is a barrier by definition). Refusals are LOUD:
             # a silent non-hold reads as a fusion bug on the bench.
             if fuse_exit and gi == len(exit) - 1:
-                if output_exit:
-                    print(f"[fusion] no hold: {type(self).__name__} exit "
-                          f"IO is a barrier (fires at the corridor end)")
-                elif self._tail_deposit(rt, group, target_solid,
-                                        target_anchor, exit_tool,
-                                        exit_j5, vaj_map):
+                if self._tail_deposit(rt, group, target_solid,
+                                      target_anchor, exit_tool,
+                                      exit_j5, vaj_map,
+                                      output_exit=output_exit):
+                    exit_io_deferred = bool(output_exit)
                     break
-                else:
-                    print(f"[fusion] no hold: {type(self).__name__} exit "
-                          f"group did not solve — executing normally")
+                print(f"[fusion] no hold: {type(self).__name__} exit "
+                      f"group did not solve — executing normally")
             self._move_along_path(
                 rt, group, target_solid, target_anchor,
                 tool_dict=exit_tool,
@@ -1663,8 +1702,10 @@ class Recipe:
                 has_motion_plan=has_motion_plan,
             )
 
-        # output exit
-        self._apply_output_config(rt, output_exit)
+        # output exit — unless it rides with the deferred tail (fired
+        # async at the fused chain's start, joined at its end).
+        if not exit_io_deferred:
+            self._apply_output_config(rt, output_exit)
 
         return True
 

@@ -360,15 +360,19 @@ latency.
   per-call `fuse_exit=True/False` on any verb. Off = today's motion,
   bit for bit.
 * **Deposit**: a fusing verb's LAST exit group is IK-solved and held
-  on `core` (`tail_deposit`) instead of executed — unless `output_exit`
-  IO follows it (IO is a barrier by definition). Deferring the exit IO
-  as its own background chain was tried and REVERTED (bench-measured):
-  it ran concurrently with the next verb's approach IO on the SAME
-  tool-changer pins and the pin verification caught the race
-  (`expected 1, actual 0`). The stop serializes them — IO chains must
-  stay strictly ordered. The principled removal is ONE ordered
-  background chain (exit IO + next approach IO in a single worker,
-  joined before contact) — designed, not yet built.
+  on `core` (`tail_deposit`) instead of executed. `output_exit` IO
+  RIDES WITH THE TAIL: it fires as a background chain when the fused
+  motion starts and is joined + pin-verified at the chain's end (a
+  tool swap no longer stops after racking the tool). SAFE because all
+  background chains share ONE ORDERED LANE: submission order is
+  execution order, and verification checks the channel's latest
+  commanded intent per pin — the first bench run without the lane
+  raced the place's re-arm against the pick's approach chain on the
+  same pins (`expected 1, actual 0`) and was reverted until the lane
+  existed. A station whose exit IO needs a clearance lead declares a
+  delay row in its own IO config — explicit, never inferred. On a
+  plain flush the order stays classic: motion first, IO synchronously
+  after.
 * **Merge**: the next verb's fold consumes the tail —
   `tail + planned travel + first approach group` run as ONE chain in
   the fold's planned primitive (`smove`/`tmove` sample the tail like
