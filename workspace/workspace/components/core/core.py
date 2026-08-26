@@ -1389,10 +1389,27 @@ class Core:
         except Exception:
             self._chain_cache = {}
 
-    @staticmethod
-    def _chain_key(pts, vel, accel, jerk, corner_cap, padding, sig):
+    def _chain_j5_turns(self, pts):
+        """The chain's j5 turn carry (from its start point) — keys are
+        canonical so a wound wrist replays the same chain regardless of
+        how many turns it has accumulated; retrieval re-carries."""
+        try:
+            if self.j5_infinite and len(pts[0]) > 5:
+                s5 = float(pts[0][5])
+                return round((s5 - self._wrap180(s5)) / 360.0)
+        except Exception:
+            pass
+        return 0
+
+    def _chain_key(self, pts, vel, accel, jerk, corner_cap, padding, sig, turns):
+        kp = []
+        for q in pts:
+            q = [round(float(v), 3) for v in q]
+            if turns and len(q) > 5:
+                q[5] = round(q[5] - 360.0 * turns, 3)
+            kp.append(q)
         return json.dumps([
-            [[round(float(v), 3) for v in p] for p in pts],
+            kp,
             round(float(vel), 3), round(float(accel), 3), round(float(jerk), 3),
             round(float(corner_cap), 3),
             -1 if padding is None else round(float(padding), 3),
@@ -1996,14 +2013,22 @@ class Core:
             try:
                 _cw, _ct = self.workspace.compute_collision_boxes(
                     max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN))
-                _sig = self._path_tool_sig(_ct)
+                # BOTH box sets join the key: corners are validated
+                # against the WORLD too — a fillet cut beside an empty
+                # slot must not replay when the slot is occupied.
+                _sig = (self._path_tool_sig(_ct), self._path_tool_sig(_cw))
             except Exception:
                 _sig = None
-        _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig)
+        _turns = self._chain_j5_turns(pts)
+        _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns)
         _hit = self._chain_cache.get(_ck)
         if _hit is not None:
             try:
                 pts_h = [[float(v) for v in q] for q in _hit["p"]]
+                if _turns:
+                    for q in pts_h:
+                        if len(q) > 5:
+                            q[5] += 360.0 * _turns
                 vajs_h = [[float(v) for v in q] for q in _hit["vaj"]]
                 corners_h = [float(v) for v in _hit["c"]]
                 stops_h = [bool(v) for v in _hit["s"]]
@@ -2383,7 +2408,12 @@ class Core:
               f"legs {legs}, bind {bind}, "
               f"certified: joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}, "
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
-        self._chain_cache_put(_ck, pts, vajs, corners, stops)
+        _cp = [list(q) for q in pts]
+        if _turns:
+            for q in _cp:
+                if len(q) > 5:
+                    q[5] -= 360.0 * _turns
+        self._chain_cache_put(_ck, _cp, vajs, corners, stops)
         return pts, vajs, corners, stops
 
     def _fw_verify_chain(self, pts, vajs, corners, stops=None, dt=0.004):
