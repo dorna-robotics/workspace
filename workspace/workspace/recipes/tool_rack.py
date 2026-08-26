@@ -19,12 +19,6 @@ class ToolRack(Recipe):
         # here overrides a project-wide chain primitive; fusing stays
         # ON because sampled fusion preserves the geometry.
         has_motion_plan=[True, "smove"],
-        # Exits still do NOT deposit: a deferred corridor would ride the
-        # NEXT verb's fold, and project-wide folds are cjmove — bare
-        # knots, the measured 6.5 mm bow. Lift when mixed-class chains
-        # exist (clmove sections inside a cjmove chain). Incoming tails
-        # still MERGE into our smove folds (sampled = straight).
-        fuse=False,
         # calibration
         calibrate_abc=True,
     )
