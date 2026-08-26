@@ -10,7 +10,7 @@ class ToolRack(Recipe):
         target_anchor="clb_0",
         target_offset=[0, 0, 0, 0, 180, 0],
         # motion
-        lmove_vaj=[150, 350, 1500],
+        lmove_vaj=[300, 450, 1500], # [150, 350, 1500],
         # calibration
         calibrate_abc=True,
     )
@@ -162,8 +162,6 @@ class ToolRack(Recipe):
                             ],
                             [
                                 [-padding,0,-gap-height_offset,0,0,0],
-                            ],
-                            [
                                 [0, 0, -gap-height_offset, 0, 0, 0]
                             ],
                             [
