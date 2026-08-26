@@ -360,14 +360,8 @@ latency.
   per-call `fuse_exit=True/False` on any verb. Off = today's motion,
   bit for bit.
 * **Deposit**: a fusing verb's LAST exit group is IK-solved and held
-  on `core` (`tail_deposit`) instead of executed. `output_exit` IO
-  RIDES WITH THE TAIL: it fires as a background chain when the fused
-  motion starts and is joined + pin-verified at the chain's end —
-  the same overlap contract as approach IO (a tool swap no longer
-  stops after racking the tool). A station whose exit IO needs a
-  clearance lead declares a delay row in its own IO config — explicit,
-  never inferred. On a plain flush the order stays classic: motion
-  first, IO synchronously after.
+  on `core` (`tail_deposit`) instead of executed — unless `output_exit`
+  IO follows it (IO is a barrier by definition).
 * **Merge**: the next verb's fold consumes the tail —
   `tail + planned travel + first approach group` run as ONE chain in
   the fold's planned primitive (`smove`/`tmove` sample the tail like
