@@ -620,6 +620,26 @@ class Recipe:
             "flush_fn": _flush,
         })
 
+    def _tail_deposit_chain(self, rt, points, primitive, vaj_map, motion_plan_kwargs):
+        """Hold a WHOLE planned hop (park, direct planned moves) as a
+        deferred tail — its arrival has no settle semantics, so the hop
+        rides into the next fold instead of stopping at its target.
+        Planner waypoints are straight joint segments, so the chain
+        carries jmove class."""
+        pts = [[float(v) for v in p] for p in points]
+
+        def _flush():
+            self._run_path_motion(rt, pts, vaj_map["jmove"], primitive,
+                                  padding=motion_plan_kwargs.get("padding"))
+
+        self.core.tail_deposit({
+            "points": pts,
+            "motion_class": "jmove",
+            "tool_pose": [0, 0, 0, 0, 0, 0],
+            "owner": f"{type(self).__name__} planned hop",
+            "flush_fn": _flush,
+        })
+
     def _fuse_tail_points(self, tail, points, primitive):
         """Splice a held tail onto the front of a fold path — ONE fused
         chain. ``points[0]`` is the frontier (== the tail's endpoint)
@@ -807,6 +827,17 @@ class Recipe:
                 self.core.tail_consume()
                 print(f"[fusion] merge: {fuse_tail.get('owner')} + "
                       f"{type(self).__name__} planned hop -> one {planned} chain")
+            if (self.fuse and planned in ("smove", "tmove", "cjmove", "clmove")
+                    and rt._is_workflow_thread()):
+                # The hop itself defers: arrival at a travel target has
+                # no settle semantics, so the whole chain rides into
+                # the next fold (the stop after "go to start joints"
+                # was this seam). Operator-thread calls execute NOW —
+                # an operator pressing Park wants motion, not a hold.
+                # The run's end flushes whatever is still held
+                # (launcher), so a deferred final Park still parks.
+                self._tail_deposit_chain(rt, points, planned, vaj_map, motion_plan_kwargs)
+                return
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
         else:

@@ -372,15 +372,31 @@ latency.
   with its endpoint — IK `cur`, `unwrap_j5` refs and `motion_plan`
   start all reason from where the robot WILL be. Recipes must read
   joints via `self._cur_joints()`, never `rt.joint()`.
+* **Planned hops defer themselves**: a planned chain hop (park,
+  direct planned moves) both MERGES an incoming tail and deposits its
+  own whole chain as the new tail — arrival at a travel target has no
+  settle semantics, so the hop rides into the next fold. Only on the
+  workflow thread: operator-thread calls execute immediately (an
+  operator pressing Park wants motion, not a hold). The run's end
+  flushes whatever is still held (launcher), so a deferred final Park
+  still parks; a killed runtime drops instead.
 * **Flush** (execute the tail to today's stop): any non-fold motion
-  path (`_move_along_path` non-merge branches, `_execute_motion_planned`
-  — park, `_screw_motion`), a second deposit, discrete planned
-  primitives, and fold failure. At the ACTION level (phase 2): a
-  successful leaf keeps the tail armed for the next robot action;
-  every leaf failure path flushes it; a non-default branch flushes
-  before the replan; a killed runtime drops it. A flush whose deposit
-  pose no longer matches the live robot drops the tail loudly instead
-  of executing it.
+  path (`_move_along_path` non-merge branches, `_screw_motion`),
+  a second deposit, discrete planned primitives, and fold failure. At
+  the ACTION level (phase 2): a successful leaf keeps the tail armed
+  for the next robot action; every leaf failure path flushes it; a
+  non-default branch flushes before the replan; a killed runtime
+  drops it. A flush whose deposit pose no longer matches the live
+  robot drops the tail loudly instead of executing it.
+* **No fuse timeout, by design**: a wall-clock timeout would make the
+  same plan produce different motion run to run (planner load decides
+  whether a seam fuses) — non-deterministic, and it buys nothing: the
+  robot idles either way, and executing the exit early just re-creates
+  the stop. The long-solve case is phase 3's streaming overlap.
+* **`fuse` stays a peer parameter**: `has_motion_plan` says how one
+  travel executes; `fuse` says whether the verb's exit joins the NEXT
+  motion — orthogonal axes (the scale wants planned cjmove travel AND
+  fuse off).
 
 The original design (kept below — it is the contract phase 2 builds
 on):

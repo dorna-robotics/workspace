@@ -1124,4 +1124,17 @@ def run_protocol(
         if hasattr(workspace, "clear_active_ctx"):
             workspace.clear_active_ctx()
     log.info("%s: BT engine finished with status=%s", project_name, status.name)
+    # Continuous motion: nothing stays deferred past the run — a
+    # deferred final Park must still park. A killed runtime DROPS the
+    # held tail instead (never move after a kill; core also drops any
+    # tail whose deposit pose no longer matches the live robot).
+    try:
+        if getattr(core, "_motion_tail", None) is not None:
+            rt = getattr(workspace, "rt", None)
+            if rt is not None and getattr(rt, "killed", False):
+                core.tail_consume()
+            else:
+                core.tail_flush(reason="run ended")
+    except Exception:
+        log.warning("%s: end-of-run motion-tail flush failed", project_name, exc_info=True)
     return status
