@@ -46,22 +46,10 @@ class Shaker4slot(Shaker):
                  "scale":[65.0, 65.0, 6.0], "padding_enabled": True},          # base plate
                 {"pose":[0.0, 23.5, 106.0, 0.0, 0.0, 0.0],
                  "scale":[55.4, 59.0, 200.0], "padding_enabled": True},        # post + head mount
-                {"pose":[0.0, 135.0, (238.588/2), 0.0, 0.0, 0.0],
-                 "scale":[157.176, 164.0, 238.588], "padding_enabled": True},  # swept head
         ],
              "rotating":[
-                {"pose":[0.0, 65.0, 0.25, 0.0, 0.0, 0.0],
-                 "scale":[68.0, 130.0, 8.5], "padding_enabled": True},         # base plate
-                {"pose":[-5.85, 82.0, 13.5, 0.0, 0.0, 0.0],
-                 "scale":[81.7, 91.0, 18.0], "padding_enabled": True},         # drive block
-                {"pose":[0.0, 82.0, 25.75, 0.0, 0.0, 0.0],
-                 "scale":[70.0, 91.0, 6.5], "padding_enabled": True},          # hub
-                {"pose":[0.0, 82.0, 33.25, 0.0, 0.0, 0.0],
-                 "scale":[70.0, 164.0, 8.5], "padding_enabled": True},         # gripper fingers
-                {"pose":[0.0, 82.0, 50.75, 0.0, 0.0, 0.0],
-                 "scale":[28.0, 154.0, 26.5], "padding_enabled": True},        # posts
-                {"pose":[0.0, 82.0, 70.0, 0.0, 0.0, 0.0],
-                 "scale":[40.0, 164.0, 12.0], "padding_enabled": True},        # top plate
+                {"pose":[-5.85, 82.0, 36.0, 0.0, 0.0, 0.0],
+                 "scale":[81.7, 164.0, 80.0], "padding_enabled": True},
         ]},
     )
 
