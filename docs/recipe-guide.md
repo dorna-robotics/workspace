@@ -247,6 +247,13 @@ canonical API reference.
 
 ## 3. The `touch` primitive — how every motion is built
 
+> **The motion reference is `docs/motion-guide.md`** — primitives and
+> chains, the group grammar (motions vs stops), the `has_motion_plan`
+> grammar, planned travel + the fold, blending, certification, the
+> infinite wrist, screw/immerse. This section keeps only the recipe-
+> structure view; for anything about how the robot actually moves,
+> read the motion guide.
+
 **`touch`** is the universal motion primitive. Every high-level
 method on `Recipe` (`pick`, `place`, `above`, `stand`, `immerse`,
 `retract`) ultimately calls it. The helpers `pick_setting` and
