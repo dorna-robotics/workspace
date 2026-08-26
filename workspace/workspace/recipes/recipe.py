@@ -641,21 +641,23 @@ class Recipe:
         self.core.tail_deposit(tail)
         return True
 
-    def _tail_deposit_lift(self, rt, J, vaj, owner=None):
-        """Hold a single pre-solved exit target as a deferred tail —
-        for hand-rolled exits that don't go through ``touch`` (the
-        decapper's post-screw lift). The flush closure replays the
-        exact lmove the verb would have run."""
+    def _tail_deposit_lift(self, rt, J, vaj, owner=None, tool_pose=None):
+        """Hold a single pre-solved lift/hop target as a deferred tail —
+        for motions that don't go through ``touch``'s exit machinery
+        (the decapper's post-screw lift, retract's direct lmove). The
+        flush closure replays the exact lmove the verb would have run."""
         J = [float(v) for v in J]
         vel, accel, jerk = vaj
+        tp = [float(v) for v in (tool_pose or [0, 0, 0, 0, 0, 0])]
 
         def _flush():
-            rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk)
+            rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
+                     tool_pose=list(tp))
 
         self.core.tail_deposit({
             "points": [[float(v) for v in self._cur_joints()], list(J)],
             "motion_class": "lmove",
-            "tool_pose": [0, 0, 0, 0, 0, 0],
+            "tool_pose": tp,
             "owner": owner or type(self).__name__,
             "flush_fn": _flush,
         })
@@ -898,12 +900,22 @@ class Recipe:
             if merged_io:
                 merged_io[1](io_h)
         else:
-            self._do_motion(
-                rt, J,
-                tool_dict if tool_dict is not None else {"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]},
-                vaj_map,
-                motion_type=unplanned,
-            )
+            td = tool_dict if tool_dict is not None else {"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]}
+            if (self.fuse and unplanned == "lmove"
+                    and rt._is_workflow_thread()):
+                # A direct lmove hop (retract's lift, hover phases) is a
+                # pure travel endpoint — it defers like the planned hops
+                # do, and the next fold or planned hop merges it.
+                tp = [0, 0, 0, 0, 0, 0]
+                if td.get("solid") and td.get("anchor"):
+                    tp = td["solid"].pose(anchor=td["anchor"],
+                                          in_frame=self.core.robot_flange,
+                                          offset=td["offset"])
+                self._tail_deposit_lift(
+                    rt, J, self.scaled_vaj(vaj_map["lmove"]),
+                    owner=f"{type(self).__name__} direct hop", tool_pose=tp)
+                return
+            self._do_motion(rt, J, td, vaj_map, motion_type=unplanned)
 
     def _move_along_path(self, rt, path, target_solid, target_anchor, tool_dict, j5_override, vaj_map, has_motion_plan=False, first_approach=False, motion_plan_kwargs={}, blend=0.0):
         """Execute a sequence of IK-solved motions along path offsets.

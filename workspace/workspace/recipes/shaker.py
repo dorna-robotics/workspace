@@ -12,9 +12,11 @@ class Shaker(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5
-        # NEVER fuse at the shaker: the head ROTATES after a place — a
-        # held exit would leave the robot parked inside the swept
-        # volume when the shake starts (bench-observed hazard).
+        # NEVER fuse a PLACE at the shaker: the head ROTATES after
+        # loading — a held exit would leave the robot parked inside the
+        # swept volume when the shake starts (bench-observed hazard).
+        # PICK re-enables fusing per call below: unloading works on a
+        # parked head that stays parked.
         fuse=False,
     )
 
@@ -82,7 +84,10 @@ class Shaker(Recipe):
 
     def pick(self, anchor="A1", solid_name="rotating", **kwargs):
         """Pick from a shaker well — targets the ``rotating`` solid so the
-        pick follows the shaker's current orientation."""
+        pick follows the shaker's current orientation. Fuses its exit
+        (the head is parked and stays parked after an unload); only
+        PLACE keeps the recipe's fuse=False stop."""
+        kwargs.setdefault("fuse_exit", True)
         return super().pick(anchor=anchor, solid_name=solid_name, **kwargs)
 
 
