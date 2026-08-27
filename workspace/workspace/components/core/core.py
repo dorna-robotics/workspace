@@ -348,6 +348,13 @@ class Core:
         # read-only filesystem) degrades to in-memory-only or straight
         # solving — the cache must never take down a run.
         self._ik_cache = None          # {key: {"arm": [j0..j5], "rail": r|None}}
+        # Chain-certification cache (core/traj.json): chain_prm is a
+        # deterministic function of (points, vaj, corner cap, padding,
+        # tool boxes) — and it is the WARM-RUN cost (seconds of
+        # verify iterations per chain on the Pi). Same contract as
+        # path.json: validated at creation, replayed on hit.
+        self._chain_cache = None
+        self._chain_cache_path = None
         self._ik_cache_path = None
 
         # --------- planned-path cache (core/path.json in the project folder)
@@ -1387,6 +1394,82 @@ class Core:
               f"runs to its stop")
         t["flush_fn"]()
 
+    def _chain_cache_init(self):
+        """Load core/traj.json — same JSONL + scene-stamp machinery as
+        ik.json. Never raises."""
+        self._chain_cache = {}
+        try:
+            d = self._core_dir()
+            if d is not None:
+                self._chain_cache_path = d / "traj.json"
+        except Exception:
+            self._chain_cache_path = None
+        if self._chain_cache_path is None or not self._chain_cache_path.is_file():
+            return
+        if not self._cache_scene_ok(self._chain_cache_path):
+            self._cache_discard_stale(self._chain_cache_path, "traj.json")
+            return
+        try:
+            for line in self._chain_cache_path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if isinstance(rec, dict) and "k" in rec and "v" in rec:
+                        self._chain_cache[rec["k"]] = rec["v"]
+                except Exception:
+                    continue  # torn tail line
+        except Exception:
+            self._chain_cache = {}
+
+    def _chain_j5_turns(self, pts):
+        """The chain's j5 turn carry (from its start point) — keys are
+        canonical so a wound wrist replays the same chain regardless of
+        how many turns it has accumulated; retrieval re-carries."""
+        try:
+            if self.j5_infinite and len(pts[0]) > 5:
+                s5 = float(pts[0][5])
+                return round((s5 - self._wrap180(s5)) / 360.0)
+        except Exception:
+            pass
+        return 0
+
+    def _chain_key(self, pts, vel, accel, jerk, corner_cap, padding, sig, turns, label):
+        kp = []
+        for q in pts:
+            q = [round(float(v), 3) for v in q]
+            if turns and len(q) > 5:
+                q[5] = round(q[5] - 360.0 * turns, 3)
+            kp.append(q)
+        return json.dumps([
+            label,   # the chain's point SPACE (cjmove: joints, clmove: xyzj)
+            kp,
+            round(float(vel), 3), round(float(accel), 3), round(float(jerk), 3),
+            round(float(corner_cap), 3),
+            -1 if padding is None else round(float(padding), 3),
+            sig,
+        ], separators=(",", ":"))
+
+    def _chain_cache_put(self, key, pts, vajs, corners, stops):
+        try:
+            row = {
+                "p": [[round(float(v), 4) for v in q] for q in pts],
+                "vaj": [[round(float(v), 4) for v in q] for q in vajs],
+                "c": [round(float(v), 4) for v in corners],
+                "s": [bool(v) for v in stops],
+            }
+            self._chain_cache[key] = row
+            if self._chain_cache_path is None:
+                return
+            _fresh = not self._chain_cache_path.is_file()
+            with open(self._chain_cache_path, "a") as f:
+                if _fresh:
+                    self._cache_stamp(f)
+                f.write(json.dumps({"k": key, "v": row}, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
     @staticmethod
     def _wrap180(x):
         """Canonical name of a shaft angle: (-180, 180]."""
@@ -1963,6 +2046,47 @@ class Core:
         if n_sec < 1:
             return pts, [], [], []
         t0 = time.perf_counter()
+
+        # ── certification cache (core/traj.json) ─────────────────────
+        # Everything below is deterministic in (pts, vaj, corner cap,
+        # padding, tool boxes) — the tool-box signature covers the
+        # carried payload, the scene stamp covers the static layout.
+        # Warm runs replay in ~a millisecond instead of re-verifying
+        # (seconds per chain on the Pi). Creation-time validation, the
+        # path.json contract.
+        if self._chain_cache is None:
+            self._chain_cache_init()
+        _sig = None
+        if padding is not None:
+            try:
+                _cw, _ct = self.workspace.compute_collision_boxes(
+                    max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN))
+                # BOTH box sets join the key: corners are validated
+                # against the WORLD too — a fillet cut beside an empty
+                # slot must not replay when the slot is occupied.
+                _sig = (self._path_tool_sig(_ct), self._path_tool_sig(_cw))
+            except Exception:
+                _sig = None
+        _turns = self._chain_j5_turns(pts)
+        _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns, label)
+        _hit = self._chain_cache.get(_ck)
+        if _hit is not None:
+            try:
+                pts_h = [[float(v) for v in q] for q in _hit["p"]]
+                if _turns:
+                    for q in pts_h:
+                        if len(q) > 5:
+                            q[5] += 360.0 * _turns
+                vajs_h = [[float(v) for v in q] for q in _hit["vaj"]]
+                corners_h = [float(v) for v in _hit["c"]]
+                stops_h = [bool(v) for v in _hit["s"]]
+                print(f"[traj] {len(pts_h)} pts -> {len(vajs_h)} {label} sections (cached), "
+                      f"vels {[round(v[0]) for v in vajs_h]}, "
+                      f"in {(time.perf_counter() - t0) * 1000:.0f} ms")
+                return pts_h, vajs_h, corners_h, stops_h
+            except Exception:
+                pass  # malformed row — fall through to a fresh solve
+
         a_budget_est = float(accel) / 2.0
 
         def _turn_dot(A, B, C):
@@ -2332,6 +2456,12 @@ class Core:
               f"legs {legs}, bind {bind}, "
               f"certified: joint vel {jv_max:.0f}/{vel:.0f}, acc {ja_max:.0f}/{accel:.0f}, "
               f"solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
+        _cp = [list(q) for q in pts]
+        if _turns:
+            for q in _cp:
+                if len(q) > 5:
+                    q[5] -= 360.0 * _turns
+        self._chain_cache_put(_ck, _cp, vajs, corners, stops)
         return pts, vajs, corners, stops
 
     def _fw_verify_chain(self, pts, vajs, corners, stops=None, dt=0.004):
