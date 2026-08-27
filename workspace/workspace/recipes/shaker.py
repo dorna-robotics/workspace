@@ -12,12 +12,6 @@ class Shaker(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5
-        # NEVER fuse a PLACE at the shaker: the head ROTATES after
-        # loading — a held exit would leave the robot parked inside the
-        # swept volume when the shake starts (bench-observed hazard).
-        # PICK re-enables fusing per call below: unloading works on a
-        # parked head that stays parked.
-        fuse=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -89,5 +83,12 @@ class Shaker(Recipe):
 
 
     def place(self, anchor="A1", solid_name="rotating", **kwargs):
-        """Place into a shaker well — targets the ``rotating`` solid."""
+        """Place into a shaker well — targets the ``rotating`` solid.
+
+        NEVER fuses by default: the head ROTATES after loading — a
+        held exit would leave the robot parked inside the swept volume
+        when the shake starts (bench-observed hazard). Pick fuses
+        normally (unloading works on a parked head that stays parked);
+        an explicit per-call ``fuse`` still wins here."""
+        kwargs.setdefault("fuse", False)
         return super().place(anchor=anchor, solid_name=solid_name, **kwargs)
