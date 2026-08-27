@@ -1566,6 +1566,13 @@ class Core:
             self._book_init()
         return self._book.get(key) if key else None
 
+    def book_reload(self):
+        """Re-read the book file — called at each RUN START (launcher)
+        so seams recorded by the previous run become consultable. The
+        snapshot rule (book_note) keeps them invisible mid-run."""
+        self._book_init()
+        self._book_pending = None
+
     def book_arm(self, key):
         """Arm a classic seam for recording — the next merge-capable
         motion (book_note) becomes its recorded partner."""
@@ -1577,16 +1584,21 @@ class Core:
 
     def book_note(self, primitive, end_pt):
         """Called at every merge-capable site: records the armed seam's
-        partner. No-op unless a seam is pending."""
+        partner. No-op unless a seam is pending.
+
+        SNAPSHOT RULE: the record goes to the FILE only — never into
+        the in-memory book this run reads from. A seam recorded early
+        in a run must not fuse later in the SAME run (repeated
+        stations — the tool rack — hit their own fresh record and the
+        run stopped being classic; the shifted solve moments re-rolled
+        the IK dice — bench-caught). Records become consultable when
+        the next run reloads the book (book_reload)."""
         if self._book_pending is None:
             return
         key, self._book_pending = self._book_pending, None
         sig = self.book_sig(primitive, end_pt)
         if sig is None:
             return
-        if self._book is None:
-            self._book_init()
-        self._book[key] = sig
         self._book_append(key, sig)
         print(f"[fusion] book: recorded seam -> {sig['p']} "
               f"(fuses on the next run)")
@@ -1598,11 +1610,17 @@ class Core:
             return True   # tail not book-gated (operator flows) — legacy splice
         got = self.book_sig(primitive, end_pt)
         if got is None or got["p"] != exp.get("p"):
+            print(f"[fusion] book: expected {exp.get('p')}, arriving "
+                  f"{None if got is None else got['p']}")
             return False
         try:
             e1, e2 = exp.get("e", []), got["e"]
-            return (len(e1) == len(e2)
-                    and all(abs(a - b) <= 0.05 for a, b in zip(e1, e2)))
+            ok = (len(e1) == len(e2)
+                  and all(abs(a - b) <= 0.05 for a, b in zip(e1, e2)))
+            if not ok:
+                print(f"[fusion] book: target drifted — expected {e1}, "
+                      f"arriving {e2}")
+            return ok
         except Exception:
             return False
 
@@ -1744,6 +1762,7 @@ class Core:
 
         if ref_joints is None:
             ref_joints = list(cur)
+
 
         # --- helper: rails r where |p - (C0 + [r,0,0])| = base_distance and r ∈ [rmin, rmax]
         def rail_solutions(px, py, pz, c0x, c0y, c0z, d, rmin, rmax):

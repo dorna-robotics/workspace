@@ -636,18 +636,21 @@ class Recipe:
         # chain when the fused motion starts and joined + pin-verified
         # at its end — same overlap contract as approach IO. Any
         # clearance lead the station needs is a declared delay row in
-        # its own IO config. A plain flush keeps today's order: motion
-        # first, IO synchronously after.
+        # its own IO config. The FLUSH path uses the same lane-ordered
+        # fire+join — a synchronous apply here raced the next verb's
+        # already-in-flight approach chain on the lane (bench: the
+        # {pin: expected 1, actual 0} verification failure returned).
         io_sync = None
         if output_exit:
             io_sync = lambda: self._apply_output_config(rt, output_exit)
 
         def _flush():
+            io_h = self._output_async(output_exit) if output_exit else None
             self._move_along_path(rt, group, target_solid, target_anchor,
                                   tool_dict=tool_dict, j5_override=j5_override,
                                   vaj_map=vaj_map)
-            if io_sync is not None:
-                io_sync()
+            if io_h is not None:
+                self._output_join(io_h)
 
         tail = {
             "points": pts,

@@ -1115,6 +1115,14 @@ def run_protocol(
         "%s: starting BT engine — %d action(s) in plan",
         project_name, len(replanner.last_plan or []),
     )
+    # Replay fusion: make the previous run's seam recordings
+    # consultable NOW — and only now. Mid-run recordings stay
+    # invisible (snapshot rule, core.book_note), so this run's
+    # lookups see exactly the book as it stood at its start.
+    try:
+        core.book_reload()
+    except Exception:
+        log.warning("%s: motion-book reload failed", project_name, exc_info=True)
     try:
         status = engine.run()
     finally:
