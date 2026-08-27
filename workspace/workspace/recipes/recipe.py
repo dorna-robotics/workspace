@@ -70,7 +70,7 @@ class Recipe:
         # executes it to today's stop instead. A per-call ``fuse``
         # wins.
         #
-        # DEFAULT OFF — and fuse=True now means REPLAY FUSION
+        # fuse=True means REPLAY FUSION
         # (docs/internal/replay-fusion-plan.md): a seam holds ONLY when
         # a previous classic run recorded that the next motion merges
         # there (core/motion_book.json). Unrecorded seams execute
@@ -78,8 +78,11 @@ class Recipe:
         # whose next motion doesn't match its record flushes classic
         # and drops the record. First run after any cache wipe is
         # therefore ALWAYS classic motion; fusion appears from run 2,
-        # only where proven.
-        fuse=False,
+        # only where proven — which is why ON is a safe default: it
+        # never gambles. ``fuse: false`` in recipes.j2 keeps a station
+        # permanently classic (a deliberate stop, a read that needs a
+        # clear robot).
+        fuse=True,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
