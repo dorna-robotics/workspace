@@ -28,7 +28,7 @@ FALCON_RACK    = "rack_falcon"
 TIP_RACK       = "rack_tip"
 
 # Pipetting parameters
-IMMERSE_DEPTH  = 20    # mm below the tube top
+IMMERSE_DIST  = 20    # mm below the tube top
 VOL_UL         = 400   # microliters
 
 
@@ -149,7 +149,7 @@ class Transfer(Action):
             return False
 
         # 2. Aspirate from the source tube.
-        rcp["falcon_pipette"].immerse(anchor=source_anchor, depth=IMMERSE_DEPTH)
+        rcp["falcon_pipette"].immerse(anchor=source_anchor, dist=IMMERSE_DIST)
         ok = rcp["falcon_pipette"].aspirate(vol=VOL_UL)
         rcp["falcon_pipette"].retract(anchor=source_anchor)
         if not ok:
@@ -157,7 +157,7 @@ class Transfer(Action):
             return False
 
         # 3. Dispense into the destination tube.
-        rcp["falcon_pipette"].immerse(anchor=dest_anchor, depth=IMMERSE_DEPTH)
+        rcp["falcon_pipette"].immerse(anchor=dest_anchor, dist=IMMERSE_DIST)
         ok = rcp["falcon_pipette"].dispense(vol=VOL_UL)
         rcp["falcon_pipette"].retract(anchor=dest_anchor)
         if not ok:

@@ -164,7 +164,7 @@ class Immerse(Action):
         rt.step(_progress_pct(self), level="progress")
         # The vial mouth is the slot anchor; dive far enough to submerge
         # the bulb inside the 40 ml vial.
-        rcp["vials"].immerse(anchor=slot, depth=60)
+        rcp["vials"].immerse(anchor=slot, dist=60)
         return "immersed"
 
 

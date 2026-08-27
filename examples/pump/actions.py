@@ -177,7 +177,7 @@ class NeedleDose(Action):
         # with lateral motion still in it — the fillet rounds the
         # hover corner — and it needs padding 130 to even solve. The
         # hover-stop + pure-vertical lmove below is the right entry.)
-        rcp["vials"].immerse(anchor=slot, depth=60, approach=False, padding=70)
+        rcp["vials"].immerse(anchor=slot, dist=60, approach=False, padding=70)
         ok = rcp["vials"].dispense(ul)
         rcp["vials"].retract(anchor=slot, padding=70)
         if ok is False:

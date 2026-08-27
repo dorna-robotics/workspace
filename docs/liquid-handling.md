@@ -289,7 +289,7 @@ In a typical protocol they compose like this (this is
 rcp["pump"].prime(to_port="flush")           # Pump: fluid prep, no motion
 rcp["pump"].aspirate(150, port="reservoir")  # Pump: fill barrel from source
 
-rcp["vials"].immerse(anchor="A3", depth=60)  # DosingSite: dip carried needle
+rcp["vials"].immerse(anchor="A3", dist=60)  # DosingSite: dip carried needle
 rcp["vials"].dispense(150)                   #   dose this vial
 rcp["vials"].retract(anchor="A3")            #   pull out (lock_j5 applies, §3)
 

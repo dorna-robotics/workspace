@@ -128,20 +128,20 @@ class PhMeterSite(Recipe):
     # ── Motion ────────────────────────────────────────────────────────
     # The probe is the TOOL, not a held load, so ``height_load`` is 0 and
     # the tool's own ``tip`` anchor (192.1 mm below the flange) is what
-    # reaches ``depth`` below the target anchor.
+    # reaches ``dist`` below the target anchor.
 
-    def immerse(self, anchor="top", depth=20, approach=False, padding=60, **kwargs):
-        """Dip the probe ``depth`` mm below ``anchor`` on this site.
+    def immerse(self, anchor="top", dist=20, approach=False, padding=60, **kwargs):
+        """Dip the probe ``dist`` mm below ``anchor`` on this site.
 
         Defaults are cup-shaped: ``anchor="top"`` (the container rim),
         two-phase motion (hover, then a straight dive) because the well
         is deep and narrow, and 60 mm of clearance above the rim. The
         glass bulb must end up submerged — a dry electrode reads
-        garbage, so ``depth`` should clear the bulb (the last ~8 mm of
+        garbage, so ``dist`` should clear the bulb (the last ~8 mm of
         the shaft), not just kiss the surface.
         """
         return super().immerse(
-            dist=depth, anchor=anchor, approach=approach, padding=padding, **kwargs,
+            dist=dist, anchor=anchor, approach=approach, padding=padding, **kwargs,
         )
 
     def retract(self, anchor="top", padding=60, **kwargs):

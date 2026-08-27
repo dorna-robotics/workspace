@@ -86,8 +86,8 @@ class DosingSite(Recipe):
         return self.touch(**motion_prm)
 
 
-    def immerse(self, anchor="place", depth=0, approach=True, padding=50, **kwargs):
-        """Dip the tip ``depth`` mm into the well at ``anchor`` of the plate on this site.
+    def immerse(self, anchor="place", dist=0, approach=True, padding=50, **kwargs):
+        """Dip the tip ``dist`` mm into the well at ``anchor`` of the plate on this site.
 
         Thin wrapper: resolves the plate attached to the site and delegates
         to ``Recipe.immerse`` with the pipetting pattern (``approach=True``,
@@ -95,7 +95,7 @@ class DosingSite(Recipe):
         """
         component, solid_name = self._resolve_attached_component()
         return super().immerse(
-            dist=depth, anchor=anchor, solid_name=solid_name, component=component,
+            dist=dist, anchor=anchor, solid_name=solid_name, component=component,
             approach=approach, padding=padding, **kwargs,
         )
 

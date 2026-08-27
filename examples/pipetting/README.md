@@ -14,7 +14,7 @@ fully loaded (20 tubes).
 | Pattern | Where |
 |---|---|
 | **`DosingSite` recipe** | One recipe alias per pipetting target: `tip_rack`, `waste_bin`, `falcon_pipette`. The recipe class has `pick_tip` / `eject_tip` / `aspirate` / `dispense` / `immerse` / `retract` — all the building blocks. |
-| **immerse / aspirate / retract triple** | The aspirate side of a transfer: descend tip below the liquid surface (`immerse(depth=N)`), suck up `vol` µL, lift back out (`retract`). Mirror it on the dispense side. |
+| **immerse / aspirate / retract triple** | The aspirate side of a transfer: descend tip below the liquid surface (`immerse(dist=N)`), suck up `vol` µL, lift back out (`retract`). Mirror it on the dispense side. |
 | **Fresh tip per transfer** | Every `Transfer(t)` action picks a different tip slot (`TIP_ANCHORS[t]`) to avoid cross-contamination. The framework's tool-changer doesn't enter here — tips are handled by the DosingSite recipe. |
 | **Adapter-resolver pattern** | All three DosingSite recipes target an `adapter_plate_*` component. The resolver walks the kinematic tree down to whatever rack (`rack_falcon_15ml`, `rack_axygen_180ul`, `rack_tip_waste_bin`) is sitting on it. Same trick the capping example uses with `cap_holder`. |
 | **Per-transfer PDDL planning** | One `Transfer(t)` action per t in 0..transfer_count-1, scheduled in order by the `~transferred(t)` precondition. |
@@ -23,10 +23,10 @@ fully loaded (20 tubes).
 
 ```
 tip_rack.pick_tip(A{t+1})              # grab a fresh tip
-falcon_pipette.immerse(A1, depth=20)   # descend into source
+falcon_pipette.immerse(A1, dist=20)   # descend into source
 falcon_pipette.aspirate(vol=400)       # suck up 400 µL
 falcon_pipette.retract(A1)             # lift out
-falcon_pipette.immerse(A{t+2}, depth=20)  # descend into dest
+falcon_pipette.immerse(A{t+2}, dist=20)  # descend into dest
 falcon_pipette.dispense(vol=400)       # push out 400 µL
 falcon_pipette.retract(A{t+2})         # lift out
 waste_bin.eject_tip()                  # drop the used tip
