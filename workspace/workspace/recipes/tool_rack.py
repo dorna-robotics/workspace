@@ -112,6 +112,14 @@ class ToolRack(Recipe):
         deactivates the changer, transfers the tool solid to the rack, and
         retracts.
 
+        NEVER fuses its exit: the exit IO is the changer's RE-ARM
+        (output_attach) — deferred onto a fused exit it fired while
+        the flange was still lifting off the seated tool, the changer
+        re-engaged, and the tool never separated (real bench — pins
+        verified, sim cannot catch the mechanics). The re-arm must
+        run with the corridor fully cleared, i.e. after a classic
+        exit. PICK exits keep fusing.
+
         Raises:
             RecipeError: If the slot is already occupied, no tool on robot,
                 or no tool changer.
@@ -178,7 +186,8 @@ class ToolRack(Recipe):
                             [0, 0, -padding-height_offset, 0, 0, 0],
                             [-2*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
-            "output_exit": output_exit
+            "output_exit": output_exit,
+            "fuse": False,   # see docstring — the re-arm needs a cleared corridor
         }
 
         # motion
