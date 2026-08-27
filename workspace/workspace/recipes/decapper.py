@@ -60,7 +60,7 @@ class Decapper(Recipe):
         exit=True,
         padding=None,
         gap=2,
-        lmove_vaj=[500, 1000, 8000],
+        lmove_vaj=[600, 2000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
         twist=None,
