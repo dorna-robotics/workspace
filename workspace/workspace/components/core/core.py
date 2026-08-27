@@ -1352,6 +1352,16 @@ class Core:
                 if d is None:
                     return
                 self._fusion_log_path = d / "fusion_log.jsonl"
+                # Bounded on disk: at boot, a journal past 2 MB rotates
+                # to .old (one generation kept) — an SD-card Pi never
+                # accumulates months of decisions.
+                try:
+                    if (self._fusion_log_path.is_file()
+                            and self._fusion_log_path.stat().st_size > 2_000_000):
+                        self._fusion_log_path.replace(
+                            self._fusion_log_path.with_suffix(".jsonl.old"))
+                except Exception:
+                    pass
             rec = {"ts": round(time.time(), 3), "ev": str(ev)}
             rec.update({k: v for k, v in fields.items() if v is not None})
             with open(self._fusion_log_path, "a") as f:
