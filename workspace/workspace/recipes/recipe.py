@@ -68,10 +68,16 @@ class Recipe:
         # verb's fold fuses it with its planned travel into ONE chain;
         # any barrier (exit IO, an unfusable path, a failed action)
         # executes it to today's stop instead. A per-call ``fuse``
-        # wins; set ``fuse: false`` in recipes.j2 to opt a station out
-        # (a station that wants the arm parked clear before reading, a
-        # station whose exit stop is deliberate).
-        fuse=True,
+        # wins.
+        #
+        # DEFAULT OFF: the online hold changes WHEN solves run, and the
+        # IK candidate filter is silently sensitive to that (bench: the
+        # rail-candidate swoop, the cross-system x-shift). Classic
+        # stop-and-go is the platform behavior until fusion returns as
+        # a replay optimization driven by a recorded motion book —
+        # design: docs/internal/replay-fusion-plan.md. Opting a recipe
+        # in with ``fuse: true`` still works, eyes open.
+        fuse=False,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See

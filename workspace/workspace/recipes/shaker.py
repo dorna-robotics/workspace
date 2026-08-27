@@ -84,10 +84,7 @@ class Shaker(Recipe):
 
     def pick(self, anchor="A1", solid_name="rotating", **kwargs):
         """Pick from a shaker well — targets the ``rotating`` solid so the
-        pick follows the shaker's current orientation. Fuses its exit
-        (the head is parked and stays parked after an unload); only
-        PLACE keeps the recipe's fuse=False stop."""
-        kwargs.setdefault("fuse", True)
+        pick follows the shaker's current orientation."""
         return super().pick(anchor=anchor, solid_name=solid_name, **kwargs)
 
 
