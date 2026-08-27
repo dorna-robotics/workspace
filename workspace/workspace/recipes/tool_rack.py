@@ -13,6 +13,11 @@ class ToolRack(Recipe):
         lmove_vaj=[300, 450, 1500], # [150, 350, 1500],
         # calibration
         calibrate_abc=True,
+        # The tool changer is a LATCH: every open/close must happen
+        # with the robot stopped at its classic moment — never
+        # overlapped with motion (bench: the latch visibly opened as
+        # the next motion started). Discrete IO for every verb here.
+        io_overlap=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):

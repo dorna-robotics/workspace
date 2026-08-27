@@ -1748,14 +1748,23 @@ class Recipe:
         #   approach=False      → contact leg only, as before.
         approach = [list(g) for g in approach if g]
         exit = [list(g) for g in exit if g]
+        # Resolve fuse HERE — it governs IO shape below, not just the
+        # exit deposit.
+        if fuse is None:
+            fuse = self.fuse
         # IO chain: overlapped UNDER the first group when a boundary
         # exists to verify at (the join + physical pin verification IS
         # the first group boundary). Single group -> no boundary ->
         # the chain completes and pin-verifies BEFORE any motion.
         # Either way, contact never starts on an unverified chain.
+        #
+        # fuse=False MEANS DISCRETE: the verb behaves as if fusion
+        # never existed — IO applies synchronously at its classic
+        # place, robot stopped, never overlapped (bench: the changer
+        # latch visibly re-opened as the next motion started).
         io_handle = None
         if output_approach:
-            if len(approach) > 1 and self.io_overlap:
+            if len(approach) > 1 and self.io_overlap and fuse:
                 io_handle = self._output_async(output_approach)
             else:
                 self._output_join(self._output_async(output_approach))
@@ -1809,8 +1818,6 @@ class Recipe:
         # padding is set too low).
         # Same resolution as padding: per-call > recipe (recipes.j2 /
         # class DEFAULTS).
-        if fuse is None:
-            fuse = self.fuse
         exit_io_deferred = False
         for gi, group in enumerate(exit):
             # Deferred tail (docs/motion-guide.md §12 + replay fusion,
