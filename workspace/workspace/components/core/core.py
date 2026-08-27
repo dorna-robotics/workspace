@@ -1340,6 +1340,25 @@ class Core:
             return list(self._motion_tail["points"][-1])
         return list(self.robot_api.joint())
 
+    def fusion_journal(self, ev, **fields):
+        """One JSONL line per fusion decision (core/fusion_log.jsonl):
+        hold / merge / flush / record / learn / mismatch / classic.
+        THE diagnosis surface for replay fusion — the console prints
+        are transient, this file is not. Always on, never raises,
+        never blocks."""
+        try:
+            if getattr(self, "_fusion_log_path", None) is None:
+                d = self._core_dir()
+                if d is None:
+                    return
+                self._fusion_log_path = d / "fusion_log.jsonl"
+            rec = {"ts": round(time.time(), 3), "ev": str(ev)}
+            rec.update({k: v for k, v in fields.items() if v is not None})
+            with open(self._fusion_log_path, "a") as f:
+                f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
     def tail_deposit(self, tail):
         """Hold a solved tail: dict with ``points`` (joint waypoints,
         [0] = the live pose), ``motion_class``, ``tool_pose``,
@@ -1349,6 +1368,8 @@ class Core:
         self._motion_tail = tail
         print(f"[fusion] hold: {tail.get('owner')} "
               f"({len(tail.get('points', [])) - 1} leg(s))")
+        self.fusion_journal("hold", owner=tail.get("owner"),
+                            legs=len(tail.get("points", [])) - 1)
 
     def tail_consume(self):
         """Take the held tail — the caller now owns its execution."""
@@ -1382,11 +1403,15 @@ class Core:
                    for a, b in zip(live, t["points"][0])):
                 print(f"[fusion] held tail from {t.get('owner')} dropped — "
                       f"robot moved since deposit; executing it would jump")
+                self.fusion_journal("dropped", owner=t.get("owner"),
+                                    reason="robot moved since deposit")
                 return
         except Exception:
             pass
         print(f"[fusion] flush({reason or 'barrier'}): {t.get('owner')} "
               f"runs to its stop")
+        self.fusion_journal("flush", owner=t.get("owner"),
+                            reason=reason or "barrier")
         t["flush_fn"]()
 
     def _chain_cache_init(self):
@@ -1611,6 +1636,8 @@ class Core:
         self._book_append(key, sig)
         print(f"[fusion] book: {verb} -> {sig['p']} "
               f"(fuses on the next run)")
+        self.fusion_journal("record", what=verb, partner=sig.get("p"),
+                            seam=key[:80])
 
     def book_check(self, tail, primitive, end_pt):
         """Does the arriving motion match ANY of the held tail's
@@ -1633,6 +1660,10 @@ class Core:
                 continue
         print(f"[fusion] book: none of {len(sigs)} recorded partner(s) "
               f"match the arriving {got['p']} — classic, and learning it")
+        self.fusion_journal("mismatch", owner=tail.get("owner"),
+                            partners=len(sigs), arriving=got.get("p"),
+                            expected=[s.get("e") for s in sigs],
+                            got=got.get("e"))
         return False
 
     def book_drop(self, key):

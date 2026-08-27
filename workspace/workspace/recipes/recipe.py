@@ -958,6 +958,9 @@ class Recipe:
                 self.core.tail_consume()
                 print(f"[fusion] merge: {fuse_tail.get('owner')} + "
                       f"{type(self).__name__} planned hop -> one {planned} chain")
+                self.core.fusion_journal("merge", owner=fuse_tail.get("owner"),
+                                         consumer=f"{type(self).__name__} planned hop",
+                                         primitive=planned)
             merged_io = None
             if fuse_tail is not None and fuse_tail.get("io_start"):
                 merged_io = (fuse_tail["io_start"], fuse_tail["io_join"],
@@ -1149,6 +1152,9 @@ class Recipe:
                     self.core.tail_consume()
                     print(f"[fusion] merge: {fuse_tail.get('owner')} + "
                           f"{type(self).__name__} travel -> one {planned} chain")
+                    self.core.fusion_journal("merge", owner=fuse_tail.get("owner"),
+                                             consumer=type(self).__name__,
+                                             primitive=planned)
                     if fuse_tail.get("io_start"):
                         pending_io = (fuse_tail["io_start"], fuse_tail["io_join"])
                     fuse_tail = None
