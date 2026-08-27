@@ -1016,22 +1016,6 @@ class Recipe:
         # frontier must stay armed for the IK/planning below) and
         # consume at the successful splice; every other path executes
         # the tail to its normal stop before moving.
-        # Replay fusion: a fold is a merge-capable site — record the
-        # armed seam's partner BEFORE the no-tail flush below (that
-        # flush is a no-op for motion, but it cancels recordings; a
-        # merge-capable arrival is precisely NOT a cancellation). The
-        # partner's identity is its solved final target — an extra
-        # solve here is answered by the ik cache.
-        if (self.core._book_pending is not None
-                and first_approach and len(path) > 1 and blend and blend > 0
-                and planned in ("smove", "tmove", "cjmove", "clmove")):
-            try:
-                Jend = self._solve_ik(target_solid, target_anchor, path[-1],
-                                      tool_dict, j5_override)
-                self.core.book_note(planned, [float(v) for v in Jend])
-            except Exception:
-                self.core.book_disarm()
-
         fuse_tail = None
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
@@ -1125,10 +1109,17 @@ class Recipe:
                 # after the fact. The pin covers only THIS verb's part
                 # — a spliced tail is already exit-pinned.
                 points = self._pin_j5(points, j5_override)
-                # Replay fusion: verify a held tail against its record
-                # before the splice (recording happened before the
-                # peek). A mismatch flushes classic and drops the
-                # record (tail_flush does both).
+                # Replay fusion: this fold is a merge-capable site.
+                # Record the armed seam's partner from the fold's OWN
+                # solved points — never a separate early solve: solves
+                # must happen at their classic moments (an early solve
+                # of path[-1] before motion_plan minted a different
+                # branch into the ik cache — bench-caught). The
+                # pending survives the pre-peek settle because those
+                # flushes pass disarm=False. Then verify a held tail
+                # against its record; a mismatch flushes classic and
+                # drops the record (tail_flush does both).
+                self.core.book_note(planned, points[-1])
                 if (fuse_tail is not None
                         and not self.core.book_check(fuse_tail, planned,
                                                      points[-1])):
