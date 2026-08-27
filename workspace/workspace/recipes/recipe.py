@@ -70,13 +70,15 @@ class Recipe:
         # executes it to today's stop instead. A per-call ``fuse``
         # wins.
         #
-        # DEFAULT OFF: the online hold changes WHEN solves run, and the
-        # IK candidate filter is silently sensitive to that (bench: the
-        # rail-candidate swoop, the cross-system x-shift). Classic
-        # stop-and-go is the platform behavior until fusion returns as
-        # a replay optimization driven by a recorded motion book —
-        # design: docs/internal/replay-fusion-plan.md. Opting a recipe
-        # in with ``fuse: true`` still works, eyes open.
+        # DEFAULT OFF — and fuse=True now means REPLAY FUSION
+        # (docs/internal/replay-fusion-plan.md): a seam holds ONLY when
+        # a previous classic run recorded that the next motion merges
+        # there (core/motion_book.json). Unrecorded seams execute
+        # exactly like fuse=False and record themselves; a held seam
+        # whose next motion doesn't match its record flushes classic
+        # and drops the record. First run after any cache wipe is
+        # therefore ALWAYS classic motion; fusion appears from run 2,
+        # only where proven.
         fuse=False,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
@@ -600,8 +602,13 @@ class Recipe:
         executing it. Solved NOW (IK + j5 pin, exactly what execution
         would command); the flush closure replays the group through the
         normal path — the robot has not moved since deposit, so the
-        replay reproduces today's motion bit for bit. Returns False if
-        the group doesn't solve (caller executes normally)."""
+        replay reproduces today's motion bit for bit.
+
+        Replay fusion: holds ONLY when the book has this seam. Returns
+        (held, arm_key): (True, None) on hold; (False, key) for an
+        unrecorded seam — the caller executes the group classically and
+        arms ``key`` AFTER it ran; (False, None) when the group didn't
+        solve."""
         try:
             pts = [[float(v) for v in self._cur_joints()]]
             for offset in group:
@@ -609,7 +616,13 @@ class Recipe:
                                    tool_dict, j5_override)
                 pts.append([float(v) for v in J])
         except Exception:
-            return False
+            return False, None
+
+        key = self.core.book_key(type(self).__name__, pts)
+        sig = self.core.book_lookup(key)
+        if sig is None:
+            return False, key
+
         tp = [0, 0, 0, 0, 0, 0]
         if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
             tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
@@ -639,33 +652,52 @@ class Recipe:
             "tool_pose": [float(v) for v in tp],
             "owner": type(self).__name__,
             "flush_fn": _flush,
+            "book_key": key,
+            "book_sig": sig,
         }
         if output_exit:
             tail["io_start"] = lambda: self._output_async(output_exit)
             tail["io_join"] = lambda h: self._output_join(h)
             tail["io_sync"] = io_sync
         self.core.tail_deposit(tail)
-        return True
+        return True, None
 
     def _tail_deposit_lift(self, rt, J, vaj, owner=None, tool_pose=None):
         """Hold a single pre-solved lift/hop target as a deferred tail —
         for motions that don't go through ``touch``'s exit machinery
         (the decapper's post-screw lift, retract's direct lmove). The
-        flush closure replays the exact lmove the verb would have run."""
+        flush closure replays the exact lmove the verb would have run.
+
+        Replay fusion: held ONLY when the book has this seam; an
+        unrecorded seam executes the lmove classically HERE and arms
+        the recording afterwards (arming after the motion so the lift
+        itself cannot cancel it at the gate)."""
         J = [float(v) for v in J]
         vel, accel, jerk = vaj
         tp = [float(v) for v in (tool_pose or [0, 0, 0, 0, 0, 0])]
+        who = owner or type(self).__name__
+        pts = [[float(v) for v in self._cur_joints()], list(J)]
+
+        key = self.core.book_key(who, pts)
+        sig = self.core.book_lookup(key)
+        if sig is None:
+            rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
+                     tool_pose=list(tp))
+            self.core.book_arm(key)
+            return
 
         def _flush():
             rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
                      tool_pose=list(tp))
 
         self.core.tail_deposit({
-            "points": [[float(v) for v in self._cur_joints()], list(J)],
+            "points": pts,
             "motion_class": "lmove",
             "tool_pose": tp,
-            "owner": owner or type(self).__name__,
+            "owner": who,
             "flush_fn": _flush,
+            "book_key": key,
+            "book_sig": sig,
         })
 
     def _tail_deposit_chain(self, rt, points, primitive, vaj_map, motion_plan_kwargs, io=None):
@@ -674,8 +706,19 @@ class Recipe:
         rides into the next fold instead of stopping at its target.
         Planner waypoints are straight joint segments, so the chain
         carries jmove class. ``io`` carries a merged tail's deferred
-        exit IO forward: (io_start, io_join, io_sync)."""
+        exit IO forward: (io_start, io_join, io_sync).
+
+        Replay fusion: holds ONLY when the book has this seam. Returns
+        (held, arm_key) — an unrecorded seam returns (False, key): the
+        caller executes the hop classically and arms ``key`` AFTER it
+        ran."""
         pts = [[float(v) for v in p] for p in points]
+        who = f"{type(self).__name__} planned hop"
+
+        key = self.core.book_key(who, pts)
+        sig = self.core.book_lookup(key)
+        if sig is None:
+            return False, key
 
         def _flush():
             io_h = io[0]() if io else None
@@ -688,13 +731,16 @@ class Recipe:
             "points": pts,
             "motion_class": "jmove",
             "tool_pose": [0, 0, 0, 0, 0, 0],
-            "owner": f"{type(self).__name__} planned hop",
+            "owner": who,
             "flush_fn": _flush,
+            "book_key": key,
+            "book_sig": sig,
         }
         if io:
             tail["io_start"], tail["io_join"] = io[0], io[1]
             tail["io_sync"] = io[2]
         self.core.tail_deposit(tail)
+        return True, None
 
     def _fuse_tail_points(self, tail, points, primitive):
         """Splice a held tail onto the front of a fold path — ONE fused
@@ -860,12 +906,19 @@ class Recipe:
         # (park, direct planned moves) fuses a held tail exactly like
         # the fold does — the tail rides in front of the planner's
         # waypoints as one chain. Anything unfusable flushes first.
+        # Replay fusion: a planned hop is a merge-capable site — record
+        # the armed seam's partner BEFORE the settle below (its target
+        # J is already solved by the caller).
+        if (self.core._book_pending is not None and use_planning
+                and planned in ("smove", "tmove", "cjmove", "clmove")):
+            self.core.book_note(planned, [float(v) for v in J])
+
         fuse_tail = None
         if (use_planning and planned in ("smove", "tmove", "cjmove", "clmove")
                 and self.core._motion_tail is not None):
             fuse_tail = self.core._motion_tail   # peek — frontier stays armed
         else:
-            self.core.tail_flush(reason="direct hop can't fuse")
+            self.core.tail_flush(reason="direct hop can't fuse", disarm=False)
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
@@ -878,6 +931,14 @@ class Recipe:
             # pinned here so a locked wrist stays locked for the whole
             # hop, not just at its end.
             points = self._pin_j5([list(p) for p in points], j5_override)
+            # Replay fusion: verify a held tail against its record
+            # before splicing (recording happened before the peek).
+            if (fuse_tail is not None
+                    and not self.core.book_check(fuse_tail, planned, points[-1])):
+                print(f"[fusion] book mismatch: {fuse_tail.get('owner')} "
+                      f"tail flushes classic")
+                self.core.tail_flush(reason="book mismatch")
+                fuse_tail = None
             if fuse_tail is not None:
                 points = self._fuse_tail_points(fuse_tail, points, planned)
                 self.core.tail_consume()
@@ -887,24 +948,27 @@ class Recipe:
             if fuse_tail is not None and fuse_tail.get("io_start"):
                 merged_io = (fuse_tail["io_start"], fuse_tail["io_join"],
                              fuse_tail.get("io_sync"))
+            arm_key = None
             if (self.fuse and planned in ("smove", "tmove", "cjmove", "clmove")
                     and rt._is_workflow_thread()):
-                # The hop itself defers: arrival at a travel target has
-                # no settle semantics, so the whole chain rides into
-                # the next fold (the stop after "go to start joints"
-                # was this seam). Operator-thread calls execute NOW —
-                # an operator pressing Park wants motion, not a hold.
-                # The run's end flushes whatever is still held
-                # (launcher), so a deferred final Park still parks.
-                # Deferred exit IO from the merged tail rides along.
-                self._tail_deposit_chain(rt, points, planned, vaj_map,
-                                         motion_plan_kwargs, io=merged_io)
-                return
+                # The hop itself can defer: arrival at a travel target
+                # has no settle semantics, so the whole chain rides
+                # into the next fold. Held ONLY when the book has this
+                # seam (replay fusion); unrecorded seams run classic
+                # below and arm the recording afterwards. Operator-
+                # thread calls always execute NOW.
+                held, arm_key = self._tail_deposit_chain(
+                    rt, points, planned, vaj_map,
+                    motion_plan_kwargs, io=merged_io)
+                if held:
+                    return
             io_h = merged_io[0]() if merged_io else None
             self._run_path_motion(rt, points, vaj_map["jmove"], planned,
                                   padding=motion_plan_kwargs.get("padding"))
             if merged_io:
                 merged_io[1](io_h)
+            if arm_key:
+                self.core.book_arm(arm_key)
         else:
             td = tool_dict if tool_dict is not None else {"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]}
             if (self.fuse and unplanned == "lmove"
@@ -949,6 +1013,22 @@ class Recipe:
         # frontier must stay armed for the IK/planning below) and
         # consume at the successful splice; every other path executes
         # the tail to its normal stop before moving.
+        # Replay fusion: a fold is a merge-capable site — record the
+        # armed seam's partner BEFORE the no-tail flush below (that
+        # flush is a no-op for motion, but it cancels recordings; a
+        # merge-capable arrival is precisely NOT a cancellation). The
+        # partner's identity is its solved final target — an extra
+        # solve here is answered by the ik cache.
+        if (self.core._book_pending is not None
+                and first_approach and len(path) > 1 and blend and blend > 0
+                and planned in ("smove", "tmove", "cjmove", "clmove")):
+            try:
+                Jend = self._solve_ik(target_solid, target_anchor, path[-1],
+                                      tool_dict, j5_override)
+                self.core.book_note(planned, [float(v) for v in Jend])
+            except Exception:
+                self.core.book_disarm()
+
         fuse_tail = None
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
@@ -960,7 +1040,8 @@ class Recipe:
             # which merges the tail itself — keep the frontier armed.
             fuse_tail = self.core._motion_tail
         if fuse_tail is None:
-            self.core.tail_flush(reason="next motion is not a fusable travel fold")
+            self.core.tail_flush(reason="next motion is not a fusable travel fold",
+                                 disarm=False)
 
         if not first_approach and len(path) > 1:
             # Grouping IS continuity: a multi-point non-travel group
@@ -1041,6 +1122,17 @@ class Recipe:
                 # after the fact. The pin covers only THIS verb's part
                 # — a spliced tail is already exit-pinned.
                 points = self._pin_j5(points, j5_override)
+                # Replay fusion: verify a held tail against its record
+                # before the splice (recording happened before the
+                # peek). A mismatch flushes classic and drops the
+                # record (tail_flush does both).
+                if (fuse_tail is not None
+                        and not self.core.book_check(fuse_tail, planned,
+                                                     points[-1])):
+                    print(f"[fusion] book mismatch: {fuse_tail.get('owner')} "
+                          f"tail flushes classic")
+                    self.core.tail_flush(reason="book mismatch")
+                    fuse_tail = None
                 pending_io = None
                 if fuse_tail is not None:
                     # THE SPLICE: held tail + travel + first group, one
@@ -1714,20 +1806,24 @@ class Recipe:
             fuse = self.fuse
         exit_io_deferred = False
         for gi, group in enumerate(exit):
-            # Deferred tail (docs/motion-guide.md §12): the LAST exit
-            # group can be held for fusion with the next verb's travel
-            # — but only when nothing after it needs a stopped robot
-            # (exit IO is a barrier by definition). Refusals are LOUD:
-            # a silent non-hold reads as a fusion bug on the bench.
+            # Deferred tail (docs/motion-guide.md §12 + replay fusion,
+            # docs/internal/replay-fusion-plan.md): the LAST exit group
+            # holds ONLY when the book has recorded that the next
+            # motion merges here. An unrecorded seam executes
+            # classically and arms the recording AFTER its motion ran
+            # (so the exit itself cannot cancel it at the gate).
+            arm_key = None
             if fuse and gi == len(exit) - 1:
-                if self._tail_deposit(rt, group, target_solid,
-                                      target_anchor, exit_tool,
-                                      exit_j5, vaj_map,
-                                      output_exit=output_exit):
+                held, arm_key = self._tail_deposit(rt, group, target_solid,
+                                                   target_anchor, exit_tool,
+                                                   exit_j5, vaj_map,
+                                                   output_exit=output_exit)
+                if held:
                     exit_io_deferred = bool(output_exit)
                     break
-                print(f"[fusion] no hold: {type(self).__name__} exit "
-                      f"group did not solve — executing normally")
+                if arm_key is None:
+                    print(f"[fusion] no hold: {type(self).__name__} exit "
+                          f"group did not solve — executing normally")
             self._move_along_path(
                 rt, group, target_solid, target_anchor,
                 tool_dict=exit_tool,
@@ -1735,6 +1831,8 @@ class Recipe:
                 vaj_map=vaj_map,
                 has_motion_plan=has_motion_plan,
             )
+            if arm_key:
+                self.core.book_arm(arm_key)
 
         # output exit — unless it rides with the deferred tail (fired
         # async at the fused chain's start, joined at its end).

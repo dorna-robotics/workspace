@@ -357,6 +357,23 @@ class Core:
         self._chain_cache_path = None
         self._ik_cache_path = None
 
+        # --------- motion book (core/motion_book.json)
+        # Replay fusion (docs/internal/replay-fusion-plan.md): a seam
+        # (a verb's would-be deferred tail) is HELD only when a
+        # previous classic run recorded that the next motion merges
+        # there. _book maps seam key -> the expected next motion's
+        # signature; _book_pending is the seam armed for recording
+        # while its classic execution waits to see what comes next.
+        # Recording clears on any barrier (tail_flush) and on any
+        # non-merge motion crossing the robot-api gate, so only seams
+        # whose IMMEDIATE next motion is a clean merge ever enter the
+        # book — and a held tail that flushes instead of merging drops
+        # its record, so the book converges to seams that merge on
+        # every single run.
+        self._book = None
+        self._book_path = None
+        self._book_pending = None
+
         # --------- planned-path cache (core/path.json in the project folder)
         # --------- background IO channel (one ordered lane)
         # Every async IO chain (approach overlap, deferred exit IO)
@@ -1337,16 +1354,26 @@ class Core:
         self._motion_tail = None
         return t
 
-    def tail_flush(self, reason=""):
+    def tail_flush(self, reason="", disarm=True):
         """Execute the held tail to its normal stop, if any. The record
         is dropped BEFORE the closure runs: a flush aborted by a kill
         or pause must not retry a half-executed tail. A tail whose
         deposit pose no longer matches the live robot (a kill + jog,
         any out-of-band motion) is DROPPED loudly instead of executed —
         replaying it from somewhere else would jump."""
+        # Replay fusion: a barrier cancels any pending seam recording
+        # (disarm=False is passed ONLY by the recipes' pre-merge
+        # settle calls, which are not barriers — real motion that
+        # can't merge disarms at the robot-api gate instead), and a
+        # HELD tail that flushes instead of merging proves its book
+        # record wrong — drop it so the seam is classic again.
+        if disarm:
+            self._book_pending = None
         t = self.tail_consume()
         if t is None:
             return
+        if t.get("book_key"):
+            self.book_drop(t["book_key"])
         try:
             live = list(self.robot_api.joint())
             if any(abs(float(a) - float(b)) > 1.0
@@ -1433,6 +1460,140 @@ class Core:
                 if _fresh:
                     self._cache_stamp(f)
                 f.write(json.dumps({"k": key, "v": row}, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
+    # ── Motion book (replay fusion) ─────────────────────────────────
+    # docs/internal/replay-fusion-plan.md. All points in keys and
+    # signatures are stored canonical-j5 (per-point wrap180) so a
+    # wound wrist replays the same book regardless of accumulated
+    # turns — same rule as the traj cache.
+
+    def _book_init(self):
+        """Load core/motion_book.json — JSONL + scene stamp like the
+        other caches; a row with v=None is a tombstone (last wins).
+        Never raises."""
+        self._book = {}
+        try:
+            d = self._core_dir()
+            if d is not None:
+                self._book_path = d / "motion_book.json"
+        except Exception:
+            self._book_path = None
+        if self._book_path is None or not self._book_path.is_file():
+            return
+        if not self._cache_scene_ok(self._book_path):
+            self._cache_discard_stale(self._book_path, "motion_book.json")
+            return
+        try:
+            for line in self._book_path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if isinstance(rec, dict) and "k" in rec:
+                        if rec.get("v") is None:
+                            self._book.pop(rec["k"], None)
+                        else:
+                            self._book[rec["k"]] = rec["v"]
+                except Exception:
+                    continue  # torn tail line
+        except Exception:
+            self._book = {}
+
+    def _book_canon_pt(self, q):
+        q = [round(float(v), 2) for v in q]
+        if self.j5_infinite and len(q) > 5:
+            q[5] = round(self._wrap180(q[5]), 2)
+        return q
+
+    def book_key(self, owner, pts):
+        """Seam identity: who holds it + the exact points it would
+        hold. None on any trouble (an unkeyable seam is just classic)."""
+        try:
+            return json.dumps([str(owner),
+                               [self._book_canon_pt(q) for q in pts]],
+                              separators=(",", ":"))
+        except Exception:
+            return None
+
+    def book_sig(self, primitive, end_pt):
+        """The next motion's identity: its primitive and its SOLVED
+        final target — deliberately not the planner's waypoints, so a
+        re-planned path to the same destination still matches."""
+        try:
+            return {"p": str(primitive), "e": self._book_canon_pt(end_pt)}
+        except Exception:
+            return None
+
+    def book_lookup(self, key):
+        if self._book is None:
+            self._book_init()
+        return self._book.get(key) if key else None
+
+    def book_arm(self, key):
+        """Arm a classic seam for recording — the next merge-capable
+        motion (book_note) becomes its recorded partner."""
+        if key:
+            self._book_pending = key
+
+    def book_disarm(self):
+        self._book_pending = None
+
+    def book_note(self, primitive, end_pt):
+        """Called at every merge-capable site: records the armed seam's
+        partner. No-op unless a seam is pending."""
+        if self._book_pending is None:
+            return
+        key, self._book_pending = self._book_pending, None
+        sig = self.book_sig(primitive, end_pt)
+        if sig is None:
+            return
+        if self._book is None:
+            self._book_init()
+        self._book[key] = sig
+        self._book_append(key, sig)
+        print(f"[fusion] book: recorded seam -> {sig['p']} "
+              f"(fuses on the next run)")
+
+    def book_check(self, tail, primitive, end_pt):
+        """Does the arriving motion match the held tail's record?"""
+        exp = tail.get("book_sig")
+        if not exp:
+            return True   # tail not book-gated (operator flows) — legacy splice
+        got = self.book_sig(primitive, end_pt)
+        if got is None or got["p"] != exp.get("p"):
+            return False
+        try:
+            e1, e2 = exp.get("e", []), got["e"]
+            return (len(e1) == len(e2)
+                    and all(abs(a - b) <= 0.05 for a, b in zip(e1, e2)))
+        except Exception:
+            return False
+
+    def book_drop(self, key):
+        """Delete a record whose prediction failed — the seam returns
+        to classic and may re-record."""
+        if not key:
+            return
+        if self._book is None:
+            self._book_init()
+        if key in self._book:
+            del self._book[key]
+            self._book_append(key, None)
+            print("[fusion] book: seam record dropped — classic again")
+
+    def _book_append(self, key, val):
+        try:
+            if self._book_path is None:
+                return
+            _fresh = not self._book_path.is_file()
+            with open(self._book_path, "a") as f:
+                if _fresh:
+                    self._cache_stamp(f)
+                f.write(json.dumps({"k": key, "v": val},
+                                   separators=(",", ":")) + "\n")
         except Exception:
             pass
 
@@ -3538,6 +3699,13 @@ class J5WindingGuard:
                 core = self._core
                 if core is not None and core._motion_tail is not None:
                     core.tail_flush(reason="unmerged motion command")
+                if core is not None and core._book_pending is not None:
+                    # A motion that is not a merge-capable fold reached
+                    # the robot before the armed seam found a partner:
+                    # the seam's immediate future is NOT a clean merge —
+                    # it stays classic (recording sites disarm by
+                    # recording BEFORE they command their motion).
+                    core.book_disarm()
                 if (core is not None and core.j5_infinite
                         and name in ("jmove", "cjmove", "smove", "tmove")):
                     self._audit(name, a, k)

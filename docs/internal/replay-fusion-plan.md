@@ -1,6 +1,7 @@
 # Replay fusion — the motion book
 
-**Status: PROPOSED — awaiting approval. No code yet.**
+**Status: APPROVED — implemented on the `fuse` branch (core motion
+book + book-gated deposits/merges). In sim verification.**
 
 ## Problem (one paragraph)
 
@@ -66,6 +67,19 @@ The online hold — `touch` depositing its exit tail *unconditionally*
 when `fuse` is on, and planned hops self-deferring — becomes
 book-gated. No other fusion machinery changes: deposit, frontier,
 merge/splice, barriers, the robot-api gate flush all stay as they are.
+
+## Verified (sim, examples/scale, batch 2, 2026-08-27)
+
+Run 1: zero merges (pure classic), 11 seams armed, 8 recorded — the
+3 unrecorded were seams whose next motion wasn't a clean fold, which
+is exactly the filter working. Run 2: holds + merges at every
+recorded seam, zero errors; the Scale exit — a genuinely branching
+seam (its next target differs per tube) — mismatched, flushed
+classic, and dropped its record. Known v1 behavior: a branching seam
+re-records and re-drops across runs (one extra hold-then-flush per
+occurrence, motion identical to classic). If that log noise ever
+matters, the upgrade path is multi-partner records (a sig LIST per
+key, match-any); deliberately not built until wanted.
 
 ## Open knobs (decide at review)
 
