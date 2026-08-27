@@ -373,6 +373,7 @@ class Core:
         self._book = None
         self._book_path = None
         self._book_pending = None
+        self._book_written = set()
 
         # --------- motion command log (core/motion_log.jsonl)
         # Ground truth for run-to-run comparison: EVERY motion command
@@ -1398,16 +1399,16 @@ class Core:
         # Replay fusion: a barrier cancels any pending seam recording
         # (disarm=False is passed ONLY by the recipes' pre-merge
         # settle calls, which are not barriers — real motion that
-        # can't merge disarms at the robot-api gate instead), and a
-        # HELD tail that flushes instead of merging proves its book
-        # record wrong — drop it so the seam is classic again.
+        # can't merge disarms at the robot-api gate instead). A HELD
+        # tail that flushes is behaviorally classic — its records are
+        # KEPT: with multi-partner records, this occurrence simply
+        # wasn't one of the seam's proven futures (the mismatch site
+        # learns the new future separately, book_learn).
         if disarm:
             self._book_pending = None
         t = self.tail_consume()
         if t is None:
             return
-        if t.get("book_key"):
-            self.book_drop(t["book_key"])
         try:
             live = list(self.robot_api.joint())
             if any(abs(float(a) - float(b)) > 1.0
@@ -1530,7 +1531,14 @@ class Core:
                         if rec.get("v") is None:
                             self._book.pop(rec["k"], None)
                         else:
-                            self._book[rec["k"]] = rec["v"]
+                            # MULTI-PARTNER: one row per proven partner,
+                            # accumulated into a list — a seam that is
+                            # sometimes followed by the next pick and
+                            # sometimes by Park fuses BOTH once both
+                            # were seen (v=None tombstone clears all).
+                            sigs = self._book.setdefault(rec["k"], [])
+                            if rec["v"] not in sigs:
+                                sigs.append(rec["v"])
                 except Exception:
                     continue  # torn tail line
         except Exception:
@@ -1562,9 +1570,11 @@ class Core:
             return None
 
     def book_lookup(self, key):
+        """The seam's list of proven partner signatures, or None."""
         if self._book is None:
             self._book_init()
-        return self._book.get(key) if key else None
+        sigs = self._book.get(key) if key else None
+        return sigs or None
 
     def book_reload(self):
         """Re-read the book file — called at each RUN START (launcher)
@@ -1572,6 +1582,7 @@ class Core:
         snapshot rule (book_note) keeps them invisible mid-run."""
         self._book_init()
         self._book_pending = None
+        self._book_written = set()
 
     def book_arm(self, key):
         """Arm a classic seam for recording — the next merge-capable
@@ -1599,30 +1610,58 @@ class Core:
         sig = self.book_sig(primitive, end_pt)
         if sig is None:
             return
+        self._book_write(key, sig)
+
+    def book_learn(self, key, primitive, end_pt):
+        """A HELD seam met an arriving motion its records didn't cover:
+        learn it as an additional partner (file only — snapshot rule),
+        so both futures fuse from the next run. The tail still flushes
+        classic now; nothing is gambled."""
+        if not key:
+            return
+        sig = self.book_sig(primitive, end_pt)
+        if sig is not None:
+            self._book_write(key, sig, verb="learned partner for held seam")
+
+    def _book_write(self, key, sig, verb="recorded seam"):
+        """Deduped, snapshot-respecting append: skip partners already
+        in the boot snapshot or already written this run."""
+        wid = (key, json.dumps(sig, separators=(",", ":")))
+        if self._book is None:
+            self._book_init()
+        if sig in (self._book.get(key) or []):
+            return
+        if not hasattr(self, "_book_written"):
+            self._book_written = set()
+        if wid in self._book_written:
+            return
+        self._book_written.add(wid)
         self._book_append(key, sig)
-        print(f"[fusion] book: recorded seam -> {sig['p']} "
+        print(f"[fusion] book: {verb} -> {sig['p']} "
               f"(fuses on the next run)")
 
     def book_check(self, tail, primitive, end_pt):
-        """Does the arriving motion match the held tail's record?"""
-        exp = tail.get("book_sig")
-        if not exp:
+        """Does the arriving motion match ANY of the held tail's
+        recorded partners?"""
+        sigs = tail.get("book_sig")
+        if not sigs:
             return True   # tail not book-gated (operator flows) — legacy splice
         got = self.book_sig(primitive, end_pt)
-        if got is None or got["p"] != exp.get("p"):
-            print(f"[fusion] book: expected {exp.get('p')}, arriving "
-                  f"{None if got is None else got['p']}")
+        if got is None:
             return False
-        try:
-            e1, e2 = exp.get("e", []), got["e"]
-            ok = (len(e1) == len(e2)
-                  and all(abs(a - b) <= 0.05 for a, b in zip(e1, e2)))
-            if not ok:
-                print(f"[fusion] book: target drifted — expected {e1}, "
-                      f"arriving {e2}")
-            return ok
-        except Exception:
-            return False
+        for exp in sigs:
+            if got["p"] != exp.get("p"):
+                continue
+            try:
+                e1, e2 = exp.get("e", []), got["e"]
+                if (len(e1) == len(e2)
+                        and all(abs(a - b) <= 0.05 for a, b in zip(e1, e2))):
+                    return True
+            except Exception:
+                continue
+        print(f"[fusion] book: none of {len(sigs)} recorded partner(s) "
+              f"match the arriving {got['p']} — classic, and learning it")
+        return False
 
     def book_drop(self, key):
         """Delete a record whose prediction failed — the seam returns

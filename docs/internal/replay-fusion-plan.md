@@ -75,11 +75,13 @@ Run 1: zero merges (pure classic), 11 seams armed, 8 recorded — the
 is exactly the filter working. Run 2: holds + merges at every
 recorded seam, zero errors; the Scale exit — a genuinely branching
 seam (its next target differs per tube) — mismatched, flushed
-classic, and dropped its record. Known v1 behavior: a branching seam
-re-records and re-drops across runs (one extra hold-then-flush per
-occurrence, motion identical to classic). If that log noise ever
-matters, the upgrade path is multi-partner records (a sig LIST per
-key, match-any); deliberately not built until wanted.
+classic, and dropped its record. UPGRADED same day: MULTI-PARTNER
+records — one file row per proven partner, accumulated into a list
+at load, match-ANY at the merge; a held seam that meets an uncovered
+future flushes classic AND learns it on the spot (book_learn), so
+both futures fuse from the next run (mid-run tool swaps AND the
+final Park). Flushes never drop records; the book only grows with
+proven pairs.
 
 ## Open knobs (decide at review)
 

@@ -943,6 +943,8 @@ class Recipe:
                     and not self.core.book_check(fuse_tail, planned, points[-1])):
                 print(f"[fusion] book mismatch: {fuse_tail.get('owner')} "
                       f"tail flushes classic")
+                self.core.book_learn(fuse_tail.get("book_key"),
+                                     planned, points[-1])
                 self.core.tail_flush(reason="book mismatch")
                 fuse_tail = None
             if fuse_tail is not None:
@@ -1128,6 +1130,8 @@ class Recipe:
                                                      points[-1])):
                     print(f"[fusion] book mismatch: {fuse_tail.get('owner')} "
                           f"tail flushes classic")
+                    self.core.book_learn(fuse_tail.get("book_key"),
+                                         planned, points[-1])
                     self.core.tail_flush(reason="book mismatch")
                     fuse_tail = None
                 pending_io = None
