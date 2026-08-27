@@ -338,150 +338,70 @@ and `pad empty`. Planner boxes are inflated by the plan padding
 (default 10) + margin. Tune per recipe in `recipes.j2`; defaults are
 50.
 
-## 12. Cross-verb continuous motion (the fusion buffer)
+## 12. Cross-verb continuous motion — replay fusion (the motion book)
 
-**Status: PHASES 1 + 2 IMPLEMENTED.** Phase 1: deferred tail on
-`core`, recipe-layer deposit/merge, verb-level barriers. Phase 2: the
-window stays open ACROSS action boundaries — a successful leaf leaves
-the tail armed (it survives no-motion actions like a weigh), and the
-seams that must break it do: any failure path flushes, a non-default
-branch flushes before `ReplanRequested`, and a killed runtime DROPS
-the tail (never move after a kill). Core-level safety invariant: a
-flush whose deposit pose no longer matches the live robot (kill +
-jog, any out-of-band motion) drops the tail loudly instead of
-executing it. Streaming commit (overlap tail execution with the next
-plan solve) is phase 3, design-only — with the single-tail design,
-chains stay bounded, so it buys only planning overlap, not pause
-latency.
+**Status: SHIPPED.** Fusion is a REPLAY optimization, never an online
+gamble: a verb's exit is held for fusing ONLY when a previous classic
+run recorded that the next motion merges there. Design + decision log:
+`docs/internal/replay-fusion-plan.md`.
 
-### Phase 1 — what ships
+### The rule
 
-* **Knob**: recipe kwarg `fuse: true` (recipes.j2, default false) or
-  per-call `fuse=True/False` on any verb (per-call wins — same two-scope pattern as `padding`). Off = today's motion,
-  bit for bit.
-* **Deposit**: a fusing verb's LAST exit group is IK-solved and held
-  on `core` (`tail_deposit`) instead of executed. `output_exit` IO
-  RIDES WITH THE TAIL: it fires as a background chain when the fused
-  motion starts and is joined + pin-verified at the chain's end (a
-  tool swap no longer stops after racking the tool). SAFE because all
-  background chains share ONE ORDERED LANE: submission order is
-  execution order, and verification checks the channel's latest
-  commanded intent per pin — the first bench run without the lane
-  raced the place's re-arm against the pick's approach chain on the
-  same pins (`expected 1, actual 0`) and was reverted until the lane
-  existed. A station whose exit IO needs a clearance lead declares a
-  delay row in its own IO config — explicit, never inferred. On a
-  plain flush the order stays classic: motion first, IO synchronously
-  after.
-* **Merge**: the next verb's fold consumes the tail —
-  `tail + planned travel + first approach group` run as ONE chain in
-  the fold's planned primitive (`smove`/`tmove` sample the tail like
-  approach legs; `cjmove`/`clmove` carry it as bare knots — the same
-  coercion the fold already applies to approach offsets), certified
-  and blended as one path.
+* **Knob**: recipe kwarg `fuse` (recipes.j2) or per-call
+  `fuse=True/False` (per-call wins — the padding two-scope pattern).
+  `fuse=True` means "allowed to consult the book"; `fuse=False` keeps
+  a station permanently classic (a deliberate stop, a read that needs
+  a clear robot).
+* **The book** (`core/motion_book.json`, JSONL + scene stamp like the
+  other caches): one row per PROVEN seam partner —
+  `(owner, held points) -> (next primitive, next solved final target)`,
+  points canonical-j5. A seam may hold MANY partners (one row each,
+  match-any): the tool-rack place exit fuses into the next pick
+  mid-run and into Park at the end.
+* **First run is classic, by construction.** An unrecorded seam
+  executes exactly like `fuse=False` and records its partner at the
+  next merge-capable fold. Records go to the FILE only and become
+  consultable at the NEXT run start (`book_reload`, launcher) — the
+  SNAPSHOT rule: a seam recorded early in a run must never fuse later
+  in the same run (repeated stations would self-fuse, shift solve
+  moments, and re-roll IK candidate selection — bench-caught).
+* **Later runs**: a recorded seam's exit group is IK-solved and held
+  on `core` (`tail_deposit`); the next verb's fold verifies the
+  arriving motion against the seam's partners — match → splice
+  (`tail + planned travel + first approach group` as ONE certified,
+  blended chain); no match → flush classic, loudly, AND learn the new
+  partner (`book_learn`) so it fuses from the next run. Nothing is
+  ever gambled: recording happens from the fold's OWN solves at their
+  classic moments — never a separate early solve (an early solve of
+  the fold target minted a different IK branch into the cache;
+  bench-caught).
+* **Exit IO rides the tail**: fired as a background chain when the
+  fused motion starts, joined + pin-verified at its end. ALL paths —
+  merge and flush alike — submit through the ONE ORDERED IO LANE
+  (submission order is execution order; a synchronous flush apply
+  raced the next verb's in-flight approach chain — bench-caught).
 * **Frontier**: while a tail is held, `core._live_joints()` answers
   with its endpoint — IK `cur`, `unwrap_j5` refs and `motion_plan`
-  start all reason from where the robot WILL be. Recipes must read
-  joints via `self._cur_joints()`, never `rt.joint()`.
-* **Planned hops defer themselves**: a planned chain hop (park,
-  direct planned moves) both MERGES an incoming tail and deposits its
-  own whole chain as the new tail — arrival at a travel target has no
-  settle semantics, so the hop rides into the next fold. Only on the
-  workflow thread: operator-thread calls execute immediately (an
-  operator pressing Park wants motion, not a hold). The run's end
-  flushes whatever is still held (launcher), so a deferred final Park
-  still parks; a killed runtime drops instead.
-* **Flush — ONE DERIVED RULE, not an enumeration**: the robot-api
-  gate (`J5WindingGuard`) settles a held tail before ANY motion
-  command that did not come from a merge — merges consume the tail
-  BEFORE executing, so they pass untouched. No motion path needs to
-  know fusion exists; a hand-rolled motion auto-flushes with
-  `flush(unmerged motion command)`. This is the fusion rule stated
-  queue-wise: continuity holds exactly while the next motion enters
-  the LOGICAL queue (the program's next command) — never the temporal
-  one (a firmware queue racing wall-clock arrival would make fusing
-  depend on planning latency: non-deterministic and un-certifiable).
-  The recipe-layer flush sites remain for their precise log reasons.
-  At the ACTION level (phase 2): a successful leaf keeps the tail
-  armed; every leaf failure path flushes; a non-default branch
-  flushes before the replan; a killed runtime drops. A flush whose
-  deposit pose no longer matches the live robot drops the tail loudly
-  instead of executing it.
-* **No fuse timeout, by design**: a wall-clock timeout would make the
-  same plan produce different motion run to run (planner load decides
-  whether a seam fuses) — non-deterministic, and it buys nothing: the
-  robot idles either way, and executing the exit early just re-creates
-  the stop. The long-solve case is phase 3's streaming overlap.
-* **`fuse` stays a peer parameter**: `has_motion_plan` says how one
-  travel executes; `fuse` says whether the verb's exit joins the NEXT
-  motion — orthogonal axes (the scale wants planned cjmove travel AND
-  fuse off).
+  start all reason from where the robot WILL be. Recipes read joints
+  via `self._cur_joints()`, never `rt.joint()`.
+* **Planned hops defer themselves** (book-gated like every seam): a
+  planned chain hop both merges an incoming tail and can deposit its
+  own chain as the new tail. Workflow thread only — operator calls
+  execute immediately. The run's end flushes whatever is held
+  (launcher); a killed runtime DROPS the tail (never move after a
+  kill), and a flush whose deposit pose no longer matches the live
+  robot drops loudly instead of executing.
+* **Flush — ONE DERIVED RULE**: the robot-api gate settles a held
+  tail before any motion command that did not come from a merge, and
+  cancels a pending recording on any non-merge motion. Barriers
+  (tail_flush) cancel recordings; action-level seams (BT): a
+  successful leaf keeps the tail armed, every failure path flushes, a
+  non-default branch flushes before the replan.
+* **No timing anywhere**: no fuse timeout, no arrival races — a seam
+  fuses because its book row proves the pair, or it runs classic.
+  Same plan in, same motion out, from the very first run.
 
-The original design (kept below — it is the contract phase 2 builds
-on):
-
-Today's continuity boundary is the group (§3): the planned chain
-absorbs the first approach group, and every verb ends at a stop after
-its last exit point. That terminal stop usually has NO named purpose —
-by the grammar's own rule, it is the bug this design removes.
-
-**Symmetry statement.** The first approach group is the chain's
-**head**; the last exit group is its **open tail**. Heads already fuse
-backward into the incoming travel. The fusion buffer lets tails fuse
-forward into the next head:
-
-```
-…exit stops)  [last exit group] ──▶ (next verb's planned travel) ──▶ [first approach group] (…
-              └──────────────── ONE continuous chain ────────────────┘
-```
-
-**Mechanism — hold back, don't look ahead.** The runtime holds the
-tail motion unexecuted in a buffer instead of executing it at verb
-end. The next rt command decides by its TYPE:
-
-* another mergeable motion → fuse the junction (collision-checked
-  fillet, chain profile recomputed over the merged path) and keep the
-  chain growing — fusion CHAINS across any number of verbs/actions;
-* a **barrier** → flush: execute the held tail to a normal stop.
-
-Barriers (each must observe a stopped robot): gripper/tool IO, device
-reads, `rt.checkpoint`/sleep/delay, pre/post_checks, operator pause,
-plan end, errors, resource change. Branch decisions read state, so
-branching flushes automatically — no action needs to know its
-successor.
-
-**The frontier rule (the one hard correctness requirement).** While a
-tail is held, live joints are stale. Every IK reference, `unwrap_j5`
-ref, motion_plan start and cache key must use the **planned frontier**
-(the last queued target), not `rt.joint()`. The j5 turn carry rides
-the frontier.
-
-**Merge eligibility is DECLARED, never inferred** (explicit over
-adaptive): approach/exit corridors and planned travel are fusible;
-precision segments never are — the soft-approach press, screw helix,
-the immerse dive below its hover, gap stops, anything ending at IO.
-Verbs get a per-call `fuse` flag for stations that want their stop
-regardless (scale, decapper).
-
-**Determinism.** No timing in flush decisions — the buffer never
-executes "because the next command didn't arrive fast enough". Same
-plan in, same motion out.
-
-**Pause safety.** A pause request is a barrier. With the streaming
-window (segments committed to the firmware one junction at a time,
-the tail kept open), pause reaction latency equals today's
-one-segment behavior; firmware halt is untouched underneath. The
-buffer records the owning action per segment for fault attribution
-and recovery.
-
-**Rollout.** Phase 1: fuse within one action's `execute()` (consecutive
-verbs through the buffer). Phase 2: the BT engine holds the window
-across an action boundary when the next robot action is unconditional
-— the engine owns the schedule, so it, not the actions, knows.
-Streaming window lands with phase 2 (it is what makes long chains
-pause-responsive).
-
-Prior art: this is industrial controller motion blending (ABB zones,
-KUKA `C_DIS`, FANUC `CNT`, UR blend radius, CNC G64 lookahead) lifted
-to the planner-selected action layer, with barriers derived from the
-device/check semantics instead of hand-written programs.
+Prior art: industrial motion blending (ABB zones, KUKA `C_DIS`,
+FANUC `CNT`, UR blend radius, CNC G64 lookahead) lifted to the
+planner-selected action layer — with the pairs PROVEN by execution
+history instead of hand-written programs.

@@ -375,12 +375,6 @@ class Core:
         self._book_pending = None
         self._book_written = set()
 
-        # --------- motion command log (core/motion_log.jsonl)
-        # Ground truth for run-to-run comparison: EVERY motion command
-        # that reaches the robot api (via the gate) appends one line —
-        # verb, vel, and the full joint targets. Diff two runs' lines
-        # to see exactly what was commanded differently.
-        self._motion_log_path = None
 
         # --------- planned-path cache (core/path.json in the project folder)
         # --------- background IO channel (one ordered lane)
@@ -1339,33 +1333,6 @@ class Core:
     # ``_live_joints`` answers with its endpoint — the FRONTIER — so IK
     # references, j5 unwrapping and motion_plan all reason from where
     # the robot WILL be, never from the stale live pose.
-
-    def _motion_log(self, name, a, k):
-        """Append one JSONL line per commanded motion (see __init__
-        comment). Never raises; never blocks motion."""
-        try:
-            if self._motion_log_path is None:
-                d = self._core_dir()
-                if d is None:
-                    return
-                self._motion_log_path = d / "motion_log.jsonl"
-            if name in ("cjmove", "clmove"):
-                pts = a[0] if a else k.get("joints", [])
-            elif name in ("smove", "tmove"):
-                pts = a[0] if a else k.get("points", k.get("samples", []))
-            else:
-                j = k.get("joint", a[0] if a else None)
-                pts = [j] if j is not None else []
-            rec = {
-                "ts": round(time.time(), 3),
-                "cmd": name,
-                "vel": k.get("vel"),
-                "pts": [[round(float(v), 3) for v in q] for q in pts],
-            }
-            with open(self._motion_log_path, "a") as f:
-                f.write(json.dumps(rec, separators=(",", ":")) + "\n")
-        except Exception:
-            pass
 
     def _live_joints(self):
         """Live joints, or the held tail's endpoint (the frontier)."""
@@ -3789,8 +3756,6 @@ class J5WindingGuard:
         if callable(attr) and name in self._MOTION:
             def _watched(*a, **k):
                 core = self._core
-                if core is not None:
-                    core._motion_log(name, a, k)
                 if core is not None and core._motion_tail is not None:
                     core.tail_flush(reason="unmerged motion command")
                 if core is not None and core._book_pending is not None:
