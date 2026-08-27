@@ -621,7 +621,9 @@ class Recipe:
         except Exception:
             return False, None
 
-        key = self.core.book_key(type(self).__name__, pts)
+        # Key on the SOLVED exit targets only — pts[0] is the live
+        # encoder reading and differs every real run (see book_key).
+        key = self.core.book_key(type(self).__name__, pts[1:])
         sig = self.core.book_lookup(key)
         if sig is None:
             return False, key
@@ -684,7 +686,8 @@ class Recipe:
         who = owner or type(self).__name__
         pts = [[float(v) for v in self._cur_joints()], list(J)]
 
-        key = self.core.book_key(who, pts)
+        # Key on the solved lift target only (pts[0] = live encoders).
+        key = self.core.book_key(who, [list(J)])
         sig = self.core.book_lookup(key)
         if sig is None:
             rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
@@ -721,7 +724,10 @@ class Recipe:
         pts = [[float(v) for v in p] for p in points]
         who = f"{type(self).__name__} planned hop"
 
-        key = self.core.book_key(who, pts)
+        # Key on the hop's FINAL target only: pts[0] is live encoders
+        # and the intermediate waypoints are the sampling planner's —
+        # both vary; the destination is the hop's identity.
+        key = self.core.book_key(who, [pts[-1]])
         sig = self.core.book_lookup(key)
         if sig is None:
             return False, key

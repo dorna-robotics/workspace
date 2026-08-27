@@ -1518,8 +1518,13 @@ class Core:
         return q
 
     def book_key(self, owner, pts):
-        """Seam identity: who holds it + the exact points it would
-        hold. None on any trouble (an unkeyable seam is just classic)."""
+        """Seam identity: who holds it + the SOLVED TARGETS it would
+        hold — never the live start pose. Solved targets are
+        deterministic (ik cache, calibration); the live reading is
+        encoder-noisy on real hardware, and with it in the key no two
+        real runs ever matched (bench-caught: sim fused, the robot
+        never did). Callers pass targets only. None on any trouble
+        (an unkeyable seam is just classic)."""
         try:
             return json.dumps([str(owner),
                                [self._book_canon_pt(q) for q in pts]],
