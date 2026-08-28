@@ -1990,7 +1990,12 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            e_top = pose_offset.pose(offset=[0, 0, height_container + exit_clearance, 0, 0, 0])
+            # The FINAL height keeps the max: the carried load must end
+            # above the neighbouring stacks and outside the plan-padded
+            # station box (the next travel starts here — see the exit
+            # docstring's START-invalid warning). Only the slow leg
+            # (e_gap) is rim-referenced.
+            e_top = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0])
             if soft_exit:
                 # Careful extraction: the pull-off runs until the held
                 # load's bottom just clears the container rim
