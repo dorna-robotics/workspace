@@ -1084,7 +1084,9 @@ class Recipe:
             return
 
         if first_approach and len(path) > 1 and blend and blend > 0:
+            _t_ik0 = _time.perf_counter()
             J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+            _t_ik0 = _time.perf_counter() - _t_ik0
             rt.checkpoint()
 
             tool_pose = [0, 0, 0, 0, 0, 0]
@@ -1167,7 +1169,9 @@ class Recipe:
                           f"{type(self).__name__} travel -> one {planned} chain")
                     self.core.fusion_journal("merge", owner=fuse_tail.get("owner"),
                                              consumer=type(self).__name__,
-                                             primitive=planned)
+                                             primitive=planned,
+                                             plan_ms=round(_t_plan * 1000),
+                                             sample_ms=round(_t_sample * 1000))
                     if fuse_tail.get("io_start"):
                         pending_io = (fuse_tail["io_start"], fuse_tail["io_join"])
                     fuse_tail = None
@@ -1185,9 +1189,15 @@ class Recipe:
                     _t_blend = _time.perf_counter() - _t2
                     if blended is not None:
                         points = blended
-                print(f"[fold] plan {_t_plan*1000:.0f} ms, sample "
-                      f"{_t_sample*1000:.0f} ms, blend {_t_blend*1000:.0f} ms "
+                print(f"[fold] ik0 {_t_ik0*1000:.0f} ms, plan {_t_plan*1000:.0f} ms, "
+                      f"sample {_t_sample*1000:.0f} ms, blend {_t_blend*1000:.0f} ms "
                       f"({len(points)} pts)")
+                self.core.fusion_journal(
+                    "fold", consumer=type(self).__name__,
+                    ik0_ms=round(_t_ik0 * 1000),
+                    plan_ms=round(_t_plan * 1000),
+                    sample_ms=round(_t_sample * 1000),
+                    blend_ms=round(_t_blend * 1000), pts=len(points))
                 io_h = pending_io[0]() if pending_io else None
                 self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
@@ -2157,6 +2167,7 @@ class Recipe:
             >>> rcp["tube_rack"].pick(anchor="A1", soft_approach=True)  # dense rack
             >>> rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)  # suction cup
         """
+        self.core.fusion_journal("verb", verb="pick", recipe=type(self).__name__)
         pick_prm = self.pick_setting(
             anchor, solid_name,
             component=component, approach=approach, actions=actions,
@@ -2424,6 +2435,7 @@ class Recipe:
             >>> rcp["tube_rack"].place(anchor="A1", soft_approach=True)  # racks
             >>> rcp["tube_rack"].place(anchor="A1", gravity_offset=-10)  # suction elbow
         """
+        self.core.fusion_journal("verb", verb="place", recipe=type(self).__name__)
         place_prm = self.place_setting(
             anchor=anchor, solid_name=solid_name,
             component=component, offset=offset, approach=approach,

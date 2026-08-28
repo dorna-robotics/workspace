@@ -227,6 +227,7 @@ class Decapper(Recipe):
         lmove_vaj=[500, 1000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
+        release=True,
         **kwargs,
     ):
         """Screw the currently-held cap onto the tube at ``anchor``.
@@ -234,7 +235,15 @@ class Decapper(Recipe):
         Inverse of ``decap``: lowers while rotating j5 forward in chunks of
         ``max_rotation`` degrees. Requires the cap to be gripped already and
         the tube to be present at ``anchor``. Attaches cap → tube on success.
-        """
+
+        ``release=False``: the tighten's end state IS the pick — the
+        gripper never opens. The capped tube is re-rooted on the tool
+        at its CURRENT geometry (the screw's true end pose, no
+        nominal-height re-grab), the chuck jaws open, and the exit
+        lift carries it out (held as a fusable tail like decap's).
+        Use instead of a follow-up ``pick()``: a closed gripper
+        commanding approach/touch motion at the seat drags the sealed
+        tube. """
         rt = self.rt
 
         # ref joints
@@ -328,23 +337,54 @@ class Decapper(Recipe):
             rebite=not one_shot,
         )
 
-        # release the cap (gripper OFF) so the exit clears without dragging it
-        if tool.output_state() != 0:
+        # attach cap to body — the screw seated it; the model follows
+        # BEFORE any exit so a carried lift moves the whole stack.
+        solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")
+
+        if release:
+            # gripper OFF so the empty exit clears without dragging the cap
+            if tool.output_state() != 0:
+                rt.checkpoint()
+                rt.output(config=tool.output_disable)
+                tool.output_state(0)
+        else:
+            # Carry ending (mirror of decap): re-root the capped tube on
+            # the tool at the CURRENT relative pose, then open the chuck
+            # jaws — station side only, the gripper is never touched.
+            tool_body = tool.assembly[next(iter(tool.assembly))]
+            attach_z = abs(dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=solid_tube.pose("center"),
+                to_frame=tool_body.pose("tcp"),
+            )[2])
+            solid_tube.attach_to(
+                parent=tool_body,
+                parent_anchor="tcp",
+                child_anchor="center",
+                offset=[0, 0, attach_z, 0, 180, 0],
+                offset_frame="parent",
+            )
+            _, _, _, component_disable = self._build_io_config(
+                tool, self.component, "component")
             rt.checkpoint()
-            rt.output(config=tool.output_disable)
-            tool.output_state(0)
+            self._apply_output_config(rt, component_disable)
 
         # exit — the empty tool lifts to the SAME resolved padding the
         # approach used (tip ends padding + gap above the seated cap),
         # consistent with decap and every pick/place exit. The old
         # full-stack lift was generous for tall tubes but would park
         # the tool inside the inflated box after capping short vials.
+        # Carrying (release=False) DOES need the full-stack term: the
+        # capped tube hangs height_total below the grip, so the lift
+        # must raise its BOTTOM clear of the chuck's padded box — a
+        # tip-only lift leaves the next travel start-invalid (bench).
         if exit and last_J is not None:
             pad = self._padding(padding)
+            lift = pad + gap + (0 if release else height_total)
             J, C = self.core.IK(
                 target_solid=tool.assembly[next(iter(tool.assembly))],
                 target_anchor="tcp",
-                target_offset=[0, 0, -pad - gap, 0, 0, 0],
+                target_offset=[0, 0, -lift, 0, 0, 0],
                 tool_solid=tool.assembly[next(iter(tool.assembly))],
                 tool_anchor="tcp",
                 tool_offset=[0, 0, 0, 0, 0, 0],
@@ -381,8 +421,5 @@ class Decapper(Recipe):
             # to the nearest equivalent instead (core.unwrap_j5).
             if not one_shot:
                 self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
-
-        # attach cap to body
-        solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")
 
         return True
