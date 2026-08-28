@@ -102,14 +102,14 @@ class Recipe:
         # j0..j5, rail, aux; sf applies on top (vel*s, accel*s^2,
         # jerk*s^3). Override per recipe in recipes.j2.
         max_vaj_joint=[
-            [120, 400, 2000],   # j0
-            [120, 400, 2000],   # j1
-            [240, 600, 2000],   # j2
-            [200, 500, 2000],   # j3
-            [200, 500, 2000],   # j4
-            [200, 500, 2000],   # j5
-            [200, 500, 2000],   # rail
-            [200, 500, 2000],   # aux
+            [120, 400, 4000],   # j0
+            [120, 400, 4000],   # j1
+            [240, 600, 4000],   # j2
+            [200, 500, 4000],   # j3
+            [200, 500, 4000],   # j4
+            [200, 500, 4000],   # j5
+            [200, 500, 4000],   # rail
+            [200, 500, 4000],   # aux
         ],
         # calibration
         calibration_name=None,
@@ -781,19 +781,10 @@ class Recipe:
         """Splice a held tail onto the front of a fold path — ONE fused
         chain. ``points[0]`` is the frontier (== the tail's endpoint)
         and the tail is already exit-pinned, so the splice is exact.
-        Knot primitives carry the tail as bare knots (the same coercion
-        the fold applies to approach offsets); sampled primitives
-        densify each tail segment like an approach leg."""
-        tpts = [list(p) for p in tail["points"]]
-        if primitive in ("smove", "tmove"):
-            dense = [tpts[0]]
-            for a, b in zip(tpts, tpts[1:]):
-                seg = None
-                if tail["motion_class"] == "lmove":
-                    seg = self.core.lmove_points(a, b, tool_pose=tail["tool_pose"], step=5.0)
-                dense.extend(seg if seg is not None else [list(b)])
-            tpts = dense
-        return tpts + [list(p) for p in points[1:]]
+        The tail rides as BARE knots for every primitive — exit legs
+        only need to run NEAR their line, so no 5 mm densify (user
+        decision; matches how cjmove/clmove always carried tails)."""
+        return [list(p) for p in tail["points"]] + [list(p) for p in points[1:]]
 
     def _tool_lock_j5(self):
         """The mounted tool's declared ``lock_j5`` (degrees), or None.
@@ -879,8 +870,8 @@ class Recipe:
         primitive executes. Planned side (travel through the planner's
         waypoints):
 
-            True / [True,"smove"] → spline through the fold (sampled
-                                    approach legs + validated fillets)
+            True / [True,"smove"] → spline through the fold (bare
+                                    knots + validated fillets)
             [True, "tmove"]       → PVT trajectory (TOPP-RA timing;
                                     needs tmove support — sim now,
                                     firmware later)
@@ -1040,9 +1031,9 @@ class Recipe:
         independent of planning. When > 0 and more offsets follow the
         first, the WHOLE approach fuses into one smove: the first hop
         comes from the planner when planning is on, else it is the same
-        segment the discrete jmove/lmove would have driven; the rest is
-        sampled with ``core.lmove_points`` (the tested lmove line,
-        every 5 mm) and every sharp corner gets a G1 Bezier fillet.
+        segment the discrete jmove/lmove would have driven; the rest
+        rides as BARE knots (one target per offset, like cjmove — no
+        5 mm sampling) and every sharp corner gets a G1 Bezier fillet.
         blend: 0 → classic discrete motions, exactly as before. The
         contact descent is never part of ``path`` here — touch() keeps
         it as its own slow lmove.
@@ -1105,6 +1096,8 @@ class Recipe:
                 )
 
             # First hop → smove waypoints, planned or not.
+            _t_plan = _t_sample = _t_blend = 0.0
+            _t0 = _time.perf_counter()
             if plan_on:
                 points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
                 if not points and motion_plan_kwargs:
@@ -1113,35 +1106,29 @@ class Recipe:
                 if not points:
                     raise RecipeError("no proper path was found")
                 points = [list(p) for p in points]
+                _t_plan = _time.perf_counter() - _t0
             else:
+                # Unplanned first hop: bare knots either way — the
+                # lmove/jmove distinction only matters for discrete
+                # execution, not for knots feeding a fold.
                 cur = [float(v) for v in self._cur_joints()]
-                if unplanned == "lmove":
-                    seg0 = self.core.lmove_points(cur, J0, tool_pose=tool_pose, step=5.0)
-                    points = ([cur] + seg0) if seg0 is not None else None
-                else:  # jmove — a straight joint segment IS its smove form
-                    points = [cur, [float(v) for v in J0]]
+                points = [cur, [float(v) for v in J0]]
 
             folded = points is not None
             rest = []
+            _t1 = _time.perf_counter()
             if folded:
                 prev = points[-1]
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                    if planned in ("cjmove", "clmove", "jmove", "lmove"):
-                        # Knot-driven primitives: BARE knots — one
-                        # target per approach offset, no 5 mm sampling,
-                        # no fillet arcs. Chains (c*) blend corners in
-                        # the controller; discrete jmove/lmove stop at
-                        # every knot by definition.
-                        rest.append([float(v) for v in J])
-                        prev = J
-                        continue
-                    seg = self.core.lmove_points(prev, J, tool_pose=tool_pose, step=5.0)
-                    if seg is None:
-                        folded = False
-                        break
-                    rest.extend(seg)
+                    # BARE knots for EVERY primitive — one target per
+                    # approach offset, no 5 mm sampling (user decision:
+                    # smove acts like cjmove/clmove, only the motion
+                    # type differs — approach legs run NEAR their
+                    # line, corners still get validated fillets).
+                    rest.append([float(v) for v in J])
                     prev = J
+            _t_sample = _time.perf_counter() - _t1
             if folded:
                 points.extend(rest)
                 # Pin BEFORE blending so the fillets are generated (and
@@ -1191,11 +1178,16 @@ class Recipe:
                     # validated once at creation against the slimmed
                     # envelope: an arc may not introduce a collision the
                     # sharp corner didn't have (see core.blend_points).
+                    _t2 = _time.perf_counter()
                     blended = self.core.blend_points(
                         points, blend, tool_pose=tool_pose, from_idx=1,
                         padding=motion_plan_kwargs.get("padding", 10))
+                    _t_blend = _time.perf_counter() - _t2
                     if blended is not None:
                         points = blended
+                print(f"[fold] plan {_t_plan*1000:.0f} ms, sample "
+                      f"{_t_sample*1000:.0f} ms, blend {_t_blend*1000:.0f} ms "
+                      f"({len(points)} pts)")
                 io_h = pending_io[0]() if pending_io else None
                 self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
                                       padding=motion_plan_kwargs.get("padding", 10))
@@ -1351,9 +1343,13 @@ class Recipe:
         s = self.speed_factor
         caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
                 for r in self.max_vaj_joint]
+        _tc = _time.perf_counter()
         vel, accel, jerk = self.core.smove_certify(points, vel, accel, jerk,
                                                    joint_caps=caps)
+        _ts = _time.perf_counter()
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
+        print(f"[fold] certify {(_ts - _tc)*1000:.0f} ms, send "
+              f"{(_time.perf_counter() - _ts)*1000:.0f} ms")
 
     def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):
         """Send a chain, split at its internal STOPS.
@@ -2033,7 +2029,7 @@ class Recipe:
                 # stop — then the normal lift. Under fusion only the
                 # lift group deposits.
                 e_gap = pose_offset.pose(offset=[0, 0, height_container + gap, 0, 0, 0])
-                exit_groups = [[e_gap], [e_top]]
+                exit_groups = [[e_gap, e_top]]
             else:
                 exit_groups = [[e_top]]
 
@@ -2297,7 +2293,7 @@ class Recipe:
                 # for places (the released item stays; the empty tool's
                 # lift is rarely delicate). Opt in per call/recipe.
                 e_gap = dorna_pose.transform_pose([0, 0, height_container + gap, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
-                exit_groups = [[e_gap], [e_top]]
+                exit_groups = [[e_gap, e_top]]
             else:
                 exit_groups = [[e_top]]
 
