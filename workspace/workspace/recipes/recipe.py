@@ -1325,6 +1325,10 @@ class Recipe:
                 else:
                     rt.lmove(joint=list(p), vel=vel, accel=accel, jerk=jerk, tool_pose=tp)
             return
+        # Certified like chains: the global vaj is reduced until no
+        # joint exceeds the commanded scalars over the exact spline
+        # (core.smove_certify — warm replays from traj.json).
+        vel, accel, jerk = self.core.smove_certify(points, vel, accel, jerk)
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
 
     def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):

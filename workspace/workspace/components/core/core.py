@@ -2230,6 +2230,84 @@ class Core:
               f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return samples
 
+    def smove_certify(self, points, vel, accel, jerk, dt=0.004):
+        """Certify ONE smove the way chains are certified: play the
+        EXACT S-curve profile over the EXACT SplinePath geometry (the
+        same classes the executor uses), measure per-joint |velocity|
+        and |acceleration|, and reduce the GLOBAL vaj until no joint
+        exceeds the commanded scalars — vel/accel are per-joint caps,
+        the same contract as the cjmove certifier. Geometry is
+        untouched; returns the certified (vel, accel, jerk). Warm
+        results replay from traj.json (label "smove")."""
+        try:
+            pts = [[float(v) for v in p] for p in points]
+            pts = [p for i, p in enumerate(pts)
+                   if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+            if len(pts) < 2:
+                return vel, accel, jerk
+            if self._chain_cache is None:
+                self._chain_cache_init()
+            _turns = self._chain_j5_turns(pts)
+            _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, None,
+                                  _turns, "smove")
+            _hit = self._chain_cache.get(_ck)
+            if _hit is not None:
+                try:
+                    v_, a_, j_ = (float(x) for x in _hit["vaj"][0])
+                    return v_, a_, j_
+                except Exception:
+                    pass
+            if getattr(self, "_fw_eval", None) is None:
+                self._fw_eval = SimulationAPI()
+            sim = self._fw_eval
+            path = SplinePath(pts)
+            d = float(path.total_len)
+            if d <= 0.0:
+                return vel, accel, jerk
+            t0 = time.perf_counter()
+            v_c, a_c, j_c = float(vel), float(accel), float(jerk)
+            jv = ja = 0.0
+            for _ in range(8):
+                prof = sim.create_profile(jerk=j_c, accel=a_c, vel=v_c, d=d)
+                jerks, ticks = prof.get("jerks", []), prof.get("ticks", [])
+                dur = sum(ticks) / float(sim.FREQ)
+                if dur <= 0.0 or not ticks:
+                    break
+                m = max(2, int(math.ceil(dur / dt)))
+                poses = []
+                for i in range(m + 1):
+                    q, _, _ = sim.traverse(jerks, ticks, q0=0.0, v0=0.0,
+                                           a0=0.0, t=min(i * dur / m, dur))
+                    pos, _, _ = path.get_curve_data(min(q, d))
+                    poses.append([float(x) for x in pos])
+                st = dur / m
+                jv = ja = 0.0
+                prev_v = None
+                for a, b in zip(poses, poses[1:]):
+                    vv = [(y - x) / st for x, y in zip(a, b)]
+                    jv = max(jv, max(abs(x) for x in vv))
+                    if prev_v is not None:
+                        ja = max(ja, max(abs(y - x) / st
+                                         for x, y in zip(prev_v, vv)))
+                    prev_v = vv
+                rv, ra = jv / float(vel), ja / float(accel)
+                if rv <= 1.05 and ra <= 1.05:
+                    break
+                if rv > 1.05:
+                    v_c = max(1.0, v_c / rv)
+                if ra > 1.05:
+                    a_c = max(1.0, a_c / ra)
+                    v_c = max(1.0, v_c / math.sqrt(min(ra, 4.0)))
+            if (v_c, a_c) != (float(vel), float(accel)):
+                print(f"[traj] smove certified: joint vel {jv:.0f}/{vel:.0f}, "
+                      f"acc {ja:.0f}/{accel:.0f} -> vaj "
+                      f"[{v_c:.0f}, {a_c:.0f}, {j_c:.0f}], "
+                      f"in {(time.perf_counter() - t0) * 1000:.0f} ms")
+            self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [])
+            return v_c, a_c, j_c
+        except Exception:
+            return vel, accel, jerk   # certification must never block motion
+
     def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0, label="cjmove"):
         """Chain parameters for cjmove tuned for MAXIMUM smoothness
         under the user's caps — derived from the firmware's actual
