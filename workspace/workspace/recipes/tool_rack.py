@@ -173,6 +173,8 @@ class ToolRack(Recipe):
                             [
                                 [-2*padding,0,-2*padding-height_offset,0,0,0],
                                 [-padding,0,-2*padding-height_offset,0,0,0],
+                            ],
+                            [
                                 [-padding,0,-gap-height_offset,0,0,0],
                                 [0, 0, -gap-height_offset, 0, 0, 0],
                             ],
