@@ -815,9 +815,12 @@ class Recipe:
         except (TypeError, ValueError):
             return None
 
-    def _padding(self, padding, default=50):
+    def _padding(self, padding, default=80):
         """Resolve an approach padding: per-call > recipe (recipes.j2
-        kwargs) > the calling method's own default."""
+        kwargs) > the calling method's own default. 80 mm (was 50):
+        longer approach/exit legs allow bigger corner fillets
+        (radius caps at 0.4x the shorter leg), so the smove certifier
+        clears the station-entry bends at higher speed."""
         if padding is not None:
             return padding
         if self.padding is not None:
