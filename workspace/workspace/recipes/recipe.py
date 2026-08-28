@@ -1990,13 +1990,16 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            e_top = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0])
+            e_top = pose_offset.pose(offset=[0, 0, height_container + exit_clearance, 0, 0, 0])
             if soft_exit:
-                # Careful extraction: the pull-off to the gap height is
-                # its own group — a short TRUE lmove ending at a stop —
-                # then the normal lift. Mirror of soft_approach's final
-                # descent; under fusion only the lift group deposits.
-                e_gap = pose_offset.pose(offset=[0, 0, height_load + height_tool + gap, 0, 0, 0])
+                # Careful extraction: the pull-off runs until the held
+                # load's bottom just clears the container rim
+                # (height_container + gap — exit offsets position the
+                # ATTACHED LOAD, so this is the walls-cleared point),
+                # as its own group — a short TRUE lmove ending at a
+                # stop — then the normal lift. Under fusion only the
+                # lift group deposits.
+                e_gap = pose_offset.pose(offset=[0, 0, height_container + gap, 0, 0, 0])
                 exit_groups = [[e_gap], [e_top]]
             else:
                 exit_groups = [[e_top]]
@@ -2250,7 +2253,7 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            e_top = dorna_pose.transform_pose([0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
+            e_top = dorna_pose.transform_pose([0, 0, height_container + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
             if soft_exit:
                 # Mirror of pick_setting's soft exit — OFF by default
                 # for places (the released item stays; the empty tool's
