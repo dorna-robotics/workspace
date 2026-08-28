@@ -2230,25 +2230,40 @@ class Core:
               f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return samples
 
-    def smove_certify(self, points, vel, accel, jerk, dt=0.004):
+    def smove_certify(self, points, vel, accel, jerk, dt=0.004, joint_caps=None):
         """Certify ONE smove the way chains are certified: play the
         EXACT S-curve profile over the EXACT SplinePath geometry (the
-        same classes the executor uses), measure per-joint |velocity|
-        and |acceleration|, and reduce the GLOBAL vaj until no joint
-        exceeds the commanded scalars — vel/accel are per-joint caps,
-        the same contract as the cjmove certifier. Geometry is
-        untouched; returns the certified (vel, accel, jerk). Warm
-        results replay from traj.json (label "smove")."""
+        executor's own classes) and hold every joint under its cap.
+        Without ``joint_caps`` the commanded scalars are uniform
+        per-joint caps; with ``joint_caps`` (Recipe.max_vaj_joint,
+        sf-scaled 8x[vel,accel,jerk]) each joint is judged against its
+        OWN row and the profile is seeded from the table.
+
+        The search is TWO-dimensional: after converging (v, a) into
+        the caps, a small deterministic grid also tries higher-v /
+        lower-a combinations and keeps the FASTEST feasible one — a
+        chain whose binding bend sits at its END is crossed during
+        deceleration, so LOWER accel (earlier braking) can buy a much
+        higher cruise (bench: the park->toolrack rail). Results cache
+        in traj.json (label "smove"); certification never blocks."""
         try:
-            pts = [[float(v) for v in p] for p in points]
+            pts = [[float(v_) for v_ in p] for p in points]
             pts = [p for i, p in enumerate(pts)
                    if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
             if len(pts) < 2:
                 return vel, accel, jerk
+            caps = None
+            if joint_caps is not None:
+                caps = [[float(x) for x in row] for row in joint_caps]
+                vel = max(row[0] for row in caps)
+                accel = max(row[1] for row in caps)
+                jerk = min(row[2] for row in caps)
             if self._chain_cache is None:
                 self._chain_cache_init()
             _turns = self._chain_j5_turns(pts)
-            _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, None,
+            _sig = None if caps is None else [[round(x, 2) for x in row]
+                                             for row in caps]
+            _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, _sig,
                                   _turns, "smove")
             _hit = self._chain_cache.get(_ck)
             if _hit is not None:
@@ -2265,14 +2280,16 @@ class Core:
             if d <= 0.0:
                 return vel, accel, jerk
             t0 = time.perf_counter()
-            v_c, a_c, j_c = float(vel), float(accel), float(jerk)
-            jv = ja = 0.0
-            for _ in range(8):
+            j_c = float(jerk)
+
+            def measure(v_c, a_c):
+                """-> (rv, ra, duration): worst per-joint vel/accel
+                ratios vs caps, and the profile duration."""
                 prof = sim.create_profile(jerk=j_c, accel=a_c, vel=v_c, d=d)
                 jerks, ticks = prof.get("jerks", []), prof.get("ticks", [])
                 dur = sum(ticks) / float(sim.FREQ)
                 if dur <= 0.0 or not ticks:
-                    break
+                    return 0.0, 0.0, 0.0
                 m = max(2, int(math.ceil(dur / dt)))
                 poses = []
                 for i in range(m + 1):
@@ -2281,28 +2298,53 @@ class Core:
                     pos, _, _ = path.get_curve_data(min(q, d))
                     poses.append([float(x) for x in pos])
                 st = dur / m
-                jv = ja = 0.0
-                prev_v = None
+                rv = ra = 0.0
+                prev = None
+                nq = len(poses[0])
                 for a, b in zip(poses, poses[1:]):
                     vv = [(y - x) / st for x, y in zip(a, b)]
-                    jv = max(jv, max(abs(x) for x in vv))
-                    if prev_v is not None:
-                        ja = max(ja, max(abs(y - x) / st
-                                         for x, y in zip(prev_v, vv)))
-                    prev_v = vv
-                rv, ra = jv / float(vel), ja / float(accel)
-                if rv <= 1.05 and ra <= 1.05:
+                    for jx in range(nq):
+                        cv = caps[jx][0] if caps and jx < len(caps) else float(vel)
+                        rv = max(rv, abs(vv[jx]) / cv)
+                    if prev is not None:
+                        for jx in range(nq):
+                            ca = caps[jx][1] if caps and jx < len(caps) else float(accel)
+                            ra = max(ra, abs(vv[jx] - prev[jx]) / st / ca)
+                    prev = vv
+                return rv, ra, dur
+
+            # 1) converge down into the caps
+            v_c, a_c = float(vel), float(accel)
+            rv = ra = 0.0
+            for _ in range(8):
+                rv, ra, dur = measure(v_c, a_c)
+                if dur <= 0.0 or (rv <= 1.05 and ra <= 1.05):
                     break
                 if rv > 1.05:
                     v_c = max(1.0, v_c / rv)
                 if ra > 1.05:
                     a_c = max(1.0, a_c / ra)
                     v_c = max(1.0, v_c / math.sqrt(min(ra, 4.0)))
+            best_v, best_a = v_c, a_c
+            _, _, best_dur = measure(best_v, best_a)
+
+            # 2) deterministic refinement grid: higher v / lower a can
+            # be FASTER when the binding bend is inside the braking
+            # zone. Keep the fastest feasible combination.
+            for fv in (1.2, 1.45, 1.8):
+                for fa in (1.0, 0.7, 0.5, 0.35):
+                    cv, ca = min(float(vel), v_c * fv), a_c * fa
+                    if ca < 10.0:
+                        continue
+                    rv2, ra2, dur2 = measure(cv, ca)
+                    if dur2 > 0 and rv2 <= 1.05 and ra2 <= 1.05 and dur2 < best_dur:
+                        best_v, best_a, best_dur = cv, ca, dur2
+            v_c, a_c = best_v, best_a
+
             if (v_c, a_c) != (float(vel), float(accel)):
-                print(f"[traj] smove certified: joint vel {jv:.0f}/{vel:.0f}, "
-                      f"acc {ja:.0f}/{accel:.0f} -> vaj "
-                      f"[{v_c:.0f}, {a_c:.0f}, {j_c:.0f}], "
-                      f"in {(time.perf_counter() - t0) * 1000:.0f} ms")
+                print(f"[traj] smove certified: vaj [{v_c:.0f}, {a_c:.0f}, "
+                      f"{j_c:.0f}] (req [{vel:.0f}, {accel:.0f}]), motion "
+                      f"{best_dur:.1f}s, in {(time.perf_counter() - t0) * 1000:.0f} ms")
             self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [])
             return v_c, a_c, j_c
         except Exception:

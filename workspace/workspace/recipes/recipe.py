@@ -96,6 +96,21 @@ class Recipe:
         corner=60.0,
         jmove_vaj=[200, 400, 2000],  # [200, 500, 3000],
         lmove_vaj=[600, 900, 3000],
+        # Per-joint [vel, accel, jerk] ceilings for SMOVE folds — the
+        # spline's global profile is derived so NO joint exceeds its
+        # own row (core.smove_certify measures per joint). Rows are
+        # j0..j5, rail, aux; sf applies on top (vel*s, accel*s^2,
+        # jerk*s^3). Override per recipe in recipes.j2.
+        max_vaj_joint=[
+            [120, 400, 2000],   # j0
+            [120, 400, 2000],   # j1
+            [240, 600, 2000],   # j2
+            [200, 500, 2000],   # j3
+            [200, 500, 2000],   # j4
+            [200, 500, 2000],   # j5
+            [200, 500, 2000],   # rail
+            [200, 500, 2000],   # aux
+        ],
         # calibration
         calibration_name=None,
         calibration=True,
@@ -160,6 +175,7 @@ class Recipe:
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
+        self.max_vaj_joint = [[float(x) for x in row] for row in prm["max_vaj_joint"]]
 
         # calibration
         self.calibration = prm["calibration"]
@@ -1325,10 +1341,15 @@ class Recipe:
                 else:
                     rt.lmove(joint=list(p), vel=vel, accel=accel, jerk=jerk, tool_pose=tp)
             return
-        # Certified like chains: the global vaj is reduced until no
-        # joint exceeds the commanded scalars over the exact spline
+        # Certified like chains, but per JOINT: the global profile is
+        # derived from the recipe's max_vaj_joint table (sf-scaled) so
+        # no joint exceeds its own row over the exact spline
         # (core.smove_certify — warm replays from traj.json).
-        vel, accel, jerk = self.core.smove_certify(points, vel, accel, jerk)
+        s = self.speed_factor
+        caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
+                for r in self.max_vaj_joint]
+        vel, accel, jerk = self.core.smove_certify(points, vel, accel, jerk,
+                                                   joint_caps=caps)
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
 
     def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):
