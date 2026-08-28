@@ -31,15 +31,14 @@ class Shaker(Recipe):
         # stop_shaking()) to interrupt an in-flight shake() early.
         self._stop_event = threading.Event()
 
-    def shake(self, duration=5, settle=1.0):
+    def shake(self, duration=5):
         """Block while toggling the shaker for ``duration`` seconds.
 
         Toggles the shaker back and forth until at least ``duration``
         seconds have elapsed AND the shaker is back at its start
-        position. Always returns to the start position on exit.
-        ``settle``: dwell (s) between the head homing and the clamp
-        OPENING — the liquid stops sloshing and the head truly comes
-        to rest before the vessels are released.
+        position. Always returns to the start position on exit. The
+        settle dwell before the clamp opens is DECLARED in the
+        component's own IO rows (Shaker.output_open delay), not here.
 
         Synchronous by design — call from a worker thread if you need
         the caller free for other work (the BT framework already does
@@ -64,8 +63,6 @@ class Shaker(Recipe):
                 break
             self.component.toggle(stop_event=self._stop_event)
         self._go_to_start()
-        if settle and settle > 0:
-            self.rt.delay(settle)
         self.component.open()
 
     def stop_shaking(self):
