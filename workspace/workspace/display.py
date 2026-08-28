@@ -37,6 +37,7 @@ class Display:
         """
         self.workspace = workspace
         self.SERVER = f"http://127.0.0.1:{port}"
+        self.port = int(port)
 
         # target FPS for pose sending
         self.fps = max(1, int(fps))
@@ -68,6 +69,7 @@ class Display:
         @self.sio.event
         def connect():
             print("[Display] socket.io connected")
+            print(f"[Display] 3D viewer: http://{self._lan_ip()}:{self.port}/")
             # On connect: send a full snapshot once
             try:
                 snap = self._build_snapshot()
@@ -92,6 +94,22 @@ class Display:
     # ----------------------------------------------------
     # Public utilities
     # ----------------------------------------------------
+    @staticmethod
+    def _lan_ip():
+        """This machine's LAN address — the URL a browser on the bench
+        network can actually open (127.0.0.1 is only right on the Pi
+        itself). No packets are sent; the UDP connect just selects the
+        outbound interface."""
+        import socket as _socket
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        except OSError:
+            return "localhost"
+        finally:
+            s.close()
+
     def set_fps(self, fps: int):
         with self._state_lock:
             self.fps = max(1, int(fps))
