@@ -42,15 +42,21 @@ class Decapper(Recipe):
         return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0,
                              **self._keep_wrist(kwargs))
 
-    def pick(self, approach=True, exit=True, padding=None, compliant=False, **kwargs):
+    def pick(self, approach=True, exit=True, padding=None, compliant=False,
+             soft_exit=False, **kwargs):
         """Pick a tube from the decapper's ``place`` anchor. Padding defaults to 30 mm.
 
         ``compliant`` defaults to False here: the decapper is a rigid jaw
         grip on a screwed-on cap, so a ``tool_tcp_z_offset`` over-drive really
         moves the tube on the tool and must fold into the attach offset (the
-        base Recipe defaults compliant=True for suction/soft tools)."""
+        base Recipe defaults compliant=True for suction/soft tools).
+
+        ``soft_exit`` defaults False here: the chuck is released when
+        the tube lifts, so the exit needs no staged pull-off — one
+        continuous lift out."""
         return super().pick(anchor="place", approach=approach, exit=exit, padding=padding,
-                            compliant=compliant, **self._keep_wrist(kwargs))
+                            compliant=compliant, soft_exit=soft_exit,
+                            **self._keep_wrist(kwargs))
 
     def decap(
         self,
