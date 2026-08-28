@@ -2262,7 +2262,12 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            e_top = dorna_pose.transform_pose([0, 0, height_container + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
+            # The max stays (same rule as pick): the exit must clear
+            # the JUST-RELEASED stack and end outside the plan-padded
+            # box — at the scale height_container is ~0 and a
+            # rim-only lift parked the tool beside the 95 mm tube
+            # (bench: planner start-invalid on the next pick).
+            e_top = dorna_pose.transform_pose([0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
             if soft_exit:
                 # Mirror of pick_setting's soft exit — OFF by default
                 # for places (the released item stays; the empty tool's
