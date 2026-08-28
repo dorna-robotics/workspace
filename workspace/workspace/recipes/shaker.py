@@ -31,12 +31,15 @@ class Shaker(Recipe):
         # stop_shaking()) to interrupt an in-flight shake() early.
         self._stop_event = threading.Event()
 
-    def shake(self, duration=5):
+    def shake(self, duration=5, settle=1.0):
         """Block while toggling the shaker for ``duration`` seconds.
 
         Toggles the shaker back and forth until at least ``duration``
         seconds have elapsed AND the shaker is back at its start
         position. Always returns to the start position on exit.
+        ``settle``: dwell (s) between the head homing and the clamp
+        OPENING — the liquid stops sloshing and the head truly comes
+        to rest before the vessels are released.
 
         Synchronous by design — call from a worker thread if you need
         the caller free for other work (the BT framework already does
@@ -48,11 +51,11 @@ class Shaker(Recipe):
         self._stop_event.clear()
         # The head is about to MOVE: any held motion tail executes to
         # its stop first, so the robot is guaranteed clear of the swept
-        # volume (defense in depth on top of fuse=False above).
+        # volume (defense in depth on top of place()'s fuse=False pin).
         self.core.tail_flush(reason="shaker head about to move")
         # Workflow: clamp the vessels, swing until done, home the head,
-        # release. The component owns each atomic op (IO + model); this
-        # loop owns the order and the duration.
+        # settle, release. The component owns each atomic op (IO +
+        # model); this loop owns the order and the timing.
         self.component.close()
         start = time.time()
         while not self._stop_event.is_set():
@@ -61,6 +64,8 @@ class Shaker(Recipe):
                 break
             self.component.toggle(stop_event=self._stop_event)
         self._go_to_start()
+        if settle and settle > 0:
+            self.rt.delay(settle)
         self.component.open()
 
     def stop_shaking(self):
