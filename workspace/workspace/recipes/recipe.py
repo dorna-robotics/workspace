@@ -686,8 +686,15 @@ class Recipe:
         who = owner or type(self).__name__
         pts = [[float(v) for v in self._cur_joints()], list(J)]
 
-        # Key on the solved lift target only (pts[0] = live encoders).
-        key = self.core.book_key(who, [list(J)])
+        # Key on the OWNER alone: a lift's target is solved relative
+        # to the live tool pose (the screw's end, the current hover) —
+        # encoder-contaminated, so any point in the key re-records
+        # every occurrence and never matches (bench book: seven
+        # near-duplicate decap-lift rows, identical partner). The
+        # partner list does the discriminating: arriving targets are
+        # absolute station solves, matched exactly; wrong-occurrence
+        # holds flush classic and learn — converging, never gambling.
+        key = self.core.book_key(who, [])
         sig = self.core.book_lookup(key)
         if sig is None:
             rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
