@@ -1139,6 +1139,7 @@ class Core:
     # EVERY solved hop is stored — direct-connection segments and OMPL
     # detours alike: one solve pipeline, one record, one replay rule.
 
+    CHAIN_CACHE_PT_TOL = 0.1     # deg / mm per joint: chain-cache fuzzy match
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
@@ -1480,6 +1481,38 @@ class Core:
             -1 if padding is None else round(float(padding), 3),
             sig,
         ], separators=(",", ":"))
+
+    def _chain_fuzzy_get(self, key):
+        """Tolerance fallback for the chain cache. The exact JSON key
+        misses whenever the chain's FIRST point is live encoders —
+        noise at the 3rd decimal flips the key every bench run and the
+        chain re-certifies for ~1-2 s (the motion book's encoder
+        lesson, resurfacing here). A row with identical non-point
+        context whose points all sit within CHAIN_CACHE_PT_TOL is the
+        same physical chain — replay it, and never mint a near-dup
+        row for it."""
+        try:
+            want = json.loads(key)
+            wpts = want[1]
+            for k2, row in self._chain_cache.items():
+                if k2 == key:
+                    continue
+                try:
+                    have = json.loads(k2)
+                except Exception:
+                    continue
+                if have[0] != want[0] or have[2:] != want[2:]:
+                    continue
+                hpts = have[1]
+                if len(hpts) != len(wpts):
+                    continue
+                if all(len(a) == len(b)
+                       and max(abs(x - y) for x, y in zip(a, b)) <= self.CHAIN_CACHE_PT_TOL
+                       for a, b in zip(wpts, hpts)):
+                    return row
+        except Exception:
+            pass
+        return None
 
     def _chain_cache_put(self, key, pts, vajs, corners, stops):
         try:
@@ -2153,13 +2186,47 @@ class Core:
         sharp path)."""
         try:
             check = None
+            _ck = None
             if padding is not None:
                 check_pad = max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN)
                 cw, ct = self.workspace.compute_collision_boxes(check_pad)
+                # Validated blends cache like certified chains: the
+                # result is deterministic given points, radius, scene
+                # (stamped) and the attached tool — do the validation
+                # ONCE and replay it. Fuzzy lookup absorbs the live-
+                # encoder first point (see _chain_fuzzy_get).
+                if self._chain_cache is None:
+                    self._chain_cache_init()
+                _sig = [self._path_tool_sig(ct), self._path_tool_sig(cw),
+                        [round(float(v), 2) for v in tool_pose]]
+                _turns = self._chain_j5_turns(points)
+                _ck = self._chain_key(points, radius, float(from_idx), step,
+                                      0.0, padding, _sig, _turns, "blend")
+                _hit = self._chain_cache.get(_ck)
+                if _hit is None:
+                    _hit = self._chain_fuzzy_get(_ck)
+                if _hit is not None:
+                    try:
+                        out = [[float(v) for v in q] for q in _hit["p"]]
+                        if _turns:
+                            for q in out:
+                                if len(q) > 5:
+                                    q[5] += 360.0 * _turns
+                        return out
+                    except Exception:
+                        pass  # malformed row — fall through to a fresh blend
                 base_in_world = list(self.rail_base.pose(anchor="carriage"))
                 self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
                 check = lambda seg: self.planner.check([list(p) for p in seg], rail_weight=rail_weight)
-            return blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx, check=check)
+            out = blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx, check=check)
+            if out is not None and _ck is not None:
+                _cp = [list(q) for q in out]
+                if _turns:
+                    for q in _cp:
+                        if len(q) > 5:
+                            q[5] -= 360.0 * _turns
+                self._chain_cache_put(_ck, _cp, [], [], [])
+            return out
         except Exception:
             return None
 
@@ -2266,6 +2333,8 @@ class Core:
             _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, _sig,
                                   _turns, "smove")
             _hit = self._chain_cache.get(_ck)
+            if _hit is None:
+                _hit = self._chain_fuzzy_get(_ck)
             if _hit is not None:
                 try:
                     v_, a_, j_ = (float(x) for x in _hit["vaj"][0])
@@ -2422,6 +2491,8 @@ class Core:
         _turns = self._chain_j5_turns(pts)
         _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns, label)
         _hit = self._chain_cache.get(_ck)
+        if _hit is None:
+            _hit = self._chain_fuzzy_get(_ck)
         if _hit is not None:
             try:
                 pts_h = [[float(v) for v in q] for q in _hit["p"]]
