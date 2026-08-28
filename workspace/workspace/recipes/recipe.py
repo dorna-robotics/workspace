@@ -2122,7 +2122,11 @@ class Recipe:
         gap=2,
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
-        soft_approach=False,
+        # True: the gap-point stop gives the approach a group boundary,
+        # so the gripper-open IO fires DURING the travel (io_overlap)
+        # and join+verifies at the gap — in the air, before descent —
+        # instead of serializing ~1.5 s of IO at a standstill.
+        soft_approach=True,
         compliant=True,
         **kwargs,
     ):
