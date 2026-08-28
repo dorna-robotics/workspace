@@ -1885,6 +1885,7 @@ class Recipe:
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
         soft_approach=True,
+        soft_exit=True,
         compliant=True,
         **kwargs,
     ):
@@ -1919,6 +1920,12 @@ class Recipe:
             tool_tip_z_offset: Shift tool tip (tip-to-TCP length) by this Z (mm).
             soft_approach: If True, insert a second approach waypoint just above
                 the load for a vertical final descent (recommended for racks).
+            soft_exit: If True (default), the pull-off to the gap
+                height is its OWN exit group — a short TRUE lmove
+                ending at a stop — before the lift to clearance. The
+                mirror of ``soft_approach``; under fusion only the
+                lift above the gap ever fuses, so the delicate
+                extraction leg stays TCP-straight on every run.
             compliant: How the grabbed item seats on the tool, which decides
                 whether ``tool_tcp_z_offset`` shifts the item's *attach*
                 position:
@@ -1983,7 +1990,16 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            exit_groups = [[pose_offset.pose(offset=[0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0])]]
+            e_top = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0])
+            if soft_exit:
+                # Careful extraction: the pull-off to the gap height is
+                # its own group — a short TRUE lmove ending at a stop —
+                # then the normal lift. Mirror of soft_approach's final
+                # descent; under fusion only the lift group deposits.
+                e_gap = pose_offset.pose(offset=[0, 0, height_load + height_tool + gap, 0, 0, 0])
+                exit_groups = [[e_gap], [e_top]]
+            else:
+                exit_groups = [[e_top]]
 
         # IO config
         output_approach = []
@@ -2137,6 +2153,7 @@ class Recipe:
         load_anchor="center",
         gravity_offset=1,
         soft_approach=True,
+        soft_exit=False,
         **kwargs,
     ):
         """Compute the motion-parameter dict for ``place`` / friends.
@@ -2233,7 +2250,15 @@ class Recipe:
         exit_groups = []
         exit_clearance = self._exit_clearance(exit, padding)
         if exit_clearance is not None:
-            exit_groups = [[dorna_pose.transform_pose([0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])]]
+            e_top = dorna_pose.transform_pose([0, 0, max(height_load, height_container) + exit_clearance, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
+            if soft_exit:
+                # Mirror of pick_setting's soft exit — OFF by default
+                # for places (the released item stays; the empty tool's
+                # lift is rarely delicate). Opt in per call/recipe.
+                e_gap = dorna_pose.transform_pose([0, 0, height_container + gap, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
+                exit_groups = [[e_gap], [e_top]]
+            else:
+                exit_groups = [[e_top]]
 
         # IO config
         output_approach = []
