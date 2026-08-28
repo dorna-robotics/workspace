@@ -12,8 +12,11 @@ class Shaker:
         # cfg
         output_start = [[None, None, 0.1]], # [[pin, index, time]]
         output_end = [[None, None, 0.1]], # [[pin, index, time]]
-        output_close = [[None, None, 0.1]], # [[pin, index, time]],
-        output_open =[[None, None, 0.1]], # [[pin, index, time]],
+        # 0.5 s dwell on the clamp rows: the head settles and the
+        # liquid stops sloshing before/after the jaws actuate (bench:
+        # the clamp opened the instant the shake ended).
+        output_close = [[None, None, 0.5]], # [[pin, index, time]],
+        output_open =[[None, None, 0.5]], # [[pin, index, time]],
     )
     def __init__(self, name: str, workspace, type=None, **kwargs):
         # prm
