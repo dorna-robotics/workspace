@@ -43,8 +43,8 @@ class VortexGenieTop2ml4x7(Rack):
         offset=[-16.5*(4-1)/2, -16.5*(7-1)/2, 7],
         pitch=[16.5, 16.5, 0],
         rvec_safe=[0, 0, 45],
-        rows=[chr(c) for c in range(ord("A"), ord("G") + 1)],
-        cols= [i for i in range(1, 4+1)],
+        rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
+        cols= [i for i in range(1, 7+1)],
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
