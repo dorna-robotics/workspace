@@ -1139,6 +1139,12 @@ class Core:
     # EVERY solved hop is stored — direct-connection segments and OMPL
     # detours alike: one solve pipeline, one record, one replay rule.
 
+    # Per-joint metric weights for the sampling planner (j0..j5).
+    # >1 = that joint is EXPENSIVE to move (the optimizer avoids it),
+    # <1 = cheap (preferred for dodging). Big links straight, wrist
+    # does the work. Part of the path-cache row context — changing
+    # these retires every cached path.
+    JOINT_WEIGHTS = [1.5, 1.5, 1.2, 1.0, 0.7, 0.5]
     CHAIN_CACHE_PT_TOL = 0.1     # deg / mm per joint: chain-cache fuzzy match
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
@@ -1233,6 +1239,9 @@ class Core:
                     self._path_near(a, b, self.PATH_CACHE_TOOL_TOL)
                     for a, b in zip(row["t"], sig)):
                 return False
+            if [round(float(v), 3) for v in row.get("w", [])] != \
+                    [round(float(v), 3) for v in self.JOINT_WEIGHTS]:
+                return False   # planned under a different metric — retire
             return (self._path_near(row["s"], start, self.PATH_CACHE_START_TOL)
                     and self._path_near(row["g"], goal, self.PATH_CACHE_GOAL_TOL))
         except Exception:
@@ -1312,6 +1321,7 @@ class Core:
             row = {
                 "s": [round(float(v), 3) for v in start],
                 "g": [round(float(v), 3) for v in goal],
+                "w": [round(float(v), 3) for v in self.JOINT_WEIGHTS],
                 "t": [[round(float(v), 3) for v in b] for b in sig],
                 "p": [[round(float(v), 3) for v in p] for p in path],
             }
@@ -2217,7 +2227,7 @@ class Core:
                         pass  # malformed row — fall through to a fresh blend
                 base_in_world = list(self.rail_base.pose(anchor="carriage"))
                 self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
-                check = lambda seg: self.planner.check([list(p) for p in seg], rail_weight=rail_weight)
+                check = lambda seg: self.planner.check([list(p) for p in seg], rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS)
             out = blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx, check=check)
             if out is not None and _ck is not None:
                 _cp = [list(q) for q in out]
@@ -2596,7 +2606,7 @@ class Core:
             cw, ct = self.workspace.compute_collision_boxes(check_pad)
             base_in_world = list(self.rail_base.pose(anchor="carriage"))
             self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
-            check = lambda seg: self.planner.check([list(q) for q in seg], rail_weight=rail_weight)
+            check = lambda seg: self.planner.check([list(q) for q in seg], rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS)
         for k in range(n_sec - 1):
             if corners[k] <= 0:
                 continue
@@ -3054,7 +3064,7 @@ class Core:
         # exit should have auto-lifted) — the planner would silently
         # burn its whole budget and report NO PATH.
         try:
-            if not self.planner.check([list(start), list(start)], rail_weight=rail_weight):
+            if not self.planner.check([list(start), list(start)], rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS):
                 print("[plan] START is inside the collision envelope — the previous "
                       "motion ended inside a box (exit not lifted?)")
         except Exception:
@@ -3080,12 +3090,13 @@ class Core:
         try:
             if self.planner.check([list(start), list(goal)], gravity=gravity,
                                   gravity_vec=gv, gravity_thr=gravity_thr,
-                                  rail_weight=rail_weight):
+                                  rail_weight=rail_weight,
+                                  joint_weights=self.JOINT_WEIGHTS):
                 res = [list(start), list(goal)]
         except Exception:
             res = None
         if res is None:
-            res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight)
+            res = self.planner.plan(start, goal, seed=seed, gravity=gravity, gravity_vec=gravity_vec, gravity_thr=gravity_thr, planner=planner, time_limit_sec=time_limit_sec, rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
@@ -3115,7 +3126,8 @@ class Core:
                     cw, ct = self.workspace.compute_collision_boxes(check_pad)
                     self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
                     seg_ok = lambda seg: self.planner.check(seg, gravity=gravity, gravity_vec=gv,
-                                                            gravity_thr=gravity_thr, rail_weight=rail_weight)
+                                                            gravity_thr=gravity_thr, rail_weight=rail_weight,
+                                                            joint_weights=self.JOINT_WEIGHTS)
                     res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
                 except Exception:
                     pass  # keep the dense path
