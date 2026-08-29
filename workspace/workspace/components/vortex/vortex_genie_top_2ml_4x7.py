@@ -43,8 +43,15 @@ class VortexGenieTop2ml4x7(Rack):
         offset=[-16.5*(4-1)/2, -16.5*(7-1)/2, 7],
         pitch=[16.5, 16.5, 0],
         rvec_safe=[0, 0, 45],
+        # A1..D7, same naming as the 2ml racks — a vial keeps its own
+        # anchor. The physical grid is 4 bores along x and 7 along y
+        # (rotated glb, see the NOTE above), so rows A-D must run
+        # along x: transpose swaps the base generator's axes. A1 =
+        # (-24.75, -49.5), D7 = (+24.75, +49.5), all 28 on the
+        # measured bores.
         rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
         cols= [i for i in range(1, 7+1)],
+        transpose=True,
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):
