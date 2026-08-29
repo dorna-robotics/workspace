@@ -2,6 +2,8 @@
 
 from contextlib import nullcontext
 from copy import deepcopy
+import hashlib
+import json
 import threading
 import time as _time
 from mergedeep import merge
@@ -365,7 +367,7 @@ class Recipe:
 
     # ── Shared helpers ──────────────────────────────────────────────────────
 
-    def _apply_output_config(self, rt, output_list):
+    def _apply_output_config(self, rt, output_list, phase=""):
         """Apply an IO output list: [[config, get_call, set_call], ...].
 
         MEMORY-LESS by default: the full sequence fires every time, even
@@ -386,11 +388,13 @@ class Recipe:
         disengaged, it fires (a re-grip attempt loses nothing).
         """
         seq = []
+        skipped = 0
         for entry in output_list:
             _config, get_call, set_call = entry[0], entry[1], entry[2]
             if (len(entry) > 3 and entry[3] == "skip_if_state"
                     and get_call is not None and set_call is not None
                     and get_call[0](*get_call[1]) == set_call[1][0]):
+                skipped += 1
                 continue
             for c in _config:
                 if len(c) < 2 or c[0] is None:
@@ -399,6 +403,14 @@ class Recipe:
                 seq.append((int(c[0]), int(c[1]), delay))
             if set_call is not None:
                 set_call[0](*set_call[1])
+        if output_list:
+            # THE io timeline (core/fusion_log.jsonl): mode "sync" =
+            # robot stopped for the chain's full duration.
+            self.core.fusion_journal(
+                "io_fire", owner=type(self).__name__, phase=phase or None,
+                mode="sync", pins=[[p, v] for p, v, _ in seq],
+                skipped=skipped or None,
+                dur=round(sum(d for _, _, d in seq), 3))
         rt.checkpoint()
         # Pin frames go through the normal QUEUE (queue 0) so they stay
         # synced with the motion — a touch-time output must execute
@@ -433,13 +445,14 @@ class Recipe:
     # overlapped: it goes through the normal queued output(config=…),
     # which is inherently synced with the motion.
 
-    def _output_async(self, output_list):
+    def _output_async(self, output_list, phase=""):
         """Fire an IO chain in a side thread. Returns a handle for
         ``_output_join``. Memory-less like _apply_output_config."""
         api = self.core.robot_api
         seq = []        # flattened [(pin, val, delay), ...]
         expected = {}   # pin -> final commanded value
         setters = []
+        skipped = 0
         for entry in output_list:
             _config, get_call, set_call = entry[0], entry[1], entry[2]
             # "skip_if_state" (hold-side chains): don't refire an
@@ -452,6 +465,8 @@ class Recipe:
                 and get_call is not None and set_call is not None
                 and get_call[0](*get_call[1]) == set_call[1][0]
             )
+            if skip_fire:
+                skipped += 1
             for c in _config:
                 if len(c) < 2 or c[0] is None:
                     continue
@@ -463,6 +478,14 @@ class Recipe:
             if set_call is not None and not skip_fire:
                 setters.append(set_call)
         state = {"exc": None}
+        if output_list:
+            # THE io timeline: mode "overlap" = fired here, robot free
+            # to move; the join barrier line closes the pair.
+            self.core.fusion_journal(
+                "io_fire", owner=type(self).__name__, phase=phase or None,
+                mode="overlap", pins=[[p, v] for p, v, _ in seq],
+                skipped=skipped or None,
+                dur=round(sum(d for _, _, d in seq), 3))
 
         # ONE ordered lane for all background chains (core comment):
         # this chain runs only after its predecessor finishes, and the
@@ -497,6 +520,8 @@ class Recipe:
             "expected": expected,
             "state": state,
             "duration": sum(d for _, _, d in seq),
+            "phase": phase,
+            "owner": type(self).__name__,
         }
 
     def _output_join(self, handle):
@@ -505,15 +530,27 @@ class Recipe:
         before any contact motion can run on a bad chain."""
         if handle is None:
             return
+        _t0 = _time.time()
+
+        def _log(ok, reason=None):
+            self.core.fusion_journal(
+                "io_join" if ok else "io_fail",
+                owner=handle.get("owner"), phase=handle.get("phase") or None,
+                waited_ms=int((_time.time() - _t0) * 1000),
+                reason=reason)
+
         # Generous timeout: the ordered lane may put predecessors ahead
         # of this chain.
         handle["thread"].join(timeout=handle["duration"] + 35.0)
         if handle["thread"].is_alive():
+            _log(False, "chain did not finish in time")
             raise RecipeError("approach IO chain did not finish in time")
         if handle["state"]["exc"] is not None:
+            _log(False, str(handle["state"]["exc"]))
             raise RecipeError(f"approach IO chain failed: {handle['state']['exc']}")
         self.rt.checkpoint()
         if not handle["expected"]:
+            _log(True)
             return
         states = None
         try:
@@ -523,6 +560,7 @@ class Recipe:
         if isinstance(states, dict):  # tolerate {"out3": 1, ...} form
             states = [states.get(f"out{i}") for i in range(16)]
         if not isinstance(states, (list, tuple)):
+            _log(False, "could not read output states")
             raise RecipeError(
                 "approach IO verification impossible — could not read "
                 f"output states (got {type(states).__name__})"
@@ -539,7 +577,9 @@ class Recipe:
             if pin < len(states) and states[pin] != ledger.get(pin, val)
         }
         if bad:
+            _log(False, f"pin verification failed: {bad}")
             raise RecipeError(f"approach IO verification failed: {bad}")
+        _log(True)
 
     def _calibrate_offset(self, target_solid, target_anchor, offset):
         """Apply calibration correction to a single offset, return corrected offset."""
@@ -660,10 +700,12 @@ class Recipe:
         # {pin: expected 1, actual 0} verification failure returned).
         io_sync = None
         if output_exit:
-            io_sync = lambda: self._apply_output_config(rt, output_exit)
+            io_sync = lambda: self._apply_output_config(rt, output_exit,
+                                                        phase="exit-sync")
 
         def _flush():
-            io_h = self._output_async(output_exit) if output_exit else None
+            io_h = (self._output_async(output_exit, phase="exit-flush")
+                    if output_exit else None)
             self._move_along_path(rt, group, target_solid, target_anchor,
                                   tool_dict=tool_dict, j5_override=j5_override,
                                   vaj_map=vaj_map)
@@ -680,7 +722,8 @@ class Recipe:
             "book_sig": sig,
         }
         if output_exit:
-            tail["io_start"] = lambda: self._output_async(output_exit)
+            tail["io_start"] = lambda: self._output_async(
+                output_exit, phase="exit-deferred")
             tail["io_join"] = lambda h: self._output_join(h)
             tail["io_sync"] = io_sync
         self.core.tail_deposit(tail)
@@ -785,6 +828,90 @@ class Recipe:
         only need to run NEAR their line, so no 5 mm densify (user
         decision; matches how cjmove/clmove always carried tails)."""
         return [list(p) for p in tail["points"]] + [list(p) for p in points[1:]]
+
+    # ── fold cache key (core/fold.json — see core's block comment) ───
+
+    @staticmethod
+    def _fold_plan_sig(kwargs):
+        """Deterministic signature of motion_plan kwargs: sorted items,
+        floats rounded — so {"padding": 120.0} equals {"padding": 120}."""
+        def _r(v):
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, (int, float)):
+                return round(float(v), 3)
+            if isinstance(v, (list, tuple)):
+                return [_r(x) for x in v]
+            return str(v) if v is not None else None
+        return sorted([str(k), _r(v)] for k, v in kwargs.items())
+
+    def _fold_cache_key(self, path, target_solid, target_anchor, tool_dict,
+                        tool_pose, j5_override, plan_on, planned,
+                        motion_plan_kwargs, blend):
+        """Exact identity of a fold REQUEST, as a JSON string — every
+        input the pipeline's output depends on except the live start
+        pose (matched fuzzily by fold_cache_get):
+
+          * the target (owning component, the anchor's world pose, the
+            anchor name) and the requested offsets,
+          * the tool (owning component, anchor, offset) and its flange
+            pose,
+          * the j5 pin, planner mode + primitive + kwargs, blend radius,
+          * the planner's joint-weight metric,
+          * the IK context (approach side, base distance, rail sweep,
+            canonical-j5 ref joints — the solve's branch selectors),
+          * the calibration state (name, abc flag, content hash — the
+            key is pre-IK, so recalibration must retire rows here; the
+            ik/path caches key on post-calibration values instead).
+
+        The held tail's seam identity is NOT part of this base key —
+        the caller appends it (or "") when composing the stored key,
+        because spliced points embed their tail and a row is only
+        valid for the exact seam it was built on.
+
+        None → this fold is uncacheable (unserializable input) and
+        runs the classic pipeline."""
+        try:
+            calib_sig = ""
+            if self.calibration:
+                cal = self.core.calibration
+                calib_sig = hashlib.sha1(json.dumps(
+                    [cal.calibration_data, cal.calibration_delta],
+                    sort_keys=True, separators=(",", ":"),
+                ).encode()).hexdigest()[:16]
+            tool_solid = tool_dict.get("solid")
+            ref = [float(v) for v in self.ref_joints]
+            if self.core.j5_infinite and len(ref) > 5:
+                ref[5] = self.core._wrap180(ref[5])
+            return json.dumps([
+                # Solid .name is None on assembly solids — the owning
+                # COMPONENT is the identity, and the anchor's live
+                # world pose pins the geometry (twin components share
+                # everything else; runtime scene mutation can move a
+                # target without touching the scene stamp).
+                str(getattr(target_solid, "component", "") or ""),
+                [round(float(v), 3)
+                 for v in target_solid.pose(anchor=target_anchor)],
+                str(target_anchor),
+                [[round(float(v), 3) for v in off] for off in path],
+                str(getattr(tool_solid, "component", "") or "") if tool_solid else "",
+                str(tool_dict.get("anchor") or ""),
+                [round(float(v), 3)
+                 for v in (tool_dict.get("offset") or [0, 0, 0, 0, 0, 0])],
+                [round(float(v), 3) for v in tool_pose],
+                None if j5_override is None else round(float(j5_override), 3),
+                bool(plan_on), str(planned),
+                round(float(blend), 3),
+                self._fold_plan_sig(motion_plan_kwargs),
+                [round(float(v), 3) for v in self.core.JOINT_WEIGHTS],
+                bool(self.left_approach), round(float(self.base_distance), 3),
+                round(float(self.rail_step), 3), int(self.rail_span),
+                [round(v, 1) for v in ref],
+                str(self.calibration_name), bool(self.calibrate_abc),
+                calib_sig,
+            ], separators=(",", ":"))
+        except Exception:
+            return None
 
     def _tool_lock_j5(self):
         """The mounted tool's declared ``lock_j5`` (degrees), or None.
@@ -1084,11 +1211,6 @@ class Recipe:
             return
 
         if first_approach and len(path) > 1 and blend and blend > 0:
-            _t_ik0 = _time.perf_counter()
-            J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
-            _t_ik0 = _time.perf_counter() - _t_ik0
-            rt.checkpoint()
-
             tool_pose = [0, 0, 0, 0, 0, 0]
             if tool_dict["solid"] and tool_dict["anchor"]:
                 tool_pose = tool_dict["solid"].pose(
@@ -1097,30 +1219,96 @@ class Recipe:
                     offset=tool_dict["offset"],
                 )
 
-            # First hop → smove waypoints, planned or not.
-            _t_plan = _t_sample = _t_blend = 0.0
-            _t0 = _time.perf_counter()
-            if plan_on:
-                points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
-                if not points and motion_plan_kwargs:
-                    rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
-                    points = self.core.motion_plan(joint=J0)
-                if not points:
-                    raise RecipeError("no proper path was found")
-                points = [list(p) for p in points]
-                _t_plan = _time.perf_counter() - _t0
-            else:
-                # Unplanned first hop: bare knots either way — the
-                # lmove/jmove distinction only matters for discrete
-                # execution, not for knots feeding a fold.
-                cur = [float(v) for v in self._cur_joints()]
-                points = [cur, [float(v) for v in J0]]
+            # ── fold cache (core/fold.json — see core's block comment):
+            # the finished product of everything below — solves, plan,
+            # pin, splice, blend — is deterministic per request + start,
+            # so a repeat verb hands its points straight to certify.
+            # The stored key = [base request, held seam identity or ""]:
+            # spliced rows embed their tail, so they only ever serve
+            # the exact seam they were built on.
+            _fold_base = self._fold_cache_key(
+                path, target_solid, target_anchor, tool_dict, tool_pose,
+                j5_override, plan_on, planned, motion_plan_kwargs, blend)
+            if fuse_tail is not None and not fuse_tail.get("book_key"):
+                _fold_base = None   # unkeyable seam — classic, uncached
+            points = None
+            cached = False
+            pending_io = None
+            _t_ik0 = _t_plan = _t_sample = _t_blend = 0.0
+            if _fold_base is not None:
+                if fuse_tail is not None:
+                    # The row's first point is the tail's deposit pose —
+                    # where the robot physically stands right now.
+                    _start = [float(v) for v in fuse_tail["points"][0]]
+                    _tk = str(fuse_tail["book_key"])
+                else:
+                    _start = [float(v) for v in self._cur_joints()]
+                    _tk = ""
+                hit = self.core.fold_cache_get(
+                    json.dumps([_fold_base, _tk]), _start)
+                if hit is not None:
+                    # Still the merge-capable site: note + verify from
+                    # the row's final target (row invariant: p[-1] IS
+                    # the fold's solved final target) — no early solve,
+                    # no ik-cache pollution.
+                    self.core.book_note(planned, hit[-1])
+                    if fuse_tail is not None:
+                        if self.core.book_check(fuse_tail, planned, hit[-1]):
+                            self.core.tail_consume()
+                            print(f"[fusion] merge: {fuse_tail.get('owner')} + "
+                                  f"{type(self).__name__} travel -> one {planned} chain")
+                            self.core.fusion_journal(
+                                "merge", owner=fuse_tail.get("owner"),
+                                consumer=type(self).__name__,
+                                primitive=planned, cached=True)
+                            if fuse_tail.get("io_start"):
+                                pending_io = (fuse_tail["io_start"],
+                                              fuse_tail["io_join"])
+                            fuse_tail = None
+                        else:
+                            # Mismatch: this row embeds the held tail —
+                            # flush classic (drops the record), learn the
+                            # new partner, and retry the tail-free row
+                            # from the flushed stop.
+                            print(f"[fusion] book mismatch: "
+                                  f"{fuse_tail.get('owner')} tail flushes classic")
+                            self.core.book_learn(fuse_tail.get("book_key"),
+                                                 planned, hit[-1])
+                            self.core.tail_flush(reason="book mismatch")
+                            fuse_tail = None
+                            hit = self.core.fold_cache_get(
+                                json.dumps([_fold_base, ""]),
+                                [float(v) for v in self._cur_joints()])
+                if hit is not None:
+                    rt.checkpoint()
+                    points = hit
+                    cached = True
 
-            folded = points is not None
-            rest = []
-            _t1 = _time.perf_counter()
-            if folded:
-                prev = points[-1]
+            if points is None:
+                _t_ik0 = _time.perf_counter()
+                J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+                _t_ik0 = _time.perf_counter() - _t_ik0
+                rt.checkpoint()
+
+                # First hop → smove waypoints, planned or not.
+                _t0 = _time.perf_counter()
+                if plan_on:
+                    points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
+                    if not points and motion_plan_kwargs:
+                        rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
+                        points = self.core.motion_plan(joint=J0)
+                    if not points:
+                        raise RecipeError("no proper path was found")
+                    points = [list(p) for p in points]
+                    _t_plan = _time.perf_counter() - _t0
+                else:
+                    # Unplanned first hop: bare knots either way — the
+                    # lmove/jmove distinction only matters for discrete
+                    # execution, not for knots feeding a fold.
+                    cur = [float(v) for v in self._cur_joints()]
+                    points = [cur, [float(v) for v in J0]]
+
+                _t1 = _time.perf_counter()
                 for offset in path[1:]:
                     J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
                     # BARE knots for EVERY primitive — one target per
@@ -1128,11 +1316,8 @@ class Recipe:
                     # smove acts like cjmove/clmove, only the motion
                     # type differs — approach legs run NEAR their
                     # line, corners still get validated fillets).
-                    rest.append([float(v) for v in J])
-                    prev = J
-            _t_sample = _time.perf_counter() - _t1
-            if folded:
-                points.extend(rest)
+                    points.append([float(v) for v in J])
+                _t_sample = _time.perf_counter() - _t1
                 # Pin BEFORE blending so the fillets are generated (and
                 # validated) on the wrist-locked path, not corrected
                 # after the fact. The pin covers only THIS verb's part
@@ -1158,11 +1343,12 @@ class Recipe:
                                          planned, points[-1])
                     self.core.tail_flush(reason="book mismatch")
                     fuse_tail = None
-                pending_io = None
+                _spliced = ""
                 if fuse_tail is not None:
                     # THE SPLICE: held tail + travel + first group, one
                     # chain. Consume only now — every earlier failure
                     # path leaves the tail held for a clean flush.
+                    _spliced = str(fuse_tail.get("book_key") or "")
                     points = self._fuse_tail_points(fuse_tail, points, planned)
                     self.core.tail_consume()
                     print(f"[fusion] merge: {fuse_tail.get('owner')} + "
@@ -1189,6 +1375,16 @@ class Recipe:
                     _t_blend = _time.perf_counter() - _t2
                     if blended is not None:
                         points = blended
+                if _fold_base is not None:
+                    self.core.fold_cache_put(
+                        json.dumps([_fold_base, _spliced]), points)
+
+            if cached:
+                print(f"[fold] cache hit ({len(points)} pts)")
+                self.core.fusion_journal(
+                    "fold", consumer=type(self).__name__,
+                    cached=True, pts=len(points))
+            else:
                 print(f"[fold] ik0 {_t_ik0*1000:.0f} ms, plan {_t_plan*1000:.0f} ms, "
                       f"sample {_t_sample*1000:.0f} ms, blend {_t_blend*1000:.0f} ms "
                       f"({len(points)} pts)")
@@ -1198,26 +1394,12 @@ class Recipe:
                     plan_ms=round(_t_plan * 1000),
                     sample_ms=round(_t_sample * 1000),
                     blend_ms=round(_t_blend * 1000), pts=len(points))
-                io_h = pending_io[0]() if pending_io else None
-                self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
-                                      padding=motion_plan_kwargs.get("padding", 10))
-                if pending_io:
-                    pending_io[1](io_h)
-                return
-            if plan_on and points:
-                # Fold sampling failed mid-way — flush the held tail
-                # (planned from its endpoint, so geometry stays right),
-                # then execute the planned travel and the remaining
-                # offsets as classic lmoves.
-                self.core.tail_flush(reason="fold failed")
-                self._run_path_motion(rt, self._pin_j5(points, j5_override), vaj_map["jmove"],
-                                      planned, tool_pose=tool_pose,
-                                      padding=motion_plan_kwargs.get("padding", 10))
-                for offset in path[1:]:
-                    J = self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)
-                    rt.checkpoint()
-                    self._do_motion(rt, J, tool_dict, vaj_map)
-                return
+            io_h = pending_io[0]() if pending_io else None
+            self._run_path_motion(rt, points, vaj_map["jmove"], planned, tool_pose=tool_pose,
+                                  padding=motion_plan_kwargs.get("padding", 10))
+            if pending_io:
+                pending_io[1](io_h)
+            return
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
 
@@ -1358,8 +1540,16 @@ class Recipe:
                                                    joint_caps=caps)
         _ts = _time.perf_counter()
         rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
+        _send_ms = (_time.perf_counter() - _ts) * 1000
         print(f"[fold] certify {(_ts - _tc)*1000:.0f} ms, send "
-              f"{(_time.perf_counter() - _ts)*1000:.0f} ms")
+              f"{_send_ms:.0f} ms")
+        # Journaled AFTER the motion returns: motion start = this
+        # event's ts - send_ms (completes the verb->fold->send
+        # kickstart timeline in core/fusion_log.jsonl).
+        self.core.fusion_journal(
+            "send", owner=type(self).__name__, primitive="smove",
+            certify_ms=round((_ts - _tc) * 1000),
+            send_ms=round(_send_ms))
 
     def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):
         """Send a chain, split at its internal STOPS.
@@ -1812,9 +2002,11 @@ class Recipe:
         io_handle = None
         if output_approach:
             if len(approach) > 1 and self.io_overlap and fuse:
-                io_handle = self._output_async(output_approach)
+                io_handle = self._output_async(output_approach,
+                                               phase="approach")
             else:
-                self._output_join(self._output_async(output_approach))
+                self._output_join(self._output_async(output_approach,
+                                                     phase="approach-sync"))
         try:
             for gi, group in enumerate(approach):
                 first = gi == 0
@@ -1845,7 +2037,7 @@ class Recipe:
                 _h["thread"].join(timeout=_h["duration"] + 5.0)
 
         # output touch
-        self._apply_output_config(rt, output_touch)
+        self._apply_output_config(rt, output_touch, phase="touch")
 
         # sleep + actions
         rt.checkpoint()
@@ -1898,7 +2090,7 @@ class Recipe:
         # output exit — unless it rides with the deferred tail (fired
         # async at the fused chain's start, joined at its end).
         if not exit_io_deferred:
-            self._apply_output_config(rt, output_exit)
+            self._apply_output_config(rt, output_exit, phase="exit")
 
         return True
 

@@ -400,6 +400,14 @@ class Core:
         self._path_cache = None        # {key: [[j0..jN], ...]}
         self._path_cache_path = None
 
+        # --------- fold cache (core/fold.json)
+        # The verb kickstart cache: stores the FINISHED fold product
+        # (the post-pin, post-splice, post-blend point list) keyed on
+        # the fold REQUEST — see fold_cache_get. Lazy like the others;
+        # every failure mode degrades to the classic fold pipeline.
+        self._fold_cache = None        # {request key: [row, ...]}
+        self._fold_cache_path = None
+
         # --------- rail carriage (shared across all rail sizes)
         rail_hd_carriage_anchors = {
             "center": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -859,6 +867,9 @@ class Core:
     #   calibrate.json  — station calibration (Calibration)
     #   ik.json         — IK solution cache
     #   path.json       — planned-path cache
+    #   fold.json       — fold (verb kickstart) cache
+    #   traj.json       — chain-certification cache
+    #   motion_book.json / fusion_log.jsonl — replay fusion
     # Legacy root-level core.json / core_ik.json / core_path.json are
     # MOVED in the first time the folder resolves (one-time migration).
     # The folder is per-station truth — gitignored, never synced.
@@ -1336,6 +1347,156 @@ class Core:
         except Exception:
             pass
 
+    # ── fold cache (core/fold.json) ─────────────────────────────────
+    # The fold pipeline (recipe._move_along_path: first-point IK, path
+    # plan, remaining approach solves, j5 pin, tail splice, corner
+    # blending — the ~0.2-0.5 s a verb "thinks" before its travel
+    # starts) is a deterministic function of its REQUEST: target
+    # identity + offsets, tool + tool pose, planner mode and kwargs,
+    # blend radius, joint weights, the calibration state and the held
+    # tail's identity — plus the live start pose. Same request, same
+    # start → the same finished chain. Rows therefore store the FULL
+    # fold product (post-pin, post-splice, post-blend) and a hit hands
+    # it straight to certify (traj.json) — path.json's contract, one
+    # level up: validated ONCE at creation, replayed verbatim with the
+    # start snapped to the live pose, no re-check (the scene's fixed
+    # collision boxes are the project's contract; the scene stamp
+    # retires the file, the calibration signature inside the key
+    # retires rows on recalibration, and retuned planner knobs mean
+    # delete core/fold.json — same rule as path.json). Starts are
+    # matched fuzzily (PATH_CACHE_START_TOL — encoder flutter) with
+    # j5 re-carried by whole turns (the traj-cache rule), so a wound
+    # wrist replays the same fold. Row invariant: p[-1] is the fold's
+    # solved final target — the recipe's book_note/book_check run on
+    # it exactly as they would on the fresh solve.
+
+    FOLD_CACHE_MAX_PER_KEY = 8   # starts per request (prior stations vary)
+
+    @staticmethod
+    def _fold_row_valid(v):
+        return (isinstance(v, dict) and isinstance(v.get("p"), list)
+                and len(v["p"]) >= 2
+                and all(isinstance(q, list) and len(q) == len(v["p"][0])
+                        for q in v["p"]))
+
+    def _fold_cache_init(self):
+        """Resolve + load core/fold.json (JSONL). Never raises."""
+        self._fold_cache = {}
+        try:
+            d = self._core_dir()
+            if d is not None:
+                self._fold_cache_path = d / "fold.json"
+        except Exception:
+            self._fold_cache_path = None
+        if self._fold_cache_path is None or not self._fold_cache_path.is_file():
+            return
+        if not self._cache_scene_ok(self._fold_cache_path):
+            self._cache_discard_stale(self._fold_cache_path, "fold.json")
+            return
+        try:
+            lines = 0
+            live = 0
+            for line in self._fold_cache_path.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                lines += 1
+                try:
+                    rec = json.loads(line)
+                    if (isinstance(rec, dict) and isinstance(rec.get("k"), str)
+                            and self._fold_row_valid(rec.get("v"))):
+                        self._fold_rows_add(rec["k"], rec["v"])
+                except Exception:
+                    continue  # torn tail line
+            live = sum(len(rows) for rows in self._fold_cache.values())
+            # Compact when replaced/dropped rows dominate the file.
+            if lines > 50 and lines > 2 * live:
+                tmp = self._fold_cache_path.with_suffix(".json.tmp")
+                fp = self._scene_fp()
+                stamp = (json.dumps({"__scene__": fp}) + "\n") if fp else ""
+                tmp.write_text(stamp + "".join(
+                    json.dumps({"k": k, "v": row}, separators=(",", ":")) + "\n"
+                    for k, rows in self._fold_cache.items() for row in rows
+                ))
+                os.replace(tmp, self._fold_cache_path)
+        except Exception:
+            self._fold_cache = {}  # unreadable file → start empty
+
+    def _fold_start_shift(self, start, s0):
+        """Whole-turn j5 shift that maps a stored start onto the live
+        winding (0.0 when j5 is finite)."""
+        if self.j5_infinite and len(s0) > 5:
+            return 360.0 * round((float(start[5]) - float(s0[5])) / 360.0)
+        return 0.0
+
+    def _fold_start_match(self, start, s0, shift):
+        return (len(start) == len(s0)
+                and all(abs(float(a) - (float(b) + (shift if i == 5 else 0.0)))
+                        <= self.PATH_CACHE_START_TOL
+                        for i, (a, b) in enumerate(zip(start, s0))))
+
+    def _fold_rows_add(self, key, row):
+        """Insert a row under its request key: replace the row whose
+        start it matches (same turn-shifted tolerance the lookup
+        uses), else append. Bounded per key — oldest drops first."""
+        rows = self._fold_cache.setdefault(key, [])
+        s = row["p"][0]
+        for i, r in enumerate(rows):
+            s0 = r["p"][0]
+            if self._fold_start_match(s, s0, self._fold_start_shift(s, s0)):
+                rows[i] = row
+                return
+        rows.append(row)
+        if len(rows) > self.FOLD_CACHE_MAX_PER_KEY:
+            rows.pop(0)
+
+    def fold_cache_get(self, key, start):
+        """Return the stored fold for this request key and live start —
+        j5 re-carried onto the live winding, start snapped to ``start``
+        — or None. Newest rows win. No re-check: validation is a
+        creation-time event (see the block comment)."""
+        if self._fold_cache is None:
+            self._fold_cache_init()
+        rows = self._fold_cache.get(key)
+        if not rows:
+            return None
+        start = [float(v) for v in start]
+        for row in reversed(rows):
+            try:
+                p = row["p"]
+                shift = self._fold_start_shift(start, p[0])
+                if not self._fold_start_match(start, p[0], shift):
+                    continue
+                out = [[float(v) for v in q] for q in p]
+                if shift:
+                    for q in out:
+                        q[5] += shift
+                out[0] = list(start)
+                return out
+            except Exception:
+                continue
+        return None
+
+    def fold_cache_put(self, key, points):
+        """Store a finished fold and append it to disk. Never raises."""
+        try:
+            row = {"p": [[round(float(v), 3) for v in q] for q in points]}
+            if not self._fold_row_valid(row):
+                return
+            if self._fold_cache is None:
+                self._fold_cache_init()
+            self._fold_rows_add(key, row)
+            if self._fold_cache_path is None:
+                return  # no resolvable project folder — in-memory only
+            _fresh = not self._fold_cache_path.is_file()
+            with open(self._fold_cache_path, "a") as f:
+                if _fresh:
+                    self._cache_stamp(f)
+                f.write(json.dumps({"k": key, "v": row},
+                                   separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
     # ── deferred motion tail — cross-verb continuous motion ──────────
     # docs/motion-guide.md §12, phase 1. A verb's LAST exit group can be
     # deposited here instead of executed; the next verb's fold consumes
@@ -1353,7 +1514,10 @@ class Core:
 
     def fusion_journal(self, ev, **fields):
         """One JSONL line per fusion decision (core/fusion_log.jsonl):
-        hold / merge / flush / record / learn / mismatch / classic.
+        hold / merge / flush / record / learn / mismatch / classic —
+        plus the IO timeline (io_fire / io_join / io_fail from the
+        recipes' output chains), so one file answers both "did the
+        seam fuse" and "did the gripper IO overlap the motion".
         THE diagnosis surface for replay fusion — the console prints
         are transient, this file is not. Always on, never raises,
         never blocks."""
