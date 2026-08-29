@@ -931,6 +931,15 @@ class Core:
         return (isinstance(v, dict) and isinstance(v.get("arm"), list)
                 and len(v["arm"]) == 6)
 
+    @staticmethod
+    def _cache_trim(d, cap):
+        """Drop the oldest entries (dict insertion order) past ``cap``.
+        Every core cache is bounded on purpose — an evicted row only
+        ever costs a re-solve on the next recording run, never a wrong
+        result."""
+        while len(d) > cap:
+            d.pop(next(iter(d)))
+
     def _ik_cache_init(self):
         """Resolve the cache path and load it. Never raises.
 
@@ -987,7 +996,8 @@ class Core:
                         self._ik_cache[rec["k"]] = rec["v"]
                 except Exception:
                     continue  # torn/corrupt line — drop it
-            # Compact when overwritten/dropped rows dominate the file.
+            self._cache_trim(self._ik_cache, self.CACHE_MAX_ROWS)
+            # Compact when overwritten/dropped/evicted rows dominate.
             if lines > 100 and lines > 2 * len(self._ik_cache):
                 self._ik_cache_rewrite()
         except Exception:
@@ -1120,6 +1130,7 @@ class Core:
                 "rail": float(J[aux]) if with_rail else None,
             }
             self._ik_cache[key] = row
+            self._cache_trim(self._ik_cache, self.CACHE_MAX_ROWS)
             if self._ik_cache_path is None:
                 return  # no resolvable project folder — in-memory only
             _fresh = not self._ik_cache_path.is_file()
@@ -1160,12 +1171,17 @@ class Core:
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
-    PATH_CACHE_MAX_ROWS = 5000   # oldest evicted first — sized for
+    PATH_CACHE_MAX_ROWS = 10000  # oldest evicted first — sized for
                                  # large projects (thousands of distinct
-                                 # slots); lookups stay tolerable (linear
-                                 # scan, ~ms at this size) and eviction
-                                 # only ever costs a re-plan on a fold
-                                 # miss, never a wrong path
+                                 # slots); eviction only ever costs a
+                                 # re-plan on a fold miss, never a wrong
+                                 # path. Bounded on purpose: no cache
+                                 # file may grow without limit
+    CACHE_MAX_ROWS = 10000       # same bound for the ik / traj / fold
+                                 # caches (keys, oldest evicted first) —
+                                 # NOTHING in core/ grows without limit;
+                                 # an evicted row only ever costs one
+                                 # re-solve on the next recording run
     PATH_DECIMATE_EPS = 4.0      # deg/mm max deviation for waypoint decimation
                                  # (4: spreads travel knots so cont corners
                                  # grow — 2 clustered knots 11-15 apart and
@@ -1454,6 +1470,7 @@ class Core:
         rows.append(row)
         if len(rows) > self.FOLD_CACHE_MAX_PER_KEY:
             rows.pop(0)
+        self._cache_trim(self._fold_cache, self.CACHE_MAX_ROWS)
 
     def fold_cache_get(self, key, start):
         """Return the stored fold for this request key and live start —
@@ -1620,16 +1637,30 @@ class Core:
             self._cache_discard_stale(self._chain_cache_path, "traj.json")
             return
         try:
+            lines = 0
             for line in self._chain_cache_path.read_text().splitlines():
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
+                lines += 1
                 try:
                     rec = json.loads(line)
                     if isinstance(rec, dict) and "k" in rec and "v" in rec:
                         self._chain_cache[rec["k"]] = rec["v"]
                 except Exception:
                     continue  # torn tail line
+            self._cache_trim(self._chain_cache, self.CACHE_MAX_ROWS)
+            # Compact when overwritten/evicted rows dominate the file —
+            # same rule as ik/path/fold, so the FILE is bounded too.
+            if lines > 100 and lines > 2 * len(self._chain_cache):
+                tmp = self._chain_cache_path.with_suffix(".json.tmp")
+                fp = self._scene_fp()
+                stamp = (json.dumps({"__scene__": fp}) + "\n") if fp else ""
+                tmp.write_text(stamp + "".join(
+                    json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
+                    for k, v in self._chain_cache.items()
+                ))
+                os.replace(tmp, self._chain_cache_path)
         except Exception:
             self._chain_cache = {}
 
@@ -1702,6 +1733,7 @@ class Core:
                 "s": [bool(v) for v in stops],
             }
             self._chain_cache[key] = row
+            self._cache_trim(self._chain_cache, self.CACHE_MAX_ROWS)
             if self._chain_cache_path is None:
                 return
             _fresh = not self._chain_cache_path.is_file()
@@ -1755,6 +1787,7 @@ class Core:
                                 sigs.append(rec["v"])
                 except Exception:
                     continue  # torn tail line
+            self._cache_trim(self._book, self.CACHE_MAX_ROWS)
         except Exception:
             self._book = {}
 
