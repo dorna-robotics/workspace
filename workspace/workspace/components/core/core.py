@@ -1160,7 +1160,12 @@ class Core:
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
-    PATH_CACHE_MAX_ROWS = 500    # oldest evicted first
+    PATH_CACHE_MAX_ROWS = 5000   # oldest evicted first — sized for
+                                 # large projects (thousands of distinct
+                                 # slots); lookups stay tolerable (linear
+                                 # scan, ~ms at this size) and eviction
+                                 # only ever costs a re-plan on a fold
+                                 # miss, never a wrong path
     PATH_DECIMATE_EPS = 4.0      # deg/mm max deviation for waypoint decimation
                                  # (4: spreads travel knots so cont corners
                                  # grow — 2 clustered knots 11-15 apart and
