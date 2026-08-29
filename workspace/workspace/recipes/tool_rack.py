@@ -81,7 +81,7 @@ class ToolRack(Recipe):
             # stop+verify boundary.
             "approach": [
                             [
-                                [-2*padding, 0, -2*padding-height_offset, 0, 0, 0],
+                                [-3*padding, 0, -2*padding-height_offset, 0, 0, 0],
                                 [0, 0, -2*padding-height_offset, 0, 0, 0],
                                 [0, 0, -12-gap-height_offset, 0, 0, 0],
                             ],
@@ -100,7 +100,7 @@ class ToolRack(Recipe):
                     [
                         [-padding,0,-gap-height_offset,0,0,0],
                         [-padding,0,-padding-height_offset,0,0,0],
-                        [-2*padding,0,-2*padding-height_offset,0,0,0]
+                        [-3*padding,0,-2*padding-height_offset,0,0,0]
                     ],
                 ],
             "fuse": False,
@@ -171,7 +171,7 @@ class ToolRack(Recipe):
             # into the rack slot is the contact group after the stop.
             "approach": [
                             [
-                                [-2*padding,0,-2*padding-height_offset,0,0,0],
+                                [-3*padding,0,-2*padding-height_offset,0,0,0],
                                 [-padding,0,-2*padding-height_offset,0,0,0],
                             ],
                             [
@@ -190,7 +190,7 @@ class ToolRack(Recipe):
             "exit": [[
                             [0, 0, -12-gap-height_offset, 0, 0, 0],
                             [0, 0, -padding-height_offset, 0, 0, 0],
-                            [-2*padding, 0, -2*padding-height_offset, 0, 0, 0],
+                            [-3*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
             "output_exit": output_exit,
             "fuse": False,   # see docstring — the re-arm needs a cleared corridor
