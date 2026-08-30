@@ -86,7 +86,7 @@ class DosingSite(Recipe):
         return self.touch(**motion_prm)
 
 
-    def immerse(self, anchor="place", dist=0, approach=True, hover=True, padding=50, **kwargs):
+    def immerse(self, anchor="place", dist=0, approach=True, padding=50, **kwargs):
         """Dip the tip ``dist`` mm into the well at ``anchor`` of the plate on this site.
 
         Thin wrapper: resolves the plate attached to the site and delegates
@@ -97,7 +97,7 @@ class DosingSite(Recipe):
         component, solid_name = self._resolve_attached_component()
         return super().immerse(
             dist=dist, anchor=anchor, solid_name=solid_name, component=component,
-            approach=approach, hover=hover, padding=padding, **kwargs,
+            approach=approach, padding=padding, **kwargs,
         )
 
 
