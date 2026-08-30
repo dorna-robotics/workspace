@@ -2931,7 +2931,7 @@ class Recipe:
         )
         return True
 
-    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
+    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, hover=True, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
         """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
 
         Depth-aware ``pick``-style motion for liquid interaction
@@ -2947,6 +2947,13 @@ class Recipe:
           — safe), then dives straight down with
           ``pick(approach=False)``. Use for deep dips and fragile
           containers — reduces sideways approach risk.
+          ``hover=False`` drops the hover phase: the dive starts from
+          wherever the tip already is. That is the STAGED-ENTRY
+          continuation — the caller stopped at the gap point with a
+          previous ``immerse`` and the hover would re-command the pose
+          it is already parked at, costing a full stop-and-restart for
+          zero travel (measured: one redundant lmove per dose). Only
+          pass it when the tip IS on the target's vertical line.
         - ``approach=True``: **single-phase** motion via
           ``pick(approach=True)``, so the full approach corridor
           (padding / gap waypoints) is used with the depth offset
@@ -3009,7 +3016,7 @@ class Recipe:
                 **kwargs,
             )
 
-        if self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=height_load, tool_tip_z_offset=height_load, **kwargs):
+        if not hover or self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=height_load, tool_tip_z_offset=height_load, **kwargs):
             return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=False, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
         raise RecipeError("immerse failed — could not move above target")
 
