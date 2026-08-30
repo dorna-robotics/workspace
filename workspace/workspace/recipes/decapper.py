@@ -88,6 +88,7 @@ class Decapper(Recipe):
             twist: Total rotation to unscrew (degrees). None (default)
                 uses the cap component's declared ``twist``.
         """
+        self._wire_verb("decap", anchor)
         rt = self.rt
 
         # pick parameters
@@ -244,6 +245,7 @@ class Decapper(Recipe):
         Use instead of a follow-up ``pick()``: a closed gripper
         commanding approach/touch motion at the seat drags the sealed
         tube. """
+        self._wire_verb("cap", anchor)
         rt = self.rt
 
         # ref joints

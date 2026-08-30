@@ -870,6 +870,7 @@ class Core:
     #   fold.json       — fold (verb kickstart) cache
     #   traj.json       — chain-certification cache
     #   motion_book.json / fusion_log.jsonl — replay fusion
+    #   robot_log.jsonl — exact wire commands (J5WindingGuard gate)
     # Legacy root-level core.json / core_ik.json / core_path.json are
     # MOVED in the first time the folder resolves (one-time migration).
     # The folder is per-station truth — gitignored, never synced.
@@ -1533,6 +1534,69 @@ class Core:
         if self._motion_tail is not None:
             return list(self._motion_tail["points"][-1])
         return list(self.robot_api.joint())
+
+    def wire_context(self, tag):
+        """Open a wire-attribution context: every robot_journal row
+        until the next call carries this id + tag (e.g. 37 /
+        "Rack.pick(A1)"), and the recipes put the same vid on their
+        fusion-journal verb line — one join key across both files.
+        Returns the id."""
+        self._wire_seq = getattr(self, "_wire_seq", 0) + 1
+        self._wire_ctx = {"vid": self._wire_seq, "tag": str(tag)}
+        return self._wire_seq
+
+    def robot_journal(self, cmd, args, kwargs):
+        """One JSONL line per command handed to the robot api
+        (core/robot_log.jsonl) — the EXACT wire truth, written at the
+        J5WindingGuard gate so every motion primitive and every pin
+        write is captured no matter which layer issued it, sim and
+        real alike (rows carry sim:true in sim mode). Floats are
+        rounded to 4 decimals (0.0001 deg — beyond encoder
+        resolution). Same rotation rule as the fusion journal: at
+        boot, past 2 MB the file moves to .old, one generation kept.
+        Always on, never raises, never blocks."""
+        try:
+            if getattr(self, "_robot_log_path", None) is None:
+                d = self._core_dir()
+                if d is None:
+                    return
+                self._robot_log_path = d / "robot_log.jsonl"
+                try:
+                    if (self._robot_log_path.is_file()
+                            and self._robot_log_path.stat().st_size > 2_000_000):
+                        self._robot_log_path.replace(
+                            self._robot_log_path.with_suffix(".jsonl.old"))
+                except Exception:
+                    pass
+
+            def _r(v):
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, float):
+                    return round(v, 4)
+                if isinstance(v, (list, tuple)):
+                    return [_r(x) for x in v]
+                if isinstance(v, dict):
+                    return {str(k2): _r(v2) for k2, v2 in v.items()}
+                if isinstance(v, (int, str)) or v is None:
+                    return v
+                return str(v)
+
+            rec = {"ts": round(time.time(), 3), "cmd": str(cmd)}
+            ctx = getattr(self, "_wire_ctx", None)
+            if ctx is not None:
+                rec["vid"] = ctx["vid"]
+                rec["tag"] = ctx["tag"]
+            if self._simulation_mode:
+                rec["sim"] = True
+            if args:
+                rec["a"] = _r(list(args))
+            if kwargs:
+                rec["k"] = _r(kwargs)
+            with open(self._robot_log_path, "a") as f:
+                f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
 
     def fusion_journal(self, ev, **fields):
         """One JSONL line per fusion decision (core/fusion_log.jsonl):
@@ -4197,6 +4261,12 @@ class J5WindingGuard:
     """
 
     _MOTION = ("jmove", "lmove", "cjmove", "clmove", "smove", "tmove")
+    # Non-motion commands worth the wire journal — pin writes, the
+    # motor switch, and axis setup/homing. Reads (joint, status,
+    # inputs) stay unlogged: they are noise, not commands.
+    _LOGGED = ("output", "raw_output", "motor",
+               "set_axis", "set_pid", "home_with_stop",
+               "home_with_encoder_index", "halt", "sleep")
 
     def __init__(self, api, core=None):
         object.__setattr__(self, "_api", api)
@@ -4219,9 +4289,18 @@ class J5WindingGuard:
                 if (core is not None and core.j5_infinite
                         and name in ("jmove", "cjmove", "smove", "tmove")):
                     self._audit(name, a, k)
+                if core is not None:
+                    core.robot_journal(name, a, k)
                 return attr(*a, **k)
             _watched.__name__ = name
             return _watched
+        if callable(attr) and name in self._LOGGED:
+            def _logged(*a, **k):
+                if self._core is not None:
+                    self._core.robot_journal(name, a, k)
+                return attr(*a, **k)
+            _logged.__name__ = name
+            return _logged
         return attr
 
     def _audit(self, name, a, k):

@@ -93,6 +93,7 @@ class DosingSite(Recipe):
         to ``Recipe.immerse`` with the pipetting pattern (``approach=True``,
         single-motion with depth-adjusted approach corridor).
         """
+        self._wire_verb("immerse", anchor)
         component, solid_name = self._resolve_attached_component()
         return super().immerse(
             dist=dist, anchor=anchor, solid_name=solid_name, component=component,
@@ -108,6 +109,7 @@ class DosingSite(Recipe):
         the natural load-height clearance (mm); at the default 0 the
         tip rises exactly by its own length.
         """
+        self._wire_verb("retract", anchor)
         component, solid_name = self._resolve_attached_component()
         return super().retract(
             dist=dist, anchor=anchor, solid_name=solid_name, component=component,
@@ -138,6 +140,7 @@ class DosingSite(Recipe):
     def dispense(self, vol, speed=500, blowout=False, **kwargs):
         """Dispense ``vol`` µL at ``speed`` µL/s; ``blowout=True`` expels
         residual volume. Same contract as :meth:`aspirate`."""
+        self._wire_verb("dispense")
         pipette = self.core.current_tool()
         if pipette is None:
             raise RecipeError("no pipette attached to the robot")

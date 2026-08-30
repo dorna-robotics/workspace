@@ -43,6 +43,7 @@ class BarcodeReader(Recipe):
         ("place" anchor). Robot motion runs whether or not we're in
         simulation — only ``detect()`` / ``code()`` returns canned values
         when the reader is offline."""
+        self._wire_verb("present")
         return self.place(
             anchor="place",
             solid_name="body",

@@ -47,6 +47,7 @@ class Shaker(Recipe):
         Use :meth:`stop_shaking` from another thread to interrupt
         early (e.g. operator kill).
         """
+        self._wire_verb("shake")
         self._stop_event.clear()
         # The head is about to MOVE: any held motion tail executes to
         # its stop first, so the robot is guaranteed clear of the swept

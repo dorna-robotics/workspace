@@ -829,6 +829,19 @@ class Recipe:
         decision; matches how cjmove/clmove always carried tails)."""
         return [list(p) for p in tail["points"]] + [list(p) for p in points[1:]]
 
+    def _wire_verb(self, verb, anchor=None):
+        """Verb entry: one fusion-journal line + the wire-attribution
+        context (core.wire_context) that stamps every robot_log row
+        with this verb's vid + tag until the next verb — "which
+        command belongs to what" answered by a join on vid."""
+        tag = f"{type(self).__name__}.{verb}"
+        if anchor is not None:
+            tag += f"({anchor})"
+        vid = self.core.wire_context(tag)
+        self.core.fusion_journal(
+            "verb", verb=verb, recipe=type(self).__name__,
+            anchor=None if anchor is None else str(anchor), vid=vid)
+
     # ── fold cache key (core/fold.json — see core's block comment) ───
 
     @staticmethod
@@ -2363,7 +2376,7 @@ class Recipe:
             >>> rcp["tube_rack"].pick(anchor="A1", soft_approach=True)  # dense rack
             >>> rcp["tube_rack"].pick(anchor="A1", tool_tcp_z_offset=-5)  # suction cup
         """
-        self.core.fusion_journal("verb", verb="pick", recipe=type(self).__name__)
+        self._wire_verb("pick", anchor)
         pick_prm = self.pick_setting(
             anchor, solid_name,
             component=component, approach=approach, actions=actions,
@@ -2631,7 +2644,7 @@ class Recipe:
             >>> rcp["tube_rack"].place(anchor="A1", soft_approach=True)  # racks
             >>> rcp["tube_rack"].place(anchor="A1", gravity_offset=-10)  # suction elbow
         """
-        self.core.fusion_journal("verb", verb="place", recipe=type(self).__name__)
+        self._wire_verb("place", anchor)
         place_prm = self.place_setting(
             anchor=anchor, solid_name=solid_name,
             component=component, offset=offset, approach=approach,
@@ -2887,6 +2900,7 @@ class Recipe:
             >>> rcp["robot"].park(joint=PARK_JOINTS, has_motion_plan=True,
             ...                   motion_plan_kwargs={"padding": 30})
         """
+        self._wire_verb("park")
         rt = self.rt
 
         if has_motion_plan is None:

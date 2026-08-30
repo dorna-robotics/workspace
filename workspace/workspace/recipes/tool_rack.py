@@ -46,6 +46,7 @@ class ToolRack(Recipe):
             RecipeError: If no tool changer, no tool at anchor, or
                 ``ref_joints`` undefined.
         """
+        self._wire_verb("pick", anchor)
         # ref joints
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")
@@ -130,6 +131,7 @@ class ToolRack(Recipe):
             RecipeError: If the slot is already occupied, no tool on robot,
                 or no tool changer.
         """
+        self._wire_verb("place", anchor)
         # ref joints
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")

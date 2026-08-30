@@ -54,6 +54,7 @@ class Vortex(Recipe):
 
         Use :meth:`stop_run` from another thread to end early.
         """
+        self._wire_verb("run")
         rt = self.rt
         self._stop_event.clear()
         self.core.tail_flush(reason="vortexer about to run")
