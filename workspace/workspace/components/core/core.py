@@ -1545,16 +1545,28 @@ class Core:
         self._wire_ctx = {"vid": self._wire_seq, "tag": str(tag)}
         return self._wire_seq
 
-    def robot_journal(self, cmd, args, kwargs):
-        """One JSONL line per command handed to the robot api
-        (core/robot_log.jsonl) — the EXACT wire truth, written at the
-        J5WindingGuard gate so every motion primitive and every pin
-        write is captured no matter which layer issued it, sim and
-        real alike (rows carry sim:true in sim mode). Floats are
-        rounded to 4 decimals (0.0001 deg — beyond encoder
-        resolution). Same rotation rule as the fusion journal: at
-        boot, past 2 MB the file moves to .old, one generation kept.
-        Always on, never raises, never blocks."""
+    @staticmethod
+    def _wire_safe(v):
+        """JSON-safe, compact form of a wire value: floats to 4
+        decimals (0.0001 deg — beyond encoder resolution), anything
+        exotic stringified."""
+        _r = Core._wire_safe
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, float):
+            return round(v, 4)
+        if isinstance(v, (list, tuple)):
+            return [_r(x) for x in v]
+        if isinstance(v, dict):
+            return {str(k2): _r(v2) for k2, v2 in v.items()}
+        if isinstance(v, (int, str)) or v is None:
+            return v
+        return str(v)
+
+    def _robot_log_write(self, rec):
+        """Append one row to core/robot_log.jsonl. Same rotation rule
+        as the fusion journal: at boot, past 2 MB the file moves to
+        .old, one generation kept. Never raises, never blocks."""
         try:
             if getattr(self, "_robot_log_path", None) is None:
                 d = self._core_dir()
@@ -1568,21 +1580,26 @@ class Core:
                             self._robot_log_path.with_suffix(".jsonl.old"))
                 except Exception:
                     pass
+            with open(self._robot_log_path, "a") as f:
+                f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
 
-            def _r(v):
-                if isinstance(v, bool):
-                    return v
-                if isinstance(v, float):
-                    return round(v, 4)
-                if isinstance(v, (list, tuple)):
-                    return [_r(x) for x in v]
-                if isinstance(v, dict):
-                    return {str(k2): _r(v2) for k2, v2 in v.items()}
-                if isinstance(v, (int, str)) or v is None:
-                    return v
-                return str(v)
-
-            rec = {"ts": round(time.time(), 3), "cmd": str(cmd)}
+    def robot_journal(self, cmd, args, kwargs):
+        """One JSONL line per command handed to the robot api
+        (core/robot_log.jsonl) — the EXACT wire truth, written at the
+        J5WindingGuard gate so every motion primitive and every pin
+        write is captured no matter which layer issued it, sim and
+        real alike (rows carry sim:true in sim mode). Returns the
+        row's ``cid`` — robot_result pairs the api's RESPONSE (or
+        exception) to it, so an error is one grep from the command
+        that caused it and, via ``vid``, from the verb it belonged
+        to. Always on, never raises."""
+        try:
+            self._wire_cmd_seq = getattr(self, "_wire_cmd_seq", 0) + 1
+            cid = self._wire_cmd_seq
+            rec = {"ts": round(time.time(), 3), "cid": cid,
+                   "cmd": str(cmd)}
             ctx = getattr(self, "_wire_ctx", None)
             if ctx is not None:
                 rec["vid"] = ctx["vid"]
@@ -1590,11 +1607,29 @@ class Core:
             if self._simulation_mode:
                 rec["sim"] = True
             if args:
-                rec["a"] = _r(list(args))
+                rec["a"] = self._wire_safe(list(args))
             if kwargs:
-                rec["k"] = _r(kwargs)
-            with open(self._robot_log_path, "a") as f:
-                f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+                rec["k"] = self._wire_safe(kwargs)
+            self._robot_log_write(rec)
+            return cid
+        except Exception:
+            return None
+
+    def robot_result(self, cid, cmd, ret=None, err=None, ms=None):
+        """The paired response row: what the api returned for command
+        ``cid`` (or the exception it raised) and how long the call
+        blocked. Written when the call returns — for motions that is
+        motion end. Never raises."""
+        try:
+            rec = {"ts": round(time.time(), 3), "cid": cid,
+                   "cmd": str(cmd), "ev": "ret"}
+            if ms is not None:
+                rec["ms"] = int(ms)
+            if err is not None:
+                rec["err"] = str(err)
+            elif ret is not None:
+                rec["ret"] = self._wire_safe(ret)
+            self._robot_log_write(rec)
         except Exception:
             pass
 
@@ -4289,19 +4324,34 @@ class J5WindingGuard:
                 if (core is not None and core.j5_infinite
                         and name in ("jmove", "cjmove", "smove", "tmove")):
                     self._audit(name, a, k)
-                if core is not None:
-                    core.robot_journal(name, a, k)
-                return attr(*a, **k)
+                return self._call_journaled(name, attr, a, k)
             _watched.__name__ = name
             return _watched
         if callable(attr) and name in self._LOGGED:
             def _logged(*a, **k):
-                if self._core is not None:
-                    self._core.robot_journal(name, a, k)
-                return attr(*a, **k)
+                return self._call_journaled(name, attr, a, k)
             _logged.__name__ = name
             return _logged
         return attr
+
+    def _call_journaled(self, name, attr, a, k):
+        """Command row at issue, response row at return — an api error
+        (returned or raised) lands in robot_log.jsonl next to the
+        exact command that caused it."""
+        core = self._core
+        if core is None:
+            return attr(*a, **k)
+        cid = core.robot_journal(name, a, k)
+        t0 = time.time()
+        try:
+            ret = attr(*a, **k)
+        except Exception as ex:
+            core.robot_result(cid, name, err=repr(ex),
+                              ms=(time.time() - t0) * 1000)
+            raise
+        core.robot_result(cid, name, ret=ret,
+                          ms=(time.time() - t0) * 1000)
+        return ret
 
     def _audit(self, name, a, k):
         try:
