@@ -1167,7 +1167,12 @@ class Core:
     # <1 = cheap (preferred for dodging). Big links straight, wrist
     # does the work. Part of the path-cache row context — changing
     # these retires every cached path.
-    JOINT_WEIGHTS = [1.5, 1.5, 1.2, 1.0, 0.7, 0.5]
+    # j4 at parity (was 0.7): a subsidized wrist PITCH let sampling
+    # noise survive optimization — visible tool wobble on paths that
+    # needed no dodge (bench-observed). j5 roll stays the sole cheap
+    # dodger: on the infinite wrist with a symmetric tcp its motion
+    # barely moves the payload, so its wiggle is physically free.
+    JOINT_WEIGHTS = [1.5, 1.5, 1.2, 1.0, 1.0, 0.5]
     CHAIN_CACHE_PT_TOL = 0.1     # deg / mm per joint: chain-cache fuzzy match
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
