@@ -2304,6 +2304,28 @@ class Core:
             # first we find the pose of the robot base frame in the rail base
             robot_pose_in_rail_base = self.robot_A0.pose(in_frame=self.rail_base)
 
+            # BASELINE FOR THE CANDIDATE MAPPING: the rail the SCENE
+            # TREE reflects — the LIVE robot, never the deferred-tail
+            # frontier. ``robot_pose_in_rail_base`` above is a tree
+            # read, so the candidate delta below must be measured from
+            # the same state. ``cur`` is frontier-aware (_live_joints),
+            # and mixing its rail in here shifts EVERY candidate by
+            # (tree rail - frontier rail): the solver then pairs arm
+            # joints solved for one rail with another rail's value and
+            # the tool lands exactly that far off target — 25 mm, one
+            # rail step, on the bench, and the wrong answer is cached
+            # under a key that knows neither rail, so it is served for
+            # good. The frontier still governs candidate PREFERENCE
+            # (r_cur below); it must not govern the geometry.
+            # Read defensively: a short/failed joint read must never
+            # break a solve — fall back to r_cur, which is exactly
+            # today's behaviour (and identical whenever no tail is held).
+            try:
+                _live = self.robot_api.joint()
+                r_tree = float(_live[aux]) if len(_live) > aux else r_cur
+            except Exception:
+                r_tree = r_cur
+
             #for r in sorted(R, key=lambda rr: abs(rr - r0)):
 
             # now we find the pose of the object in the world frame
@@ -2321,7 +2343,7 @@ class Core:
                 # Pose relative to ROBOT BASE
                 # now we update robot pose in rail base
                 updated_robot_pose_in_rail_base = list(robot_pose_in_rail_base)
-                updated_robot_pose_in_rail_base[0] = r-r_cur + robot_pose_in_rail_base[0]
+                updated_robot_pose_in_rail_base[0] = r - r_tree + robot_pose_in_rail_base[0]
 
                 # now we find update robot pose in world base
                 updated_robot_pose_in_world_base = self.rail_base.pose(pose=updated_robot_pose_in_rail_base)
