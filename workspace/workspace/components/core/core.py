@@ -2651,6 +2651,28 @@ class Core:
               f"{traj.duration:.2f}s motion, solved in {(time.perf_counter() - t0) * 1000:.0f} ms")
         return samples
 
+    def chain_sliver_dedup(self, points):
+        """Merge sliver knots (< CHAIN_DEDUP_TOL per joint vs the LAST
+        KEPT point) out of a motion chain — not just exact duplicates,
+        and never accumulating a run of tiny steps into a real one.
+
+        This is THE canonical chain: certification and the wire must
+        both use it. A sliver at the HEAD is the dangerous one — the
+        executor (sim SplinePath and the firmware alike) prepends its
+        LIVE pose, and a first chord of ~1e-5 deg makes the spline's
+        start tangent point along pure landing noise: same commanded
+        bytes, visibly different executed path (bench: mount/park
+        arcs bulging up to 50 mm, growing run to run). Certifying one
+        geometry and sending another is how that bug survived the
+        profile-side dedup."""
+        pts = [[float(v_) for v_ in p] for p in points]
+        out = []
+        for p in pts:
+            if not out or any(abs(a - b) > self.CHAIN_DEDUP_TOL
+                              for a, b in zip(p, out[-1])):
+                out.append(p)
+        return out if len(out) >= 2 else pts
+
     def smove_certify(self, points, vel, accel, jerk, dt=0.004, joint_caps=None):
         """Certify ONE smove the way chains are certified: play the
         EXACT S-curve profile over the EXACT SplinePath geometry (the
@@ -2668,16 +2690,7 @@ class Core:
         higher cruise (bench: the park->toolrack rail). Results cache
         in traj.json (label "smove"); certification never blocks."""
         try:
-            pts = [[float(v_) for v_ in p] for p in points]
-            # Merge slivers, not just exact duplicates — see
-            # CHAIN_DEDUP_TOL. Compare against the LAST KEPT point so a
-            # run of tiny steps collapses once, never accumulating.
-            _dedup = []
-            for p in pts:
-                if not _dedup or any(abs(a - b) > self.CHAIN_DEDUP_TOL
-                                     for a, b in zip(p, _dedup[-1])):
-                    _dedup.append(p)
-            pts = _dedup if len(_dedup) >= 2 else pts
+            pts = self.chain_sliver_dedup(points)
             if len(pts) < 2:
                 return vel, accel, jerk
             caps = None

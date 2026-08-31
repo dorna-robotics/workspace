@@ -1551,14 +1551,28 @@ class Recipe:
         # derived from the recipe's max_vaj_joint table (sf-scaled) so
         # no joint exceeds its own row over the exact spline
         # (core.smove_certify — warm replays from traj.json).
+        #
+        # THE CHAIN THAT IS CERTIFIED IS THE CHAIN THAT IS SENT.
+        # points[0] is the fold-TIME start; a cached fold row replays
+        # with the robot standing ~1e-5 deg away from it (landing
+        # noise), so rebase the head on the LIVE pose and drop sliver
+        # knots (chain_sliver_dedup) BEFORE certify + send. The
+        # executor prepends its own live pose to the spline, and a
+        # near-duplicate head knot makes the start tangent point
+        # along pure noise — same bytes, different path (bench:
+        # mount/park arcs bulging up to 50 mm, varying run to run).
+        chain = self.core.chain_sliver_dedup(
+            [[float(v) for v in self._cur_joints()]] + [list(p) for p in points[1:]])
+        if len(chain) < 2:
+            return   # every knot within sliver tolerance — already there
         s = self.speed_factor
         caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
                 for r in self.max_vaj_joint]
         _tc = _time.perf_counter()
-        vel, accel, jerk = self.core.smove_certify(points, vel, accel, jerk,
+        vel, accel, jerk = self.core.smove_certify(chain, vel, accel, jerk,
                                                    joint_caps=caps)
         _ts = _time.perf_counter()
-        rt.smove(points[1:], vel=vel, accel=accel, jerk=jerk)
+        rt.smove(chain[1:], vel=vel, accel=accel, jerk=jerk)
         _send_ms = (_time.perf_counter() - _ts) * 1000
         print(f"[fold] certify {(_ts - _tc)*1000:.0f} ms, send "
               f"{_send_ms:.0f} ms")
