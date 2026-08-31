@@ -1174,6 +1174,17 @@ class Core:
     # barely moves the payload, so its wiggle is physically free.
     JOINT_WEIGHTS = [1.5, 1.5, 1.2, 1.0, 1.0, 0.5]
     CHAIN_CACHE_PT_TOL = 0.1     # deg / mm per joint: chain-cache fuzzy match
+    # A chain's FIRST point is the live pose and its second is the
+    # first solved knot. When the arm sits a hair off that knot, the
+    # gap survives as a SLIVER first segment: a sub-degree leg with a
+    # direction change, which the certifier reads as a tight corner
+    # and slows the WHOLE chain for — measured 27% on the bench tool
+    # mount (187 -> 136), and it flip-flopped run to run depending on
+    # whether the live pose happened to land exactly on the knot.
+    # Points closer than this merge before certification. The
+    # commanded motion is untouched: callers send points[1:], so this
+    # only governs the speed computation.
+    CHAIN_DEDUP_TOL = 0.05       # deg / mm per joint
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
@@ -2653,8 +2664,15 @@ class Core:
         in traj.json (label "smove"); certification never blocks."""
         try:
             pts = [[float(v_) for v_ in p] for p in points]
-            pts = [p for i, p in enumerate(pts)
-                   if i == 0 or any(abs(a - b) > 1e-9 for a, b in zip(p, pts[i - 1]))]
+            # Merge slivers, not just exact duplicates — see
+            # CHAIN_DEDUP_TOL. Compare against the LAST KEPT point so a
+            # run of tiny steps collapses once, never accumulating.
+            _dedup = []
+            for p in pts:
+                if not _dedup or any(abs(a - b) > self.CHAIN_DEDUP_TOL
+                                     for a, b in zip(p, _dedup[-1])):
+                    _dedup.append(p)
+            pts = _dedup if len(_dedup) >= 2 else pts
             if len(pts) < 2:
                 return vel, accel, jerk
             caps = None
