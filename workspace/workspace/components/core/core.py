@@ -1184,7 +1184,12 @@ class Core:
     # Points closer than this merge before certification. The
     # commanded motion is untouched: callers send points[1:], so this
     # only governs the speed computation.
-    CHAIN_DEDUP_TOL = 0.05       # deg / mm per joint
+    # 0.25: a real arm settles up to ~0.1 deg off a commanded knot, so
+    # the tolerance must clear that comfortably — while staying well
+    # under the smallest LEGITIMATE segment in real chains (measured
+    # across bench travel + tool-rack chains: min 1.06 deg, median
+    # 3.56, nothing below 0.5). 4x margin on both sides.
+    CHAIN_DEDUP_TOL = 0.25       # deg / mm per joint
     PATH_CACHE_START_TOL = 1.0   # deg (arm) / mm (rail) per joint
     PATH_CACHE_GOAL_TOL = 0.5    # deg / mm per joint
     PATH_CACHE_TOOL_TOL = 1.0    # mm / deg per tool-box element
