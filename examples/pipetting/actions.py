@@ -149,17 +149,19 @@ class Transfer(Action):
             return False
 
         # 2. Aspirate from the source tube.
-        rcp["falcon_pipette"].immerse(anchor=source_anchor, dist=IMMERSE_DIST)
+        rcp["falcon_pipette"].above(anchor=source_anchor)
+        rcp["falcon_pipette"].immerse(dist=IMMERSE_DIST, anchor=source_anchor)
         ok = rcp["falcon_pipette"].aspirate(vol=VOL_UL)
-        rcp["falcon_pipette"].retract(anchor=source_anchor)
+        rcp["falcon_pipette"].retract(dist=50, anchor=source_anchor)
         if not ok:
             rt.step(f"transfer {transfer + 1}: pump unavailable — reconnect it, then Resume")
             return False
 
         # 3. Dispense into the destination tube.
-        rcp["falcon_pipette"].immerse(anchor=dest_anchor, dist=IMMERSE_DIST)
+        rcp["falcon_pipette"].above(anchor=dest_anchor)
+        rcp["falcon_pipette"].immerse(dist=IMMERSE_DIST, anchor=dest_anchor)
         ok = rcp["falcon_pipette"].dispense(vol=VOL_UL)
-        rcp["falcon_pipette"].retract(anchor=dest_anchor)
+        rcp["falcon_pipette"].retract(dist=50, anchor=dest_anchor)
         if not ok:
             rt.step(f"transfer {transfer + 1}: pump unavailable — reconnect it, then Resume")
             return False

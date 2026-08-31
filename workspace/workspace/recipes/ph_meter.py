@@ -130,25 +130,28 @@ class PhMeterSite(Recipe):
     # the tool's own ``tip`` anchor (192.1 mm below the flange) is what
     # reaches ``dist`` below the target anchor.
 
-    def immerse(self, anchor="top", dist=20, approach=False, padding=60, **kwargs):
-        """Dip the probe ``dist`` mm below ``anchor`` on this site.
+    def above(self, anchor="top", padding=60, **kwargs):
+        """Hover ``padding`` mm above ``anchor`` on this site — the
+        approach half of a dip (planned travel, fused). Default 60 mm
+        of clearance above the container rim."""
+        self._wire_verb("above", anchor)
+        return super().above(anchor=anchor, padding=padding, **kwargs)
 
-        Defaults are cup-shaped: ``anchor="top"`` (the container rim),
-        two-phase motion (hover, then a straight dive) because the well
-        is deep and narrow, and 60 mm of clearance above the rim. The
-        glass bulb must end up submerged — a dry electrode reads
+    def immerse(self, dist=20, anchor="top", **kwargs):
+        """Dip the probe tip ``dist`` mm below ``anchor`` — one straight
+        dive at the dip speed, from wherever :meth:`above` left it.
+
+        The glass bulb must end up submerged — a dry electrode reads
         garbage, so ``dist`` should clear the bulb (the last ~8 mm of
         the shaft), not just kiss the surface.
         """
-        return super().immerse(
-            dist=dist, anchor=anchor, approach=approach, padding=padding, **kwargs,
-        )
+        return super().immerse(dist=dist, anchor=anchor, **kwargs)
 
-    def retract(self, anchor="top", padding=60, **kwargs):
-        """Lift the probe clear of the well — inverse of ``immerse``."""
-        return super().retract(
-            dist=0, anchor=anchor, padding=padding, **kwargs,
-        )
+    def retract(self, dist=60, anchor="top", **kwargs):
+        """Lift the probe tip to ``dist`` mm above ``anchor`` — the
+        mirror of :meth:`immerse` (default: back to the approach
+        clearance)."""
+        return super().retract(dist=dist, anchor=anchor, **kwargs)
 
     # ── Device pass-throughs ──────────────────────────────────────────
     # Resolved through the mounted tool, so the same recipe works with

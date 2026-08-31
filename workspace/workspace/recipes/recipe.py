@@ -98,6 +98,11 @@ class Recipe:
         corner=60.0,
         jmove_vaj=[200, 400, 2000],  # [200, 500, 3000],
         lmove_vaj=[600, 900, 3000],
+        # Dip speed for immerse/retract ([vel, accel, jerk], lmove
+        # class, sf-scaled like every other motion): the straight
+        # in-vessel legs run deliberately slow. One knob — override
+        # per recipe in recipes.j2 or per call via ``vaj=``.
+        dip_vaj=[150, 500, 3000],
         # Per-joint [vel, accel, jerk] ceilings for SMOVE folds — the
         # spline's global profile is derived so NO joint exceeds its
         # own row (core.smove_certify measures per joint). Rows are
@@ -177,6 +182,7 @@ class Recipe:
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
+        self.dip_vaj = prm["dip_vaj"]
         self.max_vaj_joint = [[float(x) for x in row] for row in prm["max_vaj_joint"]]
 
         # calibration
@@ -2931,132 +2937,160 @@ class Recipe:
         )
         return True
 
-    def immerse(self, dist=0, anchor="place", solid_name="body", component=None, approach=False, exit=False, attachment=False, trigger_io=False, padding=10, **kwargs):
-        """Dip the held load ``dist`` mm into ``anchor`` (tip goes below the anchor surface).
+    def _dip_solve(self, anchor, solid_name, component, tool_z, j5_override,
+                   axis_tol, verb, **kwargs):
+        """Shared solve + contract check for immerse/retract.
 
-        Depth-aware ``pick``-style motion for liquid interaction
-        (aspirating, dipping a probe, dispensing into a tube). The
-        held item's **tip** is what reaches ``-dist`` — the math
-        accounts for the load's height so a 30 mm tip and a 100 mm
-        needle both end up the same ``dist`` below the surface.
+        Returns (J, tool_pose): the joint target that puts the held
+        tool's TIP at ``tool_z`` relative to the load-height reference
+        over ``anchor``, and the tool pose the lmove must carry.
 
-        Two patterns selectable via ``approach``:
+        THE AXIS CONTRACT: the tip must already be on the target's
+        vertical axis — within ``axis_tol`` mm laterally, frontier-
+        aware (a deferred motion's endpoint counts as where we are).
+        A dip from off-axis is an approach/setup error, and executing
+        it would drag the tip diagonally through the vessel — so it
+        raises LOUDLY instead. (Bench: the IK rail-baseline bug put a
+        hover 25 mm off axis; this check turns that class of fault
+        into an error message instead of bent hardware.)"""
+        prm = self.pick_setting(
+            anchor, solid_name,
+            component=component, actions=[], approach=False, exit=False,
+            attachment=False, trigger_io=False,
+            tool_tcp_z_offset=tool_z, tool_tip_z_offset=tool_z,
+            **kwargs,
+        )
+        if not prm:
+            raise RecipeError(f"{verb} failed — could not compute parameters")
+        J = self._solve_ik(prm["target_solid"], prm["target_anchor"],
+                           prm["contact"], prm["approach_tool"], j5_override)
 
-        - ``approach=False`` (default): **two-phase** motion. First
-          hovers at the container top via ``above`` (depth-independent
-          — safe), then dives straight down with
-          ``pick(approach=False)``. Use for deep dips and fragile
-          containers — reduces sideways approach risk.
-        - ``approach=True``: **single-phase** motion via
-          ``pick(approach=True)``, so the full approach corridor
-          (padding / gap waypoints) is used with the depth offset
-          applied throughout. More efficient when ``dist`` is shallow,
-          but requires ``padding`` to comfortably exceed the load
-          height — otherwise the corridor descent fails IK.
+        cur = [float(v) for v in self._cur_joints()]
+        kin = self.core.dorna.kinematic
+        kin.set_tcp_xyzabc([0, 0, 0, 0, 0, 0])
+        pc = kin.fw(cur[:6])
+        pt = kin.fw([float(v) for v in J[:6]])
+        dx = float(pt[0]) - float(pc[0])
+        dy = float(pt[1]) - float(pc[1])
+        if self.core.has_rail:
+            aux = self.core.rail_cfg["axis"]
+            dx += float(J[aux]) - cur[aux]
+        lat = (dx * dx + dy * dy) ** 0.5
+        if lat > axis_tol:
+            raise RecipeError(
+                f"{verb} refused: the tip is {lat:.1f} mm off the target's "
+                f"vertical axis (tolerance {axis_tol}) — position with "
+                f"above(anchor, padding=...) first; {verb} only moves "
+                f"straight along the axis")
 
-        No attach / no IO — the held item stays attached, the
-        component's IO is not triggered.
+        tp = [0, 0, 0, 0, 0, 0]
+        tool = prm["approach_tool"]
+        if tool.get("solid") and tool.get("anchor"):
+            tp = tool["solid"].pose(anchor=tool["anchor"],
+                                    in_frame=self.core.robot_flange,
+                                    offset=tool["offset"])
+        return J, [float(v) for v in tp]
 
-        A mounted tool that declares ``lock_j5`` (needle gripper's
-        stripper rods) gets the wrist roll pinned to that value on
-        every joint target of both phases — pass ``approach_j5=`` /
-        ``exit_j5=`` explicitly to override per call.
+    @staticmethod
+    def _dip_reject_dead_kwargs(verb, kwargs):
+        """The 2026-08 redesign: immerse/retract are pure single-motion
+        dip verbs. Fail LOUD on the retired parameters so an un-migrated
+        caller gets a migration message, never a silently different
+        motion."""
+        for dead in ("padding", "approach", "hover"):
+            if dead in kwargs:
+                raise RecipeError(
+                    f"{verb}() no longer takes {dead!r} — approach with "
+                    f"above(anchor, padding=...) (padding measured from the "
+                    f"payload top to the tool tip), then {verb}(dist=...) "
+                    f"moves ONLY straight along the axis")
 
-        Required state:
-            The robot must be holding a load (otherwise the
-            tip-height math doesn't apply). Inherited from
-            ``_get_tool_and_load_height``.
+    def immerse(self, dist=0, anchor="place", solid_name="body", component=None,
+                vaj=None, axis_tol=5.0, **kwargs):
+        """Put the held tool's TIP exactly ``dist`` mm BELOW the top of
+        the payload at ``anchor`` — ONE straight vertical lmove, at the
+        dip speed, executed NOW.
 
-        Args:
-            dist: Depth below the anchor surface (mm). ``0`` = tip
-                touches surface; positive goes deeper.
-            anchor: Target anchor (default ``"place"``).
-            approach: Pattern selector (see above). Default ``False``.
-            padding: Safe height above the target (mm).
-            exit, attachment, trigger_io: All ``False`` by default —
-                ``immerse`` is "deposit but don't release."
+        ``dist`` is measured from the payload TOP: 0 = tip at the top,
+        positive = into the vessel, negative = above it. Nothing else
+        moves the reference — no padding, no hover, no stacking.
 
-        Raises:
-            RecipeError: If no tool is attached, or if the "above"
-                phase fails (two-phase pattern only).
+        THE DIVE IS ALL THIS VERB DOES. Getting over the target is the
+        approach verb's job — ``above(anchor, padding=...)`` (planned
+        travel, fused, padding measured from the same payload top to
+        the same tip). Staging is the caller's composition::
 
-        Example:
-            >>> rcp["doser"].immerse(dist=10)                          # hover+dive (deep)
-            >>> rcp["pipetting_site"].immerse(dist=5, approach=True)   # single motion (shallow)
-            >>> rcp["doser"].immerse(dist=20, padding=30)              # deeper dip + extra clearance
+            site.above("A1", padding=50)   # planned hover, 50 over the top
+            site.immerse(dist=-2)          # slow straight leg to 2 over
+            site.immerse(dist=50)          # slow straight leg to depth
+
+        Every call is one motion; there are no hidden stops.
+
+        The dive executes IMMEDIATELY — never deferred: a process
+        motion must be at its pose before the next device call runs
+        (the pump doses where the needle actually is, not where a held
+        tail says it will be).
+
+        CONTRACT: the tip must already be on the target's vertical
+        axis (within ``axis_tol`` mm) — see ``_dip_solve``.
+
+        ``vaj`` overrides the dip speed ([vel, accel, jerk], lmove
+        class); default is the recipe's ``dip_vaj``. A tool with
+        ``lock_j5`` gets the wrist roll pinned; ``approach_j5=``
+        overrides per call.
         """
-        _, _, height_load = self._get_tool_and_load_height()
-
-        tool_tcp_z_offset = height_load - dist
-        tool_tip_z_offset = height_load - dist
-
-        # A tool that declares ``lock_j5`` (e.g. the needle gripper's
-        # stripper-weight rods) gets the wrist roll pinned on every
-        # joint target of the hover and the dive. Explicit
-        # approach_j5 / exit_j5 kwargs at the call site win.
+        self._dip_reject_dead_kwargs("immerse", kwargs)
         lock = self._tool_lock_j5()
-        if lock is not None:
-            kwargs.setdefault("approach_j5", lock)
-            kwargs.setdefault("exit_j5", lock)
+        j5 = kwargs.pop("approach_j5", lock)
+        _, _, height_load = self._get_tool_and_load_height()
+        J, tp = self._dip_solve(anchor, solid_name, component,
+                                height_load - dist, j5, axis_tol,
+                                "immerse", **kwargs)
+        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.dip_vaj)
+        rt = self.rt
+        rt.checkpoint()
+        rt.lmove(joint=[float(v) for v in J], vel=vel, accel=accel,
+                 jerk=jerk, tool_pose=tp)
+        return True
 
-        if approach:
-            return self.pick(
-                anchor=anchor, solid_name=solid_name, component=component,
-                approach=True, exit=exit, attachment=attachment, trigger_io=trigger_io,
-                padding=padding,
-                tool_tcp_z_offset=tool_tcp_z_offset,
-                tool_tip_z_offset=tool_tip_z_offset,
-                **kwargs,
-            )
+    def retract(self, dist=0, anchor="place", solid_name="body", component=None,
+                vaj=None, axis_tol=5.0, **kwargs):
+        """Put the held tool's TIP exactly ``dist`` mm ABOVE the top of
+        the payload at ``anchor`` — the mirror of ``immerse``: ONE
+        straight vertical lmove up, at the dip speed.
 
-        if self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=height_load, tool_tip_z_offset=height_load, **kwargs):
-            return self.pick(anchor=anchor, solid_name=solid_name, component=component, approach=False, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, **kwargs)
-        raise RecipeError("immerse failed — could not move above target")
+        Same reference as ``immerse`` and ``above``: the payload top,
+        to the tool tip. ``retract(dist=D)`` after ``above(padding=D)``
+        entries lands the exit exactly at the entry hover height.
 
-    def retract(self, dist=0, anchor="place", solid_name="body", component=None, padding=0, has_motion_plan=[False, "lmove"], **kwargs):
-        """Inverse of ``immerse`` — lift the held load ``dist`` mm above ``anchor``.
+        Unlike the dive, the lift MAY be deferred (fuse): its endpoint
+        is a pure travel start, so under replay fusion a proven seam
+        rides into the next verb's travel instead of stopping — the
+        existing direct-hop machinery (``_tail_deposit_lift``). Nothing
+        observable happens between a lift and the next motion, so the
+        hold is safe by construction.
 
-        Under the hood, calls ``above`` with tool Z offsets shifted so
-        the tip ends up ``dist`` mm above the surface (not the load's
-        center — the math accounts for load height).
-
-        **Planning is OFF by default** (``[False, "lmove"]``) — one
-        direct lmove, a straight TCP line up, matching the immerse
-        dive's lmove class. If you have obstacles above the workspace,
-        pass ``has_motion_plan=True`` explicitly.
-
-        A mounted tool that declares ``lock_j5`` gets the wrist roll
-        pinned for the lift, same as ``immerse``.
-
-        Required state:
-            The robot must be holding a load (same as ``immerse``).
-
-        Args:
-            dist: Extra lift above the natural load-height clearance
-                (mm).
-            anchor: Reference anchor (default ``"place"``).
-            padding: Extra padding applied by ``above`` (mm,
-                default ``0``).
-            has_motion_plan: Default ``[False, "lmove"]`` — unplanned
-                straight-line lift. Set ``True`` if obstacles are
-                present above.
-
-        Example:
-            >>> rcp["doser"].retract(dist=20)                 # lift 20mm above
-            >>> rcp["pipetting_site"].retract(dist=10, padding=20)  # + extra clearance
+        CONTRACT: same axis check as ``immerse`` — pulling out of a
+        vessel from off-axis is refused loudly.
         """
-        _, _, height_load = self._get_tool_and_load_height()
-
-        tool_tcp_z_offset = height_load + dist
-        tool_tip_z_offset = height_load + dist
-
-        # Same wrist lock as ``immerse`` — the lift out of a septum
-        # vial is exactly where the rods must stay clear of j4.
+        self._dip_reject_dead_kwargs("retract", kwargs)
         lock = self._tool_lock_j5()
-        if lock is not None:
-            kwargs.setdefault("approach_j5", lock)
-
-        return self.above(anchor=anchor, solid_name=solid_name, component=component, padding=padding, tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset, has_motion_plan=has_motion_plan, **kwargs)
+        j5 = kwargs.pop("approach_j5", lock)
+        _, _, height_load = self._get_tool_and_load_height()
+        J, tp = self._dip_solve(anchor, solid_name, component,
+                                height_load + dist, j5, axis_tol,
+                                "retract", **kwargs)
+        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.dip_vaj)
+        rt = self.rt
+        if self.fuse and rt._is_workflow_thread():
+            self._tail_deposit_lift(
+                rt, J, (vel, accel, jerk),
+                owner=f"{type(self).__name__} direct hop", tool_pose=tp)
+            return True
+        rt.checkpoint()
+        rt.lmove(joint=[float(v) for v in J], vel=vel, accel=accel,
+                 jerk=jerk, tool_pose=tp)
+        return True
 
     # ── Calibration ─────────────────────────────────────────────────────────
 

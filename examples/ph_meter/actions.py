@@ -164,7 +164,8 @@ class Immerse(Action):
         rt.step(_progress_pct(self), level="progress")
         # The vial mouth is the slot anchor; dive far enough to submerge
         # the bulb inside the 40 ml vial.
-        rcp["vials"].immerse(anchor=slot, dist=60)
+        rcp["vials"].above(anchor=slot)
+        rcp["vials"].immerse(dist=60, anchor=slot)
         return "immersed"
 
 
@@ -249,6 +250,7 @@ class Rinse(Action):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         rt.step(f"vial {vial + 1}: rinse in storage cup")
         rt.step(_progress_pct(self), level="progress")
+        rcp["storage"].above()
         rcp["storage"].immerse()
         rcp["storage"].retract()
         return "rinsed"

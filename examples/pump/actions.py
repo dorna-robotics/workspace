@@ -177,9 +177,10 @@ class NeedleDose(Action):
         # with lateral motion still in it — the fillet rounds the
         # hover corner — and it needs padding 130 to even solve. The
         # hover-stop + pure-vertical lmove below is the right entry.)
-        rcp["vials"].immerse(anchor=slot, dist=60, approach=False, padding=70)
+        rcp["vials"].above(anchor=slot, padding=70)
+        rcp["vials"].immerse(dist=60, anchor=slot)
         ok = rcp["vials"].dispense(ul)
-        rcp["vials"].retract(anchor=slot, padding=70)
+        rcp["vials"].retract(dist=70, anchor=slot)
         if ok is False:
             # Pump refused / offline: no fact, so the planner re-selects
             # this dose once the device is back (declarative retry).
