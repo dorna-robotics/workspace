@@ -66,6 +66,12 @@ class PhMeterAtlas(Gripper):
         # Passive dip tool — no IO of its own, so enable/disable are no-ops.
         output_enable=[[None, None, 0], [None, None, 0]],
         output_disable=[[None, None, 0], [None, None, 0]],
+        # Wrist roll (j5, degrees) pinned during immerse/retract — the
+        # same contract the needle gripper declares: a long glass probe
+        # on a 192 mm shaft must not roll while it is inside a tube.
+        # null frees the wrist. immerse/retract read this off the
+        # mounted tool (recipe.py _tool_lock_j5).
+        lock_j5=None,
         # ── device link ──────────────────────────────────────────────
         port="",           # "" → no bus claim; non-empty → claim + panel row
         baud=9600,         # EZO factory default
@@ -97,6 +103,10 @@ class PhMeterAtlas(Gripper):
         # Authored simulation intent — failures must NOT flip this (same
         # rule as Core / the meter / the pump). An unreachable real probe
         # is a fault we surface, not a reason to silently switch to sim.
+        # Wrist-roll pin for immerse/retract (None = unconstrained).
+        v = prm.get("lock_j5")
+        self.lock_j5 = None if v is None else float(v)
+
         self._simulation_mode = bool(prm["simulation"])
         self._port = prm["port"] or ""
         self._critical = bool(prm["critical"])
