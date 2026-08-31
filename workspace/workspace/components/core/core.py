@@ -3382,6 +3382,12 @@ class Core:
         if path_sig is not None:
             cached = self._path_cache_get(start, goal, path_sig)
             if cached is not None:
+                # THE replay/fresh distinction: a hop that looks
+                # different run to run is almost always a cache MISS
+                # re-solved by the sampling planner. Journal both sides
+                # so the question is answered by the log, not by eye.
+                self.fusion_journal("plan", cached=True, wp=len(cached),
+                                    excursion=self._path_excursion(cached))
                 return _recarry(cached)
 
         start_time = time.perf_counter()
@@ -3468,7 +3474,26 @@ class Core:
             print(f"[plan] {planner}@{time_limit_sec:g}s: NO PATH in {execution_time:.1f}s "
                   f"start={[round(v, 1) for v in start]} goal={[round(v, 1) for v in goal]}")
 
+        self.fusion_journal("plan", cached=False, wp=len(res) if res else 0,
+                            ms=round(execution_time * 1000),
+                            excursion=self._path_excursion(res) if res else None)
         return _recarry(res)
+
+    @staticmethod
+    def _path_excursion(pts):
+        """Max distance any joint travels BEYOND the straight span
+        between the path's endpoints (deg/mm) — the number that says
+        'this hop swung somewhere the endpoints never asked for'.
+        0 on a monotone path."""
+        try:
+            worst = 0.0
+            for j in range(len(pts[0])):
+                col = [float(p[j]) for p in pts]
+                a, b = col[0], col[-1]
+                worst = max(worst, max(col) - max(a, b), min(a, b) - min(col))
+            return round(max(worst, 0.0), 2)
+        except Exception:
+            return None
 
     def check_collision(self, j, internal=True):
         scene = []
