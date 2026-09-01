@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6594
+      "count": 6372
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2077,
+      "count": 2040,
       "max": [
         4.150000095367432,
         8.300000190734863,
-        4.1383957862854
+        4.138299465179443
       ],
       "min": [
         -4.150000095367432,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2077
+      "count": 2040
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5692
+      "byteLength": 5621
     }
   ],
   "buffers": [
     {
       "uri": "scale_top_amber_40ml.glb.bin",
-      "byteLength": 5692
+      "byteLength": 5621
     }
   ],
   "materials": [
