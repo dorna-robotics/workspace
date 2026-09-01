@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3420
+      "byteLength": 3506
     },
     {
       "buffer": 0,
-      "byteOffset": 3420,
-      "byteLength": 487
+      "byteOffset": 3506,
+      "byteLength": 483
     }
   ],
   "buffers": [
     {
       "uri": "inspection_d405_robot.glb.bin",
-      "byteLength": 3907
+      "byteLength": 3989
     }
   ],
   "materials": [

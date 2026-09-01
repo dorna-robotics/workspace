@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1290
+      "byteLength": 1293
     }
   ],
   "buffers": [
     {
       "uri": "tip_axygen_180ul.glb.bin",
-      "byteLength": 1290
+      "byteLength": 1293
     }
   ],
   "materials": [

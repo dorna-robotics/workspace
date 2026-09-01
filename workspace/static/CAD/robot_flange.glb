@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3410
+      "byteLength": 3376
     }
   ],
   "buffers": [
     {
       "uri": "robot_flange.glb.bin",
-      "byteLength": 3410
+      "byteLength": 3376
     }
   ],
   "materials": [

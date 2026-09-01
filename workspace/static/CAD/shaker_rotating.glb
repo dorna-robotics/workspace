@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5125,
-      "count": 390036
+      "count": 382158
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 123369,
+      "count": 121313,
       "max": [
         3.4620065689086914,
         7.632474422454834,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 123369
+      "count": 121313
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6798
+      "count": 6768
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2283,
+      "count": 2278,
       "max": [
         -3.095918655395508,
         1.4629989862442017,
@@ -52,7 +52,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 2283
+      "count": 2278
     },
     {
       "type": "SCALAR",
@@ -82,12 +82,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 7344
+      "count": 7320
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1368,
+      "count": 1364,
       "max": [
         -4.125207901000977,
         1.371246099472046,
@@ -102,35 +102,35 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1368
+      "count": 1364
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 422556
+      "byteLength": 415009
     },
     {
       "buffer": 0,
-      "byteOffset": 422556,
-      "byteLength": 7751
+      "byteOffset": 415009,
+      "byteLength": 7850
     },
     {
       "buffer": 0,
-      "byteOffset": 430307,
-      "byteLength": 5044
+      "byteOffset": 422859,
+      "byteLength": 5130
     },
     {
       "buffer": 0,
-      "byteOffset": 435351,
-      "byteLength": 6698
+      "byteOffset": 427989,
+      "byteLength": 6618
     }
   ],
   "buffers": [
     {
       "uri": "shaker_rotating.glb.bin",
-      "byteLength": 442049
+      "byteLength": 434607
     }
   ],
   "materials": [

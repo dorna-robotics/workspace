@@ -64,13 +64,13 @@
     {
       "buffer": 0,
       "byteOffset": 709,
-      "byteLength": 1181
+      "byteLength": 1168
     }
   ],
   "buffers": [
     {
       "uri": "table_72x30.glb.bin",
-      "byteLength": 1890
+      "byteLength": 1877
     }
   ],
   "materials": [

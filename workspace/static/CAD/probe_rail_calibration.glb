@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 101451
+      "byteLength": 101506
     }
   ],
   "buffers": [
     {
       "uri": "probe_rail_calibration.glb.bin",
-      "byteLength": 101451
+      "byteLength": 101506
     }
   ],
   "materials": [

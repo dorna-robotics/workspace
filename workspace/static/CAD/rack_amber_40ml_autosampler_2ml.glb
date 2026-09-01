@@ -15,8 +15,8 @@
       "count": 852,
       "max": [
         3.0999999046325684,
-        1.2000000476837158,
-        2.25
+        1.200036644935608,
+        2.2500429153442383
       ],
       "min": [
         -3.0999999046325684,
@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2828
+      "byteLength": 2771
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_autosampler_2ml.glb.bin",
-      "byteLength": 2828
+      "byteLength": 2771
     }
   ],
   "materials": [

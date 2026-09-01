@@ -7,77 +7,54 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 97512
+      "count": 13506
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 25352,
+      "count": 4494,
       "max": [
-        1.1502045392990112,
-        2.6651451587677,
-        1.4000000953674316
+        14.25,
+        1.2003296613693237,
+        8.25018310546875
       ],
       "min": [
-        -1.149999976158142,
+        -14.25,
         0,
-        -6.275000095367432
+        -8.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 25352
-    },
-    {
-      "type": "VEC2",
-      "componentType": 5126,
-      "count": 25352
+      "count": 4494
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 103200
-    }
-  ],
-  "samplers": [
-    {
-      "magFilter": 9728,
-      "minFilter": 9728,
-      "wrapS": 10497,
-      "wrapT": 10497
-    }
-  ],
-  "textures": [
-    {
-      "source": 0,
-      "sampler": 0
-    }
-  ],
-  "images": [
-    {
-      "name": "PaletteBaseColor",
-      "mimeType": "image/png",
-      "uri": "PaletteBaseColor.png"
+      "byteLength": 10427
     }
   ],
   "buffers": [
     {
-      "uri": "inspection_horizontal_ids5mp.glb.bin",
-      "byteLength": 103200
+      "uri": "capholder_amber_40ml_4x7.glb.bin",
+      "byteLength": 10427
     }
   ],
   "materials": [
     {
-      "name": "PaletteMaterial001",
+      "name": "Rilsan_Invent_Natural_-_PA_11",
       "doubleSided": true,
       "pbrMetallicRoughness": {
-        "metallicFactor": 0,
-        "baseColorTexture": {
-          "index": 0
-        }
+        "baseColorFactor": [
+          0.9647060036659241,
+          0.9647060036659241,
+          0.9529410004615784,
+          1
+        ],
+        "metallicFactor": 0
       },
       "extensions": {
         "KHR_materials_specular": {
@@ -88,13 +65,12 @@
   ],
   "meshes": [
     {
-      "name": "camera_holder_small",
+      "name": "cap holder",
       "primitives": [
         {
           "attributes": {
             "POSITION": 1,
-            "NORMAL": 2,
-            "TEXCOORD_0": 3
+            "NORMAL": 2
           },
           "mode": 4,
           "material": 0,
@@ -104,8 +80,7 @@
               "bufferView": 0,
               "attributes": {
                 "POSITION": 0,
-                "NORMAL": 1,
-                "TEXCOORD_0": 2
+                "NORMAL": 1
               }
             }
           }
@@ -115,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "camera_holder_small",
+      "name": "cap holder",
       "rotation": [
         0.7071068286895752,
         0,
