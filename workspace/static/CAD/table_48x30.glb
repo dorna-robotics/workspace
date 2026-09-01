@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 678
+      "byteLength": 669
     },
     {
       "buffer": 0,
-      "byteOffset": 678,
-      "byteLength": 1237
+      "byteOffset": 669,
+      "byteLength": 1229
     }
   ],
   "buffers": [
     {
       "uri": "table_48x30.glb.bin",
-      "byteLength": 1915
+      "byteLength": 1898
     }
   ],
   "materials": [

@@ -7,19 +7,19 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 2490
+      "count": 2274
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 908,
+      "count": 825,
       "max": [
-        5.249774932861328,
-        0.5997288227081299,
-        0.24988701939582825
+        10.249774932861328,
+        0.5999674797058105,
+        0.25050783157348633
       ],
       "min": [
-        -5.249774932861328,
+        -10.249774932861328,
         -0.6000000238418579,
         -0.25
       ]
@@ -27,25 +27,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 908
+      "count": 825
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2910
+      "byteLength": 2625
     }
   ],
   "buffers": [
     {
       "uri": "adapter_plate_autosampler_2ml_4x14.glb.bin",
-      "byteLength": 2910
+      "byteLength": 2625
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin",
+      "name": "Steel_-_Satin.002",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "adapter4x14",
+      "name": "adapter47",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "adapter4x14",
+      "name": "adapter47",
       "rotation": [
         0.7071068286895752,
         0,

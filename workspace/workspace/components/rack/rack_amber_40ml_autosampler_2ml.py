@@ -19,12 +19,10 @@ class RackAmber40mlAutosampler2ml:
 
     Anchors: ``center`` at the origin, ``top`` at z=12, ``place_0`` at
     the bottom of the 29.5 pocket, ``place_1`` at the bottom of the
-    13.0 pocket, ``hole_0``/``hole_1`` at the 5 mm holes (-y first).
+    13.0 pocket.
 
-    The collision boxes are the block MINUS the two pocket openings
-    (square cutouts around each bore) — a vial has to be able to
-    descend into its pocket, so a single solid block would be wrong.
-    Floor slabs cover the material under each pocket.
+    One collision box bounding the whole block, per the rack-library
+    convention.
     """
 
     DEFAULTS = dict(
@@ -34,22 +32,10 @@ class RackAmber40mlAutosampler2ml:
                 "top":     [0.0, 0.0, 12.0, 0.0, 0.0, 0.0],
                 "place_0": [-10.0, 0.0, 2.0, 0.0, 0.0, 0.0],
                 "place_1": [21.0, 0.0, 4.0, 0.0, 0.0, 0.0],
-                "hole_0":  [13.0, -12.5, 0.0, 0.0, 0.0, 0.0],
-                "hole_1":  [13.0,  12.5, 0.0, 0.0, 0.0, 0.0],
         }},
         collision_box =
             {"body":[
-                # floor slabs under the pockets
-                {"pose": [-10.0, 0.0, 1.0, 0.0, 0.0, 0.0], "scale": [29.5, 29.5, 2.0], "padding_enabled": True},
-                {"pose": [21.0, 0.0, 2.0, 0.0, 0.0, 0.0], "scale": [13.0, 13.0, 4.0], "padding_enabled": True},
-                # full-height strips around the pocket cutouts
-                {"pose": [-27.875, 0.0, 6.0, 0.0, 0.0, 0.0], "scale": [6.25, 45.0, 12.0], "padding_enabled": True},   # left edge
-                {"pose": [9.625, 0.0, 6.0, 0.0, 0.0, 0.0], "scale": [9.75, 45.0, 12.0], "padding_enabled": True},     # between pockets
-                {"pose": [29.25, 0.0, 6.0, 0.0, 0.0, 0.0], "scale": [3.5, 45.0, 12.0], "padding_enabled": True},      # right edge
-                {"pose": [-10.0, 18.625, 6.0, 0.0, 0.0, 0.0], "scale": [29.5, 7.75, 12.0], "padding_enabled": True},  # behind amber pocket
-                {"pose": [-10.0, -18.625, 6.0, 0.0, 0.0, 0.0], "scale": [29.5, 7.75, 12.0], "padding_enabled": True}, # front of amber pocket
-                {"pose": [21.0, 14.5, 6.0, 0.0, 0.0, 0.0], "scale": [13.0, 16.0, 12.0], "padding_enabled": True},     # behind autosampler
-                {"pose": [21.0, -14.5, 6.0, 0.0, 0.0, 0.0], "scale": [13.0, 16.0, 12.0], "padding_enabled": True},    # front of autosampler
+                {"pose": [0.0, 0.0, 6.0, 0.0, 0.0, 0.0], "scale": [62.0, 45.0, 12.0], "padding_enabled": True},
         ]},
     )
 

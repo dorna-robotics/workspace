@@ -7,40 +7,40 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 25596
+      "count": 25608
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8528,
+      "count": 8532,
       "max": [
-        11.800000190734863,
-        1.499578833580017,
-        3.550311326980591
+        14.25,
+        1.5,
+        4.25
       ],
       "min": [
-        -11.800000190734863,
+        -14.25,
         0,
-        -3.549999952316284
+        -4.25
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 8528
+      "count": 8532
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 17912
+      "byteLength": 17926
     }
   ],
   "buffers": [
     {
       "uri": "rack_autosampler_2ml_4x14.glb.bin",
-      "byteLength": 17912
+      "byteLength": 17926
     }
   ],
   "materials": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "amber 4x14",
+      "name": "palte2ml",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "amber 4x14",
+      "name": "palte2ml",
       "rotation": [
         0.7071068286895752,
         0,

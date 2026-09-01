@@ -9,10 +9,10 @@ class RackAutosampler2ml4x14(Rack):
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 2, 0, 0, 0], "top": [0, 0, 15, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 15/2, 0.0, 0.0, 0.0], "scale":[236.0, 71.0, 15], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, 15/2, 0.0, 0.0, 0.0], "scale":[285.0, 85.0, 15], "padding_enabled": True}#[xyzabc] , [lx,ly,lz]
         ]},
-        offset=[-16.5*(14-1)/2, -16.5*(4-1)/2, 2],
-        pitch=[16.5, 16.5, 0],
+        offset=[-20.0*(14-1)/2, -20.0*(4-1)/2, 2],
+        pitch=[20.0, 20.0, 0],
         rvec_safe=[0, 0, 45],
         rows=[chr(c) for c in range(ord("A"), ord("D") + 1)],
         cols= [i for i in range(1, 14+1)],

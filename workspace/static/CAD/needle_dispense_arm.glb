@@ -32,12 +32,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 17844
+      "count": 17838
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5081,
+      "count": 5080,
       "max": [
         8.149999618530273,
         3.2498717308044434,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5081
+      "count": 5080
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 9191
+      "byteLength": 9281
     },
     {
       "buffer": 0,
-      "byteOffset": 9191,
-      "byteLength": 18507
+      "byteOffset": 9281,
+      "byteLength": 18552
     }
   ],
   "buffers": [
     {
       "uri": "needle_dispense_arm.glb.bin",
-      "byteLength": 27698
+      "byteLength": 27833
     }
   ],
   "materials": [

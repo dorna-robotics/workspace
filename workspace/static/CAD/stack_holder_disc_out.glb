@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 18399
+      "byteLength": 18412
     }
   ],
   "buffers": [
     {
       "uri": "stack_holder_disc_out.glb.bin",
-      "byteLength": 18399
+      "byteLength": 18412
     }
   ],
   "materials": [

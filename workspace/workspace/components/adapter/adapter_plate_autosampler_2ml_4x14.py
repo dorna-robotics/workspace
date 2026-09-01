@@ -4,30 +4,24 @@ from workspace.components.factory import register
 from workspace.components.adapter.adapter import Adapter
 
 
-# NOTE: adapter_plate_autosampler_2ml_4x14.glb currently exports only the two
-# fasteners at x=+/-50 (no plate body), so collision_box / place / top below
-# are UNMEASURED placeholders carried over from the 5x10 sibling. Re-export the
-# plate and these can be measured off the mesh. (clb IS set: grid-aligned probe
-# points sized to the 236x71 tube footprint — see the anchors comment.)
 @register("adapter_plate_autosampler_2ml_4x14")
 class AdapterPlateAutosampler2ml4x14(Adapter):
+    """Same physical adapter as the amber 40 mL 4x7 one: two screws
+    200 mm apart. Copied from that component; only the clb corner rows
+    are pulled in for the narrower 4x14 rack.
+    """
     DEFAULTS = dict(
-        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 6, 0, 0, 0],
-                        "hole_0":[50, 0, 0, 0, 0, 0], "hole_1": [-50, 0, 0, 0, 0, 0],
-                        # Calibration anchors on the plate's 25 mm hole grid, at
-                        # z = 0. hole_0/hole_1 (the screws at x = +/-50) take
-                        # their own grid holes; these use OTHER free holes, every
-                        # coordinate a multiple of 25. 4 at the corners of a
-                        # 200 x 50 grid rectangle (widest holes inside the
-                        # 236 x 71 footprint) + 2 near the centre, clear of the
-                        # +/-50 screws. (Same layout as the 4x14 capholder
-                        # adapter — identical footprint and screw grid.)
-                        "clb_0": [100, 25, 0, 0, 0, 0], "clb_1": [-100, 25, 0, 0, 0, 0], "clb_2": [-100, -25, 0, 0, 0, 0], "clb_3": [100, -25, 0, 0, 0, 0],
-                        "clb_4": [25, 0, 0, 0, 0, 0], "clb_5": [-25, 0, 0, 0, 0, 0]}},
-        collision_box=
-            {"body":[
-                {"pose":[0.0, 0.0, 0, 0.0, 0.0, 0.0], "scale":[105.0, 5.0, 12.0]}#[xyzabc] , [lx,ly,lz]
-        ]}
+        anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0], "top": [0, 0, 0, 0, 0, 0],
+                "hole_0": [100, 0, 0, 0, 0, 0], "hole_1": [-100, 0, 0, 0, 0, 0],
+                # Calibration anchors on the plate's 25 mm hole grid, at z = 100
+                # (100 mm above the plate face). hole_0/hole_1 (the screws at x = +/-100)
+                # take their own grid holes; these use OTHER free holes, every
+                # coordinate a multiple of 25 so each lands on a real hole. 4 at
+                # the corners of a 250 x 100 grid rectangle (the 285 x 85 rack
+                # footprint sits inside in y) + 2 near the centre, clear of
+                # the +/-100 screws.
+                "clb_0": [125, 50, 100, 0, 0, 0], "clb_1": [-125, 50, 100, 0, 0, 0], "clb_2": [-125, -50, 100, 0, 0, 0], "clb_3": [125, -50, 100, 0, 0, 0],
+                "clb_4": [50, 0, 100, 0, 0, 0], "clb_5": [-50, 0, 100, 0, 0, 0]}},
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):
