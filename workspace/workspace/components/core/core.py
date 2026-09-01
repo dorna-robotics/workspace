@@ -4395,6 +4395,18 @@ class J5WindingGuard:
         object.__setattr__(self, "_api", api)
         object.__setattr__(self, "_core", core)
 
+    def __setattr__(self, name, value):
+        # The guard is a PROXY: attribute writes belong to the wrapped
+        # api, exactly like reads. Without this, ``robot_api.joints =
+        # [...]`` (the scene builder's pose-preview, ik_worker's drag
+        # solves) lands on the wrapper while the inner SimulationAPI
+        # keeps its own joints — the robot silently never moves.
+        # Underscored names stay on the wrapper (its own plumbing).
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._api, name, value)
+
     def __getattr__(self, name):
         attr = getattr(self._api, name)
         if callable(attr) and name in self._MOTION:
