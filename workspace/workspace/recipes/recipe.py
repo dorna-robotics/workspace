@@ -3111,13 +3111,18 @@ class Recipe:
     def _resolve_calibration_targets(self, calibration_targets):
         """Resolve the calibration target spec to a flat list of clb anchors.
 
-        None -> auto-detect every ``clb_`` anchor on the component body.
+        None -> auto-detect every ``clb_`` anchor on the component, on
+        EVERY solid — calibration features can live on a sub-solid
+        (shaker_4slot's are on ``rotating``).
         str  -> that single anchor.
         list -> that list, used as-is.
         """
         if calibration_targets is None:
-            body = self.component.assembly["body"]
-            return [a for a in body.anchors if a.startswith("clb_")]
+            found = []
+            for sol in self.component.assembly.values():
+                found += [a for a in sol.anchors
+                          if a.startswith("clb_") and a not in found]
+            return found
         if isinstance(calibration_targets, str):
             return [calibration_targets]
         return list(calibration_targets)
