@@ -4,8 +4,8 @@ from dorna2 import Solid
 from workspace.components.factory import register
 
 
-@register("liquid_waste")
-class LiquidWaste:
+@register("rack_liquid_waste")
+class RackLiquidWaste:
     """Liquid-waste container that rides in the waste-management stand.
 
     Measured off liquid_waste.glb (mm). The origin is partway up the
