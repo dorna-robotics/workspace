@@ -83,16 +83,22 @@
       0%, 100% { box-shadow: 0 2px 10px rgba(0,0,0,0.55); }
       50%      { box-shadow: 0 0 12px 2px rgba(249,79,79,0.55); }
     }
+    /* Out of flow: floats LEFT of the button column, aligned with the
+       record button — never shifts the panel. Short text only. */
     #recBadge {
-      align-self: flex-end;
+      position: absolute;
+      right: calc(100% + 8px);
+      white-space: nowrap;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       font-size: 11px;
+      line-height: 18px;
       font-variant-numeric: tabular-nums;
       color: #ff7b7b;
       background: rgba(8,14,24,0.80);
       border: 1px solid rgba(249,79,79,0.35);
       border-radius: 6px;
       padding: 2px 6px;
+      pointer-events: none;
     }
     body.light #recBadge { color: #c50000; background: rgba(255,255,255,0.85); }
 
@@ -1387,7 +1393,10 @@ function makeRenderer(opts, mountEl) {
         btn.classList.toggle("rec-on", on);
         btn.title = on ? "Stop recording" : "Record replay";
         badge.style.display = on ? "" : "none";
-        if (on) badge.textContent = "REC " + fmt(status.seconds || 0);
+        if (on) {
+          badge.textContent = "REC " + fmt(status.seconds || 0);
+          badge.style.top = btn.offsetTop + "px";
+        }
         clearInterval(pollT);
         if (on) pollT = setInterval(async () => {
           try { render(await api("status", "GET")); } catch (_) {}
@@ -1402,15 +1411,19 @@ function makeRenderer(opts, mountEl) {
             render(await api("status", "GET"));
             if (out && out.ok) {
               badge.style.display = "";
-              badge.textContent = "saved " + (out.path || "").split("/").pop();
-              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 4000);
+              badge.style.top = btn.offsetTop + "px";
+              badge.textContent = "saved \u2713";
+              badge.title = out.path || "";
+              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 2500);
             }
           } else {
             const out = await api("start");
             if (!out || !out.ok) {
               badge.style.display = "";
-              badge.textContent = (out && out.error) || "record failed";
-              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 4000);
+              badge.style.top = btn.offsetTop + "px";
+              badge.textContent = "record failed";
+              badge.title = (out && out.error) || "";
+              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 3000);
             }
             render(await api("status", "GET"));
           }
