@@ -147,6 +147,22 @@
         <div id="sbRecipesList" class="sb-files-list"></div>
       </div>
 
+      <!-- Replay: recordings captured by the notebook viewer's record
+           button (<project>/core/replay_*.jsonl). Pick one (or paste a
+           path) and scrub the whole run in the canvas. -->
+      <div id="sbReplaySection">
+        <div class="section-label">Replay
+          <button class="btn btn-sm btn-ghost btn-icon" id="rpRefresh" title="Rescan project recordings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        </div>
+        <div class="rp-controls">
+          <select class="input" id="rpList"></select>
+          <input class="input" id="rpPath" type="text" spellcheck="false"
+                 placeholder="…or full path to a replay_*.jsonl"/>
+          <button class="btn btn-sm btn-primary" id="rpLoad">Load</button>
+          <div id="rpHint" class="rp-hint"></div>
+        </div>
+      </div>
+
     </div>
   </aside>
 
@@ -188,6 +204,26 @@
       <span id="infoName"  class="infoLabel"></span>
       <span id="infoType"  class="infoLabel"></span>
       <span id="infoSolid" class="infoLabel"></span>
+    </div>
+
+    <!-- Replay player (bottom-center) — visible while a recording is
+         loaded. The builder scene hides underneath; ✕ restores it. -->
+    <div id="rpBar" style="display:none">
+      <button class="ctrl-btn" id="rpPlay" title="Play / pause">
+        <svg id="rpIconPlay" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 21 12 6 21"/></svg>
+        <svg id="rpIconPause" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="4" width="5" height="16"/><rect x="14" y="4" width="5" height="16"/></svg>
+      </button>
+      <input type="range" id="rpSlider" min="0" max="1000" value="0" step="1"/>
+      <span id="rpTime">00:00 / 00:00</span>
+      <select class="input" id="rpSpeed" title="Playback speed">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+      <button class="ctrl-btn" id="rpClose" title="Close replay">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
 
   </div><!-- /viewer-area -->

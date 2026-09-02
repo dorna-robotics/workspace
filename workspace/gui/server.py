@@ -89,6 +89,8 @@ from gui.scene_builder.server import (
     SolveRefHandler,
     ResetHandler,
     RecipeIKHandler,
+    ReplayListHandler,
+    ReplayFileHandler,
 )
 import socketio as _socketio
 
@@ -356,6 +358,8 @@ def make_app(port=5000):
         (r"/scene-builder/api/perf", PerfHandler),
         (r"/scene-builder/api/reset", ResetHandler),
         (r"/scene-builder/api/recipe_ik", RecipeIKHandler),
+        (r"/scene-builder/api/replays", ReplayListHandler),
+        (r"/scene-builder/api/replay", ReplayFileHandler),
         (r"/scene-builder/api/config_version", ConfigVersionHandler),
 
         # ---- Scene Builder Socket.IO + GUI (catch-all last) ----

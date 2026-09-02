@@ -1453,6 +1453,77 @@ async def reset_scene(sid):
     await sio.emit("scene_reset")
 
 
+class ReplayListHandler(tornado.web.RequestHandler):
+    """GET → the active project's recorded replays (core/replay_*.jsonl),
+    newest first. The Replay panel's dropdown."""
+
+    def get(self):
+        out = []
+        core_dir = os.path.join(_project_path, "core") if _project_path else None
+        if core_dir and os.path.isdir(core_dir):
+            try:
+                for n in os.listdir(core_dir):
+                    if n.startswith("replay_") and n.endswith(".jsonl"):
+                        p = os.path.join(core_dir, n)
+                        try:
+                            stt = os.stat(p)
+                            out.append({"name": n, "path": p,
+                                        "size": stt.st_size,
+                                        "mtime": int(stt.st_mtime)})
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+        out.sort(key=lambda r: r["mtime"], reverse=True)
+        self.write({"ok": True, "project": _project_path, "replays": out})
+
+
+class ReplayFileHandler(tornado.web.RequestHandler):
+    """GET ?path= → one parsed recording: {meta, snap, frames}. Accepts
+    an absolute path (the panel's free path box) or a bare replay_*.jsonl
+    name resolved in the active project's core/."""
+
+    _MAX_BYTES = 120 * 1024 * 1024
+
+    def get(self):
+        path = self.get_argument("path", "")
+        if path and os.sep not in path and _project_path:
+            path = os.path.join(_project_path, "core", path)
+        if not (os.path.basename(path).startswith("replay_")
+                and path.endswith(".jsonl")):
+            self.set_status(400)
+            self.write({"ok": False, "error": "path must be a replay_*.jsonl file"})
+            return
+        if not os.path.isfile(path):
+            self.set_status(404)
+            self.write({"ok": False, "error": f"no such file: {path}"})
+            return
+        if os.path.getsize(path) > self._MAX_BYTES:
+            self.set_status(413)
+            self.write({"ok": False, "error": "recording too large to load"})
+            return
+        meta, snap, frames = {}, {}, []
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    row = json.loads(line)
+                    if "meta" in row:
+                        meta = row["meta"]
+                    elif "snap" in row:
+                        snap = row["snap"]
+                    else:
+                        frames.append({"t": row.get("t", 0), "u": row.get("u", {})})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"ok": False, "error": f"unreadable recording: {e}"})
+            return
+        self.write({"ok": True, "path": path, "meta": meta,
+                    "snap": snap, "frames": frames})
+
+
 class ResetHandler(tornado.web.RequestHandler):
     """Clear the whole server-side scene synchronously.
 
@@ -1489,3 +1560,6 @@ if __name__ == "__main__":
             autoreload.watch(p)
     autoreload.start()
     tornado.ioloop.IOLoop.current().start()
+
+app.add_handlers(r".*$", [(r"/api/replays", ReplayListHandler)])
+app.add_handlers(r".*$", [(r"/api/replay", ReplayFileHandler)])

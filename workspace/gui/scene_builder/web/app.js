@@ -10842,3 +10842,234 @@ function startRectPattern() {
   handle.addEventListener("pointerup", end);
   handle.addEventListener("pointercancel", end);
 })();
+
+// =========================
+// Replay player — scrub a recorded run (core/replay_*.jsonl)
+// =========================
+// The recording is the viewer wire stream verbatim: one full snapshot
+// (every solid with meshUrl + world pose) then timestamped pose deltas.
+// Loading builds a self-contained THREE.Group from the snapshot, hides
+// the builder scene, and scrubbing binary-searches each solid's pose
+// timeline — playback is exact, camera stays free.
+(function replayPlayer() {
+  const $ = (id) => document.getElementById(id);
+  const listEl = $("rpList"), pathEl = $("rpPath"), loadBtn = $("rpLoad"),
+        hintEl = $("rpHint"), refreshBtn = $("rpRefresh"),
+        bar = $("rpBar"), playBtn = $("rpPlay"), slider = $("rpSlider"),
+        timeEl = $("rpTime"), speedEl = $("rpSpeed"), closeBtn = $("rpClose"),
+        iconPlay = $("rpIconPlay"), iconPause = $("rpIconPause");
+  if (!listEl || !bar) return;
+
+  const rp = { root: null, tl: null, dur: 0, t: 0, playing: false,
+               raf: 0, lastWall: 0, hidden: [] };
+
+  function hint(msg, bad) {
+    hintEl.textContent = msg || "";
+    hintEl.classList.toggle("bad", !!bad);
+  }
+
+  async function refreshList() {
+    listEl.innerHTML = "";
+    try {
+      const js = await fetch(SB_API + "/replays").then(r => r.json());
+      const rows = (js && js.replays) || [];
+      if (!rows.length) {
+        const o = document.createElement("option");
+        o.value = ""; o.textContent = "no recordings in project core/";
+        listEl.appendChild(o);
+        return;
+      }
+      for (const r of rows) {
+        const o = document.createElement("option");
+        o.value = r.path;
+        const when = new Date(r.mtime * 1000);
+        o.textContent = `${r.name}  (${(r.size / 1e6).toFixed(1)} MB)`;
+        o.title = when.toLocaleString();
+        listEl.appendChild(o);
+      }
+    } catch (e) {
+      const o = document.createElement("option");
+      o.value = ""; o.textContent = "list failed";
+      listEl.appendChild(o);
+    }
+  }
+
+  function rodQuat(rx, ry, rz) {
+    const T = window.__three.THREE;
+    const deg = Math.hypot(rx, ry, rz);
+    if (deg < 1e-9) return new T.Quaternion();
+    const rad = deg * Math.PI / 180;
+    return new T.Quaternion().setFromAxisAngle(
+      new T.Vector3(rx / deg, ry / deg, rz / deg), rad);
+  }
+
+  function applyPose(holder, p) {
+    holder.position.set(p[0], p[1], p[2]);
+    holder.quaternion.copy(rodQuat(p[3], p[4], p[5]));
+  }
+
+  function setSceneHidden(hidden) {
+    const scene = window.__three.scene;
+    if (hidden) {
+      rp.hidden = [];
+      for (const child of scene.children) {
+        if (child === rp.root) continue;
+        if (child.userData && child.userData.componentName && child.visible) {
+          child.visible = false;
+          rp.hidden.push(child);
+        }
+      }
+    } else {
+      for (const c of rp.hidden) c.visible = true;
+      rp.hidden = [];
+    }
+  }
+
+  function teardown() {
+    pause();
+    if (rp.root) {
+      window.__three.scene.remove(rp.root);
+      rp.root.traverse(o => {
+        if (o.isMesh) {
+          if (o.geometry) o.geometry.dispose();
+        }
+      });
+      rp.root = null;
+    }
+    setSceneHidden(false);
+    rp.tl = null; rp.dur = 0; rp.t = 0;
+    bar.style.display = "none";
+  }
+
+  const fmt = (s) => {
+    s = Math.max(0, Math.floor(s));
+    return String(Math.floor(s / 60)).padStart(2, "0") + ":" +
+           String(s % 60).padStart(2, "0");
+  };
+
+  function seek(t) {
+    rp.t = Math.max(0, Math.min(t, rp.dur));
+    for (const [key, tl] of rp.tl) {
+      const holder = rp.holders.get(key);
+      if (!holder) continue;
+      // last entry with time <= t (binary search)
+      let lo = 0, hi = tl.length - 1, best = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (tl[mid][0] <= rp.t) { best = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      applyPose(holder, tl[best][1]);
+    }
+    slider.value = rp.dur > 0 ? Math.round(1000 * rp.t / rp.dur) : 0;
+    timeEl.textContent = fmt(rp.t) + " / " + fmt(rp.dur);
+  }
+
+  function tick(now) {
+    if (!rp.playing) return;
+    const dt = (now - rp.lastWall) / 1000;
+    rp.lastWall = now;
+    const next = rp.t + dt * parseFloat(speedEl.value || "1");
+    if (next >= rp.dur) { seek(rp.dur); pause(); return; }
+    seek(next);
+    rp.raf = requestAnimationFrame(tick);
+  }
+
+  function play() {
+    if (!rp.tl) return;
+    if (rp.t >= rp.dur) rp.t = 0;   // replay from the top
+    rp.playing = true;
+    iconPlay.style.display = "none";
+    iconPause.style.display = "";
+    rp.lastWall = performance.now();
+    rp.raf = requestAnimationFrame(tick);
+  }
+
+  function pause() {
+    rp.playing = false;
+    cancelAnimationFrame(rp.raf);
+    iconPlay.style.display = "";
+    iconPause.style.display = "none";
+  }
+
+  async function load(path) {
+    if (!path) { hint("pick a recording or paste a path", true); return; }
+    if (!window.__three) { hint("viewer not ready yet", true); return; }
+    loadBtn.disabled = true;
+    const prev = loadBtn.textContent;
+    loadBtn.textContent = "Loading…";
+    hint("");
+    try {
+      const js = await fetch(SB_API + "/replay?path=" + encodeURIComponent(path))
+        .then(r => r.json());
+      if (!js || !js.ok) throw new Error((js && js.error) || "load failed");
+      teardown();
+      const T = window.__three.THREE;
+      rp.root = new T.Group();
+      rp.root.name = "__replay__";
+      window.__three.scene.add(rp.root);
+      rp.holders = new Map();
+      const loader = makeGltfLoader();
+      let meshesLeft = 0;
+      for (const [key, item] of Object.entries(js.snap || {})) {
+        if (!item) continue;
+        const holder = new T.Group();
+        holder.name = key;
+        applyPose(holder, item.pose || [0, 0, 0, 0, 0, 0]);
+        rp.root.add(holder);
+        rp.holders.set(key, holder);
+        if (item.meshUrl) {
+          meshesLeft++;
+          loader.load(versioned(item.meshUrl),
+            (g) => { holder.add(g.scene); meshesLeft--; },
+            undefined,
+            () => { meshesLeft--; });   // missing mesh: pose-only ghost
+        }
+      }
+      // per-key pose timeline: snapshot at t=0 + every delta after
+      rp.tl = new Map();
+      for (const [key, item] of Object.entries(js.snap || {})) {
+        if (item && item.pose) rp.tl.set(key, [[0, item.pose]]);
+      }
+      for (const f of js.frames || []) {
+        for (const [key, item] of Object.entries(f.u || {})) {
+          if (!item || !item.pose) continue;
+          if (!rp.tl.has(key)) rp.tl.set(key, [[0, item.pose]]);
+          rp.tl.get(key).push([f.t, item.pose]);
+        }
+      }
+      rp.dur = (js.frames && js.frames.length)
+        ? js.frames[js.frames.length - 1].t : 0;
+      setSceneHidden(true);
+      bar.style.display = "";
+      seek(0);
+      hint(`${(js.path || path).split("/").pop()} — ${fmt(rp.dur)}, ` +
+           `${(js.frames || []).length} frames`);
+    } catch (e) {
+      hint(String(e.message || e), true);
+      teardown();
+    } finally {
+      loadBtn.disabled = false;
+      loadBtn.textContent = prev;
+    }
+  }
+
+  loadBtn.addEventListener("click", () =>
+    load(pathEl.value.trim() || listEl.value));
+  refreshBtn.addEventListener("click", refreshList);
+  playBtn.addEventListener("click", () => (rp.playing ? pause() : play()));
+  closeBtn.addEventListener("click", teardown);
+  slider.addEventListener("input", () => {
+    pause();
+    seek(rp.dur * (parseInt(slider.value, 10) || 0) / 1000);
+  });
+  window.addEventListener("keydown", (e) => {
+    if (bar.style.display === "none") return;
+    if (e.code === "Space" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      rp.playing ? pause() : play();
+    }
+  });
+
+  refreshList();
+})();

@@ -94,6 +94,29 @@ class Display:
     # ----------------------------------------------------
     # Public utilities
     # ----------------------------------------------------
+    def _project_core(self):
+        """The active project's ``core/`` dir (where replay recordings
+        land), found by walking up from the first scene file to the
+        folder holding ``launch.yaml``. None when the workspace was
+        built from bare scene files outside a project."""
+        try:
+            import pathlib
+            cfg = getattr(self.workspace, "config_paths", None) or []
+            if not cfg:
+                return None
+            p = pathlib.Path(str(cfg[0])).resolve().parent
+            for _ in range(6):
+                if (p / "launch.yaml").exists():
+                    core = p / "core"
+                    core.mkdir(exist_ok=True)
+                    return str(core)
+                if p.parent == p:
+                    break
+                p = p.parent
+        except Exception:
+            pass
+        return None
+
     @staticmethod
     def _lan_ip():
         """This machine's LAN address — the URL a browser on the bench
@@ -392,10 +415,14 @@ class Display:
         while not self._stop_event.is_set():
             try:
                 # transports only here, NOT in Client()
+                # auth carries the PROJECT's core/ dir so the viewer
+                # server can save replay recordings next to the other
+                # per-project state (caches, logs, calibration).
                 self.sio.connect(
                     self.SERVER,
                     transports=["websocket"],
                     socketio_path="/socket.io/",
+                    auth={"project_core": self._project_core() or ""},
                 )
                 # If connect succeeds, break; reconnection is handled by the client
                 return

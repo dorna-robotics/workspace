@@ -67,6 +67,35 @@
     }
     .ctrl-btn svg { display: block; }
 
+    /* Record button — red while a replay is being captured */
+    .ctrl-btn.rec-on {
+      background: rgba(210,50,50,0.30);
+      border-color: rgba(249,79,79,0.60);
+      color: #ff7b7b;
+      animation: recPulse 1.6s ease-in-out infinite;
+    }
+    body.light .ctrl-btn.rec-on {
+      background: rgba(220,0,0,0.12);
+      border-color: rgba(220,0,0,0.45);
+      color: #c50000;
+    }
+    @keyframes recPulse {
+      0%, 100% { box-shadow: 0 2px 10px rgba(0,0,0,0.55); }
+      50%      { box-shadow: 0 0 12px 2px rgba(249,79,79,0.55); }
+    }
+    #recBadge {
+      align-self: flex-end;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: #ff7b7b;
+      background: rgba(8,14,24,0.80);
+      border: 1px solid rgba(249,79,79,0.35);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    body.light #recBadge { color: #c50000; background: rgba(255,255,255,0.85); }
+
     /* Light-mode overrides for the control panel */
     body.light .ctrl-btn {
       background: rgba(255,255,255,0.85);
@@ -192,6 +221,13 @@
         <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="8.5" x2="22" y2="8.5"/><line x1="2" y1="15.5" x2="22" y2="15.5"/>
       </svg>
     </button>
+    <!-- Replay recorder — hidden unless this server exposes /record/* -->
+    <button class="ctrl-btn" id="btnRecord" title="Record replay" style="display:none">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+    <div id="recBadge" style="display:none"></div>
   </div>
 
   <!-- ViewCube + Reset view (grouped bottom-right) -->
@@ -1322,6 +1358,66 @@ function makeRenderer(opts, mountEl) {
 
     await getVersion();
     boot();
+
+    // ── Replay recorder button ─────────────────────────────────────
+    // Only the notebook viewer server (workspace/server.py) exposes
+    // /record/* — everywhere else the probe fails and the button
+    // stays hidden. While recording: red pulse + elapsed badge; the
+    // stream is saved server-side to <project>/core/replay_*.jsonl.
+    (async function wireRecorder() {
+      const btn = document.getElementById("btnRecord");
+      const badge = document.getElementById("recBadge");
+      if (!btn) return;
+      const api = async (a, method = "POST") => {
+        const r = await fetch("/record/" + a, { method });
+        return r.json();
+      };
+      let st;
+      try { st = await api("status", "GET"); } catch (_) { return; }
+      if (!st || st.ok !== true) return;
+      btn.style.display = "";
+      let pollT = null;
+      const fmt = (s) => {
+        s = Math.max(0, Math.floor(s));
+        return String(Math.floor(s / 60)).padStart(2, "0") + ":" +
+               String(s % 60).padStart(2, "0");
+      };
+      function render(status) {
+        const on = !!(status && status.recording);
+        btn.classList.toggle("rec-on", on);
+        btn.title = on ? "Stop recording" : "Record replay";
+        badge.style.display = on ? "" : "none";
+        if (on) badge.textContent = "REC " + fmt(status.seconds || 0);
+        clearInterval(pollT);
+        if (on) pollT = setInterval(async () => {
+          try { render(await api("status", "GET")); } catch (_) {}
+        }, 1000);
+      }
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const cur = await api("status", "GET");
+          if (cur.recording) {
+            const out = await api("stop");
+            render(await api("status", "GET"));
+            if (out && out.ok) {
+              badge.style.display = "";
+              badge.textContent = "saved " + (out.path || "").split("/").pop();
+              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 4000);
+            }
+          } else {
+            const out = await api("start");
+            if (!out || !out.ok) {
+              badge.style.display = "";
+              badge.textContent = (out && out.error) || "record failed";
+              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 4000);
+            }
+            render(await api("status", "GET"));
+          }
+        } finally { btn.disabled = false; }
+      });
+      render(st);
+    })();
   </script>
 </body>
 </html>

@@ -737,3 +737,47 @@ select.input { cursor: pointer; }
 .sb-ruler-pts  { margin-top: 6px; font-weight: 400; color: rgba(255,255,255,0.72); }
 .sb-ruler-pt   { margin-top: 2px; font-weight: 400; color: rgba(255,255,255,0.86); }
 .sb-ruler-hint { margin-top: 6px; font-weight: 400; font-size: 11px; color: rgba(255,255,255,0.45); }
+
+/* ── Replay panel + player ─────────────────────────────────────────────
+   The sidebar section lists recordings (core/replay_*.jsonl) and the
+   player bar scrubs the loaded one over the canvas. Same surface
+   grammar as the ctrl panel: panel tokens, no new colors. */
+.rp-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.rp-controls .input { width: 100%; box-sizing: border-box; }
+.rp-hint {
+  font-size: 11px;
+  min-height: 14px;
+  color: var(--muted, rgba(127,127,127,0.9));
+}
+.rp-hint.bad { color: var(--danger, #e5484d); }
+
+#rpBar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel-bg, rgba(17,17,20,0.92));
+  border: 1px solid var(--panel-bord, rgba(255,255,255,0.12));
+  box-shadow: 0 6px 22px rgba(0,0,0,0.45);
+  min-width: 420px;
+  max-width: 70%;
+}
+#rpBar #rpSlider { flex: 1; min-width: 220px; accent-color: var(--accent, #4f9cf9); }
+#rpBar #rpTime {
+  font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text, #fff);
+  white-space: nowrap;
+}
+#rpBar select.input { width: auto; padding: 4px 6px; font-size: 12px; }
