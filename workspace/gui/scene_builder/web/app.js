@@ -10947,6 +10947,25 @@ function startRectPattern() {
            String(s % 60).padStart(2, "0");
   };
 
+  // The stream is ~15-20 fps (Display ACK backpressure), so raw
+  // sample-snapping looks steppy. Interpolate between the bracketing
+  // samples — position lerp + quaternion slerp — but ONLY across small
+  // gaps: delta compression sends nothing for a parked solid, and
+  // interpolating over a long silent gap would invent a slow glide
+  // that never happened. Converted vectors/quats cache lazily on the
+  // timeline entries.
+  const INTERP_MAX_GAP = 0.4;   // s
+
+  function entryVQ(e) {
+    if (!e._v) {
+      const T = window.__three.THREE;
+      const p = e[1];
+      e._v = new T.Vector3(p[0], p[1], p[2]);
+      e._q = rodQuat(p[3], p[4], p[5]);
+    }
+    return e;
+  }
+
   function seek(t) {
     rp.t = Math.max(0, Math.min(t, rp.dur));
     for (const [key, tl] of rp.tl) {
@@ -10959,7 +10978,18 @@ function startRectPattern() {
         if (tl[mid][0] <= rp.t) { best = mid; lo = mid + 1; }
         else hi = mid - 1;
       }
-      applyPose(holder, tl[best][1]);
+      const a = entryVQ(tl[best]);
+      const b = best + 1 < tl.length ? tl[best + 1] : null;
+      const gap = b ? (b[0] - a[0]) : Infinity;
+      if (b && gap > 0 && gap <= INTERP_MAX_GAP) {
+        entryVQ(b);
+        const alpha = Math.min(1, Math.max(0, (rp.t - a[0]) / gap));
+        holder.position.lerpVectors(a._v, b._v, alpha);
+        holder.quaternion.slerpQuaternions(a._q, b._q, alpha);
+      } else {
+        holder.position.copy(a._v);
+        holder.quaternion.copy(a._q);
+      }
     }
     slider.value = rp.dur > 0 ? Math.round(1000 * rp.t / rp.dur) : 0;
     timeEl.textContent = fmt(rp.t) + " / " + fmt(rp.dur);
