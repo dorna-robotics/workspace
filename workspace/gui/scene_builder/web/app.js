@@ -10915,7 +10915,7 @@ function startRectPattern() {
   function setSceneHidden(hidden) {
     const scene = window.__three.scene;
     if (hidden) {
-      rp.hidden = [];
+      if (rp.hidden.length) return;   // already hidden
       for (const child of scene.children) {
         if (child === rp.root) continue;
         if (child.userData && child.userData.componentName && child.visible) {
@@ -10929,6 +10929,29 @@ function startRectPattern() {
     }
   }
 
+  // ── Canvas follows the sidebar tab ────────────────────────────────
+  // Scene/Recipes: builder scene visible, replay group hidden (loaded
+  // recording is kept, paused). Replay: builder scene hidden — the
+  // canvas shows the recording, or nothing until one is loaded.
+  let curTab = "scene";
+  let modeRetry = 0;
+  function applyCanvasMode() {
+    if (!window.__three) {
+      clearTimeout(modeRetry);          // viewer still booting — retry
+      modeRetry = setTimeout(applyCanvasMode, 250);
+      return;
+    }
+    setSceneHidden(curTab === "replay");
+    if (rp.root) rp.root.visible = (curTab === "replay");
+    bar.style.display = (curTab === "replay" && rp.tl) ? "" : "none";
+    if (window.__markDirty) window.__markDirty();
+  }
+  document.addEventListener("sb-tab", (e) => {
+    curTab = (e.detail && e.detail.tab) || "scene";
+    if (curTab !== "replay") pause();
+    applyCanvasMode();
+  });
+
   function teardown() {
     pause();
     if (rp.root) {
@@ -10940,9 +10963,10 @@ function startRectPattern() {
       });
       rp.root = null;
     }
-    setSceneHidden(false);
     rp.tl = null; rp.dur = 0; rp.t = 0;
-    bar.style.display = "none";
+    // scene visibility stays tab-driven: on the Replay tab the canvas
+    // goes empty until the next Load; elsewhere the builder shows.
+    applyCanvasMode();
   }
 
   const fmt = (s) => {
@@ -11080,11 +11104,10 @@ function startRectPattern() {
       }
       rp.dur = (js.frames && js.frames.length)
         ? js.frames[js.frames.length - 1].t : 0;
-      setSceneHidden(true);
       const shortName = (js.path || path).split("/").pop();
       nameEl.textContent = shortName;
       nameEl.title = js.path || path;
-      bar.style.display = "";
+      applyCanvasMode();
       seek(0);
       hint(`${(js.path || path).split("/").pop()} — ${fmt(rp.dur)}, ` +
            `${(js.frames || []).length} frames`);
@@ -11153,6 +11176,9 @@ function startRectPattern() {
     if (recipesEmpty) recipesEmpty.dataset.active = (tab === "recipes") ? "1" : "";
     syncRecipesEmpty();
     try { localStorage.setItem(KEY, tab); } catch (_) {}
+    // The canvas follows the tab (replay module listens): Scene/Recipes
+    // show the builder scene, Replay shows only the loaded recording.
+    document.dispatchEvent(new CustomEvent("sb-tab", { detail: { tab } }));
   }
 
   strip.addEventListener("click", (e) => {
