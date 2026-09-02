@@ -121,6 +121,9 @@ async def connect(sid, environ, auth):
 @sio.event
 async def upstream_update(sid, payload):
     merge_into_state(world_state, payload)
+    if _recorder["fp"] is not None:
+        _record_line({"t": round(time.time() - _recorder["t0"], 4),
+                      "u": payload})
     await sio.emit("scene_update", payload)   # back to payload
     return "ok"
 
@@ -135,6 +138,88 @@ async def request_snapshot(sid):
 async def disconnect(sid):
     _clients.discard(sid)
     _client_log("disconnect", sid)
+
+
+# --------------------------------------------------
+# Replay recorder — same contract as workspace/server.py
+# --------------------------------------------------
+# One JSONL per recording in the PROJECT's core/ folder:
+#   {"meta": ...} then {"t": 0, "snap": world_state} then {"t", "u"}
+# per upstream delta. The viewer's record button drives it via
+# /record/start|stop|status (it probes status and hides where absent).
+_recorder = {"fp": None, "path": None, "t0": None, "frames": 0}
+_record_core_dir = None  # set at RuntimeServer init from the project
+
+
+def _record_line(obj):
+    fp = _recorder["fp"]
+    if fp is None:
+        return
+    try:
+        fp.write(json.dumps(obj, separators=(",", ":")) + "\n")
+        _recorder["frames"] += 1
+    except Exception as e:
+        print("[record] write failed, stopping:", e)
+        _record_stop()
+
+
+def _record_start():
+    if _recorder["fp"] is not None:
+        return {"ok": False, "error": "already recording"}
+    if not _record_core_dir:
+        return {"ok": False, "error": "no project core/ dir known"}
+    os.makedirs(_record_core_dir, exist_ok=True)
+    name = time.strftime("replay_%Y%m%d_%H%M%S.jsonl")
+    path = os.path.join(_record_core_dir, name)
+    try:
+        fp = open(path, "w")
+    except Exception as e:
+        return {"ok": False, "error": f"cannot open {path}: {e}"}
+    _recorder.update(fp=fp, path=path, t0=time.time(), frames=0)
+    _record_line({"meta": {"started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                           "project_core": _record_core_dir}})
+    _record_line({"t": 0.0, "snap": world_state})
+    print(f"[record] started -> {path}")
+    return {"ok": True, "path": path, "name": name}
+
+
+def _record_stop():
+    fp, path, t0, n = (_recorder["fp"], _recorder["path"],
+                       _recorder["t0"], _recorder["frames"])
+    _recorder.update(fp=None, path=None, t0=None, frames=0)
+    if fp is None:
+        return {"ok": False, "error": "not recording"}
+    try:
+        fp.close()
+    except Exception:
+        pass
+    secs = round(time.time() - t0, 1) if t0 else 0
+    print(f"[record] stopped: {path} ({n} lines, {secs}s)")
+    return {"ok": True, "path": path, "frames": n, "seconds": secs}
+
+
+def _record_status():
+    on = _recorder["fp"] is not None
+    return {"ok": True, "recording": on, "path": _recorder["path"],
+            "seconds": round(time.time() - _recorder["t0"], 1) if on else 0,
+            "frames": _recorder["frames"], "project_core": _record_core_dir}
+
+
+class RecordHandler(tornado.web.RequestHandler):
+    def get(self, action):
+        if action != "status":
+            self.set_status(405)
+            self.write({"ok": False, "error": "GET is status only"})
+            return
+        self.write(_record_status())
+
+    def post(self, action):
+        out = (_record_start() if action == "start"
+               else _record_stop() if action == "stop"
+               else {"ok": False, "error": f"unknown action {action}"})
+        if not out.get("ok") and self.get_status() < 400:
+            self.set_status(409)
+        self.write(out)
 
 
 # --------------------------------------------------
@@ -1553,6 +1638,7 @@ class RuntimeServer:
         routes = [
             # realtime (viewer)
             (r"/socket.io/", socketio.get_tornado_handler(sio)),
+            (r"/record/(start|stop|status)", RecordHandler),
 
             # static assets (meshes/textures/etc) — project-local first, library fallback
             (r"/static/(.*)", FallbackStaticHandler, {"paths": [
@@ -1649,6 +1735,10 @@ class RuntimeServer:
         # and any asset they import). Project-owned files, served from
         # the project — the platform holds none of it.
         _proj = _project_dir(workspace)
+        # Replay recordings land in the project's core/ folder.
+        global _record_core_dir
+        if _proj is not None:
+            _record_core_dir = str(_proj / "core")
         if _proj is not None and (_proj / "hmi").is_dir():
             routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler,
                               {"path": str(_proj / "hmi")}))
