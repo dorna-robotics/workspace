@@ -10859,12 +10859,13 @@ function startRectPattern() {
   const listEl = $("rpList"), pathEl = $("rpPath"), loadBtn = $("rpLoad"),
         hintEl = $("rpHint"), refreshBtn = $("rpRefresh"),
         bar = $("rpBar"), playBtn = $("rpPlay"), slider = $("rpSlider"),
-        timeEl = $("rpTime"), speedEl = $("rpSpeed"), closeBtn = $("rpClose"),
+        timeEl = $("rpTime"), speedsEl = $("rpSpeeds"), closeBtn = $("rpClose"),
+        nameEl = $("rpName"),
         iconPlay = $("rpIconPlay"), iconPause = $("rpIconPause");
   if (!listEl || !bar) return;
 
   const rp = { root: null, tl: null, dur: 0, t: 0, playing: false,
-               raf: 0, lastWall: 0, hidden: [] };
+               raf: 0, lastWall: 0, hidden: [], speed: 1 };
 
   function hint(msg, bad) {
     hintEl.textContent = msg || "";
@@ -10994,8 +10995,10 @@ function startRectPattern() {
         holder.quaternion.copy(a._q);
       }
     }
-    slider.value = rp.dur > 0 ? Math.round(1000 * rp.t / rp.dur) : 0;
-    timeEl.textContent = fmt(rp.t) + " / " + fmt(rp.dur);
+    const pct = rp.dur > 0 ? (100 * rp.t / rp.dur) : 0;
+    slider.value = Math.round(10 * pct);
+    slider.style.setProperty("--p", pct.toFixed(2) + "%");
+    timeEl.textContent = fmt(rp.t) + "\u2009/\u2009" + fmt(rp.dur);
     // The builder renders ON DEMAND (markDirty + 500 ms idle repaint):
     // without this every replay frame waits for the idle tick — the
     // "5 fps playback" bug.
@@ -11006,7 +11009,7 @@ function startRectPattern() {
     if (!rp.playing) return;
     const dt = (now - rp.lastWall) / 1000;
     rp.lastWall = now;
-    const next = rp.t + dt * parseFloat(speedEl.value || "1");
+    const next = rp.t + dt * rp.speed;
     if (next >= rp.dur) { seek(rp.dur); pause(); return; }
     seek(next);
     rp.raf = requestAnimationFrame(tick);
@@ -11078,6 +11081,9 @@ function startRectPattern() {
       rp.dur = (js.frames && js.frames.length)
         ? js.frames[js.frames.length - 1].t : 0;
       setSceneHidden(true);
+      const shortName = (js.path || path).split("/").pop();
+      nameEl.textContent = shortName;
+      nameEl.title = js.path || path;
       bar.style.display = "";
       seek(0);
       hint(`${(js.path || path).split("/").pop()} — ${fmt(rp.dur)}, ` +
@@ -11093,6 +11099,13 @@ function startRectPattern() {
 
   loadBtn.addEventListener("click", () =>
     load(pathEl.value.trim() || listEl.value));
+  speedsEl.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-speed]");
+    if (!b) return;
+    rp.speed = parseFloat(b.dataset.speed);
+    for (const x of speedsEl.querySelectorAll("button"))
+      x.classList.toggle("active", x === b);
+  });
   refreshBtn.addEventListener("click", refreshList);
   playBtn.addEventListener("click", () => (rp.playing ? pause() : play()));
   closeBtn.addEventListener("click", teardown);

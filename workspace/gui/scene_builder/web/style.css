@@ -759,28 +759,140 @@ select.input { cursor: pointer; }
 #rpBar {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  bottom: 20px;
   transform: translateX(-50%);
   z-index: 70;
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(760px, calc(100% - 48px));
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface, #16181d) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border2, rgba(127,127,127,0.22));
+  box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+}
+.rp-head {
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--panel-bg, rgba(17,17,20,0.92));
-  border: 1px solid var(--panel-bord, rgba(255,255,255,0.12));
-  box-shadow: 0 6px 22px rgba(0,0,0,0.45);
-  min-width: 420px;
-  max-width: 70%;
 }
-#rpBar #rpSlider { flex: 1; min-width: 220px; accent-color: var(--accent, #4f9cf9); }
-#rpBar #rpTime {
-  font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+.rp-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-family: var(--mono, ui-monospace, Menlo, monospace);
+  color: var(--muted, #9a9aa2);
+}
+.rp-speeds {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface2, rgba(127,127,127,0.10));
+}
+.rp-speeds button {
+  border: none;
+  background: none;
+  color: var(--muted, #9a9aa2);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--text, #fff);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--motion-fast, 0.12s), background var(--motion-fast, 0.12s);
+}
+.rp-speeds button:hover { color: var(--text); }
+.rp-speeds button.active {
+  color: var(--accent, #4f9cf9);
+  background: var(--accent-dim, rgba(79,156,249,0.16));
+  font-weight: 600;
+}
+.rp-x {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: none; border-radius: 7px;
+  background: none;
+  color: var(--muted, #9a9aa2);
+  cursor: pointer;
+  transition: color var(--motion-fast, 0.12s), background var(--motion-fast, 0.12s);
+}
+.rp-x:hover { color: var(--text); background: var(--surface2); }
+.rp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rp-play {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  flex: 0 0 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent, #4f9cf9);
+  color: #fff;
+  cursor: pointer;
+  transition: filter var(--motion-fast, 0.12s), transform var(--motion-fast, 0.12s);
+}
+.rp-play:hover { filter: brightness(1.12); }
+.rp-play:active { transform: scale(0.94); }
+.rp-play svg { margin-left: 1px; }
+#rpBar #rpTime {
+  font: 500 12px/1 var(--mono, ui-monospace, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text, #eee);
   white-space: nowrap;
 }
-#rpBar select.input { width: auto; padding: 4px 6px; font-size: 12px; }
+/* Slider — custom track with an accent progress fill (--p set by JS) */
+#rpSlider {
+  flex: 1;
+  min-width: 160px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: none;
+  cursor: pointer;
+}
+#rpSlider::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    var(--accent, #4f9cf9) 0%, var(--accent, #4f9cf9) var(--p, 0%),
+    var(--surface2, rgba(127,127,127,0.25)) var(--p, 0%));
+}
+#rpSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent, #4f9cf9);
+  margin-top: -4.5px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  transition: transform var(--motion-fast, 0.12s);
+}
+#rpSlider:hover::-webkit-slider-thumb { transform: scale(1.15); }
+#rpSlider::-moz-range-track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface2, rgba(127,127,127,0.25));
+}
+#rpSlider::-moz-range-progress {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--accent, #4f9cf9);
+}
+#rpSlider::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent, #4f9cf9);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
 
 /* ── Sidebar rail — Scene / Recipes / Replay ──────────────────────────
    Vertical icon rail on the panel's left edge, the app-nav grammar:

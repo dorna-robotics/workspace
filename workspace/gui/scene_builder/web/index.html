@@ -228,21 +228,26 @@
     <!-- Replay player (bottom-center) — visible while a recording is
          loaded. The builder scene hides underneath; ✕ restores it. -->
     <div id="rpBar" style="display:none">
-      <button class="ctrl-btn" id="rpPlay" title="Play / pause">
-        <svg id="rpIconPlay" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 21 12 6 21"/></svg>
-        <svg id="rpIconPause" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="4" width="5" height="16"/><rect x="14" y="4" width="5" height="16"/></svg>
-      </button>
-      <input type="range" id="rpSlider" min="0" max="1000" value="0" step="1"/>
-      <span id="rpTime">00:00 / 00:00</span>
-      <select class="input" id="rpSpeed" title="Playback speed">
-        <option value="0.5">0.5×</option>
-        <option value="1" selected>1×</option>
-        <option value="2">2×</option>
-        <option value="4">4×</option>
-      </select>
-      <button class="ctrl-btn" id="rpClose" title="Close replay">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <div class="rp-head">
+        <span id="rpName" class="rp-name" title=""></span>
+        <div class="rp-speeds" id="rpSpeeds" title="Playback speed">
+          <button data-speed="0.5">0.5×</button>
+          <button data-speed="1" class="active">1×</button>
+          <button data-speed="2">2×</button>
+          <button data-speed="4">4×</button>
+        </div>
+        <button class="rp-x" id="rpClose" title="Close replay">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="rp-row">
+        <button class="rp-play" id="rpPlay" title="Play / pause (space)">
+          <svg id="rpIconPlay" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg>
+          <svg id="rpIconPause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>
+        </button>
+        <input type="range" id="rpSlider" min="0" max="1000" value="0" step="1"/>
+        <span id="rpTime">00:00&thinsp;/&thinsp;00:00</span>
+      </div>
     </div>
 
   </div><!-- /viewer-area -->
