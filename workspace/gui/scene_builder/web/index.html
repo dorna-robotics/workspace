@@ -14,6 +14,9 @@
   <link rel="stylesheet" href="/vendor/nav.css"/>
   <link rel="stylesheet" href="style.css"/>
   <script>(function(){var w=parseInt(localStorage.getItem("sb_sidebar_w")||"",10);if(isFinite(w)){w=Math.max(220,Math.min(560,w));document.documentElement.style.setProperty("--sbw",w+"px");}})();</script>
+  <!-- Apply the saved sidebar tab BEFORE paint — otherwise all three
+       panes render stacked until app.js finishes evaluating. -->
+  <script>(function(){var t=null;try{t=localStorage.getItem("sb_tab");}catch(e){}if(!/^(scene|recipes|replay)$/.test(t||""))t="scene";document.documentElement.setAttribute("data-sbtab",t);})();</script>
   <script type="importmap">
   {
     "imports": {

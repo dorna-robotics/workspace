@@ -11220,6 +11220,8 @@ function startRectPattern() {
   }
 
   function activate(tab) {
+    // the pre-paint CSS gating keys off this attribute — keep it live
+    document.documentElement.setAttribute("data-sbtab", tab);
     for (const b of strip.querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.tab === tab);
     for (const el of sections) {

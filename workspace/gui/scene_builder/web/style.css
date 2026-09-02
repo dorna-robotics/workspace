@@ -947,6 +947,30 @@ select.input { cursor: pointer; }
 [data-theme="light"] .sb-rail button.active { background: rgba(0,122,255,0.08); }
 .sb-tab-hidden { display: none !important; }
 
+/* Pre-paint pane gating: the <head> snippet stamps data-sbtab on <html>
+   before first paint, so only the active pane ever renders — no flash
+   of all three stacked while app.js loads. The JS tab controller keeps
+   the attribute in sync afterwards. */
+html[data-sbtab="scene"]   .sidebar-scroll [data-sbtab]:not([data-sbtab="scene"]),
+html[data-sbtab="recipes"] .sidebar-scroll [data-sbtab]:not([data-sbtab="recipes"]),
+html[data-sbtab="replay"]  .sidebar-scroll [data-sbtab]:not([data-sbtab="replay"]),
+html:not([data-sbtab])     .sidebar-scroll [data-sbtab]:not([data-sbtab="scene"]) {
+  display: none !important;
+}
+/* Rail highlight follows the same attribute (correct from paint zero
+   even when the saved tab is not the markup's default) */
+html[data-sbtab="recipes"] .sb-rail button[data-tab="scene"],
+html[data-sbtab="replay"]  .sb-rail button[data-tab="scene"] {
+  color: var(--muted, #888); background: none; font-weight: 500;
+}
+html[data-sbtab="scene"]   .sb-rail button[data-tab="scene"],
+html[data-sbtab="recipes"] .sb-rail button[data-tab="recipes"],
+html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
+  color: var(--accent);
+  background: var(--accent-dim, rgba(0,122,255,0.14));
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .sb-rail {
     flex-direction: row;
