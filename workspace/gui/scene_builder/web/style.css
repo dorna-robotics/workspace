@@ -782,34 +782,60 @@ select.input { cursor: pointer; }
 }
 #rpBar select.input { width: auto; padding: 4px 6px; font-size: 12px; }
 
-/* ── Sidebar tabs — Scene / Recipes / Replay ──────────────────────────
-   Same toggle grammar as .sb-scope-toggle, panel-top placement. One
-   pane shows at a time (.sb-tab-hidden); per-section inline display
-   logic keeps working inside the active pane. */
-.sb-tabs {
+/* ── Sidebar rail — Scene / Recipes / Replay ──────────────────────────
+   Vertical icon rail on the panel's left edge, the app-nav grammar:
+   muted at rest, surface on hover, accent pill when active. One pane
+   shows at a time (.sb-tab-hidden); per-section inline display logic
+   keeps working inside the active pane. */
+.sidebar { flex-direction: row; }
+.sb-rail {
+  flex: 0 0 52px;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 4px;
-  padding: 8px 10px 6px;
-  border-bottom: 1px solid var(--panel-divider, rgba(127,127,127,0.15));
-  flex: 0 0 auto;
+  padding: 12px 6px;
+  border-right: 1px solid var(--border2);
 }
-.sb-tabs button {
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 12px;
-  padding: 5px 8px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  background: var(--bg);
-  color: var(--text-dim, #888);
+.sb-rail button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 2px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: none;
+  color: var(--muted, #888);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-  white-space: nowrap;
+  transition:
+    color      var(--motion-fast, 0.12s) var(--ease, ease),
+    background var(--motion-fast, 0.12s) var(--ease, ease);
 }
-.sb-tabs button:hover { color: var(--text, #ddd); }
-.sb-tabs button.active {
-  background: var(--surface2, rgba(127,127,127,0.12));
-  border-color: var(--panel-bord, rgba(127,127,127,0.25));
-  color: var(--text, #fff);
+.sb-rail button span {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
+.sb-rail button svg { flex-shrink: 0; }
+.sb-rail button:hover { color: var(--text); background: var(--surface2); }
+.sb-rail button:focus-visible { outline: none; box-shadow: var(--glow); }
+.sb-rail button.active {
+  color: var(--accent);
+  background: var(--accent-dim, rgba(0,122,255,0.14));
+  font-weight: 600;
+}
+[data-theme="light"] .sb-rail button.active { background: rgba(0,122,255,0.08); }
 .sb-tab-hidden { display: none !important; }
+
+@media (max-width: 768px) {
+  .sb-rail {
+    flex-direction: row;
+    flex-basis: auto;
+    padding: 6px 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border2);
+  }
+  .sidebar { flex-direction: column; }
+  .sb-rail button { flex-direction: row; gap: 6px; padding: 6px 10px; }
+}
