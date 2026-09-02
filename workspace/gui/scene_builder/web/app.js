@@ -2873,6 +2873,12 @@ function ensureBuilderBar() {
         if (k.startsWith("sb_persist::")) localStorage.removeItem(k);
       }
     } catch(e) {}
+    // A loaded replay is part of the old project: close it NOW (not at
+    // the reload) and start the fresh project on the Scene tab — the
+    // remembered Replay tab pointing at the previous project's
+    // recording read as "New Scene didn't work".
+    try { document.dispatchEvent(new Event("sb-new-scene")); } catch(e) {}
+    try { localStorage.setItem("sb_tab", "scene"); } catch(e) {}
 
     // Set project path (can be empty for no project)
     try {
@@ -10953,6 +10959,14 @@ function startRectPattern() {
   document.addEventListener("sb-tab", (e) => {
     curTab = (e.detail && e.detail.tab) || "scene";
     if (curTab !== "replay") pause();
+    applyCanvasMode();
+  });
+  // New Scene: the loaded recording belongs to the old project.
+  document.addEventListener("sb-new-scene", () => {
+    teardown();
+    pathEl.value = "";
+    hint("");
+    curTab = "scene";
     applyCanvasMode();
   });
 
