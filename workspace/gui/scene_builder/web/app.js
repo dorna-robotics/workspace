@@ -11110,3 +11110,52 @@ function startRectPattern() {
 
   refreshList();
 })();
+
+// =========================
+// Sidebar tabs — Scene / Recipes / Replay
+// =========================
+(function sbTabs() {
+  const strip = document.getElementById("sbTabs");
+  if (!strip) return;
+  const KEY = "sb_tab";
+  const sections = Array.from(document.querySelectorAll("[data-sbtab]"));
+  const recipesSection = document.getElementById("sbRecipesSection");
+  const recipesEmpty = document.getElementById("sbRecipesEmpty");
+
+  function syncRecipesEmpty() {
+    if (!recipesSection || !recipesEmpty) return;
+    const loaded = recipesSection.style.display !== "none";
+    recipesEmpty.classList.toggle("sb-tab-hidden",
+      loaded || !recipesEmpty.dataset.active);
+  }
+
+  function activate(tab) {
+    for (const b of strip.querySelectorAll("button"))
+      b.classList.toggle("active", b.dataset.tab === tab);
+    for (const el of sections) {
+      const mine = el.dataset.sbtab === tab;
+      el.classList.toggle("sb-tab-hidden", !mine);
+      el.dataset.active = mine ? "1" : "";
+    }
+    if (recipesEmpty) recipesEmpty.dataset.active = (tab === "recipes") ? "1" : "";
+    syncRecipesEmpty();
+    try { localStorage.setItem(KEY, tab); } catch (_) {}
+  }
+
+  strip.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-tab]");
+    if (b) activate(b.dataset.tab);
+  });
+
+  // The recipes section shows itself once a project loads — keep the
+  // empty-state in step without polling.
+  if (recipesSection && window.MutationObserver) {
+    new MutationObserver(syncRecipesEmpty)
+      .observe(recipesSection, { attributes: true, attributeFilter: ["style"] });
+  }
+
+  let tab = "scene";
+  try { tab = localStorage.getItem(KEY) || "scene"; } catch (_) {}
+  if (!/^(scene|recipes|replay)$/.test(tab)) tab = "scene";
+  activate(tab);
+})();

@@ -68,10 +68,16 @@
   <!-- ---- Sidebar ---- -->
   <aside class="sidebar">
     <div class="sb-resize-handle" id="sbResizeHandle" title="Drag to resize panel"></div>
+    <!-- Panel tabs: Scene (build), Recipes, Replay — one pane at a time. -->
+    <div class="sb-tabs" id="sbTabs">
+      <button data-tab="scene" class="active">Scene</button>
+      <button data-tab="recipes">Recipes</button>
+      <button data-tab="replay">Replay</button>
+    </div>
     <div class="sidebar-scroll">
 
       <!-- Controls -->
-      <div>
+      <div data-sbtab="scene">
         <div class="section-label">Controls</div>
         <div class="sb-controls">
           <div class="sb-insert-row">
@@ -95,7 +101,7 @@
       </div>
 
       <!-- Object list with search -->
-      <div>
+      <div data-sbtab="scene">
         <div class="section-label">Objects</div>
         <input type="text" id="sbObjectSearch" class="sb-object-search" placeholder="Search objects…">
         <button id="sbShowAll" class="sb-show-all-btn" style="display:none">Show all hidden</button>
@@ -103,7 +109,7 @@
       </div>
 
       <!-- Selection properties (shown when an object is selected) -->
-      <div id="sbPropsSection" style="display:none">
+      <div id="sbPropsSection" data-sbtab="scene" style="display:none">
         <div class="section-label">Selection</div>
         <div class="meta-list" style="margin-bottom:8px">
           <div class="meta-row">
@@ -120,7 +126,7 @@
       </div>
 
       <!-- Config YAML preview -->
-      <div>
+      <div data-sbtab="scene">
         <div class="section-label">Config
           <div class="spacer"></div>
           <button class="btn btn-sm btn-ghost btn-icon" id="btnSave" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
@@ -142,15 +148,18 @@
       <!-- Project recipes: listed from the project's recipes.j2; click a
            recipe to solve its reference joints (the same solve its
            __init__ runs at boot) and pose the robot there. -->
-      <div id="sbRecipesSection" style="display:none;">
+      <div id="sbRecipesSection" data-sbtab="recipes" style="display:none;">
         <div class="section-label">Recipes</div>
         <div id="sbRecipesList" class="sb-files-list"></div>
+      </div>
+      <div id="sbRecipesEmpty" data-sbtab="recipes" class="rp-hint" style="padding:10px 12px">
+        Load a project to list its recipes.
       </div>
 
       <!-- Replay: recordings captured by the notebook viewer's record
            button (<project>/core/replay_*.jsonl). Pick one (or paste a
            path) and scrub the whole run in the canvas. -->
-      <div id="sbReplaySection">
+      <div id="sbReplaySection" data-sbtab="replay">
         <div class="section-label">Replay
           <button class="btn btn-sm btn-ghost btn-icon" id="rpRefresh" title="Rescan project recordings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
         </div>

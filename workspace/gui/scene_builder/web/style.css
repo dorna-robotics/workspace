@@ -781,3 +781,35 @@ select.input { cursor: pointer; }
   white-space: nowrap;
 }
 #rpBar select.input { width: auto; padding: 4px 6px; font-size: 12px; }
+
+/* ── Sidebar tabs — Scene / Recipes / Replay ──────────────────────────
+   Same toggle grammar as .sb-scope-toggle, panel-top placement. One
+   pane shows at a time (.sb-tab-hidden); per-section inline display
+   logic keeps working inside the active pane. */
+.sb-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--panel-divider, rgba(127,127,127,0.15));
+  flex: 0 0 auto;
+}
+.sb-tabs button {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--bg);
+  color: var(--text-dim, #888);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.sb-tabs button:hover { color: var(--text, #ddd); }
+.sb-tabs button.active {
+  background: var(--surface2, rgba(127,127,127,0.12));
+  border-color: var(--panel-bord, rgba(127,127,127,0.25));
+  color: var(--text, #fff);
+}
+.sb-tab-hidden { display: none !important; }
