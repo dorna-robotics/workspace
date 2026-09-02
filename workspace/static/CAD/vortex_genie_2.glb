@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 37062
+      "count": 37032
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12251,
+      "count": 12244,
       "max": [
         5.99977970123291,
         15.600146293640137,
@@ -27,19 +27,19 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 12251
+      "count": 12244
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 12251
+      "count": 12244
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 43344
+      "byteLength": 43132
     }
   ],
   "samplers": [
@@ -66,7 +66,7 @@
   "buffers": [
     {
       "uri": "vortex_genie_2.glb.bin",
-      "byteLength": 43344
+      "byteLength": 43132
     }
   ],
   "materials": [

@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 124680
+      "count": 122496
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 39060,
+      "count": 38606,
       "max": [
         1.8499997854232788,
         1.2699999809265137,
@@ -27,17 +27,17 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 39060
+      "count": 38606
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 18444
+      "count": 18312
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5583,
+      "count": 5559,
       "max": [
         0.46351295709609985,
         -1.3207998275756836,
@@ -52,25 +52,25 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 5583
+      "count": 5559
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 122777
+      "byteLength": 120635
     },
     {
       "buffer": 0,
-      "byteOffset": 122777,
-      "byteLength": 19469
+      "byteOffset": 120635,
+      "byteLength": 19400
     }
   ],
   "buffers": [
     {
       "uri": "rack_liquid_waste.glb.bin",
-      "byteLength": 142246
+      "byteLength": 140035
     }
   ],
   "materials": [

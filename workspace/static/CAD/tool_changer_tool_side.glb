@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4435
+      "byteLength": 4400
     }
   ],
   "buffers": [
     {
       "uri": "tool_changer_tool_side.glb.bin",
-      "byteLength": 4435
+      "byteLength": 4400
     }
   ],
   "materials": [

@@ -32,7 +32,7 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 112620
+      "count": 112614
     },
     {
       "type": "VEC3",
@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 11927
+      "byteLength": 11907
     },
     {
       "buffer": 0,
-      "byteOffset": 11927,
-      "byteLength": 123873
+      "byteOffset": 11907,
+      "byteLength": 123787
     }
   ],
   "buffers": [
     {
       "uri": "feeder_cap_2ml.glb.bin",
-      "byteLength": 135800
+      "byteLength": 135694
     }
   ],
   "materials": [

@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 18230
+      "byteLength": 18214
     }
   ],
   "buffers": [
     {
       "uri": "rack_autosampler_2ml_7x8.glb.bin",
-      "byteLength": 18230
+      "byteLength": 18214
     }
   ],
   "materials": [

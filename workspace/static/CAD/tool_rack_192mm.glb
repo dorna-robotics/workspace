@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2958
+      "byteLength": 3006
     },
     {
       "buffer": 0,
-      "byteOffset": 2958,
-      "byteLength": 176
+      "byteOffset": 3006,
+      "byteLength": 188
     }
   ],
   "buffers": [
     {
       "uri": "tool_rack_192mm.glb.bin",
-      "byteLength": 3134
+      "byteLength": 3194
     }
   ],
   "materials": [
