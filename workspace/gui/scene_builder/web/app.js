@@ -2350,6 +2350,9 @@ if (node) {
       // TCP drag support: viewer internals + a fast world-pose setter
       // (drag solves return WORLD solid poses; holders are core-local).
       window.__three = { scene, camera, renderer, controls, THREE };
+      // Replay player (module scope) drives holder poses directly and
+      // must invalidate the on-demand render loop itself.
+      window.__markDirty = markDirty;
       window.__setSolidPosesWorld = (name, solids) => {
         const root = objectsByName.get(name);
         if (!root) return;
@@ -10993,6 +10996,10 @@ function startRectPattern() {
     }
     slider.value = rp.dur > 0 ? Math.round(1000 * rp.t / rp.dur) : 0;
     timeEl.textContent = fmt(rp.t) + " / " + fmt(rp.dur);
+    // The builder renders ON DEMAND (markDirty + 500 ms idle repaint):
+    // without this every replay frame waits for the idle tick — the
+    // "5 fps playback" bug.
+    if (window.__markDirty) window.__markDirty();
   }
 
   function tick(now) {
