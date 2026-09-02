@@ -19,13 +19,15 @@ class AdapterPlateAmber40mlAutosampler2ml(Adapter):
     ``hole_0``/``hole_1`` at the standoff axes on the z=0 plane, -y
     first. ``place`` at [13, 0, 0] — the rack's origin lands there so
     its holes (x=13, y=+/-12.5) line up over the standoffs. ``top`` at
-    the head tops (z=12). ``clb_0``/``clb_1`` at x = +/-25 on the fixture's 25 mm
-    grid, the free holes either side.
+    the head tops (z=12). ``clb_0``/``clb_1`` at x = +/-25, y = -/+12.5 —
+    the body centerline runs BETWEEN grid rows (the standoffs at
+    y = +/-12.5 are what sit on holes), so each clb is offset half a
+    pitch onto a real free hole, diagonally for a yaw-pinning spread.
     """
     DEFAULTS = dict(
         anchors={"body": {"center":[0, 0, 0, 0, 0, 0], "place": [-13, 0, 0, 0, 0, 0], "top": [0, 0, 12, 0, 0, 0],
                         "hole_0":[0, -12.5, 0, 0, 0, 0], "hole_1": [0, 12.5, 0, 0, 0, 0],
-                        "clb_0": [25, 0, 0, 0, 0, 0], "clb_1": [-25, 0, 0, 0, 0, 0]}},
+                        "clb_0": [25, -12.5, 0, 0, 0, 0], "clb_1": [-25, 12.5, 0, 0, 0, 0]}},
         collision_box=
             {"body":[
                 {"pose":[0.0, 0.0, 3.5, 0.0, 0.0, 0.0], "scale":[8.5, 33.5, 17.0]}#[xyzabc] , [lx,ly,lz]
