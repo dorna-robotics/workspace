@@ -365,11 +365,11 @@ function makeRenderer(opts, mountEl) {
 
       function setCollisionVisible(v) {
         showCollisionBoxes = !!v;
-        for (const obj of objectsByName.values()) {
-          obj.traverse((o) => {
-            if (o?.userData?.__isCollisionGroup) o.visible = showCollisionBoxes;
-          });
-        }
+        // Whole scene, not just builder objects — the replay group
+        // carries its own __isCollisionGroup children.
+        scene.traverse((o) => {
+          if (o?.userData?.__isCollisionGroup) o.visible = showCollisionBoxes;
+        });
       }
 
       function base64ToArrayBuffer(b64) {
@@ -2351,8 +2351,12 @@ if (node) {
       // (drag solves return WORLD solid poses; holders are core-local).
       window.__three = { scene, camera, renderer, controls, THREE };
       // Replay player (module scope) drives holder poses directly and
-      // must invalidate the on-demand render loop itself.
+      // must invalidate the on-demand render loop itself — and its
+      // loaded meshes join the edge/collision toggles like everything
+      // else in the canvas.
       window.__markDirty = markDirty;
+      window.__addEdgeOverlay = addEdgeOverlay;
+      window.__sbCollisionState = () => showCollisionBoxes;
       window.__setSolidPosesWorld = (name, solids) => {
         const root = objectsByName.get(name);
         if (!root) return;
@@ -11085,9 +11089,45 @@ function startRectPattern() {
         if (item.meshUrl) {
           meshesLeft++;
           loader.load(versioned(item.meshUrl),
-            (g) => { holder.add(g.scene); meshesLeft--; },
+            (g) => {
+              holder.add(g.scene);
+              // join the edge-outline toggle like builder meshes
+              if (window.__addEdgeOverlay) window.__addEdgeOverlay(holder);
+              if (window.__markDirty) window.__markDirty();
+              meshesLeft--;
+            },
             undefined,
             () => { meshesLeft--; });   // missing mesh: pose-only ghost
+        }
+        // Collision boxes come from the recording itself (the padded
+        // planner envelope the live viewer showed). They are WORLD
+        // poses at record time — re-express them in the holder's local
+        // frame so they ride along during playback (rigid per solid).
+        const cw = item.collisionWorld;
+        if (Array.isArray(cw) && cw.length) {
+          const colGroup = new T.Group();
+          colGroup.userData.__isCollisionGroup = true;
+          colGroup.visible = !!(window.__sbCollisionState && window.__sbCollisionState());
+          const invH = new T.Matrix4().compose(
+            holder.position, holder.quaternion, new T.Vector3(1, 1, 1)).invert();
+          for (const box of cw) {
+            if (!box || !box.pose || !box.scale) continue;
+            const mb = new T.Matrix4().compose(
+              new T.Vector3(box.pose[0], box.pose[1], box.pose[2]),
+              rodQuat(box.pose[3], box.pose[4], box.pose[5]),
+              new T.Vector3(1, 1, 1));
+            const local = invH.clone().multiply(mb);
+            const mesh = new T.Mesh(
+              new T.BoxGeometry(box.scale[0], box.scale[1], box.scale[2]),
+              new T.MeshBasicMaterial({ color: 0xff3344, transparent: true,
+                                        opacity: 0.28, depthWrite: false }));
+            local.decompose(mesh.position, mesh.quaternion, new T.Vector3());
+            mesh.scale.set(1, 1, 1);
+            mesh.renderOrder = 20;
+            mesh.raycast = () => {};
+            colGroup.add(mesh);
+          }
+          holder.add(colGroup);
         }
       }
       // per-key pose timeline: snapshot at t=0 + every delta after
