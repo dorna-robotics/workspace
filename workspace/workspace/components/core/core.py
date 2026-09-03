@@ -1199,7 +1199,13 @@ class Core:
                                  # re-plan on a fold miss, never a wrong
                                  # path. Bounded on purpose: no cache
                                  # file may grow without limit
-    CACHE_MAX_ROWS = 10000       # same bound for the ik / traj / fold
+    # Light rows (~100-300 B: ik solves, traj profiles, book seams) get
+    # a deep cap — an apc-scale campaign records ~5.4k book partners
+    # alone, and eviction there costs re-learning passes. Fat rows keep
+    # the tight cap: a fold row is a full waypoint chain (~2 KB), and a
+    # fold miss rebuilds in ~50 ms — eviction is nearly free.
+    CACHE_MAX_ROWS = 30000       # ik / traj / book (light rows)
+    FOLD_CACHE_MAX_ROWS = 10000  # fold (fat rows)
                                  # caches (keys, oldest evicted first) —
                                  # NOTHING in core/ grows without limit;
                                  # an evicted row only ever costs one
@@ -1492,7 +1498,7 @@ class Core:
         rows.append(row)
         if len(rows) > self.FOLD_CACHE_MAX_PER_KEY:
             rows.pop(0)
-        self._cache_trim(self._fold_cache, self.CACHE_MAX_ROWS)
+        self._cache_trim(self._fold_cache, self.FOLD_CACHE_MAX_ROWS)
 
     def fold_cache_get(self, key, start):
         """Return the stored fold for this request key and live start —
