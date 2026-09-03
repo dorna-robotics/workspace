@@ -96,11 +96,19 @@ class Display:
     # ----------------------------------------------------
     def _project_core(self):
         """The active project's ``core/`` dir (where replay recordings
-        land), found by walking up from the first scene file to the
-        folder holding ``launch.yaml``. None when the workspace was
-        built from bare scene files outside a project."""
+        land). Prefers the explicitly declared ``workspace.project_dir``
+        (subprojects sharing one scene walk up to the PARENT's
+        launch.yaml otherwise — same bug as runtime_server._project_dir);
+        falls back to walking up from the first scene file to the folder
+        holding ``launch.yaml``. None when the workspace was built from
+        bare scene files outside a project."""
         try:
             import pathlib
+            declared = getattr(self.workspace, "project_dir", None)
+            if declared:
+                core = pathlib.Path(str(declared)).resolve() / "core"
+                core.mkdir(exist_ok=True)
+                return str(core)
             cfg = getattr(self.workspace, "config_paths", None) or []
             if not cfg:
                 return None

@@ -529,7 +529,23 @@ HMI_WIDGETS = ("state", "stat", "progress")
 
 
 def _project_dir(workspace):
-    """The project folder, or None. Derived from the scene paths."""
+    """The project folder, or None.
+
+    Prefers an explicitly declared ``workspace.project_dir`` (set by the
+    project's main.py) and only then falls back to deriving it from the
+    scene paths. The guess breaks for SUBPROJECTS sharing one scene:
+    with ``scene: [../scene/core_1000.j2, ...]`` the first scene path
+    resolves into the PARENT's scene/ folder, so every subproject
+    guessed the parent — and got the parent's pendant, hmi/methods
+    library and replay core/. An attribute (not a RuntimeServer kwarg)
+    so project repos setting it keep working on older platforms that
+    simply ignore it."""
+    declared = getattr(workspace, "project_dir", None)
+    if declared:
+        try:
+            return Path(declared).resolve()
+        except Exception:
+            pass
     try:
         paths = getattr(workspace, "config_paths", None) or []
         if not paths:
