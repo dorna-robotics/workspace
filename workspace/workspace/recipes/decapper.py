@@ -64,6 +64,7 @@ class Decapper(Recipe):
         solid_name="body",
         approach=True,
         exit=True,
+        soft_exit=True,
         padding=None,
         gap=2,
         lmove_vaj=[600, 2000, 8000],
@@ -184,34 +185,34 @@ class Decapper(Recipe):
             # keep the j5 we ended the screw on
             J[5] = last_J[5]
 
-            # WALLS-CLEARED SPLIT (same cure as the rack soft exit):
-            # the carried cap starts between the chuck jaws, and a
-            # deposited lift fused into the next fold's spline+blend
-            # can bend the path while still inside them (bench: the
-            # rack version rubbed tubes on the way out). First leg —
-            # up by gap + height_cap, the cap's bottom just clear of
-            # the jaws — is a discrete TRUE lmove every run; only the
-            # remaining free-air lift may deposit.
-            J_gap, C = self.core.IK(
-                target_solid=tool.assembly[next(iter(tool.assembly))],
-                target_anchor="tcp",
-                target_offset=[0, 0, -gap - height_cap, 0, 0, 0],
-                tool_solid=tool.assembly[next(iter(tool.assembly))],
-                tool_anchor="tcp",
-                tool_offset=[0, 0, 0, 0, 0, 0],
-                base_distance=self.base_distance,
-                rail_step=self.rail_step,
-                rail_span=self.rail_span,
-                ref_joints=self.ref_joints,
-                left_approach=self.left_approach,
-            )
-            if C != 2:
-                raise RecipeError("could not find valid joints for the pull-off")
-            J_gap[5] = last_J[5]
-
             rt.checkpoint()
             vaj = self.scaled_vaj(self.lmove_vaj)
-            rt.lmove(joint=J_gap, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+            if soft_exit:
+                # The rack soft exit's rule, verb-explicit here too:
+                # the carried cap starts between the chuck jaws, and a
+                # deposited lift fused into the next fold's spline +
+                # blend can bend the path while still inside them. The
+                # pull-off — up by gap + height_cap, the cap's bottom
+                # just clear of the jaws — is a discrete TRUE lmove
+                # every run; only the remaining free-air lift may
+                # deposit. soft_exit=False restores the single lift.
+                J_gap, C = self.core.IK(
+                    target_solid=tool.assembly[next(iter(tool.assembly))],
+                    target_anchor="tcp",
+                    target_offset=[0, 0, -gap - height_cap, 0, 0, 0],
+                    tool_solid=tool.assembly[next(iter(tool.assembly))],
+                    tool_anchor="tcp",
+                    tool_offset=[0, 0, 0, 0, 0, 0],
+                    base_distance=self.base_distance,
+                    rail_step=self.rail_step,
+                    rail_span=self.rail_span,
+                    ref_joints=self.ref_joints,
+                    left_approach=self.left_approach,
+                )
+                if C != 2:
+                    raise RecipeError("could not find valid joints for the pull-off")
+                J_gap[5] = last_J[5]
+                rt.lmove(joint=J_gap, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
             if one_shot and self.fuse:
                 # The remaining lift fuses with the next verb's travel
                 # (the ride to the cap rack) — held, not executed.
@@ -255,6 +256,7 @@ class Decapper(Recipe):
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
         release=True,
+        soft_exit=None,
         **kwargs,
     ):
         """Screw the currently-held cap onto the tube at ``anchor``.
@@ -435,18 +437,20 @@ class Decapper(Recipe):
 
             rt.checkpoint()
             vaj = self.scaled_vaj(self.lmove_vaj)
-            if not release:
-                # WALLS-CLEARED SPLIT (same cure as decap): carrying
-                # the capped tube out, its bottom starts between the
-                # chuck jaws — the first gap + height_total of the
-                # lift is a discrete TRUE lmove every run, and only
-                # the free-air remainder may deposit. The empty-tool
-                # ending (release=True) stays a single fusible lift,
-                # like every place exit.
+            # soft_exit resolution, explicit: None -> True when
+            # CARRYING the capped tube out (its bottom starts between
+            # the chuck jaws — the walls-cleared rule), False when the
+            # tool leaves empty (release=True; a place-exit-class
+            # lift). Callers may force either.
+            _soft = (not release) if soft_exit is None else bool(soft_exit)
+            if _soft:
+                # Discrete TRUE lmove up by gap + the carried stack
+                # (height_total when carrying, rim gap alone when
+                # empty); only the free-air remainder may deposit.
                 J_gap, C = self.core.IK(
                     target_solid=tool.assembly[next(iter(tool.assembly))],
                     target_anchor="tcp",
-                    target_offset=[0, 0, -gap - height_total, 0, 0, 0],
+                    target_offset=[0, 0, -gap - (height_total if not release else 0), 0, 0, 0],
                     tool_solid=tool.assembly[next(iter(tool.assembly))],
                     tool_anchor="tcp",
                     tool_offset=[0, 0, 0, 0, 0, 0],
