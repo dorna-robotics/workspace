@@ -161,6 +161,31 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
         return None if DEV_NOCACHE else super().compute_etag()
 
 
+# Project-local CAD dirs announced by connected Displays — searched
+# BEFORE the library for /static/CAD/ requests (runtime-server parity).
+_project_static: list = []
+
+
+class FallbackStaticHandler(NoCacheStaticFileHandler):
+    """/static/ from the library, except CAD files also found in a
+    connected project's own CAD/ folder — project wins, like the
+    runtime server's FallbackStaticHandler."""
+
+    def get_absolute_path(self, root, path):
+        if path.startswith("CAD/"):
+            name = path[len("CAD/"):]
+            for d in _project_static:
+                full = os.path.join(d, name)
+                if os.path.isfile(full):
+                    return full
+        return super().get_absolute_path(root, path)
+
+    def validate_absolute_path(self, root, absolute_path):
+        if os.path.isfile(absolute_path):
+            return absolute_path
+        return super().validate_absolute_path(root, absolute_path)
+
+
 class ConfigVersionHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "application/json")
@@ -207,6 +232,16 @@ async def connect(sid, environ, auth):
     if core_dir:
         project_core = core_dir
         print(f"[record] project core announced: {project_core}")
+        # Project-local CAD (components shipped inside the project, e.g.
+        # apc's anode/cathode) must resolve on /static/CAD/ too — the
+        # runtime server serves project-first, this viewer previously
+        # served the library only and project meshes rendered as
+        # nothing in dev notebooks.
+        proj = os.path.dirname(core_dir)
+        cad = os.path.join(proj, "CAD")
+        if os.path.isdir(cad) and cad not in _project_static:
+            _project_static.insert(0, cad)
+            print(f"[static] project CAD mounted: {cad}")
     if world_state:
         await sio.emit("scene_update", world_state, room=sid)
     else:
@@ -239,7 +274,7 @@ async def disconnect(sid):
 # --------------------------------------------------
 app = tornado.web.Application([
     (r"/socket.io/", socketio.get_tornado_handler(sio)),
-    (r"/static/(.*)", NoCacheStaticFileHandler, {"path": STATIC_DIR}),
+    (r"/static/(.*)", FallbackStaticHandler, {"path": STATIC_DIR}),
     (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": VENDOR_DIR}),
     (r"/config_version", ConfigVersionHandler),
     (r"/(.*)", tornado.web.StaticFileHandler,
