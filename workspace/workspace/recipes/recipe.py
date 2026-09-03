@@ -2260,11 +2260,19 @@ class Recipe:
                 # load's bottom just clears the container rim
                 # (height_container + gap — exit offsets position the
                 # ATTACHED LOAD, so this is the walls-cleared point),
-                # as its own group — a short TRUE lmove ending at a
-                # stop — then the normal lift. Under fusion only the
-                # lift group deposits.
+                # as its OWN GROUP — a short TRUE lmove ending at a
+                # stop — then the normal lift. TWO groups, not one:
+                # packed together ([[gap, top]]) the whole exit
+                # deposited under fusion and the next fold's spline +
+                # blend fillet curved the extraction leg INSIDE the
+                # slot — the bench "tube rubs the wall on the way out,
+                # but only sometimes" (only fused runs; classic runs
+                # were straight). Split, the extraction leg executes
+                # classically every run and only the lift group may
+                # deposit — which is what the promise above always
+                # meant.
                 e_gap = pose_offset.pose(offset=[0, 0, height_container + gap, 0, 0, 0])
-                exit_groups = [[e_gap, e_top]]
+                exit_groups = [[e_gap], [e_top]]
             else:
                 exit_groups = [[e_top]]
 
@@ -2532,8 +2540,10 @@ class Recipe:
                 # Mirror of pick_setting's soft exit — OFF by default
                 # for places (the released item stays; the empty tool's
                 # lift is rarely delicate). Opt in per call/recipe.
+                # Same two-group split as pick: the pull-off leg must
+                # never ride a fused spline.
                 e_gap = dorna_pose.transform_pose([0, 0, height_container + gap, 0, 0, 0], from_frame=offset, to_frame=[0, 0, 0, 0, 0, 0])
-                exit_groups = [[e_gap, e_top]]
+                exit_groups = [[e_gap], [e_top]]
             else:
                 exit_groups = [[e_top]]
 
