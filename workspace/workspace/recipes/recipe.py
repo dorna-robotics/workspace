@@ -2241,16 +2241,7 @@ class Recipe:
         if approach:
             a_pad = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + padding, 0, 0, 0])
             if soft_approach:
-                # WALLS-referenced, like the place gap and both exits:
-                # the stop sits ``gap`` above the container rim (or above
-                # the load+tool when the load pokes past the rim — bna's
-                # tall tubes). The old load+tool-only sum INVERTED for a
-                # load sunk deep in its container with a tool that drives
-                # below its tip (apc suction, tip-tcp 1 mm, drive -5):
-                # the "gap stop" computed BELOW the contact and the
-                # approach plunged one-shot past the disc (bench,
-                # replay-recorded).
-                a_gap = pose_offset.pose(offset=[0, 0, max(height_load + height_tool, height_container) + gap, 0, 0, 0])
+                a_gap = pose_offset.pose(offset=[0, 0, height_load + height_tool + gap, 0, 0, 0])
                 approach_groups = [[a_pad, a_gap], [contact]]
             else:
                 approach_groups = [[a_pad, contact]]
