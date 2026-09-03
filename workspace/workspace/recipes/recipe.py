@@ -2241,7 +2241,23 @@ class Recipe:
         if approach:
             a_pad = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + padding, 0, 0, 0])
             if soft_approach:
-                a_gap = pose_offset.pose(offset=[0, 0, height_load + height_tool + gap, 0, 0, 0])
+                # The gap stop follows the ONE soft-boundary semantic:
+                # the lowest ENTERING EDGE stops ``gap`` above the
+                # highest obstacle. Picking, the hand is empty, so the
+                # edge is the TOOL TIP and the obstacle is the container
+                # rim or the load top, whichever is higher —
+                # ``height_tool`` converts that tip clearance into the
+                # grab-point coordinates the offset positions. The old
+                # load-only form buried the stop INSIDE a tall container
+                # holding a short load (apc discs in their holder tubes:
+                # the "stop" sat down the tube and the approach read as
+                # one continuous plunge — bench, replay-recorded). Loads
+                # that stand proud of the rim (bna's amber tubes) pick
+                # the load side of the max: identical to the old value.
+                # Place's gap needs no tool term — there the entering
+                # edge is the CARRIED LOAD's bottom, which
+                # ``height_container + gap`` already positions.
+                a_gap = pose_offset.pose(offset=[0, 0, max(height_load, height_container) + height_tool + gap, 0, 0, 0])
                 approach_groups = [[a_pad, a_gap], [contact]]
             else:
                 approach_groups = [[a_pad, contact]]
