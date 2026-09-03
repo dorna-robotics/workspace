@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 37408
+      "byteLength": 37381
     }
   ],
   "buffers": [
     {
       "uri": "gripper_sbs_width.glb.bin",
-      "byteLength": 37408
+      "byteLength": 37381
     }
   ],
   "materials": [

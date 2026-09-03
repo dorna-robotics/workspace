@@ -109,28 +109,28 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2394
+      "byteLength": 2400
     },
     {
       "buffer": 0,
-      "byteOffset": 2394,
-      "byteLength": 9115
+      "byteOffset": 2400,
+      "byteLength": 9108
     },
     {
       "buffer": 0,
-      "byteOffset": 11509,
-      "byteLength": 7769
+      "byteOffset": 11508,
+      "byteLength": 8031
     },
     {
       "buffer": 0,
-      "byteOffset": 19278,
-      "byteLength": 101535
+      "byteOffset": 19539,
+      "byteLength": 101925
     }
   ],
   "buffers": [
     {
       "uri": "barcode_reader_zebra_vertical_144mm.glb.bin",
-      "byteLength": 120813
+      "byteLength": 121464
     }
   ],
   "materials": [

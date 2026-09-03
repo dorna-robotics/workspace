@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2767
+      "byteLength": 2833
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_autosampler_2ml.glb.bin",
-      "byteLength": 2767
+      "byteLength": 2833
     }
   ],
   "materials": [

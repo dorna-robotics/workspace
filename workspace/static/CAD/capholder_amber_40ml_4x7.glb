@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10427
+      "byteLength": 10416
     }
   ],
   "buffers": [
     {
       "uri": "capholder_amber_40ml_4x7.glb.bin",
-      "byteLength": 10427
+      "byteLength": 10416
     }
   ],
   "materials": [

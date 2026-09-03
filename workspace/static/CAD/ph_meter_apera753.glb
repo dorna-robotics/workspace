@@ -7,111 +7,141 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 2460
+      "count": 58122
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 438,
+      "count": 19112,
       "max": [
-        4.49957275390625,
-        3.99993896484375,
-        9.5
+        2.1500000953674316,
+        16.350000381469727,
+        2.1500000953674316
       ],
       "min": [
-        -4.5,
+        -2.1500000953674316,
         0,
-        -9.5
+        -2.1500000953674316
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 438
+      "count": 19112
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 336
+      "count": 432
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 96,
+      "count": 144,
       "max": [
-        3.60012149810791,
-        3.9999001026153564,
-        8.19999885559082
+        0.800000011920929,
+        8.149999618530273,
+        0.800000011920929
       ],
       "min": [
-        -3.5999999046325684,
-        3.9999001026153564,
-        -8.399999618530273
+        -0.800000011920929,
+        2.75,
+        -0.800000011920929
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 96
+      "count": 144
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 276
+      "count": 144
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 184,
+      "count": 48,
       "max": [
-        2.9997072219848633,
-        4.199723720550537,
-        7.90000057220459
+        0.4000000059604645,
+        2.75,
+        0.4000000059604645
       ],
       "min": [
-        -3,
-        3.9999799728393555,
-        -2.200000047683716
+        -0.4000000059604645,
+        1.9500000476837158,
+        -0.4000000059604645
       ]
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 184
+      "count": 48
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 72
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 72,
+      "max": [
+        0.30000001192092896,
+        17.350000381469727,
+        0.30000001192092896
+      ],
+      "min": [
+        -0.30000001192092896,
+        16.350000381469727,
+        -0.30000001192092896
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 72
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2717
+      "byteLength": 58421
     },
     {
       "buffer": 0,
-      "byteOffset": 2717,
-      "byteLength": 586
+      "byteOffset": 58421,
+      "byteLength": 689
     },
     {
       "buffer": 0,
-      "byteOffset": 3303,
-      "byteLength": 483
+      "byteOffset": 59110,
+      "byteLength": 307
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 59417,
+      "byteLength": 393
     }
   ],
   "buffers": [
     {
-      "uri": "multi_meter_bk879b.glb.bin",
-      "byteLength": 3786
+      "uri": "ph_meter_apera753.glb.bin",
+      "byteLength": 59810
     }
   ],
   "materials": [
     {
-      "name": "Powder_Coat_(Blue)",
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.3058820068836212,
-          0.34117600321769714,
-          0.5294119715690613,
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
           1
         ],
         "metallicFactor": 0
@@ -123,7 +153,7 @@
       }
     },
     {
-      "name": "Plastic_-_Glossy_(White)",
+      "name": "Paint_-_Enamel_Glossy_(White)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -141,13 +171,31 @@
       }
     },
     {
-      "name": "Powder_Coat_(Grey)",
+      "name": "Powder_Coat_(Black)",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
-          0.7019609808921814,
-          0.7019609808921814,
-          0.7019609808921814,
+          0.09803900122642517,
+          0.09803900122642517,
+          0.09803900122642517,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Aluminum_-_Anodized_Glossy_(Blue)",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.34902000427246094,
+          0.5843139886856079,
+          0.8549020290374756,
           1
         ],
         "metallicFactor": 0
@@ -161,7 +209,7 @@
   ],
   "meshes": [
     {
-      "name": "LCR Meter",
+      "name": "ph meter origin",
       "primitives": [
         {
           "attributes": {
@@ -216,13 +264,31 @@
               }
             }
           }
+        },
+        {
+          "attributes": {
+            "POSITION": 10,
+            "NORMAL": 11
+          },
+          "mode": 4,
+          "material": 3,
+          "indices": 9,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 3,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
         }
       ]
     }
   ],
   "nodes": [
     {
-      "name": "LCR Meter",
+      "name": "ph meter origin",
       "rotation": [
         0.7071068286895752,
         0,

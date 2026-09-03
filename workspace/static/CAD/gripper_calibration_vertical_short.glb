@@ -12,7 +12,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3601,
+      "count": 3593,
       "max": [
         21.338581085205078,
         21.482099533081055,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 3601
+      "count": 3593
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10567
+      "byteLength": 10486
     }
   ],
   "buffers": [
     {
       "uri": "gripper_calibration_vertical_short.glb.bin",
-      "byteLength": 10567
+      "byteLength": 10486
     }
   ],
   "materials": [

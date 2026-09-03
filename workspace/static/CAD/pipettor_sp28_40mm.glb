@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 36493
+      "byteLength": 36295
     }
   ],
   "buffers": [
     {
       "uri": "pipettor_sp28_40mm.glb.bin",
-      "byteLength": 36493
+      "byteLength": 36295
     }
   ],
   "materials": [
