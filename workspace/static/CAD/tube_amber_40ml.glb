@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4482
+      "byteLength": 4566
     }
   ],
   "buffers": [
     {
       "uri": "tube_amber_40ml.glb.bin",
-      "byteLength": 4482
+      "byteLength": 4566
     }
   ],
   "materials": [

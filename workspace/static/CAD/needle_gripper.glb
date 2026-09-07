@@ -7,19 +7,19 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 41676
+      "count": 266940
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13424,
+      "count": 54017,
       "max": [
-        3.2996790409088135,
-        16.90999984741211,
-        2.1500096321105957
+        3.434999942779541,
+        17.3387393951416,
+        2.1500000953674316
       ],
       "min": [
-        -3.299999952316284,
+        -3.498500108718872,
         0,
         -2.1500000953674316
       ]
@@ -27,57 +27,130 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 13424
+      "count": 54017
     },
     {
-      "type": "VEC2",
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 4074
+    },
+    {
+      "type": "VEC3",
       "componentType": 5126,
-      "count": 13424
+      "count": 1342,
+      "max": [
+        3.299999952316284,
+        5.550000190734863,
+        2
+      ],
+      "min": [
+        -3.299999952316284,
+        4.150000095367432,
+        -2
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 1342
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 3846
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 1274,
+      "max": [
+        3.299999952316284,
+        17.299999237060547,
+        2
+      ],
+      "min": [
+        -3.299999952316284,
+        15.510000228881836,
+        -2
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 1274
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 41571
-    }
-  ],
-  "samplers": [
+      "byteLength": 233872
+    },
     {
-      "magFilter": 9728,
-      "minFilter": 9728,
-      "wrapS": 10497,
-      "wrapT": 10497
-    }
-  ],
-  "textures": [
+      "buffer": 0,
+      "byteOffset": 233872,
+      "byteLength": 4164
+    },
     {
-      "source": 0,
-      "sampler": 0
-    }
-  ],
-  "images": [
-    {
-      "name": "PaletteBaseColor",
-      "mimeType": "image/png",
-      "uri": "PaletteBaseColor.png"
+      "buffer": 0,
+      "byteOffset": 238036,
+      "byteLength": 3719
     }
   ],
   "buffers": [
     {
       "uri": "needle_gripper.glb.bin",
-      "byteLength": 41571
+      "byteLength": 241755
     }
   ],
   "materials": [
     {
-      "name": "PaletteMaterial001",
+      "name": "Steel_-_Satin",
       "doubleSided": true,
       "pbrMetallicRoughness": {
-        "metallicFactor": 0,
-        "baseColorTexture": {
-          "index": 0
+        "baseColorFactor": [
+          0.6274510025978088,
+          0.6274510025978088,
+          0.6274510025978088,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
         }
+      }
+    },
+    {
+      "name": "Aluminum_-_Satin",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9607840180397034,
+          0.9607840180397034,
+          0.9647060036659241,
+          1
+        ],
+        "metallicFactor": 0
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    },
+    {
+      "name": "Stainless_Steel_-_Satin",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7960780262947083,
+          0.7960780262947083,
+          0.7960780262947083,
+          1
+        ],
+        "metallicFactor": 0
       },
       "extensions": {
         "KHR_materials_specular": {
@@ -88,13 +161,12 @@
   ],
   "meshes": [
     {
-      "name": "Full Syringe Gripper Origin.001",
+      "name": "originlatest",
       "primitives": [
         {
           "attributes": {
             "POSITION": 1,
-            "NORMAL": 2,
-            "TEXCOORD_0": 3
+            "NORMAL": 2
           },
           "mode": 4,
           "material": 0,
@@ -104,8 +176,43 @@
               "bufferView": 0,
               "attributes": {
                 "POSITION": 0,
-                "NORMAL": 1,
-                "TEXCOORD_0": 2
+                "NORMAL": 1
+              }
+            }
+          }
+        },
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5
+          },
+          "mode": 4,
+          "material": 1,
+          "indices": 3,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 1,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
+              }
+            }
+          }
+        },
+        {
+          "attributes": {
+            "POSITION": 7,
+            "NORMAL": 8
+          },
+          "mode": 4,
+          "material": 2,
+          "indices": 6,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 2,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1
               }
             }
           }
@@ -115,7 +222,7 @@
   ],
   "nodes": [
     {
-      "name": "Full Syringe Gripper Origin",
+      "name": "originlatest",
       "rotation": [
         0.7071068286895752,
         0,

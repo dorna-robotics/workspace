@@ -84,23 +84,23 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 2717
+      "byteLength": 2709
     },
     {
       "buffer": 0,
-      "byteOffset": 2717,
-      "byteLength": 586
+      "byteOffset": 2709,
+      "byteLength": 580
     },
     {
       "buffer": 0,
-      "byteOffset": 3303,
-      "byteLength": 483
+      "byteOffset": 3289,
+      "byteLength": 480
     }
   ],
   "buffers": [
     {
       "uri": "multi_meter_bk879b.glb.bin",
-      "byteLength": 3786
+      "byteLength": 3769
     }
   ],
   "materials": [

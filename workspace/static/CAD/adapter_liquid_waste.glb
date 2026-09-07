@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3786
+      "count": 3756
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1403,
+      "count": 1398,
       "max": [
         1.6002684831619263,
         10,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1403
+      "count": 1398
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3374
+      "byteLength": 3381
     }
   ],
   "buffers": [
     {
       "uri": "adapter_liquid_waste.glb.bin",
-      "byteLength": 3374
+      "byteLength": 3381
     }
   ],
   "materials": [

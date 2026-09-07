@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 103288
+      "byteLength": 103267
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_500mm_base.glb.bin",
-      "byteLength": 103288
+      "byteLength": 103267
     }
   ],
   "materials": [
