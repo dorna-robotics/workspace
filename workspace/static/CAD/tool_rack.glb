@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3154
+      "byteLength": 3078
     }
   ],
   "buffers": [
     {
       "uri": "tool_rack.glb.bin",
-      "byteLength": 3154
+      "byteLength": 3078
     }
   ],
   "materials": [

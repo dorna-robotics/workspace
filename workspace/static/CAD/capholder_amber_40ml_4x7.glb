@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 13506
+      "count": 13500
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4494,
+      "count": 4492,
       "max": [
         14.25,
         1.2003296613693237,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 4494
+      "count": 4492
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 10473
+      "byteLength": 10464
     }
   ],
   "buffers": [
     {
       "uri": "capholder_amber_40ml_4x7.glb.bin",
-      "byteLength": 10473
+      "byteLength": 10464
     }
   ],
   "materials": [

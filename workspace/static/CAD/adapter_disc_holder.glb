@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 811
+      "byteLength": 794
     }
   ],
   "buffers": [
     {
       "uri": "adapter_disc_holder.glb.bin",
-      "byteLength": 811
+      "byteLength": 794
     }
   ],
   "materials": [

@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 170805
+      "count": 147006
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 49466,
+      "count": 44333,
       "max": [
-        0.6000000238418579,
+        0.5998644828796387,
         3.3959999084472656,
-        4.350020885467529
+        4.34993839263916
       ],
       "min": [
         -2.9000000953674316,
@@ -27,19 +27,19 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 49466
+      "count": 44333
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 49466
+      "count": 44333
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 172309
+      "byteLength": 153239
     }
   ],
   "samplers": [
@@ -66,7 +66,7 @@
   "buffers": [
     {
       "uri": "inspection_poe_vertical.glb.bin",
-      "byteLength": 172309
+      "byteLength": 153239
     }
   ],
   "materials": [

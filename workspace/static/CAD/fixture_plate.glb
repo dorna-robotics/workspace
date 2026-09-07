@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 28151
+      "byteLength": 28149
     }
   ],
   "buffers": [
     {
       "uri": "fixture_plate.glb.bin",
-      "byteLength": 28151
+      "byteLength": 28149
     }
   ],
   "materials": [

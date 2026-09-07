@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 51696
+      "count": 49374
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17441,
+      "count": 16810,
       "max": [
         2.150320529937744,
         16.350000381469727,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17441
+      "count": 16810
     },
     {
       "type": "SCALAR",
@@ -109,28 +109,28 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 53506
+      "byteLength": 51456
     },
     {
       "buffer": 0,
-      "byteOffset": 53506,
-      "byteLength": 677
+      "byteOffset": 51456,
+      "byteLength": 689
     },
     {
       "buffer": 0,
-      "byteOffset": 54183,
-      "byteLength": 311
+      "byteOffset": 52145,
+      "byteLength": 307
     },
     {
       "buffer": 0,
-      "byteOffset": 54494,
+      "byteOffset": 52452,
       "byteLength": 393
     }
   ],
   "buffers": [
     {
       "uri": "ph_meter_apera753.glb.bin",
-      "byteLength": 54887
+      "byteLength": 52845
     }
   ],
   "materials": [

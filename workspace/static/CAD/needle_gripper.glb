@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 266940
+      "count": 212670
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 54017,
+      "count": 43789,
       "max": [
-        3.434999942779541,
+        3.4346673488616943,
         17.3387393951416,
-        2.1500000953674316
+        2.1500244140625
       ],
       "min": [
         -3.498500108718872,
@@ -27,21 +27,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 54017
+      "count": 43789
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4074
+      "count": 4032
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1342,
+      "count": 1328,
       "max": [
         3.299999952316284,
-        5.550000190734863,
-        2
+        5.5499267578125,
+        1.9999632835388184
       ],
       "min": [
         -3.299999952316284,
@@ -52,21 +52,21 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1342
+      "count": 1328
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3846
+      "count": 3834
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1274,
+      "count": 1270,
       "max": [
         3.299999952316284,
-        17.299999237060547,
-        2
+        17.29989242553711,
+        1.9999632835388184
       ],
       "min": [
         -3.299999952316284,
@@ -77,30 +77,30 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1274
+      "count": 1270
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 233872
+      "byteLength": 189861
     },
     {
       "buffer": 0,
-      "byteOffset": 233872,
-      "byteLength": 4164
+      "byteOffset": 189861,
+      "byteLength": 4148
     },
     {
       "buffer": 0,
-      "byteOffset": 238036,
-      "byteLength": 3719
+      "byteOffset": 194009,
+      "byteLength": 3689
     }
   ],
   "buffers": [
     {
       "uri": "needle_gripper.glb.bin",
-      "byteLength": 241755
+      "byteLength": 197698
     }
   ],
   "materials": [

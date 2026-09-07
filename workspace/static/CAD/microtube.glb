@@ -64,13 +64,13 @@
     {
       "buffer": 0,
       "byteOffset": 757,
-      "byteLength": 1170
+      "byteLength": 1157
     }
   ],
   "buffers": [
     {
       "uri": "microtube.glb.bin",
-      "byteLength": 1927
+      "byteLength": 1914
     }
   ],
   "materials": [
