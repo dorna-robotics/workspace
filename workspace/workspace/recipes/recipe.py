@@ -1717,6 +1717,7 @@ class Recipe:
     def _compute_pick_heights(self, component, solid_name, anchor, tool, load_list, tool_tcp_z_offset=0, tool_tip_z_offset=0):
         """Compute heights for pick operations. Returns (height_load, height_container, height_tool, pose_offset, tool_body)."""
         height_load = 0
+        grab_z = 0.0
         pose_offset = dorna_pose.Pose(pose=[0, 0, 0, 0, 0, 0])
         if load_list:
             height_load = abs(
@@ -1726,13 +1727,13 @@ class Recipe:
                     to_frame=load_list[-1].pose("top"),
                 )[2]
             )
-            pose_offset = dorna_pose.Pose(
-                pose=dorna_pose.transform_pose(
-                    [0, 0, 0, 0, 0, 0],
-                    from_frame=load_list[0].pose("center"),
-                    to_frame=component.assembly[solid_name].pose(anchor),
-                )
+            pose_vec = dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=load_list[0].pose("center"),
+                to_frame=component.assembly[solid_name].pose(anchor),
             )
+            pose_offset = dorna_pose.Pose(pose=pose_vec)
+            grab_z = float(pose_vec[2])
 
         height_container = abs(
             dorna_pose.transform_pose(
@@ -1741,6 +1742,18 @@ class Recipe:
                 to_frame=component.assembly[solid_name].pose(anchor), # "place"
             )[2]
         )
+        # FRAME RULE: every approach/exit offset built from
+        # ``pose_offset`` is applied at the GRAB frame, and
+        # ``height_load`` is already grab-relative — but the container
+        # rim height above is ANCHOR-relative. A load attached to its
+        # slot with a z offset (apc's disc stacks: the item rides
+        # ``grab_z`` above the anchor) would have that offset counted
+        # twice, parking the gap/pad stops stack-height too high
+        # (bench-measured: 72 mm above the disc instead of rim + gap).
+        # Re-express the rim in the grab frame; clamped at 0 because a
+        # rim below the grab point is not an obstacle. Zero-offset
+        # attaches (every bna rack) have grab_z = 0 — identical values.
+        height_container = max(height_container - grab_z, 0)
 
         tool_body = tool.assembly[next(iter(tool.assembly))]
         height_tool = abs(
