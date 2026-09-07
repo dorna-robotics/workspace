@@ -11,7 +11,10 @@ from workspace.components.inspection.inspection import Inspection
 class InspectionPoeHorizontal(Inspection):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0],
-                "lens": [9.6, 0, 20.5, 0, 0, 0]}},
+                "lens": [9.6, 0, 20.5, 0, 0, 0],
+                # where the presented item goes: 70 mm out along the
+                # lens axis (+z in the component frame)
+                "place": [9.6, 0, 20.5 + 70, 0, 0, 0]}},
         collision_box = {"body":[
                 {"pose":[17.5, -10.02, 0.0, 0, 0, 0], "scale":[35.0, 66.96, 46.0], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
         ]},
@@ -28,8 +31,8 @@ class InspectionPoeHorizontal(Inspection):
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs
 
-        # this module only has center/lens — drop the base's extras
-        for h in ("place", "top", "hole_0", "hole_1", "hole_2", "hole_3"):
+        # this module only has center/lens/place — drop the base's extras
+        for h in ("top", "hole_0", "hole_1", "hole_2", "hole_3"):
             prm["anchors"]["body"].pop(h, None)
 
         # type

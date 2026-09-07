@@ -13,7 +13,10 @@ class InspectionPoeVertical(Inspection):
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0],
                 "lens": [-14.5, -29, 20.1, 0, 0, 0],
-                "top": [-14.5, -29, 33.96, 0, 0, 0]}},
+                "top": [-14.5, -29, 33.96, 0, 0, 0],
+                # where the presented item goes: 70 mm out along the
+                # lens axis (+z, looking up)
+                "place": [-14.5, -29, 20.1 + 70, 0, 0, 0]}},
         collision_box = {"body":[
                 {"pose":[-11.5, -14.5, 2.73, 0, 0, 0], "scale":[35.0, 58.0, 62.46], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
         ]},
@@ -30,8 +33,8 @@ class InspectionPoeVertical(Inspection):
         merge(prm, cfg) # cfg
         merge(prm, kwargs) # kwargs
 
-        # this module only has center/lens/top — drop the base's extras
-        for h in ("place", "hole_0", "hole_1", "hole_2", "hole_3"):
+        # this module only has center/lens/top/place — drop the base's extras
+        for h in ("hole_0", "hole_1", "hole_2", "hole_3"):
             prm["anchors"]["body"].pop(h, None)
 
         # type
