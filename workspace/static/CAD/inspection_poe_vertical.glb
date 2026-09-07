@@ -1,0 +1,149 @@
+{
+  "asset": {
+    "generator": "glTF-Transform v4.4.0",
+    "version": "2.0"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 170805
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 49466,
+      "max": [
+        0.6000000238418579,
+        3.3959999084472656,
+        4.350020885467529
+      ],
+      "min": [
+        -2.9000000953674316,
+        -2.8499999046325684,
+        -1.4500000476837158
+      ]
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5126,
+      "count": 49466
+    },
+    {
+      "type": "VEC2",
+      "componentType": 5126,
+      "count": 49466
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 172309
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9728,
+      "minFilter": 9728,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "textures": [
+    {
+      "source": 0,
+      "sampler": 0
+    }
+  ],
+  "images": [
+    {
+      "name": "PaletteBaseColor",
+      "mimeType": "image/png",
+      "uri": "PaletteBaseColor.png"
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "inspection_poe_vertical.glb.bin",
+      "byteLength": 172309
+    }
+  ],
+  "materials": [
+    {
+      "name": "PaletteMaterial001",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "metallicFactor": 0,
+        "baseColorTexture": {
+          "index": 0
+        }
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "camera origin",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1,
+            "NORMAL": 2,
+            "TEXCOORD_0": 3
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0,
+          "extensions": {
+            "KHR_draco_mesh_compression": {
+              "bufferView": 0,
+              "attributes": {
+                "POSITION": 0,
+                "NORMAL": 1,
+                "TEXCOORD_0": 2
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "camera origin",
+      "rotation": [
+        0.7071068286895752,
+        0,
+        0,
+        0.7071068286895752
+      ],
+      "scale": [
+        10,
+        10,
+        10
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_draco_mesh_compression",
+    "KHR_materials_specular"
+  ],
+  "extensionsRequired": [
+    "KHR_draco_mesh_compression"
+  ]
+}
