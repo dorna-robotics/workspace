@@ -1145,4 +1145,15 @@ def run_protocol(
                 core.tail_flush(reason="run ended")
     except Exception:
         log.warning("%s: end-of-run motion-tail flush failed", project_name, exc_info=True)
+    # One line of fusion observability per run — which pass this was
+    # (recording vs fused) and whether any seam had to re-learn.
+    try:
+        summary = core.fusion_summary()
+        if summary:
+            rt = getattr(workspace, "rt", None)
+            if rt is not None:
+                rt.step(summary)
+            log.info("%s: %s", project_name, summary)
+    except Exception:
+        pass
     return status

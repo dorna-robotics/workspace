@@ -1685,6 +1685,17 @@ class Core:
                             self._fusion_log_path.with_suffix(".jsonl.old"))
                 except Exception:
                     pass
+            # Per-run tallies for the end-of-run summary line
+            # (fusion_summary) — this is the single chokepoint every
+            # fusion decision already passes through.
+            c = getattr(self, "_fusion_counts", None)
+            if c is not None:
+                if ev == "merge":
+                    c["merged"] += 1
+                elif ev == "record":
+                    c["recorded"] += 1
+                elif ev == "flush" and "mismatch" in str(fields.get("reason", "")):
+                    c["mismatched"] += 1
             rec = {"ts": round(time.time(), 3), "ev": str(ev)}
             rec.update({k: v for k, v in fields.items() if v is not None})
             with open(self._fusion_log_path, "a") as f:
@@ -1961,6 +1972,25 @@ class Core:
         self._book_init()
         self._book_pending = None
         self._book_written = set()
+        # Fresh tallies for this run's summary line (fusion_summary).
+        self._fusion_counts = {"merged": 0, "recorded": 0, "mismatched": 0}
+
+    def fusion_summary(self):
+        """One human line for the step feed: what fusion did THIS run.
+        ``None`` before the first book_reload. Reading the run state
+        from this line: "0 merged, N recorded" = the recording pass
+        (fuses next run); "N mismatched" = that many seams re-learned
+        because the geometry moved since they were recorded."""
+        c = getattr(self, "_fusion_counts", None)
+        if c is None:
+            return None
+        line = (f"fusion: {c['merged']} merged, {c['recorded']} recorded, "
+                f"{c['mismatched']} mismatched")
+        if c["merged"] == 0 and c["recorded"]:
+            line += " (recording pass — fuses on the next run)"
+        elif c["mismatched"]:
+            line += " (geometry moved — those seams re-learned, fuse next run)"
+        return line
 
     def book_arm(self, key):
         """Arm a classic seam for recording — the next merge-capable
