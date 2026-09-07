@@ -16,6 +16,11 @@ opt-in and its absence falls back cleanly (generic form / default
 pendant). Gold exemplar for all three: **the bd project's `hmi/`
 folder** (`~/Downloads/projects/bd` on the bench Pi).
 
+**Setup screens build on the HMI kit** — import
+`/orchestrator/hmi-kit/kit.js`, start from its `setup-template.js`, and
+follow `docs/hmi-kit-guide.md` (the design language: tokens, turned
+racks, well selection, the four message tones).
+
 **The rule that decides format** (hmi-guide §10b): *if Python reads it,
 it's yaml; if only the browser reads it, it's the project's file.*
 `default` is read headlessly — `bt.replay`, launch, Start-with-defaults,

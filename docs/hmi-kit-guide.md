@@ -1,14 +1,20 @@
-# Project HMI Guide
+# Project HMI kit — the design language
 
 How to build a project setup screen (and pendant) that looks and behaves
 like the ones that already exist. **bna** and **calibration** are the
-worked examples of this language; this folder is its reference:
+worked examples of this language. The kit itself lives at
+`workspace/gui/orchestrator/web/admin/hmi-kit/`, served same-origin at
+`/orchestrator/hmi-kit/`:
 
 | File | What it is |
 |---|---|
-| `HMI_GUIDE.md` | This document — the design language and the rules |
-| `kit.js` | The shared CSS + helpers, importable by any setup screen (`KIT_VERSION` 2: adds turned racks and well selection) |
-| `setup-template.js` | A minimal working screen to copy into a new project |
+| `docs/hmi-kit-guide.md` | This document — the design language and the rules |
+| `hmi-kit/kit.js` | The shared CSS + helpers, importable by any setup screen (`KIT_VERSION` 2: adds turned racks and well selection) |
+| `hmi-kit/setup-template.js` | A minimal working screen to copy into a new project |
+
+Architecture companion: `docs/hmi-guide.md` — the `rt.op` channel, the
+screen hosting contract, and the pendant fallback catalog. This document
+is the *style and behaviour* half.
 
 ---
 

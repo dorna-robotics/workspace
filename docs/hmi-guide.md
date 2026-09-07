@@ -9,6 +9,10 @@ the data and the frame. §2 records a reversal of this document's original
 principle and why. Companion visual reference: the static mockups in
 `docs/internal/hmi_mockups/` (disposable — see §9 Housekeeping).
 Task playbook: `.claude/skills/project-ui/SKILL.md`.
+**Style + behaviour companion: `docs/hmi-kit-guide.md`** — the shared
+design language and the importable kit
+(`/orchestrator/hmi-kit/kit.js` + `setup-template.js`) every project
+screen builds on.
 
 ## 0. The three operator-UI keys
 
