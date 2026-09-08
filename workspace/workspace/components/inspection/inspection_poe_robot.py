@@ -21,7 +21,7 @@ class InspectionPoeRobot(Inspection):
                 "place": [0, 0, -9.9 + 70, 0, 0, 0],
                 "hole_0": [0, 36.25, 0, 0, 0, 0], "hole_1": [0, 56.25, 0, 0, 0, 0]}},
         collision_box = {"body":[
-                {"pose":[0.0, 23.5, -27.27, 0, 0, 0], "scale":[32.0, 76.0, 62.46], "padding_enabled": True},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 23.5, -27.27, 0, 0, 0], "scale":[32.0, 76.0, 62.46], "padding_enabled": False},#[xyzabc] , [lx,ly,lz]
         ]},
         # This is a Hikrobot GigE (PoE) camera — same driver block as
         # its station siblings: color-only (mode "bgr", not "bgrd"),
