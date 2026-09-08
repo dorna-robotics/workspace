@@ -32,19 +32,24 @@ class Decapper(Recipe):
             kwargs.setdefault("exit_j5", "keep")
         return kwargs
 
-    def place(self, approach=True, exit=True, padding=None, **kwargs):
-        """Place a tube into the decapper's ``place`` anchor.
+    def place(self, anchor="place", approach=True, exit=True, padding=None, **kwargs):
+        """Place a tube into the decapper's ``anchor`` (default "place").
+
+        ``anchor`` is first, like every other recipe verb — a multi-slot
+        decapper (decapper_two_slot's ``a1``/``a2``) names the slot per
+        call, same as ``decap``/``cap`` always could.
 
         Thin override of ``Recipe.place`` with ``gravity_offset=0`` (the
         decapper holds the tube directly — no lift compensation) and a
         shorter default padding of 30 mm.
         """
-        return super().place(anchor="place", approach=approach, exit=exit, padding=padding, gravity_offset=0,
+        return super().place(anchor=anchor, approach=approach, exit=exit, padding=padding, gravity_offset=0,
                              **self._keep_wrist(kwargs))
 
-    def pick(self, approach=True, exit=True, padding=None, compliant=False,
+    def pick(self, anchor="place", approach=True, exit=True, padding=None, compliant=False,
              soft_exit=False, **kwargs):
-        """Pick a tube from the decapper's ``place`` anchor. Padding defaults to 30 mm.
+        """Pick a tube from the decapper's ``anchor`` (default "place").
+        Padding defaults to 30 mm.
 
         ``compliant`` defaults to False here: the decapper is a rigid jaw
         grip on a screwed-on cap, so a ``tool_tcp_z_offset`` over-drive really
@@ -54,7 +59,7 @@ class Decapper(Recipe):
         ``soft_exit`` defaults False here: the chuck is released when
         the tube lifts, so the exit needs no staged pull-off — one
         continuous lift out."""
-        return super().pick(anchor="place", approach=approach, exit=exit, padding=padding,
+        return super().pick(anchor=anchor, approach=approach, exit=exit, padding=padding,
                             compliant=compliant, soft_exit=soft_exit,
                             **self._keep_wrist(kwargs))
 
