@@ -251,9 +251,25 @@ class Display:
                     item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
+            j = self._read_joints()
+            if j is not None:
+                batch["__joints__"] = {"joints": j}
         except Exception as e:
             print("[Display] error building snapshot batch:", e)
         return batch
+
+    def _read_joints(self):
+        """The live 8-joint vector for the viewer's joints chip, or
+        None. Zero added load by construction: the joints were already
+        read this frame to pose the scene — this is one more cheap
+        api read, rounded, and it rides the EXISTING scene_update
+        message only when the values changed."""
+        try:
+            core = self.workspace.components.get("core")
+            j = core.robot_api.joint()
+            return [round(float(v), 2) for v in list(j)[:8]]
+        except Exception:
+            return None
 
     def _build_pose_frame(self):
         """Only pose + visible; DO NOT delete meshUrl. Delta: skip unchanged objects."""
@@ -298,6 +314,13 @@ class Display:
                     "collisionWorld": cw,
                     "collisionFlange": cf,
                 }
+
+        # Joints chip: append only on change (usually alongside pose
+        # deltas that were being sent anyway).
+        j = self._read_joints()
+        if j is not None and j != getattr(self, "_last_joints", None):
+            self._last_joints = j
+            out["__joints__"] = {"joints": j}
 
         return out
 

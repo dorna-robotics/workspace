@@ -2310,6 +2310,12 @@ if (node) {
       socket.on("scene_update", (payload) => {
         if (!payload || typeof payload !== "object") return;
         for (const [n, s] of Object.entries(payload)) {
+          // Live joints chip — pseudo-entry from the Display, never a
+          // scene object (see the orchestrator viewer's twin).
+          if (n === "__joints__") {
+            try { window.__sbJointsChip(s && s.joints); } catch (e) {}
+            continue;
+          }
           // Per-entry isolation: one bad entry must not strand the
           // rest of the replay (unrendered objects, unregistered
           // components — the "no core object" class of bug).
@@ -2357,6 +2363,25 @@ if (node) {
       window.__markDirty = markDirty;
       window.__addEdgeOverlay = addEdgeOverlay;
       window.__sbCollisionState = () => showCollisionBoxes;
+      // Live joints chip (bottom-right, clear of the rail and player).
+      let _sbJointsChip = null;
+      window.__sbJointsChip = (j) => {
+        if (!Array.isArray(j)) return;
+        if (!_sbJointsChip) {
+          _sbJointsChip = document.createElement("div");
+          _sbJointsChip.id = "sbJointsChip";
+          _sbJointsChip.style.cssText =
+            "position:fixed;right:12px;bottom:12px;z-index:40;padding:4px 8px;" +
+            "border-radius:6px;background:rgba(10,14,24,0.72);" +
+            "border:1px solid rgba(255,255,255,0.10);color:#9fb3c8;" +
+            "font:11px ui-monospace,Menlo,Consolas,monospace;" +
+            "user-select:text;cursor:text;white-space:nowrap;";
+          document.body.appendChild(_sbJointsChip);
+        }
+        const txt = "[" + j.map(v =>
+          Math.abs(v) >= 1000 ? v.toFixed(1) : v.toFixed(2)).join(", ") + "]";
+        if (_sbJointsChip.textContent !== txt) _sbJointsChip.textContent = txt;
+      };
       window.__setSolidPosesWorld = (name, solids) => {
         const root = objectsByName.get(name);
         if (!root) return;

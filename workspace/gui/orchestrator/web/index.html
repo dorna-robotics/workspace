@@ -1307,10 +1307,41 @@ function makeRenderer(opts, mountEl) {
         _hasMeshData = false;
       });
 
+      // ── Live joints chip ──────────────────────────────────────────
+      // A "__joints__" pseudo-entry rides the scene stream (Display
+      // sends it only when the values change). One textContent write —
+      // no three.js involvement, no timers.
+      let _jointsChip = null;
+      function updateJointsChip(j) {
+        if (!Array.isArray(j)) return;
+        if (!_jointsChip) {
+          _jointsChip = document.createElement("div");
+          _jointsChip.id = "jointsChip";
+          // Bottom-center, on the SAME baseline as the info bar's
+          // pills (bottom 18px, 5px/12px padding, 8px radius, mono
+          // 11px) so the two read as one row. Selectable so the list
+          // can be copy-pasted straight into a notebook.
+          _jointsChip.style.cssText =
+            "position:fixed;left:50%;transform:translateX(-50%);bottom:18px;" +
+            "z-index:40;padding:5px 12px;" +
+            "border-radius:8px;background:rgba(10,14,24,0.72);" +
+            "backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
+            "border:none;color:#9fb3c8;" +
+            "font:600 11px 'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;" +
+            "letter-spacing:0.03em;" +
+            "user-select:text;cursor:text;white-space:nowrap;";
+          document.body.appendChild(_jointsChip);
+        }
+        const txt = "[" + j.map(v =>
+          Math.abs(v) >= 1000 ? v.toFixed(1) : v.toFixed(2)).join(", ") + "]";
+        if (_jointsChip.textContent !== txt) _jointsChip.textContent = txt;
+      }
+
       socket.on("scene_update", (payload) => {
         if (!payload) return;
         for (const [n, s] of Object.entries(payload)) {
           if (!s) continue;
+          if (n === "__joints__") { updateJointsChip(s.joints); continue; }
           // Merge: later fields overwrite earlier ones for same object
           const prev = _pendingUpdates[n];
           _pendingUpdates[n] = prev ? Object.assign(prev, s) : s;
