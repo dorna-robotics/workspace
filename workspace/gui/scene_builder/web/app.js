@@ -11276,6 +11276,71 @@ function startRectPattern() {
 
   let tab = "scene";
   try { tab = localStorage.getItem(KEY) || "scene"; } catch (_) {}
-  if (!/^(scene|recipes|replay)$/.test(tab)) tab = "scene";
+  if (!/^(scene|recipes|replay|schedule)$/.test(tab)) tab = "scene";
   activate(tab);
+})();
+
+
+// ── Schedule tab — the plan of the active project, before any run ─────
+// The chart is the orchestrator's Gantt (schedule.js + schedule.css,
+// served at /orchestrator/…). Loaded lazily so a missing module never
+// takes the builder down. The server runs ``bt.replay --json`` for
+// the project at the current path and returns the ``schedule`` event.
+(function scheduleTab() {
+  const SB_API = "/scene-builder/api";
+  const pane = document.getElementById("sbSchedPane");
+  const btn  = document.getElementById("schedRun");
+  const nIn  = document.getElementById("schedBatch");
+  const hint = document.getElementById("schedHint");
+  if (!pane || !btn) return;
+  let mod = null;
+
+  async function ensure() {
+    if (mod) return mod;
+    mod = await import("/orchestrator/schedule.js");
+    mod.attachSchedule(pane, { preview: false });
+    return mod;
+  }
+
+  function setHint(text, bad) {
+    if (!hint) return;
+    hint.textContent = text;
+    hint.classList.toggle("bad", !!bad);
+  }
+
+  btn.addEventListener("click", async () => {
+    const batch = Math.max(1, parseInt(nIn && nIn.value, 10) || 1);
+    btn.disabled = true;
+    setHint(`Planning ${batch} item(s)… a full protocol takes a minute or two.`);
+    try {
+      const m = await ensure();
+      const res = await fetch(SB_API + "/schedule_preview", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch }),
+      });
+      const js = await res.json().catch(() => ({}));
+      if (!res.ok || !js.ok) throw new Error(js.error || `HTTP ${res.status}`);
+      const ev = js.event;
+      m.ingestPreview(ev);
+      m.showSchedule();
+      const broken = (ev.fails && ev.fails.length) || ev.goal_ok === false;
+      setHint(broken
+        ? `Batch ${batch}: ${ev.fails.length} precondition failure(s) — ${ev.fails.slice(0, 3).join("; ")}`
+        : `Batch ${batch}: ${(ev.actions || []).length} actions, ${(ev.swaps || []).length} tool swaps, makespan ${Math.round(ev.makespan)} s.`,
+        !!broken);
+    } catch (err) {
+      setHint(`Plan failed: ${err && err.message ? err.message : err}`, true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.addEventListener("sb-tab", async (e) => {
+    const on = ((e.detail && e.detail.tab) || "scene") === "schedule";
+    pane.style.display = on ? "block" : "none";
+    if (on) {
+      try { const m = await ensure(); m.showSchedule(); }
+      catch (err) { setHint(`Schedule chart unavailable: ${err && err.message ? err.message : err}`, true); }
+    }
+  });
 })();

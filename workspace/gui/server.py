@@ -75,6 +75,7 @@ from gui.orchestrator.server import (
 # Import scene builder (triggers dorna2 patches + component scanning)
 # ---------------------------------------------------------------------------
 from gui.scene_builder.server import (
+    SchedulePreviewHandler,
     sio as sb_sio,
     PerfHandler,
     CatalogHandler,
@@ -355,6 +356,7 @@ def make_app(port=5000):
         (r"/scene-builder/api/set_project", SetProjectHandler),
         (r"/scene-builder/api/project_bundle", ProjectBundleHandler),
         (r"/scene-builder/api/solve_ref", SolveRefHandler),
+        (r"/scene-builder/api/schedule_preview", SchedulePreviewHandler),
         (r"/scene-builder/api/perf", PerfHandler),
         (r"/scene-builder/api/reset", ResetHandler),
         (r"/scene-builder/api/recipe_ik", RecipeIKHandler),

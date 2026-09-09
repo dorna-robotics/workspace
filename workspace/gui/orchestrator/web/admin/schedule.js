@@ -148,6 +148,7 @@ function _patchBlockState(leafKey) {
   if (!_visible()) return;
   const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
   if (!g) { _render(); return; }
+  _updateNowMarker();
   const state = _leafState.get(leafKey) || "pending";
   g.setAttribute("class", `sched-block sched-${state}`);
   // If this transition just produced a finished block, add its
@@ -202,7 +203,9 @@ function _jumpToCurrent() {
 
 // Attach the gantt to an inline host element (the viewport's
 // Schedule pane). Renders happen only while the host is visible.
-export function attachSchedule(el) {
+export function attachSchedule(el, opts = {}) {
+  // opts.preview === false: no preview control in the top bar — the
+  // host drives ingestPreview() from its own controls (scene builder).
   if (!el) { _ganttEl = null; _gutterEl = null; _stickyEl = null; return; }
   // FOUR ELEMENTS, EACH WITH ONE JOB. A single scrolling SVG loses the
   // row labels and the phase name the moment you pan, and lets blocks
@@ -247,7 +250,125 @@ export function attachSchedule(el) {
   _stickyEl = body.querySelector(".sched-phase-sticky");
   _ganttEl.addEventListener("scroll", _syncStickyBands, { passive: true });
   _wireTip(_ganttEl, el);
+  if (opts.preview !== false) _mountPreviewControls(bar);
   _mountZoomControls(bar);
+  _startNowMarker();
+}
+
+// ── Preview — draw a plan that never ran ──────────────────────────────
+// The host wires ``setPreviewRunner(async batch => event)``; the runner
+// asks the runtime server for ``bt.replay --json`` and hands back the
+// same ``schedule`` event a live run publishes. Whole batch, no phases.
+let _previewRunner = null;
+let _previewEls = null;
+
+export function setPreviewRunner(fn) {
+  _previewRunner = fn;
+  if (_previewEls) _previewEls.btn.disabled = !fn;
+}
+
+export function ingestPreview(event) {
+  _slices.length = 0;
+  _leafState.clear();
+  _leafTiming.clear();
+  _slices.push({ ...event, replan_id: 0, phase: event.phase || null });
+  _render();
+  requestAnimationFrame(() => { if (_ganttEl) _ganttEl.scrollLeft = 0; });
+}
+
+function _mountPreviewControls(host) {
+  if (host.querySelector(".sched-preview")) return;
+  const bar = document.createElement("div");
+  bar.className = "sched-preview";
+  bar.innerHTML =
+    '<label class="sched-preview-lbl">Preview batch ' +
+    '<input class="sched-preview-n" type="number" min="1" max="56" value="4" aria-label="Batch size"></label>' +
+    '<button class="sched-preview-btn" type="button">Preview</button>' +
+    '<span class="sched-preview-msg" aria-live="polite"></span>';
+  host.appendChild(bar);
+  const n = bar.querySelector(".sched-preview-n");
+  const btn = bar.querySelector(".sched-preview-btn");
+  const msg = bar.querySelector(".sched-preview-msg");
+  _previewEls = { n, btn, msg };
+  btn.disabled = !_previewRunner;
+  btn.addEventListener("click", async () => {
+    if (!_previewRunner) return;
+    const batch = Math.max(1, parseInt(n.value, 10) || 1);
+    btn.disabled = true;
+    msg.textContent = `planning ${batch}…`;
+    msg.dataset.state = "busy";
+    try {
+      const ev = await _previewRunner(batch);
+      ingestPreview(ev);
+      const broken = (ev.fails && ev.fails.length) || ev.goal_ok === false;
+      msg.textContent = broken
+        ? `PREVIEW batch ${batch} — ${ev.fails.length} precondition failure(s)`
+        : `PREVIEW batch ${batch} — ${(ev.actions || []).length} actions, ${Math.round(ev.makespan)} s`;
+      msg.dataset.state = broken ? "error" : "ok";
+    } catch (err) {
+      msg.textContent = `preview failed: ${err && err.message ? err.message : err}`;
+      msg.dataset.state = "error";
+    } finally {
+      btn.disabled = !_previewRunner;
+    }
+  });
+}
+
+// ── The now-marker — where the run is, on the X axis ─────────────────
+// X is a flow layout, not a clock, so "where we are" is the running
+// block: a vertical line through it, advanced by wall-clock elapsed
+// over the planned duration. Redrawn once a second while a block runs.
+let _nowTimer = null;
+
+function _startNowMarker() {
+  if (_nowTimer) return;
+  _nowTimer = setInterval(_updateNowMarker, 1000);
+}
+
+function _updateNowMarker() {
+  if (!_visible()) return;
+  const svg = _ganttEl.querySelector("svg.sched-svg");
+  if (!svg) return;
+  let g = svg.querySelector("g.sched-now");
+  const running = _leafOrder.find(k => _leafState.get(k) === "running");
+  if (!running) { if (g) g.remove(); return; }
+  const geom = _leafGeom.get(running);
+  if (!geom) { if (g) g.remove(); return; }
+  const a = _actionByKey(running);
+  const t = _leafTiming.get(running) || {};
+  let frac = 0;
+  if (t.startedAt != null && a && a.duration) {
+    frac = Math.min(0.98, Math.max(0, (Date.now() / 1000 - t.startedAt) / a.duration));
+  }
+  const x = geom.x + frac * geom.w;
+  const H = parseFloat(svg.getAttribute("height")) || 0;
+  const svgNS = "http://www.w3.org/2000/svg";
+  if (!g) {
+    g = document.createElementNS(svgNS, "g");
+    g.setAttribute("class", "sched-now");
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("class", "sched-now-line");
+    const head = document.createElementNS(svgNS, "polygon");
+    head.setAttribute("class", "sched-now-head");
+    g.appendChild(line); g.appendChild(head);
+    svg.appendChild(g);
+  }
+  const line = g.querySelector("line");
+  line.setAttribute("x1", String(x)); line.setAttribute("x2", String(x));
+  line.setAttribute("y1", "0");       line.setAttribute("y2", String(H));
+  const head = g.querySelector("polygon");
+  head.setAttribute("points", `${x - 6},0 ${x + 6},0 ${x},8`);
+}
+
+function _actionByKey(key) {
+  const bar = key.indexOf("|");
+  const rid = Number(key.slice(0, bar)), leaf = key.slice(bar + 1);
+  for (const sl of _slices) {
+    if ((sl.replan_id || 0) !== rid) continue;
+    for (const a of (sl.actions || [])) if (a.leaf_name === leaf) return a;
+    for (const w of (sl.swaps || []))   if (w.leaf_name === leaf) return w;
+  }
+  return null;
 }
 
 // Minus / plus / home, floating top-right over the chart. Built once
@@ -402,7 +523,7 @@ function _wireTip(host, panel) {
 function _clearChart(host) {
   if (!host) return;
   for (const child of [...host.children]) {
-    if (!child.classList.contains("sched-zoom")) child.remove();
+    if (!child.classList.contains("sched-zoom") && !child.classList.contains("sched-preview")) child.remove();
   }
 }
 
@@ -786,6 +907,7 @@ function _renderGantt() {
 
   _clearChart(_ganttEl);
   _ganttEl.appendChild(svg);
+  _updateNowMarker();
   // Synchronous: a rAF here would paint the labels at their band-start
   // x for one frame and then snap them, which is the very flash this
   // whole mechanism exists to avoid.

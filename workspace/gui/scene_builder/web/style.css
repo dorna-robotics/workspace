@@ -982,3 +982,25 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
   .sidebar { flex-direction: column; }
   .sb-rail button { flex-direction: row; gap: 6px; padding: 6px 10px; }
 }
+
+/* ── Schedule tab ──────────────────────────────────────────────────
+   The Gantt card floats over the canvas; the chart itself is the
+   orchestrator's (schedule.js + schedule.css). */
+.sb-sched-pane {
+  position: absolute;
+  inset: 16px;
+  z-index: 60;
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.sb-sched-lbl {
+  display: flex; flex-direction: column; gap: 4px;
+  font: 600 10px/1 var(--mono);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sb-sched-lbl .input { width: 100%; box-sizing: border-box; }

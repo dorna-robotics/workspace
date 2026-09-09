@@ -11,7 +11,7 @@
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
-import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
+import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts, setPreviewRunner } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
 const wsName  = (params.get("name") || "").trim();
@@ -542,6 +542,17 @@ let _muxWsAlive = false;
 function connectWs(runtimeUrl) {
   // Cache the base URL for the HTTP recover POST in recoverDevice().
   _devicesUrl = runtimeUrl;
+  // The Schedule tab's preview asks this workspace's runtime server
+  // for the plan of a batch that never ran (bt.replay --json).
+  setPreviewRunner(async (batch) => {
+    const res = await fetch(runtimeUrl.replace(/\/$/, "") + "/schedule/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batch }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.msg || `HTTP ${res.status}`);
+    return data.event;
+  });
   const wsUrl = runtimeUrl.replace(/^http/, "ws") + "/ws";
   if (_muxWs && _muxWsUrl === wsUrl) return;
   disconnectWs();

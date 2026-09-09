@@ -1321,6 +1321,59 @@ class SolveRefHandler(tornado.web.RequestHandler):
 # Real Workspace + real core.IK live in the worker (the builder's
 # preview stubs must not touch them). Started lazily, restarted when
 # the project or its files change, requests serialized by a lock.
+class SchedulePreviewHandler(tornado.web.RequestHandler):
+    """POST {"batch": N} → the plan of the active project for N items, as
+    the ``schedule`` event the Gantt draws (``bt.replay --json``). Runs
+    in a SUBPROCESS like the reference solve: the replay imports the
+    project's actions and resets the action registry, which must never
+    happen inside this server. Whole batch, no phases, no motion."""
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "content-type")
+        self.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+    async def post(self):
+        if not _project_path:
+            self.write({"ok": False, "error": "no project path set"})
+            return
+        if not os.path.exists(os.path.join(_project_path, "launch.yaml")):
+            self.write({"ok": False, "error": "not a project: no launch.yaml at the project path"})
+            return
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception:
+            data = {}
+        batch = max(1, int(data.get("batch") or 1))
+        kwargs = data.get("kwargs") or {}
+        cmd = [sys.executable, "-m", "workspace.bt.replay", _project_path,
+               "--batch", str(batch), "--json"]
+        if kwargs:
+            cmd += ["--kwargs-json", json.dumps(kwargs)]
+
+        def _run():
+            import subprocess
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
+                                   cwd=PARENT_DIR)
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "error": "replay timed out (15 min)"}
+            except Exception as ex:
+                return {"ok": False, "error": f"replay spawn failed: {ex}"}
+            lines = (r.stdout or "").strip().splitlines()
+            try:
+                return {"ok": True, "event": json.loads(lines[-1])}
+            except Exception:
+                return {"ok": False,
+                        "error": (r.stderr or r.stdout or "replay produced no schedule")[-1200:]}
+
+        result = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        self.write(result)
+
+
 _ik_worker = {"proc": None, "project": None, "sig": None, "info": None}
 import threading as _threading
 _ik_lock = _threading.Lock()
@@ -1408,6 +1461,7 @@ app.add_handlers(r".*$", [(r"/api/recipe_ik", RecipeIKHandler)])
 app.add_handlers(r".*$", [(r"/api/set_project", SetProjectHandler)])
 app.add_handlers(r".*$", [(r"/api/project_bundle", ProjectBundleHandler)])
 app.add_handlers(r".*$", [(r"/api/solve_ref", SolveRefHandler)])
+app.add_handlers(r".*$", [(r"/api/schedule_preview", SchedulePreviewHandler)])
 
 # catalog endpoint (CAD/*.glb)
 app.add_handlers(r".*$", [(r"/api/catalog", CatalogHandler)])
