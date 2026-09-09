@@ -11338,6 +11338,10 @@ function startRectPattern() {
   document.addEventListener("sb-tab", async (e) => {
     const on = ((e.detail && e.detail.tab) || "scene") === "schedule";
     pane.style.display = on ? "block" : "none";
+    // Schedule mode: the chart alone. The 3D canvas and its controls
+    // are hidden, not just covered — nothing renders behind the plan.
+    const area = document.getElementById("viewerArea");
+    if (area) area.classList.toggle("sched-mode", on);
     if (on) {
       try { const m = await ensure(); m.showSchedule(); }
       catch (err) { setHint(`Schedule chart unavailable: ${err && err.message ? err.message : err}`, true); }

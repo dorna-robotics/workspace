@@ -1004,3 +1004,7 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
   text-transform: uppercase;
 }
 .sb-sched-lbl .input { width: 100%; box-sizing: border-box; }
+/* Schedule mode hides everything else in the viewer area — the
+   three.js canvas, the view cube, the control buttons, the info bar. */
+.viewer-area.sched-mode > *:not(#sbSchedPane) { display: none !important; }
+.viewer-area.sched-mode { background: var(--bg); }
