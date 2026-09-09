@@ -1111,18 +1111,21 @@ checked without a bench, before any motion:
       …
       t=   316  shake1(0)                     [shaker]  300s
 
-A failed precondition is marked ``PRE FALSE`` on its line. The
-replay plans the whole batch in one shot — it does not walk the phase
-list the launcher uses at run time (bt-framework-guide §13).
+A failed precondition is marked ``PRE FALSE`` on its line. A phased
+project (``phases:`` in launch.yaml) is replayed **phase by phase,
+window by window, with the launcher's own phase code**
+(``workspace/bt/phase.py``: ``current_phase`` / ``pick_window``), so the
+listing is the order the live run takes and a 28-item batch replays in
+minutes instead of never; each window's schedule is offset by the
+makespans before it.
 
 **The same plan in the GUI.** The scene builder's fourth sidebar tab,
 *Schedule*, plans the project at the builder's project path for a
 chosen batch and draws it (``POST /scene-builder/api/schedule_preview``).
 The workspace page's Schedule tab has the same as a *Preview* control: pick a batch size, and the runtime server runs
 ``bt.replay --json`` in a subprocess (``POST /schedule/preview``) and
-draws the result with the live Gantt's own renderer, marked PREVIEW.
-Whole batch, no phases, no motion — the picture of the terminal
-listing. During a real run the same chart carries a **now-marker**, a
+draws the result with the live Gantt's own renderer, marked PREVIEW,
+one band per phase — the picture of the terminal listing, no motion. During a real run the same chart carries a **now-marker**, a
 vertical line through the running block that advances with elapsed
 time over the planned duration.
 

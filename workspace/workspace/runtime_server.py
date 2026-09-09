@@ -790,8 +790,9 @@ class SchedulePreviewHandler(tornado.web.RequestHandler):
     Body ``{"batch": N, "kwargs": {...}}``. Runs ``bt.replay --json`` in
     a SUBPROCESS (the replay resets the action registry, which must
     never touch this process's live one) and returns the ``schedule``
-    event the Gantt already draws, flagged ``preview``. Whole-batch,
-    no phases, no motion — the same figure the terminal gate prints.
+    event the Gantt already draws, flagged ``preview``. Walks the
+    project's phases window by window exactly as the live run does
+    (workspace/bt/phase.py), no motion — the terminal gate's figure.
     """
 
     def initialize(self, workspace):

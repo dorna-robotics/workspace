@@ -1326,7 +1326,8 @@ class SchedulePreviewHandler(tornado.web.RequestHandler):
     the ``schedule`` event the Gantt draws (``bt.replay --json``). Runs
     in a SUBPROCESS like the reference solve: the replay imports the
     project's actions and resets the action registry, which must never
-    happen inside this server. Whole batch, no phases, no motion."""
+    happen inside this server. Walks the project's phases window by
+    window exactly as the live run does; no motion."""
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "content-type")

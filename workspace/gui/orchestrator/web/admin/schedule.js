@@ -271,7 +271,13 @@ export function ingestPreview(event) {
   _slices.length = 0;
   _leafState.clear();
   _leafTiming.clear();
-  _slices.push({ ...event, replan_id: 0, phase: event.phase || null });
+  // A phased replay carries one slice per phase window, each with its
+  // phase name — the same shape the live run publishes, so the chart
+  // draws the phase bands and dividers. A flat replay is one slice.
+  const slices = (Array.isArray(event.slices) && event.slices.length) ? event.slices : [event];
+  slices.forEach((sl, i) => {
+    _slices.push({ ...sl, replan_id: (sl.replan_id != null ? sl.replan_id : i), phase: sl.phase || null });
+  });
   _render();
   requestAnimationFrame(() => { if (_ganttEl) _ganttEl.scrollLeft = 0; });
 }

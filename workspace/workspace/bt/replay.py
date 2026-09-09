@@ -105,8 +105,58 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     return out
 
 
-def replay(project_dir, kwargs, show=False, event=False):
+def _walk(res, out, reg, ctx, meta, state, t_off, show, tool_now, phase=None):
+    """Replay one scheduled slice against the real pre()/eff(): every
+    precondition at its scheduled moment, effects applied to ``state``.
+    Returns (failures, lines, tool_now). Times are offset by ``t_off``."""
+    from workspace.bt.dsl import _normalise_eff, Fact, _default_branch
+    order = sorted(range(len(res)), key=lambda i: (out[i][2], i))
+    failures, lines = [], []
+    for i in order:
+        a = res[i]
+        cls = reg.get(a.name)
+        inst = cls(); inst.ctx = ctx; inst.state = frozenset(state)
+        expr = inst.pre(*a.params)
+        ok = expr if isinstance(expr, bool) else (
+            expr.as_tuple() in state if isinstance(expr, Fact)
+            else expr.evaluate(frozenset(state)))
+        t = out[i][2] + t_off
+        if not ok:
+            failures.append(f"{a.name}{a.params} @t={t:.0f}" + (f" [{phase}]" if phase else ""))
+        if show:
+            m = meta[a.name]
+            # The tool circuit, as the scheduler sees it: only an
+            # action that DECLARED a tool takes part; a change is a
+            # swap the runtime inserts before it (dsl auto-swap).
+            if m.tool_required and m.tool != tool_now:
+                lines.append(f"      {'':>6}  swap {tool_now or '-'} -> {m.tool or '-'}")
+                tool_now = m.tool
+            prm = ", ".join(str(x) for x in a.params)
+            res_ = m.resource if isinstance(m.resource, str) else ",".join(m.resource or ())
+            held = f" / {m.tool}" if (m.tool_required and m.tool) else ""
+            lines.append(f"  t={t:6.0f}  {a.name}({prm})"
+                         f"{'':<{max(1, 28 - len(a.name) - len(prm))}}"
+                         f"{'PRE FALSE  ' if not ok else ''}"
+                         f"[{res_}{held}]  {m.duration}s")
+        inst.state = frozenset(state)  # state-aware effs see the live state
+        eff = _normalise_eff(inst.eff(*a.params), a.name)
+        for f in eff[_default_branch(eff)]:
+            if isinstance(f, Fact):
+                state.add(f.as_tuple()) if f.polarity else state.discard(f.as_tuple())
+    return failures, lines, tool_now
+
+
+def replay(project_dir, kwargs, show=False, event=False, launch=None):
     """One replay. Returns (plan_len, failures, goal_ok, makespan).
+
+    With ``launch`` (the project's launch.yaml dict) naming ``phases:``,
+    the replay WALKS THE PHASES exactly as the launcher does — the same
+    ``current_phase`` / ``pick_window`` code in workspace/bt/phase.py:
+    plan and schedule one window of one phase toward that phase's
+    goal, apply the effects, advance, and finally the tail toward the
+    global goal. The per-window schedules are laid end to end, each
+    offset by the makespans before it, into ONE sequence. A project
+    that declares no phases is one flat plan, as before.
 
     ``show=True`` also returns the scheduled sequence as text lines —
     start time, action, params, tool, and every tool swap — the staged
@@ -117,14 +167,15 @@ def replay(project_dir, kwargs, show=False, event=False):
     # A package (``actions/``) registers its classes when its submodules
     # import; those stay cached under ``actions.<phase>`` and would skip
     # registration on the next import, leaving the registry empty.
-    for _m in [m for m in sys.modules if m == "actions" or m.startswith("actions.")]:
+    for _m in [m for m in sys.modules
+               if m in ("actions", "phases") or m.startswith("actions.")]:
         sys.modules.pop(_m, None)
     import workspace.bt.dsl as dsl
     dsl.ActionRegistry._stack = []
     dsl._CAPACITY_PREDICATE_NAMES.clear()
     import actions as A
     from workspace.bt.dsl import (ActionRegistry, build_precedence, derive_capacity_spans,
-                                  WorkspaceContext, _normalise_eff, Fact, _default_branch)
+                                  WorkspaceContext)
     from workspace.planner.pddl import domain_from_templates, plan as pddl_plan
     from workspace.planner.cpsat_scheduler import schedule_cpsat
 
@@ -140,56 +191,124 @@ def replay(project_dir, kwargs, show=False, event=False):
                               "checks": {}, "current_tool": None, "event_publisher": None})
         reg = ActionRegistry.current()
         meta = reg.to_meta()
-        domain = domain_from_templates(reg.to_templates(ctx))
-        gf = spec.get("goal_facts") or reg.derive_goal_facts(ctx)
-        res = pddl_plan(initial, domain, spec["goal"], goal_facts=gf)
-        preds = build_precedence(res, reg, initial_state=initial, ctx=ctx)
-        caps = derive_capacity_spans(res, reg, initial_state=initial, ctx=ctx)
-        out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
 
-        order = sorted(range(len(res)), key=lambda i: (out[i][2], i))
-        state = set(initial)
-        failures = []
-        lines = []
-        tool_now = None
-        for i in order:
-            a = res[i]
-            cls = reg.get(a.name)
-            inst = cls(); inst.ctx = ctx; inst.state = frozenset(state)
-            expr = inst.pre(*a.params)
-            ok = expr if isinstance(expr, bool) else (
-                expr.as_tuple() in state if isinstance(expr, Fact)
-                else expr.evaluate(frozenset(state)))
-            if not ok:
-                failures.append(f"{a.name}{a.params} @t={out[i][2]:.0f}")
+        # ── Phases, resolved the launcher's way ───────────────────────
+        launch = launch or {}
+        phases = []
+        slice_dim = launch.get("slice_dim") or (next(iter(objects)) if len(objects) == 1 else None)
+        all_items = list(objects.get(slice_dim, [])) if slice_dim else []
+        if launch.get("phases"):
+            from workspace.bt.launcher import _load_phases
+            from workspace.bt.phase import normalise_phases
+            spec_val = spec.get("phases") or _load_phases(launch.get("phases"), kwargs)
+            phases = normalise_phases(spec_val, all_items)
+
+        if not phases:
+            # ── Flat: the whole batch, one plan (unchanged) ───────────
+            domain = domain_from_templates(reg.to_templates(ctx))
+            gf = spec.get("goal_facts") or reg.derive_goal_facts(ctx)
+            res = pddl_plan(initial, domain, spec["goal"], goal_facts=gf)
+            preds = build_precedence(res, reg, initial_state=initial, ctx=ctx)
+            caps = derive_capacity_spans(res, reg, initial_state=initial, ctx=ctx)
+            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
+            state = set(initial)
+            failures, lines, _ = _walk(res, out, reg, ctx, meta, state, 0.0, show, None)
+            goal_ok = spec["goal"](frozenset(state))
+            mk = max(out[i][2] + meta[res[i].name].duration for i in range(len(res)))
+            extra = []
             if show:
-                m = meta[a.name]
-                # The tool circuit, as the scheduler sees it: only an
-                # action that DECLARED a tool takes part; a change is a
-                # swap the runtime inserts before it (dsl auto-swap).
-                if m.tool_required and m.tool != tool_now:
-                    lines.append(f"      {'':>6}  swap {tool_now or '-'} -> {m.tool or '-'}")
-                    tool_now = m.tool
-                prm = ", ".join(str(x) for x in a.params)
-                res_ = m.resource if isinstance(m.resource, str) else ",".join(m.resource or ())
-                held = f" / {m.tool}" if (m.tool_required and m.tool) else ""
-                lines.append(f"  t={out[i][2]:6.0f}  {a.name}({prm})"
-                             f"{'':<{max(1, 28 - len(a.name) - len(prm))}}"
-                             f"{'PRE FALSE  ' if not ok else ''}"
-                             f"[{res_}{held}]  {m.duration}s")
-            inst.state = frozenset(state)  # state-aware effs see the live state
-            eff = _normalise_eff(inst.eff(*a.params), a.name)
-            for f in eff[_default_branch(eff)]:
-                if isinstance(f, Fact):
-                    state.add(f.as_tuple()) if f.polarity else state.discard(f.as_tuple())
+                extra.append(lines)
+            if event:
+                extra.append(_schedule_event(res, out, swaps, meta, reg, mk, kwargs))
+            return (len(res), failures, goal_ok, mk, *extra)
+
+        # ── Phased: window by window, phase by phase ──────────────────
+        from workspace.bt.phase import current_phase, pick_window
+        item_done = spec.get("item_done")
+        plan_window = int(launch.get("plan_window", 4))
+        state = set(initial)
+        t_off = 0.0
+        tool_now = None
+        failures, lines = [], []
+        res_all, out_all, swaps_all, slice_events = [], [], [], []
+        rid = 0
+        while True:
+            fstate = frozenset(state)
+            cur = current_phase(fstate, phases, all_items, item_done)
+            if cur is None:
+                if spec["goal"](fstate):
+                    break
+                # Every phase reached: the tail toward the global goal (Park).
+                outstanding = [it for it in all_items
+                               if item_done is None or not item_done(fstate, it)]
+                window = outstanding or list(all_items)
+                name, goal = None, spec["goal"]
+            else:
+                name, items, reached_fn, width, facts_fn = cur
+                window = pick_window(fstate, phases, all_items, item_done, width or plan_window)
+                if not window:
+                    failures.append(f"phase {name}: no window to plan")
+                    break
+                scoped = [it for it in window if it in items] or list(items)
+                goal = (lambda st, _r=reached_fn, _s=scoped: _r(st, _s))
+            if slice_dim:
+                ctx.meta["objects"][slice_dim] = list(window)
+            ctx.meta["current_phase"] = name
+            rid += 1
+            domain = domain_from_templates(reg.to_templates(ctx))
+            # The heuristic aims at the OPEN PHASE's facts (the launcher
+            # does the same) — final facts would drag later actions in.
+            if cur is not None and cur[4] is not None:
+                gf = frozenset(cur[4](scoped))
+            else:
+                gf = spec.get("goal_facts") or reg.derive_goal_facts(ctx)
+            res = pddl_plan(fstate, domain, goal, goal_facts=gf)
+            if not res:
+                failures.append(f"phase {name or 'tail'} window {window}: NO PLAN")
+                break
+            preds = build_precedence(res, reg, initial_state=fstate, ctx=ctx)
+            caps = derive_capacity_spans(res, reg, initial_state=fstate, ctx=ctx)
+            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
+            if show:
+                lines.append(f"── {name or 'tail'} · window {list(window)} · t0={t_off:.0f} ──")
+            f_, l_, tool_now = _walk(res, out, reg, ctx, meta, state, t_off, show, tool_now, phase=name)
+            failures += f_
+            lines += l_
+            mk = max(out[i][2] + meta[res[i].name].duration for i in range(len(res)))
+            out_off = [(n, i, s_ + t_off) for n, i, s_ in out]
+            swaps_off = [(s_ + t_off, ft, tt, d) for s_, ft, tt, d in (swaps or [])]
+            if event:
+                ev = _schedule_event(res, out_off, swaps_off, meta, reg, t_off + mk, kwargs)
+                ev["replan_id"] = rid
+                ev["phase"] = name
+                ev["window"] = list(window)
+                for act in ev["actions"]:
+                    act["phase"] = name
+                slice_events.append(ev)
+            res_all += list(res)
+            out_all += out_off
+            swaps_all += swaps_off
+            t_off += mk
+            if cur is None:
+                break                          # the tail is planned once
+            if not goal(frozenset(state)):
+                failures.append(f"phase {name} window {window}: plan did not reach the phase")
+                break
+            if rid > 5000:
+                failures.append("replay: more than 5000 slices — aborting")
+                break
         goal_ok = spec["goal"](frozenset(state))
-        mk = max(out[i][2] + meta[res[i].name].duration for i in range(len(res)))
         extra = []
         if show:
             extra.append(lines)
         if event:
-            extra.append(_schedule_event(res, out, swaps, meta, reg, mk, kwargs))
-        return (len(res), failures, goal_ok, mk, *extra)
+            ev = _schedule_event(res_all, out_all, swaps_all, meta, reg, t_off, kwargs)
+            for act, sl in zip(ev["actions"], [a for e in slice_events for a in e["actions"]]):
+                act["phase"] = sl.get("phase")
+            ev["phases"] = [nm for nm, *_ in phases]
+            ev["slices"] = slice_events
+            extra.append(ev)
+        return (len(res_all), failures, goal_ok, t_off, *extra)
     finally:
         sys.path.remove(project_dir)
 
@@ -254,7 +373,8 @@ def main():
         kwargs.update(extra_kw)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(buf):
-            plan_len, fails, goal_ok, mk, ev = replay(project, kwargs, event=True)
+            plan_len, fails, goal_ok, mk, ev = replay(project, kwargs, event=True,
+                                                      launch=launch)
         ev["fails"] = list(fails)
         ev["goal_ok"] = bool(goal_ok)
         print(json.dumps(ev))
@@ -266,7 +386,7 @@ def main():
         kwargs.update(extra_kw)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            r = replay(project, kwargs, show=args.show)
+            r = replay(project, kwargs, show=args.show, launch=launch)
         plan_len, fails, goal_ok, mk = r[:4]
         status = "OK" if (not fails and goal_ok) else "*** BROKEN ***"
         bad = bad or bool(fails) or not goal_ok

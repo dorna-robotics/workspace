@@ -646,85 +646,15 @@ def run_protocol(
     # written out of dependency order still runs correctly and a phase
     # whose ``pre`` is unmet is skipped rather than selected. Validation below
     # is the guard that the declared order is achievable at all.
-    def _always_ready(_st, _items):
-        """A phase with no ``pre`` is ready as soon as its turn comes."""
-        return True
+    # The phase machinery lives in workspace/bt/phase.py so bt.replay
+    # walks phases with the SAME code as the live run. These wrappers
+    # bind this run's items / item_done / window.
+    from workspace.bt.phase import (normalise_phases as _normalise_phases_impl,
+                                    current_phase as _current_phase_impl,
+                                    pick_window as _pick_window_impl)
 
     def _normalise_phases(spec_val):
-        """Normalise to ``[(name, scope, pre, reached, plan_window)]``.
-
-        SCOPE AND GOAL ARE SEPARATE, and that separation is what makes
-        hierarchy expressible. Scope answers "which items does this
-        phase concern"; goal answers "have they reached it". Fusing them
-        into one ``(state, items) -> bool`` looks tidier and breaks the
-        moment a phase covers a SUBSET: the window picker has to ask
-        "is THIS item past the phase", and a rack-scoped predicate given
-        one tube ignores the tube and answers about the whole rack, so
-        every item is filtered or none is.
-
-        With them split, a rack/tube hierarchy needs no nesting
-        machinery at all — the project emits a FLAT list of scoped
-        phases and the launcher walks it:
-
-            "phases": [
-                {"name": f"rack{r}_{stage}",
-                 "scope": (lambda st, _r=r: tubes_in(_r)),
-                 "goal":  stage}          # or a Phase subclass
-                for r in racks for stage in ("returned", "ejected")
-            ]
-
-        Levels are just more entries. A third level is more entries
-        again. Nothing in the launcher counts levels.
-
-        THERE IS NO PER-PHASE OBJECT DIM. A phase always windows the
-        project's one ``slice_dim``; a rack-scoped phase still windows
-        TUBES, just a subset of them, which is what ``scope`` is for. A
-        second dim would only be needed by a project whose actions span
-        two object kinds — LoadRack(rack) alongside Dispense(tube) — and
-        none does. A ``{dim: [...]}`` form used to be accepted here and
-        silently dropped every phase keyed to any other dim, which
-        promised multi-dim support that did not exist.
-        """
-        if not spec_val:
-            return []
-        if isinstance(spec_val, dict):
-            spec_val = [spec_val]           # a single dict entry
-        from workspace.bt.phase import Phase as _Phase
-        out = []
-        for entry in spec_val:
-            if isinstance(entry, _Phase):
-                # An authored Phase: scope / pre / eff, same shape as an
-                # Action one level up. ``pre`` folds into the goal —
-                # a phase that may not open yet is simply not reached.
-                out.append((
-                    entry.name,
-                    (lambda st, _e=entry: _e.scope(st, all_items)),
-                    (lambda st, items, _e=entry: bool(_e.pre(st, items))),
-                    (lambda st, items, _e=entry: _e.reached(st, items)),
-                    getattr(entry, "plan_window", None),
-                ))
-                continue
-            if isinstance(entry, dict):
-                name = str(entry.get("name") or entry.get("goal") or "phase")
-                scope = entry.get("scope")
-                goal = entry.get("goal")
-            elif callable(entry):
-                name, scope, goal = getattr(entry, "__name__", "phase"), None, entry
-            else:
-                name, scope, goal = str(entry), None, str(entry)
-            # scope: None means "every item still live"
-            scope_fn = scope if callable(scope) else (lambda st, _s=scope: _s)
-            if scope is None:
-                scope_fn = None
-            # goal: a name is sugar for "that fact holds for every item
-            # in scope"; a callable gets (state, items).
-            if callable(goal):
-                goal_fn = goal
-            else:
-                goal_fn = (lambda st, items, _n=str(goal):
-                           all((_n, it) in st for it in items))
-            out.append((name, scope_fn, _always_ready, goal_fn, None))
-        return out
+        return _normalise_phases_impl(spec_val, all_items)
 
     # The monotonic set is invariant for a given action registry, but it
     # costs a probe of every action against every binding (~1.2 ms at 28
@@ -747,7 +677,7 @@ def run_protocol(
         # the classic Sussman trap (achieving goal B undoes goal A);
         # catching it at launch beats discovering it mid-batch.
         mono = _mono()
-        for nm, _scope, _pre, _fn, _w in phases:
+        for nm, _scope, _pre, _fn, _w, _gf in phases:
             if nm not in mono and nm != "phase":
                 log.warning(
                     "Launcher: phase %r is not monotonic — some action "
@@ -755,68 +685,20 @@ def run_protocol(
                     "must be facts that only ever get added.", nm,
                 )
         log.info("Launcher: %d phase(s): %s",
-                 len(phases), " -> ".join(nm for nm, _s, _p, _g, _w in phases))
+                 len(phases), " -> ".join(nm for nm, _s, _p, _g, _w, _f in phases))
 
     def _current_phase(state):
-        """First unmet phase as ``(name, items_in_scope, goal_fn)``.
+        """First unmet phase as ``(name, items, reached_fn, window, goal_facts_fn)``."""
+        return _current_phase_impl(state, phases, all_items, item_done, log=log)
 
-        Scope is resolved here, once, so both the planning goal and the
-        window picker see the same item set.
-        """
-        live = [it for it in all_items if not item_done(state, it)] \
-            if item_done is not None else list(all_items)
-        blocked = []
-        for nm, scope_fn, pre_fn, reached_fn, _win in phases:
-            items = list(scope_fn(state)) if scope_fn is not None else (live or all_items)
-            if not items:
-                continue                     # scope empty — phase vacuous
-            if reached_fn(state, items):
-                continue                     # already crossed
-            if not pre_fn(state, items):
-                blocked.append(nm)
-                continue                     # not ready — try the next
-            return nm, items, reached_fn, _win
-        if blocked:
-            # Every outstanding phase is waiting on something no other
-            # phase will provide. Say so loudly: silently returning None
-            # here would fall through to the global goal and plan the
-            # whole protocol, which is the failure this exists to avoid.
-            log.warning("Launcher: phases %s are all blocked by their pre() "
-                        "— check their order and conditions.", blocked)
-        return None
-
-    # Phases make windowing worthwhile even when the window covers the
-    # whole batch, so the "batch bigger than the window" test no longer
-    # decides it on its own.
     slicing_active = (
         item_done is not None
         and (len(all_items) > int(plan_window) or bool(phases))
     )
 
     def _pick_window(state) -> list:
-        """Next ``plan_window`` items still outstanding, in order.
-
-        "Outstanding" means not finished; while an phase is open it
-        also means not yet past THAT phase, so a tube that already
-        cleared the current phase drops out of the window and the
-        planner stops reasoning about it.
-        """
-        cur = _current_phase(state) if phases else None
-        scope = set(cur[1]) if cur is not None else None
-        width = int(cur[3]) if (cur is not None and cur[3]) else int(plan_window)
-        out: list = []
-        for it in all_items:
-            if item_done(state, it):
-                continue
-            if scope is not None:
-                if it not in scope:
-                    continue        # this phase does not concern it
-                if cur[2](state, [it]):
-                    continue        # already past this phase
-            out.append(it)
-            if len(out) >= width:
-                break
-        return out
+        """Next ``plan_window`` items still outstanding, in order (phase.py)."""
+        return _pick_window_impl(state, phases, all_items, item_done, plan_window, log=log)
 
     def _planning_goal(state) -> bool:
         """Goal for the planner.
@@ -845,7 +727,7 @@ def run_protocol(
                 # NOT ``goal_fn`` — binding that name here would make
                 # it local to this whole function and turn every other
                 # ``goal_fn(state)`` read below into an UnboundLocalError.
-                _nm, items, phase_reached, _w = cur
+                _nm, items, phase_reached, _w, _gf = cur
                 window = ctx.meta["objects"].get(slice_dim, [])
                 # Target the phase over the items actually in the
                 # window, so a window smaller than the scope still
@@ -923,6 +805,27 @@ def run_protocol(
     # the current observed state through so state-aware ``eff()``
     # bodies see the world they would at runtime when computing the
     # precedence graph.
+    # WHILE A PHASE IS OPEN, THE HEURISTIC AIMS AT THAT PHASE. The
+    # project's goal_facts are the protocol's final facts; steering
+    # GBFS at those from inside an early phase makes it wander past the
+    # boundary and pull later actions into the slice (measured on bna:
+    # the split window planned an internal-standard dose and an
+    # inspection). The Replanner accepts a zero-arg callable, evaluated
+    # per replan, so the facts follow the window the observer just set.
+    if phases:
+        _base_goal_facts = goal_facts
+
+        def _slice_goal_facts():
+            st = ctx.state.get("facts", frozenset())
+            st = st if isinstance(st, frozenset) else frozenset(st)
+            cur = _current_phase(st)
+            if cur is not None and cur[4] is not None:
+                window = ctx.meta["objects"].get(slice_dim, []) if slice_dim else []
+                scoped = [it for it in (window or all_items) if it in cur[1]]
+                return frozenset(cur[4](scoped or cur[1]))
+            return _base_goal_facts() if callable(_base_goal_facts) else _base_goal_facts
+        goal_facts = _slice_goal_facts
+
     def _precedence(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)

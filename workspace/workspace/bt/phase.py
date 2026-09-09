@@ -145,3 +145,129 @@ def collect(module) -> List[Phase]:
             found.append(obj)
     found.sort(key=lambda c: c._order)
     return [c() for c in found]
+
+
+# ═══ The launcher's phase machinery, as plain functions ═══════════════
+# ``run_protocol`` and ``bt.replay`` walk phases with the SAME code — a
+# replay that re-implemented this would drift from the live run, which
+# is the one thing a preview must never do.
+
+def _always_ready(_st, _items):
+    """A phase with no ``pre`` is ready as soon as its turn comes."""
+    return True
+
+
+def normalise_phases(spec_val, all_items):
+    """Normalise a phases spec to
+    ``[(name, scope, pre, reached, plan_window, goal_facts)]``.
+
+    ``goal_facts(items)`` is the phase's own facts for those items — what
+    the planner's GBFS heuristic aims at while the phase is open. Aiming
+    at the protocol's FINAL facts instead makes the search wander past
+    the phase boundary and drag later actions into the slice (measured
+    on bna: the split window planned an internal-standard dose and an
+    inspection). ``None`` for a bare callable goal, which has no facts.
+
+    SCOPE AND GOAL ARE SEPARATE, and that separation is what makes
+    hierarchy expressible. Scope answers "which items does this phase
+    concern"; goal answers "have they reached it". Fused into one
+    ``(state, items) -> bool`` it breaks the moment a phase covers a
+    SUBSET: the window picker has to ask "is THIS item past the phase".
+
+    Accepted entries: an authored :class:`Phase` (scope / pre / eff), a
+    dict ``{"name", "scope", "goal"}``, a callable ``(state, items) ->
+    bool``, or a bare predicate name meaning "that fact holds for every
+    item in scope". A phase always windows the project's one
+    ``slice_dim``; ``scope`` is how a phase concerns a subset of it.
+    """
+    if not spec_val:
+        return []
+    if isinstance(spec_val, dict):
+        spec_val = [spec_val]           # a single dict entry
+    out = []
+    for entry in spec_val:
+        if isinstance(entry, Phase):
+            out.append((
+                entry.name,
+                (lambda st, _e=entry: _e.scope(st, all_items)),
+                (lambda st, items, _e=entry: bool(_e.pre(st, items))),
+                (lambda st, items, _e=entry: _e.reached(st, items)),
+                getattr(entry, "plan_window", None),
+                (lambda items, _e=entry: _e.eff_tuples(items)),
+            ))
+            continue
+        if isinstance(entry, dict):
+            name = str(entry.get("name") or entry.get("goal") or "phase")
+            scope = entry.get("scope")
+            goal = entry.get("goal")
+        elif callable(entry):
+            name, scope, goal = getattr(entry, "__name__", "phase"), None, entry
+        else:
+            name, scope, goal = str(entry), None, str(entry)
+        scope_fn = scope if callable(scope) else (lambda st, _s=scope: _s)
+        if scope is None:
+            scope_fn = None                 # "every item still live"
+        if callable(goal):
+            goal_fn, facts_fn = goal, None
+        else:
+            goal_fn = (lambda st, items, _n=str(goal):
+                       all((_n, it) in st for it in items))
+            facts_fn = (lambda items, _n=str(goal): [(_n, it) for it in items])
+        out.append((name, scope_fn, _always_ready, goal_fn, None, facts_fn))
+    return out
+
+
+def current_phase(state, phases, all_items, item_done, log=None):
+    """First unmet phase as ``(name, items_in_scope, reached_fn, window,
+    goal_facts_fn)``, or None when every phase is reached (or blocked —
+    logged).
+
+    Scope is resolved here, once, so the planning goal and the window
+    picker see the same item set. Order is derived: the first phase
+    that is ready (``pre``) and not yet reached runs, whatever its
+    position in the list.
+    """
+    live = [it for it in all_items if not item_done(state, it)] \
+        if item_done is not None else list(all_items)
+    blocked = []
+    for nm, scope_fn, pre_fn, reached_fn, _win, facts_fn in phases:
+        items = list(scope_fn(state)) if scope_fn is not None else (live or all_items)
+        if not items:
+            continue                     # scope empty — phase vacuous
+        if reached_fn(state, items):
+            continue                     # already crossed
+        if not pre_fn(state, items):
+            blocked.append(nm)
+            continue                     # not ready — try the next
+        return nm, items, reached_fn, _win, facts_fn
+    if blocked and log is not None:
+        log.warning("Launcher: phases %s are all blocked by their pre() "
+                    "— check their order and conditions.", blocked)
+    return None
+
+
+def pick_window(state, phases, all_items, item_done, plan_window, log=None):
+    """Next ``plan_window`` items still outstanding, in order.
+
+    "Outstanding" means not finished; while a phase is open it also
+    means not yet past THAT phase, so an item that already cleared the
+    current phase drops out of the window and the planner stops
+    reasoning about it. A phase's own ``plan_window`` overrides the
+    project's while it is open.
+    """
+    cur = current_phase(state, phases, all_items, item_done, log=log) if phases else None
+    scope = set(cur[1]) if cur is not None else None
+    width = int(cur[3]) if (cur is not None and cur[3]) else int(plan_window)
+    out = []
+    for it in all_items:
+        if item_done is not None and item_done(state, it):
+            continue
+        if scope is not None:
+            if it not in scope:
+                continue        # this phase does not concern it
+            if cur[2](state, [it]):
+                continue        # already past this phase
+        out.append(it)
+        if len(out) >= width:
+            break
+    return out
