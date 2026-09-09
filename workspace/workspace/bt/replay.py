@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import os
 import sys
 
@@ -104,12 +105,14 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     return out
 
 
-def replay(project_dir, kwargs, show=False):
+def replay(project_dir, kwargs, show=False, event=False):
     """One replay. Returns (plan_len, failures, goal_ok, makespan).
 
     ``show=True`` also returns the scheduled sequence as text lines —
     start time, action, params, tool, and every tool swap — the staged
-    order an operator can read without a bench."""
+    order an operator can read without a bench. ``event=True`` returns
+    the schedule as the ``schedule`` event the launcher publishes to the
+    GUI, so the Schedule tab can draw a plan that never ran."""
     sys.path.insert(0, project_dir)
     # A package (``actions/``) registers its classes when its submodules
     # import; those stay cached under ``actions.<phase>`` and would skip
@@ -142,7 +145,7 @@ def replay(project_dir, kwargs, show=False):
         res = pddl_plan(initial, domain, spec["goal"], goal_facts=gf)
         preds = build_precedence(res, reg, initial_state=initial, ctx=ctx)
         caps = derive_capacity_spans(res, reg, initial_state=initial, ctx=ctx)
-        out, _ = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
+        out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
 
         order = sorted(range(len(res)), key=lambda i: (out[i][2], i))
         state = set(initial)
@@ -181,11 +184,49 @@ def replay(project_dir, kwargs, show=False):
                     state.add(f.as_tuple()) if f.polarity else state.discard(f.as_tuple())
         goal_ok = spec["goal"](frozenset(state))
         mk = max(out[i][2] + meta[res[i].name].duration for i in range(len(res)))
+        extra = []
         if show:
-            return len(res), failures, goal_ok, mk, lines
-        return len(res), failures, goal_ok, mk
+            extra.append(lines)
+        if event:
+            extra.append(_schedule_event(res, out, swaps, meta, reg, mk, kwargs))
+        return (len(res), failures, goal_ok, mk, *extra)
     finally:
         sys.path.remove(project_dir)
+
+
+def _schedule_event(res, out, swaps, meta, reg, makespan, kwargs):
+    """The launcher's ``schedule`` event shape (launcher.run_protocol),
+    from a replay: one slice, ``replan_id`` 0, ``preview`` true."""
+    from workspace.planner.plan_scheduler import _resources as _r
+    acts = []
+    for i, a in enumerate(res):
+        n = a.name
+        cls = reg.get(n)
+        item = a.params[0] if a.params else None
+        m = meta.get(n)
+        acts.append({
+            "leaf_name": f"{n}(t{item})",
+            "name": n,
+            "class_name": cls.__name__ if cls is not None else n,
+            "item": item,
+            "parametrized": bool(cls.params) if cls is not None else True,
+            "start_t": float(out[i][2]),
+            "duration": float(m.duration) if m else 1.0,
+            "resources": list(_r(m.resource)) if m else [],
+            "tool": m.tool if m else None,
+        })
+    return {
+        "type": "schedule",
+        "replan_id": 0,
+        "preview": True,
+        "batch": kwargs.get("batch_size"),
+        "tool_resource": "robot",
+        "phase": None,
+        "actions": acts,
+        "swaps": [{"leaf_name": f"swap({ft or '∅'}→{tt or '∅'})", "from": ft, "to": tt,
+                   "start_t": float(st), "duration": float(d)} for st, ft, tt, d in (swaps or [])],
+        "makespan": float(makespan),
+    }
 
 
 def main():
@@ -195,15 +236,34 @@ def main():
     ap.add_argument("--kw", action="append", default=[], help="kwarg override name=value (repeatable)")
     ap.add_argument("--show", action="store_true",
                     help="print the scheduled sequence: start time, action, tool, swaps")
+    ap.add_argument("--json", action="store_true",
+                    help="print ONLY the schedule as JSON (the GUI's schedule event) — one batch")
+    ap.add_argument("--kwargs-json", default=None,
+                    help="a JSON object of kwargs applied over the defaults (before --kw)")
     args = ap.parse_args()
 
     project = os.path.abspath(args.project)
     from workspace.recipes.solve import load_launch
     launch = load_launch(project)
 
+    extra_kw = json.loads(args.kwargs_json) if args.kwargs_json else {}
+
+    if args.json:
+        n = args.batch[0]
+        kwargs = resolve_kwargs(launch, batch=n, overrides=args.kw, project_dir=project)
+        kwargs.update(extra_kw)
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(buf):
+            plan_len, fails, goal_ok, mk, ev = replay(project, kwargs, event=True)
+        ev["fails"] = list(fails)
+        ev["goal_ok"] = bool(goal_ok)
+        print(json.dumps(ev))
+        sys.exit(1 if (fails or not goal_ok) else 0)
+
     bad = False
     for n in args.batch:
         kwargs = resolve_kwargs(launch, batch=n, overrides=args.kw, project_dir=project)
+        kwargs.update(extra_kw)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
             r = replay(project, kwargs, show=args.show)

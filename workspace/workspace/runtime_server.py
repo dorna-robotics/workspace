@@ -2,6 +2,8 @@
 import os
 import time
 import json
+import sys
+import asyncio
 from pathlib import Path
 from threading import Thread
 from typing import Callable, Any, List, Optional
@@ -780,6 +782,61 @@ _schedule_ws_clients: set = set()
 # a ``schedule`` event with ``replan_id == 1``).
 _schedule_history: List[dict] = []         # every schedule event so far
 _schedule_runtime_events: List[dict] = []  # every action/swap start/end so far
+
+
+class SchedulePreviewHandler(tornado.web.RequestHandler):
+    """POST /schedule/preview — the plan for a batch that never ran.
+
+    Body ``{"batch": N, "kwargs": {...}}``. Runs ``bt.replay --json`` in
+    a SUBPROCESS (the replay resets the action registry, which must
+    never touch this process's live one) and returns the ``schedule``
+    event the Gantt already draws, flagged ``preview``. Whole-batch,
+    no phases, no motion — the same figure the terminal gate prints.
+    """
+
+    def initialize(self, workspace):
+        self.workspace = workspace
+
+    async def post(self):
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception:
+            data = {}
+        batch = max(1, int(data.get("batch") or 1))
+        kwargs = data.get("kwargs") or {}
+        proj = _project_dir(self.workspace)
+        if proj is None:
+            self.set_status(400)
+            self.write({"ok": False, "msg": "no project directory declared"})
+            return
+        import workspace as _pkg
+        pkg_root = str(Path(_pkg.__file__).resolve().parent.parent)
+        cmd = [sys.executable, "-m", "workspace.bt.replay", str(proj), "--batch", str(batch), "--json"]
+        if kwargs:
+            cmd += ["--kwargs-json", json.dumps(kwargs)]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=pkg_root,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=900)
+        except asyncio.TimeoutError:
+            self.set_status(504)
+            self.write({"ok": False, "msg": "replay timed out (15 min)"})
+            return
+        except Exception as ex:
+            self.set_status(500)
+            self.write({"ok": False, "msg": f"could not run the replay: {ex}"})
+            return
+        text = out.decode("utf-8", "replace").strip()
+        line = text.splitlines()[-1] if text else ""
+        try:
+            event = json.loads(line)
+        except Exception:
+            self.set_status(500)
+            self.write({"ok": False, "msg": "replay produced no schedule",
+                        "log": (err.decode("utf-8", "replace") + "\n" + text)[-4000:]})
+            return
+        self.write({"ok": True, "event": event})
 
 
 class ScheduleWebSocket(tornado.websocket.WebSocketHandler):
@@ -1710,6 +1767,7 @@ class RuntimeServer:
             )),
             (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
             (r"/records(\.csv)?", RecordsHandler, dict(rt=self.rt)),
+            (r"/schedule/preview", SchedulePreviewHandler, dict(workspace=self.workspace)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
             (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/op", OpWebSocket, dict(rt=self.rt)),

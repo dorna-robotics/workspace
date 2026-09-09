@@ -1115,6 +1115,15 @@ A failed precondition is marked ``PRE FALSE`` on its line. The
 replay plans the whole batch in one shot — it does not walk the phase
 list the launcher uses at run time (bt-framework-guide §13).
 
+**The same plan in the GUI.** The workspace page's Schedule tab has a
+*Preview* control: pick a batch size, and the runtime server runs
+``bt.replay --json`` in a subprocess (``POST /schedule/preview``) and
+draws the result with the live Gantt's own renderer, marked PREVIEW.
+Whole batch, no phases, no motion — the picture of the terminal
+listing. During a real run the same chart carries a **now-marker**, a
+vertical line through the running block that advances with elapsed
+time over the planned duration.
+
 ### 10.3 `workspace.bt.dryrun` — optional machinery debug, NOT a gate
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
