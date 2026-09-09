@@ -80,8 +80,27 @@ projects/<name>/
 └── README.md                # 30 lines max — what + where-to-edit table
 ```
 
-**One substantive file** for the protocol (`actions.py`). Everything
-else is either:
+**One substantive file** for the protocol (`actions.py`) — until the
+protocol has phases. A phased protocol (§13) is a PACKAGE, one module
+per phase, and `launch.yaml` names the folder:
+
+```
+projects/<name>/
+├── launch.yaml              # actions: actions/     phases: phases.py
+├── doc/phases.md            # the BOUNDARY TABLE — written before any phase's code
+├── actions/
+│   ├── __init__.py          # imports the phase modules; Start / Park / OperatorPark / setup
+│   ├── predicates.py        # every fact, grouped by phase, one line of meaning each
+│   ├── base.py              # abstract action bodies (register = False) + shared helpers
+│   ├── phase_1.py           # the concrete actions of phase 1, in execution order
+│   └── phase_2.py           # … one module per phase
+└── phases.py                # one Phase class per phase, same order as the modules
+```
+
+Importing the package imports every phase module, and importing a
+module registers its actions — nothing lists actions by hand.
+`examples/phased/` is the gold copy of this layout; §13 "The package
+layout" says how the pieces relate. Everything else is either:
 
 * **Boilerplate** copied verbatim across projects (`main.py`).
 * **Configuration** edited only when scene / kwargs change
@@ -1555,6 +1574,39 @@ That is the classic Sussman trap. The launcher checks each name against
 A bounded loop (dose, measure, dose again) is expressed by **unrolling**
 it into separate phases — `shaken_pass1`, `shaken_pass2` — not by
 re-opening one. An unbounded loop cannot be a phase boundary.
+
+#### The package layout — how a phased project is built
+
+A phase is a contract before it is code. The order that keeps a
+many-action protocol readable, and that every phased project follows
+(`examples/phased/` is the copy to start from):
+
+1. **Write the boundary table first** — `doc/phases.md`, one row per
+   phase: the monotonic per-item fact, where every item physically is
+   at exit (slot, cap state), gripper empty, the tool mounted, and the
+   condition for opening. The row is the contract the next phase's
+   actions start from, and it is why a phase can be built and
+   bench-checked alone. Change the row before changing the code.
+2. **One module per phase** — `actions/phase_N.py` holds that phase's
+   concrete actions in execution order; reading the file is reading
+   the phase. `actions/predicates.py` holds every fact with its
+   meaning; `actions/base.py` holds abstract bodies (`register =
+   False`) and shared helpers; `actions/__init__.py` imports the phase
+   modules and keeps Start, Park, OperatorPark and `setup`.
+3. **Per-pass facts are pass-indexed** (`home_1`, `home_2`), never a
+   `pass` parameter: an action takes one param, and the phase fact must
+   be one no action removes — a shared `home` would be cleared by the
+   next pass's pick and the phase would re-open.
+4. **Shared motion is an abstract base plus thin subclasses** carrying
+   `PASS` and `register = True` (a `register = False` base passes its
+   opt-out down). Create the base on the SECOND user, not before.
+5. **Gate each phase alone** — `bt.replay --batch 1 4` with zero
+   fails, then the bench at a small batch — before the next phase's
+   row is written. The launcher already runs the list in order; there
+   is nothing to "connect" at the end.
+6. **The audit row is written where its value is produced** — Start
+   seeds the rows, the reading action writes the field, Park derives
+   `status` from the facts (`rt.record`, project-guide §3).
 
 ### Slicing — bounding WIDTH
 

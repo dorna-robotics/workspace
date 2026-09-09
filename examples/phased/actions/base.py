@@ -1,0 +1,177 @@
+"""Shared action bodies — the motion, written once.
+
+Every station visit here is an ABSTRACT base (``register = False``)
+parameterised by ``PASS``. The phase modules subclass it in two lines
+(``PASS`` and ``register = True`` — the opt-out inherits, so each
+concrete action opts back in), so pass 2 is the same code as pass 1
+under pass-indexed facts. A base is only ever created on its SECOND
+use: one concrete action in one phase stays a plain class in that
+phase's module.
+
+Helpers that several actions share (the rack slot lookup, the progress
+figure) live here too, as plain functions.
+"""
+
+from workspace.bt import Action
+
+from actions.predicates import (PASSES, hand_empty, home, off_scale, on_scale,
+                                pan_empty, picked, started, weighed)
+
+RACK = "rack_autosampler_2ml_1"
+
+# Per-tube steps per pass — what the progress bar spans.
+_STEPS_PER_PASS = 5
+
+
+def slot_of(action, tube):
+    """Rack slot anchor (A1..F8) for tube index ``tube`` — read from the
+    rack component so the order matches the scene, not a hardcoded list."""
+    return action.ctx.workspace.components[RACK].slot["body"][tube]
+
+
+def item_id(tube):
+    """The identity a row is recorded under (project-guide §3 rt.record).
+    A real project uses the sample's own id — an L-number from the
+    manifest — never its position."""
+    return f"tube {tube + 1}"
+
+
+def progress_pct(action):
+    """Monotonic % over every per-tube step of every pass. Reads the live
+    fact set; this action's eff has not applied yet, so count it +1."""
+    tubes = action._ctx_all_objects().get("tube", [])
+    total = (len(tubes) or 1) * _STEPS_PER_PASS * len(PASSES)
+    facts = (getattr(action.ctx, "state", None) or {}).get("facts") or set()
+    done = sum(
+        ((pred[p].name, t) in facts)
+        for t in tubes for p in PASSES
+        for pred in (picked, on_scale, weighed, off_scale, home)
+    )
+    return int((done + 1) / total * 100)
+
+
+class PassAction(Action):
+    """Base of every per-tube action: one param, pass-indexed facts.
+
+    ``gate`` is what lets the pass start on this tube — pass 1 needs the
+    run started, pass N needs the tube home from pass N-1. That single
+    hook is the whole difference between the passes.
+    """
+    register = False
+    PASS: int = 0
+    params = ["tube"]
+    resource = "robot"
+    tool = "gripper"
+
+    def gate(self, tube):
+        return started() if self.PASS == 1 else home[self.PASS - 1](tube)
+
+    def tag(self, tube):
+        return f"tube {tube + 1} pass {self.PASS}: "
+
+
+class PickBase(PassAction):
+    """Lift the tube out of its rack slot."""
+    register = False
+    duration = 10
+
+    def pre(self, tube):
+        # hand_empty gates one-at-a-time: no pick while holding a tube.
+        return self.gate(tube) & hand_empty() & ~picked[self.PASS](tube)
+
+    def eff(self, tube):
+        return {"picked": (+picked[self.PASS](tube), -hand_empty())}
+
+    def execute(self, tube):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        slot = slot_of(self, tube)
+        rt.step(f"{self.tag(tube)}pick from rack[{slot}]")
+        rt.step(progress_pct(self), level="progress")
+        rcp["tube_rack"].pick(slot, soft_approach=True)
+        return "picked"
+
+
+class PlaceOnScaleBase(PassAction):
+    """Release the held tube on the balance pan."""
+    register = False
+    duration = 10
+
+    def pre(self, tube):
+        return picked[self.PASS](tube) & pan_empty() & ~on_scale[self.PASS](tube)
+
+    def eff(self, tube):
+        return {"on_scale": (+on_scale[self.PASS](tube), +hand_empty(), -pan_empty())}
+
+    def execute(self, tube):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        rt.step(f"{self.tag(tube)}place on scale")
+        rt.step(progress_pct(self), level="progress")
+        rcp["scale"].place("place", gravity_offset=4, soft_approach=True)
+        return "on_scale"
+
+
+class WeighBase(PassAction):
+    """Read the settled mass — a pure device read, its own action so a
+    failed reading is retried without redoing an arm move (examples/scale
+    is the reference for that pattern). Writes the tube's audit row
+    where the value is produced."""
+    register = False
+    duration = 3
+    resource = "scale"    # the pan is busy, the arm is free
+    tool = None
+
+    def pre(self, tube):
+        return on_scale[self.PASS](tube) & ~weighed[self.PASS](tube)
+
+    def eff(self, tube):
+        return {"weighed": (+weighed[self.PASS](tube),)}
+
+    def execute(self, tube):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        rt.step(progress_pct(self), level="progress")
+        grams = rcp["scale"].weight(sim_return=10.0 + tube + 0.1 * self.PASS)
+        if grams is None:
+            rt.step(f"{self.tag(tube)}weight unavailable — will retry after recover")
+            return False
+        rt.step(f"{self.tag(tube)}weight = {grams} g")
+        rt.record(item_id(tube), **{f"weight_{self.PASS}_g": grams})
+        return "weighed"
+
+
+class PickFromScaleBase(PassAction):
+    """Re-grip the weighed tube and lift it off the pan."""
+    register = False
+    duration = 10
+
+    def pre(self, tube):
+        return weighed[self.PASS](tube) & hand_empty() & ~off_scale[self.PASS](tube)
+
+    def eff(self, tube):
+        return {"off_scale": (+off_scale[self.PASS](tube), -hand_empty(), +pan_empty())}
+
+    def execute(self, tube):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        rt.step(f"{self.tag(tube)}pick off scale")
+        rt.step(progress_pct(self), level="progress")
+        rcp["scale"].pick("place", soft_approach=True)
+        return "off_scale"
+
+
+class ReturnBase(PassAction):
+    """Back into its own slot — the phase fact for this pass."""
+    register = False
+    duration = 10
+
+    def pre(self, tube):
+        return off_scale[self.PASS](tube) & ~home[self.PASS](tube)
+
+    def eff(self, tube):
+        return {"home": (+home[self.PASS](tube), +hand_empty())}
+
+    def execute(self, tube):
+        rt, rcp = self.ctx.runtime, self.ctx.recipes
+        slot = slot_of(self, tube)
+        rt.step(f"{self.tag(tube)}place back to rack[{slot}]")
+        rt.step(progress_pct(self), level="progress")
+        rcp["tube_rack"].place(slot, gravity_offset=4, soft_approach=True)
+        return "home"

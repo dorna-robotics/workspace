@@ -1,0 +1,27 @@
+{%- set sf = 20 -%}
+
+# Robot (generic): the base Recipe with NO component. It owns no station
+# and does no boot-time IK — it's just the stable handle for robot-level
+# calls Start/Park make (park(joint=...), motor, axis homing via
+# set_axis_with_stop / set_axis_with_encoder). Same across every project.
+robot:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {speed_factor: {{ sf }}}
+
+# 4-finger gripper, parked in the tool rack.
+gripper:
+  class: workspace.recipes.tool_rack.ToolRack
+  kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
+
+# Tube rack — Rack over the SBS adapter; resolves to rack_autosampler_2ml_1.
+tube_rack:
+  class: workspace.recipes.rack.Rack
+  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# Scale — pick/place onto the pan ("place" anchor) + weight().
+# base_distance 350 with rail_step 20 reaches the pan at plate_6/C13.
+# (rail_step 5 was too coarse to land a rail solution at 350 — IK
+# returned no joints; verified with core.IK.)
+scale:
+  class: workspace.recipes.scale.Scale
+  kwargs: {component: scale_spx222_1, base_distance: 350, rail_step: 20, rail_span: 5, speed_factor: {{ sf }}}

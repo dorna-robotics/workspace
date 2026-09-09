@@ -69,7 +69,11 @@ def main():
     ws.rt.start()
 
     sys.path.insert(0, project)
-    sys.modules.pop("actions", None)
+    # A package (``actions/``) registers its classes when its submodules
+    # import; those stay cached under ``actions.<phase>`` and would skip
+    # registration on the next import, leaving the registry empty.
+    for _m in [m for m in sys.modules if m == "actions" or m.startswith("actions.")]:
+        sys.modules.pop(_m, None)
     import actions as A
 
     status = run_protocol(workspace=ws, core=core, recipes=rcp, actions_module=A,

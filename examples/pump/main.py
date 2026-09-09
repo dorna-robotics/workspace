@@ -6,7 +6,8 @@ to diverge. Project-specific behaviour lives in:
 
   * ``launch.yaml``   — project name, port, scene, recipes, kwargs
   * ``recipes.yaml``  — recipe wiring
-  * ``actions.py``    — BT actions
+  * ``actions.py``    — BT actions (or ``actions/``, a package — one
+                        module per phase; bt-framework-guide §13)
   * ``checks.py``     — vision / sensor checks
   * ``scene/*.j2``    — components + populated items
 
@@ -58,9 +59,10 @@ _register_project_components()
 
 
 def _import_module(rel_path: str):
-    """``'actions.py'`` → ``'actions'``; ``'protocol/actions.py'`` → ``'protocol.actions'``."""
-    name = rel_path.removesuffix(".py").replace("/", ".")
-    return importlib.import_module(name)
+    """``'actions.py'`` → ``'actions'``; ``'protocol/actions.py'`` →
+    ``'protocol.actions'``; ``'actions/'`` (a package) → ``'actions'``."""
+    name = rel_path.rstrip("/").removesuffix("/__init__.py").removesuffix(".py")
+    return importlib.import_module(name.replace("/", "."))
 
 
 actions = _import_module(LAUNCH.get("actions", "actions.py"))

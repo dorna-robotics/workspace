@@ -165,6 +165,19 @@ setup:    hmi/setup.js       # screen to SET the kwargs, before the run
 pendant:  hmi/pendant.html   # screen shown DURING the run
 ```
 
+**A phased protocol is a package.** When the protocol has phases
+(bt-framework-guide §13) `actions:` names a folder and the boundary
+table comes first — copy `examples/phased/` and follow its README:
+
+```yaml
+actions:  actions/           # __init__.py + predicates.py + base.py + phase_N.py
+phases:   phases.py          # one Phase class per phase
+```
+
+with `doc/phases.md` written before any phase's actions. Step 4 above
+then runs per phase: write the row, write `phase_N.py`, replay, bench,
+next row.
+
 Operator-facing files live in **`hmi/`**. An inline `default:` dict works
 for legacy/small projects. Field types are project-guide §3.
 

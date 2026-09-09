@@ -107,7 +107,11 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
 def replay(project_dir, kwargs):
     """One replay. Returns (plan_len, failures, goal_ok, makespan)."""
     sys.path.insert(0, project_dir)
-    sys.modules.pop("actions", None)
+    # A package (``actions/``) registers its classes when its submodules
+    # import; those stay cached under ``actions.<phase>`` and would skip
+    # registration on the next import, leaving the registry empty.
+    for _m in [m for m in sys.modules if m == "actions" or m.startswith("actions.")]:
+        sys.modules.pop(_m, None)
     import workspace.bt.dsl as dsl
     dsl.ActionRegistry._stack = []
     dsl._CAPACITY_PREDICATE_NAMES.clear()
