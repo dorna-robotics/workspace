@@ -229,3 +229,6 @@ examples/*/core/
 core.json
 core_ik.json
 core_path.json
+
+# rt.record run folders (audit data, one per run — see project-guide §3)
+runs/

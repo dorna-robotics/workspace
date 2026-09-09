@@ -1038,6 +1038,36 @@
   color: var(--muted); font-weight: 700; font-size: var(--text-xs);
   text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;
 }
+/* Records widget — the rt.record table. Text only, tabular numbers,
+   scrolls sideways inside its own card so the pendant never does. */
+.hmi-records {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+.hmi-records-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  color: var(--muted); font-weight: 700; font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: var(--space-2);
+}
+.hmi-records-head a { color: var(--accent); text-decoration: none; }
+.hmi-records-scroll { overflow-x: auto; }
+.hmi-records table {
+  border-collapse: collapse; width: 100%;
+  font-size: var(--text-sm); font-variant-numeric: tabular-nums;
+}
+.hmi-records th, .hmi-records td {
+  text-align: left; padding: 4px 8px; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.hmi-records th {
+  color: var(--muted); font-weight: 700; font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.hmi-records td:first-child { font-weight: 700; }
+.hmi-records-empty { color: var(--muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
 /* Rack widget — one dot grammar: filled = occupied, hollow = empty,
    colour = process state. Muted for done, saturated only for active
    and attention (§9), and every state also differs in FORM so colour

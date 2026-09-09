@@ -262,6 +262,10 @@ class Weigh(Action):
             rt.step(f"tube {tube + 1}: weight unavailable — will retry after recover")
             return False
         rt.step(f"tube {tube + 1}: weight = {grams} g")
+        # The audit row for this tube, written where the value is
+        # produced (project-guide §3 "rt.record"). Keyed by the item's
+        # identity — a real project uses its sample id (an L-number).
+        rt.record(f"tube {tube + 1}", weight_g=grams)
         return "weighed"
 
 

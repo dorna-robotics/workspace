@@ -159,6 +159,19 @@ Three sources; two exist, one is a small addition:
      to the SD card. `rev` keeps climbing across runs so a reconnecting
      client never sees it go backwards.
 
+4. **`rt.record(item, **fields)` — the per-item record channel. BUILT.**
+   Sibling of `rt.op` for the AUDIT: one row per sample / vial / plate,
+   keyed by the project's identity for it (an L-number), persisted as
+   `runs/<stamp>/records.jsonl` while the run goes and exported as
+   `records.csv` when it ends — project-guide §3 has the rules. On the
+   wire it is `record_state` on the multiplexed `/ws` only: a snapshot
+   on connect, then deltas with a monotonic `rev`, keyed
+   `item → {field: value}` plus `columns` (field names in first-seen
+   order) and `unset` per item. Same 100 ms coalescing, same
+   never-blocks, same bounds discipline as `rt.op`. A pendant shows it
+   through the `records` widget (§4) or `api.records` / `api.onRecords`
+   (§4b); `GET /records.csv` is the download.
+
 ## 4b. The project screen — the contract (IMPLEMENTED, primary path)
 
 `launch.yaml`:
@@ -262,8 +275,9 @@ bound to platform data, not project data: `timer`, `devices`, `alert`.
 | `scan` | last barcode, big mono | `rt.op` key |
 | `queue` | upcoming batches | platform |
 | `keyval` | small table (operator, recipe, started) | mixed |
+| `records` | the `rt.record` audit table, live, with the CSV link | platform record store |
 
-### Declaration + widgets (implemented: `state`, `stat`, `progress`, `rack`)
+### Declaration + widgets (implemented: `state`, `stat`, `progress`, `rack`, `records`)
 
 `launch.yaml` points at the file (`pendant: hmi/hmi.j2`); the runtime
 server parses it ONCE at construction, validates every entry against
@@ -326,10 +340,28 @@ The split that keeps it generic:
   the rack is display-only, exactly as before.
 
 ```python
-# in an action, as the readings happen
-_record(rt, tube, Weight=f"{grams} g")        # → rt.op(tube_info={...})
-_record(rt, tube, Barcode=scan)
+# in an action, as the readings happen — the same write feeds the
+# audit record (project-guide §3 "rt.record") and, mirrored by the
+# project into an op key, the tap pane
+rt.record(l_number, weight_g=grams)
+rt.op(tube_info={slot: rt.records()[l_number]})
 ```
+
+**The `records` widget** is the audit table, live — one row per
+`rt.record` item, every field as a column, and the `records.csv`
+download link. It binds to the platform's record store, not to an op
+key, which is what makes it the rare catalog entry that is not
+domain-shaped:
+
+```yaml
+  - widget: records
+    label: Samples
+    columns: [barcode, weight_g, ph_1, ph_2, status]   # optional; default every field
+```
+
+A project screen (§4b, JS shape) reads the same table through
+`api.records` at mount and `api.onRecords(cb)` for every change — `cb`
+receives the whole current table and the column order.
 
 Adding a widget to the catalog is one entry in the pendant's registry
 plus one row in the table above — no change to the loader, the

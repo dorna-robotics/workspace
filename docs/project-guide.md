@@ -316,6 +316,58 @@ but is not a value. Values are memory-only and
 cleared at run start. Delivery is a coalesced WS push — see
 `docs/hmi-guide.md` §3 for the channel spec.
 
+### `rt.record(item, **fields)` — the per-item audit record
+
+`rt.op` is what the operator sees now. `rt.record` is what the client
+gets afterwards: one record per ITEM the run worked on, keyed by the
+project's own identity for it, persisted as it is written, exported as
+CSV when the run ends. bd's `_record` helper and bna's L-number sheet
+are this, owned by the platform once instead of copied per project.
+
+```python
+rt.record("L2508-0142")                                   # Start: seed the row
+rt.record("L2508-0142", barcode=code, barcode_ok=code == expected)
+rt.record("L2508-0142", weight_g=grams)                   # in Weigh, on a valid read
+rt.record("L2508-0142", ph_1=[7.2, 8.9], naoh_ul=600)
+rt.record("L2508-0142", status="done")                    # at Park, from the facts
+rt.record("L2508-0142", ph_1=None)                        # remove a field
+```
+
+Rules, and the reasons behind them:
+
+* **Key by identity, not position.** The item is the L-number, sample id
+  or serial the client will look for — a slot is where it sat, and goes
+  in as a field. Seed every row at Start (a call with no fields registers
+  the item) so the table shows the whole batch before anything is measured.
+* **Write where the value is produced.** The action that read the device
+  writes the field, right after the reading is valid — the same place it
+  asserts its fact (§8 "Device reads + declarative retry"). Never rebuild
+  the record from memory at the end; the end only adds `status`.
+* **Status is derived from facts.** At Park, "done" is the item's final
+  fact; anything else reports the last phase fact it reached plus its
+  anomaly flags. The project owns the words, the facts own the truth.
+* **Merge semantics per item.** Writing a field again overwrites it;
+  `None` removes it; a value equal to the stored one writes nothing.
+  Values are plain JSON — a barcode string, a number, a small list —
+  ≤ 4 KB each, ≤ 2000 items; over-cap values are dropped with one log
+  line per reason, never a crash.
+* **Never blocks.** Memory only from the workflow thread; the server
+  drains on the `rt.op` cadence and does the file IO there.
+
+What the platform does with it:
+
+| | |
+|---|---|
+| `<project>/runs/<YYYYmmdd_HHMMSS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
+| `<project>/runs/<stamp>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
+| `GET /records` · `GET /records.csv` | the same, live, at any moment of the run — the download link on the pendant |
+| `record_state` on `/ws` | snapshot then deltas, the `op_state` shape keyed `item → {field: value}`; feeds the pendant's `records` widget (hmi-guide §4) and `api.onRecords` for a project screen (§4b) |
+
+Keep `runs/` out of the project's git — it is data, one folder per run.
+A script without a server (a dev notebook) sets `rt.record_dir` itself
+and calls `rt.record_drain()` once at the end; otherwise records stay in
+memory and `rt.records()` / `rt.record_csv()` still answer.
+
 ## 4. Recipes — `recipes.yaml` or `recipes.j2`
 
 Maps human-readable aliases (like `gripper`, `pipette`) to recipe classes with their configuration. A recipe knows how to pick, place, dose, etc. using a specific component from the scene. You write the alias once here and use it everywhere in your states.

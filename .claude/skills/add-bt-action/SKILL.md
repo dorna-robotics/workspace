@@ -43,7 +43,8 @@ The framework auto-registers every Action subclass — no domain.py.
     Only **three** things vary per project: the tool recipe alias (`gripper` vs `cap_tool` vs your own), the per-item predicate name (`vial_2ml_capped` vs `cap_fed` vs `read_done`), and the object key for `_ctx_all_objects` (`"tube"` vs `"cap"` vs `"sample"`). Everything else stays.
 
     Canonical reference: `examples/feeder/actions.py:Start/Park/OperatorPark` — every example follows the same shape.
-7. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
+7. **A device read writes its audit row where the value is produced.** `rt.record(item_id, weight_g=grams)` right after the valid reading, keyed by the project's identity for the item (an L-number, a slot) — never a summary at the end. The runtime persists it and serves the CSV; project-guide.md §3 "`rt.record`".
+8. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
 
 ## Canonical doc references
 

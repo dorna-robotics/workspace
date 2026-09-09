@@ -1,7 +1,10 @@
 # workspace/runtime.py
 from __future__ import annotations
 
+import csv
+import io
 import json
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -70,6 +73,29 @@ class Runtime:
         self._op_dirty: set = set()
         self._op_unset: set = set()
         self._op_dropped: set = set()   # keys already warned about
+
+        # ── per-item records (rt.record) ────────────────────────────
+        # One record per ITEM the run works on (a sample, a vial, a
+        # plate), keyed by the project's own identity for it (an
+        # L-number, a slot). ``rt.op`` is the operator's current view;
+        # this is the AUDIT: every write is also an append-only line in
+        # the run's ``records.jsonl`` and the finished run is exported
+        # as ``records.csv``. Same discipline as rt.op — the workflow
+        # thread only writes memory; the server drains on its cadence
+        # (``record_drain``) and does the file IO there.
+        self._records: dict = {}          # item -> {field: value}
+        self._rec_fields: list = []       # field names, first-seen order
+        self._rec_rev = 0
+        self._rec_dirty: dict = {}        # item -> {field: value} pending push
+        self._rec_unset: dict = {}        # item -> set(field) pending push
+        self._rec_lines: list = []        # jsonl lines pending write
+        self._rec_carry: list = []        # (run_dir, lines, csv) from a cleared run
+        self._rec_finalize = False        # write records.csv on next drain
+        self._rec_run_dir: Optional[str] = None
+        self._rec_dropped: set = set()
+        # Where runs land: ``<project>/runs``. Set by RuntimeServer from
+        # the project dir; a script sets it itself. None = memory only.
+        self.record_dir: Optional[str] = None
 
         # start-token handshake
         self._start_token = 0
@@ -175,6 +201,7 @@ class Runtime:
         ):
             if self.run_started_at and not self.run_finished_at:
                 self.run_finished_at = time.time()
+            self._rec_finalize = True
 
         self._cv.notify_all()
         # Push the new status snapshot to any wired listener (e.g. the
@@ -390,6 +417,204 @@ class Runtime:
         # rev keeps climbing across runs: a client that reconnects mid
         # transition must never see a revision go backwards.
 
+    # ── Per-item records (rt.record) ─────────────────────────────────
+    RECORD_MAX_ITEMS = 2000
+    RECORD_MAX_VALUE_BYTES = 4096
+
+    def record(self, item: Any, **fields: Any) -> None:
+        """Attach fields to one item's record — the per-sample audit trail.
+
+        ``item`` is the project's identity for the thing being worked
+        on (an L-number, a slot name); ``fields`` are plain JSON-able
+        values. Merge semantics per item: writing ``weight_g`` again
+        overwrites it, ``None`` removes it. With no fields the item is
+        only registered, which is how a Start action seeds every row
+        before anything is measured.
+
+            rt.record("L2508-0142", barcode=code, barcode_ok=code == expected)
+            rt.record("L2508-0142", weight_g=12.34)
+            rt.record("L2508-0142", status="done")
+
+        Write a value where it is PRODUCED — the action that read the
+        device, at the moment the reading is valid — never from a
+        summary at the end. Every call is one append-only line in the
+        run's ``records.jsonl`` with a timestamp, so the file is the
+        history and the CSV (``record_csv``) is a projection of it.
+
+        Never blocks (project-guide §8): memory only from the workflow
+        thread; the server's drain does the file IO. Over-cap or
+        unserialisable values are dropped with one log line per reason.
+        """
+        key = str(item)
+        with self._lock:
+            rec = self._records.get(key)
+            new = rec is None
+            if new:
+                if len(self._records) >= self.RECORD_MAX_ITEMS:
+                    self._rec_warn(key, f"store already holds {self.RECORD_MAX_ITEMS} items")
+                    return
+                rec = self._records[key] = {}
+            set_: dict = {}
+            unset: list = []
+            for f, val in fields.items():
+                name = str(f)
+                if val is None:
+                    if name in rec:
+                        del rec[name]
+                        unset.append(name)
+                    continue
+                try:
+                    blob = json.dumps(val)
+                except (TypeError, ValueError):
+                    self._rec_warn(name, f"value is not JSON-able ({type(val).__name__})")
+                    continue
+                if len(blob) > self.RECORD_MAX_VALUE_BYTES:
+                    self._rec_warn(name, f"value is {len(blob)}B > {self.RECORD_MAX_VALUE_BYTES}B")
+                    continue
+                parsed = json.loads(blob)          # detached copy
+                if name not in self._rec_fields:
+                    self._rec_fields.append(name)
+                if name in rec and rec[name] == parsed:
+                    continue                       # no change, no line
+                rec[name] = parsed
+                set_[name] = parsed
+            if not new and not set_ and not unset:
+                return
+            d = self._rec_dirty.setdefault(key, {})
+            d.update(set_)
+            if unset:
+                u = self._rec_unset.setdefault(key, set())
+                for name in unset:
+                    u.add(name)
+                    d.pop(name, None)
+            line: dict = {"t": round(time.time(), 3), "item": key}
+            if set_ or new:
+                line["set"] = set_
+            if unset:
+                line["unset"] = unset
+            self._rec_lines.append(line)
+
+    def _rec_warn(self, key: str, why: str) -> None:
+        if why in self._rec_dropped:
+            return
+        self._rec_dropped.add(why)
+        print(f"[record] dropped {key!r}: {why} (further of this kind suppressed)")
+
+    def records(self) -> dict:
+        """Every item's record — a detached copy, in first-seen order."""
+        with self._lock:
+            return json.loads(json.dumps(self._records))
+
+    def record_columns(self) -> list:
+        with self._lock:
+            return list(self._rec_fields)
+
+    @property
+    def record_run_dir(self) -> Optional[str]:
+        """This run's folder under ``record_dir`` once anything was written."""
+        return self._rec_run_dir
+
+    def record_csv(self, columns: Optional[list] = None) -> str:
+        """The records as CSV text — ``item`` first, then ``columns`` (or
+        every field in first-seen order). Nested values are JSON."""
+        with self._lock:
+            cols = list(columns) if columns else list(self._rec_fields)
+            rows = [(k, dict(v)) for k, v in self._records.items()]
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["item"] + cols)
+        for key, rec in rows:
+            w.writerow([key] + [self._csv_cell(rec.get(c)) for c in cols])
+        return buf.getvalue()
+
+    @staticmethod
+    def _csv_cell(v: Any) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v
+        return json.dumps(v)
+
+    def record_snapshot(self) -> dict:
+        """Full current state — what a connecting client gets."""
+        with self._lock:
+            return {"rev": self._rec_rev, "columns": list(self._rec_fields),
+                    "set": json.loads(json.dumps(self._records)), "snapshot": True}
+
+    def record_drain(self) -> Optional[dict]:
+        """Pending delta (or None), and the file IO for what was written.
+
+        Called by the server on the op cadence; a script without a server
+        calls it itself once at the end. Appends the pending jsonl lines
+        under ``record_dir/<run stamp>/records.jsonl`` and, once the run
+        has ended, writes ``records.csv`` beside them.
+        """
+        with self._lock:
+            lines, self._rec_lines = self._rec_lines, []
+            finalize, self._rec_finalize = self._rec_finalize, False
+            carry, self._rec_carry = self._rec_carry, []
+            delta = None
+            if self._rec_dirty or self._rec_unset:
+                self._rec_rev += 1
+                delta = {"rev": self._rec_rev, "columns": list(self._rec_fields)}
+                if self._rec_dirty:
+                    delta["set"] = {k: dict(v) for k, v in self._rec_dirty.items()}
+                if self._rec_unset:
+                    delta["unset"] = {k: sorted(v) for k, v in self._rec_unset.items()}
+                self._rec_dirty.clear()
+                self._rec_unset.clear()
+            csv_text = self.record_csv() if (finalize and self._records) else None
+            started = self.run_started_at
+        for run_dir, c_lines, c_csv in carry:
+            self._record_persist(run_dir, c_lines, c_csv)
+        if lines or csv_text:
+            if self._rec_run_dir is None and self.record_dir:
+                stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(started or time.time()))
+                cand, n = os.path.join(self.record_dir, stamp), 1
+                while os.path.exists(cand):          # two runs in one second
+                    n += 1
+                    cand = os.path.join(self.record_dir, f"{stamp}_{n}")
+                self._rec_run_dir = cand
+            self._record_persist(self._rec_run_dir, lines, csv_text)
+        return delta
+
+    def _record_persist(self, run_dir: Optional[str], lines: list, csv_text: Optional[str]) -> None:
+        if not run_dir:
+            return
+        try:
+            os.makedirs(run_dir, exist_ok=True)
+            path = os.path.join(run_dir, "records.jsonl")
+            if lines:
+                fresh = not os.path.exists(path)
+                with open(path, "a") as fp:
+                    if fresh:
+                        fp.write(json.dumps({"meta": {
+                            "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                            "run_dir": run_dir}}) + "\n")
+                    for ln in lines:
+                        fp.write(json.dumps(ln, separators=(",", ":")) + "\n")
+            if csv_text:
+                with open(os.path.join(run_dir, "records.csv"), "w") as fp:
+                    fp.write(csv_text)
+        except OSError as ex:
+            self._rec_warn(run_dir, f"cannot write run records: {ex}")
+
+    def _clear_records(self) -> None:
+        # Anything the last run left unwritten travels with its own run
+        # dir so a Start right after an End never loses an audit line.
+        if self._rec_lines or self._rec_finalize:
+            csv_text = self.record_csv() if (self._rec_finalize and self._records) else None
+            self._rec_carry.append((self._rec_run_dir, self._rec_lines, csv_text))
+        self._records.clear()
+        self._rec_fields.clear()
+        self._rec_dirty.clear()
+        self._rec_unset.clear()
+        self._rec_lines = []
+        self._rec_finalize = False
+        self._rec_run_dir = None
+        self._rec_dropped.clear()
+        # rev keeps climbing across runs, like the op rev.
+
     def _clear_steps(self) -> None:
         self._steps.clear()
         self._progress = -1
@@ -439,6 +664,7 @@ class Runtime:
             self._status.last_error = None
             self._clear_steps()
             self._clear_ops()
+            self._clear_records()
             self._set_state(RTState.IDLE)
             self._cv.notify_all()
 

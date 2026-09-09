@@ -362,6 +362,26 @@ class StatusHandler(tornado.web.RequestHandler):
             self.write(out)
 
 
+class RecordsHandler(tornado.web.RequestHandler):
+    """GET /records — this run's per-item records (``rt.record``) as
+    JSON; GET /records.csv — the same as a CSV download. Live at any
+    point of the run; the finished run's copy is written next to its
+    ``records.jsonl`` by the runtime itself."""
+
+    def initialize(self, rt: Runtime):
+        self.rt = rt
+
+    def get(self, fmt=None):
+        if fmt == ".csv":
+            self.set_header("Content-Type", "text/csv; charset=utf-8")
+            self.set_header("Content-Disposition", 'attachment; filename="records.csv"')
+            self.write(self.rt.record_csv())
+            return
+        snap = self.rt.record_snapshot()
+        self.write({"run_dir": self.rt.record_run_dir,
+                    "columns": snap["columns"], "records": snap["set"]})
+
+
 # --------------------------------------------------
 # Step WebSocket — push step updates to dashboard
 # --------------------------------------------------
@@ -525,7 +545,7 @@ def _run_operator_action(rt, fn):
 # The project DECLARES widgets; the platform renders them. Widgets come
 # from a catalog the pendant owns — a project never ships markup, so it
 # cannot drift from the design system.
-HMI_WIDGETS = ("state", "stat", "progress")
+HMI_WIDGETS = ("state", "stat", "progress", "records")
 
 
 def _project_dir(workspace):
@@ -691,6 +711,19 @@ def _op_flush(rt: Runtime) -> None:
         return
     if delta and (_op_ws_clients or _all_ws_clients):
         _broadcast_op(delta)
+
+
+def _record_flush(rt: Runtime) -> None:
+    """Drain ``rt.record`` on the op cadence: the runtime appends the
+    run's jsonl lines (and the CSV at run end) inside the drain, and the
+    delta goes out as ``record_state`` on the multiplexed /ws only — no
+    legacy endpoint for a channel born after the multiplexer."""
+    try:
+        delta = rt.record_drain()
+    except Exception:
+        return
+    if delta and _all_ws_clients:
+        _broadcast_dual(set(), "", "record_state", delta)
 
 
 class StatusWebSocket(tornado.websocket.WebSocketHandler):
@@ -1368,6 +1401,9 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             # Operator values — full snapshot, same shape /ws/op sends.
             self._send("op_state", self._rt.op_snapshot())
 
+            # Per-item records — full snapshot, same shape as the deltas.
+            self._send("record_state", self._rt.record_snapshot())
+
             # HMI declaration — what this project wants displayed. Sent
             # once on connect; it is static for the life of the run.
             self._send("pendant_spec", _PENDANT_SPEC)
@@ -1673,6 +1709,7 @@ class RuntimeServer:
                 workspace=self.workspace,
             )),
             (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
+            (r"/records(\.csv)?", RecordsHandler, dict(rt=self.rt)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
             (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/op", OpWebSocket, dict(rt=self.rt)),
@@ -1755,6 +1792,8 @@ class RuntimeServer:
         global _record_core_dir
         if _proj is not None:
             _record_core_dir = str(_proj / "core")
+            # rt.record runs land in the project's runs/ folder.
+            self.rt.record_dir = str(_proj / "runs")
         if _proj is not None and (_proj / "hmi").is_dir():
             routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler,
                               {"path": str(_proj / "hmi")}))
@@ -1798,6 +1837,9 @@ class RuntimeServer:
         # messages/second worst case however hard a project writes.
         tornado.ioloop.PeriodicCallback(
             lambda: _op_flush(self.rt), OP_FLUSH_MS
+        ).start()
+        tornado.ioloop.PeriodicCallback(
+            lambda: _record_flush(self.rt), OP_FLUSH_MS
         ).start()
 
         # autoreload for dev

@@ -642,6 +642,62 @@ const HMI_WIDGETS = {
   },
 };
 
+// Per-item audit table — every rt.record() row, live. Bound to the
+// platform's RECORD store, not to an op key (the one catalog widget
+// that is): ``columns:`` picks and orders the fields, default every
+// field in first-seen order; ``label:`` names the card. Values are
+// written as text nodes only — a record value is data, never markup.
+HMI_WIDGETS.records = function (w) {
+  const el = document.createElement("div");
+  el.className = "hmi-records";
+  const head = document.createElement("div");
+  head.className = "hmi-records-head";
+  const title = document.createElement("span");
+  title.textContent = w.label || "Records";
+  const link = document.createElement("a");
+  link.textContent = "CSV";
+  link.href = (_devicesUrl || "").replace(/\/$/, "") + "/records.csv";
+  head.appendChild(title); head.appendChild(link);
+  const scroll = document.createElement("div");
+  scroll.className = "hmi-records-scroll";
+  const table = document.createElement("table");
+  scroll.appendChild(table);
+  const empty = document.createElement("div");
+  empty.className = "hmi-records-empty";
+  empty.textContent = "No records yet";
+  el.appendChild(head); el.appendChild(scroll); el.appendChild(empty);
+  return {
+    el,
+    records: true,
+    update(recs, cols) {
+      const items = Object.keys(recs || {});
+      const columns = (Array.isArray(w.columns) && w.columns.length) ? w.columns : (cols || []);
+      table.textContent = "";
+      empty.hidden = items.length > 0;
+      scroll.hidden = items.length === 0;
+      if (!items.length) return;
+      const thead = table.createTHead();
+      const hr = thead.insertRow();
+      for (const c of ["item", ...columns]) {
+        const th = document.createElement("th");
+        th.textContent = c;
+        hr.appendChild(th);
+      }
+      const tbody = table.createTBody();
+      for (const item of items) {
+        const rec = recs[item] || {};
+        const tr = tbody.insertRow();
+        tr.insertCell().textContent = item;
+        for (const c of columns) {
+          const v = rec[c];
+          tr.insertCell().textContent =
+            (v === undefined || v === null) ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+        }
+      }
+    },
+  };
+};
+
 let _hmiInstances = [];
 
 function buildHmi(spec) {
@@ -671,8 +727,9 @@ function buildHmi(spec) {
     }
     inst.detailBind = w.detail || null;
     _hmiInstances.push(inst);
-    inst.update(inst.platform ? undefined : _opValues[inst.bind],
-                inst.detailBind ? _opValues[inst.detailBind] : undefined);
+    if (inst.records) inst.update(_records, _recordColumns);
+    else inst.update(inst.platform ? undefined : _opValues[inst.bind],
+                     inst.detailBind ? _opValues[inst.detailBind] : undefined);
   }
   host.style.display = _hmiInstances.length ? "" : "none";
   _hmiBuilt = true;
@@ -732,6 +789,10 @@ async function mountProjectPendant(spec) {
       }
       const api = {
         get values() { return { ..._opValues }; },
+        // rt.record — the per-item audit rows. Read once at mount, then
+        // subscribe: every delta hands the whole current table back.
+        get records() { return _recordsCopy(); },
+        onRecords(cb) { (_hmiHost.recordCbs ||= []).push(cb); },
         get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
         onTheme(cb) { (_hmiHost.themeCbs ||= []).push(cb); },
         // The same operator-action path the platform buttons use — a
@@ -818,12 +879,52 @@ function applyOpState(payload) {
   for (const [k, v] of Object.entries(payload.set || {})) _opValues[k] = v;
   for (const k of payload.unset || []) delete _opValues[k];
   for (const inst of _hmiInstances) {
-    if (!inst.platform) {
+    if (!inst.platform && !inst.records) {
       inst.update(_opValues[inst.bind],
                   inst.detailBind ? _opValues[inst.detailBind] : undefined);
     }
   }
   applyProjectHmiValues();
+}
+
+// ── Per-item records (rt.record) ────────────────────────────────────
+// Same wire discipline as op_state — a snapshot on connect, then deltas
+// with a monotonic rev — but keyed item -> {field: value}, plus the
+// column order the runtime saw the fields in.
+const _records = {};
+let _recordColumns = [];
+let _recordRev = -1;
+
+function _recordsCopy() {
+  const out = {};
+  for (const [k, v] of Object.entries(_records)) out[k] = { ...v };
+  return out;
+}
+
+function applyRecordState(payload) {
+  if (!payload) return;
+  if (payload.snapshot) {
+    for (const k of Object.keys(_records)) delete _records[k];
+  } else if (_recordRev >= 0 && typeof payload.rev === "number" && payload.rev !== _recordRev + 1) {
+    _resyncOpState();          // one reconnect re-delivers every snapshot
+  }
+  if (typeof payload.rev === "number") _recordRev = payload.rev;
+  if (Array.isArray(payload.columns)) _recordColumns = payload.columns.slice();
+  for (const [item, fields] of Object.entries(payload.set || {})) {
+    const rec = _records[item] || (_records[item] = {});
+    Object.assign(rec, fields || {});
+  }
+  for (const [item, fields] of Object.entries(payload.unset || {})) {
+    const rec = _records[item];
+    if (!rec) continue;
+    for (const f of fields || []) delete rec[f];
+  }
+  for (const inst of _hmiInstances) {
+    if (inst.records) inst.update(_records, _recordColumns);
+  }
+  for (const cb of (_hmiHost && _hmiHost.recordCbs) || []) {
+    try { cb(_recordsCopy(), _recordColumns.slice()); } catch (err) { console.error("onRecords threw:", err); }
+  }
 }
 
 function _resyncOpState() {
@@ -861,6 +962,10 @@ function _dispatchMuxMessage(env) {
     }
     case "op_state": {
       applyOpState(payload);
+      break;
+    }
+    case "record_state": {
+      applyRecordState(payload);
       break;
     }
     case "pendant_spec": {
