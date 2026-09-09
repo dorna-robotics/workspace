@@ -1,3 +1,5 @@
+import time as _time
+
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
@@ -82,15 +84,61 @@ class BarcodeReader(Recipe):
         return super().rotate(rotation=rotation, joint="j5", **kwargs)
 
     def code_rotate(self, angles=4, rotation=90, allowed=ALL_SYMBOLOGIES,
-                    timeout: float = 2.5, sim_return=None):
-        """Rotate-until-read: the label can face away from the window,
-        so try up to ``angles`` presentations, turning the held item by
-        ``rotation`` degrees (j5) between misses. Call it with the item
-        already presented (``present()``); returns the decoded string,
-        or ``None`` after every angle missed — the caller decides how
-        loud that is. On an infinite wrist the turns accumulate (no
-        unwind); in simulation the first read returns the canned code,
-        so sim runs stay single-pass."""
+                    timeout: float = 2.5, sim_return=None,
+                    continuous=True, sweep=360,
+                    sweep_vaj=[90, 500, 3000], trigger_timeout: float = 0.6):
+        """Rotate-until-read. Call it with the item already presented
+        (``present()``); returns the decoded string, or ``None`` when
+        nothing read — the caller decides how loud that is.
+
+        ``continuous=True`` (default, needs the infinite wrist): ONE
+        non-blocking j5 turn of ``sweep`` degrees (``timeout=0`` — the
+        command returns while the robot is still moving) while the
+        scanner live-triggers in short ``trigger_timeout`` windows; the
+        FIRST read halts the robot on the spot. Typically sub-second on
+        hardware instead of stop-and-shoot. ``sweep_vaj`` paces the
+        turn (default 90 deg/s: ~8 trigger windows per revolution).
+        In simulation the turn runs to completion first (the sim
+        executes motions serially), then the canned code returns —
+        same call sequence, deterministic timing.
+
+        ``continuous=False`` — or a limited wrist, automatically:
+        stepped mode — up to ``angles`` presentations, ``rotation``
+        degrees between misses, one ``timeout`` read each."""
+        if continuous and getattr(self.core, "j5_infinite", False):
+            rt = self.rt
+            rt.checkpoint()
+            if getattr(self.core, "_simulation_mode", False):
+                # Sim: full blocking turn, then the canned read — the
+                # halt below is the SimulationAPI's acknowledged no-op.
+                self.rotate(sweep, vaj=sweep_vaj)
+                code = self.code(allowed=allowed, timeout=timeout,
+                                 sim_return=sim_return)
+                rt.halt()
+                return code
+            cur = [float(v) for v in rt.joint()]
+            tgt = cur[:]
+            tgt[5] += float(sweep)
+            # Launch the turn and return immediately (dorna2 play
+            # timeout=0); the read loop below owns the clock.
+            rt.jmove(joint=tgt, vel=sweep_vaj[0], accel=sweep_vaj[1],
+                     jerk=sweep_vaj[2], timeout=0)
+            deadline = _time.time() + abs(sweep) / max(sweep_vaj[0], 1) + 3.0
+            code = None
+            try:
+                while _time.time() < deadline:
+                    code = self.code(allowed=allowed,
+                                     timeout=trigger_timeout,
+                                     sim_return=sim_return)
+                    if code:
+                        break
+            finally:
+                # Stop where we are (first read), or acknowledge the
+                # already-finished turn — either way the queue is clean
+                # and the next verb starts from live joints.
+                rt.halt()
+                rt.delay(0.1)
+            return code
         for attempt in range(max(1, int(angles))):
             if attempt:
                 self.rotate(rotation)

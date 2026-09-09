@@ -4529,7 +4529,15 @@ class SimulationAPI:
 
     def joint(self):
         return self.joints[:]
-    
+
+    def halt(self, accel=None, **kwargs):
+        """Real-SDK compatibility (dorna2.halt): the sim executes every
+        motion to completion serially, so by the time a caller can
+        issue halt there is nothing in flight — acknowledge and move
+        on. Lets scan-while-moving flows (BarcodeReader.code_rotate
+        continuous mode) run the same call sequence in sim and real."""
+        return True
+
     def solve_third_degree(self,a, b, c, d):
         """
         Solve a cubic a*t^3 + b*t^2 + c*t + d = 0
