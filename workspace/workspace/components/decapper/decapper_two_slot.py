@@ -22,7 +22,7 @@ class DecapperTwoSlot(Decapper):
     midpoint between them, ``top`` the measured top.
     """
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 40, 0, 0, 90], "top":[0, 0, 67, 0, 0, 90],
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 40, 0, 0, 90], "top":[0, 0, 70, 0, 0, 90],
             "A1": [0, -24, 40, 0, 0, 90], "A2": [0, 24, 40, 0, 0, 90],
             "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0]}},
         collision_box =

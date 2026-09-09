@@ -80,3 +80,22 @@ class BarcodeReader(Recipe):
     def rotate(self, rotation=90, **kwargs):
         """Rotate j5 — used to flip the presentation angle."""
         return super().rotate(rotation=rotation, joint="j5", **kwargs)
+
+    def code_rotate(self, angles=4, rotation=90, allowed=ALL_SYMBOLOGIES,
+                    timeout: float = 2.5, sim_return=None):
+        """Rotate-until-read: the label can face away from the window,
+        so try up to ``angles`` presentations, turning the held item by
+        ``rotation`` degrees (j5) between misses. Call it with the item
+        already presented (``present()``); returns the decoded string,
+        or ``None`` after every angle missed — the caller decides how
+        loud that is. On an infinite wrist the turns accumulate (no
+        unwind); in simulation the first read returns the canned code,
+        so sim runs stay single-pass."""
+        for attempt in range(max(1, int(angles))):
+            if attempt:
+                self.rotate(rotation)
+            code = self.code(allowed=allowed, timeout=timeout,
+                             sim_return=sim_return)
+            if code:
+                return code
+        return None

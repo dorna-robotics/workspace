@@ -2858,7 +2858,15 @@ class Recipe:
                 f"(robot has {len(current_joint)} joints)"
             )
         new_joint = current_joint[:]
-        new_joint[joint_index] = (new_joint[joint_index] + rotation + limit[1]) % abs(limit[1] - limit[0]) + limit[0]
+        if joint_index == 5 and getattr(self.core, "j5_infinite", False):
+            # Infinite wrist: NEVER wrap — the shaft winds freely, and
+            # wrapping would command the long unwind back into
+            # [limit] (a +90 near the edge became a -270 spin). The
+            # turn-carry invariant holds: the target stays within one
+            # turn of live.
+            new_joint[joint_index] = new_joint[joint_index] + rotation
+        else:
+            new_joint[joint_index] = (new_joint[joint_index] + rotation + limit[1]) % abs(limit[1] - limit[0]) + limit[0]
 
         rt.checkpoint()
         rt.jmove(joint=new_joint, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
