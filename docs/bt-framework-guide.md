@@ -1582,11 +1582,19 @@ many-action protocol readable, and that every phased project follows
 (`examples/phased/` is the copy to start from):
 
 1. **Write the boundary table first** — `doc/phases.md`, one row per
-   phase: the monotonic per-item fact, where every item physically is
-   at exit (slot, cap state), gripper empty, the tool mounted, and the
-   condition for opening. The row is the contract the next phase's
-   actions start from, and it is why a phase can be built and
-   bench-checked alone. Change the row before changing the code.
+   phase: the CLOSURE fact (one per item, asserted by every way the
+   phase can end for it, so monotonic by construction), the OUTCOMES
+   (each an outcome fact plus the physical resting state it means —
+   "in the heavy rack", "open in its own slot", "skipped, capped in
+   its slot"; every item ends with exactly one, and the next phase's
+   actions gate on them), what is MEASURED and in which action, and
+   the condition for opening. Nothing about tools: the tool at exit
+   is whatever the last scheduled action used. The row is the
+   contract the next phase's actions start from, and it is why a
+   phase can be built and bench-checked alone. Change the row before
+   changing the code. A decision inside a phase (above or below a
+   weight, barcode read or not) is an action with two `eff` branches
+   (§7), never a boundary.
 2. **One module per phase** — `actions/phase_N.py` holds that phase's
    concrete actions in execution order; reading the file is reading
    the phase. `actions/predicates.py` holds every fact with its

@@ -9,7 +9,7 @@ What it teaches, and where:
 
 | Question | Look in |
 |---|---|
-| What does the bench look like at each phase boundary? | `doc/phases.md` — the boundary table, written first |
+| How can each phase end for a tube, and where does it rest? | `doc/phases.md` — the boundary table (closure fact, outcomes, measurements), written first |
 | What does a fact mean? | `actions/predicates.py` — every fact, grouped by phase |
 | How is a motion done? | `actions/base.py` — abstract bases (`register = False`), shared helpers |
 | What happens in phase N? | `actions/phase_N.py` — the concrete actions, in execution order |
