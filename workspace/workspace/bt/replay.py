@@ -104,8 +104,12 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     return out
 
 
-def replay(project_dir, kwargs):
-    """One replay. Returns (plan_len, failures, goal_ok, makespan)."""
+def replay(project_dir, kwargs, show=False):
+    """One replay. Returns (plan_len, failures, goal_ok, makespan).
+
+    ``show=True`` also returns the scheduled sequence as text lines —
+    start time, action, params, tool, and every tool swap — the staged
+    order an operator can read without a bench."""
     sys.path.insert(0, project_dir)
     # A package (``actions/``) registers its classes when its submodules
     # import; those stay cached under ``actions.<phase>`` and would skip
@@ -143,6 +147,8 @@ def replay(project_dir, kwargs):
         order = sorted(range(len(res)), key=lambda i: (out[i][2], i))
         state = set(initial)
         failures = []
+        lines = []
+        tool_now = None
         for i in order:
             a = res[i]
             cls = reg.get(a.name)
@@ -153,6 +159,21 @@ def replay(project_dir, kwargs):
                 else expr.evaluate(frozenset(state)))
             if not ok:
                 failures.append(f"{a.name}{a.params} @t={out[i][2]:.0f}")
+            if show:
+                m = meta[a.name]
+                # The tool circuit, as the scheduler sees it: only an
+                # action that DECLARED a tool takes part; a change is a
+                # swap the runtime inserts before it (dsl auto-swap).
+                if m.tool_required and m.tool != tool_now:
+                    lines.append(f"      {'':>6}  swap {tool_now or '-'} -> {m.tool or '-'}")
+                    tool_now = m.tool
+                prm = ", ".join(str(x) for x in a.params)
+                res_ = m.resource if isinstance(m.resource, str) else ",".join(m.resource or ())
+                held = f" / {m.tool}" if (m.tool_required and m.tool) else ""
+                lines.append(f"  t={out[i][2]:6.0f}  {a.name}({prm})"
+                             f"{'':<{max(1, 28 - len(a.name) - len(prm))}}"
+                             f"{'PRE FALSE  ' if not ok else ''}"
+                             f"[{res_}{held}]  {m.duration}s")
             inst.state = frozenset(state)  # state-aware effs see the live state
             eff = _normalise_eff(inst.eff(*a.params), a.name)
             for f in eff[_default_branch(eff)]:
@@ -160,6 +181,8 @@ def replay(project_dir, kwargs):
                     state.add(f.as_tuple()) if f.polarity else state.discard(f.as_tuple())
         goal_ok = spec["goal"](frozenset(state))
         mk = max(out[i][2] + meta[res[i].name].duration for i in range(len(res)))
+        if show:
+            return len(res), failures, goal_ok, mk, lines
         return len(res), failures, goal_ok, mk
     finally:
         sys.path.remove(project_dir)
@@ -170,6 +193,8 @@ def main():
     ap.add_argument("project", help="project directory (holds launch.yaml + actions.py)")
     ap.add_argument("--batch", type=int, nargs="*", default=[1, 4], help="batch sizes (default: 1 4)")
     ap.add_argument("--kw", action="append", default=[], help="kwarg override name=value (repeatable)")
+    ap.add_argument("--show", action="store_true",
+                    help="print the scheduled sequence: start time, action, tool, swaps")
     args = ap.parse_args()
 
     project = os.path.abspath(args.project)
@@ -181,9 +206,13 @@ def main():
         kwargs = resolve_kwargs(launch, batch=n, overrides=args.kw, project_dir=project)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            plan_len, fails, goal_ok, mk = replay(project, kwargs)
+            r = replay(project, kwargs, show=args.show)
+        plan_len, fails, goal_ok, mk = r[:4]
         status = "OK" if (not fails and goal_ok) else "*** BROKEN ***"
         bad = bad or bool(fails) or not goal_ok
+        if args.show:
+            print(f"── batch {n} — scheduled order (t = start, s) ──")
+            print("\n".join(r[4]))
         print(f"batch={n:<3d} plan={plan_len:3d} actions  fails={len(fails)}  "
               f"goal={goal_ok}  makespan={mk:5.0f}  {status}")
         for f in fails[:4]:

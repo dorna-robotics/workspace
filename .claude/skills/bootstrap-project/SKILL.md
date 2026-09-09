@@ -104,6 +104,9 @@ schedule (CP-SAT) → replay in scheduled order against real
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
 
+Add `--show` to print the staged sequence (start time, action, tool,
+swaps) for the operator to read — project-guide §10.2.
+
 solve + replay are the ONLY standard software gates — path checking
 is the operator's job on the bench, not the agent's. (The
 `workspace.bt.dryrun` command exists for off-bench machinery

@@ -1097,6 +1097,24 @@ catches wrongly-seeded facts, multi-item catches capacity and
 interleaving mistakes. Schedules are derived, never authored — this is
 what proves the derivation's inputs truthful.
 
+**`--show` prints the staged sequence** — every action in scheduled
+order with its start time, params, resources, the tool it holds, and
+each tool swap the runtime will insert — so the staging can be read and
+checked without a bench, before any motion:
+
+    sudo python3 -m workspace.bt.replay <project_dir> --batch 1 --show
+
+    ── batch 1 — scheduled order (t = start, s) ──
+      t=     0  start()                       [robot]  5s
+                  swap - -> gripper
+      t=    15  pick(0)                       [robot / gripper]  10s
+      …
+      t=   316  shake1(0)                     [shaker]  300s
+
+A failed precondition is marked ``PRE FALSE`` on its line. The
+replay plans the whole batch in one shot — it does not walk the phase
+list the launcher uses at run time (bt-framework-guide §13).
+
 ### 10.3 `workspace.bt.dryrun` — optional machinery debug, NOT a gate
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.dryrun <project_dir> --batch 2
