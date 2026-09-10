@@ -85,6 +85,15 @@ class PhMeter(Gripper):
         baud=9600,         # EZO factory default
         timeout=2.0,       # s — per-command read deadline
         simulation=True,
+        # ── reading / settling ───────────────────────────────────────
+        # A freshly dipped electrode drifts for tens of seconds, so ``ph()``
+        # waits for a settled reading by default. These tune what "settled"
+        # means; every one is overridable per install from scene yaml, and
+        # per call from the method arguments.
+        settle=True,               # ph() settles unless a call says otherwise
+        settle_n=3,                # consecutive readings that must agree
+        settle_tolerance=0.08,     # ...within this many pH units
+        settle_max_readings=20,    # give-up budget (~0.9 s per reading)
         # ``critical`` controls whether a non-sim, unreachable transition
         # pauses the runtime. A probe we can't read mid-run is a real fault
         # worth pausing for; set ``critical: false`` in scene yaml where the
@@ -114,6 +123,12 @@ class PhMeter(Gripper):
         self._simulation_mode = bool(prm["simulation"])
         self._port = prm["port"] or ""
         self._critical = bool(prm["critical"])
+
+        # Settle tuning — the defaults every read/ph call falls back to.
+        self._settle = bool(prm["settle"])
+        self._settle_n = int(prm["settle_n"])
+        self._settle_tolerance = float(prm["settle_tolerance"])
+        self._settle_max_readings = int(prm["settle_max_readings"])
 
         # ── The one sim/real branch — the station handles the unified API;
         #    recipes and operator buttons never think about it. ──
@@ -194,16 +209,39 @@ class PhMeter(Gripper):
         """Compensate for the sample temperature and read in one call."""
         return self.probe.read_at_temperature(celsius, sim_return=sim_return)
 
-    def read_stable(self, n: int = 3, tolerance: float = 0.02, max_readings: int = 20,
+    def read_stable(self, n: int = None, tolerance: float = None,
+                    max_readings: int = None,
                     sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Block until the electrode settles (``Reading`` or None)."""
-        return self.probe.read_stable(n=n, tolerance=tolerance,
-                                      max_readings=max_readings, sim_return=sim_return)
+        """Block until the electrode settles (``Reading`` or None).
 
-    def ph(self, stable: bool = True, sim_return: float = 7.000):
-        """pH value (float or None). ``stable=True`` waits for a settled
-        reading; ``stable=False`` takes an instantaneous one."""
-        return self.probe.ph(stable=stable, sim_return=sim_return)
+        Unset arguments fall back to this component's configured tuning
+        (``settle_n`` / ``settle_tolerance`` / ``settle_max_readings``), so a
+        bench that needs a different definition of "settled" sets it once in
+        scene yaml instead of at every call site.
+        """
+        return self.probe.read_stable(
+            n=self._settle_n if n is None else n,
+            tolerance=self._settle_tolerance if tolerance is None else tolerance,
+            max_readings=self._settle_max_readings if max_readings is None else max_readings,
+            sim_return=sim_return,
+        )
+
+    def ph(self, stable: bool = None, sim_return: float = 7.000):
+        """pH value (float or None).
+
+        ``stable`` defaults to the component's ``settle`` setting (on unless
+        scene yaml turns it off), so recipes just call ``ph()``. Pass
+        ``stable=False`` for an instantaneous reading.
+
+        The settled path goes through :meth:`read_stable` so the component's
+        settle tuning applies — ``station.ph()`` would use the station's own
+        defaults instead. sim still branches exactly once, in the station.
+        """
+        stable = self._settle if stable is None else bool(stable)
+        if not stable:
+            return self.probe.ph(stable=False, sim_return=sim_return)
+        r = self.read_stable(sim_return=Reading(status="ok", ph=sim_return, raw="sim"))
+        return None if r is None or not r.ok else r.ph
 
     def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
         """Probe health vs an ideal electrode (``Slope`` or None). Healthy is
