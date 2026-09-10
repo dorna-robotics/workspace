@@ -258,7 +258,7 @@ export function attachSchedule(el, opts = {}) {
 // ── Preview — draw a plan that never ran ──────────────────────────────
 // The host wires ``setPreviewRunner(async batch => event)``; the runner
 // asks the runtime server for ``bt.replay --json`` and hands back the
-// same ``schedule`` event a live run publishes. Whole batch, no phases.
+// same ``schedule`` event a live run publishes, phase by phase.
 let _previewRunner = null;
 let _previewEls = null;
 

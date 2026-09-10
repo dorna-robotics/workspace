@@ -1117,7 +1117,10 @@ window by window, with the launcher's own phase code**
 (``workspace/bt/phase.py``: ``current_phase`` / ``pick_window``), so the
 listing is the order the live run takes and a 28-item batch replays in
 minutes instead of never; each window's schedule is offset by the
-makespans before it.
+makespans before it. ``--show`` ends with a per-phase table (windows,
+actions, template-expansion hits, plan and CP-SAT seconds) so a slow
+phase names itself; ``REPLAY_TRACE=1`` prints one line per slice as
+it is planned.
 
 **The same plan in the GUI.** The scene builder's fourth sidebar tab,
 *Schedule*, plans the project at the builder's project path for a
