@@ -550,11 +550,20 @@ select.input { cursor: pointer; }
    Viewer area
    ============================================================ */
 
+.viewer-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .viewer-area {
   flex: 1;
   position: relative;
   background: #000;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 [data-theme="light"] .viewer-area { background: #f2f2f7; }
@@ -707,6 +716,7 @@ select.input { cursor: pointer; }
     overflow: visible;
   }
   .sidebar-scroll { overflow: visible; }
+  .viewer-col { flex: none; }
   .viewer-area { height: 50vh; flex: none; }
 }
 
@@ -763,23 +773,17 @@ select.input { cursor: pointer; }
 }
 .rp-hint.bad { color: var(--danger, #e5484d); }
 
+/* The player is a strip docked under the 3D canvas (a flex sibling of
+   .viewer-area inside .viewer-col), not an overlay — so it can never
+   sit over the view cube or the info bar. */
 #rpBar {
-  position: absolute;
-  left: 50%;
-  bottom: 20px;
-  transform: translateX(-50%);
-  z-index: 70;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: calc(100% - 48px);        /* the whole viewer width — the slider is the timeline */
-  padding: 10px 14px 12px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--surface, #16181d) 88%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--border2, rgba(127,127,127,0.22));
-  box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+  padding: 10px 24px 12px;
+  background: var(--surface, #16181d);
+  border-top: 1px solid var(--border2, rgba(127,127,127,0.22));
 }
 .rp-head {
   display: flex;
@@ -830,11 +834,20 @@ select.input { cursor: pointer; }
   transition: color var(--motion-fast, 0.12s), background var(--motion-fast, 0.12s);
 }
 .rp-x:hover { color: var(--text); background: var(--surface2); }
+/* play · prev · slider · next · time on one grid row; the chapter strip
+   sits in the slider's column on the row below — same left, same
+   width, no measuring. */
 .rp-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px 30px minmax(160px, 1fr) 30px auto;
   align-items: center;
-  gap: 12px;
+  column-gap: 12px;
+  row-gap: 2px;
 }
+/* Idle player (Replay tab, nothing loaded): the controls are inert. */
+#rpBar.is-empty .rp-row,
+#rpBar.is-empty .rp-speeds { opacity: 0.4; pointer-events: none; }
+#rpBar.is-empty .rp-x { display: none; }
 .rp-play {
   display: flex; align-items: center; justify-content: center;
   width: 34px; height: 34px;
@@ -857,8 +870,8 @@ select.input { cursor: pointer; }
 }
 /* Slider — custom track with an accent progress fill (--p set by JS) */
 #rpSlider {
-  flex: 1;
-  min-width: 160px;
+  width: 100%;
+  min-width: 0;
   -webkit-appearance: none;
   appearance: none;
   height: 22px;
@@ -1069,11 +1082,10 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
    One segment per phase, like a video's chapters. Gray / white like the
    schedule's bands; the current one carries the accent. */
 .rp-chapters {
+  grid-column: 3;
+  grid-row: 2;
   position: relative;
   height: 18px;
-  margin-top: 2px;
-  /* left / width are set by JS to the slider's own box, so the strip
-     and the slider share one x axis whatever the buttons measure. */
 }
 /* Phase step buttons — previous / next chapter, either side of the slider. */
 .rp-step {

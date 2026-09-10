@@ -222,7 +222,8 @@
     </div>
   </aside>
 
-  <!-- ---- Viewer area ---- -->
+  <!-- ---- Viewer column: the 3D area, then the replay player docked under it ---- -->
+  <div class="viewer-col" id="viewerCol">
   <div class="viewer-area" id="viewerArea">
 
     <!-- Control buttons (top-right of viewer) — same as orchestrator -->
@@ -265,11 +266,14 @@
     <!-- The Schedule tab's chart, over the canvas. -->
     <div id="sbSchedPane" class="sb-sched-pane" style="display:none"></div>
 
-    <!-- Replay player (bottom-center) — visible while a recording is
-         loaded. The builder scene hides underneath; ✕ restores it. -->
+  </div><!-- /viewer-area -->
+
+    <!-- Replay player — its own strip under the 3D canvas, never over the
+         view cube. Shown on the Replay tab (idle until a recording is
+         loaded); ✕ unloads the recording. -->
     <div id="rpBar" style="display:none">
       <div class="rp-head">
-        <span id="rpName" class="rp-name" title=""></span>
+        <span id="rpName" class="rp-name" title="">No recording loaded</span>
         <span id="rpPhase" class="rp-phase" hidden></span>
         <div class="rp-speeds" id="rpSpeeds" title="Playback speed">
           <button data-speed="0.5">0.5×</button>
@@ -294,13 +298,13 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 17 12 7 20"/><rect x="17" y="4" width="2" height="16"/></svg>
         </button>
         <span id="rpTime">00:00&thinsp;/&thinsp;00:00</span>
+        <!-- Phase chapters — the grid cell right under the slider, so
+             the strip has the slider's exact footprint. Only when the
+             recording carries the run's schedule; click to jump. -->
+        <div class="rp-chapters" id="rpChapters" hidden></div>
       </div>
-      <!-- Phase chapters under the slider — only when the recording
-           carries the run's schedule. Click a chapter to jump there. -->
-      <div class="rp-chapters" id="rpChapters" hidden></div>
     </div>
-
-  </div><!-- /viewer-area -->
+  </div><!-- /viewer-col -->
 
 </div><!-- /sb-body -->
 

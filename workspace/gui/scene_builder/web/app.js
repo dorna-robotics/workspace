@@ -9358,11 +9358,15 @@ ensureBuilderBar();
       }
       animate();
 
-      window.addEventListener("resize", () => {
+      // The viewer's box changes without a window resize too — the
+      // replay player docks under the canvas and takes its height.
+      const fitViewer = () => {
         camera.aspect = viewerEl.clientWidth / viewerEl.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
-      });
+      };
+      window.addEventListener("resize", fitViewer);
+      if (window.ResizeObserver) new ResizeObserver(fitViewer).observe(viewerEl);
     }
 
     await getVersion();
@@ -10906,16 +10910,6 @@ function startRectPattern() {
   const chapEl = $("rpChapters"), phaseEl = $("rpPhase");
   const prevBtn = $("rpPrev"), nextBtn = $("rpNext");
 
-  // The chapter strip shares the slider's x axis: same left, same width.
-  function alignChapters() {
-    if (!chapEl || !slider) return;
-    // offsetLeft is measured inside the bar's padding; the strip's
-    // margin starts at the content edge, so subtract the row's own
-    // offset or the strip lands one padding to the right.
-    const row = slider.parentElement;
-    chapEl.style.marginLeft = (slider.offsetLeft - (row ? row.offsetLeft : 0)) + "px";
-    chapEl.style.width = slider.offsetWidth + "px";
-  }
   // Previous / next phase. "Previous" goes to the start of the current
   // phase when we are more than 2 s into it, like a track button.
   function stepPhase(dir) {
@@ -10941,7 +10935,6 @@ function startRectPattern() {
     if (prevBtn) prevBtn.disabled = chs.length === 0;
     if (nextBtn) nextBtn.disabled = chs.length === 0;
     if (!chs.length || !rp.dur) return;
-    alignChapters();
     chs.forEach((c, i) => {
       const seg = document.createElement("button");
       seg.type = "button";
@@ -11040,7 +11033,11 @@ function startRectPattern() {
     }
     setSceneHidden(curTab === "replay");
     if (rp.root) rp.root.visible = (curTab === "replay");
-    bar.style.display = (curTab === "replay" && rp.tl) ? "" : "none";
+    // The player is part of the Replay tab: shown as soon as the tab is,
+    // idle (controls inert) until a recording is loaded.
+    bar.style.display = (curTab === "replay") ? "" : "none";
+    bar.classList.toggle("is-empty", !rp.tl);
+    slider.disabled = playBtn.disabled = !rp.tl;
     if (window.__markDirty) window.__markDirty();
   }
   document.addEventListener("sb-tab", (e) => {
@@ -11069,6 +11066,10 @@ function startRectPattern() {
       rp.root = null;
     }
     rp.tl = null; rp.dur = 0; rp.t = 0; rp.chapters = [];
+    nameEl.textContent = "No recording loaded";
+    nameEl.title = "";
+    slider.value = 0; slider.style.setProperty("--p", "0%");
+    timeEl.textContent = "00:00\u2009/\u200900:00";
     if (chapEl) { chapEl.textContent = ""; chapEl.hidden = true; }
     if (phaseEl) { phaseEl.textContent = ""; phaseEl.hidden = true; }
     // scene visibility stays tab-driven: on the Replay tab the canvas
@@ -11287,14 +11288,13 @@ function startRectPattern() {
     seek(rp.dur * (parseInt(slider.value, 10) || 0) / 1000);
   });
   window.addEventListener("keydown", (e) => {
-    if (bar.style.display === "none") return;
+    if (bar.style.display === "none" || !rp.tl) return;
     if (e.code === "Space" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) {
       e.preventDefault();
       rp.playing ? pause() : play();
     }
   });
 
-  window.addEventListener("resize", alignChapters);
   refreshList();
 })();
 
