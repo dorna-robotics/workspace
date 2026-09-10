@@ -19,6 +19,8 @@
   /*  topbar min-height + its margin — kept here so .gantt-body's cap
       cannot drift out of step with the strip above it. */
   --sched-topbar-h: 40px;
+  /*  The minimap strip under the plot + its margin. */
+  --sched-minimap-h: 72px;
 }
 
 /*  Header strip. The zoom controls live HERE, not floating over the
@@ -37,8 +39,42 @@
 .gantt-body {
   display: flex;
   align-items: flex-start;
-  max-height: calc(100% - var(--sched-topbar-h));
+  max-height: calc(100% - var(--sched-topbar-h) - var(--sched-minimap-h));
   min-height: 0;
+}
+/*  The minimap: the whole plan in one strip, phases named, a box for
+    the viewport. Fixed height; the SVG inside scales the chart to the
+    strip's width. */
+.sched-minimap {
+  margin-top: var(--space-3);
+  height: calc(var(--sched-minimap-h) - var(--space-3));
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.sched-minimap:active { cursor: grabbing; }
+.sched-mini-svg { display: block; }
+.sched-mini-band { fill: var(--accent); fill-opacity: 0.06; stroke: var(--border); stroke-width: 1; }
+.sched-mini-band.is-alt { fill-opacity: 0; }
+.sched-mini-label {
+  font: 600 8px/1 var(--mono);
+  fill: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.sched-mini-block.sched-pending { fill: var(--border); }
+.sched-mini-block.sched-done    { fill: var(--accent); fill-opacity: 0.45; }
+.sched-mini-block.sched-skipped { fill: var(--border); fill-opacity: 0.4; }
+.sched-mini-block.sched-running { fill: var(--accent); }
+.sched-mini-view {
+  fill: var(--accent); fill-opacity: 0.10;
+  stroke: var(--accent); stroke-width: 1.5;
+  pointer-events: none;
 }
 /*  Frozen label column — outside the scroller, so panning cannot take
     the row names off screen. */

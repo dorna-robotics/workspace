@@ -149,6 +149,10 @@ function _patchBlockState(leafKey) {
   const g = _ganttEl.querySelector(`g.sched-block[data-leaf-key="${leafKey}"]`);
   if (!g) { _render(); return; }
   _updateNowMarker();
+  if (_miniEl) {
+    const m = _miniEl.querySelector(`rect.sched-mini-block[data-leaf-key="${leafKey}"]`);
+    if (m) m.setAttribute("class", `sched-mini-block sched-${_leafState.get(leafKey) || "pending"}`);
+  }
   const state = _leafState.get(leafKey) || "pending";
   g.setAttribute("class", `sched-block sched-${state}`);
   // If this transition just produced a finished block, add its
@@ -244,6 +248,15 @@ export function attachSchedule(el, opts = {}) {
     tip.hidden = true;
     el.appendChild(tip);
   }
+  let mini = el.querySelector(":scope > .sched-minimap");
+  if (!mini) {
+    mini = document.createElement("div");
+    mini.className = "sched-minimap";
+    mini.title = "The whole plan — drag to move the view";
+    el.appendChild(mini);
+  }
+  _miniEl = mini;
+  _wireMinimap(mini);
   _tipEl    = el.querySelector(":scope > .sched-tip");
   _gutterEl = body.querySelector(".gantt-gutter");
   _ganttEl  = body.querySelector(".gantt-container");
@@ -253,6 +266,104 @@ export function attachSchedule(el, opts = {}) {
   if (opts.preview !== false) _mountPreviewControls(bar);
   _mountZoomControls(bar);
   _startNowMarker();
+}
+
+// ── Minimap — the whole plan at a glance, under the chart ─────────────
+// A strip that draws every phase band with its name, every block as a
+// thin mark in its row (coloured by state), and a box for the part of
+// the chart the viewport shows. Drag the box, or click, to move the
+// view. Rebuilt with the chart; the box follows every scroll.
+let _miniEl = null;
+let _chart = null;          // {W, H, rows, TOP_PAD, ROW_H} of the last render
+const MINI_BAND_H = 12;     // the band/name row at the top of the strip
+const MINI_ROW_H  = 6;      // one resource row in the strip
+
+function _miniScale() {
+  if (!_miniEl || !_chart || !_chart.W) return 0;
+  const mw = _miniEl.clientWidth;
+  return mw > 0 ? mw / _chart.W : 0;
+}
+
+function _buildMinimap() {
+  if (!_miniEl || !_chart) return;
+  const sx = _miniScale();
+  _miniEl.textContent = "";
+  if (!sx) return;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const mw = _miniEl.clientWidth;
+  const mh = MINI_BAND_H + _chart.rows * MINI_ROW_H + 4;
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("width", String(mw));
+  svg.setAttribute("height", String(mh));
+  svg.setAttribute("class", "sched-mini-svg");
+  // Phase bands, full height, alternating like the chart's.
+  _bands.forEach((b, i) => {
+    const x0 = b.x0 * sx, w = Math.max(2, (b.x1 - b.x0) * sx);
+    const r = document.createElementNS(svgNS, "rect");
+    r.setAttribute("x", String(x0)); r.setAttribute("y", "0");
+    r.setAttribute("width", String(w)); r.setAttribute("height", String(mh));
+    r.setAttribute("class", "sched-mini-band" + (i % 2 ? " is-alt" : ""));
+    svg.appendChild(r);
+    const fit = Math.floor((w - 4) / 5.6);
+    if (fit >= 3) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", String(x0 + 3)); t.setAttribute("y", "9");
+      t.setAttribute("class", "sched-mini-label");
+      t.textContent = b.phase.length <= fit ? b.phase : b.phase.slice(0, Math.max(1, fit - 1)) + "…";
+      const tt = document.createElementNS(svgNS, "title"); tt.textContent = b.phase; t.appendChild(tt);
+      svg.appendChild(t);
+    }
+  });
+  // Blocks as marks in their rows.
+  for (const key of _leafOrder) {
+    const g = _leafGeom.get(key);
+    if (!g) continue;
+    const r = document.createElementNS(svgNS, "rect");
+    r.setAttribute("x", String(g.x * sx));
+    r.setAttribute("y", String(MINI_BAND_H + (g.row || 0) * MINI_ROW_H + 1));
+    r.setAttribute("width", String(Math.max(1, g.w * sx - 0.5)));
+    r.setAttribute("height", String(MINI_ROW_H - 2));
+    r.setAttribute("rx", "1");
+    r.setAttribute("class", `sched-mini-block sched-${_leafState.get(key) || "pending"}`);
+    r.setAttribute("data-leaf-key", key);
+    svg.appendChild(r);
+  }
+  // The viewport box, on top.
+  const box = document.createElementNS(svgNS, "rect");
+  box.setAttribute("class", "sched-mini-view");
+  box.setAttribute("y", "0"); box.setAttribute("height", String(mh));
+  box.setAttribute("rx", "2");
+  svg.appendChild(box);
+  _miniEl.appendChild(svg);
+  _syncMinimapView();
+}
+
+function _syncMinimapView() {
+  if (!_miniEl || !_ganttEl) return;
+  const box = _miniEl.querySelector("rect.sched-mini-view");
+  const sx = _miniScale();
+  if (!box || !sx) return;
+  box.setAttribute("x", String(_ganttEl.scrollLeft * sx));
+  box.setAttribute("width", String(Math.max(6, _ganttEl.clientWidth * sx)));
+}
+
+function _wireMinimap(el) {
+  if (el.dataset.wired) return;
+  el.dataset.wired = "1";
+  let dragging = false;
+  const jump = (clientX) => {
+    const sx = _miniScale();
+    if (!sx || !_ganttEl) return;
+    const rect = el.getBoundingClientRect();
+    const px = clientX - rect.left;
+    _ganttEl.scrollLeft = Math.max(0, px / sx - _ganttEl.clientWidth / 2);
+  };
+  el.addEventListener("pointerdown", (e) => { dragging = true; el.setPointerCapture(e.pointerId); jump(e.clientX); });
+  el.addEventListener("pointermove", (e) => { if (dragging) jump(e.clientX); });
+  const stop = (e) => { dragging = false; try { el.releasePointerCapture(e.pointerId); } catch (_) {} };
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointercancel", stop);
+  if (window.ResizeObserver) new ResizeObserver(() => _buildMinimap()).observe(el);
 }
 
 // ── Preview — draw a plan that never ran ──────────────────────────────
@@ -416,6 +527,7 @@ let _stickyRaf = 0;
 let _stickyIdx = -2;   // -2 = never synced; -1 = no bands
 
 function _syncStickyBands() {
+  _syncMinimapView();
   if (_stickyRaf) return;                 // one update per frame, no more
   _stickyRaf = requestAnimationFrame(() => {
     _stickyRaf = 0;
@@ -598,6 +710,7 @@ function _renderGantt() {
     _stickyIdx = -2;
     if (_stickyEl) { _stickyEl.textContent = ""; _stickyEl.hidden = true; }
     _clearChart(_ganttEl);
+    if (_miniEl) _miniEl.textContent = "";
     const empty = document.createElement("div");
     empty.className = "sched-empty";
     empty.textContent = "No plan yet.";
@@ -609,6 +722,11 @@ function _renderGantt() {
   // identity shouldn't change across replans anyway). Resource rows
   // are the union across every slice's actions so a slice that only
   // touches shaker_2 still gets a row drawn for it.
+  // A re-render draws NEW label elements; the pinned label's memory of
+  // which band it stands in for must not survive that, or the early
+  // return in _applyStickyBands leaves the fresh label un-hidden and
+  // the same name shows twice at the left edge.
+  _stickyIdx = -2;
   const tres = _slices[_slices.length - 1].tool_resource || "robot";
   const resSet = new Set([tres]);
   for (const slice of _slices) {
@@ -746,7 +864,7 @@ function _renderGantt() {
       const key = _leafKey(sliceReplanId, p.a.leaf_name);
       placements.set(key, p);
       _leafOrder.push(key);
-      _leafGeom.set(key, { x: p.x, w: p.w });
+      _leafGeom.set(key, { x: p.x, w: p.w, y: p.y, h: p.h, row: p.rowIdx });
     }
 
     if (sliceIdx + 1 < _slices.length) {
@@ -919,6 +1037,8 @@ function _renderGantt() {
 
   _clearChart(_ganttEl);
   _ganttEl.appendChild(svg);
+  _chart = { W, H, rows: rows.length, TOP_PAD, ROW_H };
+  _buildMinimap();
   _updateNowMarker();
   // Synchronous: a rAF here would paint the labels at their band-start
   // x for one frame and then snap them, which is the very flash this
