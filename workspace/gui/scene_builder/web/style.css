@@ -772,7 +772,7 @@ select.input { cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: min(760px, calc(100% - 48px));
+  width: calc(100% - 48px);        /* the whole viewer width — the slider is the timeline */
   padding: 10px 14px 12px;
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface, #16181d) 88%, transparent);
@@ -1071,9 +1071,22 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
 .rp-chapters {
   position: relative;
   height: 18px;
-  margin: 2px 0 0 46px;        /* aligns with the slider: the play button + gap */
-  margin-right: 74px;          /* the time readout's width */
+  margin-top: 2px;
+  /* left / width are set by JS to the slider's own box, so the strip
+     and the slider share one x axis whatever the buttons measure. */
 }
+/* Phase step buttons — previous / next chapter, either side of the slider. */
+.rp-step {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex: 0 0 30px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+.rp-step:hover:not([disabled]) { border-color: var(--accent); color: var(--accent); }
+.rp-step[disabled] { opacity: 0.35; cursor: default; }
 .rp-chapter {
   position: absolute; top: 0; height: 100%;
   margin: 0; padding: 0 4px;

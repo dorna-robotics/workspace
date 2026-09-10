@@ -10904,6 +10904,32 @@ function startRectPattern() {
   const rp = { root: null, tl: null, dur: 0, t: 0, playing: false,
                raf: 0, lastWall: 0, hidden: [], speed: 1, chapters: [] };
   const chapEl = $("rpChapters"), phaseEl = $("rpPhase");
+  const prevBtn = $("rpPrev"), nextBtn = $("rpNext");
+
+  // The chapter strip shares the slider's x axis: same left, same width.
+  function alignChapters() {
+    if (!chapEl || !slider) return;
+    // offsetLeft is measured inside the bar's padding; the strip's
+    // margin starts at the content edge, so subtract the row's own
+    // offset or the strip lands one padding to the right.
+    const row = slider.parentElement;
+    chapEl.style.marginLeft = (slider.offsetLeft - (row ? row.offsetLeft : 0)) + "px";
+    chapEl.style.width = slider.offsetWidth + "px";
+  }
+  // Previous / next phase. "Previous" goes to the start of the current
+  // phase when we are more than 2 s into it, like a track button.
+  function stepPhase(dir) {
+    const chs = rp.chapters || [];
+    if (!chs.length || !_chapterMod) return;
+    const cur = _chapterMod.chapterAt(chs, rp.t);
+    const i = cur ? chs.indexOf(cur) : -1;
+    let target = null;
+    if (dir < 0) target = (cur && rp.t - cur.t0 > 2) ? cur : chs[Math.max(0, i - 1)];
+    else target = chs[Math.min(chs.length - 1, i + 1)];
+    if (target) { pause(); seek(target.t0); }
+  }
+  if (prevBtn) prevBtn.addEventListener("click", () => stepPhase(-1));
+  if (nextBtn) nextBtn.addEventListener("click", () => stepPhase(1));
 
   // ── Phase chapters on the slider ───────────────────────────────
   function renderChapters() {
@@ -10912,7 +10938,10 @@ function startRectPattern() {
     const chs = rp.chapters || [];
     chapEl.hidden = chs.length === 0;
     if (phaseEl) phaseEl.hidden = chs.length === 0;
+    if (prevBtn) prevBtn.disabled = chs.length === 0;
+    if (nextBtn) nextBtn.disabled = chs.length === 0;
     if (!chs.length || !rp.dur) return;
+    alignChapters();
     chs.forEach((c, i) => {
       const seg = document.createElement("button");
       seg.type = "button";
@@ -11265,6 +11294,7 @@ function startRectPattern() {
     }
   });
 
+  window.addEventListener("resize", alignChapters);
   refreshList();
 })();
 

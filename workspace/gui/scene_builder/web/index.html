@@ -286,7 +286,13 @@
           <svg id="rpIconPlay" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg>
           <svg id="rpIconPause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>
         </button>
+        <button class="rp-step" id="rpPrev" title="Previous phase" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="17 4 7 12 17 20"/><rect x="5" y="4" width="2" height="16"/></svg>
+        </button>
         <input type="range" id="rpSlider" min="0" max="1000" value="0" step="1"/>
+        <button class="rp-step" id="rpNext" title="Next phase" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 17 12 7 20"/><rect x="17" y="4" width="2" height="16"/></svg>
+        </button>
         <span id="rpTime">00:00&thinsp;/&thinsp;00:00</span>
       </div>
       <!-- Phase chapters under the slider — only when the recording
