@@ -278,9 +278,10 @@
   display: flex; align-items: center; gap: var(--space-2);
 }
 .sched-preview-n {
-  width: 4.5ch;
+  width: 6ch;
   height: 32px;
-  padding: 0 6px;
+  padding: 0 8px;
+  text-align: center;
   font: 600 12px/1 var(--mono);
   color: var(--text);
   background: var(--surface2);
