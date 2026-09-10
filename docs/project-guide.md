@@ -1145,7 +1145,9 @@ chosen batch and draws it (``POST /scene-builder/api/schedule_preview``).
 The workspace page's Schedule tab has the same as a *Preview* control: pick a batch size, and the runtime server runs
 ``bt.replay --json`` in a subprocess (``POST /schedule/preview``) and
 draws the result with the live Gantt's own renderer, marked PREVIEW,
-one band per phase — the picture of the terminal listing, no motion. During a real run the same chart carries a **now-marker**, a
+one band per phase, and every tool swap as an orange bar carrying
+the tool's name in front of the first action that needs it — the
+picture of the terminal listing, no motion. During a real run the same chart carries a **now-marker**, a
 vertical line through the running block that advances with elapsed
 time over the planned duration.
 

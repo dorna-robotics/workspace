@@ -154,7 +154,8 @@ function _patchBlockState(leafKey) {
     if (m) m.setAttribute("class", `sched-mini-block sched-${_leafState.get(leafKey) || "pending"}`);
   }
   const state = _leafState.get(leafKey) || "pending";
-  g.setAttribute("class", `sched-block sched-${state}`);
+  const isSwap = g.classList.contains("sched-swap");
+  g.setAttribute("class", `sched-block${isSwap ? " sched-swap" : ""} sched-${state}`);
   // If this transition just produced a finished block, add its
   // elapsed-time label under the rect. (Done before only via a full
   // re-render — we replicate just the duration text here.)
@@ -329,6 +330,16 @@ function _buildMinimap() {
   for (const key of _leafOrder) {
     const g = _leafGeom.get(key);
     if (!g) continue;
+    if (g.swap) {
+      const t = document.createElementNS(svgNS, "rect");
+      t.setAttribute("x", String((g.x + 7) * sx - 0.75));
+      t.setAttribute("y", String(MINI_BAND_H + (g.row || 0) * rowH));
+      t.setAttribute("width", "1.5");
+      t.setAttribute("height", String(rowH));
+      t.setAttribute("class", "sched-mini-swap");
+      svg.appendChild(t);
+      continue;
+    }
     const r = document.createElementNS(svgNS, "rect");
     r.setAttribute("x", String(g.x * sx));
     r.setAttribute("y", String(MINI_BAND_H + (g.row || 0) * rowH + 1));
@@ -839,6 +850,21 @@ function _renderGantt() {
     // Chart time uses actual ``wall_ts`` when available so completed
     // runs reflect what really happened, not what the planner
     // predicted.
+    // TOOL SWAPS ARE PART OF THE FLOW. The runtime inserts a swap right
+    // before the first action that needs the other tool; the scheduler
+    // ends the swap where that action starts. Anchor each swap to that
+    // action, and give it its own slot in the layout so the tool name
+    // has room — a swap is a real motion on the robot, not decoration.
+    for (const w of (slice.swaps || [])) {
+      const at = (w.start_t || 0) + (w.duration || 0);
+      let best = null;
+      for (const p of local.values()) {
+        if (p.swapBefore) continue;
+        const ps = chartStart(p.a);
+        if (ps >= at - 1e-6 && (!best || ps < chartStart(best.a))) best = p;
+      }
+      if (best) best.swapBefore = w;
+    }
     const allByTime = [...local.values()].sort(
       (a, b) => chartStart(a.a) - chartStart(b.a),
     );
@@ -860,6 +886,11 @@ function _renderGantt() {
           if (right > nx) nx = right;
         }
       }
+      if (p.swapBefore) {
+        p.swapX = nx;
+        p.swapW = swapWidth(p.swapBefore);
+        nx += p.swapW;
+      }
       p.x = nx;
       placed.push(p);
     }
@@ -873,6 +904,11 @@ function _renderGantt() {
       if (p.x + p.w > sliceMaxX) sliceMaxX = p.x + p.w;
       p.phase = slice.phase || null;
       const key = _leafKey(sliceReplanId, p.a.leaf_name);
+      if (p.swapBefore) {
+        const sk = _leafKey(sliceReplanId, p.swapBefore.leaf_name);
+        _leafOrder.push(sk);
+        _leafGeom.set(sk, { x: p.swapX, w: p.swapW, y: p.y, h: p.h, row: p.rowIdx, swap: true });
+      }
       placements.set(key, p);
       _leafOrder.push(key);
       _leafGeom.set(key, { x: p.x, w: p.w, y: p.y, h: p.h, row: p.rowIdx });
@@ -1030,7 +1066,7 @@ function _renderGantt() {
       for (let i = 0; i + 1 < arr.length; i++) {
         const A = arr[i], B = arr[i + 1];
         const x1 = A.x + A.w;
-        const x2 = B.x;
+        const x2 = B.swapBefore ? B.swapX : B.x;
         if (x2 - x1 < 4) continue;
         const yMid = A.y + A.h / 2;
         const stA = _leafState.get(_leafKey(A.replan_id, A.a.leaf_name)) || "pending";
@@ -1050,6 +1086,10 @@ function _renderGantt() {
 
   // Action blocks.
   for (const p of placements.values()) {
+    if (p.swapBefore) {
+      const sk = _leafKey(p.replan_id, p.swapBefore.leaf_name);
+      _appendSwap(gBlocks, p, _leafState.get(sk) || "pending", swapLabel(p.swapBefore));
+    }
     const state = _leafState.get(_leafKey(p.replan_id, p.a.leaf_name)) || "pending";
     _appendBlock(gBlocks, p, state);
   }
@@ -1063,6 +1103,44 @@ function _renderGantt() {
   // x for one frame and then snap them, which is the very flash this
   // whole mechanism exists to avoid.
   _applyStickyBands();
+}
+
+const swapLabel = (w) => `⇄ ${w.to || "park"}`;
+const swapWidth = (w) => Math.max(36, swapLabel(w).length * CHAR_W + 24) * _zoom;
+
+// A tool swap: a vertical bar in the gap before the block that needs
+// the new tool, with the tool's name beside it. Same state grammar and
+// tooltip as a block (it is a ``.sched-block`` for the patch/tip paths).
+function _appendSwap(parent, p, state, label) {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const w = p.swapBefore;
+  const g = document.createElementNS(svgNS, "g");
+  g.setAttribute("class", `sched-block sched-swap sched-${state}`);
+  g.setAttribute("data-leaf-key", _leafKey(p.replan_id, w.leaf_name));
+  g.dataset.label = `tool swap ${w.from || "none"} → ${w.to || "park"}`;
+  g.dataset.res = "robot";
+  if (w.duration != null) g.dataset.plan = String(w.duration);
+  if (p.phase) g.dataset.phase = p.phase;
+  const cx = p.swapX + 7;
+  const hit = document.createElementNS(svgNS, "rect");     // hover target
+  hit.setAttribute("x", String(p.swapX)); hit.setAttribute("y", String(p.y - 4));
+  hit.setAttribute("width", String(p.swapW)); hit.setAttribute("height", String(p.h + 8));
+  hit.setAttribute("class", "sched-swap-hit");
+  g.appendChild(hit);
+  const line = document.createElementNS(svgNS, "line");
+  line.setAttribute("x1", String(cx)); line.setAttribute("x2", String(cx));
+  line.setAttribute("y1", String(p.y - 4)); line.setAttribute("y2", String(p.y + p.h + 4));
+  line.setAttribute("class", "sched-swap-line");
+  g.appendChild(line);
+  if (p.swapW >= label.length * CHAR_W * 0.9 * _zoom) {
+    const t = document.createElementNS(svgNS, "text");
+    t.setAttribute("x", String(cx + 7));
+    t.setAttribute("y", String(p.y + p.h / 2 + 4));
+    t.setAttribute("class", "sched-swap-label");
+    t.textContent = label;
+    g.appendChild(t);
+  }
+  parent.appendChild(g);
 }
 
 function _appendBlock(parent, p, state) {
