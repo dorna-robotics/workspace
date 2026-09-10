@@ -54,6 +54,12 @@ class Display:
 
         # delta compression: cache last sent pose per object
         self._last_sent = {}  # key → (pose_tuple, collision_hash)
+        # What the viewer has been told exists — the base for the
+        # ``delete`` diff in send_snapshot. Separate from _last_sent on
+        # purpose: that cache is cleared to force a full resend and only
+        # refills as frames go out, so it is NOT a record of what is on
+        # screen (see send_snapshot).
+        self._shown_keys = set()
 
     
         # socket.io client
@@ -153,20 +159,22 @@ class Display:
         ``delete: true``. A plain snapshot only *omits* a removed object,
         which the viewer treats as "unchanged" and leaves the stale mesh
         on screen — so a runtime ``remove_component`` wouldn't visually
-        disappear. We diff the previously-sent keys against the new
-        snapshot and append a delete marker for the gone ones, in the
-        SAME payload (a separate emit could be dropped by the
+        disappear. The diff base is ``_shown_keys``, everything the
+        viewer has been told exists — NOT ``_last_sent``: that cache is
+        cleared here to force a full resend and refills only as frames
+        go out, so two removals inside one frame period left the second
+        with an empty base and no delete marker (28 caps dropped in a
+        loop: only the first vanished on screen). The marker rides in
+        the SAME payload (a separate emit could be dropped by the
         inflight-replace path)."""
         try:
             snap = self._build_snapshot()
-            # _last_sent doubles as the delete-diff base and is also
-            # written by the 60fps frame thread — read+clear atomically so
-            # a concurrent frame can neither tear the diff nor erase the
-            # knowledge that a now-removed object was ever on screen.
+            keys = set(snap.keys())
             with self._state_lock:
-                prev_keys = set(self._last_sent.keys())
+                gone = self._shown_keys - keys
+                self._shown_keys = keys
                 self._last_sent.clear()
-            for k in prev_keys - set(snap.keys()):
+            for k in gone:
                 snap[k] = {"delete": True}
             self._emit_update(snap)
         except Exception as e:
