@@ -811,15 +811,21 @@ function _renderGantt() {
     // overlay handles the band under the viewport edge, whose own label
     // has scrolled out of reach; this handles every other visible band,
     // which the overlay alone left anonymous.
-    let lab = null;
-    if (w > b.phase.length * 6.2 + 14) {
-      lab = document.createElementNS(svgNS, "text");
-      lab.setAttribute("x", String(b.x0 - BAND_PAD + 8));
-      lab.setAttribute("y", String(TOP_PAD - 12));
-      lab.setAttribute("class", "sched-phase-label");
-      lab.textContent = b.phase;
-      gBands.appendChild(lab);
-    }
+    // EVERY band carries its name. A phase of four blocks is still a
+    // phase; when the band is narrower than the text the name is cut
+    // to what fits plus an ellipsis, and the full name sits in a
+    // tooltip. The sticky copy at the viewport edge shows it in full.
+    const CHAR = 6.2, fit = Math.floor((w + 2 * BAND_PAD - 12) / CHAR);
+    let lab = document.createElementNS(svgNS, "text");
+    lab.setAttribute("x", String(b.x0 - BAND_PAD + 6));
+    lab.setAttribute("y", String(TOP_PAD - 12));
+    lab.setAttribute("class", "sched-phase-label");
+    lab.textContent = (b.phase.length <= fit) ? b.phase
+                    : (fit >= 4 ? b.phase.slice(0, fit - 1) + "…" : "…");
+    const tt = document.createElementNS(svgNS, "title");
+    tt.textContent = b.phase;
+    lab.appendChild(tt);
+    gBands.appendChild(lab);
     _bands.push({ phase: b.phase, x0: b.x0 - BAND_PAD, x1: b.x1 + BAND_PAD,
                   el: lab });
   });
