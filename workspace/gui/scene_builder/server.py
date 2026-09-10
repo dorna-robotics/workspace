@@ -1533,14 +1533,131 @@ class ReplayListHandler(tornado.web.RequestHandler):
         self.write({"ok": True, "project": _project_path, "replays": out})
 
 
+def parse_recording(path, fps=10.0, max_frames=400_000):
+    """Stream a replay_*.jsonl into {meta, snap, frames, events}.
+
+    Frames are THINNED to at most ``fps`` per second of recording and
+    STRIPPED to what playback uses — pose and joints per solid, the
+    full spec only for a solid the snapshot did not have (added
+    mid-run) or a delete. Thinning MERGES: a dropped frame's poses are
+    carried into the next kept frame, so no solid's last position is
+    lost. Older recordings (full specs per frame) come out the same
+    size as new compact ones. Memory is what is KEPT, never the file.
+    Returns (result, error)."""
+    min_dt = (1.0 / fps) if fps and fps > 0 else 0.0
+    meta, snap, frames, events = {}, {}, [], []
+    seen = set()
+    pending = {}
+    last_t = None
+    last_kept_t = None
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if "meta" in row:
+                meta = row["meta"]
+            elif "snap" in row:
+                snap = row["snap"]
+                seen = set(snap)
+            elif "ev" in row:
+                events.append({"t": row.get("t", 0), "ev": row["ev"]})
+            else:
+                t = float(row.get("t", 0))
+                for name, spec in (row.get("u") or {}).items():
+                    if not isinstance(spec, dict):
+                        continue
+                    if spec.get("delete") or name not in seen:
+                        pending[name] = spec
+                        seen.add(name)
+                        continue
+                    slim = pending.get(name) if isinstance(pending.get(name), dict) else {}
+                    for k in ("pose", "joints", "visible"):
+                        if k in spec:
+                            slim[k] = spec[k]
+                    if slim:
+                        pending[name] = slim
+                last_t = t
+                if last_kept_t is None or t - last_kept_t >= min_dt:
+                    if pending:
+                        frames.append({"t": t, "u": pending})
+                        pending = {}
+                    last_kept_t = t
+                    if len(frames) > max_frames:
+                        return None, (f"recording keeps more than {max_frames} frames at "
+                                      f"{fps:g} fps — load it at a lower rate")
+    if pending and last_t is not None:           # the tail, whatever the rate
+        frames.append({"t": last_t, "u": pending})
+    return {"meta": meta, "snap": snap, "frames": frames, "events": events}, None
+
+
+def encode_replay(result, path, fps):
+    """The parsed recording as the COLUMNAR BINARY the Replay tab loads:
+
+        "DRPL" | uint32 header length | header JSON (padded to 4 bytes)
+        | per key, in header order: float32 times[n], float32 poses[n*6]
+
+    One typed array of times and one of poses per moving solid, instead
+    of one JSON object per frame per solid: the same 7-hour run is
+    ~40 MB on the wire and ~40 MB in the browser, where JSON frames
+    were 210 MB of text and ten times that as objects. The header
+    carries what is small — meta, the snapshot, the schedule events,
+    the key list, and any mid-run add/delete specs under ``extras``."""
+    import struct
+    snap = result["snap"] or {}
+    frames = result["frames"]
+    cols = {}          # name -> (times list, poses list)
+    def col(name):
+        c = cols.get(name)
+        if c is None:
+            c = cols[name] = ([], [])
+            sp = snap.get(name)
+            if isinstance(sp, dict) and isinstance(sp.get("pose"), list) and len(sp["pose"]) == 6:
+                c[0].append(0.0); c[1].extend(float(x) for x in sp["pose"])
+        return c
+    extras = []
+    for fr in frames:
+        t = float(fr["t"])
+        for name, spec in fr["u"].items():
+            if not isinstance(spec, dict):
+                continue
+            pose = spec.get("pose")
+            if isinstance(pose, list) and len(pose) == 6:
+                c = col(name)
+                c[0].append(t); c[1].extend(float(x) for x in pose)
+            if spec.get("delete") or ("meshUrl" in spec and name not in snap):
+                if len(extras) < 2000:
+                    extras.append({"t": t, "name": name, "spec": spec})
+    names = list(cols)
+    header = {"ok": True, "path": path, "fps": fps, "meta": result["meta"], "snap": snap,
+              "events": result["events"], "extras": extras,
+              "dur": float(frames[-1]["t"]) if frames else 0.0,
+              "keys": [{"name": n, "n": len(cols[n][0])} for n in names],
+              "samples": sum(len(cols[n][0]) for n in names)}
+    hb = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hb += b" " * ((4 - len(hb) % 4) % 4)
+    parts = [b"DRPL", struct.pack("<I", len(hb)), hb]
+    for n in names:
+        ts, ps = cols[n]
+        parts.append(struct.pack("<%df" % len(ts), *ts))
+        parts.append(struct.pack("<%df" % len(ps), *ps))
+    return b"".join(parts)
+
+
 class ReplayFileHandler(tornado.web.RequestHandler):
-    """GET ?path= → one parsed recording: {meta, snap, frames}. Accepts
-    an absolute path (the panel's free path box) or a bare replay_*.jsonl
-    name resolved in the active project's core/."""
+    """GET ?path=&fps= → one parsed recording, as the columnar binary
+    of :func:`encode_replay` (errors stay JSON ``{ok: false, error}``). Accepts an absolute path (the panel's free path box) or a
+    bare replay_*.jsonl name resolved in the active project's core/.
+    ``fps`` (default 10) is the playback frame rate the file is thinned
+    to — see :func:`parse_recording`. Parsed in a worker thread so a
+    long file never stalls the builder."""
 
-    _MAX_BYTES = 120 * 1024 * 1024
-
-    def get(self):
+    async def get(self):
+        try:
+            fps = float(self.get_argument("fps", "10"))
+        except ValueError:
+            fps = 10.0
         path = self.get_argument("path", "")
         if path and os.sep not in path and _project_path:
             path = os.path.join(_project_path, "core", path)
@@ -1553,32 +1670,22 @@ class ReplayFileHandler(tornado.web.RequestHandler):
             self.set_status(404)
             self.write({"ok": False, "error": f"no such file: {path}"})
             return
-        if os.path.getsize(path) > self._MAX_BYTES:
-            self.set_status(413)
-            self.write({"ok": False, "error": "recording too large to load"})
+        def _run():
+            try:
+                result, err = parse_recording(path, fps=fps)
+                if err:
+                    return None, err
+                return encode_replay(result, path, fps), None
+            except Exception as e:
+                return None, f"unreadable recording: {e}"
+        blob, err = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
+        if err:
+            self.set_status(413 if "lower rate" in err else 500)
+            self.write({"ok": False, "error": err})
             return
-        meta, snap, frames, events = {}, {}, [], []
-        try:
-            with open(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    row = json.loads(line)
-                    if "meta" in row:
-                        meta = row["meta"]
-                    elif "snap" in row:
-                        snap = row["snap"]
-                    elif "ev" in row:
-                        events.append({"t": row.get("t", 0), "ev": row["ev"]})
-                    else:
-                        frames.append({"t": row.get("t", 0), "u": row.get("u", {})})
-        except Exception as e:
-            self.set_status(500)
-            self.write({"ok": False, "error": f"unreadable recording: {e}"})
-            return
-        self.write({"ok": True, "path": path, "meta": meta,
-                    "snap": snap, "frames": frames, "events": events})
+        self.set_header("Content-Type", "application/octet-stream")
+        self.set_header("Content-Length", str(len(blob)))
+        self.write(blob)
 
 
 class ResetHandler(tornado.web.RequestHandler):

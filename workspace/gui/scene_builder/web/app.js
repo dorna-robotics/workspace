@@ -10892,6 +10892,7 @@ function startRectPattern() {
 (function replayPlayer() {
   const $ = (id) => document.getElementById(id);
   let _chapterMod = null;    // replay_chapters.js, loaded on first use
+  let _fmt = null;           // replay_format.js — the wire format
   const listEl = $("rpList"), pathEl = $("rpPath"), loadBtn = $("rpLoad"),
         hintEl = $("rpHint"), refreshBtn = $("rpRefresh"),
         bar = $("rpBar"), playBtn = $("rpPlay"), slider = $("rpSlider"),
@@ -11061,39 +11062,35 @@ function startRectPattern() {
   // timeline entries.
   const INTERP_MAX_GAP = 0.4;   // s
 
-  function entryVQ(e) {
-    if (!e._v) {
-      const T = window.__three.THREE;
-      const p = e[1];
-      e._v = new T.Vector3(p[0], p[1], p[2]);
-      e._q = rodQuat(p[3], p[4], p[5]);
-    }
-    return e;
+  // Scratch objects for the seek — no allocation per key per frame.
+  let _sv = null, _sq = null, _sv2 = null, _sq2 = null;
+  function _poseInto(p, i, v, q) {
+    const o = 6 * i;
+    v.set(p[o], p[o + 1], p[o + 2]);
+    q.copy(rodQuat(p[o + 3], p[o + 4], p[o + 5]));
   }
 
   function seek(t) {
     rp.t = Math.max(0, Math.min(t, rp.dur));
+    if (!_sv) {
+      const T = window.__three.THREE;
+      _sv = new T.Vector3(); _sq = new T.Quaternion(); _sv2 = new T.Vector3(); _sq2 = new T.Quaternion();
+    }
     for (const [key, tl] of rp.tl) {
       const holder = rp.holders.get(key);
-      if (!holder) continue;
-      // last entry with time <= t (binary search)
-      let lo = 0, hi = tl.length - 1, best = 0;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (tl[mid][0] <= rp.t) { best = mid; lo = mid + 1; }
-        else hi = mid - 1;
-      }
-      const a = entryVQ(tl[best]);
-      const b = best + 1 < tl.length ? tl[best + 1] : null;
-      const gap = b ? (b[0] - a[0]) : Infinity;
-      if (b && gap > 0 && gap <= INTERP_MAX_GAP) {
-        entryVQ(b);
-        const alpha = Math.min(1, Math.max(0, (rp.t - a[0]) / gap));
-        holder.position.lerpVectors(a._v, b._v, alpha);
-        holder.quaternion.slerpQuaternions(a._q, b._q, alpha);
+      if (!holder || !tl.t.length) continue;
+      const i = _fmt.sampleAt(tl.t, rp.t);
+      const j = i + 1 < tl.t.length ? i + 1 : -1;
+      const gap = j >= 0 ? (tl.t[j] - tl.t[i]) : Infinity;
+      _poseInto(tl.p, i, _sv, _sq);
+      if (j >= 0 && gap > 0 && gap <= INTERP_MAX_GAP) {
+        _poseInto(tl.p, j, _sv2, _sq2);
+        const alpha = Math.min(1, Math.max(0, (rp.t - tl.t[i]) / gap));
+        holder.position.lerpVectors(_sv, _sv2, alpha);
+        holder.quaternion.slerpQuaternions(_sq, _sq2, alpha);
       } else {
-        holder.position.copy(a._v);
-        holder.quaternion.copy(a._q);
+        holder.position.copy(_sv);
+        holder.quaternion.copy(_sq);
       }
     }
     const pct = rp.dur > 0 ? (100 * rp.t / rp.dur) : 0;
@@ -11142,8 +11139,18 @@ function startRectPattern() {
     loadBtn.textContent = "Loading…";
     hint("");
     try {
-      const js = await fetch(SB_API + "/replay?path=" + encodeURIComponent(path))
-        .then(r => r.json());
+      const fpsEl = $("rpFps");
+      const fps = fpsEl ? fpsEl.value : "10";
+      _fmt = _fmt || await import("./replay_format.js");
+      const res = await fetch(SB_API + "/replay?path=" + encodeURIComponent(path)
+                              + "&fps=" + encodeURIComponent(fps));
+      const ctype = res.headers.get("content-type") || "";
+      if (!res.ok || ctype.includes("json")) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error((e && e.error) || `load failed (HTTP ${res.status})`);
+      }
+      const parsed = _fmt.parseReplay(await res.arrayBuffer());
+      const js = parsed.header;
       if (!js || !js.ok) throw new Error((js && js.error) || "load failed");
       teardown();
       const T = window.__three.THREE;
@@ -11204,20 +11211,10 @@ function startRectPattern() {
           holder.add(colGroup);
         }
       }
-      // per-key pose timeline: snapshot at t=0 + every delta after
-      rp.tl = new Map();
-      for (const [key, item] of Object.entries(js.snap || {})) {
-        if (item && item.pose) rp.tl.set(key, [[0, item.pose]]);
-      }
-      for (const f of js.frames || []) {
-        for (const [key, item] of Object.entries(f.u || {})) {
-          if (!item || !item.pose) continue;
-          if (!rp.tl.has(key)) rp.tl.set(key, [[0, item.pose]]);
-          rp.tl.get(key).push([f.t, item.pose]);
-        }
-      }
-      rp.dur = (js.frames && js.frames.length)
-        ? js.frames[js.frames.length - 1].t : 0;
+      // per-key pose timelines: typed arrays straight off the wire
+      // (snapshot pose at t=0 is the server's first sample per key)
+      rp.tl = parsed.tl;
+      rp.dur = js.dur || 0;
       // Phase chapters, when the recording carries the run's schedule.
       rp.chapters = [];
       if (js.events && js.events.length) {
@@ -11233,7 +11230,8 @@ function startRectPattern() {
       applyCanvasMode();
       seek(0);
       hint(`${(js.path || path).split("/").pop()} — ${fmt(rp.dur)}, ` +
-           `${(js.frames || []).length} frames`);
+           `${js.keys ? js.keys.length : 0} solids, ${js.samples || 0} samples` +
+           (js.fps ? ` at ${js.fps} fps` : ""));
     } catch (e) {
       hint(String(e.message || e), true);
       teardown();

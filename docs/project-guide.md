@@ -940,6 +940,14 @@ scene builder's Replay tab scrubs. Because it is server-side:
   moment the runtime stamps ``run_finished_at`` (``on_run_start`` is its
   twin at ``run_started_at``); a recorder armed on an idle bench stays
   armed until the run it was waiting for finishes;
+* frames are COMPACT deltas — the pose (and joints) of what moved,
+  the full spec only for a solid added mid-run — about 150 bytes each;
+  the Replay tab loads any length: the builder streams the file,
+  thins it to a chosen playback rate (10 fps default, merging dropped
+  frames so no solid's last position is lost) and sends it as a
+  columnar binary — one typed array of times and one of poses per
+  solid (``gui/scene_builder/web/replay_format.js``). A 7-hour run is
+  ~35 MB on the wire where JSON frames were 400 MB;
 * the file is flushed every 25 lines and closed at process exit;
 * **the run's schedule is recorded beside the frames** — every plan
   slice and every action / swap start and end, on the recording's

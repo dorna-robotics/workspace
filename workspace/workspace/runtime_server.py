@@ -122,12 +122,41 @@ async def connect(sid, environ, auth):
         await sio.emit("request_snapshot")
 
 
+def _compact_delta(payload: dict, state: dict) -> dict:
+    """What a recording needs from a scene delta: the pose (and joints)
+    of every solid that moved, and the FULL spec only for a solid the
+    recording has not seen (a component added mid-run) or a delete.
+    Every other field — meshUrl, collision boxes, identity — is already
+    in the snapshot and never changes; repeating it per frame made a
+    frame 3.4 KB where 150 bytes carried the information (a 7-hour run
+    recorded 760 MB and could not be opened)."""
+    out = {}
+    for name, spec in payload.items():
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("delete") or name not in state:
+            out[name] = spec
+            continue
+        slim = {}
+        for k in ("pose", "joints"):
+            if isinstance(spec.get(k), list):
+                # 0.001 mm / 0.001 deg is far below what a replay can show;
+                # full float repr was half of every frame's bytes.
+                slim[k] = [round(float(x), 3) for x in spec[k]]
+        if "visible" in spec and spec["visible"] != state[name].get("visible"):
+            slim["visible"] = spec["visible"]
+        if slim:
+            out[name] = slim
+    return out
+
+
 @sio.event
 async def upstream_update(sid, payload):
-    merge_into_state(world_state, payload)
     if _recorder["fp"] is not None:
-        _record_line({"t": round(time.time() - _recorder["t0"], 4),
-                      "u": payload})
+        delta = _compact_delta(payload, world_state)
+        if delta:
+            _record_line({"t": round(time.time() - _recorder["t0"], 4), "u": delta})
+    merge_into_state(world_state, payload)
     await sio.emit("scene_update", payload)   # back to payload
     return "ok"
 
