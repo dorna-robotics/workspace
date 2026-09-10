@@ -59,7 +59,7 @@
 .sched-minimap {
   margin-top: var(--space-3);
   height: calc(var(--sched-minimap-h) - var(--space-3));
-  background: var(--surface2);
+  background: var(--surface);      /* white like the chart, so the bands alternate gray / white */
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -69,7 +69,7 @@
 }
 .sched-minimap:active { cursor: grabbing; }
 .sched-mini-svg { display: block; }
-.sched-mini-band { fill: var(--surface3); fill-opacity: 0.6; stroke: var(--sched-band-stroke); stroke-width: 1; }
+.sched-mini-band { fill: var(--sched-band-fill); fill-opacity: var(--sched-band-alpha); stroke: var(--sched-band-stroke); stroke-width: 1; }
 .sched-mini-band.is-alt { fill-opacity: 0; }
 .sched-mini-label {
   font: 600 8px/1 var(--mono);
