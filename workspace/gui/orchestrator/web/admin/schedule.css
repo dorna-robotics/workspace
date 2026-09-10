@@ -3,7 +3,18 @@
    (served at /orchestrator/schedule.css), so the same plan looks the
    same everywhere. Design tokens come from /vendor/base.css. */
 
+/*  THE SCHEDULE'S GRAYS, in one place. The phase band is a faint cool
+    tint, never a gray slab, so the neutral lines drawn over it (row
+    separators, slice dividers, pending connectors) stay visible inside
+    a band and outside it alike. Same values feed the minimap. */
 .gantt-panel {
+  --sched-band-fill:    var(--accent);
+  --sched-band-alpha:   0.055;
+  --sched-band-stroke:  var(--border);
+  --sched-line:         var(--border);       /* row separators, dividers */
+  --sched-line-alpha:   0.9;
+  --sched-connector:    var(--border);
+  --sched-pending-fill: var(--surface);
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -58,7 +69,7 @@
 }
 .sched-minimap:active { cursor: grabbing; }
 .sched-mini-svg { display: block; }
-.sched-mini-band { fill: var(--accent); fill-opacity: 0.07; stroke: var(--border); stroke-width: 1; }
+.sched-mini-band { fill: var(--sched-band-fill); fill-opacity: 0.09; stroke: var(--sched-band-stroke); stroke-width: 1; }
 .sched-mini-band.is-alt { fill-opacity: 0; }
 .sched-mini-label {
   font: 600 8px/1 var(--mono);
@@ -136,9 +147,9 @@
   text-transform: uppercase;
 }
 .sched-rowline {
-  stroke: var(--border2);
+  stroke: var(--sched-line);
   stroke-width: 1;
-  opacity: 0.45;
+  opacity: var(--sched-line-alpha);
 }
 
 /* ── Connector — short blue line between consecutive blocks on a row */
@@ -149,15 +160,15 @@
 }
 /* Connector strokes match the corresponding block's border so the
    chart reads as one coherent strip. */
-.sched-connector.pending { stroke: var(--border);              opacity: 0.65; stroke-dasharray: 3 4; }
+.sched-connector.pending { stroke: var(--sched-connector);     opacity: 0.9;  stroke-dasharray: 3 4; }
 .sched-connector.done    { stroke: rgba(10,132,255,0.32); }
 
 /* ── Slice divider — vertical separator between replan slices ────── */
 .sched-slice-divider {
-  stroke: var(--border);
+  stroke: var(--sched-line);
   stroke-width: 1;
   stroke-dasharray: 4 6;
-  opacity: 0.5;
+  opacity: var(--sched-line-alpha);
 }
 
 /* ── Phase band — groups the slices belonging to one phase ─────────── */
@@ -191,9 +202,9 @@
     a phase does not have (§9). This is a wash and an outline, both
     positional.                                                        */
 .sched-phase-band {
-  fill: var(--muted);
-  fill-opacity: 0.18;          /* vs no fill: 1.21:1 dark, 1.19:1 light */
-  stroke: var(--border);
+  fill: var(--sched-band-fill);
+  fill-opacity: var(--sched-band-alpha);
+  stroke: var(--sched-band-stroke);
   stroke-width: 1;
 }
 .sched-phase-band.is-alt { fill-opacity: 0; }   /* outline only */
@@ -358,7 +369,7 @@
 }
 
 /* PENDING (future) — solid neutral card */
-.sched-block.sched-pending .sched-block-fill   { fill: var(--surface2); }
+.sched-block.sched-pending .sched-block-fill   { fill: var(--sched-pending-fill); }
 .sched-block.sched-pending .sched-block-border { stroke: var(--border); }
 .sched-block.sched-pending .sched-blocklabel   { fill: var(--muted); }
 
