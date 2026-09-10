@@ -28,6 +28,7 @@ import io
 import json
 import os
 import sys
+import time
 
 import yaml
 
@@ -224,7 +225,9 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
 
         # ── Phased: window by window, phase by phase ──────────────────
         from workspace.bt.phase import current_phase, pick_window
+        from workspace.planner.replanner import expand_template_plan
         item_done = spec.get("item_done")
+        timing = []            # one row per slice: where the seconds go
         plan_window = int(launch.get("plan_window", 4))
         state = set(initial)
         t_off = 0.0
@@ -255,20 +258,43 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
                 ctx.meta["objects"][slice_dim] = list(window)
             ctx.meta["current_phase"] = name
             rid += 1
-            domain = domain_from_templates(reg.to_templates(ctx))
+            t0 = time.perf_counter()
+            templates = reg.to_templates(ctx)
+            domain = domain_from_templates(templates)
             # The heuristic aims at the OPEN PHASE's facts (the launcher
             # does the same) — final facts would drag later actions in.
             if cur is not None and cur[4] is not None:
                 gf = frozenset(cur[4](scoped))
             else:
                 gf = spec.get("goal_facts") or reg.derive_goal_facts(ctx)
-            res = pddl_plan(fstate, domain, goal, goal_facts=gf)
+            t1 = time.perf_counter()
+            # TEMPLATE EXPANSION FIRST, search as the fallback — the
+            # launcher's own rule (planner/replanner.py): plan ONE item's
+            # chain, stamp it for every item in the window, verify by
+            # simulation. Independent items are not searched for.
+            plan_fn = (lambda st, g, facts, _d=domain: pddl_plan(st, _d, g, goal_facts=facts))
+            res = None
+            expanded = False
+            if cur is not None and slice_dim and len(scoped) > 1:
+                try:
+                    res = expand_template_plan(templates, fstate, goal, gf, list(scoped),
+                                               ctx, slice_dim, plan_fn)
+                except Exception:
+                    res = None
+                expanded = res is not None
+            if res is None:
+                res = pddl_plan(fstate, domain, goal, goal_facts=gf)
+            t2 = time.perf_counter()
             if not res:
                 failures.append(f"phase {name or 'tail'} window {window}: NO PLAN")
                 break
             preds = build_precedence(res, reg, initial_state=fstate, ctx=ctx)
             caps = derive_capacity_spans(res, reg, initial_state=fstate, ctx=ctx)
             out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
+            t3 = time.perf_counter()
+            timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
+                           "expanded": expanded, "domain_s": round(t1 - t0, 3),
+                           "plan_s": round(t2 - t1, 3), "cpsat_s": round(t3 - t2, 3)})
             if show:
                 lines.append(f"── {name or 'tail'} · window {list(window)} · t0={t_off:.0f} ──")
             f_, l_, tool_now = _walk(res, out, reg, ctx, meta, state, t_off, show, tool_now, phase=name)
@@ -298,11 +324,31 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
                 failures.append("replay: more than 5000 slices — aborting")
                 break
         goal_ok = spec["goal"](frozenset(state))
+        if show:
+            # Where the seconds went, per phase — the guide's worked
+            # example in table form (bt-framework-guide §13).
+            agg = {}
+            for row in timing:
+                a = agg.setdefault(row["phase"], {"windows": 0, "actions": 0, "expanded": 0,
+                                                  "domain_s": 0.0, "plan_s": 0.0, "cpsat_s": 0.0})
+                a["windows"] += 1; a["actions"] += row["actions"]; a["expanded"] += int(row["expanded"])
+                for k in ("domain_s", "plan_s", "cpsat_s"):
+                    a[k] += row[k]
+            lines.append("")
+            lines.append(f"  {'phase':<16}{'windows':>8}{'actions':>9}{'template':>10}{'domain s':>10}{'plan s':>9}{'cpsat s':>9}")
+            tot = {"domain_s": 0.0, "plan_s": 0.0, "cpsat_s": 0.0}
+            for nm, a in agg.items():
+                lines.append(f"  {nm:<16}{a['windows']:>8}{a['actions']:>9}{a['expanded']:>7}/{a['windows']:<2}"
+                             f"{a['domain_s']:>10.2f}{a['plan_s']:>9.2f}{a['cpsat_s']:>9.2f}")
+                for k in tot:
+                    tot[k] += a[k]
+            lines.append(f"  {'TOTAL':<16}{'':>8}{len(res_all):>9}{'':>10}{tot['domain_s']:>10.2f}{tot['plan_s']:>9.2f}{tot['cpsat_s']:>9.2f}")
         extra = []
         if show:
             extra.append(lines)
         if event:
             ev = _schedule_event(res_all, out_all, swaps_all, meta, reg, t_off, kwargs)
+            ev["timing"] = timing
             for act, sl in zip(ev["actions"], [a for e in slice_events for a in e["actions"]]):
                 act["phase"] = sl.get("phase")
             ev["phases"] = [nm for nm, *_ in phases]
