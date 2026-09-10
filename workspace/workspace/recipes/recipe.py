@@ -98,11 +98,6 @@ class Recipe:
         corner=60.0,
         jmove_vaj=[200, 400, 2000],  # [200, 500, 3000],
         lmove_vaj=[600, 900, 3000],
-        # Dip speed for immerse/retract ([vel, accel, jerk], lmove
-        # class, sf-scaled like every other motion): the straight
-        # in-vessel legs run deliberately slow. One knob — override
-        # per recipe in recipes.j2 or per call via ``vaj=``.
-        dip_vaj=[150, 500, 3000],
         # Per-joint [vel, accel, jerk] ceilings for SMOVE folds — the
         # spline's global profile is derived so NO joint exceeds its
         # own row (core.smove_certify measures per joint). Rows are
@@ -182,7 +177,6 @@ class Recipe:
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
-        self.dip_vaj = prm["dip_vaj"]
         self.max_vaj_joint = [[float(x) for x in row] for row in prm["max_vaj_joint"]]
 
         # calibration
@@ -3087,7 +3081,7 @@ class Recipe:
                     f"moves ONLY straight along the axis")
 
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, **kwargs):
+                vaj=[150, 500, 3000], axis_tol=5.0, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm BELOW the top of
         the payload at ``anchor`` — ONE straight vertical lmove, at the
         dip speed, executed NOW.
@@ -3115,10 +3109,10 @@ class Recipe:
         CONTRACT: the tip must already be on the target's vertical
         axis (within ``axis_tol`` mm) — see ``_dip_solve``.
 
-        ``vaj`` overrides the dip speed ([vel, accel, jerk], lmove
-        class); default is the recipe's ``dip_vaj``. A tool with
-        ``lock_j5`` gets the wrist roll pinned; ``approach_j5=``
-        overrides per call.
+        ``vaj`` is the dip speed ([vel, accel, jerk], lmove class,
+        sf-scaled like every other motion): the straight in-vessel legs
+        run deliberately slow. A tool with ``lock_j5`` gets the wrist
+        roll pinned; ``approach_j5=`` overrides per call.
         """
         self._dip_reject_dead_kwargs("immerse", kwargs)
         lock = self._tool_lock_j5()
@@ -3127,7 +3121,7 @@ class Recipe:
         J, tp = self._dip_solve(anchor, solid_name, component,
                                 height_load - dist, j5, axis_tol,
                                 "immerse", **kwargs)
-        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.dip_vaj)
+        vel, accel, jerk = self.scaled_vaj(vaj)
         rt = self.rt
         rt.checkpoint()
         rt.lmove(joint=[float(v) for v in J], vel=vel, accel=accel,
@@ -3135,7 +3129,7 @@ class Recipe:
         return True
 
     def retract(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, **kwargs):
+                vaj=[150, 500, 3000], axis_tol=5.0, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm ABOVE the top of
         the payload at ``anchor`` — the mirror of ``immerse``: ONE
         straight vertical lmove up, at the dip speed.
@@ -3161,7 +3155,7 @@ class Recipe:
         J, tp = self._dip_solve(anchor, solid_name, component,
                                 height_load + dist, j5, axis_tol,
                                 "retract", **kwargs)
-        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.dip_vaj)
+        vel, accel, jerk = self.scaled_vaj(vaj)
         rt = self.rt
         if self.fuse and rt._is_workflow_thread():
             self._tail_deposit_lift(
