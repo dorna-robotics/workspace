@@ -71,10 +71,12 @@ class PhMeter(Recipe):
         return self._probe().read_stable(n=n, tolerance=tolerance,
                                          max_readings=max_readings, sim_return=sim_return)
 
-    def ph(self, stable: bool = True, sim_return: float = 7.000):
-        """pH value (float or None). ``None`` means "no valid reading" —
-        a BT action should ``return False`` on it and let the planner
-        re-select after recover (declarative retry, project-guide §8)."""
+    def ph(self, stable: bool = None, sim_return: float = 7.000):
+        """pH value (float or None). ``stable`` unset → the probe's own
+        ``settle`` setting (scene yaml); ``False`` → instantaneous.
+        ``None`` back means "no valid reading" — a BT action should
+        ``return False`` on it and let the planner re-select after
+        recover (declarative retry, project-guide §8)."""
         return self._probe().ph(stable=stable, sim_return=sim_return)
 
     def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
@@ -192,11 +194,13 @@ class PhMeterSite(Recipe):
         return self._probe().read_stable(n=n, tolerance=tolerance,
                                          max_readings=max_readings, sim_return=sim_return)
 
-    def ph(self, stable: bool = True, sim_return: float = 7.000):
-        """pH value (float or None). ``stable=True`` waits for a settled
-        reading. ``None`` means "no valid reading" — a BT action should
-        ``return False`` on it and let the planner re-select after
-        recover (declarative retry, project-guide §8)."""
+    def ph(self, stable: bool = None, sim_return: float = 7.000):
+        """pH value (float or None). ``stable`` unset → the probe's own
+        ``settle`` setting (scene yaml: settle / settle_n /
+        settle_tolerance / settle_max_readings); ``False`` →
+        instantaneous. ``None`` back means "no valid reading" — a BT
+        action should ``return False`` on it and let the planner
+        re-select after recover (declarative retry, project-guide §8)."""
         return self._probe().ph(stable=stable, sim_return=sim_return)
 
     def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
