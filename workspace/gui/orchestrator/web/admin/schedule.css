@@ -58,7 +58,7 @@
 }
 .sched-minimap:active { cursor: grabbing; }
 .sched-mini-svg { display: block; }
-.sched-mini-band { fill: var(--accent); fill-opacity: 0.06; stroke: var(--border); stroke-width: 1; }
+.sched-mini-band { fill: var(--accent); fill-opacity: 0.07; stroke: var(--border); stroke-width: 1; }
 .sched-mini-band.is-alt { fill-opacity: 0; }
 .sched-mini-label {
   font: 600 8px/1 var(--mono);
@@ -67,7 +67,7 @@
   text-transform: uppercase;
   pointer-events: none;
 }
-.sched-mini-block.sched-pending { fill: var(--border); }
+.sched-mini-block.sched-pending { fill: var(--muted); fill-opacity: 0.45; }
 .sched-mini-block.sched-done    { fill: var(--accent); fill-opacity: 0.45; }
 .sched-mini-block.sched-skipped { fill: var(--border); fill-opacity: 0.4; }
 .sched-mini-block.sched-running { fill: var(--accent); }

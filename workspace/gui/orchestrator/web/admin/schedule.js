@@ -299,7 +299,10 @@ function _buildMinimap() {
   if (!sx) return;
   const svgNS = "http://www.w3.org/2000/svg";
   const mw = _miniEl.clientWidth;
-  const mh = MINI_BAND_H + _chart.rows * MINI_ROW_H + 4;
+  // The rows share the strip's height evenly, so the strip is full
+  // whatever the resource count (5 rows on bna, 2 on a small bench).
+  const mh = _miniEl.clientHeight || (MINI_BAND_H + _chart.rows * MINI_ROW_H + 4);
+  const rowH = Math.max(4, Math.floor((mh - MINI_BAND_H - 3) / Math.max(1, _chart.rows)));
   const svg = document.createElementNS(svgNS, "svg");
   svg.setAttribute("width", String(mw));
   svg.setAttribute("height", String(mh));
@@ -328,9 +331,9 @@ function _buildMinimap() {
     if (!g) continue;
     const r = document.createElementNS(svgNS, "rect");
     r.setAttribute("x", String(g.x * sx));
-    r.setAttribute("y", String(MINI_BAND_H + (g.row || 0) * MINI_ROW_H + 1));
-    r.setAttribute("width", String(Math.max(1, g.w * sx - 0.5)));
-    r.setAttribute("height", String(MINI_ROW_H - 2));
+    r.setAttribute("y", String(MINI_BAND_H + (g.row || 0) * rowH + 1));
+    r.setAttribute("width", String(Math.max(1.5, g.w * sx - 0.5)));
+    r.setAttribute("height", String(rowH - 2));
     r.setAttribute("rx", "1");
     r.setAttribute("class", `sched-mini-block sched-${_leafState.get(key) || "pending"}`);
     r.setAttribute("data-leaf-key", key);

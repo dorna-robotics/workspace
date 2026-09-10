@@ -988,7 +988,8 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
    orchestrator's (schedule.js + schedule.css). */
 .sb-sched-pane {
   position: absolute;
-  inset: 16px;
+  top: 16px; left: 16px; right: 16px;
+  max-height: calc(100% - 32px);      /* hugs the chart; never taller than the area */
   z-index: 60;
   display: none;
   background: var(--surface);

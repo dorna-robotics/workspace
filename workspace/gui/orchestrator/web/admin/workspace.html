@@ -440,7 +440,8 @@
        slide beneath the chips. No modal. */
     #wsSchedPane {
       position: absolute;
-      top: 58px; left: 16px; right: 16px; bottom: 16px;
+      top: 58px; left: 16px; right: 16px;
+      max-height: calc(100% - 74px);   /* hugs the chart; never taller than the area */
       display: none;
       background: var(--surface);
       border: 1px solid var(--border);
