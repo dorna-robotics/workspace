@@ -15,6 +15,7 @@ What it teaches, and where:
 | What happens in phase N? | `actions/phase_N.py` — the concrete actions, in execution order |
 | Where are Start / Park / setup? | `actions/__init__.py` — imports the phases, nothing else per phase |
 | Which line does the batch cross next? | `phases.py` — one class per phase, same order |
+| How do I check ONE phase, from a notebook, with no numbers of its own? | `dev/phase.ipynb` — `Bench(PROJ).phase(name)`; the project is the only source of truth (bt-framework-guide §13 "Checking one phase") |
 
 Conventions this encodes:
 
@@ -29,7 +30,10 @@ Conventions this encodes:
   writes `weight_N_g` on a valid reading, Start seeds the rows,
   Park derives `status` from the facts (`rt.record`, project-guide §3).
 - **Build phase by phase, gate each alone**: replay at batch 1 and 4,
-  then the bench, before the next phase's row is written.
+  then the bench, before the next phase's row is written. On the
+  bench, `dev/phase.ipynb` runs one phase from the project's own
+  files — seeds the earlier phases, applies their `layout`, stops
+  when the phase closes.
 
 ```bash
 cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay ~/Downloads/workspace/examples/phased --batch 1 4

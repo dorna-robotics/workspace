@@ -374,6 +374,23 @@ class Workspace:
             return set()
         return set(self._active_ctx.state.get("facts") or set())
 
+    def attach(self, child_name: str, att: dict) -> None:
+        """Move a component at runtime: re-attach ``child_name`` per an
+        ``attach:`` clause (``parent_name``, ``parent_solid``,
+        ``parent_anchor``, ``child_solid``, ``child_anchor``, ``offset``)
+        — the same shape the scene files use. The solid detaches from
+        its current parent first. Raises on an unresolvable side rather
+        than skipping: a bench that thinks a cap moved when it did not
+        is the exact mismatch this exists to prevent.
+        """
+        with self._scene_lock:
+            if not self._apply_one_attachment(child_name, att):
+                raise KeyError(
+                    f"attach: cannot resolve {child_name!r} onto "
+                    f"{att.get('parent_name')!r}.{att.get('parent_solid')!r}"
+                )
+        self._notify_scene_changed()
+
     def reset_scene(self):
         """Reset the scene to its launch-time layout.
 

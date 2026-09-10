@@ -39,6 +39,7 @@ not author from memory or first principles.
 | **Scene yaml** (chassis + layout, attach hierarchy) | `examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
 | **Custom component** | the apc repo's `components/*.py` (standalone repo, `~/Downloads/projects/apc` on the bench Pi); library components under `workspace/components/` |
 | **Phased protocol** (`actions/` package, `phases.py`, `doc/phases.md` boundary table, pass-indexed facts, abstract bases + thin `PASS` subclasses, `rt.record` rows) | `examples/phased/` (whole project) — write the boundary row, then the phase module, then replay; bt-framework-guide §13 "The package layout" |
+| **Phase dev notebook** (check one phase from a notebook; `Bench(PROJ).phase(name)`, no parameters typed — the project is the source; `Phase.layout` for where items rest) | `examples/phased/dev/phase.ipynb`; bt-framework-guide §13 "Checking one phase" |
 | **Project entry point** (`main.py`, `launch.yaml`, `checks.py`) | any example — `main.py` is byte-identical across all projects (copy verbatim); `launch.yaml` + `checks.py` follow the example shape |
 
 Convention these encode (don't re-derive): `main.py` is canonical and

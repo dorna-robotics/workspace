@@ -391,6 +391,10 @@ def run_protocol(
     slice_dim: Optional[str] = None,
     scheduler: str = "cpsat",
     phases: Any = None,
+    seed_facts: Any = None,
+    until_phase: Optional[str] = None,
+    reset_scene: bool = True,
+    initial_tool: Optional[str] = None,
     **kwargs,
 ) -> py_trees.common.Status:
     """Default plan → schedule → BT tick lifecycle for any BT project.
@@ -438,6 +442,20 @@ def run_protocol(
             in-house earliest-start scheduler — fast, no dependency,
             but locally-optimal only. CP-SAT falls back to greedy
             automatically if ortools is missing or the solver errors.
+        seed_facts: Extra facts added to the initial state — how
+            ``workspace.bt.bench`` starts a run PAST earlier phases
+            (their closure facts seeded instead of executed).
+        until_phase: Name of a phase; the run ends as soon as that
+            phase is reached instead of at the project's goal. With
+            ``seed_facts`` this runs exactly one phase.
+        reset_scene: Snap the scene back to its launch-time layout
+            before planning (default). ``False`` when the caller has
+            already put the model where the run starts — a bench that
+            applied a phase's layout — so the reset does not undo it.
+        initial_tool: Recipe alias of the tool on the flange when the
+            run starts (``None`` = empty flange, the launch-scene
+            truth). A bench running phases back to back passes what
+            the last phase left mounted, so the first swap is real.
         **kwargs: Operator-supplied parameters from the GUI; forwarded
             to ``actions_module.setup``.
 
@@ -465,7 +483,7 @@ def run_protocol(
     # with the planner's view, so consecutive Starts work without
     # needing a Kill+Launch cycle. No-op on the very first run after
     # Launch (everything is already in its initial position).
-    if hasattr(workspace, "reset_scene"):
+    if reset_scene and hasattr(workspace, "reset_scene"):
         try:
             workspace.reset_scene()
             log.info("Launcher: scene reset to launch-time layout")
@@ -482,6 +500,9 @@ def run_protocol(
         )
     spec = actions_module.setup(**kwargs)
     initial_facts = set(spec["initial_facts"])
+    if seed_facts:
+        initial_facts |= {tuple(f) for f in seed_facts}
+        log.info("Launcher: %d seeded fact(s) — starting past earlier phases", len(seed_facts))
     objects       = dict(spec.get("objects") or {})
 
     # Goal MUST be a callable ``state -> bool``. The planner calls it
@@ -567,7 +588,7 @@ def run_protocol(
             # Tracks the tool currently held by the robot. _DSLActionLeaf
             # consults / updates this when an Action declares ``tool=``.
             # ``None`` = nothing held; populated by the auto-swap path.
-            "current_tool": None,
+            "current_tool": initial_tool,
             # Optional event sink for schedule + execution events. The
             # GUI's /ws/schedule WebSocket consumes these. None = no-op.
             "event_publisher": event_publisher,
@@ -693,6 +714,27 @@ def run_protocol(
         """First unmet phase as ``(name, items, reached_fn, window, goal_facts_fn)``."""
         return _current_phase_impl(state, phases, all_items, item_done, log=log)
 
+    # ``until_phase``: the run is over when THAT phase is reached for
+    # its scope — every goal below defers to it first. The launcher
+    # still walks phases in order, so a phase the seeds left unmet runs
+    # first; that is reported, not hidden.
+    _until = None
+    if until_phase is not None:
+        _until = next((ph for ph in phases if ph[0] == until_phase), None)
+        if _until is None:
+            raise ValueError(
+                f"until_phase={until_phase!r} is not a phase of this project: "
+                f"{[ph[0] for ph in phases]}"
+            )
+    _until_warned = {"done": False}
+
+    def _until_reached(state) -> bool:
+        if _until is None:
+            return False
+        _nm, scope_fn, _pre, reached_fn, _w, _gf = _until
+        items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
+        return (not items) or reached_fn(state, items)
+
     slicing_active = (
         item_done is not None
         and (len(all_items) > int(plan_window) or bool(phases))
@@ -715,6 +757,8 @@ def run_protocol(
         otherwise tail actions like ``Park`` (whose pre needs every
         item done) get skipped.
         """
+        if _until_reached(state):
+            return True
         if item_done is None:
             return goal_fn(state)
         # PHASES TAKE PRECEDENCE OVER THE WINDOW TEST. While an phase
@@ -753,6 +797,8 @@ def run_protocol(
 
     def _global_goal(state) -> bool:
         """Goal for the slice_check leaf — all items in the full batch done."""
+        if _until_reached(state):
+            return True
         if item_done is None:
             return goal_fn(state)
         return all(item_done(state, it) for it in all_items)
@@ -769,6 +815,14 @@ def run_protocol(
             # in build_tree because _observe already did the work.
             _cur = _current_phase(state) if phases else None
             c.meta["current_phase"] = _cur[0] if _cur else None
+            if (_until is not None and _cur is not None and _cur[0] != _until[0]
+                    and not _until_warned["done"]):
+                _until_warned["done"] = True
+                log.warning(
+                    "Launcher: until_phase=%r but phase %r is not reached yet "
+                    "— running it first (the seeds did not cover it).",
+                    _until[0], _cur[0],
+                )
             # FREEZE THE PHASE FOR THIS REPLAN. The planning goal and the
             # heuristic read this, never _current_phase(state) again: a
             # goal that re-asks "which phase is current" while the

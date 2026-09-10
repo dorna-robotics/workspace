@@ -1616,6 +1616,56 @@ many-action protocol readable, and that every phased project follows
    seeds the rows, the reading action writes the field, Park derives
    `status` from the facts (`rt.record`, project-guide §3).
 
+#### Checking one phase — the bench
+
+A phase is a contract, so it can be checked alone — without running the
+protocol from the top and without a notebook that re-types the motion
+with its own numbers. `workspace.bt.Bench` runs ONE phase from a
+notebook with the project as the only source of truth:
+
+```python
+from workspace.bt import Bench
+bench = Bench(PROJ, port=8000)                 # the folder holding launch.yaml
+bench.phase("ph1_measured", selected=[0, 1])   # that phase, those items, the HMI's kwargs
+```
+
+`Bench` loads what `main.py` loads — scene, recipes, actions,
+parameters, checks, phases. `prepare(name)` does steps 1 and 2 below
+and nothing else — the model is set, the viewer shows it, the moves
+are printed — so the real bench can be matched and simulation turned
+off before `phase(name)` runs the robot. `phase(name)`:
+
+1. **Seeds** the facts every earlier phase would have asserted
+   (`Phase.seed`, default: its `eff`). The launcher runs the first
+   phase not yet reached, so seeding is how "start at N" is said.
+2. **Lays out** the model as those phases leave it (`Phase.layout`:
+   attach clauses over the launch scene — caps in the cap rack, say),
+   and prints every move so the operator sets the real bench the same
+   way. Default: nothing moved — right for a phase that returns every
+   item home.
+3. **Runs** the launcher with `until_phase=name`: it plans and executes
+   this one phase, in the planner's own order, and returns.
+
+Phases run back to back continue from where the last left things —
+the model is never reset behind your back, the tool on the flange
+included, and the phase's own actions bring the tool they declare, as
+in a run. `bench.reset()` is the explicit way back to the launch
+scene, for running an earlier phase again. A cold start prints its
+assumptions. A phase the seeds left unmet (a
+scope that only a run-time `Start` populates) is run first, and the
+launcher's log says so. `bench.run(ActionCls, item)` is the block
+underneath — one project action with the project's context, the same
+leaf the engine uses — for driving actions by hand.
+
+The copy to start from is `examples/phased/dev/phase.ipynb`; every
+phased project carries it unchanged. Two hooks on `Phase` carry the
+per-project truth, next to `pre` and `eff`:
+
+| | Default | Override when |
+|---|---|---|
+| `seed(items)` | `eff(items)` | the phase has several outcomes — name the nominal one, the next phase gates on it |
+| `layout(items)` | `[]` | items rest somewhere other than the launch scene puts them |
+
 ### Slicing — bounding WIDTH
 
 Enable it by returning `item_done(state, item)` from `setup()`:
