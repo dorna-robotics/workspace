@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 898
+      "byteLength": 894
     },
     {
       "buffer": 0,
-      "byteOffset": 898,
+      "byteOffset": 894,
       "byteLength": 541
     }
   ],
   "buffers": [
     {
       "uri": "disc_22mm.glb.bin",
-      "byteLength": 1439
+      "byteLength": 1435
     }
   ],
   "materials": [

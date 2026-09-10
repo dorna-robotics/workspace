@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1642
+      "byteLength": 1639
     }
   ],
   "buffers": [
     {
       "uri": "rotating_cylinder_mkb1630_plunger.glb.bin",
-      "byteLength": 1642
+      "byteLength": 1639
     }
   ],
   "materials": [
