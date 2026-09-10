@@ -742,7 +742,11 @@ def run_protocol(
 
     def _pick_window(state) -> list:
         """Next ``plan_window`` items still outstanding, in order (phase.py)."""
-        return _pick_window_impl(state, phases, all_items, item_done, plan_window, log=log)
+        # A seeded start toward ``until_phase`` reads as "all blocked" until
+        # Start's own seeds land — not the misconfiguration the walker
+        # warns about (see _observe), so it does not log here either.
+        return _pick_window_impl(state, phases, all_items, item_done, plan_window,
+                                 log=None if _until is not None else log)
 
     def _planning_goal(state) -> bool:
         """Goal for the planner.
@@ -813,16 +817,27 @@ def run_protocol(
             # event can carry it and the Gantt can band consecutive
             # slices under their phase name. Resolved here rather than
             # in build_tree because _observe already did the work.
-            _cur = _current_phase(state) if phases else None
+            if _until is not None:
+                # A seeded start: before Start's own seeds land (capacity
+                # facts, manifest facts) the target's pre can read as
+                # blocked. That is not the "all blocked" misconfiguration
+                # the walker warns about — plan toward the target; the
+                # planner puts Start first because the target needs it.
+                _cur = _current_phase_impl(state, phases, all_items, item_done, log=None)
+                if _cur is None:
+                    _nm, scope_fn, _pre, reached_fn, _w, _gf = _until
+                    items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
+                    _cur = (_nm, items, reached_fn, _w, _gf)
+                elif _cur[0] != _until[0] and not _until_warned["done"]:
+                    _until_warned["done"] = True
+                    log.warning(
+                        "Launcher: until_phase=%r but phase %r is not reached yet "
+                        "— running it first (the seeds did not cover it).",
+                        _until[0], _cur[0],
+                    )
+            else:
+                _cur = _current_phase(state) if phases else None
             c.meta["current_phase"] = _cur[0] if _cur else None
-            if (_until is not None and _cur is not None and _cur[0] != _until[0]
-                    and not _until_warned["done"]):
-                _until_warned["done"] = True
-                log.warning(
-                    "Launcher: until_phase=%r but phase %r is not reached yet "
-                    "— running it first (the seeds did not cover it).",
-                    _until[0], _cur[0],
-                )
             # FREEZE THE PHASE FOR THIS REPLAN. The planning goal and the
             # heuristic read this, never _current_phase(state) again: a
             # goal that re-asks "which phase is current" while the
