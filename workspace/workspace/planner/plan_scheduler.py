@@ -105,8 +105,11 @@ def schedule_greedy(
     *,
     predecessors: Optional[List[set]] = None,
     tool_resource: str = "robot",
+    initial_tool: Optional[str] = None,
 ) -> Tuple[List[Tuple[str, int, float]], List[Tuple[float, Optional[str], Optional[str], int]]]:
     """First-fit earliest-start scheduling, precedence-aware.
+    ``initial_tool``: the tool already mounted when this plan starts, so
+    a window does not begin with a phantom swap onto the tool it holds.
 
     For each action in plan order:
 
@@ -139,8 +142,8 @@ def schedule_greedy(
     item_end: Dict[int, float] = {}
     resource_end: Dict[str, float] = {}
     action_end: List[float] = []
-    # Global tool state — single tool changer.
-    current_tool: Optional[str] = None
+    # Global tool state — single tool changer, starting from what is mounted.
+    current_tool: Optional[str] = initial_tool
     actions_out: List[Tuple[str, int, float]] = []
     swaps_out: List[Tuple[float, Optional[str], Optional[str], int]] = []
 
@@ -219,6 +222,7 @@ def make_schedule_builder(
     use_cpsat: bool = False,
     precedence_fn: Optional[Callable[[Sequence[Action]], List[set]]] = None,
     capacity_fn: Optional[Callable[[Sequence[Action]], Dict[str, List[Tuple[int, int]]]]] = None,
+    initial_tool_fn: Optional[Callable[[], Optional[str]]] = None,
 ) -> Callable[[Sequence[Action]], List[Tuple[str, int, float]]]:
     """Return a closure that schedules any plan with the given meta.
 
@@ -267,6 +271,9 @@ def make_schedule_builder(
     """
     def _build(actions: Sequence[Action]) -> List[Tuple[str, int, float]]:
         preds = precedence_fn(actions) if precedence_fn is not None else None
+        # The tool mounted NOW — read at build time, so every replan and
+        # every window starts from the truth rather than from "nothing".
+        initial_tool = initial_tool_fn() if initial_tool_fn is not None else None
         if use_cpsat:
             try:
                 # Local import — ortools is an optional dependency. If
@@ -274,12 +281,13 @@ def make_schedule_builder(
                 # and we fall back to greedy without crashing the run.
                 from workspace.planner.cpsat_scheduler import schedule_cpsat
                 caps = capacity_fn(actions) if capacity_fn is not None else None
-                return schedule_cpsat(actions, meta, predecessors=preds, capacity_spans=caps)
+                return schedule_cpsat(actions, meta, predecessors=preds, capacity_spans=caps,
+                                      initial_tool=initial_tool)
             except Exception as ex:
                 log.warning(
                     "CP-SAT scheduler failed (%s: %s) — falling back to greedy",
                     type(ex).__name__, ex,
                 )
-        return schedule_greedy(actions, meta, predecessors=preds)
+        return schedule_greedy(actions, meta, predecessors=preds, initial_tool=initial_tool)
 
     return _build

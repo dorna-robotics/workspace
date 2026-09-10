@@ -236,6 +236,7 @@ def _simulate_order(
     swap_durations: List[int],
     predecessors: Optional[List[set]],
     tool_resource: str,
+    initial_tool: Optional[str] = None,
 ) -> "Dict[int, float]":
     """Simplified :func:`workspace.planner.plan_scheduler.schedule_greedy`
     timing pass, but driven by an arbitrary ``order`` (a permutation of
@@ -247,7 +248,7 @@ def _simulate_order(
     """
     action_end: "Dict[int, float]" = {}
     resource_end: "Dict[str, float]" = {}
-    current_tool: Optional[str] = None
+    current_tool: Optional[str] = initial_tool
     starts_hint: "Dict[int, float]" = {}
     for i in order:
         earliest_causal = max(
@@ -319,11 +320,18 @@ def schedule_cpsat(
     tool_resource: str = "robot",
     time_limit_s: float = 30.0,
     deterministic_limit: float = 0.4,
+    initial_tool: Optional[str] = None,
 ) -> Tuple[
     List[Tuple[str, int, float]],
     List[Tuple[float, Optional[str], Optional[str], int]],
 ]:
     """Solve the plan-to-schedule problem optimally with CP-SAT.
+
+    ``initial_tool`` is the tool ALREADY MOUNTED when this plan starts —
+    the previous window's last tool. Without it every window began
+    with a phantom swap onto a tool the robot was already holding: a
+    reserved gap in the schedule and a swap on the chart that the
+    runtime then skipped as "already correct".
 
     Args:
         actions: Output of the PDDL planner — totally-ordered plan.
@@ -523,7 +531,7 @@ def schedule_cpsat(
             # The robot starts holding nothing, so the first tool-
             # opinionated action of the run cannot begin before its own
             # swap has happened. Slack for every later one.
-            if tool_required[i]:
+            if tool_required[i] and tools[i] != initial_tool:
                 model.Add(starts[i] >= swap_durations[i])
             for b_idx in range(a_idx + 1, k):
                 j = tool_actions[b_idx]
@@ -573,7 +581,7 @@ def schedule_cpsat(
             )
             hint_starts = _simulate_order(
                 hint_order, durations, resources_list, tools, tool_required,
-                swap_durations, hint_preds, tool_resource,
+                swap_durations, hint_preds, tool_resource, initial_tool,
             )
             for i in range(n):
                 model.AddHint(starts[i], int(hint_starts[i]))
@@ -725,7 +733,7 @@ def schedule_cpsat(
     swaps_out: List[Tuple[float, Optional[str], Optional[str], int]] = []
     if k > 0:
         ordered = sorted(tool_actions, key=lambda i: solver.Value(starts[i]))
-        current_tool: Optional[str] = None
+        current_tool: Optional[str] = initial_tool
         for i in ordered:
             if not tool_required[i]:
                 continue

@@ -839,6 +839,10 @@ def run_protocol(
     use_cpsat = (str(scheduler).lower() == "cpsat")
     build_schedule = make_schedule_builder(
         meta, use_cpsat=use_cpsat, precedence_fn=_precedence, capacity_fn=_capacity,
+        # The tool on the flange when this slice is scheduled — the
+        # SwapLeaf keeps ctx.meta["current_tool"] true — so a window
+        # never opens with a swap onto the tool it already holds.
+        initial_tool_fn=lambda: ctx.meta.get("current_tool"),
     )
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 

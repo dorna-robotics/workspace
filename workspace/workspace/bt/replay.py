@@ -124,14 +124,17 @@ def _walk(res, out, reg, ctx, meta, state, t_off, show, tool_now, phase=None):
         t = out[i][2] + t_off
         if not ok:
             failures.append(f"{a.name}{a.params} @t={t:.0f}" + (f" [{phase}]" if phase else ""))
+        m = meta[a.name]
+        # The tool circuit, as the scheduler sees it: only an action
+        # that DECLARED a tool takes part; a change is a swap the
+        # runtime inserts before it (dsl auto-swap). Tracked whether or
+        # not we print, because the next window starts from it.
+        swapped = m.tool_required and m.tool != tool_now
+        if show and swapped:
+            lines.append(f"      {'':>6}  swap {tool_now or '-'} -> {m.tool or '-'}")
+        if swapped:
+            tool_now = m.tool
         if show:
-            m = meta[a.name]
-            # The tool circuit, as the scheduler sees it: only an
-            # action that DECLARED a tool takes part; a change is a
-            # swap the runtime inserts before it (dsl auto-swap).
-            if m.tool_required and m.tool != tool_now:
-                lines.append(f"      {'':>6}  swap {tool_now or '-'} -> {m.tool or '-'}")
-                tool_now = m.tool
             prm = ", ".join(str(x) for x in a.params)
             res_ = m.resource if isinstance(m.resource, str) else ",".join(m.resource or ())
             held = f" / {m.tool}" if (m.tool_required and m.tool) else ""
@@ -298,7 +301,8 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
                 break
             preds = build_precedence(res, reg, initial_state=fstate, ctx=ctx)
             caps = derive_capacity_spans(res, reg, initial_state=fstate, ctx=ctx)
-            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None)
+            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
+                                        initial_tool=tool_now)
             t3 = time.perf_counter()
             timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
                            "expanded": expanded, "domain_s": round(t1 - t0, 3),
