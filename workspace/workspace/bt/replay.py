@@ -203,6 +203,14 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
             from workspace.bt.phase import normalise_phases
             spec_val = spec.get("phases") or _load_phases(launch.get("phases"), kwargs)
             phases = normalise_phases(spec_val, all_items)
+            if not phases:
+                # A phased project must NEVER be replayed flat by accident:
+                # the flat plan of a 28-item batch runs for minutes and
+                # says nothing about the run. Name the cause instead.
+                raise RuntimeError(
+                    f"launch.yaml names phases: {launch.get('phases')!r} but no phase "
+                    f"loaded — the phases module failed to import (run "
+                    f"`python3 -c \"import phases\"` in the project) or declares none.")
 
         if not phases:
             # ── Flat: the whole batch, one plan (unchanged) ───────────
@@ -295,6 +303,10 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None):
             timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
                            "expanded": expanded, "domain_s": round(t1 - t0, 3),
                            "plan_s": round(t2 - t1, 3), "cpsat_s": round(t3 - t2, 3)})
+            if os.environ.get("REPLAY_TRACE"):
+                print(f"[replay] {name or 'tail':<16} window {list(window)} actions {len(res):3d} "
+                      f"{'expanded' if expanded else 'searched'} plan {t2 - t1:6.2f}s cpsat {t3 - t2:5.2f}s",
+                      file=sys.__stderr__, flush=True)
             if show:
                 lines.append(f"── {name or 'tail'} · window {list(window)} · t0={t_off:.0f} ──")
             f_, l_, tool_now = _walk(res, out, reg, ctx, meta, state, t_off, show, tool_now, phase=name)
