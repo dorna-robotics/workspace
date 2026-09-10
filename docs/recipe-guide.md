@@ -346,7 +346,7 @@ Two flags drive it:
 | `pick(approach=False, ...)` | No — no approach waypoint exists |
 | Exit from a pick/place | No — exit path always uses direct moves |
 | `retract(...)` | No — `has_motion_plan=False` by default |
-| `rotate(...)`, `vibrate(...)` | No — direct jmoves |
+| `rotate(...)`, `vibrate(...)` | No — direct jmoves. `vibrate` is solved AT THE CURRENT POSE (rail fixed, arm seeded from the live joints), so it is the same in-place shake through any recipe |
 | `park(...)` | Yes if `has_motion_plan=True` (or `core.has_motion_plan`), else single jmove |
 
 `lmove` (Cartesian straight line) is used only for subsequent

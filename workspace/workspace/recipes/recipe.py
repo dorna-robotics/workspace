@@ -2891,6 +2891,10 @@ class Recipe:
             vaj: [velocity, accel, jerk] for each jmove. The default
                 uses high jerk for the snappy shake feel.
 
+        Solved at the CURRENT pose — rail fixed, arm seeded from the live
+        joints — so it is the same shake through any recipe; the recipe
+        only contributes ``speed_factor`` and ``left_approach``.
+
         Raises:
             RecipeError: If IK fails for any waypoint in the pattern.
         """
@@ -2909,6 +2913,15 @@ class Recipe:
 
         joint_list = []
         for p in pattern:
+            # IN PLACE, WHATEVER RECIPE THIS IS CALLED ON. A shake is a
+            # local perturbation of the pose the robot is in: the rail
+            # stays put (base_distance=None makes core.IK solve at the
+            # current rail value) and the arm branch is seeded from the
+            # live joints, never from this recipe's station distance or
+            # reference pose. With the station parameters, a shake
+            # through any recipe but the one whose station the robot
+            # stood at asked for a rail position the arm was not at — no
+            # solution, or a rail move dressed as a shake (bna, 2026-09-10).
             J, C = self.core.IK(
                 target_solid=self.core.assembly["robot_flange"],
                 target_anchor="output",
@@ -2916,16 +2929,16 @@ class Recipe:
                 tool_solid=None,
                 tool_anchor=None,
                 tool_offset=[0, 0, 0, 0, 0, 0],
-                base_distance=self.base_distance,
-                rail_step=self.rail_step,
-                rail_span=self.rail_span,
+                base_distance=None,
+                rail_step=0,
+                rail_span=0,
                 left_approach=self.left_approach,
-                ref_joints=self.ref_joints,
+                ref_joints=None,
             )
             if C == 2:
                 joint_list.append(J)
             else:
-                raise RecipeError("could not find a valid approach")
+                raise RecipeError(f"vibrate: no IK solution for offset {p[:3]} at the current pose (code {C})")
 
         joint_list = cnt * joint_list
         joint_list.append(current_joint)
