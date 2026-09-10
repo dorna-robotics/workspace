@@ -30,6 +30,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+    import { makeAnchorGizmo, addAnchorGizmo, removeAnchorGizmo, placeAnchorGizmo, setAnchorHover, nearestAnchorHit, labelPlate } from "/vendor/anchor_gizmos.js";
     import io from "/vendor/socket.io.esm.min.js";
 
     // Shared Draco decoder — used by every GLTFLoader instance in this
@@ -480,102 +481,10 @@ function makeRenderer(opts, mountEl) {
         return spr;
       }
 
-      function makeAnchorLabel(text, color = "#ffffff", fontPx = 72) {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        const font = `bold ${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
-        ctx.font = font;
-        const metrics = ctx.measureText(text);
-        const pad = 12;
-        canvas.width  = Math.ceil(metrics.width + pad * 2);
-        canvas.height = Math.ceil(fontPx * 1.3 + pad * 2);
-
-        ctx.font = font;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
-
-        ctx.fillStyle = color;
-        ctx.fillText(text, pad, pad);
-
-        // A SECOND, PLATED TEXTURE — used only while hovered/selected.
-        // Plain is right at rest: a plate on every label turns a dense
-        // rack into a wall of white. But the one you are pointing at has
-        // to be readable over whatever is behind it (these draw with
-        // depthTest off), so it gets a greyish-white plate and a
-        // hairline. Built once, here, rather than per hover event.
-        const plate = document.createElement("canvas");
-        plate.width = canvas.width; plate.height = canvas.height;
-        const pctx = plate.getContext("2d");
-        const r = 14;
-        pctx.beginPath();
-        pctx.moveTo(r, 0);
-        pctx.arcTo(plate.width, 0, plate.width, plate.height, r);
-        pctx.arcTo(plate.width, plate.height, 0, plate.height, r);
-        pctx.arcTo(0, plate.height, 0, 0, r);
-        pctx.arcTo(0, 0, plate.width, 0, r);
-        pctx.closePath();
-        pctx.fillStyle = "rgba(232,232,236,0.94)";
-        pctx.fill();
-        pctx.lineWidth = 3;
-        pctx.strokeStyle = "rgba(0,0,0,0.35)";
-        pctx.stroke();
-        pctx.font = font;
-        pctx.textAlign = "left";
-        pctx.textBaseline = "top";
-        pctx.fillStyle = color;
-        pctx.fillText(text, pad, pad);
-
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const texPlate = new THREE.CanvasTexture(plate);
-        texPlate.colorSpace = THREE.SRGBColorSpace;
-        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
-        const spr = new THREE.Sprite(mat);
-        const scale = 0.09;
-        spr.scale.set(canvas.width * scale, canvas.height * scale, 1);
-        spr.renderOrder = 999;
-        spr.frustumCulled = false;
-        spr.userData.__texPlain = tex;
-        spr.userData.__texPlate = texPlate;
-        return spr;
-      }
-
-      function makeAxesHelperAlwaysOnTop(size) {
-        const axes = new THREE.AxesHelper(size);
-        axes.traverse(child => {
-          if (child.material && child.material.isMaterial) {
-            child.material.depthTest = false;
-            child.renderOrder = 999;
-          }
-        });
-        axes.renderOrder = 999;
-        axes.frustumCulled = false;
-        return axes;
-      }
-
       // ---- CLEAR ANCHORS (updated: also hides bottom-left UI) ----
       function clearAnchors() {
         if (activeAnchors) {
-          activeAnchors.items.forEach(it => {
-            anchorsLayer.remove(it.axes);
-            if (it.label) anchorsLayer.remove(it.label);
-            if (it.dot) {
-              anchorsLayer.remove(it.dot);
-              if (it.dot.geometry) it.dot.geometry.dispose();
-              if (it.dot.material) it.dot.material.dispose();
-            }
-            if (it.ring) {
-              anchorsLayer.remove(it.ring);
-              if (it.ring.geometry) it.ring.geometry.dispose();
-              if (it.ring.material) it.ring.material.dispose();
-            }
-            if (it.pick) {
-              anchorsLayer.remove(it.pick);
-              pickableMeshes.delete(it.pick);
-              if (it.pick.geometry) it.pick.geometry.dispose();
-              if (it.pick.material) it.pick.material.dispose();
-            }
-          });
+          activeAnchors.items.forEach(it => removeAnchorGizmo(it, anchorsLayer, pickableMeshes));
         }
         activeAnchors = null;
 
@@ -664,72 +573,14 @@ function makeRenderer(opts, mountEl) {
             ? `${solidKey}:${name}`
             : String(name);
 
-          const size = 7;
-          const axes = makeAxesHelperAlwaysOnTop(size);
-
-          // Determine anchor color based on builder mode
+          // Child-anchor picking is blue, target-anchor picking green.
           const mode = window.builderState?.mode || "IDLE";
-          const isChildMode = mode === "PICK_CHILD_ANCHOR";
-          const isTargetMode = mode === "PICK_TARGET_ANCHOR";
-          const anchorColor = isChildMode ? 0x0a84ff : isTargetMode ? 0x34c759 : 0x0a84ff;
-          const anchorColorCSS = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#0a84ff";
-          const labelBg = isChildMode ? "#0a84ff" : isTargetMode ? "#34c759" : "#000";
-
-          const label = makeAnchorLabel(displayName, "#000000");
-          label.material.opacity = 0.9;
-          label.userData.__baseScale = label.scale.clone();
-
-          anchorsLayer.add(axes);
-          anchorsLayer.add(label);
-
-          // Visible anchor dot — small by default, grows on hover
-          const dotGeo = new THREE.SphereGeometry(1.5, 16, 16);
-          const dotMat = new THREE.MeshBasicMaterial({
-            color: anchorColor,
-            transparent: true,
-            opacity: 0.6,
-            depthTest: false,
-          });
-          const dot = new THREE.Mesh(dotGeo, dotMat);
-          dot.renderOrder = 997;
-          dot.frustumCulled = false;
-          anchorsLayer.add(dot);
-
-          // Glow ring — hidden by default, appears on hover
-          const ringGeo = new THREE.RingGeometry(4, 7, 24);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: anchorColor,
-            transparent: true,
-            opacity: 0.0,
-            depthTest: false,
-            side: THREE.DoubleSide,
-          });
-          const ring = new THREE.Mesh(ringGeo, ringMat);
-          ring.renderOrder = 996;
-          ring.frustumCulled = false;
-          anchorsLayer.add(ring);
-
-          // Clickable pick sphere (larger than dot for easy clicking)
-          const pickGeo = new THREE.SphereGeometry(8, 12, 12);
-          const pickMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.01, depthTest: false });
-          const pick = new THREE.Mesh(pickGeo, pickMat);
-          pick.renderOrder = 998;
-          pick.frustumCulled = false;
-          pick.userData.__isAnchorPick = true;
-          pick.userData.anchorName = name;
-          pick.userData.ownerName = obj?.name || "";
-          if (solidKey) pick.userData.solidKey = solidKey;
-          // Store refs for hover effect
-          pick.userData.__dotMesh = dot;
-          pick.userData.__ringMesh = ring;
-          pick.userData.__labelSprite = label;
-          pick.userData.__dotColor = anchorColor;
-          anchorsLayer.add(pick);
-
-          // register for raycast picking
-          pickableMeshes.add(pick);
-
-          items.push({ name: displayName, rawName: name, solidKey, pLocal, qLocal, axes, label, pick, dot, ring });
+          const anchorColor = mode === "PICK_TARGET_ANCHOR" ? 0x34c759 : 0x0a84ff;
+          const extra = { ownerName: obj?.name || "" };
+          if (solidKey) extra.solidKey = solidKey;
+          const g = makeAnchorGizmo(name, displayName, anchorColor, extra);
+          addAnchorGizmo(g, anchorsLayer, pickableMeshes);
+          items.push({ name: displayName, rawName: name, solidKey, pLocal, qLocal, ...g });
         }
 
         // Extract data
@@ -767,18 +618,8 @@ function makeRenderer(opts, mountEl) {
         const objWorldQ = new THREE.Quaternion();
         obj.getWorldQuaternion(objWorldQ);
 
-        for (const it of items) {
-          const pWorld = obj.localToWorld(it.pLocal.clone());
-          const qWorld = objWorldQ.clone().multiply(it.qLocal);
-          it.axes.position.copy(pWorld);
-          it.axes.quaternion.copy(qWorld);
-          if (it.pick) { it.pick.position.copy(pWorld); it.pick.quaternion.copy(qWorld); }
-          if (it.dot) { it.dot.position.copy(pWorld); }
-          if (it.ring) { it.ring.position.copy(pWorld); it.ring.lookAt(camera.position); }
-          if (it.label) {
-            it.label.position.copy(pWorld).add(new THREE.Vector3(0,0,18));
-          }
-        }
+        for (const it of items)
+          placeAnchorGizmo(it, obj.localToWorld(it.pLocal.clone()), objWorldQ.clone().multiply(it.qLocal), camera);
       }
 
       function setPointerFromEvent(event) {
@@ -837,17 +678,6 @@ function makeRenderer(opts, mountEl) {
       }
       window.__rulerClear = __rulerClear;
 
-      // Swap a label between its plain and plated textures. The pair is
-      // built once in makeAnchorLabel; this only moves a reference.
-      function __labelPlate(sprite, on) {
-        const u = sprite?.userData; if (!u?.__texPlain) return;
-        const want = on ? u.__texPlate : u.__texPlain;
-        if (sprite.material.map !== want) {
-          sprite.material.map = want;
-          sprite.material.needsUpdate = true;
-        }
-      }
-
       // THE FIRST PICK STAYS LIT. Between the two clicks there is
       // nothing on screen saying where the measurement started — and
       // the hover highlight moves away with the cursor the moment you
@@ -859,7 +689,7 @@ function makeRenderer(opts, mountEl) {
         if (!mesh || __rulerIsMarked(mesh)) return;
         const d = mesh.userData.__dotMesh, l = mesh.userData.__labelSprite;
         if (d) { d.scale.setScalar(3.0); d.material.opacity = 1.0; d.material.color.set(RULER_HL); }
-        if (l) { l.renderOrder = 1007; __labelPlate(l, true); l.material.opacity = 1.0; }
+        if (l) { l.renderOrder = 1007; labelPlate(l, true); l.material.opacity = 1.0; }
         __rulerMarks.push(mesh);
 
         // AND A MARKER WE OWN. Recolouring the anchor's own dot is not
@@ -888,7 +718,7 @@ function makeRenderer(opts, mountEl) {
             d.material.opacity = 0.6;
             d.material.color.set(mesh.userData.__dotColor);
           }
-          if (l) { l.renderOrder = 999; __labelPlate(l, false); l.material.opacity = 0.9; }
+          if (l) { l.renderOrder = 999; labelPlate(l, false); l.material.opacity = 0.9; }
         }
         __rulerMarks = [];
       }
@@ -1098,38 +928,9 @@ function makeRenderer(opts, mountEl) {
 
         const allowAnchor = forceAnchors || wantAnchorHitZones() || __rulerShift;
 
-        // NEAREST TO THE CURSOR, not first along the ray. Anchor pick
-        // spheres are deliberately larger than their dots, so in a dense
-        // rack several overlap under one cursor — and the ray ENTERS a
-        // neighbour's sphere before the one you are aiming at whenever
-        // that neighbour is nearer the camera. Depth order is the wrong
-        // question; "which dot is the cursor on" is the right one, so
-        // compare the anchors' screen-space distance to the pointer.
-        const anchorHits = allowAnchor
-          ? hits.filter(h => h.object?.isMesh && h.object.userData?.__isAnchorPick)
-          : [];
-        if (anchorHits.length) {
-          let best = null, bestD = Infinity;
-          const v = new THREE.Vector3();
-          for (const h of anchorHits) {
-            h.object.getWorldPosition(v);
-            v.project(camera);
-            const dx = v.x - pointer.x, dy = v.y - pointer.y;
-            const d = dx * dx + dy * dy;
-            if (d < bestD) { bestD = d; best = h; }
-          }
-          // DEPTH IS NOT CONSULTED, DELIBERATELY. Anchor dots and their
-          // pick spheres draw with depthTest off — they are always
-          // visible through geometry, which is the point: you need to
-          // see the anchor inside a rack. Picking has to agree with
-          // that. Honouring occlusion here meant an anchor you could
-          // plainly see refused to be clicked because a tube sat in
-          // front of it, which reads as a broken control.
-          //
-          // The tolerance is the pick sphere's radius: the ray only
-          // reaches this code if it passed through one, so "an anchor
-          // hit exists" already means "the cursor is on it".
-          return best;
+        if (allowAnchor) {
+          const a = nearestAnchorHit(hits, pointer, camera);
+          if (a) return a;
         }
 
         for (const h of hits) {
@@ -1817,40 +1618,14 @@ if (node) {
           const newHover = isAnchorHit ? hit.object : null;
           if (newHover !== __hoveredAnchorPick) {
             // Unhover previous — shrink back, dim label
-            if (__hoveredAnchorPick && !__rulerIsMarked(__hoveredAnchorPick)) {
-              const d = __hoveredAnchorPick.userData.__dotMesh;
-              const r = __hoveredAnchorPick.userData.__ringMesh;
-              const l = __hoveredAnchorPick.userData.__labelSprite;
-              // A picked endpoint keeps its magenta and its plate — the
-              // cursor moving on must not undress the measurement.
-              if (d) {
-                d.scale.setScalar(__rulerShift ? RULER_DOT_SCALE : 1);
-                d.material.opacity = 0.6;
-                d.material.color.set(__hoveredAnchorPick.userData.__dotColor);
-              }
-              if (r) { r.material.opacity = 0.0; }
-              if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
-              if (l) { l.renderOrder = 999; __labelPlate(l, false); }
-            }
-            // Hover new — grow dot, glow ring, enlarge label
+            // A picked ruler endpoint keeps its magenta and its plate —
+            // the cursor moving on must not undress the measurement.
+            if (__hoveredAnchorPick && !__rulerIsMarked(__hoveredAnchorPick))
+              setAnchorHover(__hoveredAnchorPick, false, { dotScale: __rulerShift ? RULER_DOT_SCALE : 1 });
             if (newHover) {
-              const d = newHover.userData.__dotMesh;
-              const r = newHover.userData.__ringMesh;
-              const l = newHover.userData.__labelSprite;
-              if (d) {
-                d.scale.set(2.5, 2.5, 2.5); d.material.opacity = 1.0;
-                // Shift down => this click WILL take it, so preview the
-                // picked colour. Without shift it is ordinary hover.
-                d.material.color.set(__rulerShift ? RULER_HL : newHover.userData.__dotColor);
-              }
-              if (r) { r.material.opacity = 0.4; }
-              if (l && l.userData.__baseScale) { l.material.opacity = 1.0; l.scale.copy(l.userData.__baseScale).multiplyScalar(1.5); }
-              // TO THE FRONT. Every anchor label is renderOrder 999, so
-              // overlapping ones sort by scene-graph order — arbitrary,
-              // and in a dense rack the one you are pointing at is as
-              // likely as not to be behind its neighbours. Growing it
-              // does not help if it is drawn underneath them.
-              if (l) { l.renderOrder = 1006; __labelPlate(l, true); }
+              // Shift down => this click WILL take it, so preview the
+              // picked colour. Without shift it is ordinary hover.
+              setAnchorHover(newHover, true, { hoverColor: __rulerShift ? RULER_HL : undefined });
               if (window.builderState?.mode === "PICK_TARGET_ANCHOR") {
                 __showGhostPreview(newHover.userData.anchorName, newHover.userData.solidKey || null);
               }
@@ -1860,13 +1635,7 @@ if (node) {
             __hoveredAnchorPick = newHover;
           }
         } else if (__hoveredAnchorPick && !__rulerIsMarked(__hoveredAnchorPick)) {
-          const d = __hoveredAnchorPick.userData.__dotMesh;
-          const r = __hoveredAnchorPick.userData.__ringMesh;
-          const l = __hoveredAnchorPick.userData.__labelSprite;
-          if (d) { d.scale.set(1, 1, 1); d.material.opacity = 0.6; }
-          if (r) { r.material.opacity = 0.0; }
-          if (l && l.userData.__baseScale) { l.material.opacity = 0.9; l.scale.copy(l.userData.__baseScale); }
-          if (l) { l.renderOrder = 999; __labelPlate(l, false); }
+          setAnchorHover(__hoveredAnchorPick, false);
           __hoveredAnchorPick = null;
           __clearGhost();
         }

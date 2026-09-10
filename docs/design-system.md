@@ -15,6 +15,7 @@ chrome's sake.
 |---|---|
 | [workspace/gui/vendor/base.css](../workspace/gui/vendor/base.css) | All tokens. Buttons, pills, inputs, toasts, modal chrome, confirm dialog, scrollbar, reduced-motion, shared step-list primitive. |
 | [workspace/gui/vendor/nav.css](../workspace/gui/vendor/nav.css) | App-wide left nav. Uses the same tokens; no extra CSS variables. |
+| [workspace/gui/vendor/anchor_gizmos.js](../workspace/gui/vendor/anchor_gizmos.js) | How an anchor looks in a 3D viewer — axes, label, dot, hover glow, cursor-nearest picking. The orchestrator viewer and the scene builder both import it; neither draws an anchor itself. |
 | [workspace/gui/orchestrator/web/admin/style.css](../workspace/gui/orchestrator/web/admin/style.css) | Workspace + pendant specifics that don't fit in the shared primitives. |
 | [workspace/gui/orchestrator/web/admin/index.html](../workspace/gui/orchestrator/web/admin/index.html) | Dashboard page-scoped CSS in a `<style>` block — kept page-local because dashboard layout doesn't belong in `base.css`. |
 | [workspace/gui/orchestrator/web/admin/workspace.html](../workspace/gui/orchestrator/web/admin/workspace.html) | Workspace page-scoped CSS, same reasoning. |

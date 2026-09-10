@@ -261,6 +261,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader }    from "three/addons/loaders/GLTFLoader.js";
     import { DRACOLoader }   from "three/addons/loaders/DRACOLoader.js";
+    import { makeAnchorGizmo, addAnchorGizmo, removeAnchorGizmo, placeAnchorGizmo, setAnchorHover, nearestAnchorHit } from "/vendor/anchor_gizmos.js";
     import io from "/vendor/socket.io.esm.min.js";
 
     // -------- cache-busting --------
@@ -1037,42 +1038,16 @@ function makeRenderer(opts, mountEl) {
       const pointer       = new THREE.Vector2();
       const pickableMeshes = new Set();
       let activeAnchors   = null;
+      let __hoveredAnchorPick = null;   // the anchor pick sphere under the cursor
 
       const anchorsLayer  = new THREE.Group();
       anchorsLayer.frustumCulled = false;
       scene.add(anchorsLayer);
 
-      function makeTextSprite(text, fontPx=72, bg="#000", fg="#fff", alpha=0.7, pad=10, bold=true) {
-        const cv = document.createElement("canvas"), ctx = cv.getContext("2d");
-        ctx.font = `${bold?"bold ":""}${fontPx}px sans-serif`;
-        const m  = ctx.measureText(text);
-        cv.width  = Math.ceil(m.width + pad*2);
-        cv.height = Math.ceil(fontPx + pad*2);
-        ctx.font = `${bold?"bold ":""}${fontPx}px sans-serif`;
-        ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillStyle = bg; ctx.globalAlpha = alpha;
-        ctx.fillRect(0, 0, cv.width, cv.height);
-        ctx.globalAlpha = 1; ctx.fillStyle = fg;
-        ctx.fillText(text, pad, pad);
-        const tex = new THREE.CanvasTexture(cv);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-        spr.scale.set(cv.width*0.1, cv.height*0.1, 1);
-        spr.renderOrder = 999; spr.frustumCulled = false;
-        return spr;
-      }
-      function makeAxesHelperAlwaysOnTop(size) {
-        const axes = new THREE.AxesHelper(size);
-        axes.traverse(c => { if (c.material?.isMaterial) { c.material.depthTest = false; c.renderOrder = 999; } });
-        axes.renderOrder = 999; axes.frustumCulled = false;
-        return axes;
-      }
       function clearAnchors() {
-        if (activeAnchors) activeAnchors.items.forEach(it => {
-          anchorsLayer.remove(it.axes);
-          if (it.label) anchorsLayer.remove(it.label);
-        });
+        if (activeAnchors) activeAnchors.items.forEach(it => removeAnchorGizmo(it, anchorsLayer, pickableMeshes));
         activeAnchors = null;
+        __hoveredAnchorPick = null;
         const bar = document.getElementById("infoBar");
         if (bar) bar.style.display = "none";
       }
@@ -1086,10 +1061,9 @@ function makeRenderer(opts, mountEl) {
           const [ax,ay,az,rx,ry,rz] = arr;
           const pLocal = new THREE.Vector3(ax,ay,az);
           const qLocal = rodriguesDegToQuaternion(rx,ry,rz);
-          const axes   = makeAxesHelperAlwaysOnTop(18);
-          const label  = makeTextSprite(name, 90, "#000", "#fff", 0.65);
-          anchorsLayer.add(axes); anchorsLayer.add(label);
-          items.push({ name, pLocal, qLocal, axes, label });
+          const g = makeAnchorGizmo(name);
+          addAnchorGizmo(g, anchorsLayer, pickableMeshes);
+          items.push({ name, pLocal, qLocal, ...g });
         }
         const comp  = obj.userData?.componentName || "--";
         const type  = obj.userData?.typeName || obj.userData?.type || "--";
@@ -1107,12 +1081,8 @@ function makeRenderer(opts, mountEl) {
         if (!obj.parent) { clearAnchors(); return; }
         const wq = new THREE.Quaternion();
         obj.getWorldQuaternion(wq);
-        for (const it of items) {
-          const pw = obj.localToWorld(it.pLocal.clone());
-          it.axes.position.copy(pw);
-          it.axes.quaternion.copy(wq.clone().multiply(it.qLocal));
-          if (it.label) it.label.position.copy(pw).add(new THREE.Vector3(0,0,22));
-        }
+        for (const it of items)
+          placeAnchorGizmo(it, obj.localToWorld(it.pLocal.clone()), wq.clone().multiply(it.qLocal), camera);
       }
 
       function setPointerFromEvent(e) {
@@ -1120,13 +1090,22 @@ function makeRenderer(opts, mountEl) {
         pointer.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
         pointer.y = -((e.clientY - r.top)  / r.height) * 2 + 1;
       }
-      function pickFirstMesh() {
+      // ``allowAnchor``: hover considers the anchor pick spheres (that is
+      // how you see which anchor is under the cursor); a click never
+      // does, so an anchor cannot swallow a click meant for a part.
+      function pickFirstMesh(allowAnchor) {
         raycaster.setFromCamera(pointer, camera);
         const targets = pickableMeshes.size ? Array.from(pickableMeshes) : scene.children;
         const hits    = raycaster.intersectObjects(targets, true);
         if (!hits.length) return null;
-        for (const h of hits) { if (h.object?.isMesh) return h; }
-        return hits[0];
+        const anchorHit = allowAnchor ? nearestAnchorHit(hits, pointer, camera) : null;
+        if (anchorHit) return anchorHit;
+        for (const h of hits) {
+          if (!h.object?.isMesh) continue;
+          if (h.object.userData?.__isAnchorPick) continue;
+          return h;
+        }
+        return null;
       }
 
       const CLICK_MS = 250, CLICK_PX = 6;
@@ -1142,7 +1121,7 @@ function makeRenderer(opts, mountEl) {
         const dy = Math.abs(e.clientY - downInfo.y);
         if (downInfo.button === 0 && e.button === 0 && dt <= CLICK_MS && dx <= CLICK_PX && dy <= CLICK_PX) {
           setPointerFromEvent(e);
-          const hit = pickFirstMesh();
+          const hit = pickFirstMesh(false);
           if (hit?.object?.isMesh) {
             let node = hit.object;
             while (node && !node.userData?.anchors && node !== scene) node = node.parent;
@@ -1163,8 +1142,17 @@ function makeRenderer(opts, mountEl) {
         const __now = performance.now();
         if (__now - __hoverPickAt < 50) return;
         __hoverPickAt = __now;
-        const hit = pickFirstMesh();
+        const hit = pickFirstMesh(true);
+        const isAnchorHit = !!hit?.object?.userData?.__isAnchorPick;
         renderer.domElement.style.cursor = hit?.object?.isMesh ? "pointer" : "default";
+        // Anchor hover — grow the dot, show the glow ring, enlarge and
+        // plate the label; shrink the previous one back.
+        const newHover = isAnchorHit ? hit.object : null;
+        if (newHover !== __hoveredAnchorPick) {
+          if (__hoveredAnchorPick) setAnchorHover(__hoveredAnchorPick, false);
+          if (newHover) setAnchorHover(newHover, true);
+          __hoveredAnchorPick = newHover;
+        }
       });
 
       function registerPickables(node) {
