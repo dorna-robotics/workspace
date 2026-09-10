@@ -961,17 +961,25 @@ function _renderGantt() {
 
   // Horizontal dividers stay in the plot; the LABELS go to the frozen
   // gutter so panning cannot take them off screen.
-  rows.forEach((r, i) => {
-    if (i > 0) {
-      const line = document.createElementNS(svgNS, "line");
-      line.setAttribute("x1", "0");
-      line.setAttribute("x2", String(W - 16));
-      line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
-      line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
-      line.setAttribute("class", "sched-rowline");
-      gRows.appendChild(line);
-    }
-  });
+  // Row separators live INSIDE the phase bands — a line running past a
+  // band's edge reads as a stray mark. With no bands (a phase-less
+  // project) they span the plot.
+  const rowSpans = _bands.length
+    ? _bands.map(b => [b.x0, b.x1])
+    : [[BAND_PAD + 8, W - 16]];
+  for (const [x1, x2] of rowSpans) {
+    rows.forEach((r, i) => {
+      if (i > 0) {
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(x1));
+        line.setAttribute("x2", String(x2));
+        line.setAttribute("y1", String(TOP_PAD + i * ROW_H));
+        line.setAttribute("y2", String(TOP_PAD + i * ROW_H));
+        line.setAttribute("class", "sched-rowline");
+        gRows.appendChild(line);
+      }
+    });
+  }
 
   if (_gutterEl) {
     _gutterEl.textContent = "";
