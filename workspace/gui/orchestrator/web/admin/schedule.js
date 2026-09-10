@@ -286,6 +286,14 @@ function _miniScale() {
 
 function _buildMinimap() {
   if (!_miniEl || !_chart) return;
+  // The strip starts where the PLOT starts, not where the row labels
+  // do: its x axis is the chart's, so its left edge must be the
+  // chart's. The gutter's width is only known after layout.
+  const gw = _gutterEl ? _gutterEl.offsetWidth : 0;
+  if (_miniEl.style.marginLeft !== gw + "px") {
+    _miniEl.style.marginLeft = gw + "px";     // resizes the strip → observer rebuilds
+    return;
+  }
   const sx = _miniScale();
   _miniEl.textContent = "";
   if (!sx) return;
