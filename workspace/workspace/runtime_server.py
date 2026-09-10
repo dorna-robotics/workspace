@@ -1823,33 +1823,20 @@ class RuntimeServer:
         # update. Device-state changes also push status (see device
         # subscription below) so the dashboard's pill and gate stay
         # in lockstep with reality without extra fetches.
-        # THE RECORDER FOLLOWS THE RUN. A recording started before or
-        # during a run stops by itself the moment the run ends — done,
-        # error, or killed — so the file closes cleanly with the run
-        # and nobody has to remember the button. Only a transition OUT
-        # of a running state counts: an idle bench with the recorder
-        # armed keeps it armed (device events also push status here).
-        _rec_prev = {"state": None}
-        _RUNNING = {"RUNNING", "PAUSED", "PARKING"}
-        _ENDED = {"IDLE", "ERROR", "KILLED"}
-
-        def _record_follow_run(status):
-            # ``str(RTState.RUNNING)`` is "RTState.RUNNING" — keep the name.
-            st = str((status or {}).get("state") or "").split(".")[-1].upper()
-            if not st:
+        # THE RECORDER FOLLOWS THE RUN — on the runtime's own run-end
+        # hook, fired at the exact moment it stamps run_finished_at
+        # (done, error or killed). Not a status broadcast, not a string
+        # compare: the same event that ends the run closes the file. A
+        # recorder armed on an idle bench stays armed until its run ends.
+        def _record_on_run_end(state):
+            if _recorder["fp"] is None:
                 return
-            prev, _rec_prev["state"] = _rec_prev["state"], st
-            if prev in _RUNNING and st in _ENDED and _recorder["fp"] is not None:
-                out = _record_stop()
-                print(f"[record] auto-stopped at {st}: {out.get('path')} "
-                      f"({out.get('frames')} lines, {out.get('seconds')}s)")
+            out = _record_stop()
+            print(f"[record] stopped with the run ({state}): {out.get('path')} "
+                  f"({out.get('frames')} lines, {out.get('seconds')}s)", flush=True)
+        self.rt.on_run_end = _record_on_run_end
 
         def _push_full_status(runtime_status=None):
-            if runtime_status is not None:
-                try:
-                    _record_follow_run(runtime_status)
-                except Exception:
-                    pass
             try:
                 payload = _status_payload(self.rt, self.workspace)
             except Exception:

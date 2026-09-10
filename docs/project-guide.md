@@ -935,9 +935,11 @@ scene builder's Replay tab scrubs. Because it is server-side:
 
 * closing or refreshing the page does not stop it — the viewer asks
   `/record/status` on load and lights the button if a recording is on;
-* it **stops by itself when the run ends** — done, error or killed —
-  so the file closes with the run; a recorder armed on an idle bench
-  stays armed until the run it was waiting for finishes;
+* it **stops by itself when the run ends** — done, error or killed.
+  This hangs off the runtime's ``on_run_end`` hook, fired at the exact
+  moment the runtime stamps ``run_finished_at`` (``on_run_start`` is its
+  twin at ``run_started_at``); a recorder armed on an idle bench stays
+  armed until the run it was waiting for finishes;
 * the file is flushed every 25 lines and closed at process exit.
 
 `GET /record/status`, `POST /record/start|stop` are the endpoints.

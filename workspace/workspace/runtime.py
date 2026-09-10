@@ -148,6 +148,15 @@ class Runtime:
         # race with the orchestrator's polling loop.
         self.run_started_at: Optional[float] = None
         self.run_finished_at: Optional[float] = None
+        # Run lifecycle hooks, fired at the SAME moment the stamps above
+        # are set — the one authoritative "a run began" / "the run is
+        # over" in the platform. ``on_run_end(state)`` receives the
+        # terminal state ("IDLE", "ERROR" or "KILLED"). Anything that
+        # must follow the run (the replay recorder) hangs off these,
+        # never off a status broadcast. Called under the runtime lock:
+        # do brief work, or schedule it.
+        self.on_run_start: Optional[Callable[[], None]] = None
+        self.on_run_end: Optional[Callable[[str], None]] = None
 
     # ---------------------------------------------------------------------
     # Status helpers
@@ -195,6 +204,7 @@ class Runtime:
             else:
                 self.run_started_at = time.time()
                 self.run_finished_at = None
+                self._fire(self.on_run_start)
         elif (
             new_state in (RTState.IDLE, RTState.ERROR, RTState.KILLED)
             and old in (RTState.RUNNING, RTState.PAUSED, RTState.PARKING)
@@ -202,6 +212,7 @@ class Runtime:
             if self.run_started_at and not self.run_finished_at:
                 self.run_finished_at = time.time()
             self._rec_finalize = True
+            self._fire(self.on_run_end, new_state.value)
 
         self._cv.notify_all()
         # Push the new status snapshot to any wired listener (e.g. the
@@ -221,6 +232,16 @@ class Runtime:
                 })
             except Exception:
                 pass
+
+    @staticmethod
+    def _fire(cb, *args) -> None:
+        """Call a lifecycle hook; a hook must never break a state change."""
+        if cb is None:
+            return
+        try:
+            cb(*args)
+        except Exception:
+            pass
 
     def _set_state_with_callback(self, new_state: RTState, *, err: Optional[str] = None) -> None:
         cb = None
