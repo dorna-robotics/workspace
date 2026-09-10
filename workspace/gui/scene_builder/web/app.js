@@ -11302,16 +11302,61 @@ function startRectPattern() {
     return mod;
   }
 
+  const report = document.getElementById("schedReport");
+
   function setHint(text, bad) {
     if (!hint) return;
     hint.textContent = text;
     hint.classList.toggle("bad", !!bad);
   }
 
+  // The gate's figures as a small table: a title with a status pill,
+  // then one aligned row per figure. Text nodes only — the values come
+  // from the replay, never markup.
+  function hms(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return (h ? h + "h " : "") + String(m).padStart(h ? 2 : 1, "0") + "m " + String(s).padStart(2, "0") + "s";
+  }
+  function showReport(batch, ev) {
+    if (!report) return;
+    report.textContent = "";
+    const fails = (ev.fails || []).length;
+    const broken = fails > 0 || ev.goal_ok === false;
+    const head = document.createElement("div"); head.className = "sb-report-head";
+    const title = document.createElement("span"); title.textContent = `Plan · batch ${batch}`;
+    const pill = document.createElement("span"); pill.className = "sb-report-pill" + (broken ? " bad" : "");
+    pill.textContent = broken ? (fails ? `${fails} FAILURE${fails > 1 ? "S" : ""}` : "GOAL NOT REACHED") : "OK";
+    head.appendChild(title); head.appendChild(pill); report.appendChild(head);
+    const planS = (ev.timing || []).reduce((a, r) => a + (r.plan_s || 0) + (r.cpsat_s || 0) + (r.domain_s || 0), 0);
+    const rows = [
+      ["Phases",     ev.phases ? String(ev.phases.length) : "—", ""],
+      ["Windows",    ev.slices ? String(ev.slices.length) : "1", ""],
+      ["Actions",    String((ev.actions || []).length), ""],
+      ["Tool swaps", String((ev.swaps || []).length), ""],
+      ["Makespan",   hms(ev.makespan), `${Math.round(ev.makespan || 0)} s`],
+      ["Planned in", planS ? planS.toFixed(1) + " s" : "—", ""],
+    ];
+    for (const [k, v, sub] of rows) {
+      const row = document.createElement("div"); row.className = "sb-report-row";
+      const kk = document.createElement("span"); kk.className = "sb-report-k"; kk.textContent = k;
+      const vv = document.createElement("span"); vv.className = "sb-report-v"; vv.textContent = v;
+      if (sub) { const sm = document.createElement("small"); sm.textContent = sub; vv.appendChild(sm); }
+      row.appendChild(kk); row.appendChild(vv); report.appendChild(row);
+    }
+    if (fails) {
+      const f = document.createElement("div"); f.className = "sb-report-fails";
+      f.textContent = (ev.fails || []).slice(0, 5).join("\n") + (fails > 5 ? `\n… ${fails - 5} more` : "");
+      report.appendChild(f);
+    }
+    report.hidden = false;
+  }
+
   btn.addEventListener("click", async () => {
     const batch = Math.max(1, parseInt(nIn && nIn.value, 10) || 1);
     btn.disabled = true;
-    setHint(`Planning ${batch} item(s)… a full protocol takes a minute or two.`);
+    if (report) report.hidden = true;
+    setHint(`Planning ${batch} item(s)…`);
     try {
       const m = await ensure();
       const res = await fetch(SB_API + "/schedule_preview", {
@@ -11323,12 +11368,10 @@ function startRectPattern() {
       const ev = js.event;
       m.ingestPreview(ev);
       m.showSchedule();
-      const broken = (ev.fails && ev.fails.length) || ev.goal_ok === false;
-      setHint(broken
-        ? `Batch ${batch}: ${ev.fails.length} precondition failure(s) — ${ev.fails.slice(0, 3).join("; ")}`
-        : `Batch ${batch}: ${(ev.actions || []).length} actions, ${(ev.swaps || []).length} tool swaps, makespan ${Math.round(ev.makespan)} s.`,
-        !!broken);
+      setHint("");
+      showReport(batch, ev);
     } catch (err) {
+      if (report) report.hidden = true;
       setHint(`Plan failed: ${err && err.message ? err.message : err}`, true);
     } finally {
       btn.disabled = false;
