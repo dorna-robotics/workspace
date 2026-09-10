@@ -35,13 +35,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 120
+      "byteLength": 121
     }
   ],
   "buffers": [
     {
       "uri": "collision_box.glb.bin",
-      "byteLength": 120
+      "byteLength": 121
     }
   ],
   "meshes": [

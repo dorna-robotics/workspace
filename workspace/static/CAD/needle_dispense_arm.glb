@@ -59,18 +59,18 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 9281
+      "byteLength": 9199
     },
     {
       "buffer": 0,
-      "byteOffset": 9281,
-      "byteLength": 18564
+      "byteOffset": 9199,
+      "byteLength": 18606
     }
   ],
   "buffers": [
     {
       "uri": "needle_dispense_arm.glb.bin",
-      "byteLength": 27845
+      "byteLength": 27805
     }
   ],
   "materials": [

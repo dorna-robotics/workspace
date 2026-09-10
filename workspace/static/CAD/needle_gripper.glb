@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 212670
+      "count": 200640
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 43789,
+      "count": 41518,
       "max": [
         3.4346673488616943,
         17.3387393951416,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 43789
+      "count": 41518
     },
     {
       "type": "SCALAR",
@@ -57,12 +57,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 3834
+      "count": 3822
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1270,
+      "count": 1266,
       "max": [
         3.299999952316284,
         17.29989242553711,
@@ -77,30 +77,30 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1270
+      "count": 1266
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 189861
+      "byteLength": 179984
     },
     {
       "buffer": 0,
-      "byteOffset": 189861,
-      "byteLength": 4148
+      "byteOffset": 179984,
+      "byteLength": 4100
     },
     {
       "buffer": 0,
-      "byteOffset": 194009,
-      "byteLength": 3689
+      "byteOffset": 184084,
+      "byteLength": 3731
     }
   ],
   "buffers": [
     {
       "uri": "needle_gripper.glb.bin",
-      "byteLength": 197698
+      "byteLength": 187815
     }
   ],
   "materials": [

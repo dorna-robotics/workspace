@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 49374
+      "count": 56706
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 16810,
+      "count": 18743,
       "max": [
-        2.150320529937744,
-        16.350000381469727,
-        2.150320529937744
+        2.1500000953674316,
+        17.850000381469727,
+        2.1500000953674316
       ],
       "min": [
         -2.1500000953674316,
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 16810
+      "count": 18743
     },
     {
       "type": "SCALAR",
@@ -39,13 +39,13 @@
       "componentType": 5126,
       "count": 144,
       "max": [
-        0.7999265789985657,
-        8.149999618530273,
-        0.7999265789985657
+        0.800000011920929,
+        9.649999618530273,
+        0.800000011920929
       ],
       "min": [
         -0.800000011920929,
-        2.75,
+        4.25,
         -0.800000011920929
       ]
     },
@@ -65,12 +65,12 @@
       "count": 48,
       "max": [
         0.4000000059604645,
-        2.75,
+        4.25,
         0.4000000059604645
       ],
       "min": [
         -0.4000000059604645,
-        1.9500000476837158,
+        3.450000047683716,
         -0.4000000059604645
       ]
     },
@@ -89,13 +89,13 @@
       "componentType": 5126,
       "count": 72,
       "max": [
-        0.30001217126846313,
-        17.350000381469727,
-        0.30001217126846313
+        0.30000001192092896,
+        18.850000381469727,
+        0.30000001192092896
       ],
       "min": [
         -0.30000001192092896,
-        16.350000381469727,
+        17.850000381469727,
         -0.30000001192092896
       ]
     },
@@ -109,33 +109,33 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 51456
+      "byteLength": 56669
     },
     {
       "buffer": 0,
-      "byteOffset": 51456,
+      "byteOffset": 56669,
       "byteLength": 689
     },
     {
       "buffer": 0,
-      "byteOffset": 52145,
+      "byteOffset": 57358,
       "byteLength": 307
     },
     {
       "buffer": 0,
-      "byteOffset": 52452,
+      "byteOffset": 57665,
       "byteLength": 393
     }
   ],
   "buffers": [
     {
       "uri": "ph_meter_apera753.glb.bin",
-      "byteLength": 52845
+      "byteLength": 58058
     }
   ],
   "materials": [
     {
-      "name": "Steel_-_Satin",
+      "name": "Steel_-_Satin.001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -209,7 +209,7 @@
   ],
   "meshes": [
     {
-      "name": "ph meter origin",
+      "name": "ph meter origin updatw",
       "primitives": [
         {
           "attributes": {
@@ -288,7 +288,7 @@
   ],
   "nodes": [
     {
-      "name": "ph meter origin",
+      "name": "ph meter origin updatw",
       "rotation": [
         0.7071068286895752,
         0,
