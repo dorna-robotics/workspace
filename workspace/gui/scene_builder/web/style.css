@@ -994,7 +994,7 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
   display: none;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);     /* the orchestrator's card token, same everywhere */
   box-shadow: var(--shadow-sm);
 }
 .sb-sched-lbl {
