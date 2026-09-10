@@ -940,7 +940,14 @@ scene builder's Replay tab scrubs. Because it is server-side:
   moment the runtime stamps ``run_finished_at`` (``on_run_start`` is its
   twin at ``run_started_at``); a recorder armed on an idle bench stays
   armed until the run it was waiting for finishes;
-* the file is flushed every 25 lines and closed at process exit.
+* the file is flushed every 25 lines and closed at process exit;
+* **the run's schedule is recorded beside the frames** — every plan
+  slice and every action / swap start and end, on the recording's
+  clock (``{"t", "ev"}`` lines; a recording started mid-run first
+  writes the schedule so far, with negative times). The scene builder's
+  Replay tab turns them into **phase chapters under the slider**: one
+  segment per phase, click to jump, the current phase named beside the
+  time.
 
 `GET /record/status`, `POST /record/start|stop` are the endpoints.
 

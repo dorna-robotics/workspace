@@ -668,6 +668,8 @@ def run_protocol(
         return _mono_memo[0]
 
     phases = _normalise_phases(phases_spec)
+    # The phase this replan plans toward, resolved once in _observe.
+    _frozen_phase = {"cur": None}
 
     if phases:
         # A NON-MONOTONIC PHASE CANNOT BE A PHASE BOUNDARY. If some
@@ -722,7 +724,7 @@ def run_protocol(
         # Only when the last phase has closed do we fall through to the
         # window/tail logic below.
         if phases:
-            cur = _current_phase(state)
+            cur = _frozen_phase["cur"]
             if cur is not None:
                 # NOT ``goal_fn`` — binding that name here would make
                 # it local to this whole function and turn every other
@@ -767,6 +769,15 @@ def run_protocol(
             # in build_tree because _observe already did the work.
             _cur = _current_phase(state) if phases else None
             c.meta["current_phase"] = _cur[0] if _cur else None
+            # FREEZE THE PHASE FOR THIS REPLAN. The planning goal and the
+            # heuristic read this, never _current_phase(state) again: a
+            # goal that re-asks "which phase is current" while the
+            # search advances re-targets the NEXT phase the moment this
+            # one is reached inside the search, and the tail plans on to
+            # the end of the protocol — one slice, every phase, which is
+            # exactly what phases exist to prevent (measured: a 3-item,
+            # 2-phase run planned as one 32-action slice).
+            _frozen_phase["cur"] = _cur
             log.info(
                 "Launcher: slice window = %s (%d/%d done)",
                 window,
@@ -816,9 +827,7 @@ def run_protocol(
         _base_goal_facts = goal_facts
 
         def _slice_goal_facts():
-            st = ctx.state.get("facts", frozenset())
-            st = st if isinstance(st, frozenset) else frozenset(st)
-            cur = _current_phase(st)
+            cur = _frozen_phase["cur"]
             if cur is not None and cur[4] is not None:
                 window = ctx.meta["objects"].get(slice_dim, []) if slice_dim else []
                 scoped = [it for it in (window or all_items) if it in cur[1]]

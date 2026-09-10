@@ -3,6 +3,7 @@ import os
 import time
 import atexit
 import json
+import threading
 import sys
 import asyncio
 from pathlib import Path
@@ -152,6 +153,9 @@ async def disconnect(sid):
 # /record/start|stop|status (it probes status and hides where absent).
 _recorder = {"fp": None, "path": None, "t0": None, "frames": 0}
 _record_core_dir = None  # set at RuntimeServer init from the project
+# Frames arrive on the IO loop, schedule events from BT threads — one
+# lock keeps the lines whole.
+_record_lock = threading.Lock()
 
 
 def _record_close_at_exit():
@@ -163,19 +167,32 @@ atexit.register(_record_close_at_exit)
 
 
 def _record_line(obj):
-    fp = _recorder["fp"]
-    if fp is None:
+    with _record_lock:
+        fp = _recorder["fp"]
+        if fp is None:
+            return
+        try:
+            fp.write(json.dumps(obj, separators=(",", ":")) + "\n")
+            _recorder["frames"] += 1
+            # Flush now and then so a recording survives a hard exit of the
+            # workspace process; per-line flushing would hammer the SD card.
+            if _recorder["frames"] % 25 == 0:
+                fp.flush()
+        except Exception as e:
+            print("[record] write failed, stopping:", e)
+            _record_stop()
+
+
+def _record_event(event: dict) -> None:
+    """A schedule event into the recording, on the recording's clock —
+    ``{"t": seconds since start, "ev": event}``. The plan slices and the
+    action / swap start-end events are what let a replay show WHERE in
+    the protocol each moment was."""
+    if _recorder["fp"] is None:
         return
-    try:
-        fp.write(json.dumps(obj, separators=(",", ":")) + "\n")
-        _recorder["frames"] += 1
-        # Flush now and then so a recording survives a hard exit of the
-        # workspace process; per-line flushing would hammer the SD card.
-        if _recorder["frames"] % 25 == 0:
-            fp.flush()
-    except Exception as e:
-        print("[record] write failed, stopping:", e)
-        _record_stop()
+    wall = event.get("wall_ts")
+    t = (wall - _recorder["t0"]) if isinstance(wall, (int, float)) else (time.time() - _recorder["t0"])
+    _record_line({"t": round(t, 4), "ev": event})
 
 
 def _record_start():
@@ -194,6 +211,12 @@ def _record_start():
     _record_line({"meta": {"started": time.strftime("%Y-%m-%dT%H:%M:%S"),
                            "project_core": _record_core_dir}})
     _record_line({"t": 0.0, "snap": world_state})
+    # A recording can start at ANY moment of a run. Write the run's
+    # schedule so far — every plan slice and every action / swap event —
+    # on the recording's clock (events before the start carry negative
+    # times), so the replay knows which phase and action t=0 fell in.
+    for ev in list(_schedule_history) + list(_schedule_runtime_events):
+        _record_event(ev)
     print(f"[record] started -> {path}")
     return {"ok": True, "path": path, "name": name}
 
@@ -897,6 +920,7 @@ def _broadcast_schedule_event(event: dict) -> None:
         _schedule_history.append(event)
     elif etype in ("action_start", "action_end", "swap_start", "swap_end"):
         _schedule_runtime_events.append(event)
+    _record_event(event)
 
     if _main_ioloop is None:
         return

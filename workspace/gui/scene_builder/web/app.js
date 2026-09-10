@@ -10891,6 +10891,7 @@ function startRectPattern() {
 // timeline — playback is exact, camera stays free.
 (function replayPlayer() {
   const $ = (id) => document.getElementById(id);
+  let _chapterMod = null;    // replay_chapters.js, loaded on first use
   const listEl = $("rpList"), pathEl = $("rpPath"), loadBtn = $("rpLoad"),
         hintEl = $("rpHint"), refreshBtn = $("rpRefresh"),
         bar = $("rpBar"), playBtn = $("rpPlay"), slider = $("rpSlider"),
@@ -10900,7 +10901,38 @@ function startRectPattern() {
   if (!listEl || !bar) return;
 
   const rp = { root: null, tl: null, dur: 0, t: 0, playing: false,
-               raf: 0, lastWall: 0, hidden: [], speed: 1 };
+               raf: 0, lastWall: 0, hidden: [], speed: 1, chapters: [] };
+  const chapEl = $("rpChapters"), phaseEl = $("rpPhase");
+
+  // ── Phase chapters on the slider ───────────────────────────────
+  function renderChapters() {
+    if (!chapEl) return;
+    chapEl.textContent = "";
+    const chs = rp.chapters || [];
+    chapEl.hidden = chs.length === 0;
+    if (phaseEl) phaseEl.hidden = chs.length === 0;
+    if (!chs.length || !rp.dur) return;
+    chs.forEach((c, i) => {
+      const seg = document.createElement("button");
+      seg.type = "button";
+      seg.className = "rp-chapter" + (i % 2 ? " is-alt" : "");
+      seg.style.left = (100 * c.t0 / rp.dur).toFixed(3) + "%";
+      seg.style.width = (100 * (c.t1 - c.t0) / rp.dur).toFixed(3) + "%";
+      seg.title = `${c.phase}  ${fmt(c.t0)} – ${fmt(c.t1)}`;
+      const lab = document.createElement("span");
+      lab.textContent = c.phase;
+      seg.appendChild(lab);
+      seg.addEventListener("click", () => { pause(); seek(c.t0); });
+      chapEl.appendChild(seg);
+    });
+    syncChapter();
+  }
+  function syncChapter() {
+    if (!chapEl || !rp.chapters || !rp.chapters.length) return;
+    const cur = _chapterMod ? _chapterMod.chapterAt(rp.chapters, rp.t) : null;
+    for (const seg of chapEl.children) seg.classList.toggle("is-current", !!cur && seg.title.startsWith(cur.phase + "  "));
+    if (phaseEl) phaseEl.textContent = cur ? cur.phase : "";
+  }
 
   function hint(msg, bad) {
     hintEl.textContent = msg || "";
@@ -11006,7 +11038,9 @@ function startRectPattern() {
       });
       rp.root = null;
     }
-    rp.tl = null; rp.dur = 0; rp.t = 0;
+    rp.tl = null; rp.dur = 0; rp.t = 0; rp.chapters = [];
+    if (chapEl) { chapEl.textContent = ""; chapEl.hidden = true; }
+    if (phaseEl) { phaseEl.textContent = ""; phaseEl.hidden = true; }
     // scene visibility stays tab-driven: on the Replay tab the canvas
     // goes empty until the next Load; elsewhere the builder shows.
     applyCanvasMode();
@@ -11066,6 +11100,7 @@ function startRectPattern() {
     slider.value = Math.round(10 * pct);
     slider.style.setProperty("--p", pct.toFixed(2) + "%");
     timeEl.textContent = fmt(rp.t) + "\u2009/\u2009" + fmt(rp.dur);
+    syncChapter();
     // The builder renders ON DEMAND (markDirty + 500 ms idle repaint):
     // without this every replay frame waits for the idle tick — the
     // "5 fps playback" bug.
@@ -11183,6 +11218,15 @@ function startRectPattern() {
       }
       rp.dur = (js.frames && js.frames.length)
         ? js.frames[js.frames.length - 1].t : 0;
+      // Phase chapters, when the recording carries the run's schedule.
+      rp.chapters = [];
+      if (js.events && js.events.length) {
+        try {
+          _chapterMod = _chapterMod || await import("./replay_chapters.js");
+          rp.chapters = _chapterMod.buildChapters(js.events, rp.dur);
+        } catch (e) { console.warn("replay chapters unavailable:", e); }
+      }
+      renderChapters();
       const shortName = (js.path || path).split("/").pop();
       nameEl.textContent = shortName;
       nameEl.title = js.path || path;

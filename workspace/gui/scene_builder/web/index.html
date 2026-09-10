@@ -262,6 +262,7 @@
     <div id="rpBar" style="display:none">
       <div class="rp-head">
         <span id="rpName" class="rp-name" title=""></span>
+        <span id="rpPhase" class="rp-phase" hidden></span>
         <div class="rp-speeds" id="rpSpeeds" title="Playback speed">
           <button data-speed="0.5">0.5×</button>
           <button data-speed="1" class="active">1×</button>
@@ -280,6 +281,9 @@
         <input type="range" id="rpSlider" min="0" max="1000" value="0" step="1"/>
         <span id="rpTime">00:00&thinsp;/&thinsp;00:00</span>
       </div>
+      <!-- Phase chapters under the slider — only when the recording
+           carries the run's schedule. Click a chapter to jump there. -->
+      <div class="rp-chapters" id="rpChapters" hidden></div>
     </div>
 
   </div><!-- /viewer-area -->

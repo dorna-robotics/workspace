@@ -1557,7 +1557,7 @@ class ReplayFileHandler(tornado.web.RequestHandler):
             self.set_status(413)
             self.write({"ok": False, "error": "recording too large to load"})
             return
-        meta, snap, frames = {}, {}, []
+        meta, snap, frames, events = {}, {}, [], []
         try:
             with open(path) as f:
                 for line in f:
@@ -1569,6 +1569,8 @@ class ReplayFileHandler(tornado.web.RequestHandler):
                         meta = row["meta"]
                     elif "snap" in row:
                         snap = row["snap"]
+                    elif "ev" in row:
+                        events.append({"t": row.get("t", 0), "ev": row["ev"]})
                     else:
                         frames.append({"t": row.get("t", 0), "u": row.get("u", {})})
         except Exception as e:
@@ -1576,7 +1578,7 @@ class ReplayFileHandler(tornado.web.RequestHandler):
             self.write({"ok": False, "error": f"unreadable recording: {e}"})
             return
         self.write({"ok": True, "path": path, "meta": meta,
-                    "snap": snap, "frames": frames})
+                    "snap": snap, "frames": frames, "events": events})
 
 
 class ResetHandler(tornado.web.RequestHandler):

@@ -1064,3 +1064,39 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
   color: var(--danger, #e5484d);
   white-space: pre-wrap;
 }
+
+/* ── Replay: phase chapters under the slider ──────────────────────
+   One segment per phase, like a video's chapters. Gray / white like the
+   schedule's bands; the current one carries the accent. */
+.rp-chapters {
+  position: relative;
+  height: 18px;
+  margin: 2px 0 0 46px;        /* aligns with the slider: the play button + gap */
+  margin-right: 74px;          /* the time readout's width */
+}
+.rp-chapter {
+  position: absolute; top: 0; height: 100%;
+  margin: 0; padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--muted);
+  font: 700 9px/16px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.rp-chapter.is-alt { background: var(--surface); }
+.rp-chapter:hover { color: var(--text); border-color: var(--accent); }
+.rp-chapter.is-current { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+.rp-chapter span { pointer-events: none; }
+.rp-phase {
+  font: 700 10px/1 var(--mono);
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
