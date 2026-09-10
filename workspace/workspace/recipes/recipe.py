@@ -2899,7 +2899,14 @@ class Recipe:
             RecipeError: If IK fails for any waypoint in the pattern.
         """
         rt = self.rt
-
+        # SETTLE FIRST. Under motion fusion the previous verb's exit lift
+        # may be a held tail: the robot is still at the grip point while
+        # the IK's live pose is the frontier it has not reached (measured
+        # after a fused pick: 25 mm of rail between the two). Shaking
+        # from there would jerk the payload out of the slot along a
+        # joint-space path and RETURN it into the slot afterwards. Flush
+        # the tail; everything below is then the settled pose.
+        self.core.tail_flush(reason="vibrate: shake from the settled pose")
         current_joint = rt.joint()
 
         pattern = [
