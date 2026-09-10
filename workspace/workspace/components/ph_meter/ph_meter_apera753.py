@@ -9,9 +9,9 @@ component, device-guide §10 shape A).
 Geometry, measured off ph_meter_apera753.glb (mm, z from the flange
 face):
       0.0 -  10.0   mount flange       43.0 dia
-     10.0 - 100.0   slotted guard cage 38.5 dia over the ribs
-    100.0 - 120.0   electrode body     44.5 dia at its widest
-    120.0 - 173.5   shaft, tapering to the tip at 173.5
+     10.0 -  90.0   slotted guard cage 38.5 dia over the ribs
+     90.0 - 110.0   electrode body     44.5 dia at its widest
+    110.0 - 188.5   shaft, tapering to the tip at 188.5
 """
 
 from __future__ import annotations
@@ -27,14 +27,14 @@ from workspace.components.gripper.gripper import Gripper
 @register("ph_meter_apera753")
 class PhMeterApera753(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 173.5, 0, 0, 0], "tip": [0, 0, 173.5, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 188.5, 0, 0, 0], "tip": [0, 0, 188.5, 0, 0, 0]}},
         # Two boxes: everything wide (flange + cage + electrode body)
         # in one block, the slim tapering shaft in the other, split at
-        # the z=120 shoulder.
+        # the z=110 shoulder.
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 120.0/2, 0.0, 0.0, 0.0], "scale":[44.5, 44.5, 120.0]},
-                {"pose":[0.0, 0.0, (120.0+173.5)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 173.5-120.0]},
+                {"pose":[0.0, 0.0, 110.0/2, 0.0, 0.0, 0.0], "scale":[44.5, 44.5, 110.0]},
+                {"pose":[0.0, 0.0, (110.0+188.5)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 188.5-110.0]},
         ]},
         #cfg
         has_tool_changer = False,

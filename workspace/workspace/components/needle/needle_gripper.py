@@ -49,7 +49,7 @@ class NeedleGripper(PumpedTool, Gripper):
     # face at z = 173.387 hangs below it at rest and is the tool's
     # working reference — tcp/tip live there.
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 173.387, 0, 0, 0],  "tip":[0, 0, 173.387, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 169.10, 0, 0, 0],  "tip":[0, 0, 173.387, 0, 0, 0]}},
         collision_box =
             {"body":[
                 {"pose":[-0.32, 0.0, 86.6935, 0.0, 0.0, 0.0], "scale":[69.34, 43.0, 173.387]},
