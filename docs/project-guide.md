@@ -926,7 +926,22 @@ sudo python3 projects/my_project/main.py --port 5010
 
 Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send start/pause/kill commands.
 
-### Pause / Park / Kill — runtime control semantics
+### Recording a run — the replay recorder
+
+The 3D viewer's record button (red while capturing) drives a recorder
+that lives in the WORKSPACE PROCESS, not the page: it writes every
+scene update to `<project>/core/replay_<stamp>.jsonl`, the file the
+scene builder's Replay tab scrubs. Because it is server-side:
+
+* closing or refreshing the page does not stop it — the viewer asks
+  `/record/status` on load and lights the button if a recording is on;
+* it **stops by itself when the run ends** — done, error or killed —
+  so the file closes with the run; a recorder armed on an idle bench
+  stays armed until the run it was waiting for finishes;
+* the file is flushed every 25 lines and closed at process exit.
+
+`GET /record/status`, `POST /record/start|stop` are the endpoints.
+
 
 The runtime exposes three control signals. Each interacts differently with the currently executing state:
 

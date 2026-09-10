@@ -1,6 +1,7 @@
 # workspace/runtime_server.py
 import os
 import time
+import atexit
 import json
 import sys
 import asyncio
@@ -153,6 +154,14 @@ _recorder = {"fp": None, "path": None, "t0": None, "frames": 0}
 _record_core_dir = None  # set at RuntimeServer init from the project
 
 
+def _record_close_at_exit():
+    if _recorder["fp"] is not None:
+        _record_stop()
+
+
+atexit.register(_record_close_at_exit)
+
+
 def _record_line(obj):
     fp = _recorder["fp"]
     if fp is None:
@@ -160,6 +169,10 @@ def _record_line(obj):
     try:
         fp.write(json.dumps(obj, separators=(",", ":")) + "\n")
         _recorder["frames"] += 1
+        # Flush now and then so a recording survives a hard exit of the
+        # workspace process; per-line flushing would hammer the SD card.
+        if _recorder["frames"] % 25 == 0:
+            fp.flush()
     except Exception as e:
         print("[record] write failed, stopping:", e)
         _record_stop()
@@ -1810,7 +1823,33 @@ class RuntimeServer:
         # update. Device-state changes also push status (see device
         # subscription below) so the dashboard's pill and gate stay
         # in lockstep with reality without extra fetches.
-        def _push_full_status(_unused_runtime_status=None):
+        # THE RECORDER FOLLOWS THE RUN. A recording started before or
+        # during a run stops by itself the moment the run ends — done,
+        # error, or killed — so the file closes cleanly with the run
+        # and nobody has to remember the button. Only a transition OUT
+        # of a running state counts: an idle bench with the recorder
+        # armed keeps it armed (device events also push status here).
+        _rec_prev = {"state": None}
+        _RUNNING = {"RUNNING", "PAUSED", "PARKING"}
+        _ENDED = {"IDLE", "ERROR", "KILLED"}
+
+        def _record_follow_run(status):
+            # ``str(RTState.RUNNING)`` is "RTState.RUNNING" — keep the name.
+            st = str((status or {}).get("state") or "").split(".")[-1].upper()
+            if not st:
+                return
+            prev, _rec_prev["state"] = _rec_prev["state"], st
+            if prev in _RUNNING and st in _ENDED and _recorder["fp"] is not None:
+                out = _record_stop()
+                print(f"[record] auto-stopped at {st}: {out.get('path')} "
+                      f"({out.get('frames')} lines, {out.get('seconds')}s)")
+
+        def _push_full_status(runtime_status=None):
+            if runtime_status is not None:
+                try:
+                    _record_follow_run(runtime_status)
+                except Exception:
+                    pass
             try:
                 payload = _status_payload(self.rt, self.workspace)
             except Exception:
