@@ -237,6 +237,9 @@ class PumpStation:
             raise ValueError(f"unknown pump driver {driver!r} — one of {sorted(DRIVERS)}")
         self.port = port or ""
         self.driver_name = str(driver)
+        # The rotary-switch address, as authored (0-9 / A-F): with the
+        # line it is what identifies THIS pump on a multi-drop line.
+        self.address = (driver_kwargs or {}).get("address", 0)
         self.backend = DRIVERS[driver](port=self.port, **(driver_kwargs or {}))
         self.declared_valve_type = None if valve_type is None else int(valve_type)
         self.simulation = bool(simulation)
@@ -268,11 +271,12 @@ class PumpStation:
 
     @property
     def id(self) -> str:
-        """``pump:<basename(port)>`` per device-guide §9 — ``pump`` is
-        the blessed kind for syringe / dosing pumps; the basename keeps
-        the id slash-free so ``device/+/info`` matches. Sim does not
-        change it."""
-        return f"{self.KIND}:{os.path.basename(self.port)}"
+        """``pump:<basename(port)>@<address>`` per device-guide §9 — a
+        device on a multi-drop line is the line AND its address: two
+        pumps daisy-chained on one RS-485 port are two devices, two
+        panel rows. The basename keeps the id slash-free so
+        ``device/+/info`` matches. Sim does not change it."""
+        return f"{self.KIND}:{os.path.basename(self.port)}@{self.address}"
 
     def on_state_change(self, cb: Callable[[str, str], None]) -> None:
         self._listeners.append(cb)

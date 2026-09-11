@@ -43,11 +43,14 @@ bench owns a fluid device.
 **One pump = one barrel = one component = one bus row.** The syringe
 is a parameter (`syringe_volume_ul`), not a component — it is a
 hardware fact the drive cannot report, like the pump variant. "Two
-syringes" means two pump drives, so it is two scene entries, each on
-its own USB adapter with its own address (the bna bench runs an LV and
-an HV pump exactly this way). Daisy-chaining several drives on one
-RS-485 adapter is not supported — two stations would fight over one
-half-duplex line.
+syringes" means two pump drives, so it is two scene entries. They may
+sit on their own USB adapters, or daisy-chained on ONE RS-485 adapter
+with different rotary addresses (the bna bench runs its LV and HV pumps
+on one line, addresses 0 and 1). A shared port is opened once by the
+platform and every drive on it holds the line's lock for the whole of
+an exchange (`workspace.devices.serial_line`), so two drives never
+fight over the half-duplex line; the device id is
+`pump:<port basename>@<address>`, one bus row per drive.
 
 **Why the nozzles hold a name, not an instance.** A carried needle and a
 fixed arm are opposites kinematically — one travels to the liquid, the

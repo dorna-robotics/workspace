@@ -23,7 +23,10 @@ Scene yaml (see ``docs/liquid-handling.md`` for every setting)::
       type: "pump"
       driver: "psd4"
       port: "/dev/serial/by-id/usb-…"   # "" → no bus claim, sim bookkeeping only
-      address: 0                        # rotary switch position, 0-9 / A-F
+      address: 0                        # rotary switch position, 0-9 / A-F —
+                                        # pumps daisy-chained on ONE port share
+                                        # it and differ by address; the device
+                                        # id is pump:<port basename>@<address>
       baud: 9600                        # 9600 (DIP 3 off) or 38400 (DIP 3 on)
       simulation: true
       critical: true

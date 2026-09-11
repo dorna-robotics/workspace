@@ -568,14 +568,25 @@ truth.
   When deriving an id from a filesystem path (e.g. `/dev/ttyUSB0` or
   `/dev/serial/by-id/usb-...-port0`), use the path's **basename**, not
   the full path — see `BK879BStation.id` for the canonical pattern.
+- **A device on a multi-drop line is the line AND its address:**
+  `<kind>:<line basename>@<address>`. Several devices share one port on
+  an RS-485 chain (Hamilton PSD pumps with rotary addresses); an id that
+  names only the port names the wire, not the device, and two devices
+  collapse into one panel row — `PumpStation.id` is the pattern. The
+  platform opens such a port ONCE (`workspace.devices.serial_line`)
+  and every driver on it holds the line's lock for the whole of one
+  exchange, so two devices' traffic never interleaves. A second attach
+  of an id this process already publishes raises `DeviceIdInUse`
+  rather than silently overwriting the first.
 
 Examples:
 
 ```
-camera:130322274110     ← USB serial
-printer:zd420-front     ← physical position
-pipette:pumpA           ← physical label
-dorna:192.168.1.42      ← host/IP
+camera:130322274110               ← USB serial
+printer:zd420-front               ← physical position
+pipette:pumpA                     ← physical label
+dorna:192.168.1.42                ← host/IP
+pump:usb-1a86_USB_Serial-if00-port0@1   ← line + address (multi-drop)
 ```
 
 Bad:

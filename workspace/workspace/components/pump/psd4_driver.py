@@ -47,6 +47,8 @@ from typing import Optional
 import serial
 import serial.tools.list_ports
 
+from workspace.devices.serial_line import SerialLine
+
 
 # Rotary address switch position -> the address character the pump
 # answers to on a single-pump chain (manual table 7-2).
@@ -231,6 +233,10 @@ class PSD4:
         self.syringe_volume_ul = float(syringe_volume_ul)
         self.high_resolution = bool(high_resolution)
         self.variant = variant
+        # The port is a LINE shared by every pump daisy-chained on it
+        # (workspace.devices.serial_line): acquired on connect, its lock
+        # held for the whole of each exchange.
+        self._line: Optional[SerialLine] = None
         self.ser: Optional[serial.Serial] = None
 
         # Accept either a switch position or a literal address char.
@@ -244,53 +250,58 @@ class PSD4:
     # ==================================================
 
     def is_connected(self) -> bool:
-        return self.ser is not None and self.ser.is_open
+        return self._line is not None and self._line.is_open
 
     def connect(self) -> bool:
         if self.is_connected():
             return True
         try:
-            self.ser = serial.Serial(
-                self.port, self.baud, bytesize=8,
-                parity="N", stopbits=1, timeout=self.timeout,
-            )
+            self._line = SerialLine.acquire(
+                self.port, baudrate=self.baud, bytesize=8, parity="N", stopbits=1,
+                timeout=self.timeout)
         except serial.SerialException:
+            self._line = None
             self.ser = None
             return False
+        self.ser = self._line.ser
         self._drain()
         return True
 
     def close(self) -> None:
-        if self.ser is not None:
+        if self._line is not None:
             try:
-                self.ser.close()
+                self._line.release()
             finally:
+                self._line = None
                 self.ser = None
 
     def _drain(self, window: float = 0.2) -> bytes:
         """Discard anything already queued. An aborted move can leave a
         stale reply in the buffer that would otherwise be read as the
-        answer to the next command."""
-        if self.ser is None:
+        answer to the next command. Under the line's lock: on a shared
+        line, between two locked exchanges, only stale bytes can be
+        there."""
+        if self._line is None:
             return b""
-        old, drained = self.ser.timeout, b""
-        try:
-            self.ser.timeout = window
-            while True:
-                d = self.ser.read(256)
-                if not d:
-                    break
-                drained += d
-                if len(drained) > 4096:
-                    break
-        except serial.SerialException:
-            pass
-        finally:
+        with self._line.lock:
+            old, drained = self.ser.timeout, b""
             try:
-                self.ser.timeout = old
+                self.ser.timeout = window
+                while True:
+                    d = self.ser.read(256)
+                    if not d:
+                        break
+                    drained += d
+                    if len(drained) > 4096:
+                        break
             except serial.SerialException:
                 pass
-        return drained
+            finally:
+                try:
+                    self.ser.timeout = old
+                except serial.SerialException:
+                    pass
+            return drained
 
     # ==================================================
     # Low-level I/O
@@ -305,47 +316,52 @@ class PSD4:
 
         Raises PSD4Error when the pump says nothing in time — a silent
         pump is a dropped link, never a zero reading.
+
+        The line's lock is held from the write to the terminator: every
+        pump on the line hears every frame, so two pumps' exchanges must
+        never interleave.
         """
         if not self.is_connected():
             raise PSD4Error("not connected")
-        deadline = time.monotonic() + (
-            self.timeout if read_timeout is None else float(read_timeout)
-        )
-        self.ser.reset_input_buffer()
-        self.ser.write(f"/{self.address}{data}\r".encode("ascii"))
+        with self._line.lock:
+            deadline = time.monotonic() + (
+                self.timeout if read_timeout is None else float(read_timeout)
+            )
+            self.ser.reset_input_buffer()
+            self.ser.write(f"/{self.address}{data}\r".encode("ascii"))
 
-        # Replies end in <CR><LF>; read until LF so a payload containing
-        # a CR can't cut the line short.
-        buf = b""
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise PSD4Error(f"no response to {data!r} — pump silent/disconnected")
-            self.ser.timeout = remaining
-            chunk = self.ser.read_until(b"\n")
-            if not chunk:
-                raise PSD4Error(f"no response to {data!r} — pump silent/disconnected")
-            buf += chunk
-            if buf.endswith(b"\n"):
-                break
+            # Replies end in <CR><LF>; read until LF so a payload containing
+            # a CR can't cut the line short.
+            buf = b""
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise PSD4Error(f"no response to {data!r} — pump silent/disconnected")
+                self.ser.timeout = remaining
+                chunk = self.ser.read_until(b"\n")
+                if not chunk:
+                    raise PSD4Error(f"no response to {data!r} — pump silent/disconnected")
+                buf += chunk
+                if buf.endswith(b"\n"):
+                    break
 
-        line = buf.decode("ascii", errors="ignore").strip("\r\n")
-        # Expected: /0<status><payload>. Anything shorter is a framing
-        # failure, usually a baud or half-duplex-direction problem.
-        if len(line) < 3 or not line.startswith("/"):
-            raise PSD4Error(f"malformed reply to {data!r}: {line!r}")
-        status_byte = ord(line[2])
-        # Real firmware (DV01.00.00) terminates every payload with ETX
-        # even in Terminal Protocol, which the manual documents as
-        # CR/LF-framed only. Left in, that byte rides along into every
-        # numeric query and int() blows up on "1400\x03". Strip the
-        # Standard-Protocol framing characters here, once, so no caller
-        # has to know.
-        payload = line[3:].strip("\x02\x03").strip()
-        return (
-            Status(ready=bool(status_byte & 0x20), error=status_byte & 0x0F, raw=line),
-            payload,
-        )
+            line = buf.decode("ascii", errors="ignore").strip("\r\n")
+            # Expected: /0<status><payload>. Anything shorter is a framing
+            # failure, usually a baud or half-duplex-direction problem.
+            if len(line) < 3 or not line.startswith("/"):
+                raise PSD4Error(f"malformed reply to {data!r}: {line!r}")
+            status_byte = ord(line[2])
+            # Real firmware (DV01.00.00) terminates every payload with ETX
+            # even in Terminal Protocol, which the manual documents as
+            # CR/LF-framed only. Left in, that byte rides along into every
+            # numeric query and int() blows up on "1400\x03". Strip the
+            # Standard-Protocol framing characters here, once, so no caller
+            # has to know.
+            payload = line[3:].strip("\x02\x03").strip()
+            return (
+                Status(ready=bool(status_byte & 0x20), error=status_byte & 0x0F, raw=line),
+                payload,
+            )
 
     def command(self, cmd: str, wait: bool = True, timeout: Optional[float] = None) -> str:
         """Queue ``cmd`` in the command buffer and execute it (appends

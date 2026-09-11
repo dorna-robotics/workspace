@@ -65,6 +65,8 @@ __all__ = [
     "attach_sim_stub",
     "DeviceAttachment",
     "DevicePublisherConflict",
+    "DeviceIdInUse",
+    "attached_device_ids",
     "make_publisher_id",
 ]
 
@@ -108,6 +110,56 @@ class _StubDevice:
 # implementing ``ping()``) are polled, and only while genuinely idle —
 # see DeviceAttachment's heartbeat docstring.
 HEARTBEAT_INTERVAL_S = 5.0
+
+
+class DeviceIdInUse(RuntimeError):
+    """A second attach of a device id this process already publishes.
+
+    The bus's conflict check compares publisher ids, which are
+    per-process — two components in ONE process with the same device id
+    pass it, both publish to the same retained topics, and the panel
+    shows one row for two devices with nothing in the log. Two
+    components sharing an id is always a bug: either the id names the
+    wire instead of the device (a multi-drop line — put the address in
+    the id) or the scene declares one device twice.
+    """
+
+    def __init__(self, device_id: str, kind: str):
+        self.device_id, self.kind = device_id, kind
+        super().__init__(
+            f"device id {device_id!r} is already attached in this process — two "
+            f"components share it. An id names ONE device: on a shared line put "
+            f"the address in the id (device-guide §9), otherwise fix the scene.")
+
+
+# Every device id this process has attached and not closed. The guard
+# behind DeviceIdInUse; DeviceAttachment.close() releases the entry.
+_ATTACHED: dict[str, "DeviceAttachment"] = {}
+_ATTACHED_LOCK = threading.Lock()
+
+
+def _claim_device_id(device_id: str, kind: str, attachment: "DeviceAttachment") -> None:
+    with _ATTACHED_LOCK:
+        live = _ATTACHED.get(device_id)
+        if live is not None and not live.closed:
+            raise DeviceIdInUse(device_id, kind)
+        _ATTACHED[device_id] = attachment
+        attachment.device_id = device_id
+
+
+def _release_device_id(attachment: "DeviceAttachment") -> None:
+    did = getattr(attachment, "device_id", None)
+    if not did:
+        return
+    with _ATTACHED_LOCK:
+        if _ATTACHED.get(did) is attachment:
+            del _ATTACHED[did]
+
+
+def attached_device_ids() -> list[str]:
+    """Every device id this process currently publishes — diagnostics."""
+    with _ATTACHED_LOCK:
+        return sorted(d for d, a in _ATTACHED.items() if not a.closed)
 
 
 class DeviceAttachment:
@@ -161,6 +213,8 @@ class DeviceAttachment:
         self.recover = recover
         self._recover_factory = recover_factory
         self._device = device
+        self.closed = False
+        self.device_id: Optional[str] = None     # set by attach_device's claim
         self._hb_interval = float(heartbeat_interval)
         self._hb_stop = threading.Event()
         self._hb_thread: Optional[threading.Thread] = None
@@ -262,6 +316,8 @@ class DeviceAttachment:
 
     def close(self) -> None:
         """Stop the heartbeat, AutoRecover and the adapter. Safe twice."""
+        self.closed = True
+        _release_device_id(self)
         self._stop_heartbeat()
         if self.recover is not None:
             try:
@@ -382,12 +438,14 @@ def attach_device(
         except Exception:
             log.exception("attach_device[%s]: recover_factory raised", kind)
             recover = None
-    return DeviceAttachment(
+    attachment = DeviceAttachment(
         adapter=adapter,
         recover=recover,
         recover_factory=recover_factory,
         device=device,
     )
+    _claim_device_id(device_id, kind, attachment)
+    return attachment
 
 
 def attach_sim_stub(
