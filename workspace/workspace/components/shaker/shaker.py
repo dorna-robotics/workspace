@@ -2,6 +2,7 @@ from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
 import time
+from workspace.components.work import pure
 
 class Shaker:
     DEFAULTS = dict(
@@ -47,6 +48,7 @@ class Shaker:
 
 
     # set or get output state
+    @pure
     def toggle_state(self, state=None):
         if state is None:
             return self._toggle_state

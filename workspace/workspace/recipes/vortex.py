@@ -37,7 +37,7 @@ class Vortex(Recipe):
             raise RecipeError(
                 f"Vortex recipe needs driver=<vortex_genie_2 component name>, "
                 f"got {driver!r}")
-        self.driver = workspace.components[driver]
+        self.driver = self.gated(workspace.components[driver])
 
         # Stop signal — settable from another thread (stop_run) to end
         # an in-flight run() early.
@@ -57,7 +57,6 @@ class Vortex(Recipe):
         self._wire_verb("run")
         rt = self.rt
         self._stop_event.clear()
-        self.core.tail_flush(reason="vortexer about to run")
         self.driver.enable()
         try:
             deadline = float(duration)

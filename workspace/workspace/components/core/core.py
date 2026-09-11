@@ -1861,7 +1861,7 @@ class Core:
             pass
         return None
 
-    def _chain_cache_put(self, key, pts, vajs, corners, stops):
+    def _chain_cache_put(self, key, pts, vajs, corners, stops, extra=None):
         try:
             row = {
                 "p": [[round(float(v), 4) for v in q] for q in pts],
@@ -1869,6 +1869,8 @@ class Core:
                 "c": [round(float(v), 4) for v in corners],
                 "s": [bool(v) for v in stops],
             }
+            if extra:
+                row.update(extra)
             self._chain_cache[key] = row
             self._cache_trim(self._chain_cache, self.CACHE_MAX_ROWS)
             if self._chain_cache_path is None:
@@ -2745,9 +2747,12 @@ class Core:
             _hit = self._chain_cache.get(_ck)
             if _hit is None:
                 _hit = self._chain_fuzzy_get(_ck)
-            if _hit is not None:
+            # A row without the binding joint predates the diagnostic:
+            # certify once more so every motion can say what limits it.
+            if _hit is not None and _hit.get("bound"):
                 try:
                     v_, a_, j_ = (float(x) for x in _hit["vaj"][0])
+                    print(f"[traj] smove (cached): vaj [{v_:.0f}, {a_:.0f}, {j_:.0f}] — {_hit['bound']}")
                     return v_, a_, j_
                 except Exception:
                     pass
@@ -2761,9 +2766,15 @@ class Core:
             t0 = time.perf_counter()
             j_c = float(jerk)
 
+            JOINT = ("j0", "j1", "j2", "j3", "j4", "j5", "rail", "aux")
+            bind = {}   # the worst offender of the LAST measure(): joint, kind, ratio, path fraction
+
             def measure(v_c, a_c):
                 """-> (rv, ra, duration): worst per-joint vel/accel
-                ratios vs caps, and the profile duration."""
+                ratios vs caps, and the profile duration. Also records
+                in ``bind`` WHICH joint binds, on vel or accel, and how
+                far along the path — the one fact a slow motion needs
+                to explain itself."""
                 prof = sim.create_profile(jerk=j_c, accel=a_c, vel=v_c, d=d)
                 jerks, ticks = prof.get("jerks", []), prof.get("ticks", [])
                 dur = sum(ticks) / float(sim.FREQ)
@@ -2778,18 +2789,27 @@ class Core:
                     poses.append([float(x) for x in pos])
                 st = dur / m
                 rv = ra = 0.0
+                rv_at = ra_at = (0, 0.0)
                 prev = None
                 nq = len(poses[0])
-                for a, b in zip(poses, poses[1:]):
+                for i, (a, b) in enumerate(zip(poses, poses[1:])):
                     vv = [(y - x) / st for x, y in zip(a, b)]
                     for jx in range(nq):
                         cv = caps[jx][0] if caps and jx < len(caps) else float(vel)
-                        rv = max(rv, abs(vv[jx]) / cv)
+                        r = abs(vv[jx]) / cv
+                        if r > rv:
+                            rv, rv_at = r, (jx, i / m)
                     if prev is not None:
                         for jx in range(nq):
                             ca = caps[jx][1] if caps and jx < len(caps) else float(accel)
-                            ra = max(ra, abs(vv[jx] - prev[jx]) / st / ca)
+                            r = abs(vv[jx] - prev[jx]) / st / ca
+                            if r > ra:
+                                ra, ra_at = r, (jx, i / m)
                     prev = vv
+                jx, frac = rv_at if rv >= ra else ra_at
+                bind.update(joint=JOINT[jx] if jx < len(JOINT) else f"q{jx}",
+                            kind="vel" if rv >= ra else "accel",
+                            ratio=max(rv, ra), frac=frac)
                 return rv, ra, dur
 
             # 1) converge down into the caps
@@ -2819,12 +2839,14 @@ class Core:
                     if dur2 > 0 and rv2 <= 1.05 and ra2 <= 1.05 and dur2 < best_dur:
                         best_v, best_a, best_dur = cv, ca, dur2
             v_c, a_c = best_v, best_a
+            measure(v_c, a_c)      # the binding joint of the profile that will run
+            bound = (f"bound by {bind.get('joint', '?')} {bind.get('kind', '?')} "
+                     f"x{bind.get('ratio', 0.0):.2f} at {bind.get('frac', 0.0):.0%} of the path")
 
-            if (v_c, a_c) != (float(vel), float(accel)):
-                print(f"[traj] smove certified: vaj [{v_c:.0f}, {a_c:.0f}, "
-                      f"{j_c:.0f}] (req [{vel:.0f}, {accel:.0f}]), motion "
-                      f"{best_dur:.1f}s, in {(time.perf_counter() - t0) * 1000:.0f} ms")
-            self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [])
+            print(f"[traj] smove certified: vaj [{v_c:.0f}, {a_c:.0f}, "
+                  f"{j_c:.0f}] (req [{vel:.0f}, {accel:.0f}]), motion "
+                  f"{best_dur:.1f}s, in {(time.perf_counter() - t0) * 1000:.0f} ms — {bound}")
+            self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [], extra={"bound": bound})
             return v_c, a_c, j_c
         except Exception:
             return vel, accel, jerk   # certification must never block motion

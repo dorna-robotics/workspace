@@ -969,6 +969,21 @@ class Runtime:
                     continue
                 return
 
+    def settle(self, reason: str = "work") -> None:
+        """Execute the robot's held motion tail, if any, before non-motion
+        WORK: a device op (through the recipe's gated component), a
+        sleep, a delay. The tail is a deferred exit — the robot still
+        stands at its last deposit pose while the model says it has
+        left — and work that acts on or measures the world must not run
+        there. Motions never come here: the robot-api gate merges or
+        flushes a tail itself. Workflow thread only: an operator call
+        must not move a paused workflow's robot."""
+        if not self._is_workflow_thread():
+            return
+        flush = getattr(self.robot_api, "tail_flush", None)
+        if callable(flush):
+            flush(reason=reason)
+
     def call(self, fn: Callable[..., T], *a: Any, checkpoint: bool = True, **k: Any) -> T:
         if checkpoint:
             self.checkpoint()
@@ -1007,6 +1022,9 @@ class Runtime:
         if not checkpoint:
             self._sleep(seconds)
             return
+        # A dwell is work: waiting AT a pose means the robot must be at
+        # the pose the model says — a held exit executes first.
+        self.settle("sleep")
         end = time.time() + seconds
         while True:
             self.checkpoint()

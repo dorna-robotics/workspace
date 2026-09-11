@@ -335,6 +335,15 @@ plate_{{ level }}:
 
 ## 7. Methods — what belongs on the component vs the recipe
 
+> **Work vs pure.** A recipe reaches its component through a gate: every
+> method it calls is work — it settles any held robot motion and
+> observes pause first. Mark a helper that only reads bookkeeping
+> (`material_at`, `syringe_volume`, a port name) with `@pure` from
+> `workspace.components.work` so it skips the gate. Never mark a
+> hardware op pure. Forgetting a mark is safe and visible; the reverse
+> is the one mistake the gate cannot catch.
+
+
 A common trap is to put atomic device operations in the recipe ("`rotate_in_step` lives on the Feeder recipe, so does the math…"). That leads to:
 
 - **Duplication** the moment you want the same operation called from a different recipe or directly from the UI

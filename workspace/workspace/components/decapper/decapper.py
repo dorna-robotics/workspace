@@ -2,6 +2,7 @@ from copy import deepcopy
 from mergedeep import merge
 from workspace.components.factory import register
 from dorna2 import Solid
+from workspace.components.work import pure
 
 
 @register("decapper")
@@ -52,6 +53,7 @@ class Decapper:
 
 
     # set or get output state
+    @pure
     def output_state(self, state=None):
         if state is None:
             return self._output_state

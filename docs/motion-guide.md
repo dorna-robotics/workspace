@@ -400,6 +400,18 @@ run recorded that the next motion merges there. Design + decision log:
 * **No timing anywhere**: no fuse timeout, no arrival races — a seam
   fuses because its book row proves the pair, or it runs classic.
   Same plan in, same motion out, from the very first run.
+* **Settle — the other half of ONE rule**: the tail lives only between
+  two robot motions. The next motion consumes or flushes it (above);
+  the first non-motion WORK settles it — a component op called from a
+  recipe (the recipe's component is behind a gate, `recipes/gated.py`),
+  `rt.sleep`, `rt.delay`. Observability (`rt.step`, `rt.op`) never
+  touches it. A balance read, a shaker start, a dwell — none can run
+  with the robot still at its deposit pose, and no recipe writes a
+  flush for it. `fuse: false` is therefore only ever a SHAPE choice
+  (keep this station's exit classic), never a safety switch for reads.
+  `@pure` (components/work.py) marks bookkeeping helpers that skip the
+  gate; an unmarked helper settles needlessly and says so in the flush
+  reason (`work: pump_1.tube_volume`).
 
 Prior art: industrial motion blending (ABB zones, KUKA `C_DIS`,
 FANUC `CNT`, UR blend radius, CNC G64 lookahead) lifted to the

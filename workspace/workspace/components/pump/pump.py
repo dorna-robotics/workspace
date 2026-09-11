@@ -82,6 +82,7 @@ from typing import Optional, Union
 from mergedeep import merge
 from dorna2 import Solid
 
+from workspace.components.work import pure
 from workspace.components.factory import register
 from workspace.components.pump.pump_station import PumpStation
 from workspace.devices import AutoRecover, attach_device
@@ -361,6 +362,7 @@ class Pump:
 
     # ── unit conversion ───────────────────────────────────────────
 
+    @pure
     def syringe_volume(self) -> float:
         """µL the full stroke sweeps — what we were TOLD is fitted.
         Change it with ``initialize(syringe_volume_ul=…)``."""
@@ -559,10 +561,12 @@ class Pump:
         p = self.open_port()
         return None if p is None else self.name_of(p)
 
+    @pure
     def material_in_barrel(self) -> Optional[str]:
         """Name of the last source drawn from; None after initialize."""
         return self._material_in_barrel
 
+    @pure
     def material_at(self, outlet: PortRef = None) -> Optional[str]:
         """Last material pushed through ``outlet`` (default: the single
         outlet) — what sits at that nozzle's tip."""

@@ -8,6 +8,7 @@ import threading
 import time as _time
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
+from workspace.recipes.gated import gated
 from dorna2 import Pose
 from workspace.components.probe_calibration import ProbeCalibration
 from workspace.components.core.core import _xyzj_to_joints
@@ -155,7 +156,9 @@ class Recipe:
         # init
         self.workspace = workspace
         self.core = core
-        self.component = component
+        # Behind the gate (recipes/gated.py): every op the recipe calls on
+        # its component settles a held motion tail and observes pause.
+        self.component = gated(component, self)
 
         # IK
         self.left_approach = prm["left_approach"]
@@ -243,6 +246,13 @@ class Recipe:
     def rt(self):
         # Workspace Runtime (pause/stop/resume aware + robot_api proxy + lock)
         return self.workspace.rt
+
+    def gated(self, component):
+        """A component this recipe reaches dynamically (the tool on the
+        flange, a second component it drives), behind the same gate as
+        ``self.component``. Every device op a recipe calls goes through
+        a gate — there is no ungated path from a workflow to hardware."""
+        return gated(component, self)
 
     # ── Axis-init helpers ───────────────────────────────────────────────────
     # Bundle the 3-step startup sequence (set_axis + set_pid + a homing

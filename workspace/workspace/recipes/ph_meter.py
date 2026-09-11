@@ -101,7 +101,7 @@ class PhMeter(_ProbeOps, Recipe):
     def __init__(self, workspace, core, component, **kwargs):
         self.workspace = workspace
         self.core = core
-        self.component = component
+        self.component = self.gated(component)   # every op settles + checkpoints (recipes/gated.py)
 
     def _probe(self):
         return self.component
@@ -168,4 +168,4 @@ class PhMeterSite(_ProbeOps, Recipe):
         probe = self.core.current_tool()
         if probe is None:
             raise RecipeError("no pH probe attached to the robot")
-        return probe
+        return self.gated(probe)

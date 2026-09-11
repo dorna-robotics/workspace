@@ -41,7 +41,7 @@ class Pump(Recipe):
     def __init__(self, workspace, core, component, **kwargs):
         self.workspace = workspace
         self.core = core
-        self.component = component
+        self.component = self.gated(component)   # every op settles + checkpoints (recipes/gated.py)
 
     # ── Pass-throughs to the component's atomic ops ───────────────────
     # ``port`` is a number or a name from the scene's ``valve_ports``

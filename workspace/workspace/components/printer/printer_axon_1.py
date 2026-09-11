@@ -46,6 +46,7 @@ from workspace.components.factory import register
 from workspace.components.printer.printer import Printer
 from workspace.components.printer.cab_station import CabStation
 from workspace.devices import AutoRecover, attach_device
+from workspace.components.work import pure
 
 
 log = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ class PrinterAxon1(Printer):
 
     # ── Geometry ──────────────────────────────────────────────────────
 
+    @pure
     def _place_offset(self, radius):
         """Lateral offset that puts a tube of ``radius`` mm against the
         applicator pad, expressed in the ``place`` anchor's frame."""

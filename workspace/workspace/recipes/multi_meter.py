@@ -42,7 +42,7 @@ class MultiMeter(Recipe):
     def __init__(self, workspace, core, component, **kwargs):
         self.workspace = workspace
         self.core = core
-        self.component = component
+        self.component = self.gated(component)   # every op settles + checkpoints (recipes/gated.py)
 
     # ── Pass-throughs to the component's atomic ops ───────────────────
     # Keeps the call sites symmetrical with other recipes

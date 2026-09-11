@@ -40,8 +40,6 @@ class Scale(Recipe):
         weight (grams), inline in the signature (the real weight() returns
         a float, so sim_return is one too); pass a ``float`` to inject a
         different one. Real mode ignores it."""
-        # An analytical balance needs a CLEAR, SETTLED robot: any
-        # deferred motion tail (a held place-exit hovering over the
-        # pan) executes to its stop before the read.
-        self.core.tail_flush(reason="scale read needs a clear robot")
+        # An analytical balance needs a CLEAR, SETTLED robot — the gate
+        # on ``self.component`` executes any held place-exit first.
         return self.component.weight(stable=stable, timeout=timeout, sim_return=sim_return)

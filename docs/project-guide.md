@@ -649,7 +649,8 @@ runtime method without exception.
 | **Observability** | `rt.step(label, level)` — for every level: `info`, `success`, `warning`, `error`, `progress` | ❌ |
 | **Runtime state reads** | `rt.status()`, `rt.state`, `rt.step_info` | ❌ |
 | **Runtime control** | `rt.pause()`, `rt.resume()`, `rt.kill()`, `rt.start()`, `rt.park()` | ❌ |
-| **Direct recipe / component / driver calls** | `rcp["x"].foo()`, `core.dorna.x()`, `self.component.bar()`, `self.driver.cmd()` | ❌ |
+| **Component ops from a recipe** | `self.component.bar()` — the recipe's component is behind a gate (`workspace/recipes/gated.py`): every op settles a held motion tail and checkpoints first; `@pure` helpers skip it | ✅ |
+| **Direct driver / core calls** | `core.dorna.x()`, `self.driver.cmd()` | ❌ |
 
 #### How robot calls inherit pause-awareness for free
 
