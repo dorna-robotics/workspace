@@ -24,6 +24,7 @@ from copy import deepcopy
 from mergedeep import merge
 
 from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
+from workspace.recipes.dip import DipSite
 from workspace.recipes.recipe import Recipe, RecipeError
 
 
@@ -107,9 +108,18 @@ class PhMeter(_ProbeOps, Recipe):
         return self.component
 
 
-class PhMeterSite(_ProbeOps, Recipe):
+class PhMeterSite(_ProbeOps, DipSite):
     """Probe carried by the robot; this recipe's component is the vessel
-    it dips into."""
+    it dips into — a rack whose anchors are the tubes, or a cup. The
+    dip verbs are ``DipSite``'s; only the defaults are the probe's: a
+    60 mm hover, 20 mm under the surface (the glass bulb is the last
+    ~8 mm of the shaft — a dry electrode reads garbage), back to the
+    hover on the way out."""
+
+    DIP_ANCHOR = "top"
+    DIP_PADDING = 60
+    DIP_IN = 20
+    DIP_OUT = 60
 
     DEFAULTS = dict(
         # ref joints
@@ -131,34 +141,6 @@ class PhMeterSite(_ProbeOps, Recipe):
             component=component,
             **prm
         )
-
-    # ── Motion ────────────────────────────────────────────────────────
-    # The probe is the TOOL, not a held load, so ``height_load`` is 0 and
-    # the tool's own ``tip`` anchor (192.1 mm below the flange) is what
-    # reaches ``dist`` below the target anchor.
-
-    def above(self, anchor="top", padding=60, **kwargs):
-        """Hover ``padding`` mm above ``anchor`` on this site — the
-        approach half of a dip (planned travel, fused). Default 60 mm
-        of clearance above the container rim."""
-        self._wire_verb("above", anchor)
-        return super().above(anchor=anchor, padding=padding, **kwargs)
-
-    def immerse(self, dist=20, anchor="top", **kwargs):
-        """Dip the probe tip ``dist`` mm below ``anchor`` — one straight
-        dive at the dip speed, from wherever :meth:`above` left it.
-
-        The glass bulb must end up submerged — a dry electrode reads
-        garbage, so ``dist`` should clear the bulb (the last ~8 mm of
-        the shaft), not just kiss the surface.
-        """
-        return super().immerse(dist=dist, anchor=anchor, **kwargs)
-
-    def retract(self, dist=60, anchor="top", **kwargs):
-        """Lift the probe tip to ``dist`` mm above ``anchor`` — the
-        mirror of :meth:`immerse` (default: back to the approach
-        clearance)."""
-        return super().retract(dist=dist, anchor=anchor, **kwargs)
 
     # ── Device pass-throughs ──────────────────────────────────────────
     # Resolved through the mounted tool, so the same recipe works with

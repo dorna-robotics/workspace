@@ -1,9 +1,12 @@
 from copy import deepcopy
 from mergedeep import merge
+from workspace.recipes.dip import DipSite
 from workspace.recipes.recipe import Recipe, RecipeError
 import time
 
-class DosingSite(Recipe):
+class DosingSite(DipSite):
+    """A dip site over a HOLDER (an adapter plate): the verbs act on
+    whatever sits at its ``place`` — see ``recipes/dip.py``."""
     DEFAULTS = dict(
         # ref joints
         target_offset=[0, 0, 150, 0, 180, 0],
@@ -86,47 +89,8 @@ class DosingSite(Recipe):
         return self.touch(**motion_prm)
 
 
-    def above(self, anchor="place", padding=50, **kwargs):
-        """Hover ``padding`` mm above the payload at ``anchor`` of the
-        plate on this site — the APPROACH half of a dose: planned
-        travel, fused, tip-referenced (padding is measured from the
-        payload top to the tool tip, the same reference immerse and
-        retract use). immerse/retract then move only straight along
-        the axis."""
-        self._wire_verb("above", anchor)
-        component, solid_name = self._resolve_attached_component()
-        lock = self._tool_lock_j5()
-        if lock is not None:
-            kwargs.setdefault("approach_j5", lock)
-        _, _, height_load = self._get_tool_and_load_height()
-        return super().above(
-            anchor=anchor, solid_name=solid_name, component=component,
-            padding=padding, tool_tcp_z_offset=height_load,
-            tool_tip_z_offset=height_load, **kwargs,
-        )
-
-    def immerse(self, dist=0, anchor="place", **kwargs):
-        """Tip ``dist`` mm below the payload top at ``anchor`` — one
-        straight dive at the dip speed, executed now. Approach with
-        :meth:`above` first; see ``Recipe.immerse``."""
-        self._wire_verb("immerse", anchor)
-        component, solid_name = self._resolve_attached_component()
-        return super().immerse(
-            dist=dist, anchor=anchor, solid_name=solid_name,
-            component=component, **kwargs,
-        )
-
-    def retract(self, dist=0, anchor="place", **kwargs):
-        """Tip ``dist`` mm above the payload top at ``anchor`` — one
-        straight lift at the dip speed (deferrable under fusion). The
-        mirror of :meth:`immerse`; see ``Recipe.retract``."""
-        self._wire_verb("retract", anchor)
-        component, solid_name = self._resolve_attached_component()
-        return super().retract(
-            dist=dist, anchor=anchor, solid_name=solid_name,
-            component=component, **kwargs,
-        )
-
+    def _dip_target(self):
+        return self._resolve_attached_component()
 
     def aspirate(self, vol, speed=200, **kwargs):
         """Aspirate ``vol`` µL at ``speed`` µL/s.

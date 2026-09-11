@@ -316,7 +316,18 @@ and a 100 mm needle end at the same depth). `approach=False`
 `approach=True` is single-phase through the corridor with the depth
 offset — requires padding to comfortably exceed load height, and the
 blended lateral entry was REJECTED on the bench for vessels: use the
-straight dive. `lock_j5` pins the wrist through both phases.
+straight dive. `lock_j5` pins the wrist through both phases — the
+hover included: `Recipe.above` reads the mounted tool's lock, so the
+dive and the lift never carry a wrist roll.
+
+**Every dip site is a `DipSite`** (`recipes/dip.py`): `DosingSite`
+(needle over a plate on an adapter) and `PhMeterSite` (probe over a
+rack or a cup) share the three verbs `above` / `immerse` / `retract`
+once — tip-referenced, wrist-locked, wired for attribution, at the
+recipe's `lmove_vaj` unless the call names `vaj`. A subclass sets its
+defaults (`DIP_ANCHOR`, `DIP_PADDING`, `DIP_IN`, `DIP_OUT`) and, over a
+holder, resolves `_dip_target`. Nothing about the motion is written
+per site.
 
 **Soft approach** (`soft_approach=True`, corridor only): the contact
 point becomes its own final group → full stop at the gap point

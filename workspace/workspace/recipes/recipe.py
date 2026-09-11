@@ -2756,6 +2756,13 @@ class Recipe:
             >>> rcp["inspector_1"].above("place", padding=80)  # 80mm above the inspector
             >>> rcp["tube_rack"].above("A1")                   # 50mm above whatever's at A1
         """
+        # A tool that declares ``lock_j5`` keeps its wrist pinned for the
+        # WHOLE dip cycle — the hover included, so the dive and the lift
+        # never carry a wrist roll. ONE rule for every dip site (needle,
+        # probe, whatever comes next); a per-call ``approach_j5`` wins.
+        lock = self._tool_lock_j5()
+        if lock is not None:
+            kwargs.setdefault("approach_j5", lock)
         pick_prm = self.pick_setting(
             anchor, solid_name,
             component=component, actions=[], exit=False,
