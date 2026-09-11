@@ -10,7 +10,7 @@ and ``KeytoStation`` (pipettor):
   ``workspace.devices.attach_device`` can publish bus state and wire
   AutoRecover for the real path.
 * Exposes a **unified pH API** (``is_connected``, ``read``,
-  ``read_stable``, ``ph``, ``slope``, ``calibrate``, …) so the
+  ``read_stable``, ``calibrate``, ``slope``) so the
   component / recipes never branch on the sim flag.
 * Real mode wraps :class:`AtlasPH` (the raw EZO UART driver). Sim mode
   returns canned ``Reading`` / ``Slope`` objects matching the real
@@ -242,8 +242,7 @@ class EzoPHStation:
     #
     # ``sim_return`` (device-guide §17) — explicit sim injection. Its
     # default IS the canned sim value, written inline in the signature and
-    # shaped exactly like the real return (a ``Reading`` for read /
-    # read_stable, a ``float`` for ph, a ``Slope`` for slope). In sim the
+    # shaped exactly like the real return (a ``Reading``). In sim the
     # method returns ``sim_return`` verbatim; real mode ignores it.
 
     def is_connected(self) -> bool:
@@ -262,27 +261,6 @@ class EzoPHStation:
             self._touch()
             try:
                 r = self._driver.read()
-                if not r.connected:
-                    self._set_state("down", "no reading")
-                return r
-            except Exception as ex:
-                self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
-                return None
-            finally:
-                self._touch()
-
-    def read_at_temperature(self, celsius: float,
-                            sim_return: Reading = Reading(status="ok", ph=7.000, raw="sim")) -> Optional[Reading]:
-        """``RT,t`` — compensate for the sample temperature and read in
-        one round-trip. In sim, returns ``sim_return``."""
-        if self.simulation:
-            return sim_return
-        with self._io_lock:
-            if self._driver is None or not self._driver.is_connected():
-                return None
-            self._touch()
-            try:
-                r = self._driver.read_at_temperature(celsius)
                 if not r.connected:
                     self._set_state("down", "no reading")
                 return r
@@ -316,19 +294,11 @@ class EzoPHStation:
             finally:
                 self._touch()
 
-    def ph(self, stable: bool = True, sim_return: float = 7.000) -> Optional[float]:
-        """Convenience: just the pH value (or None). ``stable=True``
-        waits for a settled reading. In sim, returns ``sim_return`` (a
-        ``float``) verbatim."""
-        if self.simulation:
-            return sim_return
-        r = self.read_stable() if stable else self.read()
-        return None if r is None or not r.ok else r.ph
-
     def slope(self, sim_return: Slope = Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")) -> Optional[Slope]:
-        """``Slope,?`` — probe health vs an ideal electrode. Check
-        ``.healthy`` before trusting a reading after a long idle. In
-        sim, returns ``sim_return``."""
+        """Probe health vs an ideal electrode (``Slope`` or None) — the
+        calibrate buttons append this to their confirmation printout so
+        the operator sees the slopes move as points are (re)set. In sim,
+        returns ``sim_return``."""
         if self.simulation:
             return sim_return
         with self._io_lock:
@@ -338,7 +308,7 @@ class EzoPHStation:
             try:
                 return self._driver.slope()
             except Exception as ex:
-                self._op_failed("slope", ex)
+                self._set_state("down", f"slope failed: {type(ex).__name__}: {ex}")
                 return None
             finally:
                 self._touch()
@@ -348,23 +318,6 @@ class EzoPHStation:
     # the same inline-``sim_return`` shape as the pipettor's pump ops.
     # The chip's rule: mid (~pH 7) FIRST (it wipes any existing
     # calibration), then low (~4) / high (~10) in either order.
-
-    def calibration_points(self, sim_return: int = 3) -> Optional[int]:
-        """``Cal,?`` — number of stored calibration points (0–3). In
-        sim, returns ``sim_return``."""
-        if self.simulation:
-            return sim_return
-        with self._io_lock:
-            if self._driver is None or not self._driver.is_connected():
-                return None
-            self._touch()
-            try:
-                return self._driver.calibration_points()
-            except Exception as ex:
-                self._op_failed("calibration_points", ex)
-                return None
-            finally:
-                self._touch()
 
     def calibrate(self, value: float, sim_return: bool = True) -> bool:
         """Calibrate against the buffer currently on the probe. The point
@@ -390,57 +343,4 @@ class EzoPHStation:
             finally:
                 self._touch()
 
-    def calibrate_clear(self, sim_return: bool = True) -> bool:
-        """Wipe all stored calibration points. Same contract as
-        :meth:`calibrate`."""
-        if self.simulation:
-            return sim_return
-        with self._io_lock:
-            if self._driver is None or not self._driver.is_connected():
-                return False
-            self._touch()
-            try:
-                self._driver.calibrate_clear()
-                return True
-            except Exception as ex:
-                self._op_failed("calibrate_clear", ex)
-                return False
-            finally:
-                self._touch()
-
     # ── Temperature compensation ───────────────────────────────────────
-
-    def set_temperature_compensation(self, celsius: float, sim_return: bool = True) -> bool:
-        """Store the sample temperature on the chip (``T,t``). Persists
-        across power cycles. Same contract as :meth:`calibrate`."""
-        if self.simulation:
-            return sim_return
-        with self._io_lock:
-            if self._driver is None or not self._driver.is_connected():
-                return False
-            self._touch()
-            try:
-                self._driver.set_temperature_compensation(celsius)
-                return True
-            except Exception as ex:
-                self._op_failed("set_temperature_compensation", ex)
-                return False
-            finally:
-                self._touch()
-
-    def get_temperature_compensation(self, sim_return: float = 25.0) -> Optional[float]:
-        """The temperature the chip is currently compensating for (°C).
-        In sim, returns ``sim_return``."""
-        if self.simulation:
-            return sim_return
-        with self._io_lock:
-            if self._driver is None or not self._driver.is_connected():
-                return None
-            self._touch()
-            try:
-                return self._driver.get_temperature_compensation()
-            except Exception as ex:
-                self._op_failed("get_temperature_compensation", ex)
-                return None
-            finally:
-                self._touch()

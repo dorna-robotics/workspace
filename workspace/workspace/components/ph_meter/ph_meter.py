@@ -58,7 +58,7 @@ from __future__ import annotations
 import logging
 
 from workspace.components.gripper.gripper import Gripper
-from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
+from workspace.components.ph_meter.ezo_ph_driver import Reading
 from workspace.components.ph_meter.ezo_ph_station import EzoPHStation
 from workspace.devices import AutoRecover, attach_device
 
@@ -86,11 +86,11 @@ class PhMeter(Gripper):
         timeout=2.0,       # s — per-command read deadline
         simulation=True,
         # ── reading / settling ───────────────────────────────────────
-        # A freshly dipped electrode drifts for tens of seconds, so ``ph()``
+        # A freshly dipped electrode drifts for tens of seconds, so ``read``
         # waits for a settled reading by default. These tune what "settled"
         # means; every one is overridable per install from scene yaml, and
         # per call from the method arguments.
-        settle=True,               # ph() settles unless a call says otherwise
+        settle=True,               # read() settles unless a call says otherwise
         settle_n=3,                # consecutive readings that must agree
         settle_tolerance=0.08,     # ...within this many pH units
         settle_max_readings=20,    # give-up budget (~0.9 s per reading)
@@ -124,7 +124,7 @@ class PhMeter(Gripper):
         self._port = prm["port"] or ""
         self._critical = bool(prm["critical"])
 
-        # Settle tuning — the defaults every read/ph call falls back to.
+        # Settle tuning — the defaults every read() call falls back to.
         self._settle = bool(prm["settle"])
         self._settle_n = int(prm["settle_n"])
         self._settle_tolerance = float(prm["settle_tolerance"])
@@ -187,10 +187,11 @@ class PhMeter(Gripper):
         return "real"
 
     # ── Atomic pH API (component-level — recipes call these) ───────────
-    # Sim-agnostic by construction: the station branches internally. Returns
-    # ``Reading`` / ``Slope`` / float on success, ``None`` when disconnected
-    # and not in sim. Never raises on transient failures — the station
-    # transitions state to ``down`` so AutoRecover takes over.
+    # This device does two things: it READS and it CALIBRATES. That is the
+    # whole API. Sim-agnostic by construction — the station branches
+    # internally; returns ``Reading`` / bool on success, ``None``/False when
+    # disconnected and not in sim. Never raises on transient failures — the
+    # station transitions state to ``down`` so AutoRecover takes over.
     #
     # ``sim_return`` (device-guide §17) — explicit sim injection, passed
     # straight to the station. Its default IS the canned sim value, inline in
@@ -200,25 +201,22 @@ class PhMeter(Gripper):
     def is_connected(self) -> bool:
         return self.probe.is_connected()
 
-    def read(self, sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Single reading (``Reading`` or None)."""
-        return self.probe.read(sim_return=sim_return)
+    def read(self, settle: bool = None, n: int = None, tolerance: float = None,
+             max_readings: int = None,
+             sim_return=Reading(status="ok", ph=7.000, raw="sim")):
+        """THE reading call (``Reading`` or None).
 
-    def read_at_temperature(self, celsius: float,
-                            sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Compensate for the sample temperature and read in one call."""
-        return self.probe.read_at_temperature(celsius, sim_return=sim_return)
-
-    def read_stable(self, n: int = None, tolerance: float = None,
-                    max_readings: int = None,
-                    sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Block until the electrode settles (``Reading`` or None).
-
-        Unset arguments fall back to this component's configured tuning
-        (``settle_n`` / ``settle_tolerance`` / ``settle_max_readings``), so a
-        bench that needs a different definition of "settled" sets it once in
-        scene yaml instead of at every call site.
+        ``settle`` unset -> the component's ``settle`` setting (on unless
+        scene yaml turns it off): block until ``n`` consecutive readings
+        agree within ``tolerance`` pH units, giving up after
+        ``max_readings``. Each unset tuning argument falls back to the
+        scene-yaml values (``settle_n`` / ``settle_tolerance`` /
+        ``settle_max_readings``). ``settle=False`` -> one instantaneous
+        reading.
         """
+        settle = self._settle if settle is None else bool(settle)
+        if not settle:
+            return self.probe.read(sim_return=sim_return)
         return self.probe.read_stable(
             n=self._settle_n if n is None else n,
             tolerance=self._settle_tolerance if tolerance is None else tolerance,
@@ -226,66 +224,44 @@ class PhMeter(Gripper):
             sim_return=sim_return,
         )
 
-    def ph(self, stable: bool = None, sim_return: float = 7.000):
-        """pH value (float or None).
-
-        ``stable`` defaults to the component's ``settle`` setting (on unless
-        scene yaml turns it off), so recipes just call ``ph()``. Pass
-        ``stable=False`` for an instantaneous reading.
-
-        The settled path goes through :meth:`read_stable` so the component's
-        settle tuning applies — ``station.ph()`` would use the station's own
-        defaults instead. sim still branches exactly once, in the station.
-        """
-        stable = self._settle if stable is None else bool(stable)
-        if not stable:
-            return self.probe.ph(stable=False, sim_return=sim_return)
-        r = self.read_stable(sim_return=Reading(status="ok", ph=sim_return, raw="sim"))
-        return None if r is None or not r.ok else r.ph
-
-    def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
-        """Probe health vs an ideal electrode (``Slope`` or None). Healthy is
-        95-105% both sides with offset within +/-30 mV. A bad signal path —
-        crushed connector, RF adapter, long analog run — degrades these the
-        same way a worn electrode does, so check the wiring before condemning
-        the probe."""
-        return self.probe.slope(sim_return=sim_return)
-
-    def calibration_points(self, sim_return: int = 3):
-        """Stored calibration points, 0–3 (int or None). Calibration lives in
-        the EZO's EEPROM, not the electrode, so it survives power cycles —
-        and it does NOT follow the probe if you swap electrodes."""
-        return self.probe.calibration_points(sim_return=sim_return)
-
     def calibrate(self, value: float, sim_return: bool = True):
-        """Calibrate against the buffer on the probe — the point is picked
-        from ``value`` (mid must come first; the chip enforces it). Returns
+        """Calibrate against the buffer the probe is sitting in — the point
+        (low/mid/high) is picked from ``value``. Mid (~pH 7) must come
+        first and WIPES the other points; the chip enforces it. Returns
         True/False, never raises."""
         return self.probe.calibrate(value, sim_return=sim_return)
 
-    def calibrate_clear(self, sim_return: bool = True):
-        """Wipe all stored calibration points."""
-        return self.probe.calibrate_clear(sim_return=sim_return)
-
-    def set_temperature_compensation(self, celsius: float, sim_return: bool = True):
-        """Store the sample temperature on the chip (persists). The EZO has no
-        temperature sensor — this is the value it compensates with, not a
-        measurement."""
-        return self.probe.set_temperature_compensation(celsius, sim_return=sim_return)
-
-    def get_temperature_compensation(self, sim_return: float = 25.0):
-        """The temperature the chip is compensating for (°C, or None)."""
-        return self.probe.get_temperature_compensation(sim_return=sim_return)
-
     # ── Operator actions (component-guide §8) ─────────────────────────
     # Buttons in the Operator Controls panel — every method here takes no
-    # required args and returns something the runtime can stringify
-    # (``Reading`` / ``Slope`` have __str__). ``calibrate`` needs a buffer
-    # value, so it stays a recipe/action call, not a button.
-    #
-    # Groups are paired deliberately: consecutive entries sharing a ``group``
-    # render as ONE row of equal-width buttons, so two per group keeps every
-    # label readable on a sidebar-width tablet.
+    # required args and returns something the runtime can stringify.
+    # Read uses the default settle tuning; the three Cal buttons pin the
+    # standard buffer values so no typing is needed at the bench.
+    # Consecutive entries sharing a ``group`` render as ONE row.
+
+    def _cal_result(self, which: str, ok: bool) -> str:
+        """Confirmation string for a Cal button: the point that was set,
+        plus the chip's CURRENT slopes so the operator sees them move as
+        points are added the first time or overridden later."""
+        if not ok:
+            return f"{which} calibration FAILED"
+        s = self.probe.slope()
+        if s is None:
+            return f"{which} calibrated (slopes unavailable)"
+        return (f"{which} calibrated — acid {s.acid_percent:.1f}% / "
+                f"base {s.base_percent:.1f}%, offset {s.offset_mv:+.1f} mV")
+
+    def calibrate_4(self):
+        """Operator button — recalibrate the LOW point in pH 4.00 buffer."""
+        return self._cal_result("low", self.calibrate(4.00))
+
+    def calibrate_7(self):
+        """Operator button — recalibrate the MID point in pH 7.00 buffer.
+        Do this one FIRST: the chip wipes low/high when mid is set."""
+        return self._cal_result("mid", self.calibrate(7.00))
+
+    def calibrate_10(self):
+        """Operator button — recalibrate the HIGH point in pH 10.00 buffer."""
+        return self._cal_result("high", self.calibrate(10.00))
 
     def reconnect(self):
         """Re-run the connection sequence (same path AutoRecover uses)."""
@@ -315,12 +291,12 @@ class PhMeter(Gripper):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Read pH",      "method": "read",               "icon": "activity", "group": "read"},
-            {"label": "Read Settled", "method": "read_stable",        "icon": "activity", "group": "read"},
-            {"label": "Health",       "method": "slope",              "icon": "eye",      "group": "cal"},
-            {"label": "Cal Points",   "method": "calibration_points", "icon": "eye",      "group": "cal"},
-            {"label": "Reconnect",    "method": "reconnect",          "icon": "rotate",   "group": "conn"},
-            {"label": "Release",      "method": "release_probe",      "icon": "link-off", "group": "conn"},
+            {"label": "Read",      "method": "read",         "icon": "activity", "group": "read"},
+            {"label": "Cal 4",     "method": "calibrate_4",  "icon": "rotate",   "group": "cal"},
+            {"label": "Cal 7",     "method": "calibrate_7",  "icon": "rotate",   "group": "cal"},
+            {"label": "Cal 10",    "method": "calibrate_10", "icon": "rotate",   "group": "cal"},
+            {"label": "Reconnect", "method": "reconnect",    "icon": "rotate",   "group": "conn"},
+            {"label": "Release",   "method": "release_probe","icon": "link-off", "group": "conn"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

@@ -18,16 +18,16 @@ Hardware notes (Apera LabSen 753, aperainst.com/labsen-753)
   which leaches the junction.
 * **Connector is BNC + RCA.** The EZO takes the BNC (pH signal) only.
   The RCA carries the probe's built-in **NTC 30 kΩ** temperature element
-  and the EZO has no input for it, so that lead is unused here and ATC
-  is NOT automatic — the chip compensates with whatever
-  ``set_temperature_compensation`` last stored. Reading the NTC would
-  need its own ADC; an EZO-RTD will not take it (that circuit expects a
-  PT-series RTD, not a 30 kΩ NTC).
+  and the EZO has no input for it, so that lead is unused here and
+  temperature compensation is fixed at whatever the chip last stored
+  (25 °C from the factory). Reading the NTC would need its own ADC; an
+  EZO-RTD will not take it (that circuit expects a PT-series RTD, not a
+  30 kΩ NTC).
 * Membrane impedance <250 MΩ; vendor response spec 15–30 s to a fully
   stabilised reading. Measured on the bench, buffer-to-buffer transfers
-  settled in **20–45 s** — so ``read_stable``'s default 20-reading budget
-  (~18 s) is too short for a transfer and will return a not-yet-settled
-  value.
+  settled in **20–45 s** — so ``read``'s default 20-reading settle budget
+  (~18 s) is too short for a transfer; raise ``settle_max_readings`` in
+  scene yaml (or ``max_readings`` per call) for transfers.
 * Range 0–14 pH, 0–80 °C. Six-month warranty.
 
 **A BNC is a bayonet** — push and quarter-turn. There is nothing to

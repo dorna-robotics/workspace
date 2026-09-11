@@ -27,7 +27,62 @@ from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
 from workspace.recipes.recipe import Recipe, RecipeError
 
 
-class PhMeter(Recipe):
+class _ProbeOps:
+    """The probe's atomic ops, on whatever ``_probe()`` resolves to — the
+    same five calls for a stationary probe and a robot-mounted one. The
+    surface is the component's (``PhMeter``): ``read`` is THE reading
+    call and settles by default per the probe's scene-yaml tuning;
+    ``ph`` is its value. ``sim_return`` (device-guide §17): inline
+    default, shaped like the real return; real mode ignores it."""
+
+    def _probe(self):
+        raise NotImplementedError
+
+    def is_connected(self):
+        return self._probe().is_connected()
+
+    def read(self, settle: bool = None, n: int = None, tolerance: float = None,
+             max_readings: int = None,
+             sim_return=Reading(status="ok", ph=7.000, raw="sim")):
+        """A reading (``Reading`` or None). ``settle`` unset → the probe's
+        ``settle`` setting: block until ``n`` consecutive readings agree
+        within ``tolerance``, giving up after ``max_readings`` (each unset
+        → scene yaml ``settle_n`` / ``settle_tolerance`` /
+        ``settle_max_readings``); ``False`` → one instantaneous reading.
+        Call it AFTER ``immerse``: settling starts when the bulb hits
+        liquid. A plain blocking call — a BT action wanting a checkpoint
+        sits behind ``rt.*`` like any other long step."""
+        return self._probe().read(settle=settle, n=n, tolerance=tolerance,
+                                  max_readings=max_readings, sim_return=sim_return)
+
+    def ph(self, settle: bool = None, sim_return: float = 7.000):
+        """The pH value (float or None) — ``read`` with the same settle
+        rule. ``None`` means "no valid reading": a BT action should
+        ``return False`` on it and let the planner re-select after
+        recover (declarative retry, project-guide §8)."""
+        r = self.read(settle=settle, sim_return=Reading(status="ok", ph=sim_return, raw="sim"))
+        return None if r is None or not r.ok else r.ph
+
+    def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
+        """Probe health vs an ideal electrode (``Slope`` or None)."""
+        return self._probe().slope(sim_return=sim_return)
+
+    def calibrate(self, value: float, sim_return: bool = True):
+        """Calibrate against the buffer the probe is sitting in; the point
+        (low / mid / high) is picked from ``value``. The chip's rule: mid
+        (~pH 7) FIRST — it wipes the other points — then low (~4) and
+        high (~10) in either order. Returns True/False, never raises, so
+        a BT action can ``return False``. Let the reading settle first::
+
+            rcp["buffer_7"].immerse()
+            rcp["buffer_7"].read()
+            rcp["buffer_7"].calibrate(7.00)
+            rcp["buffer_7"].retract()
+        """
+        return self._probe().calibrate(value, sim_return=sim_return)
+
+
+class PhMeter(_ProbeOps, Recipe):
     """Stationary probe — no motion, no mounted tool.
 
     ``Recipe.__init__`` (IK / calibration / motion settings) is skipped
@@ -37,7 +92,8 @@ class PhMeter(Recipe):
 
     Workflow-level methods (``read_and_log``, a full calibration
     sequence) belong here — they combine the component's atomic ops
-    with other workspace state. Never inline a sim check.
+    with other workspace state. Never inline a sim check. The atomic
+    ops themselves come from ``_ProbeOps``.
     """
 
     DEFAULTS = dict()
@@ -50,59 +106,8 @@ class PhMeter(Recipe):
     def _probe(self):
         return self.component
 
-    # ``sim_return`` (device-guide §17) — inline default, shaped like the
-    # real return. Pass your own to inject; real mode ignores it.
 
-    def is_connected(self):
-        return self._probe().is_connected()
-
-    def read(self, sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Single reading (``Reading`` or None)."""
-        return self._probe().read(sim_return=sim_return)
-
-    def read_at_temperature(self, celsius: float,
-                            sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Compensate for the sample temperature and read in one call."""
-        return self._probe().read_at_temperature(celsius, sim_return=sim_return)
-
-    def read_stable(self, n: int = 3, tolerance: float = 0.02, max_readings: int = 20,
-                    sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Block until the electrode settles (``Reading`` or None)."""
-        return self._probe().read_stable(n=n, tolerance=tolerance,
-                                         max_readings=max_readings, sim_return=sim_return)
-
-    def ph(self, stable: bool = None, sim_return: float = 7.000):
-        """pH value (float or None). ``stable`` unset → the probe's own
-        ``settle`` setting (scene yaml); ``False`` → instantaneous.
-        ``None`` back means "no valid reading" — a BT action should
-        ``return False`` on it and let the planner re-select after
-        recover (declarative retry, project-guide §8)."""
-        return self._probe().ph(stable=stable, sim_return=sim_return)
-
-    def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
-        """Probe health vs an ideal electrode (``Slope`` or None)."""
-        return self._probe().slope(sim_return=sim_return)
-
-    def calibrate(self, value: float, sim_return: bool = True):
-        """Calibrate against the buffer the probe is sitting in. Returns
-        True/False, never raises. Mid (~pH 7) must be calibrated first —
-        the chip enforces it."""
-        return self._probe().calibrate(value, sim_return=sim_return)
-
-    def calibration_points(self, sim_return: int = 3):
-        """Stored calibration points, 0–3 (int or None)."""
-        return self._probe().calibration_points(sim_return=sim_return)
-
-    def calibrate_clear(self, sim_return: bool = True):
-        """Wipe all stored calibration points."""
-        return self._probe().calibrate_clear(sim_return=sim_return)
-
-    def set_temperature_compensation(self, celsius: float, sim_return: bool = True):
-        """Store the sample temperature on the chip (persists)."""
-        return self._probe().set_temperature_compensation(celsius, sim_return=sim_return)
-
-
-class PhMeterSite(Recipe):
+class PhMeterSite(_ProbeOps, Recipe):
     """Probe carried by the robot; this recipe's component is the vessel
     it dips into."""
 
@@ -159,84 +164,8 @@ class PhMeterSite(Recipe):
     # Resolved through the mounted tool, so the same recipe works with
     # the probe on any tool-changer slot.
     #
-    # ``sim_return`` (device-guide §17) — explicit sim injection. Its
-    # default IS the canned sim value, inline in the signature and shaped
-    # like the real return (a ``Reading`` for read / read_stable, a
-    # ``float`` for ph, a ``Slope`` for slope). Real mode ignores it.
-
     def _probe(self):
         probe = self.core.current_tool()
         if probe is None:
             raise RecipeError("no pH probe attached to the robot")
         return probe
-
-    def is_connected(self):
-        return self._probe().is_connected()
-
-    def read(self, sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Single reading (``Reading`` or None)."""
-        return self._probe().read(sim_return=sim_return)
-
-    def read_at_temperature(self, celsius: float,
-                            sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Compensate for the sample temperature and read in one call."""
-        return self._probe().read_at_temperature(celsius, sim_return=sim_return)
-
-    def read_stable(self, n: int = 3, tolerance: float = 0.02, max_readings: int = 20,
-                    sim_return=Reading(status="ok", ph=7.000, raw="sim")):
-        """Block until the electrode settles (``Reading`` or None).
-
-        Call this AFTER ``immerse`` — settling starts when the bulb hits
-        liquid. The wait is the probe's, not the bus's; it is a plain
-        blocking read, so a BT action wanting a checkpoint should sit
-        behind ``rt.*`` like any other long step.
-        """
-        return self._probe().read_stable(n=n, tolerance=tolerance,
-                                         max_readings=max_readings, sim_return=sim_return)
-
-    def ph(self, stable: bool = None, sim_return: float = 7.000):
-        """pH value (float or None). ``stable`` unset → the probe's own
-        ``settle`` setting (scene yaml: settle / settle_n /
-        settle_tolerance / settle_max_readings); ``False`` →
-        instantaneous. ``None`` back means "no valid reading" — a BT
-        action should ``return False`` on it and let the planner
-        re-select after recover (declarative retry, project-guide §8)."""
-        return self._probe().ph(stable=stable, sim_return=sim_return)
-
-    def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
-        """Probe health vs an ideal electrode (``Slope`` or None)."""
-        return self._probe().slope(sim_return=sim_return)
-
-    # ── Calibration ───────────────────────────────────────────────────
-    # The chip's rule: mid (~pH 7) FIRST — it wipes any existing
-    # calibration — then low (~4) / high (~10) in either order. A full
-    # 3-point session is one immerse/read_stable/calibrate cycle per
-    # buffer cup, with a rinse in between.
-
-    def calibrate(self, value: float, sim_return: bool = True):
-        """Calibrate against the buffer the probe is currently sitting in.
-
-        Returns True/False rather than raising, so a BT action can
-        ``return False`` and let the planner re-select. Let the reading
-        settle first::
-
-            rcp["buffer_7"].immerse()
-            rcp["buffer_7"].read_stable()
-            rcp["buffer_7"].calibrate(7.00)
-            rcp["buffer_7"].retract()
-        """
-        return self._probe().calibrate(value, sim_return=sim_return)
-
-    def calibration_points(self, sim_return: int = 3):
-        """Stored calibration points, 0–3 (int or None)."""
-        return self._probe().calibration_points(sim_return=sim_return)
-
-    def calibrate_clear(self, sim_return: bool = True):
-        """Wipe all stored calibration points."""
-        return self._probe().calibrate_clear(sim_return=sim_return)
-
-    def set_temperature_compensation(self, celsius: float, sim_return: bool = True):
-        """Store the sample temperature on the chip (persists across
-        power cycles). Use ``read_at_temperature`` instead for a one-off
-        sample at a different temperature."""
-        return self._probe().set_temperature_compensation(celsius, sim_return=sim_return)

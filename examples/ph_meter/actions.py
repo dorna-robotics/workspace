@@ -31,7 +31,7 @@ logic). Point ph_meter_atlas_1 at the real circuit (port +
 simulation:false in the layout) for live readings.
 
 Pattern reference: examples/scale/actions.py. Probe/site API:
-workspace/recipes/ph_meter.py — immerse/retract + ph/read_stable
+workspace/recipes/ph_meter.py — immerse/retract + read/ph
 through the mounted tool.
 """
 
