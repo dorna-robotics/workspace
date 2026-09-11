@@ -11,12 +11,14 @@ and the phase list all come from ``launch.yaml`` — the same files
 ``main.py`` loads — so a green notebook is the run's own code passing.
 
 HOW A PHASE RUNS ALONE. The launcher runs the first phase whose closure
-fact does not hold yet. ``phase(name)`` therefore SEEDS the facts every
-earlier phase would have asserted (``Phase.seed``), puts the model where
-those phases leave things (``Phase.layout``, applied over the launch
-scene), and runs the launcher with ``until_phase=name``: it plans and
-executes this one phase and returns. The planner orders the actions
-exactly as a real run would; the notebook never lists them.
+fact does not hold yet. ``phase(name)`` therefore SEEDS the fact state
+the earlier phases leave behind — not declared anywhere: it is what
+their actions assert, FACT-REPLAYED (planned and their effects applied,
+no motion — ``bt.replay.state_before``) — puts the model where those
+phases leave things (``Phase.layout``, the one thing a phase declares
+for the bench), and runs the launcher with ``until_phase=name``: it
+plans and executes this one phase and returns. The planner orders the
+actions exactly as a real run would; the notebook never lists them.
 
 Phases can be run back to back (5, then 7) or cold (13 straight away).
 ``prepare(name)`` puts the model where the phase starts and prints every
@@ -112,28 +114,31 @@ class Bench:
         return dim, list(objects[dim])
 
     def _phases(self, kw) -> list:
+        """The project's authored ``Phase`` instances (declaration order).
+        A bare-string / dict / callable phase entry has no ``layout``
+        and is left to the replay, which handles every form."""
         from workspace.bt.launcher import _load_phases
-        from workspace.bt.phase import Phase, normalise_phases
+        from workspace.bt.phase import Phase
         spec_val = _load_phases(self.launch.get("phases"), kw)
         if not spec_val:
             raise ValueError(f"{self.project_dir.name} declares no phases (launch.yaml: phases:)")
-        out = []
-        for entry in (spec_val if isinstance(spec_val, (list, tuple)) else [spec_val]):
-            if isinstance(entry, Phase):
-                out.append(entry)
-                continue
-            # A bare entry (name / dict / callable): the launcher's own
-            # normalisation, wrapped so the walk below reads one shape.
-            nm, scope_fn, pre_fn, reached_fn, _w, facts_fn = normalise_phases([entry], [])[0]
-            out.append(_Bare(nm, scope_fn, pre_fn, reached_fn, facts_fn))
-        return out
+        entries = spec_val if isinstance(spec_val, (list, tuple)) else [spec_val]
+        return [e for e in entries if isinstance(e, Phase)]
 
     # ── the seeded start state ────────────────────────────────────────
     def start_state(self, name: str, **overrides):
         """What starting at phase ``name`` assumes: ``(seed_facts,
-        layout, skipped)`` — the facts of every earlier phase, where
-        those phases leave the items, and the phase names skipped.
-        Pure; ``phase`` calls it and then applies it."""
+        layout, skipped)``.
+
+        The facts are the state the earlier phases leave behind,
+        FACT-REPLAYED from the project's own actions (``bt.replay
+        .state_before``: each earlier phase planned and its effects
+        applied, no motion) — minus what Start asserts, because Start
+        still executes in the run (motors, homing) and asserts those
+        itself. The layout is every closed phase's ``layout``; the
+        skipped list is their names. Pure; ``prepare`` applies it."""
+        from workspace.bt.replay import state_before
+
         kw = self.kwargs(**overrides)
         _dim, all_items = self._objects(kw)
         phases = self._phases(kw)
@@ -141,59 +146,44 @@ class Bench:
         if name not in names:
             raise ValueError(f"{name!r} is not a phase of {self.project_dir.name}: {names}")
 
-        # The walk's state ALSO carries what the bookend actions assert
-        # (Start: capacity facts, manifest facts a scope reads) — the
-        # planner has them before any phase, so the walk must too, or a
-        # scope that only Start populates reads as empty. Those facts
-        # are NOT seeded into the run: Start executes there (motors,
-        # homing) and asserts them itself.
-        state: set = set(self._bookend_facts(kw, set()))
-        seeds: List[tuple] = []
+        state, failures = state_before(self.actions, self.launch, kw, name)
+        if failures:
+            raise RuntimeError(
+                f"the phases before {name!r} do not replay clean — fix the project first:\n  "
+                + "\n  ".join(failures))
+        seeds = sorted(state - self._start_facts(kw))
+
         layout: List[Tuple[str, dict]] = []
         skipped: List[str] = []
-        while True:
-            cur = None
-            for p in phases:
-                items = list(p.scope(frozenset(state), all_items))
-                if not items or p.reached(frozenset(state), items):
-                    continue
-                if not p.pre(frozenset(state), items):
-                    continue
-                cur, cur_items = p, items
+        for p in phases:
+            if p.name == name:
                 break
-            if cur is None:
-                raise RuntimeError(
-                    f"phase {name!r} is unreachable from the seeds: every phase before it "
-                    f"is reached or blocked — check phases.py pre()/scope()")
-            if cur.name == name:
-                break
-            new = [t for t in cur.seed_tuples(cur_items) if t not in state]
-            seeds += new
-            state |= set(new)
-            # An item's LAST resting place wins: a cap parked, put back,
-            # parked again is one move to the bench, not three.
-            for child, att in cur.layout(cur_items):
-                layout = [(c, a) for c, a in layout if c != child] + [(child, att)]
-            skipped.append(cur.name)
+            items = list(p.scope(state, all_items))
+            if items and p.reached(state, items):
+                skipped.append(p.name)
+                # An item's LAST resting place wins: a cap parked, put
+                # back, parked again is one move to the bench, not three.
+                for child, att in p.layout(items):
+                    layout = [(c, a) for c, a in layout if c != child] + [(child, att)]
         return seeds, layout, skipped
 
-    def _bookend_facts(self, kw, state: set) -> set:
+    def _start_facts(self, kw) -> set:
         """Facts the parameterless actions (Start and its kin) assert
-        from ``state`` — their default eff branch, applied whenever
-        their pre holds, to a fixpoint. The same probe bt.replay makes;
-        no motion, no scene."""
+        from the initial state — their default eff branch, applied
+        whenever their pre holds, to a fixpoint. Not seeded: Start runs
+        for real and asserts them itself."""
         from workspace.bt.behaviours import WorkspaceContext
         from workspace.bt.dsl import ActionRegistry, Fact, _normalise_eff, _default_branch
         spec = self.actions.setup(**kw)
         objects = dict(spec.get("objects") or {})
         ctx = WorkspaceContext(
-            workspace=None, core=None, runtime=None, state={"facts": set(state)},
+            workspace=None, core=None, runtime=None, state={"facts": set(spec["initial_facts"])},
             recipes={}, meta={"project": self.launch.get("project_name"), "kwargs": kw,
                               "objects": objects,
                               "all_objects": {k: list(v) for k, v in objects.items()},
                               "checks": {}, "current_tool": None, "event_publisher": None})
         reg = ActionRegistry.current()
-        out = set(state)
+        out = set(spec["initial_facts"])
         bookends = [cls for _n, cls in sorted(reg._actions.items()) if not cls.params]
         changed = True
         while changed:
@@ -210,7 +200,7 @@ class Bench:
                 for f in eff[_default_branch(eff)]:
                     if isinstance(f, Fact) and f.polarity and f.as_tuple() not in out:
                         out.add(f.as_tuple()); changed = True
-        return out
+        return out - set(spec["initial_facts"])
 
     def _apply_layout(self, layout) -> None:
         """Over the model AS IT STANDS — what the last phase left, or the
@@ -347,27 +337,3 @@ class Bench:
     def facts(self) -> set:
         """The facts ``run`` has accumulated (empty before the first call)."""
         return set(self._ctx.state.get("facts", set())) if self._ctx else set()
-
-
-class _Bare:
-    """A non-``Phase`` phase entry (bare name / dict / callable) with the
-    ``Phase`` surface the walk needs: no layout, seed = its facts."""
-
-    def __init__(self, name, scope_fn, pre_fn, reached_fn, facts_fn):
-        self.name = name
-        self._scope, self._pre, self._reached, self._facts = scope_fn, pre_fn, reached_fn, facts_fn
-
-    def scope(self, state, items):
-        return list(self._scope(state)) if self._scope is not None else list(items)
-
-    def pre(self, state, items):
-        return bool(self._pre(state, items))
-
-    def reached(self, state, items):
-        return bool(self._reached(state, items))
-
-    def seed_tuples(self, items):
-        return [tuple(t) for t in (self._facts(items) if self._facts else [])]
-
-    def layout(self, items):
-        return []

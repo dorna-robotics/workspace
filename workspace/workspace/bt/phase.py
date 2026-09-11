@@ -119,18 +119,6 @@ class Phase:
         return [self.fact(it) for it in items]
 
     # ── Starting past this phase (workspace.bt.bench) ─────────────────
-    def seed(self, items):
-        """The facts that describe every item AT REST after this phase
-        closed — what a bench that starts PAST this phase seeds.
-
-        Default: ``eff`` — with one outcome the closure fact is the
-        outcome fact, so it says everything. A phase with several
-        outcomes overrides this to pick the nominal one (``sorted(t)``
-        plus ``in_heavy(t)``), because the next phase's actions gate on
-        the outcome, not on the closure alone.
-        """
-        return self.eff(items)
-
     def layout(self, items):
         """Where the items PHYSICALLY rest after this phase closed, as
         attach clauses relative to the launch-time scene:
@@ -144,7 +132,10 @@ class Phase:
         "resting state" column, made machine-readable. The bench
         applies these so the model matches the real bench before a
         later phase runs, and prints them so the operator can set the
-        bench the same way.
+        bench the same way. This is the ONE thing a phase declares for
+        the bench: the FACTS at a boundary are not declared anywhere —
+        they are what the earlier phases' actions assert, fact-replayed
+        (bt.replay.state_before).
         """
         return []
 
@@ -160,10 +151,6 @@ class Phase:
         """Every fact ``eff`` names is true."""
         return all(t in state for t in self.eff_tuples(items))
 
-    def seed_tuples(self, items):
-        """``seed`` as plain fact tuples."""
-        return [f.as_tuple() if hasattr(f, "as_tuple") else tuple(f)
-                for f in self.seed(items)]
 
     # ── Introspection used by the launcher ────────────────────────────
     def fact_names(self, items) -> List[str]:

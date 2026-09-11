@@ -1635,9 +1635,12 @@ and nothing else — the model is set, the viewer shows it, the moves
 are printed — so the real bench can be matched and simulation turned
 off before `phase(name)` runs the robot. `phase(name)`:
 
-1. **Seeds** the facts every earlier phase would have asserted
-   (`Phase.seed`, default: its `eff`). The launcher runs the first
-   phase not yet reached, so seeding is how "start at N" is said.
+1. **Seeds** the fact state the earlier phases leave behind. Nothing
+   is declared for this: the earlier phases are fact-replayed from the
+   project's own actions (`bt.replay.state_before` — each planned, its
+   effects applied, no motion), minus what Start asserts, since Start
+   still runs for real. The launcher runs the first phase not yet
+   reached, so seeding is how "start at N" is said.
 2. **Lays out** the model as those phases leave it (`Phase.layout`:
    attach clauses over the launch scene — caps in the cap rack, say),
    and prints every move so the operator sets the real bench the same
@@ -1658,13 +1661,17 @@ underneath — one project action with the project's context, the same
 leaf the engine uses — for driving actions by hand.
 
 The copy to start from is `examples/phased/dev/phase.ipynb`; every
-phased project carries it unchanged. Two hooks on `Phase` carry the
+phased project carries it unchanged. One hook on `Phase` carries the
 per-project truth, next to `pre` and `eff`:
 
 | | Default | Override when |
 |---|---|---|
-| `seed(items)` | `eff(items)` | the phase has several outcomes — name the nominal one, the next phase gates on it |
 | `layout(items)` | `[]` | items rest somewhere other than the launch scene puts them |
+
+Facts are deliberately NOT a hook: a boundary's facts are whatever the
+actions before it assert (outcome facts included — `cap_parked` after a
+decap stage, say), and the replay already computes that. Declaring
+them again would be a second source of truth.
 
 ### Slicing — bounding WIDTH
 
