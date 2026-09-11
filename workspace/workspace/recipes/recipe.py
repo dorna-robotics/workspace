@@ -3081,7 +3081,7 @@ class Recipe:
                     f"moves ONLY straight along the axis")
 
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=[150, 500, 3000], axis_tol=5.0, **kwargs):
+                vaj=None, axis_tol=5.0, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm BELOW the top of
         the payload at ``anchor`` — ONE straight vertical lmove, at the
         dip speed, executed NOW.
@@ -3109,10 +3109,11 @@ class Recipe:
         CONTRACT: the tip must already be on the target's vertical
         axis (within ``axis_tol`` mm) — see ``_dip_solve``.
 
-        ``vaj`` is the dip speed ([vel, accel, jerk], lmove class,
-        sf-scaled like every other motion): the straight in-vessel legs
-        run deliberately slow. A tool with ``lock_j5`` gets the wrist
-        roll pinned; ``approach_j5=`` overrides per call.
+        ``vaj`` ([vel, accel, jerk], sf-scaled like every other motion)
+        applies to THIS leg only when given; unset, the leg runs at the
+        recipe's ``lmove_vaj`` like any other lmove. A tool with
+        ``lock_j5`` gets the wrist roll pinned; ``approach_j5=``
+        overrides per call.
         """
         self._dip_reject_dead_kwargs("immerse", kwargs)
         lock = self._tool_lock_j5()
@@ -3121,7 +3122,7 @@ class Recipe:
         J, tp = self._dip_solve(anchor, solid_name, component,
                                 height_load - dist, j5, axis_tol,
                                 "immerse", **kwargs)
-        vel, accel, jerk = self.scaled_vaj(vaj)
+        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.lmove_vaj)
         rt = self.rt
         rt.checkpoint()
         rt.lmove(joint=[float(v) for v in J], vel=vel, accel=accel,
@@ -3129,7 +3130,7 @@ class Recipe:
         return True
 
     def retract(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=[150, 500, 3000], axis_tol=5.0, **kwargs):
+                vaj=None, axis_tol=5.0, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm ABOVE the top of
         the payload at ``anchor`` — the mirror of ``immerse``: ONE
         straight vertical lmove up, at the dip speed.
@@ -3155,7 +3156,7 @@ class Recipe:
         J, tp = self._dip_solve(anchor, solid_name, component,
                                 height_load + dist, j5, axis_tol,
                                 "retract", **kwargs)
-        vel, accel, jerk = self.scaled_vaj(vaj)
+        vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.lmove_vaj)
         rt = self.rt
         if self.fuse and rt._is_workflow_thread():
             self._tail_deposit_lift(
