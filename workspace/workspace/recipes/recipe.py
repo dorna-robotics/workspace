@@ -3098,7 +3098,7 @@ class Recipe:
                     f"moves ONLY straight along the axis")
 
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, **kwargs):
+                vaj=None, axis_tol=5.0, fuse=None, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm BELOW the top of
         the payload at ``anchor`` — ONE straight vertical lmove, at the
         dip speed, executed NOW.
@@ -3133,6 +3133,17 @@ class Recipe:
         overrides per call.
         """
         self._dip_reject_dead_kwargs("immerse", kwargs)
+        # ``fuse`` is accepted so the dip verbs take the same argument,
+        # but a dive has only one honest value. Deferring it would leave
+        # the needle at the hover while the pump doses, so True is
+        # REFUSED rather than silently ignored — the one thing worse
+        # than a missing knob is one that does nothing.
+        if fuse:
+            raise RecipeError(
+                "immerse(fuse=True): a dive is never deferred — the pump "
+                "doses where the needle IS, so holding it would dose at the "
+                "hover. Omit it, or pass fuse=False; retract() is the dip "
+                "verb that may defer.")
         lock = self._tool_lock_j5()
         j5 = kwargs.pop("approach_j5", lock)
         _, _, height_load = self._get_tool_and_load_height()
@@ -3147,7 +3158,7 @@ class Recipe:
         return True
 
     def retract(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, **kwargs):
+                vaj=None, axis_tol=5.0, fuse=None, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm ABOVE the top of
         the payload at ``anchor`` — the mirror of ``immerse``: ONE
         straight vertical lmove up, at the dip speed.
@@ -3163,6 +3174,13 @@ class Recipe:
         observable happens between a lift and the next motion, so the
         hold is safe by construction.
 
+        ``fuse`` overrides the recipe's flag FOR THIS CALL, resolved
+        the way ``touch`` resolves its own: ``None`` takes the recipe's
+        ``fuse``, ``False`` makes this one lift discrete (it executes
+        here and stops), ``True`` offers it to the next motion. Reach
+        for ``False`` on a lift that must land before whatever follows
+        it — a reading, an operator hand-off, a lift you want to watch.
+
         CONTRACT: same axis check as ``immerse`` — pulling out of a
         vessel from off-axis is refused loudly.
         """
@@ -3175,7 +3193,10 @@ class Recipe:
                                 "retract", **kwargs)
         vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.lmove_vaj)
         rt = self.rt
-        if self.fuse and rt._is_workflow_thread():
+        # Resolve fuse HERE, as touch does: None takes the recipe's.
+        if fuse is None:
+            fuse = self.fuse
+        if fuse and rt._is_workflow_thread():
             self._tail_deposit_lift(
                 rt, J, (vel, accel, jerk),
                 owner=f"{type(self).__name__} direct hop", tool_pose=tp)
