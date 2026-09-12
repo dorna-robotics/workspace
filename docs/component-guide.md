@@ -540,7 +540,7 @@ workspace.remove_component(name)
 must include `type`, may include `attach`, plus whatever per-type
 config the component class accepts. Returns the new instance.
 
-Almost every real add will also need a corresponding PDDL fact, so
+Almost every real add will also need a corresponding fact, so
 the canonical pattern is two calls:
 
 ```python
@@ -614,7 +614,7 @@ mutation so concurrent BT walks see a consistent state.
 
 ### The explicit-mutation rule
 
-Scene topology and planner state (PDDL facts) are **separate
+Scene topology and planner state (facts) are **separate
 concerns**. The framework **never** infers one from the other. A
 caller that mutates the scene is responsible for mutating any
 corresponding facts, and vice versa — see the paired examples in
@@ -626,7 +626,7 @@ documented fully in
 
 ### What the caller is on the hook for
 
-- **Updating PDDL facts** to reflect any predicate the change
+- **Updating facts** to reflect any predicate the change
   implies. The framework can't infer because predicates are
   project-specific.
 - **Not removing something the current action is mid-touch on** —

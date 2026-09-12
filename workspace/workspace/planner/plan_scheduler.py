@@ -1,6 +1,6 @@
-"""Schedule a PDDL plan onto parallel resources.
+"""Schedule a plan onto parallel resources.
 
-The PDDL planner gives you a totally-ordered list of actions. In a lab
+The route planner gives you a totally-ordered list of steps. In a lab
 the robot, the shakers, the dispensers, and the inspectors are all
 separate resources — many actions can overlap. This module turns the
 ordered plan into a Gantt schedule that respects:
@@ -17,9 +17,8 @@ Two scheduler choices, same return shape:
 * :func:`schedule_greedy` — earliest-start-time first-fit. Linear,
   no dependencies beyond stdlib. Optimal-enough for batches of 10-100
   items with a handful of resources. **Use this by default.**
-* :class:`ORScheduler` (in ``scheduler.py``) — CP-SAT, provably optimal
-  makespan. Use when batch sizes climb into the hundreds and the
-  greedy schedule starts leaving real time on the table.
+* :func:`workspace.planner.cpsat_scheduler.schedule_cpsat` — CP-SAT,
+  provably good makespan; the launcher's default.
 
 Both return ``[(action_name, item_index, start_t_seconds), ...]`` that
 ``workspace.bt.from_schedule`` consumes directly.
@@ -31,7 +30,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from workspace.planner.pddl import Action
+from workspace.planner.route import Step as Action
 
 
 log = logging.getLogger(__name__)

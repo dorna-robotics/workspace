@@ -73,16 +73,11 @@ def setup(**kwargs):
             and (parked.name,) in state
         )
 
-    goal_facts = frozenset(
-        [(decapped.name, t) for t in tubes]
-        + [(started.name,), (parked.name,)]
-    )
 
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
         "item_done":     item_done,
-        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 
@@ -130,7 +125,10 @@ class Cap(Action):
     tool      = "gripper"
 
     def pre(self, tube):
-        return started() & ~capped(tube)
+        # ``~decapped``: a tube that has been through the round trip is
+        # behind this step for good — Decap takes ``capped`` away again,
+        # so ``~capped`` alone would let the route lookup cap it twice.
+        return started() & ~capped(tube) & ~decapped(tube)
 
     def eff(self, tube):
         return {"capped": (+capped(tube),)}
@@ -226,3 +224,8 @@ class Park(Action):
 class OperatorPark(Park):
     """Operator-initiated park — fires on the Park button, outside the plan."""
     trigger = "park"
+
+
+# The route — the order an item meets the actions (workspace.bt.protocol).
+# Being listed here is what makes an action part of the run.
+ROUTE = [Start, Cap, Decap, Park]

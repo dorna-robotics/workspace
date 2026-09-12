@@ -47,14 +47,15 @@ from workspace.bt.builder import (
     with_retry,
 )
 from workspace.bt.dsl import (
-    ActionRegistry,
     RecipeUnavailable,
     build_precedence,
     derive_capacity_spans,
     state_to_frozen,
 )
 from workspace.bt.engine import BTEngine, EngineConfig
-from workspace.planner import ReplanConfig, Replanner, make_schedule_builder
+from workspace.bt.phase import PhaseNotReady, current_phase as _current_phase_impl, pick_window as _pick_window_impl
+from workspace.bt.protocol import Protocol, load_route
+from workspace.planner import Replanner, make_schedule_builder, plan_route
 
 
 log = logging.getLogger(__name__)
@@ -101,50 +102,23 @@ def _configure_logging() -> None:
     pkg.propagate = False
 
 
-def _load_phases(ref: Any, kwargs: Optional[dict] = None) -> Any:
-    """Resolve ``launch.yaml``'s ``phases:`` into a phase list.
+def _load_route(ref: Any, actions_module: Any, *, project: str = "") -> Protocol:
+    """Resolve ``launch.yaml``'s ``route:`` into the run's :class:`Protocol`.
 
-    Accepts what the key can reasonably hold:
-
-      * ``None``                  — no phases; the launcher behaves as before.
-      * a list                    — used as-is (inline in launch.yaml).
-      * ``"phases.py"`` / dotted  — imported; the module must expose
-        ``PHASES`` (a list) or ``phases`` (a list, or a callable taking
-        the run kwargs so the list can depend on batch size).
-
-    A path is resolved the same way ``actions:`` and ``checks:`` are —
-    by module name, with the project directory already on sys.path
-    because main.py imported ``actions`` from it.
+    ``route:`` names the module holding ``ROUTE`` — ``phases.py`` for a
+    phased project (its Phase classes carry their steps), unset for a
+    flat one, whose ``ROUTE`` lives in the actions module. A path is
+    resolved the way ``actions:`` and ``checks:`` are — by module name,
+    the project directory already on sys.path because main.py imported
+    ``actions`` from it.
     """
-    if ref is None or isinstance(ref, (list, tuple)):
-        return ref
+    if ref is None:
+        return load_route(actions_module, project=project)
     if not isinstance(ref, str):
-        log.warning("Launcher: phases: expected a path or list, got %s — ignored.",
-                    type(ref).__name__)
-        return None
+        raise TypeError(f"launch.yaml: route: expected a module path, got {type(ref).__name__}")
     name = ref.removesuffix(".py").replace("/", ".")
-    try:
-        mod = importlib.import_module(name)
-    except Exception:
-        log.exception("Launcher: phases: could not import %r — running without phases.", ref)
-        return None
-    # PHASE CLASSES FIRST. A module that declares Phase subclasses is
-    # the authored form; PHASES/phases as a plain list stays supported
-    # for a short static sequence, and for anything generated.
-    from workspace.bt.phase import collect as _collect_phases
-    spec_val = _collect_phases(mod) or None
-    if spec_val is None:
-        spec_val = getattr(mod, "PHASES", None)
-    if spec_val is None:
-        spec_val = getattr(mod, "phases", None)
-    if callable(spec_val):
-        try:
-            spec_val = spec_val(**(kwargs or {}))
-        except TypeError:
-            spec_val = spec_val()
-    if spec_val is None:
-        log.warning("Launcher: %r defines no PHASES — running without phases.", ref)
-    return spec_val
+    mod = importlib.import_module(name)
+    return load_route(mod, project=project)
 
 
 # ── Recipe loading (mirrors pace_or's BaseWorkflow._load_recipes) ─────────
@@ -390,7 +364,7 @@ def run_protocol(
     plan_window: int = 4,
     slice_dim: Optional[str] = None,
     scheduler: str = "cpsat",
-    phases: Any = None,
+    route: Optional[str] = None,
     seed_facts: Any = None,
     until_phase: Optional[str] = None,
     reset_scene: bool = True,
@@ -403,10 +377,12 @@ def run_protocol(
 
       1. Calls ``actions_module.setup(**kwargs)`` to map operator
          kwargs into ``initial_facts`` / ``goal`` / ``objects``.
-      2. Builds a :class:`WorkspaceContext` carrying the recipes dict
+      2. Loads the project's ROUTE (``route:`` in launch.yaml, or the
+         actions module) into a :class:`Protocol` — the steps, the
+         phases, the scheduler meta and the leaf factory all come
+         from it.
+      3. Builds a :class:`WorkspaceContext` carrying the recipes dict
          the caller supplied.
-      3. Pulls PDDL templates, scheduler meta, and a leaf factory
-         from the auto-populated :class:`ActionRegistry`.
       4. Wraps the body in ``replan_on_failure(...)``. Leaves are NOT
          retried implicitly (``max_attempts=1``) — a failure replans;
          retry only where a project explicitly opts in.
@@ -429,13 +405,16 @@ def run_protocol(
         tick_hz: BT engine tick rate (Hz). Comes from launch.yaml kwargs.
         project_name: Display name for log lines / tree node names.
             Default = ``actions_module.__name__``.
-        plan_window: How many items the planner thinks about at once.
-            Default 4 — the safe limit for the in-house GBFS planner.
-            Projects on a stronger planner (e.g. Fast Downward) can
-            raise this in their ``launch.yaml``.
+        plan_window: How many items one schedule holds. Default 4.
+            Planning itself is a lookup and does not care; the window
+            bounds the scheduler's model (``launch.yaml``, and per
+            phase ``Phase.plan_window``).
         slice_dim: Which ``objects`` key to slice along. Default
             ``"tube"`` — matches the convention in lab protocols.
             Only meaningful when ``setup()`` returns ``item_done``.
+        route: Path of the module holding ``ROUTE`` (``launch.yaml:
+            route:``) — ``phases.py`` for a phased project. ``None``:
+            the actions module's ``ROUTE``.
         scheduler: ``"cpsat"`` (default) uses the CP-SAT solver —
             optimal makespan, clusters same-tool actions automatically,
             packs work into idle robot windows. ``"greedy"`` uses the
@@ -505,41 +484,17 @@ def run_protocol(
         log.info("Launcher: %d seeded fact(s) — starting past earlier phases", len(seed_facts))
     objects       = dict(spec.get("objects") or {})
 
-    # Goal MUST be a callable ``state -> bool``. The planner calls it
-    # after every state expansion to check "are we done yet?". One
-    # shape — for nuanced goals (disjunctions, thresholds, multi-branch
-    # terminal actions) just write the predicate directly.
+    # Goal MUST be a callable ``state -> bool``: is the run done.
     goal_fn = spec["goal"]
     if not callable(goal_fn):
         raise TypeError(
             f"setup() returned goal of type {type(goal_fn).__name__} — "
             "expected a callable: ``def goal(state): return ...``"
         )
-    # `goal_facts` — set of positive fact tuples used as the PDDL
-    # planner's GBFS heuristic (``h = |goal_facts \ state|``). Projects
-    # can supply their own list via setup(); otherwise the framework
-    # auto-derives one from the action effects (every monotonic
-    # predicate × every reachable parameter binding). Auto-derivation
-    # handles ~all lab protocols correctly; override only if some
-    # monotonic predicate is decorative and would mislead the search.
-    goal_facts = spec.get("goal_facts")
 
     # `item_done(state, item) -> bool` — optional per-item completion
-    # predicate. When present, the launcher enables slicing along
-    # ``slice_dim`` so the planner only thinks about ``plan_window``
-    # items at a time. Without it, all items must fit in one plan.
-    # PHASES MAY COME FROM launch.yaml OR FROM setup(). The launch.yaml
-    # form matches how ``actions:`` and ``checks:`` are already named —
-    # a path to a project file — which keeps a long generated phase list
-    # out of actions.py:
-    #
-    #     launch.yaml:   phases: phases.py
-    #     phases.py:     PHASES = [...]        # or def phases(**kwargs)
-    #
-    # setup() returning "phases" still works and wins if both are given,
-    # because setup() can see the kwargs and a static file cannot.
-    # Passing nothing keeps the old behaviour exactly.
-    phases_spec = spec.get("phases") or _load_phases(phases, kwargs)
+    # predicate. When present, the launcher windows the batch along
+    # ``slice_dim`` so one schedule holds ``plan_window`` items.
     item_done = spec.get("item_done")
     if item_done is not None and not callable(item_done):
         raise TypeError(
@@ -547,14 +502,15 @@ def run_protocol(
             "expected a callable: ``def item_done(state, item): return ...``"
         )
 
-    # 2. Context. Carries the live mutable facts dict + recipes +
+    # 2. The protocol: the ROUTE, resolved. Steps, phases, scheduler
+    #    meta and leaves all come from here — the same object bt.replay
+    #    and the bench build from.
+    protocol = _load_route(route, actions_module, project=project_name)
+    phases = list(protocol.phases)
+
+    # 3. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
     #    candidate bindings).
-    # Default event publisher: hook the runtime server's schedule WS
-    # broadcaster if it's importable. Lets the project's launch include
-    # the framework without explicitly wiring the GUI plumbing; if the
-    # server module is missing (headless tests, alt frontends) we just
-    # leave it None and the publish hooks become no-ops.
     event_publisher = None
     try:
         from workspace.runtime_server import _broadcast_schedule_event
@@ -562,15 +518,11 @@ def run_protocol(
     except Exception:
         pass
 
-    # Snapshot the full ``objects`` dict before slicing can mutate it
-    # in-place. ``ctx.meta["objects"]`` follows the planner's current
-    # window (narrowed per replan when slicing is active);
-    # ``ctx.meta["all_objects"]`` always carries the original
-    # un-sliced view. Actions that need to seed state for the *entire*
-    # batch (e.g. a ``Start`` action that adds ``in_source(t)`` for
-    # every tube) must read from ``all_objects`` — reading from
-    # ``objects`` would only seed the current window and leave later
-    # slices stuck without their initial facts.
+    # Snapshot the full ``objects`` dict before windowing can mutate it
+    # in-place. ``ctx.meta["objects"]`` follows the current window
+    # (narrowed per replan); ``ctx.meta["all_objects"]`` always carries
+    # the original un-sliced view — what a ``Start`` that seeds facts
+    # for every item reads.
     all_objects = {k: list(v) for k, v in (objects or {}).items()}
 
     ctx = WorkspaceContext(
@@ -602,26 +554,15 @@ def run_protocol(
     if hasattr(workspace, "set_active_ctx"):
         workspace.set_active_ctx(ctx)
 
-    # 3. Registry artifacts (auto-populated when ``actions`` was imported).
-    #    Tool-swap durations live per-action on the Action class
-    #    (cls.tool_swap_duration); the scheduler reads them via
-    #    ActionMeta. No global knob here.
-    registry       = ActionRegistry.current()
-    templates      = registry.to_templates(ctx)
-    meta           = registry.to_meta()
-    leaf_factory   = registry.leaf_factory(ctx)
+    meta         = protocol.meta()
+    leaf_factory = protocol.leaf_factory(ctx)
 
-    # ── Slicing wiring (no-op when item_done absent or batch fits) ────
+    # ── Windowing (no-op when item_done absent and batch fits) ────────
     #
-    # Resolve ``slice_dim`` — the ``objects`` key the planner windows
-    # along. When unset (the default), auto-infer it: a single-dimension
-    # protocol (one ``objects`` key, which is ~every lab protocol) slices
-    # along that key, so windowed planning "just works" regardless of
-    # what the key is named. Only multi-dimension protocols need to name
-    # the dim explicitly (via ``launch.yaml: slice_dim``). Previously
-    # this defaulted to the literal ``"tube"``, so any project whose key
-    # wasn't named "tube" silently lost windowing and planned the whole
-    # batch at once.
+    # ``slice_dim`` — the ``objects`` key the run windows along. Unset,
+    # a single-dimension protocol (one ``objects`` key — every lab
+    # protocol) windows along that key. Only a multi-dimension protocol
+    # names it (``launch.yaml: slice_dim``).
     if slice_dim is None:
         keys = list(objects.keys())
         slice_dim = keys[0] if len(keys) == 1 else None
@@ -633,8 +574,15 @@ def run_protocol(
                 "no slice_dim given, so planning is NOT windowed. Pass "
                 "slice_dim (launch.yaml) to enable it.", len(keys), keys,
             )
+    elif slice_dim not in objects:
+        # A stale key would window over nothing and plan nothing — say so.
+        raise ValueError(
+            f"launch.yaml: slice_dim={slice_dim!r} is not an objects key of setup(): "
+            f"{list(objects)} — name one of them, or drop the key for a "
+            f"single-dimension protocol"
+        )
 
-    # Two views of the slicing dim:
+    # Two views of the item dim:
     #   * ``all_items``  — full operator-supplied set (stays constant)
     #   * ``ctx.meta["objects"][slice_dim]`` — current window the
     #     planner thinks about. Re-assigned each rebuild.
@@ -642,98 +590,55 @@ def run_protocol(
 
     # ── Phases ────────────────────────────────────────────────────────
     #
-    # An PHASE is a goal the whole batch reaches before any item moves
+    # A PHASE is a goal the whole batch reaches before any item moves
     # past it: "every tube barcoded", then "every tube weighed", and so
-    # on. It exists because BOTH halves of the pipeline grow with how
-    # much work is in flight at once, and item-windowing only bounds one
-    # of them. Measured on bd: the full protocol at 12 items is a
-    # 230-action plan and CP-SAT returns UNKNOWN on it, while one stage
-    # over the same 12 items is ~60 actions and schedules fine. Cutting
-    # the HORIZON is what item windows cannot do — a window of 4 still
-    # carries each of those 4 all the way to the end.
-    #
-    # AUTHORED AS A GOAL, NOT AS A PREDICATE NAME. A bare name is sugar
-    # for "this fact holds for every item in scope"; a callable
-    # ``(state, items) -> bool`` says anything. That is deliberate: the
-    # nested case (every tube in rack r, then the next rack) is the same
-    # list with a different callable, not a new mechanism.
-    #
-    # ONE OBJECT DIM. A phase always windows the project's ``slice_dim``;
-    # a rack-scoped phase still windows TUBES, just a subset, which is
-    # what ``scope`` is for.
-    #
-    # ORDER IS DERIVED FROM ``pre``, not from list position. The launcher
-    # runs the first phase that is ready and not yet reached, so a list
-    # written out of dependency order still runs correctly and a phase
-    # whose ``pre`` is unmet is skipped rather than selected. Validation below
-    # is the guard that the declared order is achievable at all.
+    # on — DEPTH, which item windows cannot bound. ROUTE gives their
+    # order; each carries the steps its items take while it is open.
     # The phase machinery lives in workspace/bt/phase.py so bt.replay
-    # walks phases with the SAME code as the live run. These wrappers
-    # bind this run's items / item_done / window.
-    from workspace.bt.phase import (normalise_phases as _normalise_phases_impl,
-                                    current_phase as _current_phase_impl,
-                                    pick_window as _pick_window_impl)
-
-    def _normalise_phases(spec_val):
-        return _normalise_phases_impl(spec_val, all_items)
-
-    # The monotonic set is invariant for a given action registry, but it
-    # costs a probe of every action against every binding (~1.2 ms at 28
-    # items). Three sites want it and two of those only want its LENGTH
-    # for a log line, so compute it lazily and at most once — paying it
-    # three times to print a number is the wrong trade.
-    _mono_memo = []
-    def _mono():
-        if not _mono_memo:
-            _mono_memo.append(registry.monotonic_predicates(ctx))
-        return _mono_memo[0]
-
-    phases = _normalise_phases(phases_spec)
-    # The phase this replan plans toward, resolved once in _observe.
-    _frozen_phase = {"cur": None}
-
+    # walks phases with the SAME code as the live run.
     if phases:
         # A NON-MONOTONIC PHASE CANNOT BE A PHASE BOUNDARY. If some
         # action removes the fact again, "everyone has reached it" is
         # not a line the batch crosses once — it can un-cross, the
-        # phase never closes, and the run stalls with no error. This is
-        # the classic Sussman trap (achieving goal B undoes goal A);
-        # catching it at launch beats discovering it mid-batch.
-        mono = _mono()
-        for nm, _scope, _pre, _fn, _w, _gf, _grp, _bud in phases:
-            if nm not in mono and nm != "phase":
-                log.warning(
-                    "Launcher: phase %r is not monotonic — some action "
-                    "removes it, so the phase may never close. Phases "
-                    "must be facts that only ever get added.", nm,
-                )
+        # phase never closes, and the run stalls with no error (the
+        # Sussman trap). Catching it at launch beats discovering it
+        # mid-batch.
+        mono = protocol.monotonic_predicates(ctx)
+        for ph in phases:
+            for nm in ph.fact_names(all_items):
+                if nm not in mono:
+                    log.warning(
+                        "Launcher: phase %r names fact %r, which some action "
+                        "removes — the phase may never close. Phases must be "
+                        "facts that only ever get added.", ph.name, nm,
+                    )
         log.info("Launcher: %d phase(s): %s",
-                 len(phases), " -> ".join(nm for nm, *_ in phases))
+                 len(phases), " -> ".join(ph.name for ph in phases))
+
+    # The phase this replan plans toward, resolved once in _observe:
+    # ``(phase, items in scope)`` or None.
+    _frozen_phase = {"cur": None}
 
     def _current_phase(state):
-        """First unmet phase as ``(name, items, reached_fn, window, goal_facts_fn)``."""
-        return _current_phase_impl(state, phases, all_items, item_done, log=log)
+        return _current_phase_impl(state, phases, all_items, item_done)
 
     # ``until_phase``: the run is over when THAT phase is reached for
-    # its scope — every goal below defers to it first. The launcher
-    # still walks phases in order, so a phase the seeds left unmet runs
-    # first; that is reported, not hidden.
+    # its scope — every goal below defers to it first.
     _until = None
     if until_phase is not None:
-        _until = next((ph for ph in phases if ph[0] == until_phase), None)
+        _until = protocol.phase(until_phase)
         if _until is None:
             raise ValueError(
                 f"until_phase={until_phase!r} is not a phase of this project: "
-                f"{[ph[0] for ph in phases]}"
+                f"{[ph.name for ph in phases]}"
             )
     _until_warned = {"done": False}
 
     def _until_reached(state) -> bool:
         if _until is None:
             return False
-        _nm, scope_fn, _pre, reached_fn, _w, _gf, _grp, _bud = _until
-        items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
-        return (not items) or reached_fn(state, items)
+        items = list(_until.scope(state, all_items))
+        return (not items) or _until.reached(state, items)
 
     slicing_active = (
         item_done is not None
@@ -742,61 +647,37 @@ def run_protocol(
 
     def _pick_window(state) -> list:
         """Next ``plan_window`` items still outstanding, in order (phase.py)."""
-        # A seeded start toward ``until_phase`` reads as "all blocked" until
-        # Start's own seeds land — not the misconfiguration the walker
-        # warns about (see _observe), so it does not log here either.
-        return _pick_window_impl(state, phases, all_items, item_done, plan_window,
-                                 log=None if _until is not None else log)
+        return _pick_window_impl(state, phases, all_items, item_done, plan_window)
 
     def _planning_goal(state) -> bool:
-        """Goal for the planner.
+        """What this window's plan must reach.
 
-        Default (no slicing): defer to the user's ``goal_fn`` so any
-        global tail goals (e.g. ``parked``) are honored.
-
-        Slicing active: the planner only sees the current window, so
-        the in-window goal is ``all(item_done over window)``. But on
-        the *final* slice — when no items remain outside the window —
-        the planner should also satisfy the user's full ``goal_fn``,
-        otherwise tail actions like ``Park`` (whose pre needs every
-        item done) get skipped.
+        No windowing: the project's ``goal_fn`` (so tail goals such as
+        ``parked`` are honored). A phase open: THAT phase, over the
+        items in the window — the route stops at the boundary. Else the
+        window's items done; on the final window also ``goal_fn`` so
+        the tail (Park) is planned.
         """
         if _until_reached(state):
             return True
         if item_done is None:
             return goal_fn(state)
-        # PHASES TAKE PRECEDENCE OVER THE WINDOW TEST. While an phase
-        # is open the planner's target is that phase, not "these items
-        # are finished" — that is the whole point: it stops the plan at
-        # the phase boundary instead of carrying every item to the end.
-        # Only when the last phase has closed do we fall through to the
-        # window/tail logic below.
         if phases:
             cur = _frozen_phase["cur"]
             if cur is not None:
-                # NOT ``goal_fn`` — binding that name here would make
-                # it local to this whole function and turn every other
-                # ``goal_fn(state)`` read below into an UnboundLocalError.
-                _nm, items, phase_reached, _w, _gf, _grp, _bud = cur
+                ph, items = cur
                 window = ctx.meta["objects"].get(slice_dim, [])
-                # Target the phase over the items actually in the
-                # window, so a window smaller than the scope still
-                # terminates.
                 scoped = [it for it in (window or all_items) if it in items]
-                return phase_reached(state, scoped or items)
+                return ph.reached(state, scoped or items)
         window = ctx.meta["objects"].get(slice_dim, [])
         if not all(item_done(state, it) for it in window):
             return False
-        # Window done. If there are still items outside the window
-        # (more slices to come), we're not at the tail yet — pass.
         remaining_outside = [
             it for it in all_items
             if it not in window and not item_done(state, it)
         ]
         if remaining_outside:
             return True
-        # Final slice — every item is done. Require the user's full
-        # goal_fn so tail actions like Park get planned.
         return goal_fn(state)
 
     def _global_goal(state) -> bool:
@@ -808,49 +689,37 @@ def run_protocol(
         return all(item_done(state, it) for it in all_items)
 
     def _observe(c) -> Any:
-        """Observe + (when slicing) advance the planning window."""
+        """Observe + (when windowing) advance the window and the phase."""
         state = state_to_frozen(c.state)
         if slicing_active:
-            window = _pick_window(state)
-            c.meta["objects"][slice_dim] = window
-            # Stamp the phase this window belongs to, so the schedule
-            # event can carry it and the Gantt can band consecutive
-            # slices under their phase name. Resolved here rather than
-            # in build_tree because _observe already did the work.
             if _until is not None:
                 # A seeded start: before Start's own seeds land (capacity
-                # facts, manifest facts) the target's pre can read as
-                # blocked. That is not the "all blocked" misconfiguration
-                # the walker warns about — plan toward the target; the
-                # planner puts Start first because the target needs it.
-                _cur = _current_phase_impl(state, phases, all_items, item_done, log=None)
+                # facts, manifest facts) the target's pre can read as not
+                # ready. Plan toward the target; the route puts Start
+                # first because the target's steps need it.
+                try:
+                    _cur = _current_phase(state)
+                except PhaseNotReady:
+                    _cur = None
                 if _cur is None:
-                    _nm, scope_fn, _pre, reached_fn, _w, _gf, _grp, _bud = _until
-                    items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
-                    _cur = (_nm, items, reached_fn, _w, _gf, _grp, _bud)
-                elif _cur[0] != _until[0] and not _until_warned["done"]:
+                    _cur = (_until, list(_until.scope(state, all_items)))
+                elif _cur[0].name != _until.name and not _until_warned["done"]:
                     _until_warned["done"] = True
                     log.warning(
                         "Launcher: until_phase=%r but phase %r is not reached yet "
                         "— running it first (the seeds did not cover it).",
-                        _until[0], _cur[0],
+                        _until.name, _cur[0].name,
                     )
+                window = _pick_window_impl(state, [_cur[0]] if _cur[0] not in phases else phases,
+                                           all_items, item_done, plan_window)
             else:
                 _cur = _current_phase(state) if phases else None
-            c.meta["current_phase"] = _cur[0] if _cur else None
-            # The window's partition into the sets that move together
-            # (Phase.group) — the planner stamps one group's chain per
-            # group and never searches a grouped phase (replanner).
-            c.meta["groups"] = (_cur[5](window) if (_cur is not None and _cur[5] is not None) else None)
-            c.meta["schedule_budget"] = _cur[6] if _cur is not None else None
-            # FREEZE THE PHASE FOR THIS REPLAN. The planning goal and the
-            # heuristic read this, never _current_phase(state) again: a
-            # goal that re-asks "which phase is current" while the
-            # search advances re-targets the NEXT phase the moment this
-            # one is reached inside the search, and the tail plans on to
-            # the end of the protocol — one slice, every phase, which is
-            # exactly what phases exist to prevent (measured: a 3-item,
-            # 2-phase run planned as one 32-action slice).
+                window = _pick_window(state)
+            c.meta["objects"][slice_dim] = window
+            c.meta["current_phase"] = _cur[0].name if _cur else None
+            c.meta["schedule_budget"] = _cur[0].schedule_budget if _cur else None
+            # FREEZE THE PHASE FOR THIS REPLAN: the planning goal reads
+            # this, never _current_phase(state) again.
             _frozen_phase["cur"] = _cur
             log.info(
                 "Launcher: slice window = %s (%d/%d done)",
@@ -862,67 +731,38 @@ def run_protocol(
 
     if slicing_active:
         log.info(
-            "Launcher: slicing enabled — %d items, window=%d (%d slices)",
+            "Launcher: windowing enabled — %d items, window=%d",
             len(all_items), int(plan_window),
-            (len(all_items) + int(plan_window) - 1) // int(plan_window),
         )
 
-    # Auto-derive goal_facts if the project didn't supply one. Done
-    # after the registry+ctx are ready so `param_iter` can read
-    # ``ctx.meta["objects"]``. When slicing is active, derive lazily
-    # (per rebuild) so the heuristic reflects the current window.
-    if goal_facts is None:
-        if slicing_active:
-            goal_facts = lambda: registry.derive_goal_facts(ctx)
-            log.info(
-                "Launcher: goal_facts will be re-derived per slice "
-                "(%d monotonic predicates)",
-                len(_mono()),
-            )
-        else:
-            goal_facts = registry.derive_goal_facts(ctx)
-            log.info(
-                "Launcher: auto-derived %d goal_facts across %d monotonic predicates",
-                len(goal_facts), len(_mono()),
-            )
-    # Precedence-aware scheduling — actions whose pre()/eff() are
-    # causally independent overlap on different resources. We thread
-    # the current observed state through so state-aware ``eff()``
-    # bodies see the world they would at runtime when computing the
-    # precedence graph.
-    # WHILE A PHASE IS OPEN, THE HEURISTIC AIMS AT THAT PHASE. The
-    # project's goal_facts are the protocol's final facts; steering
-    # GBFS at those from inside an early phase makes it wander past the
-    # boundary and pull later actions into the slice (measured on bna:
-    # the split window planned an internal-standard dose and an
-    # inspection). The Replanner accepts a zero-arg callable, evaluated
-    # per replan, so the facts follow the window the observer just set.
-    if phases:
-        _base_goal_facts = goal_facts
+    def _plan(state):
+        """The route lookup for this window: the run-level steps plus
+        the open phase's, in ROUTE order, over the window's items."""
+        cur = _frozen_phase["cur"] if slicing_active else None
+        classes = protocol.candidates(cur[0].name if cur else None)
+        templates = protocol.templates(ctx, classes)
+        items = (ctx.meta["objects"].get(slice_dim, []) if slice_dim else [])
+        return plan_route(templates, state, _planning_goal, list(items),
+                          explain=protocol.explainer(ctx))
 
-        def _slice_goal_facts():
-            cur = _frozen_phase["cur"]
-            if cur is not None and cur[4] is not None:
-                window = ctx.meta["objects"].get(slice_dim, []) if slice_dim else []
-                scoped = [it for it in (window or all_items) if it in cur[1]]
-                return frozenset(cur[4](scoped or cur[1]))
-            return _base_goal_facts() if callable(_base_goal_facts) else _base_goal_facts
-        goal_facts = _slice_goal_facts
-
+    # Precedence-aware scheduling — steps whose pre()/eff() are
+    # causally independent overlap on different resources. The observed
+    # state is threaded through so state-aware bodies see the world
+    # they would at runtime when the precedence graph is derived.
     def _precedence(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
-        return build_precedence(plan, registry, initial_state=initial, ctx=ctx)
+        return build_precedence(plan, protocol, initial_state=initial, ctx=ctx)
 
     def _capacity(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
-        return derive_capacity_spans(plan, registry, initial_state=initial, ctx=ctx)
+        return derive_capacity_spans(plan, protocol, initial_state=initial, ctx=ctx)
 
     use_cpsat = (str(scheduler).lower() == "cpsat")
     build_schedule = make_schedule_builder(
         meta, use_cpsat=use_cpsat, precedence_fn=_precedence, capacity_fn=_capacity,
-        # The tool on the flange when this slice is scheduled — the
+        # The tool on the flange when this window is scheduled — the
         # SwapLeaf keeps ctx.meta["current_tool"] true — so a window
         # never opens with a swap onto the tool it already holds.
         initial_tool_fn=lambda: ctx.meta.get("current_tool"),
@@ -931,9 +771,7 @@ def run_protocol(
     )
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 
-    # 4. Default tree shape: from_schedule + per-leaf retry + outer
-    #    replan_on_failure. Project can supply its own build_tree by
-    #    calling run_protocol_with_tree() instead (advanced use).
+    # 4. Tree: from_schedule + per-leaf retry + outer replan_on_failure.
     # Durations + resources tables for from_schedule's overlap
     # detection and resource-aware sub-grouping inside each phase.
     durations = {name: float(m.duration) for name, m in meta.items()}
@@ -961,12 +799,10 @@ def run_protocol(
         # tool. Resource list is normalised to a tuple-of-strings.
         replan_counter["n"] += 1
         # Expose the current replan_id on ctx.meta so every leaf /
-        # swap-leaf can stamp its lifecycle events with the slice it
-        # belongs to. The schedule modal uses this to give per-slice
-        # parameterless actions (Start / Park / ShakerOne / ShakerTwo
-        # — same self.name across slices) distinct positions on the
-        # Gantt instead of letting later slices overwrite earlier
-        # ones' placements.
+        # swap-leaf can stamp its lifecycle events with the window it
+        # belongs to. The schedule modal uses this to give per-window
+        # parameterless actions (Start / Park — same self.name across
+        # windows) distinct positions on the Gantt.
         ctx.meta["current_replan_id"] = replan_counter["n"]
         pub = ctx.meta.get("event_publisher")
         if pub is not None:
@@ -978,9 +814,9 @@ def run_protocol(
                     "replan_id": replan_counter["n"],
                     "wall_ts": _time.time(),
                     "tool_resource": "robot",
-                    # Which phase this slice belongs to, or None when the
+                    # Which phase this window belongs to, or None when the
                     # project declares no phases. The Gantt groups
-                    # consecutive slices sharing a phase under one band.
+                    # consecutive windows sharing a phase under one band.
                     "phase": ctx.meta.get("current_phase"),
                     "actions": [
                         {
@@ -989,16 +825,16 @@ def run_protocol(
                             # Original Action subclass name (PascalCase) so
                             # the GUI can label blocks exactly as authored.
                             "class_name": (
-                                registry.get(n).__name__
-                                if registry.get(n) is not None else n
+                                protocol.get(n).__name__
+                                if protocol.get(n) is not None else n
                             ),
                             "item": i,
                             # Parameterless actions (Start / Park) have one
                             # grounding regardless of items — flag so the
                             # GUI drops the misleading "(0)" label.
                             "parametrized": bool(
-                                registry.get(n).params
-                                if registry.get(n) is not None else True
+                                protocol.get(n).params
+                                if protocol.get(n) is not None else True
                             ),
                             "start_t": float(s),
                             "duration": float(meta[n].duration) if n in meta else 1.0,
@@ -1034,11 +870,11 @@ def run_protocol(
             return with_retry(leaf_factory(action_name, item_index), max_attempts=1)
         # The plan's precedence, keyed like the tree's entries, so a leaf
         # in a parallel branch waits for what the schedule put before it.
-        _plan = list(replanner.last_plan or [])
+        _plan_steps = list(replanner.last_plan or [])
         _key = lambda a: f"{a.name}(t{a.params[0] if a.params else 0})"
-        _preds = _precedence(_plan) if _plan else []
-        pred_names = {_key(_plan[i]): {_key(_plan[j]) for j in _preds[i]}
-                      for i in range(len(_plan))} if _plan else None
+        _preds = _precedence(_plan_steps) if _plan_steps else []
+        pred_names = {_key(_plan_steps[i]): {_key(_plan_steps[j]) for j in _preds[i]}
+                      for i in range(len(_plan_steps))} if _plan_steps else None
         body = from_schedule(
             actions_list, _wrapped,
             swaps=swaps_list,
@@ -1048,8 +884,8 @@ def run_protocol(
             name=f"{project_name}/body",
             predecessors=pred_names,
         )
-        # When slicing is on, end-of-slice check decides "exit or
-        # replan for next window". When off, it's a no-op (the body
+        # When windowing is on, the end-of-window check decides "exit or
+        # replan for the next window". When off, it's a no-op (the body
         # alone reaches SUCCESS naturally).
         if slicing_active:
             from workspace.bt.builder import slice_check
@@ -1068,26 +904,16 @@ def run_protocol(
     replanner = Replanner(
         ctx=ctx,
         observe=_observe,
-        templates=templates,
-        goal=_planning_goal,
-        goal_facts=goal_facts,
+        plan=_plan,
         build_schedule=build_schedule,
         build_tree=build_tree,
-        config=ReplanConfig(verbose=True),
     )
 
-    # Park-cleanup tree: collect every Action subclass declaring
+    # Park-cleanup tree: every Action subclass declaring
     # ``trigger = "park"``. When the operator clicks Park, the BT
     # engine completes the current action, then runs this subtree to
     # park the robot (release tools, return home, …) before exiting.
-    # The collection happens at engine-start so the registry is
-    # already populated.
-    from workspace.bt.dsl import _is_park_trigger
-    park_classes = [
-        (name, cls)
-        for name, cls in sorted(registry._actions.items())
-        if _is_park_trigger(cls)
-    ]
+    park_classes = list(protocol.park_classes)
 
     def build_park_tree() -> Optional[py_trees.behaviour.Behaviour]:
         if not park_classes:

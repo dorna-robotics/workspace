@@ -98,7 +98,7 @@ enough to leave for step 5's eyes.
 ## Step 4 — flow + schedule validation (pure logic, no robot sim)
 
 Author `actions.py` from the gold exemplars (see CLAUDE.md table).
-Validate with the replay command — plan (PDDL) → precedence →
+Validate with the replay command — the route lookup → precedence →
 schedule (CP-SAT) → replay in scheduled order against real
 `pre()`/`eff()` → 0 failures + goal reached. Seconds, no motion:
 
@@ -174,7 +174,7 @@ table comes first — copy `examples/phased/` and follow its README:
 
 ```yaml
 actions:  actions/           # __init__.py + predicates.py + base.py + phase_N.py
-phases:   phases.py          # one Phase class per phase
+route:    phases.py          # one Phase class per phase, each with its route; the ROUTE
 ```
 
 with `doc/phases.md` written before any phase's actions. Step 4 above

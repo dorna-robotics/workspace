@@ -32,13 +32,13 @@ not author from memory or first principles.
 
 | Writing a… | Read first (gold) |
 |---|---|
-| **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park) | `examples/runtime/actions.py`, plus `examples/feeder/actions.py` (simple) or `examples/capping/actions.py` (multi-action + progress) |
+| **BT action / protocol** (`actions.py`, predicates, `setup`, pre/eff/execute, per-item + Start/Park, the `ROUTE`) | `examples/runtime/actions.py`, plus `examples/feeder/actions.py` (simple) or `examples/capping/actions.py` (multi-action + progress) |
 | **Device read with declarative retry** (read is its own action; assert the success fact only on a valid reading, `return False` otherwise; planner re-selects it after recover — no `with_retry`/loop) | `examples/scale/actions.py` (`PlaceOnScale`/`Weigh`/`PickFromScale`); the why is `docs/project-guide.md` §8 "Device reads + declarative retry" |
 | **Runtime scene mutation** (`add_component`/`remove_component` paired with facts, the explicit-mutation rule) | `examples/runtime/` (whole project — the reference for this) |
 | **Recipe wiring** (`recipes.j2`) | `examples/feeder/recipes.j2`, `examples/capping/recipes.j2` |
 | **Scene yaml** (chassis + layout, attach hierarchy) | `examples/runtime/scene/core_500.j2` (chassis) + any example's `scene/layout.j2`; the true chassis template is `scenes/core/core_500.j2` |
 | **Custom component** | the apc repo's `components/*.py` (standalone repo, `~/Downloads/projects/apc` on the bench Pi); library components under `workspace/components/` |
-| **Phased protocol** (`actions/` package, `phases.py`, `doc/phases.md` boundary table, pass-indexed facts, abstract bases + thin `PASS` subclasses, `rt.record` rows; `Phase.group` when a device couples items — a shaker bank, a rotor) | `examples/phased/` (whole project) — write the boundary row, then the phase module, then replay; bt-framework-guide §13 "The package layout", "Groups" |
+| **Phased protocol** (`actions/` package, `phases.py` with each phase's `route` and the `ROUTE`, `doc/phases.md` boundary table, pass-indexed facts, abstract bases + thin `PASS` subclasses, `rt.record` rows; a step whose `pre` spans a bank when a device couples items) | `examples/phased/` (whole project) — write the boundary row, then the phase module, then the route, then replay; bt-framework-guide §13 "The route", "The package layout" |
 | **Phase dev notebook** (check one phase from a notebook; `Bench(PROJ).phase(name)`, no parameters typed — the project is the source; `Phase.layout` for where items rest) | `examples/phased/dev/phase.ipynb`; bt-framework-guide §13 "Checking one phase" |
 | **Project entry point** (`main.py`, `launch.yaml`, `checks.py`) | any example — `main.py` is byte-identical across all projects (copy verbatim); `launch.yaml` + `checks.py` follow the example shape |
 

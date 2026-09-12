@@ -2,14 +2,14 @@
 
 The pre-DSL pace_bt had four scattered declarations per action:
 
-  domain.py    — ActionTemplate (preconditions + effects for PDDL)
+  domain.py    — Template (preconditions + effects for the planner)
   actions.py   — RecipeAction subclass with execute() + apply_effects()
   schedule.py  — ActionMeta (duration + resource)
   conditions.py — PredicateCondition subclass per testable fact
 
 The DSL collapses them. One :class:`Action` subclass per action declares
 preconditions, effects, duration, resource, and the recipe call —
-auto-registers itself for PDDL planning, scheduling, BT leaf creation,
+is planned, scheduled and run as a BT leaf from that one declaration,
 and apply_effects derivation. Conditions for any predicate are
 auto-generated when you write ``has_cap.condition(tube)``.
 
@@ -42,9 +42,9 @@ That's it — no domain.py, no separate condition class, no schedule
 META dict, no _LEAVES dict. The framework reads the class and wires
 everything up.
 
-The DSL is a thin layer over the existing PDDL + scheduler + BT
+The DSL is a thin layer over the route planner + scheduler + BT
 machinery; nothing here is *required* — projects with unusual needs
-can drop down to the raw building blocks (``ActionTemplate``,
+can drop down to the raw building blocks (``Template``,
 ``ActionMeta``, ``RecipeAction``) any time. Use the DSL for the 90%
 case; escape hatch for the 10%.
 
@@ -85,7 +85,6 @@ import re
 import threading
 from typing import (
     Any,
-    Callable,
     Dict,
     FrozenSet,
     Iterable,
@@ -103,8 +102,7 @@ from workspace.bt.behaviours import (
     RecipeAction,
     WorkspaceContext,
 )
-from workspace.planner.pddl import ActionTemplate, State
-from workspace.planner.plan_scheduler import ActionMeta
+from workspace.planner.route import State
 
 
 log = logging.getLogger(__name__)
@@ -148,19 +146,6 @@ class RecipeUnavailable(KeyError):
 # ── Registration helper ────────────────────────────────────────────────────
 
 
-def _should_register(cls) -> bool:
-    """Whether ``__init_subclass__`` should add this class to the registry.
-
-    Reads ``register`` via normal attribute lookup — so the flag
-    inherits like every other class attribute. An abstract base that
-    sets ``register = False`` propagates that to every concrete
-    subclass; subclasses that want to be registered must redeclare
-    ``register = True`` explicitly. Verbose by design — we prefer
-    explicit assignment over silent surprises.
-    """
-    return bool(getattr(cls, "register", True))
-
-
 def _is_park_trigger(cls) -> bool:
     """Is this a Park-cleanup action (``trigger = "park"``)?
 
@@ -187,7 +172,7 @@ class Fact:
     predicates: ``has_cap(tube_3)`` returns ``Fact("has_cap", (tube_3,))``.
     """
 
-    # ``_tuple`` and ``_expr`` are memo slots, not state: the PDDL search
+    # ``_tuple`` and ``_expr`` are memo slots, not state: the planner
     # re-derives both on the order of a million times per plan (every
     # grounded action's pre() is rebuilt for every state expanded), and
     # they are pure functions of the other three fields.
@@ -227,7 +212,7 @@ class Fact:
         return Expr.or_(_ensure_expr(other), self.expr())
 
     def as_tuple(self) -> Tuple[Any, ...]:
-        """The (predicate_name, *args) tuple used in PDDL state sets."""
+        """The (predicate_name, *args) tuple a State holds."""
         t = self._tuple
         if t is None:
             t = self._tuple = (self.pred,) + self.args
@@ -402,7 +387,7 @@ class Predicate:
 
         Facts are immutable value objects (``+f``/``-f`` return new
         ones), so handing out the same instance twice is safe, and it
-        turns the search's hottest allocation into a dict hit: the PDDL
+        turns the planner's hottest allocation into a dict hit: the
         expansion loop called this ~1.9M times for one bna batch-4 plan.
         Unhashable arguments simply skip the cache.
         """
@@ -502,7 +487,7 @@ def _facts_from_state(state: Dict[str, Any]) -> set:
 def state_to_frozen(state: Dict[str, Any]) -> FrozenSet[Tuple[Any, ...]]:
     """Take the mutable ctx.state and snapshot the facts as a frozenset.
 
-    The PDDL planner only consumes frozensets of fact tuples — the
+    The planner only consumes frozensets of fact tuples — the
     framework calls this at the start of each plan request to convert
     the live, mutable state into a planner-friendly snapshot.
     """
@@ -588,7 +573,7 @@ def _extract_eff_facts(branch: Any) -> Tuple[set, set]:
 
 def _walk_plan_metas(
     plan: Sequence[Any],
-    registry: "ActionRegistry",
+    protocol: Any,
     initial_state: Optional[FrozenSet[Tuple[Any, ...]]],
     ctx: Optional["WorkspaceContext"],
 ) -> List[Dict[str, set]]:
@@ -606,7 +591,7 @@ def _walk_plan_metas(
     )
     metas: List[Dict[str, set]] = []
     for action in plan:
-        cls = registry.get(action.name)
+        cls = protocol.get(action.name)
         if cls is None:
             metas.append({"pre_pos": set(), "pre_neg": set(),
                           "added": set(), "removed": set()})
@@ -644,7 +629,7 @@ def _walk_plan_metas(
 
 def _capacity_relaxation_helps(
     plan: Sequence[Any],
-    registry: "ActionRegistry",
+    protocol: Any,
 ) -> bool:
     """Would relaxing capacity-fact precedence let the scheduler find a
     better tool ordering than it can today?
@@ -672,7 +657,7 @@ def _capacity_relaxation_helps(
     revisit for the very common pick → read → place shape and give
     every such project the expensive treatment for nothing.
     """
-    meta = registry.to_meta()
+    meta = protocol.meta()
     blocks_by_item: Dict[Any, int] = {}
     last_tool_by_item: Dict[Any, Any] = {}
     for action in plan:
@@ -689,8 +674,8 @@ def _capacity_relaxation_helps(
 
 
 def build_precedence(
-    plan: Sequence[Any],          # list of workspace.planner.pddl.Action
-    registry: "ActionRegistry",
+    plan: Sequence[Any],          # list of workspace.planner.route.Step
+    protocol: Any,                # workspace.bt.protocol.Protocol
     initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
     ctx: Optional["WorkspaceContext"] = None,
 ) -> List[set]:
@@ -741,10 +726,24 @@ def build_precedence(
     scheduler then mis-reads as "no dependencies" and runs the action
     at t=0. Always pass ctx when calling this from a project context.
     """
-    metas = _walk_plan_metas(plan, registry, initial_state, ctx)
+    metas = _walk_plan_metas(plan, protocol, initial_state, ctx)
     # Only skip capacity edges when doing so can actually buy a better
     # tool ordering — see _capacity_relaxation_helps.
-    skip_capacity = _capacity_relaxation_helps(plan, registry)
+    skip_capacity = _capacity_relaxation_helps(plan, protocol)
+    start = initial_state if initial_state is not None else frozenset()
+    # A capacity fact that is FALSE when the plan starts is held from
+    # before the plan — a replan from an observed state with a vial in
+    # the arm. Its first release in the plan is a hard predecessor of
+    # every step that needs it: the spans cannot say so (the acquire
+    # happened before the plan), so the edge stays for that first
+    # adder whatever the relaxation. Measured: after a failed return,
+    # the next vial's pick was scheduled before the return that frees
+    # the hand.
+    first_release: Dict[Tuple[Any, ...], int] = {}
+    for j, mj in enumerate(metas):
+        for f in mj["added"]:
+            if f[0] in _CAPACITY_PREDICATE_NAMES and f not in start and f not in first_release:
+                first_release[f] = j
 
     predecessors: List[set] = []
     for i, m in enumerate(metas):
@@ -753,6 +752,9 @@ def build_precedence(
         # Stop at first remover (the fact was just removed; we're a bug).
         for f in m["pre_pos"]:
             if skip_capacity and f[0] in _CAPACITY_PREDICATE_NAMES:
+                j = first_release.get(f)
+                if j is not None and j < i:
+                    preds.add(j)
                 continue
             for j in range(i - 1, -1, -1):
                 if f in metas[j]["added"]:
@@ -774,7 +776,7 @@ def build_precedence(
 
 def derive_capacity_spans(
     plan: Sequence[Any],
-    registry: "ActionRegistry",
+    protocol: Any,
     initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
     ctx: Optional["WorkspaceContext"] = None,
 ) -> Dict[str, List[Tuple[int, int]]]:
@@ -793,6 +795,16 @@ def derive_capacity_spans(
     gripper across five separate hand_empty spans in one run: pick,
     the scale/inspect/scan/decap block, retrieve, pick-for-cap, and
     the final cap-and-return).
+
+    A **reader** — an action whose precondition needs the fact true
+    and whose effect neither removes nor adds it (a ``Load`` that
+    picks from the rack and seats on the shaker inside one action:
+    the hand is empty at both ends and busy in between) — is a span
+    of its own, ``(i, i)``: it holds the resource for its own
+    duration. Without it the scheduler may place such an action
+    between another item's acquire and release, where its
+    precondition is false (measured: ``unload(2)`` scheduled while
+    the arm carried tube 3 to the balance).
 
     Returns ``{resource_name: [(acquire_idx, release_idx), ...]}`` —
     only resources with at least one span, in plan order. Feed
@@ -814,9 +826,9 @@ def derive_capacity_spans(
     without dropped edges is merely redundant, but dropped edges
     without spans would lose the mutual exclusion entirely.
     """
-    if not _capacity_relaxation_helps(plan, registry):
+    if not _capacity_relaxation_helps(plan, protocol):
         return {}
-    metas = _walk_plan_metas(plan, registry, initial_state, ctx)
+    metas = _walk_plan_metas(plan, protocol, initial_state, ctx)
     spans: Dict[str, List[Tuple[int, int]]] = {}
     open_at: Dict[str, int] = {}
     # SORTED, and that is load-bearing. ``_CAPACITY_PREDICATE_NAMES`` is
@@ -829,13 +841,15 @@ def derive_capacity_spans(
     # See the determinism note in cpsat_scheduler.schedule_cpsat.
     for i, m in enumerate(metas):
         for name in sorted(_CAPACITY_PREDICATE_NAMES):
-            acquires = any(f[0] == name for f in m["pre_pos"]) and \
-                any(f[0] == name for f in m["removed"])
+            needs = any(f[0] == name for f in m["pre_pos"])
+            removes = any(f[0] == name for f in m["removed"])
             releases = any(f[0] == name for f in m["added"])
-            if acquires and name not in open_at:
+            if needs and removes and name not in open_at:
                 open_at[name] = i
-            if releases and name in open_at:
+            elif releases and name in open_at:
                 spans.setdefault(name, []).append((open_at.pop(name), i))
+            elif needs and not removes and not releases:
+                spans.setdefault(name, []).append((i, i))      # a reader: its own span
     for name, i in open_at.items():
         log.warning(
             "derive_capacity_spans: %r acquired at plan index %d but never "
@@ -910,16 +924,20 @@ def _to_snake(name: str) -> str:
 class Action:
     """Base class for declarative actions.
 
-    Subclass once per action. The framework auto-registers the subclass
-    into :class:`ActionRegistry`, from which it derives:
+    Subclass once per action, and list the subclass in the project's
+    ROUTE (``workspace.bt.protocol``) — that is what makes it a step of
+    the run. From the class the framework derives:
 
-      * an :class:`ActionTemplate` for the PDDL planner (preconditions
-        + effects),
-      * an :class:`ActionMeta` for the scheduler (duration + resource),
-      * a BT leaf factory (``execute`` body wrapped in
-        :class:`RecipeAction` so threading + cancellation come for free),
+      * a planner :class:`~workspace.planner.route.Template`
+        (preconditions + effects),
+      * an ``ActionMeta`` for the scheduler (duration + resource),
+      * a BT leaf (``execute`` body wrapped in :class:`RecipeAction` so
+        threading + cancellation come for free),
       * tool-swap, pre/post-check, and trigger semantics matching the
         project-guide vocabulary.
+
+    A subclass that is NOT in the ROUTE — an abstract base that only
+    shares code, a helper — is never planned. No flag says so.
 
     Class attributes (the **pace_or-style vocabulary**, see project-guide.md):
 
@@ -965,12 +983,6 @@ class Action:
                             swap happens). Can be a list of names.
         post_check:         Name of a check method to run after the
                             action completes. Same shape as pre_check.
-        register:           ``True`` (default) to add this class to
-                            the ActionRegistry. Set to ``False`` on
-                            abstract bases that exist only to share
-                            code; concrete subclasses redeclare
-                            ``register = True`` explicitly.
-
     Methods to override:
         pre(self, *params)     -> Expr or Fact or bool
         eff(self, *params)     -> tuple of Facts (use +/- for add/remove)
@@ -999,29 +1011,11 @@ class Action:
     #
     #   * ``None`` (default) — fires as part of the goal-directed plan.
     #   * ``"park"``         — runs when the operator clicks Park.
-    #                          Excluded from PDDL templates and the
-    #                          scheduler; the launcher collects every
-    #                          ``trigger="park"`` class into the
-    #                          Park-cleanup subtree. Typical: release
+    #                          Never a route step; the launcher
+    #                          collects every ``trigger="park"`` class
+    #                          into the Park-cleanup subtree. Typical: release
     #                          the held tool, return home, dispose waste.
     trigger:             Optional[str] = None
-
-    # Whether to add this class to the ActionRegistry. Inherits like
-    # every other class attribute — concrete subclasses of a
-    # ``register=False`` abstract base must opt in with
-    # ``register = True`` on their own body.
-    #
-    # Examples:
-    #   class Inspected(Action):                  # registered (default True)
-    #       params = ["tube"]
-    #       ...
-    #   class ShakerCycleBase(Action):            # abstract base
-    #       register = False
-    #       ...
-    #   class ShakerOne(ShakerCycleBase):         # concrete — opt back in
-    #       register = True
-    #       ...
-    register:            bool = True
 
     # ── Framework-managed per-call attributes ──────────────────────────
     # These are set by the framework before invoking pre()/eff() so
@@ -1039,19 +1033,15 @@ class Action:
     state: Optional[State] = None
     ctx:   Any = None
 
-    # ── Auto-registration machinery ─────────────────────────────────────
-    # Subclasses register themselves into the active ActionRegistry on
-    # class creation. The "active" registry is process-global by default
-    # but projects can use isolated registries (see ActionRegistry.use()).
+    # ── Registration ────────────────────────────────────────────────────
+    # Every subclass is recorded in the active ActionRegistry on class
+    # creation, by its snake-case name — the process-wide "what is
+    # defined" table. What RUNS is the ROUTE (workspace.bt.protocol);
+    # the registry only resolves ``trigger = "park"`` classes, which
+    # live outside the route.
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Registration is governed solely by the ``register`` class
-        # attribute (inherits normally; concrete subclasses of an
-        # abstract base opt back in with ``register = True``).
-        if not _should_register(cls):
-            return
-        name = _to_snake(cls.__name__)
-        ActionRegistry.current().register(name, cls)
+        ActionRegistry.current().register(_to_snake(cls.__name__), cls)
 
     # ── Authors override these ──────────────────────────────────────────
     def pre(self, *args: Any) -> Any:  # pragma: no cover - abstract-ish
@@ -1140,7 +1130,7 @@ class Action:
         return "none"
 
     def param_iter(self, state: State) -> Iterable[Tuple[Any, ...]]:
-        """Yield candidate parameter tuples for PDDL instantiation.
+        """Yield candidate parameter tuples for the planner.
 
         Default: read ``ctx.meta["objects"][param_name]`` for each
         declared param and yield the Cartesian product. Most projects
@@ -1190,24 +1180,13 @@ class Action:
 
 
 class ActionRegistry:
-    """Tracks every :class:`Action` subclass declared in a project.
+    """Every :class:`Action` subclass defined in the process, by name.
 
-    Usage:
-
-        # In project authoring code:
-        in_source = predicate("in_source")
-        class Decap(Action):
-            ...
-
-        # Then in workflow.py:
-        registry = ActionRegistry.current()
-        templates = registry.to_templates(ctx)
-        meta      = registry.to_meta()
-        leaf      = registry.leaf_factory(ctx)
-
-    By default a single global registry collects all declarations.
-    Tests or projects that want isolation can push a fresh one onto the
-    stack via :meth:`use` (context manager).
+    The route (``workspace.bt.protocol.Protocol``) says what runs; this
+    table says what exists — it resolves ``trigger = "park"`` classes,
+    which are outside the route, and names for the GUI. By default one
+    global registry collects all declarations; tests or projects that
+    want isolation push a fresh one via :meth:`use` (context manager).
     """
 
     _stack: List["ActionRegistry"] = []
@@ -1241,268 +1220,6 @@ class ActionRegistry:
 
     def names(self) -> List[str]:
         return list(self._actions.keys())
-
-    # ── Output: PDDL templates ─────────────────────────────────────────
-    def to_templates(self, ctx: WorkspaceContext) -> List[ActionTemplate]:
-        """Build a list of :class:`ActionTemplate` for the PDDL planner.
-
-        Each registered action class becomes one template **unless**
-        it carries ``trigger = "park"`` — those are scene cleanup, not
-        part of the goal-directed plan; the engine runs
-        them when the operator clicks Park. The instance used during
-        planning carries ``ctx`` so its ``param_iter`` / ``pre`` /
-        ``eff`` can consult ``ctx.meta``.
-        """
-        templates: List[ActionTemplate] = []
-        for name, cls in self._actions.items():
-            if _is_park_trigger(cls):
-                continue
-            instance = cls()
-            instance.ctx = ctx  # type: ignore[attr-defined]
-            templates.append(self._make_template(name, instance))
-        return templates
-
-    @staticmethod
-    def _make_template(name: str, instance: Action) -> ActionTemplate:
-        def param_iter_fn(state: State) -> Iterable[Tuple[Any, ...]]:
-            yield from instance.param_iter(state)
-
-        def pre_fn(state: State, params: Tuple[Any, ...]) -> bool:
-            # Expose the world so state-aware pre bodies can read
-            # ``self.state``. Set BEFORE the call so the override sees
-            # the right snapshot.
-            instance.state = state
-            expr = instance.pre(*params)
-            if isinstance(expr, bool):
-                return expr
-            if isinstance(expr, Fact):
-                return expr.as_tuple() in state
-            if isinstance(expr, Expr):
-                return expr.evaluate(state)
-            raise TypeError(
-                f"{instance.__class__.__name__}.pre() must return Fact, "
-                f"Expr, or bool — got {type(expr).__name__}"
-            )
-
-        def eff_fn(state: State, params: Tuple[Any, ...]) -> State:
-            instance.state = state
-            effs = _normalise_eff(instance.eff(*params), name)
-            # Planner projects forward with the FIRST branch — author
-            # convention is to list the optimistic / default outcome
-            # first. Runtime divergence triggers a replan.
-            facts = effs[_default_branch(effs)]
-            s = set(state)
-            for f in facts:
-                if not isinstance(f, Fact):
-                    raise TypeError(
-                        f"{instance.__class__.__name__}.eff() must return Facts "
-                        f"— got {type(f).__name__}"
-                    )
-                if f.polarity:
-                    s.add(f.as_tuple())
-                else:
-                    s.discard(f.as_tuple())
-            return frozenset(s)
-
-        return ActionTemplate(
-            name=name,
-            param_iter=param_iter_fn,
-            preconditions=pre_fn,
-            effects=eff_fn,
-        )
-
-    # ── Output: planner heuristic hint (auto-derived) ──────────────────
-    def monotonic_predicates(self, ctx=None) -> set:
-        """Predicate names that no action ever removes (across all branches).
-
-        A predicate is "monotonic" iff every action that touches it does
-        so additively — i.e. ``+pred(...)`` somewhere, ``-pred(...)``
-        nowhere. Monotonic predicates are the ideal progress markers
-        for a planner heuristic: each time one becomes true the search
-        has irreversibly moved closer to the goal.
-
-        Polarity is determined at write-time (``+fact`` vs ``-fact``)
-        and doesn't depend on parameter values, so we call ``eff()``
-        with dummy params just to read the polarities.
-        """
-        added: set = set()
-        removed: set = set()
-        unprobed: list = []
-        for cls in self._actions.values():
-            if _is_park_trigger(cls):
-                continue
-            instance = cls()
-            # Probe with an empty state. Static effs ignore self.state;
-            # state-aware effs that produce facts depending on what's
-            # currently loaded simply produce fewer facts here — those
-            # the project should list in ``goal_facts`` explicitly.
-            instance.state = frozenset()
-            if ctx is not None:
-                instance.ctx = ctx  # type: ignore[attr-defined]
-            # PROBE WITH REAL PARAMETERS WHEN WE CAN. Polarity doesn't
-            # depend on parameter VALUES, so one binding is enough — but
-            # it has to be a binding the eff can actually RUN on. Opaque
-            # ``object()`` sentinels break any eff that does real work on
-            # its param (``tube % N``, a dict lookup, an f-string), and
-            # a broken probe makes the action contribute NOTHING: its
-            # predicates never reach ``added``, so a perfectly monotonic
-            # fact looks non-monotonic AND drops out of the derived
-            # goal_facts, quietly weakening the planner heuristic.
-            # Measured on bna: ``_seat(tube) = tube % 4`` raised on the
-            # sentinel, which cost ``unloaded`` both its phase boundary
-            # and its place in the heuristic.
-            # EVERY BINDING, not just one. Polarity doesn't depend on
-            # parameter values, but WHICH PREDICATES an eff touches can:
-            # ``SHAKER_FREE[_seat(tube)]`` names a different capacity
-            # predicate per seat. Probing one tube saw only seat 0, so
-            # ``shaker_free_1..3`` kept looking monotonic and stayed in
-            # the derived goal_facts — the heuristic was chasing
-            # capacity flags as if they were progress.
-            probed = []
-            if ctx is not None:
-                try:
-                    for params in instance.param_iter(frozenset()):
-                        try:
-                            probed.append(_normalise_eff(
-                                instance.eff(*params), cls.__name__,
-                            ))
-                        except Exception:
-                            continue
-                except Exception:
-                    pass
-            if not probed:
-                dummy = tuple(object() for _ in cls.params)
-                try:
-                    probed.append(
-                        _normalise_eff(instance.eff(*dummy), cls.__name__),
-                    )
-                except Exception:
-                    unprobed.append(cls.__name__)
-                    continue
-            for effs in probed:
-                for branch_facts in effs.values():
-                    for f in branch_facts:
-                        if not isinstance(f, Fact):
-                            continue
-                        (added if f.polarity else removed).add(f.pred)
-        if unprobed:
-            # NOT debug. An unprobeable action silently shrinks the
-            # monotonic set, which mislabels phases and weakens the
-            # heuristic — both failures are invisible at the call site.
-            log.warning(
-                "monotonic_predicates: could not probe eff() for %s — their "
-                "predicates are missing from the monotonic set, so phase "
-                "checks and derived goal_facts are incomplete. Give the "
-                "action a param_iter that enumerates on an empty state.",
-                ", ".join(sorted(unprobed)),
-            )
-        return added - removed
-
-    def derive_goal_facts(
-        self, ctx: WorkspaceContext,
-    ) -> FrozenSet[Tuple[Any, ...]]:
-        """Auto-derive a planner heuristic hint from the action set.
-
-        Returns the set of fact tuples ``(pred, *args)`` such that:
-
-          * ``pred`` is monotonic (never removed by any action), and
-          * the fact is added by *some* action under *some* parameter
-            binding (so it's actually reachable, not theoretical).
-
-        Used by :func:`run_protocol` when ``setup()`` doesn't supply
-        ``goal_facts`` — every project gets a free heuristic without
-        annotating progress markers by hand. Projects with decorative
-        monotonic predicates can still override by returning
-        ``goal_facts`` from setup() explicitly.
-        """
-        mono = self.monotonic_predicates(ctx)
-        if not mono:
-            return frozenset()
-
-        empty: State = frozenset()
-        out: set = set()
-        for cls in self._actions.values():
-            if _is_park_trigger(cls):
-                continue
-            instance = cls()
-            instance.ctx = ctx  # type: ignore[attr-defined]
-            instance.state = empty
-            try:
-                param_combos = list(instance.param_iter(empty))
-            except Exception:
-                log.debug("derive_goal_facts: skip %s — param_iter raised",
-                          cls.__name__, exc_info=True)
-                continue
-            for params in param_combos:
-                try:
-                    effs = _normalise_eff(
-                        instance.eff(*params), cls.__name__,
-                    )
-                except Exception:
-                    continue
-                for branch_facts in effs.values():
-                    for f in branch_facts:
-                        if (isinstance(f, Fact)
-                                and f.polarity
-                                and f.pred in mono):
-                            out.add(f.as_tuple())
-        return frozenset(out)
-
-    # ── Output: scheduler meta ─────────────────────────────────────────
-    def to_meta(self) -> Dict[str, ActionMeta]:
-        out: Dict[str, ActionMeta] = {}
-        for name, cls in self._actions.items():
-            # Park-trigger actions (``trigger = "park"``) aren't
-            # scheduled work — the engine runs them outside the schedule
-            # when Park is requested. Keep them out of scheduler meta too.
-            if _is_park_trigger(cls):
-                continue
-            # Two pieces of information get pulled out of the class's
-            # ``tool`` attribute:
-            #
-            #   tool_required = True  iff the author *declared* a tool
-            #                          opinion (any value other than
-            #                          the _TOOL_UNSET sentinel).
-            #   tool          = the named tool ("name"), or None to mean
-            #                          "drop whatever's held" — only
-            #                          meaningful when tool_required.
-            #
-            # Splitting the two avoids the historical conflation where
-            # ``tool=None`` could mean either "drop" or "unset".
-            tool_attr = getattr(cls, "tool", Action._TOOL_UNSET)
-            tool_required = tool_attr is not Action._TOOL_UNSET
-            tool_val = None if not tool_required else tool_attr
-            out[name] = ActionMeta(
-                duration=int(cls.duration),
-                resource=cls.resource,
-                item_arg_index=0,  # convention: first param is the item
-                tool=tool_val,
-                tool_required=tool_required,
-                tool_swap_duration=int(cls.tool_swap_duration),
-            )
-        return out
-
-    # ── Output: leaf factory for from_schedule ─────────────────────────
-    def leaf_factory(
-        self,
-        ctx: WorkspaceContext,
-    ) -> Callable[[str, int], py_trees.behaviour.Behaviour]:
-        """Return a callable suitable for ``workspace.bt.from_schedule``.
-
-        Each scheduled task becomes a :class:`_DSLActionLeaf` that runs
-        the Action subclass's ``execute(...)`` (or sleeps in sim) and
-        applies the declared effects on success.
-        """
-        registry = self
-
-        def _factory(action_name: str, item_index: int) -> py_trees.behaviour.Behaviour:
-            cls = registry.get(action_name)
-            if cls is None:
-                raise KeyError(action_name)
-            return _DSLActionLeaf(ctx=ctx, action_cls=cls, item_index=item_index)
-
-        return _factory
-
 
 class _RegistryCtx:
     """Push/pop ActionRegistry on the class-level stack."""
@@ -1708,6 +1425,26 @@ class _DSLActionLeaf(RecipeAction):
             })
 
     def _execute_body(self) -> bool:
+        # 0. The declared pre() against the live facts. The schedule is
+        #    derived from the plan and must never run a step ahead of
+        #    what the facts allow; if it does, that is a scheduling
+        #    fault to SEE — named here, then a replan from the observed
+        #    state — never a motion to make on a world the model does
+        #    not describe.
+        facts = state_to_frozen(self.ctx.state)
+        self._instance.state = facts
+        expr = self._instance.pre(*self._params())
+        ok = expr if isinstance(expr, bool) else (
+            expr.as_tuple() in facts if isinstance(expr, Fact) else expr.evaluate(facts))
+        if not ok:
+            pos, neg = _extract_pre_facts(expr)
+            miss = [f"{f[0]}{f[1:]}" for f in sorted(pos, key=repr) if f not in facts]
+            miss += [f"not {f[0]}{f[1:]}" for f in sorted(neg, key=repr) if f in facts]
+            log.warning("BT leaf HOLD : %s — its pre() is false in the live facts (needs %s); "
+                        "the schedule ran ahead of the facts — replanning",
+                        self.name, ", ".join(miss) or "a computed condition")
+            return False
+
         # 1. pre_check — runs BEFORE tool swap. False = skip the whole
         #    action (treated as success so the BT moves on without
         #    failing the parent sequence; matches pace_or semantics).

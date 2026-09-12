@@ -88,8 +88,8 @@ Top-level keys:
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
-| `phases` | *Optional.* Path to a phases file (e.g. `phases.py`) declaring the ordered goals the whole batch passes through. Bounds planning DEPTH — how far an item is carried before the batch regroups — which is a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase may also declare the sets of items that move together (`Phase.group`) and its scheduler budget (`Phase.schedule_budget`). Omit it and behaviour is unchanged. See bt-framework-guide.md §13. |
-| `plan_window` | *Optional, default 4.* How many items the planner holds at once. A `Phase` may override it for the span it is open (`Phase.plan_window`). See bt-framework-guide.md §13. |
+| `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase may also name its scheduler budget (`Phase.schedule_budget`). See bt-framework-guide.md §13. |
+| `plan_window` | *Optional, default 4.* How many items one schedule holds. A `Phase` may override it for the span it is open (`Phase.plan_window`). See bt-framework-guide.md §13. |
 
 ```yaml
 scene: [scene/base.j2, scene/layout.j2]
@@ -1121,8 +1121,8 @@ your own on top.
 
     cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay <project_dir> --batch 1 4
 
-PDDL plan → precedence → capacity spans → CP-SAT schedule → replay in
-**scheduled** order against the real `pre()`/`eff()`. Zero
+The route lookup → precedence → capacity spans → CP-SAT schedule →
+replay in **scheduled** order against the real `pre()`/`eff()`. Zero
 precondition failures + goal reached, or the exact action and time
 that broke. Pure logic — seconds, no workspace, no motion. Run after
 any `actions.py` change, at batch 1 AND a multi-item batch: batch 1
@@ -1144,16 +1144,18 @@ checked without a bench, before any motion:
       …
       t=   316  shake1(0)                     [shaker]  300s
 
-A failed precondition is marked ``PRE FALSE`` on its line. A phased
-project (``phases:`` in launch.yaml) is replayed **phase by phase,
-window by window, with the launcher's own phase code**
+A failed precondition is marked ``PRE FALSE`` on its line and the
+failure names the facts it is missing at that moment. A phased
+project (``route: phases.py`` in launch.yaml) is replayed **phase by
+phase, window by window, with the launcher's own phase code**
 (``workspace/bt/phase.py``: ``current_phase`` / ``pick_window``), so the
-listing is the order the live run takes and a 28-item batch replays in
-minutes instead of never; each window's schedule is offset by the
-makespans before it. ``--show`` ends with a per-phase table (windows,
-actions, template-expansion hits, plan and CP-SAT seconds) so a slow
-phase names itself; ``REPLAY_TRACE=1`` prints one line per slice as
-it is planned.
+listing is the order the live run takes; each window's schedule is
+offset by the makespans before it. A route that does not close is
+reported with the item, the step and the missing facts
+(bt-framework-guide §13 "The route"). ``--show`` ends with a per-phase
+table (windows, actions, plan and CP-SAT seconds) so a slow phase
+names itself; ``REPLAY_TRACE=1`` prints one line per window as it is
+planned.
 
 **The same plan in the GUI.** The scene builder's fourth sidebar tab,
 *Schedule*, plans the project at the builder's project path for a

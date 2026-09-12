@@ -82,8 +82,9 @@ def workflow_fn(*, workspace, core, **kwargs):
         # key. Only multi-dimension protocols need to name it here.
         slice_dim=LAUNCH.get("slice_dim"),
         scheduler=str(LAUNCH.get("scheduler", "cpsat")),
-        # Optional: path to a project phases file (see launcher._load_phases).
-        phases=LAUNCH.get("phases"),
+        # The module holding ROUTE — phases.py for a phased project; unset,
+        # the actions module's own ROUTE (launcher._load_route).
+        route=LAUNCH.get("route"),
         **kwargs,
     )
 

@@ -31,7 +31,7 @@ Every skill points back to `docs/`:
 - `docs/project-guide.md` — project structure, runtime API, pause semantics, validation toolchain (§10: solve / replay / dryrun, caches, stock.j2)
 - `docs/recipe-guide.md` — recipe patterns, `rt.*` API
 - `docs/motion-guide.md` — THE motion reference: primitives, group grammar, planned travel, blending, j5 turn-carry, screw/immerse, fusion design
-- `docs/bt-framework-guide.md` — BT projects, PDDL planning, actions, slicing
+- `docs/bt-framework-guide.md` — BT projects, the route, actions, phases, windows
 - `docs/design-system.md` — UI tokens, surfaces, theme
 - `docs/parameter-guidelines.md` — recipe parameter heuristics
 - `docs/liquid-handling.md` — pumps, nozzles, plumbing a fluid path, PSD/4 settings

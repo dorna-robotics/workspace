@@ -47,7 +47,7 @@ You declare:
 
 The framework derives:
 
-* a **PDDL plan** (ordered action sequence to the goal),
+* a **plan** — the declared route looked up against the world (§13),
 * a **schedule** (parallelism across resources, tool-swap gaps),
 * a **behavior tree** for execution (with retry, recovery, replan),
 * **condition leaves** for any predicate (auto-generated when needed),
@@ -86,19 +86,18 @@ per phase, and `launch.yaml` names the folder:
 
 ```
 projects/<name>/
-├── launch.yaml              # actions: actions/     phases: phases.py
+├── launch.yaml              # actions: actions/     route: phases.py
 ├── doc/phases.md            # the BOUNDARY TABLE — written before any phase's code
 ├── actions/
-│   ├── __init__.py          # imports the phase modules; Start / Park / OperatorPark / setup
+│   ├── __init__.py          # Start / Park / OperatorPark / setup
 │   ├── predicates.py        # every fact, grouped by phase, one line of meaning each
-│   ├── base.py              # abstract action bodies (register = False) + shared helpers
+│   ├── base.py              # abstract action bodies + shared helpers
 │   ├── phase_1.py           # the concrete actions of phase 1, in execution order
 │   └── phase_2.py           # … one module per phase
-└── phases.py                # one Phase class per phase, same order as the modules
+└── phases.py                # one Phase class per phase, each with its route; the ROUTE
 ```
 
-Importing the package imports every phase module, and importing a
-module registers its actions — nothing lists actions by hand.
+What runs is what the ROUTE lists — each phase's `route` in order.
 `examples/phased/` is the gold copy of this layout; §13 "The package
 layout" says how the pieces relate. Everything else is either:
 
@@ -124,8 +123,9 @@ layout" says how the pieces relate. Everything else is either:
   `scene` (list of scene files), `recipes` (recipes file path),
   `actions` (protocol module path — default `actions.py`),
   `checks` (Checks module path — default `checks.py`),
-  `plan_window` (optional, default 4 — WIDTH, see §13), `phases`
-  (optional, path to a phases file — DEPTH, see §13), and
+  `plan_window` (optional, default 4 — WIDTH, see §13), `route`
+  (optional, the module holding ROUTE — `phases.py` for a phased
+  project; unset, the actions module's own — see §13), and
   `kwargs` (the GUI form schema rendered into the operator's
   Parameters modal). main.py reads everything from here via
   `LAUNCH["..."]` lookups and uses `importlib` to load the
@@ -136,7 +136,8 @@ layout" says how the pieces relate. Everything else is either:
   `recipes.j2` is read first if present (Jinja2 template → YAML).
 * **`actions.py`** — THE file. Predicates at top, then a single
   `setup(**kwargs)` function that returns `{initial_facts, goal,
-  objects}`, then one `Action` subclass per atomic step.
+  objects}`, then one `Action` subclass per atomic step, then the
+  `ROUTE` — the steps in the order an item meets them.
 * **`checks.py`** — pace_or-style verification class. Methods take
   `(item_index)`, return `bool` or `(bool, message)`. Wired into
   the framework via `load_checks(...)` and looked up by name from
@@ -189,8 +190,7 @@ sudo python3 main.py --port 5010
 ```
 
 The framework reads `launch.yaml`, loads `recipes.yaml`, imports
-`actions` (which auto-registers Action classes via `__init_subclass__`),
-and starts the BT engine. The operator UI is then at
+`actions`, resolves its ROUTE, and starts the BT engine. The operator UI is then at
 `http://<ip>:5010/`.
 
 ---
@@ -226,7 +226,7 @@ dosed         = predicate("dosed")
 
 # ─── 2. setup() — the per-run translator. ──────────────────────────────
 #     Called once per Start click. Turns operator kwargs into the
-#     three things the planner needs: initial facts, the goal, and
+#     three things the run needs: initial facts, the goal, and
 #     the parameter pools.
 def setup(**kwargs):
     batch_size = int(kwargs.get("batch_size", 1))
@@ -298,8 +298,8 @@ What's happening:
   `SimulationAPI` in sim and `Dorna()` in real, and recipes go
   through that. The framework just calls `execute()` either way.
 
-Subclassing `Action` auto-registers the class — the framework picks
-it up the moment `actions.py` is imported.
+Subclassing `Action` defines the step; listing it in the ROUTE (§13)
+makes it part of the run.
 
 ### 3.1 Action class vocabulary (the pace_or terms, kept verbatim)
 
@@ -315,8 +315,7 @@ parentheses.
 | `tool_swap_duration` | `int` (`10`) | Seconds added before this action when the held tool needs to change. Per-action so different swaps can have different costs. |
 | `pre_check` | `str \| list[str] \| None` | Name(s) from `checks.py` to run **before** the tool swap. Returning False **skips** the action (success — BT moves on). |
 | `post_check` | `str \| list[str] \| None` | Name(s) to run after `execute()`. Returning False **fails** the action (BT may retry / replan). |
-| `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"park"`` marks the action as scene cleanup invoked when the operator clicks Park. Not part of the PDDL plan or the schedule. `params` must be empty. See §3.2. |
-| `register` | `bool` (`True`) | Whether to add the class to the `ActionRegistry`. `False` on abstract bases; concrete subclasses opt back in with `register = True`. See §3.3. |
+| `trigger` | `str \| None` (`None`) | Lifecycle-event hook. ``"park"`` marks the action as scene cleanup invoked when the operator clicks Park. Never a route step, never scheduled. `params` must be empty. See §3.2. |
 
 ### 3.2 `trigger` — lifecycle event hooks
 
@@ -328,7 +327,7 @@ overloading other attributes.
 | Value | Effect |
 |---|---|
 | `None` *(default)* | Action fires as part of the goal-directed plan. |
-| `"park"` | Action runs only when the operator clicks Park. Excluded from PDDL templates and the scheduler. The launcher collects every `trigger="park"` class into the Park-cleanup subtree (registry order, one leaf per class, `item_index=0`). |
+| `"park"` | Action runs only when the operator clicks Park. Never a route step, never scheduled. The launcher collects every `trigger="park"` class into the Park-cleanup subtree (one leaf per class, `item_index=0`). |
 
 Typical use — park the tool when the operator stops the run:
 
@@ -363,47 +362,11 @@ class OperatorPark(Park):
     trigger = "park"     # set on the subclass; further subclasses inherit this
 ```
 
-**`trigger` vs `register` — which one hides the action?**
-
-`trigger = "park"` is **enough on its own** to keep the action out
-of the plan and the schedule: it's filtered from `to_meta()`
-(scheduler) and `to_templates()` (PDDL planner). You do **not** also
-need to set `register = False`. Conceptually:
-
-| You want… | Set… |
-|---|---|
-| Action that runs only on operator Park | `trigger = "park"` |
-| Abstract base class subclasses inherit from | `register = False` |
-
-### 3.3 `register` — registry opt-out
-
-`register` is a single boolean class attribute. Default `True` —
-every `Action` subclass is added to the `ActionRegistry` and seen by
-the planner, scheduler, and live Gantt.
-
-Set `register = False` on **abstract base classes** that exist only
-to share code (typically `pre`, `eff`, `execute` skeletons across
-several concrete actions). The opt-out **inherits normally**, so
-concrete subclasses must redeclare `register = True` to participate.
-Verbose by design: every class makes its intent explicit at the
-point of declaration, no silent MRO surprises.
-
-**Examples:**
-
-```python
-class Inspected(Action):                # registered (default True)
-    params = ["tube"]
-    ...
-
-class ShakerCycleBase(Action):          # abstract base
-    register = False
-    ...
-
-class ShakerOne(ShakerCycleBase):       # concrete — opt back in
-    register = True
-    SHAKER   = "shaker_1"
-    resource = "shaker_1"
-```
+**What keeps an action out of the run?** Not being in the ROUTE. An
+abstract base that only shares code, a helper class — simply not
+listed, never planned. `trigger = "park"` is the one class that is
+outside the route on purpose: it runs on the operator's Park, and
+listing it in a route is an error.
 
 ### 3.3 `eff()` — always a dict of named branches
 
@@ -457,7 +420,7 @@ rule as `eff()` being a dict.
 
 | Phase | Behavior |
 |---|---|
-| **PDDL planning** | Uses the *first* dict key as the projected effect. Single-key dicts behave deterministically; multi-key dicts plan optimistically for the first branch. |
+| **Planning** | Uses the *first* dict key as the projected effect. Single-key dicts behave deterministically; multi-key dicts plan optimistically for the first branch. |
 | **Scheduling** | Same regardless — duration, resource, tool all read from the class. |
 | **Runtime — execute() returns first key** | That branch applies. No replan. |
 | **Runtime — execute() returns non-first key** | That branch applies. The framework raises `ReplanRequested` so downstream actions re-evaluate. |
@@ -772,7 +735,7 @@ class ShakerOne(Action):
 * It's a **snapshot for this one call**. The framework sets it
   immediately before invoking `pre()` / `eff()` and never mutates it.
   Don't try to write to it.
-* `self.state` reflects the *planning-time* world during plan search
+* `self.state` reflects the *planning-time* world during the route lookup
   (which may be a hypothetical future state) and the *pre-mutation*
   runtime world during effect application (so eff() sees the same
   state the planner saw at that step).
@@ -1109,8 +1072,8 @@ class Weigh(Action):
 
 That's all. The framework:
 
-* Auto-derives a PDDL `ActionTemplate` from `pre` / `eff`.
-* Auto-registers the duration/resource into the scheduler meta.
+* Derives the planner `Template` from `pre` / `eff`.
+* Derives the duration/resource into the scheduler meta.
 * Auto-builds a BT leaf wrapping `execute`.
 * Auto-mirrors `eff` into the runtime state-update logic.
 * Auto-generates `weighed.condition(tube)` if you ever need a BT
@@ -1121,9 +1084,11 @@ edits to a `_LEAVES` dict. The class is the single source of truth.
 
 ---
 
-## 7. Conditional branching (PDDL handles it)
+## 7. Conditional branching (the route handles it)
 
-PDDL doesn't have `if`. Branching emerges from preconditions.
+A route has no `if`. Branching emerges from preconditions: both
+steps are in the route, and the lookup takes the one whose `pre`
+holds.
 
 To express "if tube is heavy, use `DispenseHeavy`; else `DispenseLight`":
 
@@ -1137,7 +1102,7 @@ class DispenseHeavy(Action):
         return in_working(tube) & weight_heavy(tube) & ~dosed(tube)
 ```
 
-The planner picks whichever action's preconditions hold. No `if` in
+The lookup picks whichever step's preconditions hold. No `if` in
 the workflow. No `if` in the tree. Branching is in the action
 preconditions, where it belongs.
 
@@ -1290,7 +1255,7 @@ Why this is the cleanest pattern:
 
 ## 9. Runtime fact mutation — `add_fact` / `remove_fact` / `facts`
 
-Inside an active run, PDDL facts live in `ctx.state["facts"]` — a
+Inside an active run, the facts live in `ctx.state["facts"]` — a
 mutable set of tuples like `("capped", "tube_5")`. The framework
 re-evaluates preconditions on every BT tick, so any fact you add
 or remove takes effect immediately on the next tick. The replanner
@@ -1314,7 +1279,7 @@ checks without guarding.
 
 ### The explicit-mutation rule (cross-link)
 
-Scene topology and PDDL state are **separate concerns**. The
+Scene topology and fact state are **separate concerns**. The
 framework never infers one from the other. A caller that mutates
 the scene is responsible for mutating any corresponding facts, and
 vice versa. See [component-guide.md §9](component-guide.md) for
@@ -1364,7 +1329,7 @@ for free:
 | What's the current world state? | `ctx.dump_state()` → JSON facts |
 | What's running right now? | `engine.active_path()` → list of node names from root to active leaf |
 | Full tree snapshot? | `engine.snapshot()` → ASCII status |
-| Last plan? | `replanner.last_plan` → list of `Action(name, params)` |
+| Last plan? | `replanner.last_plan` → list of `Step(name, params)` |
 | Last schedule? | `replanner.last_schedule` → list of `(action_name, item, start_t)` |
 
 These work the same way in every BT project. An operator who learns
@@ -1378,15 +1343,15 @@ them once can debug any protocol.
 batch description (kwargs from operator)
         │
         ▼
-ActionRegistry.current()        ← auto-populated when actions.py is imported
+Protocol(ROUTE)                 ← the declared route, resolved (bt/protocol.py)
         │
-        ├─► .to_templates(ctx)  → list of ActionTemplate (PDDL planner inputs)
-        ├─► .to_meta()          → dict of ActionMeta (scheduler durations + resources)
+        ├─► .templates(ctx, …)  → list of Template (the steps as the planner sees them)
+        ├─► .meta()             → dict of ActionMeta (scheduler durations + resources)
         └─► .leaf_factory(ctx)  → callable that turns scheduled tasks into BT leaves
         │
         ▼
-plan(initial_state, templates, goal)
-        │  ordered Action list
+plan_route(templates, state, goal, items)   ← a lookup, never a search
+        │  ordered Step list
         ▼
 build_schedule(plan)                  ← uses META durations + resources
         │  [(action_name, item, start_t), ...]
@@ -1427,17 +1392,17 @@ SUCCESS / FAILURE / INVALID (aborted)
 ## 13. Scaling a batch — width, depth, and hardware
 
 Three different limits govern how big a batch can be. Confusing them is
-the single most common way to get "no plan" or a solver timeout, so they
-are named separately here and everywhere in the code.
+the single most common way to get a solver timeout or a route that
+stalls, so they are named separately here and everywhere in the code.
 
 | | Bounds | Set in | Wrong tool for |
 |---|---|---|---|
-| **`plan_window`** | **WIDTH** — how many items the planner holds at once | `launch.yaml` | expressing hardware |
-| **Phases** | **DEPTH** — how far an item is carried before the batch regroups | `phases.py` | limiting concurrency |
-| **Capacity facts** | **HARDWARE** — how many fit in a station | `actions.py` | bounding the search |
+| **`plan_window`** | **WIDTH** — how many items one schedule holds | `launch.yaml`, `Phase.plan_window` | expressing hardware |
+| **Phases** | **DEPTH** — how far an item is carried before the batch regroups | `phases.py` (the ROUTE) | limiting concurrency |
+| **Capacity facts** | **HARDWARE** — how many fit in a station | `actions.py` | bounding the schedule |
 
-"Shake four at a time" is the third one. It is four `shaker_free_*`
-predicates over two 2-slot shakers, so re-benching to three shakers
+"Shake four at a time" is the third one. It is four `seat_free_*`
+predicates on one 4-seat shaker, so re-benching to a second shaker
 changes the number with no code edit. Writing `4` in a window would be
 a lie that outlives the bench.
 
@@ -1448,83 +1413,125 @@ On a Pi 5, lab-sized problems:
 | Layer | Cost | Notes |
 |---|---|---|
 | BT tick (10 Hz) | <1 ms | Pure-Python tree walk |
-| PDDL plan, template expansion | ~10 ms | Constant in item count — see below |
-| PDDL plan, search, 8 items | ~4.5 s | With object-symmetry reduction |
+| Route lookup, any batch | ~1 ms per item | A lookup, not a search — constant in what the items do |
 | CP-SAT schedule, ~100 actions | ~1 s | Grows fast past ~200 actions |
-| CP-SAT schedule, ~300 actions | ~30 s | This is usually the real bottleneck |
+| CP-SAT schedule, ~240 actions | ~200 s | At a proven-optimal budget; this is the real bottleneck |
 
 Robot motions (1-10 s per move) and dwells (5 s to minutes) dwarf the
-first three. **CP-SAT is the layer that bites**, and phases are what
-keep its models small.
+first three. **CP-SAT is the layer that bites**, and phases and
+windows are what keep its models small.
 
-### Why planning used to explode, and what fixed it
+### The route — declared, looked up, never searched
 
-Two independent problems, both now handled by the platform with no
-project change:
+The order an item meets the actions is written down by the project,
+not discovered by the platform:
 
-**Object symmetry.** With twelve tubes still in the rack, `pick(0) ..
-pick(11)` are twelve spellings of one move; the plans they lead to
-differ only by relabeling. The search expanded all of them, chasing
-12! equivalent orderings to rediscover one plan. `domain_from_templates`
-now expands one representative per group, where a "group" is
-(action name, the set of predicates currently true of the item).
-Measured on a 19-action-per-item protocol: the wall moved from 7 items
-to 19, and batch 8 from >90 s to 4.5 s, with the **same plan out**.
+```python
+# actions.py — a flat protocol
+ROUTE = [Start, Load, Shake, Unload, Park]
 
-> The state guard is the whole correctness argument. Collapsing by
-> action name alone forces a rigid item order into the plan, and
-> `build_precedence` derives its edges FROM the plan, so that rigidity
-> reaches the schedule — measured as makespan 734 → 818 on an otherwise
-> valid plan.
+# phases.py — a phased protocol: each phase carries its steps
+class Weighed1(Phase):
+    fact  = home[1]
+    route = [Pick1, PlaceOnScale1, Weigh1, PickFromScale1, Return1]
 
-**Redundant search.** When items are independent the plan is not
-something to search for — it is one item's chain, stamped N times. The
-Replanner plans one item, re-grounds the chain for every item, and
-searches only for the tail. Planning becomes **constant** in N (~10 ms
-at 4, 8 or 19 items) rather than merely faster.
+ROUTE = [Start, Weighed1, Weighed2, Park]
+```
 
-> Nothing is trusted: the replicated plan is SIMULATED against the real
-> `preconditions`/`effects` before it is used, and the ordinary search
-> runs if that fails. A protocol whose phase barriers genuinely couple
-> items falls back automatically — the fallback is the mechanism, not
-> an escape hatch. When the coupling is a DEVICE that holds several
-> items at once (a shaker bank, a rotor), the phase declares the sets
-> that move together (`Phase.group`, §13 "Groups") and the chain is
-> planned once per group and stamped — the search never runs.
+Being in the ROUTE is what makes an action part of the run; a class
+that is not listed — an abstract base, a helper — is never planned. A
+`trigger = "park"` action is the one thing outside the route (§3.2).
+
+**Planning is a lookup.** An item's next step is the first step of
+the route whose `pre` holds in the world as it stands. The plan for a
+window is that lookup applied to the units in order — the run-level
+steps (`Start`, `Park`) first, then the items in window order —
+always advancing the FIRST unit that can move: after every step the
+scan restarts from the first unit. So an item is carried as far as it
+goes; an item behind it moves only while the ones before it cannot;
+a step whose `pre` spans several items (a shake that needs its whole
+bank seated) simply waits until the others have caught up. Each
+step's `eff` is applied as it is taken, so every later `pre` is
+evaluated against the world that step leaves — the same simulation
+`bt.replay` performs. That order is what keeps a pipeline free of
+deadlock: an item never picks up a shared resource (the hand, a seat)
+while an earlier item could still finish and release one.
+
+The plan's order is only a VALID order, never the timing. The
+scheduler overlaps it on the resources (§11): the shake on the shaker
+lane while the arm weighs the previous bank, the swap where it costs
+least. The overlap never came from the planner.
+
+**Every failure is a named failure of the route.** There is no
+fallback and no search; `bt.replay` reports it before any bench does:
+
+| The route… | The message names | The fix |
+|---|---|---|
+| lets a step apply again after it ran | the step and the item | the step's `pre` must be false once it is behind the item: guard it with the negation of a fact a LATER step asserts (`~unloaded(t)` on a load, `~retrieved(t)` on a cap-park). `~its_own_fact` is not enough when a later step removes that fact again. |
+| stalls | the item, its last step, and what the next steps in route order are missing (`load(5) needs seat_free_1()`) | the missing fact — a seed Start forgot, a release an action never asserts, a phase opened out of turn |
+| finishes every item and the goal still fails | the window | the goal (or the phase's `fact`) waits for a fact no step asserts |
+
+This is the contract the search used to hide: a search picked a
+goal-directed order and never re-selected a step whose fact a later
+step had removed. The lookup asks every step honestly, so every
+`pre` has to be honest. A step that both needs and keeps a capacity
+fact (`Load`: hand empty at both ends, busy in between) is a
+**reader** — the scheduler holds the resource for its duration
+(`derive_capacity_spans`), so no other item's carry is placed across
+it.
+
+> Until 2026-09 the platform SEARCHED for the plan (a forward search
+> over pre/eff) and later stamped one item's chain over the batch.
+> The search grew with every device that couples items; at 28 coupled
+> vials it took the bench Pi down, and each guard bolted on — windows,
+> stamping, groups — was a way of telling the planner the route the
+> project had already written in its phase modules. The route is that
+> file, promoted to the mechanism.
 
 ### Phases — bounding DEPTH
 
 `plan_window` bounds how many items are in flight; it does **not** bound
-how far each is carried. A window of 4 still plans all 4 to the end of
-the protocol, so both the search and the CP-SAT model grow with the
-protocol's full depth. Measured: a 12-item batch of a 19-step protocol
-is a 230-action plan and CP-SAT returns `UNKNOWN` on it, while the same
-12 items through one stage is ~60 actions and schedules in 0.2 s.
+how far each is carried. A window of 4 still schedules all 4 to the end
+of the protocol, so the CP-SAT model grows with the protocol's full
+depth. Measured: a 12-item batch of a 19-step protocol is a 230-action
+schedule and CP-SAT returns `UNKNOWN` on it, while the same 12 items
+through one stage is ~60 actions and schedules in 0.2 s.
 
 A **phase** is a goal the whole batch reaches before any item moves past
-it. Authored like an Action, in a file named by `launch.yaml`:
+it. Authored like an Action, in the file `launch.yaml` names as the
+route:
 
 ```yaml
 # launch.yaml
-phases: phases.py
+route: phases.py
 ```
 
 ```python
 # phases.py
 from workspace.bt.phase import Phase
-from actions import dispensed, unloaded, racked
+from actions import Start, Park, dispensed, unloaded
+from actions.phase_1 import Barcode, Weigh, Decap, Dose
+from actions.phase_2 import Recap, Load, Shake, Unload
 
 class Dispensed(Phase):
     """Barcode, weigh, decap and dose — every tube."""
-    def pre(self, state, items):  return True
-    def eff(self, items):         return [dispensed(t) for t in items]
+    fact  = dispensed
+    route = [Barcode, Weigh, Decap, Dose]
 
 class Unloaded(Phase):
-    """Shake, four at a time, then back to the rack."""
+    """Recap, shake four at a time, back to the rack."""
+    fact  = unloaded
+    route = [Recap, Load, Shake, Unload]
     def pre(self, state, items):
         return all(dispensed(t).as_tuple() in state for t in items)
-    def eff(self, items):         return [unloaded(t) for t in items]
+
+ROUTE = [Start, Dispensed, Unloaded, Park]
 ```
+
+While a phase is open only ITS steps (plus the run-level ones) are
+candidates, and its goal is its `fact` over the items in the window —
+the route stops at the boundary instead of carrying every item to the
+end.
 
 #### The Phase surface
 
@@ -1532,49 +1539,45 @@ class Unloaded(Phase):
 |---|---|---|---|
 | `name` | attr | class name lowercased | display name |
 | `fact` | attr | `None` | sugar: `eff` becomes "this fact for every item in scope" |
+| `route` | attr | `[]` | THE STEPS, in the order an item meets them while this phase is open — Action classes. What it lists is what runs. |
 | `plan_window` | attr | `None` | WIDTH while this phase is open; `None` inherits launch.yaml's value. Same name on purpose — one concept. |
-| `schedule_budget` | attr | `None` | the scheduler's deterministic CP-SAT budget while this phase is open; `None` inherits the default. See "Groups". |
+| `schedule_budget` | attr | `None` | the scheduler's deterministic CP-SAT budget while this phase is open; `None` inherits the default. See "Steps that span items". |
 | `scope(state, items)` | hook | all items | which items this phase concerns |
-| `pre(state, items)` | hook | `True` | may this phase open |
+| `pre(state, items)` | hook | `True` | may this phase open — a guard on the ROUTE's order |
 | `eff(items)` | hook | from `fact` | facts that must hold for it to be done |
-| `group(items)` | hook | `None` | the sets of items that MOVE TOGETHER (a shaker bank, a rotor); `None` — every item alone. See "Groups". |
 | `layout(items)` | hook | `[]` | where the items physically rest once the phase closed — the bench applies it when starting past this phase. See "Checking one phase". |
 
 There is deliberately **no `execute`**. A phase performs no motion; its
-execution is the planner reaching `eff`, which is exactly why it can
+execution is the route reaching `eff`, which is exactly why it can
 bound the horizon.
 
-`eff` returns **facts, not a boolean**, because the launcher uses them
-twice — to ask whether the phase is reached, and to hand the planner
-`goal_facts` so GBFS has a heuristic for the phase. A boolean answers
-the first question and leaves the search blind.
+`eff` returns **facts, not a boolean**, because they are used twice —
+to ask whether the phase is reached, and by the bench to seed a run
+that starts past the phase.
 
-#### Order is derived, not declared
+#### Order is the ROUTE's
 
-The launcher runs the first phase that is **ready** (`pre` holds) and
-**not yet reached** (`eff` does not hold). Declaration order is only a
-tiebreak, so a list written out of dependency order still runs
-correctly, and a phase whose `pre` is unmet is skipped rather than
-selected. If every outstanding phase is blocked, the launcher warns
-rather than silently falling through to the global goal.
+`ROUTE` lists the phases in the order the batch crosses them. The
+launcher opens the first phase, in that order, with items in scope
+that is not yet reached. `pre` is a guard on that order, not its
+source: the phase whose turn it is with a false `pre` stops the run
+with the phase named (`PhaseNotReady`) — never silently skipped.
 
-That gives three things from the same two hooks:
+Two things from the same hooks:
 
 - **Conditional phases** — `scope` returns `[]` and the phase is skipped
-  entirely. A rework pass sits in the list permanently and activates
+  entirely. A rework pass sits in the ROUTE permanently and activates
   only when some item populates its scope.
 - **Hierarchy** — `scope` returns one rack of a hotel. A rack/tube/stage
   hierarchy is a FLAT generated list of scoped phases; nothing in the
   launcher counts levels, so a third level is simply more entries.
-  Verified to three levels.
-- **Explicit dependencies** — `pre` states what order alone cannot.
 
 #### Monotonicity is the one hard rule
 
 Every fact a phase's `eff` names must be one **no action removes**. "The
 batch has crossed this line" has to stay crossed; otherwise the phase
-re-opens, the planner re-targets it, and the run stalls with no error.
-That is the classic Sussman trap. The launcher checks each name against
+re-opens and the run stalls with no error. That is the classic Sussman
+trap. The launcher checks each name against the route's
 `monotonic_predicates()` at startup and warns.
 
 A bounded loop (dose, measure, dose again) is expressed by **unrolling**
@@ -1603,87 +1606,51 @@ many-action protocol readable, and that every phased project follows
    (§7), never a boundary.
 2. **One module per phase** — `actions/phase_N.py` holds that phase's
    concrete actions in execution order; reading the file is reading
-   the phase. `actions/predicates.py` holds every fact with its
-   meaning; `actions/base.py` holds abstract bodies (`register =
-   False`) and shared helpers; `actions/__init__.py` imports the phase
-   modules and keeps Start, Park, OperatorPark and `setup`.
+   the phase, and the phase's `route` lists the same classes in the
+   same order. `actions/predicates.py` holds every fact with its
+   meaning; `actions/base.py` holds abstract bodies and shared
+   helpers; `actions/__init__.py` keeps Start, Park, OperatorPark and
+   `setup`; `phases.py` holds the Phase classes and the ROUTE.
 3. **Per-pass facts are pass-indexed** (`home_1`, `home_2`), never a
    `pass` parameter: an action takes one param, and the phase fact must
    be one no action removes — a shared `home` would be cleared by the
    next pass's pick and the phase would re-open.
 4. **Shared motion is an abstract base plus thin subclasses** carrying
-   `PASS` and `register = True` (a `register = False` base passes its
-   opt-out down). Create the base on the SECOND user, not before.
+   `PASS`. A base is never listed in a route, so it is never planned.
+   Create the base on the SECOND user, not before.
 5. **Gate each phase alone** — `bt.replay --batch 1 4` with zero
    fails, then the bench at a small batch — before the next phase's
-   row is written. The launcher already runs the list in order; there
+   row is written. The ROUTE already runs the list in order; there
    is nothing to "connect" at the end.
 6. **The audit row is written where its value is produced** — Start
    seeds the rows, the reading action writes the field, Park derives
    `status` from the facts (`rt.record`, project-guide §3).
 
-#### Groups — items that move together
+#### Steps that span items — banks, rotors, plates
 
-A phase is a barrier on DEPTH; overlap is not a phase concept. Overlap
-lives in the scheduler: within one window CP-SAT overlaps whatever the
-resources allow (a shake holds only the shaker, a rest only its own
-clock, an extraction the arm). What limits that window is PLANNING: the
-planner plans one item's chain and stamps it for the rest, and that
-stamp is only valid while items are independent. A device that holds
-several items at once — a shaker bank, a rotor, a tray — couples them,
-the stamp fails, and the planner falls back to a search over every
-coupled item, which grows with the batch (bna: 28 coupled vials took
-the bench Pi down).
+A device that holds several items at once couples them: one shake
+runs for the four vials of a bank. The step says so in its `pre`
+(every vial of the bank seated) and its `eff` (all four shaken), and
+the bank is a static rule (`tube // N_SEATS`, `actions.base.bank_of`
+over the window). Nothing else is declared: the route lookup carries
+each vial to the shake and waits there until the bank is complete.
 
-So a phase declares how its items travel:
+What the overlap needs is that the banks share a SCHEDULE: a phase
+that holds the shake AND the work after it — rest, extraction, the
+second weighing — with `plan_window = MAX_BATCH`, so bank k+1 shakes
+while bank k is extracted. Three barriers there would idle the arm
+through every shake. bna's shake-rest-extract pass went from 6750 s
+to 5070 s at 28 vials this way, and `examples/phased` is the small
+copy of it: `Weighed2` holds the shake and the second weighing, and
+bank 2 shakes while bank 1 is weighed.
 
-```python
-class Extracted1(Phase):
-    fact = extracted[1]
-    plan_window = MAX_BATCH           # the whole batch — the pipeline never drains
-
-    def group(self, items):           # the sets that move together
-        return banks(items)           # [[0,1,2,3], [4,5,6,7], ...]
-```
-
-With a partition declared: the planner plans ONE group's chain and
-stamps it per group (a last, partial group is planned on its own,
-bounded by its size); the window never splits a group; the scheduler
-overlaps the groups. bna's shake-rest-extract pass planned as one
-four-vial search plus seven stamps, and the scheduler produced the
-pipeline — bank k+1 shaking while bank k rests and bank k-1 is
-extracted — cutting the pass from 6750 s to 5070 s at 28 vials.
-Explicit, deterministic, verified by simulation like every stamped
-plan; a stamp that does not hold FAILS LOUDLY — a grouped phase is
-never searched. Default: every item on its own, today's behaviour.
-
-A replan mid-phase finds the groups at different stages — bank 0's
-tube in the arm, bank 1 on the shaker, bank 2 untouched. Each distinct
-stage is planned once, bounded by the group size, and stamped over the
-groups at that stage; and each chain is planned FROM THE STATE THE
-CHAINS BEFORE IT LEAVE, in the order the chains close (bank 1 cannot
-close while the arm carries bank 0's tube — it closes after bank 0's
-chain frees the arm). The order among candidates is the declared one,
-so the plan is the same for the same state.
-
-A grouped whole-batch window is a bigger scheduling model by design,
-so the phase also names its scheduler budget: `schedule_budget = 4.0`
+A whole-batch window is a bigger scheduling model by design, so such
+a phase also names its scheduler budget: `schedule_budget = 4.0`
 (CP-SAT's deterministic search budget; `None` inherits the default).
 bna's pass at 28 was FEASIBLE at 6460 s under the default and proven
 OPTIMAL at 5070 s with 4.0 — about 200 s of scheduling on the Pi, once
 per replan, and reproducible because the budget stops the search, not
 the wall.
-
-A grouped phase is the tool when stages overlap ACROSS groups. When a
-device must finish every group before anyone continues, the barrier —
-a plain phase — is still the right tool; the two are complementary.
-
-The gold exemplar is `examples/phased`: its 4-seat shaker couples the
-tubes into banks (`seat_free` capacity facts, seat `t mod 4`, bank
-`t // 4`), `Weighed2.group` names the banks, and the shake and the
-second weighing share the phase so bank 2 shakes while bank 1 is
-weighed. Read its `phases.py`, `actions/phase_2.py` and the
-`weighed_2` row of `doc/phases.md` before writing a grouped phase.
 
 #### Checking one phase — the bench
 
@@ -1699,7 +1666,7 @@ bench.phase("ph1_measured", selected=[0, 1])   # that phase, those items, the HM
 ```
 
 `Bench` loads what `main.py` loads — scene, recipes, actions,
-parameters, checks, phases. `prepare(name)` does steps 1 and 2 below
+parameters, checks, the route. `prepare(name)` does steps 1 and 2 below
 and nothing else — the model is set, the viewer shows it, the moves
 are printed — so the real bench can be matched and simulation turned
 off before `phase(name)` runs the robot. `phase(name)`:
@@ -1756,7 +1723,7 @@ def setup(**kwargs):
     return {
         "initial_facts": frozenset(),
         "goal":          goal,
-        "item_done":     item_done,        # ← opts in to slicing
+        "item_done":     item_done,        # ← opts in to windowing
         "objects":       {"tube": tubes},
     }
 ```
@@ -1764,36 +1731,40 @@ def setup(**kwargs):
 | Knob | Who sets it | Meaning |
 |---|---|---|
 | `batch_size` (project's own name) | operator | "I have N samples" — a scientific quantity |
-| `plan_window` | project | "plan this many at once" — planner tuning |
+| `plan_window` | project | "schedule this many at once" — scheduler tuning |
 
-With no phases and `batch_size <= plan_window`, slicing is a no-op.
+With no phases and `batch_size <= plan_window`, windowing is a no-op.
 Phases keep windowing active even when the window covers the whole
 batch, because depth still needs bounding.
 
 ### Worked example
 
-A 28-sample protocol, 19 steps per sample, on a Pi 5:
+bna at 28 vials, 44 actions per vial, on a Pi 5 (`bt.replay --show`
+ends with this table; 2026-09-12):
 
 ```
-phase        mode      actions   plan     cpsat    makespan
-dispensed    template     309    0.01s   29.40s      3273
-unloaded     template      84    0.00s    0.29s       850
-racked       template     140    0.00s    0.18s      1830
-                          534                        5968  (99 min)
-TOTAL PLANNING 29.9s
+phase            windows  actions   plan s  cpsat s
+identified             7      253    0.059     0.23
+surrogate              7       28    0.007     0.03
+…
+capped_1               7       84    0.014     0.06
+extracted_1            1      238    0.460   221.35     (budget 4.0)
+…
+extracted_2            1      238    0.563   310.33     (budget 4.0)
+…
+TOTAL                        1235    1.219   532.43
+batch=28  plan=1235 actions  fails=0  goal=True  makespan=27338  OK
 ```
 
-Planning is 0.5 % of the run. Note where the cost sits: template
-expansion makes the search free, and essentially all remaining time is
-CP-SAT on the largest phase. If that ever matters, split the phase or
-set its `plan_window` — both shrink the model.
+Planning is nothing; essentially all the time is CP-SAT on the two
+whole-batch passes, and that is a budget the phase names. If it ever
+matters, lower the budget or split the phase — both shrink the model.
 
 Before this work the same protocol was **infeasible above 4 samples**,
 because each sample held one of four working slots from first pick to
 last place. **The layout change came first and mattered most**: samples
-that hold no shared seat between stations are independent, which is what
-makes template expansion apply at all. No amount of planner work
-substitutes for it.
+that hold no shared seat between stations are independent. No amount
+of planner work substitutes for it.
 
 ## 14. Checks (pre_check / post_check) — pace_or-compatible
 
@@ -1940,7 +1911,7 @@ forces it, but mismatching them lies to anyone reading state dumps.
 ### Q: What is `setup()` exactly?
 
 The one function the framework calls **per Start click**. Its job is
-to translate operator kwargs into the three things the planner needs:
+to translate operator kwargs into the three things the run needs:
 
 ```python
 return {
@@ -1986,20 +1957,20 @@ def goal(state):
 Two rules:
 
 1. **Pure.** Same `state` in → same `bool` out. No I/O, no mutation.
-2. **Cheap.** Called many times during search — use set membership
+2. **Cheap.** Called after every step of the lookup — use set membership
    (`(fact, t) in state` is O(1)) rather than scans.
 
 The callable is **fully expressive** for boolean predicates over the
-declared world state — same power as formal PDDL goal expressions.
+declared world state.
 Out of scope (by design): wall-clock conditions, plan-cost objectives,
 external sensors. For sensor-driven goals, use a sensing action to
 lift the value into state first (§3.3).
 
 ### Q: What is `frozenset` (in `setup()`'s `initial_facts`)?
 
-Pure Python — an immutable, hashable version of `set`. The PDDL
-planner needs states to be hashable (so it can de-duplicate visited
-states during search), and a plain `set` isn't. You build the set
+Pure Python — an immutable, hashable version of `set`. A state is a
+value the planner and the leaves pass around and compare, so it is
+frozen; a plain `set` isn't. You build the set
 normally (`facts = set()`, `facts.add(...)`), then freeze it on the
 way out. (§3.5 shows what the state actually looks like in memory.)
 

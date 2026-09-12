@@ -1,67 +1,42 @@
-"""Planner package — PDDL forward search + OR-tools scheduler + Replanner.
+"""Planner package — the route lookup, the schedulers, and the Replanner.
 
-Three layers, each useful on its own and composable into the
-plan-then-schedule-then-build-tree pipeline that pace_bt-style projects
-follow:
-
-* :mod:`workspace.planner.pddl` — BFS forward-search planner that
-  consumes a state + action templates + goal and returns an ordered
-  action list.
-* :mod:`workspace.planner.scheduler` — OR-tools CP-SAT scheduler. Given
-  the action list + durations + resource constraints, returns a Gantt
-  schedule.
-* :mod:`workspace.planner.replanner` — convenience glue: observe →
-  plan → schedule → BT tree, packaged as a ``rebuild()`` callable the
-  :class:`workspace.bt.BTEngine` invokes on replan events.
-
-Projects only need to import what they use:
-
-    from workspace.planner import plan, ActionTemplate, ORScheduler, Replanner
+* :mod:`workspace.planner.route` — ``plan_route``: a declared route
+  looked up against the observed world, item by item. No search.
+* :mod:`workspace.planner.plan_scheduler` / :mod:`cpsat_scheduler` —
+  the plan onto parallel resources: a Gantt schedule (greedy, or
+  CP-SAT for provably good makespans).
+* :mod:`workspace.planner.replanner` — observe → plan → schedule →
+  tree, packaged as the ``rebuild()`` the BT engine calls on every
+  replan.
 """
 
 from __future__ import annotations
 
-from workspace.planner.pddl import (
-    Action,
-    ActionTemplate,
-    Domain,
+from workspace.planner.route import (
     Goal,
+    RouteError,
     State,
-    domain_from_templates,
-    plan,
+    Step,
+    Template,
+    plan_route,
 )
 from workspace.planner.plan_scheduler import (
     ActionMeta,
     make_schedule_builder,
     schedule_greedy,
 )
-from workspace.planner.replanner import (
-    ReplanConfig,
-    Replanner,
-)
-
-
-# scheduler is optional (depends on ortools); import lazily so projects
-# that only use PDDL don't pay the import cost.
-def __getattr__(name):
-    if name == "ORScheduler":
-        from workspace.planner.scheduler import ORScheduler
-        return ORScheduler
-    raise AttributeError(name)
+from workspace.planner.replanner import Replanner
 
 
 __all__ = [
-    "Action",
-    "ActionTemplate",
-    "Domain",
     "Goal",
+    "RouteError",
     "State",
-    "plan",
-    "domain_from_templates",
+    "Step",
+    "Template",
+    "plan_route",
     "ActionMeta",
     "schedule_greedy",
     "make_schedule_builder",
     "Replanner",
-    "ReplanConfig",
-    "ORScheduler",  # lazy
 ]

@@ -33,7 +33,7 @@ All four set the same `paused` flag. The next pause-aware call (`rt.sleep`, `rt.
 3. **Runtime scene + state mutation** — for advanced recovery, the runtime exposes:
    - `workspace.add_component(name, cfg)` / `workspace.remove_component(name)` (scene mutation) — component-guide.md §9.
    - `workspace.add_fact(*tuple)` / `workspace.remove_fact(*tuple)` (state mutation) — bt-framework-guide.md §9.
-   - **Explicit-mutation rule**: scene topology and PDDL state are separate concerns; the framework never auto-bridges them. The caller is responsible for both sides.
+   - **Explicit-mutation rule**: scene topology and fact state are separate concerns; the framework never auto-bridges them. The caller is responsible for both sides.
 
 ## Quick rules
 

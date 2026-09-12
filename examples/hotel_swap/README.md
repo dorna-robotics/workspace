@@ -14,7 +14,7 @@ Same plates 1–6 footprint as the other examples.
 | **`Hotel` recipe — lateral slide-in** | `hotel_a.pick(level=N)` builds the `place_N` anchor and runs the side-load approach: the gripper enters from the side, slides in, descends, picks. `place(level=N)` mirrors it. |
 | **`Adapter` recipe — biased approach** | `holder_a.place()` and `holder_a.pick()` run a 3-waypoint approach with a +10 mm X bias to clear the SBS adapter's wall. |
 | **`gripper_sbs_width`** | SBS-width plate gripper. The tool changer auto-swaps it on the first `Swap` action via `Swap.tool = "gripper"`. |
-| **Per-level PDDL planning** | One `Swap(level)` action per level; the planner schedules them based on `~swapped(level)` precondition. Each level is independent so they could be reordered/parallelised. |
+| **Per-level planning** | One `Swap(level)` action per level; the planner schedules them based on `~swapped(level)` precondition. Each level is independent so they could be reordered/parallelised. |
 
 ## Per-level flow (8 motions)
 

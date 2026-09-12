@@ -73,16 +73,11 @@ def setup(**kwargs):
     # ``shaken(t)`` is added by Shake's state-aware eff, so
     # auto-derivation can't see it — list the per-tube progress
     # markers explicitly (same note as bna's setup).
-    goal_facts = frozenset(
-        [(p.name, t) for p in (shaken, done) for t in tubes]
-        + [(started.name,), (parked.name,)]
-    )
 
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
         "item_done":     item_done,
-        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 
@@ -267,3 +262,8 @@ class Park(Action):
 class OperatorPark(Park):
     """Operator-initiated park — fires on the Park button, outside the plan."""
     trigger = "park"
+
+
+# The route — the order an item meets the actions (workspace.bt.protocol).
+# Being listed here is what makes an action part of the run.
+ROUTE = [Start, Load, Shake, Unload, Park]

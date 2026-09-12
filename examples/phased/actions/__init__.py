@@ -2,28 +2,28 @@
 
     actions/
       predicates.py   every fact, grouped by phase, one line of meaning each
-      base.py         abstract action bodies (register=False) + shared helpers
+      base.py         abstract action bodies + shared helpers
       phase_1.py      the concrete actions of phase 1, in execution order
       phase_2.py      the concrete actions of phase 2 — the shake, then pass 2
-      __init__.py     THIS FILE — imports the phases, holds the bookends and setup
-    phases.py         one Phase class per phase, same order as the modules
+      __init__.py     THIS FILE — the bookends and setup
+    phases.py         one Phase class per phase, each with its ``route``, and the
+                      run's ROUTE: ``[Start, Weighed1, Weighed2, Park]``
     doc/phases.md     the boundary table — what the bench looks like at each line
 
-``launch.yaml`` names the package (``actions: actions/``); importing it
-imports every phase module, and importing a module registers its
-actions. Nothing here lists actions by hand. To add a phase: one row in
-doc/phases.md, one ``phase_N.py``, one import below, one class in
-phases.py — in that order.
+``launch.yaml`` names the package (``actions: actions/``) and the route
+(``route: phases.py``). What runs is what the ROUTE lists — a phase's
+``route`` is the order its steps are met. To add a phase: one row in
+doc/phases.md, one ``phase_N.py``, one class in phases.py with its
+``route``, its place in ROUTE — in that order.
 
 Two weigh passes over one rack, a shake in banks of four between
 them, is a deliberately small protocol; the shape is what this example
-teaches (bt-framework-guide §13) — and, in phase 2, how items a device
-couples travel as a group.
+teaches (bt-framework-guide §13) — and, in phase 2, how a step whose
+``pre`` spans a bank pipelines against the work after it.
 """
 
 from workspace.bt import Action
 
-from actions import phase_1, phase_2                      # noqa: F401 — registers the actions
 from actions.predicates import PASSES, hand_empty, home, pan_empty, parked, seat_free, started
 from actions.base import item_id, slot_of
 
@@ -40,14 +40,11 @@ def setup(**kwargs):
                 and all(item_done(state, t) for t in tubes)
                 and (parked.name,) in state)
 
-    goal_facts = frozenset([(last.name, t) for t in tubes]
-                           + [(started.name,), (parked.name,)])
 
     return {
         "initial_facts": frozenset(),
         "goal":          goal,
         "item_done":     item_done,
-        "goal_facts":    goal_facts,
         "objects":       {"tube": tubes},
     }
 

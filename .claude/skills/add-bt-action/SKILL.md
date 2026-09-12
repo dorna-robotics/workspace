@@ -23,7 +23,7 @@ An **Action** subclass represents one atomic, transactional step in a BT-planned
 - `execute(...)` — the actual `rt.*` work, returns the chosen eff branch name
 - Optional `duration`, `resource`, `tool`, `pre_check`, `post_check`, `trigger`
 
-The framework auto-registers every Action subclass — no domain.py.
+Listing the class in the project's `ROUTE` (or a phase's `route`) is what makes it part of the run — no domain.py, no registration flag. An abstract base is simply not listed.
 
 ## Quick rules
 
@@ -64,10 +64,11 @@ The framework auto-registers every Action subclass — no domain.py.
 - **feeder actions**: `examples/feeder/actions.py` — minimal per-item template (Start → per-item action → Park)
 - **capping actions**: `examples/capping/actions.py` — multi-action protocol with progress reporting
 - **runtime actions**: `examples/runtime/actions.py` — full reference incl. runtime scene mutation
-- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases (`register = False`) in `base.py`, thin `PASS`/`register = True` subclasses per `phase_N.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project. When a device holds several items at once (a shaker bank, a rotor) the phase declares the sets that move together — `Phase.group` — so the planner stamps one group's chain instead of searching; bt-framework-guide §13 "Groups".
+- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases in `base.py`, thin `PASS` subclasses per `phase_N.py`, each phase's `route` and the `ROUTE` in `phases.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project. When a device holds several items at once (a shaker bank, a rotor) the step's `pre` spans the bank and the phase holds the work after it in one window; bt-framework-guide §13 "Steps that span items".
 
 ## Common pitfalls
 
+- **A step's `pre` comes true again after it ran.** The route lookup asks every step honestly, so a `Load` guarded only by `~on_shaker(t)` applies again once the unload removes `on_shaker`. Guard it with the negation of a fact a LATER step asserts (`~unloaded(t)`). `bt.replay` names the step: "applies again after it ran".
 - **`pre()` returns a Python `bool`** (`return True if x else False`) — breaks the precedence graph. Always return an `Expr` built from predicates.
 - **Eff seeds wrong objects** — using current-slice `objects` instead of `_ctx_all_objects()` for full-batch seeding leaves later slices without the facts. bt-framework-guide.md §12.
 - **Heavy work in `pre()` or `eff()`** — they're called by the planner repeatedly; keep them pure / O(1). Real I/O goes in `execute()`.

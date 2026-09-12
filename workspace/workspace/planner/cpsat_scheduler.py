@@ -1,4 +1,4 @@
-"""CP-SAT scheduler — minimum-makespan schedule for a PDDL plan.
+"""CP-SAT scheduler — minimum-makespan schedule for a plan.
 
 Drop-in replacement for :func:`schedule_greedy` with the same I/O
 shape. Where greedy walks the plan in order and places each action
@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ortools.sat.python import cp_model
 
-from workspace.planner.pddl import Action
+from workspace.planner.route import Step as Action
 from workspace.planner.plan_scheduler import ActionMeta, ActionMetaMap, _resources
 
 
@@ -334,7 +334,7 @@ def schedule_cpsat(
     runtime then skipped as "already correct".
 
     Args:
-        actions: Output of the PDDL planner — totally-ordered plan.
+        actions: The route planner's plan — totally-ordered steps.
         meta: ``action_name -> ActionMeta`` lookup.
         predecessors: Optional per-action predecessor index sets, from
             :func:`workspace.bt.dsl.build_precedence`. Without it the

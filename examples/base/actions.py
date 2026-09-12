@@ -20,12 +20,10 @@ def setup(**kwargs):
     def goal(state):
         return (started.name,) in state and (parked.name,) in state
 
-    goal_facts = frozenset([(started.name,), (parked.name,)])
 
     return {
         "initial_facts": frozenset(),
         "goal":          goal,
-        "goal_facts":    goal_facts,
         "objects":       {},
     }
 
@@ -90,3 +88,8 @@ class Park(Action):
 class OperatorPark(Park):
     """Operator-initiated park — fires on the Park button, outside the plan."""
     trigger = "park"
+
+
+# The route — the order an item meets the actions (workspace.bt.protocol).
+# Being listed here is what makes an action part of the run.
+ROUTE = [Start, Park]

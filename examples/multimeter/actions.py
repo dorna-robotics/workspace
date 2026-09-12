@@ -49,16 +49,11 @@ def setup(**kwargs):
             and (parked.name,) in state
         )
 
-    goal_facts = frozenset(
-        [(read_done.name, s) for s in samples]
-        + [(started.name,), (parked.name,)]
-    )
 
     return {
         "initial_facts": frozenset(facts),
         "goal":          goal,
         "item_done":     item_done,
-        "goal_facts":    goal_facts,
         "objects":       {"sample": samples},
     }
 
@@ -170,3 +165,8 @@ class Park(Action):
         rt = self.ctx.runtime
         rt.step("workspace parked", level="success")
         return "parked"
+
+
+# The route — the order an item meets the actions (workspace.bt.protocol).
+# Being listed here is what makes an action part of the run.
+ROUTE = [Start, ReadMeter, Park]

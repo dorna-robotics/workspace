@@ -17,7 +17,7 @@ fully loaded (20 tubes).
 | **immerse / aspirate / retract triple** | The aspirate side of a transfer: descend tip below the liquid surface (`immerse(dist=N)`), suck up `vol` µL, lift back out (`retract`). Mirror it on the dispense side. |
 | **Fresh tip per transfer** | Every `Transfer(t)` action picks a different tip slot (`TIP_ANCHORS[t]`) to avoid cross-contamination. The framework's tool-changer doesn't enter here — tips are handled by the DosingSite recipe. |
 | **Adapter-resolver pattern** | All three DosingSite recipes target an `adapter_plate_*` component. The resolver walks the kinematic tree down to whatever rack (`rack_falcon_15ml`, `rack_axygen_180ul`, `rack_tip_waste_bin`) is sitting on it. Same trick the capping example uses with `cap_holder`. |
-| **Per-transfer PDDL planning** | One `Transfer(t)` action per t in 0..transfer_count-1, scheduled in order by the `~transferred(t)` precondition. |
+| **Per-transfer planning** | One `Transfer(t)` action per t in 0..transfer_count-1, scheduled in order by the `~transferred(t)` precondition. |
 
 ## Per-transfer flow (one cycle, 6 calls)
 

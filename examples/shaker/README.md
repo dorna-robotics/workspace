@@ -68,7 +68,7 @@ object key (`"tube"`), and the tool (`gripper`) vary.
    walks `tube_rack.slot["body"]`, no table to maintain.
 3. **Second shaker**: add `shaker_2slot_2` + a second recipe alias,
    split `Shake` into two subclasses with a shared abstract base
-   (`register = False`) — the bna project's `ShakerOne`/`ShakerTwo`
+   (not listed in the `ROUTE`) — the bna project's `ShakerOne`/`ShakerTwo`
    is the canonical reference. With two shakers the robot loads one
    while the other shakes — full pipeline overlap.
 

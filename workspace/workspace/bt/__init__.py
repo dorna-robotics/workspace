@@ -63,6 +63,9 @@ from workspace.bt.launcher import (
     read_yaml_or_j2,
     run_protocol,
 )
+# The route: Phase (phases.py) and Protocol (the resolved ROUTE).
+from workspace.bt.phase import Phase
+from workspace.bt.protocol import Protocol, load_route
 # Bench — one phase of a phased project from a notebook, the project as
 # the only source of truth (``from workspace.bt import Bench``).
 from workspace.bt.bench import Bench
@@ -104,6 +107,10 @@ __all__ = [
     "load_recipes",
     "read_yaml_or_j2",
     "run_protocol",
+    # The route
+    "Phase",
+    "Protocol",
+    "load_route",
     # Phase bench (notebooks)
     "Bench",
 ]

@@ -113,17 +113,18 @@ class Bench:
                              "set slice_dim in launch.yaml")
         return dim, list(objects[dim])
 
+    def _protocol(self):
+        """The project's ROUTE as a Protocol — the launcher's own loader."""
+        from workspace.bt.launcher import _load_route
+        return _load_route(self.launch.get("route"), self.actions,
+                           project=str(self.launch.get("project_name") or self.project_dir.name))
+
     def _phases(self, kw) -> list:
-        """The project's authored ``Phase`` instances (declaration order).
-        A bare-string / dict / callable phase entry has no ``layout``
-        and is left to the replay, which handles every form."""
-        from workspace.bt.launcher import _load_phases
-        from workspace.bt.phase import Phase
-        spec_val = _load_phases(self.launch.get("phases"), kw)
-        if not spec_val:
-            raise ValueError(f"{self.project_dir.name} declares no phases (launch.yaml: phases:)")
-        entries = spec_val if isinstance(spec_val, (list, tuple)) else [spec_val]
-        return [e for e in entries if isinstance(e, Phase)]
+        """The project's ``Phase`` instances, in ROUTE order."""
+        phases = self._protocol().phases
+        if not phases:
+            raise ValueError(f"{self.project_dir.name} declares no phases (ROUTE holds none)")
+        return phases
 
     # ── the seeded start state ────────────────────────────────────────
     def start_state(self, name: str, **overrides):
@@ -173,7 +174,7 @@ class Bench:
         whenever their pre holds, to a fixpoint. Not seeded: Start runs
         for real and asserts them itself."""
         from workspace.bt.behaviours import WorkspaceContext
-        from workspace.bt.dsl import ActionRegistry, Fact, _normalise_eff, _default_branch
+        from workspace.bt.dsl import Fact, _normalise_eff, _default_branch
         spec = self.actions.setup(**kw)
         objects = dict(spec.get("objects") or {})
         ctx = WorkspaceContext(
@@ -182,9 +183,8 @@ class Bench:
                               "objects": objects,
                               "all_objects": {k: list(v) for k, v in objects.items()},
                               "checks": {}, "current_tool": None, "event_publisher": None})
-        reg = ActionRegistry.current()
         out = set(spec["initial_facts"])
-        bookends = [cls for _n, cls in sorted(reg._actions.items()) if not cls.params]
+        bookends = [cls for cls in self._protocol().run_steps if not cls.params]
         changed = True
         while changed:
             changed = False
@@ -274,7 +274,7 @@ class Bench:
                 plan_window=int(self.launch.get("plan_window", 4)),
                 slice_dim=self.launch.get("slice_dim"),
                 scheduler=str(self.launch.get("scheduler", "cpsat")),
-                phases=self.launch.get("phases"),
+                route=self.launch.get("route"),
                 seed_facts=seeds,
                 until_phase=name,
                 reset_scene=False,          # the layout above IS the start state

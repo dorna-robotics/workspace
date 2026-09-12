@@ -1,12 +1,12 @@
 """Shared action bodies — the motion, written once.
 
-Every station visit here is an ABSTRACT base (``register = False``)
-parameterised by ``PASS``. The phase modules subclass it in two lines
-(``PASS`` and ``register = True`` — the opt-out inherits, so each
-concrete action opts back in), so pass 2 is the same code as pass 1
-under pass-indexed facts. A base is only ever created on its SECOND
-use: one concrete action in one phase stays a plain class in that
-phase's module — the shaker's three (phase_2.py) are exactly that.
+Every station visit here is an ABSTRACT base parameterised by
+``PASS``. The phase modules subclass it in one line (``PASS``), so pass
+2 is the same code as pass 1 under pass-indexed facts. A base is never
+planned: what runs is what a phase's ``route`` lists (phases.py), and
+no base is listed. A base is only ever created on its SECOND use: one
+concrete action in one phase stays a plain class in that phase's
+module — the shaker's three (phase_2.py) are exactly that.
 
 Helpers that several actions share (the rack slot lookup, the shaker
 seat and bank, the progress figure) live here too, as plain functions.
@@ -86,7 +86,6 @@ class PassAction(Action):
     run started, pass 2 needs the tube back from the shaker. That single
     hook is the whole difference between the passes.
     """
-    register = False
     PASS: int = 0
     params = ["tube"]
     resource = "robot"
@@ -101,7 +100,6 @@ class PassAction(Action):
 
 class PickBase(PassAction):
     """Lift the tube out of its rack slot."""
-    register = False
     duration = 10
 
     def pre(self, tube):
@@ -122,7 +120,6 @@ class PickBase(PassAction):
 
 class PlaceOnScaleBase(PassAction):
     """Stand the held tube on the balance top and let go."""
-    register = False
     duration = 10
 
     def pre(self, tube):
@@ -144,7 +141,6 @@ class WeighBase(PassAction):
     failed reading is retried without redoing an arm move (examples/scale
     is the reference for that pattern). Writes the tube's audit row
     where the value is produced."""
-    register = False
     duration = 3
     resource = "scale"    # the top is busy, the arm is free
     tool = None
@@ -169,7 +165,6 @@ class WeighBase(PassAction):
 
 class PickFromScaleBase(PassAction):
     """Re-grip the weighed tube and lift it off the top."""
-    register = False
     duration = 10
 
     def pre(self, tube):
@@ -188,7 +183,6 @@ class PickFromScaleBase(PassAction):
 
 class ReturnBase(PassAction):
     """Back into its own slot — the phase fact for this pass."""
-    register = False
     duration = 10
 
     def pre(self, tube):

@@ -1,17 +1,19 @@
 """Phase 2 — ``weighed_2``: shaken in banks of four, then weighed again.
 
 Read top to bottom, this file IS the phase: the concrete actions in the
-order a tube meets them. First the shaker — three actions used once,
-so they are plain classes here, no base (a base exists only on a
-second user). Then the same five stations as pass 1 as thin subclasses
-of the bases in ``base.py`` — the ``gate`` in ``PassAction`` makes each
-tube wait for its own ``unloaded``, and ``phases.Weighed2.pre`` makes
-the whole batch wait for everyone's ``home_1``.
+order a tube meets them — the same order ``phases.Weighed2.route``
+declares. First the shaker — three actions used once, so they are
+plain classes here, no base (a base exists only on a second user).
+Then the same five stations as pass 1 as thin subclasses of the bases
+in ``base.py`` — the ``gate`` in ``PassAction`` makes each tube wait
+for its own ``unloaded``, and ``phases.Weighed2.pre`` makes the whole
+batch wait for everyone's ``home_1``.
 
-The shake couples four tubes — one head, one clamp, one cycle — which
-is why ``phases.Weighed2`` declares the banks (``group``) and why the
-shake and the second weighing are ONE phase: bank 2 shakes while bank
-1 is weighed. Boundary at exit: doc/phases.md row ``weighed_2``.
+The shake couples four tubes — one head, one clamp, one cycle: its
+``pre`` spans the bank, so the route lookup simply waits until the
+bank is seated. The shake and the second weighing are ONE phase so
+the scheduler overlaps the banks: bank 2 shakes while bank 1 is
+weighed. Boundary at exit: doc/phases.md row ``weighed_2``.
 """
 
 from workspace.bt import Action
@@ -29,7 +31,9 @@ class Load(Action):
     """Rack slot → the tube's shaker seat. One action for the two moves:
     nothing is mid-carry at a boundary, and no boundary falls between
     them. The seat is a capacity fact: a tube of the next bank cannot
-    take it before this one is unloaded."""
+    take it before this one is unloaded. ``~unloaded``: a tube that is
+    back from the shaker is behind this step for good — the route
+    lookup needs every step's pre to say so."""
     params   = ["tube"]
     duration = 20
     resource = "robot"
@@ -37,7 +41,7 @@ class Load(Action):
 
     def pre(self, tube):
         return (home[1](tube) & hand_empty() & seat_free[tube % N_SEATS]()
-                & ~on_shaker(tube))
+                & ~on_shaker(tube) & ~unloaded(tube))
 
     def eff(self, tube):
         return {"loaded": (+on_shaker(tube), -seat_free[tube % N_SEATS]())}
@@ -108,24 +112,19 @@ class Unload(Action):
 
 class Pick2(PickBase):
     PASS = 2
-    register = True
 
 
 class PlaceOnScale2(PlaceOnScaleBase):
     PASS = 2
-    register = True
 
 
 class Weigh2(WeighBase):
     PASS = 2
-    register = True
 
 
 class PickFromScale2(PickFromScaleBase):
     PASS = 2
-    register = True
 
 
 class Return2(ReturnBase):
     PASS = 2
-    register = True

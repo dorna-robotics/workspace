@@ -4,7 +4,7 @@
 
 Boots the project's scene in a throwaway SIM workspace (hardware never
 touched — simulation forced on every device), loads the recipes, and
-runs the REAL protocol through the REAL engine: PDDL planning, CP-SAT
+runs the REAL protocol through the REAL engine: the route lookup, CP-SAT
 scheduling, checks, the BT leaf engine, and — the part nothing cheaper
 covers — REAL motion planning for every hop. Only the motion PLAYBACK
 is stubbed (moves complete instantly), so a full batch runs in minutes
@@ -76,9 +76,13 @@ def main():
         sys.modules.pop(_m, None)
     import actions as A
 
-    status = run_protocol(workspace=ws, core=core, recipes=rcp, actions_module=A,
+    status = run_protocol(ws, core, A, recipes=rcp,
                           project_name=launch.get("project_name", os.path.basename(project)),
-                          kwargs=kwargs)
+                          plan_window=int(launch.get("plan_window", 4)),
+                          slice_dim=launch.get("slice_dim"),
+                          scheduler=str(launch.get("scheduler", "cpsat")),
+                          route=launch.get("route"),
+                          **kwargs)
     print(f"\ndryrun: {status} (batch {args.batch}, kwargs {kwargs})")
     sys.exit(0 if getattr(status, "name", str(status)) == "SUCCESS" else 1)
 

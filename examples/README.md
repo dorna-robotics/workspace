@@ -51,7 +51,7 @@ recipes. Copy the folder, rename, edit. No cross-folder coupling.
 | [`capping/`](capping/) | Full cap + decap roundtrip with the decapper + 4-finger gripper. Tube rack + cap holder + decapper, split-action planning (`Cap` then `Decap`). |
 | [`hotel_swap/`](hotel_swap/) | Swap plates pairwise between two SBS hotels via two plate holders. `Hotel` recipe (lateral slide-in) + `Adapter` recipe (biased approach) + `gripper_sbs_width`. |
 | [`pipetting/`](pipetting/) | Pick fresh tip → aspirate from a falcon tube → dispense in another → eject tip. `DosingSite` recipe with `pick_tip` / `aspirate` / `dispense` / `eject_tip`, fully-loaded 4×5 falcon rack + 8×12 tip rack + waste bin. |
-| [`phased/`](phased/) | **The layout of a phased protocol**: `actions/` as a package (predicates, abstract bases, one module per phase), `phases.py`, the boundary table in `doc/phases.md`, pass-indexed facts, `rt.record` audit rows. Copy this shape for any multi-phase project. |
+| [`phased/`](phased/) | **The layout of a phased protocol**: `actions/` as a package (predicates, abstract bases, one module per phase), `phases.py` (each phase's `route`, the `ROUTE`), the boundary table in `doc/phases.md`, pass-indexed facts, `rt.record` audit rows, and a shaker whose bank of four pipelines against the second weighing. Copy this shape for any multi-phase project. |
 | [`shaker/`](shaker/) | Load 40 ml tubes onto a 2-slot shaker, shake, return. Non-robot resource (`resource="shaker"`), batched device action, `plan_window` = device capacity. |
 
 More examples will be added incrementally as common patterns emerge
