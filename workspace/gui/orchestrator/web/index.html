@@ -1388,7 +1388,7 @@ function makeRenderer(opts, mountEl) {
     // Only the notebook viewer server (workspace/server.py) exposes
     // /record/* — everywhere else the probe fails and the button
     // stays hidden. While recording: red pulse + elapsed badge; the
-    // stream is saved server-side to <project>/core/replay_*.jsonl.
+    // stream is saved server-side to <project>/rec/rec_*.jsonl.
     (async function wireRecorder() {
       const btn = document.getElementById("btnRecord");
       const badge = document.getElementById("recBadge");

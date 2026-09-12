@@ -932,7 +932,7 @@ Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send 
 
 The 3D viewer's record button (red while capturing) drives a recorder
 that lives in the WORKSPACE PROCESS, not the page: it writes every
-scene update to `<project>/core/replay_<stamp>.jsonl`, the file the
+scene update to `<project>/rec/rec_<stamp>.jsonl`, the file the
 scene builder's Replay tab scrubs. Because it is server-side:
 
 * closing or refreshing the page does not stop it — the viewer asks

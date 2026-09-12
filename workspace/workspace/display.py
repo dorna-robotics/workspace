@@ -100,9 +100,13 @@ class Display:
     # ----------------------------------------------------
     # Public utilities
     # ----------------------------------------------------
-    def _project_core(self):
-        """The active project's ``core/`` dir (where replay recordings
-        land). Prefers the explicitly declared ``workspace.project_dir``
+    def _rec_dir(self):
+        """The active project's ``rec/`` dir — where recordings land, and
+        the one folder the scene builder's Replay panel lists. It is the
+        PROJECT's own folder, not the station's core/: core/ is per-bench
+        state that core_dir may point anywhere, recordings belong to the
+        project you are looking at. Prefers the explicitly declared
+        ``workspace.project_dir``
         (subprojects sharing one scene walk up to the PARENT's
         launch.yaml otherwise — same bug as runtime_server._project_dir);
         falls back to walking up from the first scene file to the folder
@@ -112,18 +116,18 @@ class Display:
             import pathlib
             declared = getattr(self.workspace, "project_dir", None)
             if declared:
-                core = pathlib.Path(str(declared)).resolve() / "core"
-                core.mkdir(exist_ok=True)
-                return str(core)
+                rec = pathlib.Path(str(declared)).resolve() / "rec"
+                rec.mkdir(exist_ok=True)
+                return str(rec)
             cfg = getattr(self.workspace, "config_paths", None) or []
             if not cfg:
                 return None
             p = pathlib.Path(str(cfg[0])).resolve().parent
             for _ in range(6):
                 if (p / "launch.yaml").exists():
-                    core = p / "core"
-                    core.mkdir(exist_ok=True)
-                    return str(core)
+                    rec = p / "rec"
+                    rec.mkdir(exist_ok=True)
+                    return str(rec)
                 if p.parent == p:
                     break
                 p = p.parent
@@ -461,7 +465,7 @@ class Display:
                     self.SERVER,
                     transports=["websocket"],
                     socketio_path="/socket.io/",
-                    auth={"project_core": self._project_core() or ""},
+                    auth={"rec_dir": self._rec_dir() or ""},
                 )
                 # If connect succeeds, break; reconnection is handled by the client
                 return

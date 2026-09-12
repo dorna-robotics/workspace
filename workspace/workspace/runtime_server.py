@@ -181,7 +181,7 @@ async def disconnect(sid):
 # per upstream delta. The viewer's record button drives it via
 # /record/start|stop|status (it probes status and hides where absent).
 _recorder = {"fp": None, "path": None, "t0": None, "frames": 0}
-_record_core_dir = None  # set at RuntimeServer init from the project
+_record_dir = None  # set at RuntimeServer init from the project
 # Frames arrive on the IO loop, schedule events from BT threads — one
 # lock keeps the lines whole.
 _record_lock = threading.Lock()
@@ -227,18 +227,18 @@ def _record_event(event: dict) -> None:
 def _record_start():
     if _recorder["fp"] is not None:
         return {"ok": False, "error": "already recording"}
-    if not _record_core_dir:
-        return {"ok": False, "error": "no project core/ dir known"}
-    os.makedirs(_record_core_dir, exist_ok=True)
-    name = time.strftime("replay_%Y%m%d_%H%M%S.jsonl")
-    path = os.path.join(_record_core_dir, name)
+    if not _record_dir:
+        return {"ok": False, "error": "no project rec/ dir known"}
+    os.makedirs(_record_dir, exist_ok=True)
+    name = time.strftime("rec_%Y%m%d_%H%M%S.jsonl")
+    path = os.path.join(_record_dir, name)
     try:
         fp = open(path, "w")
     except Exception as e:
         return {"ok": False, "error": f"cannot open {path}: {e}"}
     _recorder.update(fp=fp, path=path, t0=time.time(), frames=0)
     _record_line({"meta": {"started": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                           "project_core": _record_core_dir}})
+                           "rec_dir": _record_dir}})
     _record_line({"t": 0.0, "snap": world_state})
     # A recording can start at ANY moment of a run. Write the run's
     # schedule so far — every plan slice and every action / swap event —
@@ -269,7 +269,7 @@ def _record_status():
     on = _recorder["fp"] is not None
     return {"ok": True, "recording": on, "path": _recorder["path"],
             "seconds": round(time.time() - _recorder["t0"], 1) if on else 0,
-            "frames": _recorder["frames"], "project_core": _record_core_dir}
+            "frames": _recorder["frames"], "rec_dir": _record_dir}
 
 
 class RecordHandler(tornado.web.RequestHandler):
@@ -1927,13 +1927,12 @@ class RuntimeServer:
         # the project — the platform holds none of it.
         _proj = _project_dir(workspace)
         # Replay recordings land in the project's core/ folder.
-        global _record_core_dir
+        global _record_dir
         if _proj is not None:
-            # The core folder the station actually resolved (launch.yaml
-            # ``core_dir``), never a second guess at "<project>/core".
-            _core = getattr(workspace.components.get("core", None), "_core_dir", None)
-            _resolved = _core() if callable(_core) else None
-            _record_core_dir = str(_resolved) if _resolved else str(_proj / "core")
+            # Recordings live with the PROJECT, in rec/ — not in the
+            # station's core/, which core_dir may point anywhere. The
+            # scene builder's Replay panel lists this same folder.
+            _record_dir = str(_proj / "rec")
             # rt.record runs land in the project's runs/ folder.
             self.rt.record_dir = str(_proj / "runs")
         if _proj is not None and (_proj / "hmi").is_dir():

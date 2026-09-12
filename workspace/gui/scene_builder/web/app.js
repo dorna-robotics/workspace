@@ -10655,7 +10655,7 @@ function startRectPattern() {
 })();
 
 // =========================
-// Replay player — scrub a recorded run (core/replay_*.jsonl)
+// Replay player — scrub a recorded run (rec/rec_*.jsonl)
 // =========================
 // The recording is the viewer wire stream verbatim: one full snapshot
 // (every solid with meshUrl + world pose) then timestamped pose deltas.

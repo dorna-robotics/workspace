@@ -48,15 +48,15 @@ world_state = {}
 # --------------------------------------------------
 # Replay recorder — captures the exact wire stream
 # --------------------------------------------------
-# One JSONL file per recording, saved in the ACTIVE PROJECT's core/
+# One JSONL file per recording, saved in the ACTIVE PROJECT's rec/
 # folder (the Display announces it in its connect auth):
-#   line 1: {"meta": {"started": iso8601, "project_core": ...}}
+#   line 1: {"meta": {"started": iso8601, "rec_dir": ...}}
 #   line 2: {"t": 0.0, "snap": <full world_state>}      — the opening scene
 #   line N: {"t": secs, "u": <upstream payload>}        — every delta after
 # Replaying = apply the snapshot, then the deltas in order — the same
 # thing the live viewer does, which is what makes playback exact.
 recorder = {"fp": None, "path": None, "t0": None, "frames": 0}
-project_core = None  # announced by the Display on connect
+rec_dir = None  # announced by the Display on connect
 
 
 def record_line(obj):
@@ -74,19 +74,19 @@ def record_line(obj):
 def record_start():
     if recorder["fp"] is not None:
         return {"ok": False, "error": "already recording"}
-    if not project_core:
+    if not rec_dir:
         return {"ok": False, "error": "no project connected yet — run a "
                 "workspace with a project scene first"}
-    os.makedirs(project_core, exist_ok=True)
-    name = time.strftime("replay_%Y%m%d_%H%M%S.jsonl")
-    path = os.path.join(project_core, name)
+    os.makedirs(rec_dir, exist_ok=True)
+    name = time.strftime("rec_%Y%m%d_%H%M%S.jsonl")
+    path = os.path.join(rec_dir, name)
     try:
         fp = open(path, "w")
     except Exception as e:
         return {"ok": False, "error": f"cannot open {path}: {e}"}
     recorder.update(fp=fp, path=path, t0=time.time(), frames=0)
     record_line({"meta": {"started": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                          "project_core": project_core}})
+                          "rec_dir": rec_dir}})
     record_line({"t": 0.0, "snap": world_state})
     print(f"[record] started -> {path}")
     return {"ok": True, "path": path, "name": name}
@@ -113,7 +113,7 @@ def record_status():
             "path": recorder["path"],
             "seconds": round(time.time() - recorder["t0"], 1) if on else 0,
             "frames": recorder["frames"],
-            "project_core": project_core}
+            "rec_dir": rec_dir}
 
 
 # --------------------------------------------------
@@ -227,11 +227,11 @@ class RecordHandler(tornado.web.RequestHandler):
 # --------------------------------------------------
 @sio.event
 async def connect(sid, environ, auth):
-    global project_core
-    core_dir = (auth or {}).get("project_core") or ""
+    global rec_dir
+    core_dir = (auth or {}).get("rec_dir") or ""
     if core_dir:
-        project_core = core_dir
-        print(f"[record] project core announced: {project_core}")
+        rec_dir = core_dir
+        print(f"[record] project rec folder announced: {rec_dir}")
         # Project-local CAD (components shipped inside the project, e.g.
         # apc's anode/cathode) must resolve on /static/CAD/ too — the
         # runtime server serves project-first, this viewer previously

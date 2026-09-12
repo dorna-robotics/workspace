@@ -1509,17 +1509,21 @@ async def reset_scene(sid):
 
 
 class ReplayListHandler(tornado.web.RequestHandler):
-    """GET → the active project's recorded replays (core/replay_*.jsonl),
-    newest first. The Replay panel's dropdown."""
+    """GET → the active project's recordings (rec/rec_*.jsonl), newest
+    first. The Replay panel's dropdown.
+
+    The PROJECT's own rec/ folder, which is where both recorders write
+    (Display announces it, runtime_server derives it) — never core/,
+    whose location launch.yaml's ``core_dir`` may move."""
 
     def get(self):
         out = []
-        core_dir = os.path.join(_project_path, "core") if _project_path else None
-        if core_dir and os.path.isdir(core_dir):
+        rec_dir = os.path.join(_project_path, "rec") if _project_path else None
+        if rec_dir and os.path.isdir(rec_dir):
             try:
-                for n in os.listdir(core_dir):
-                    if n.startswith("replay_") and n.endswith(".jsonl"):
-                        p = os.path.join(core_dir, n)
+                for n in os.listdir(rec_dir):
+                    if n.startswith("rec_") and n.endswith(".jsonl"):
+                        p = os.path.join(rec_dir, n)
                         try:
                             stt = os.stat(p)
                             out.append({"name": n, "path": p,
@@ -1534,7 +1538,7 @@ class ReplayListHandler(tornado.web.RequestHandler):
 
 
 def parse_recording(path, fps=10.0, max_frames=400_000):
-    """Stream a replay_*.jsonl into {meta, snap, frames, events}.
+    """Stream a rec_*.jsonl into {meta, snap, frames, events}.
 
     Frames are THINNED to at most ``fps`` per second of recording and
     STRIPPED to what playback uses — pose and joints per solid, the
@@ -1648,7 +1652,7 @@ def encode_replay(result, path, fps):
 class ReplayFileHandler(tornado.web.RequestHandler):
     """GET ?path=&fps= → one parsed recording, as the columnar binary
     of :func:`encode_replay` (errors stay JSON ``{ok: false, error}``). Accepts an absolute path (the panel's free path box) or a
-    bare replay_*.jsonl name resolved in the active project's core/.
+    bare rec_*.jsonl name resolved in the active project's rec/.
     ``fps`` (default 10) is the playback frame rate the file is thinned
     to — see :func:`parse_recording`. Parsed in a worker thread so a
     long file never stalls the builder."""
@@ -1660,11 +1664,11 @@ class ReplayFileHandler(tornado.web.RequestHandler):
             fps = 10.0
         path = self.get_argument("path", "")
         if path and os.sep not in path and _project_path:
-            path = os.path.join(_project_path, "core", path)
-        if not (os.path.basename(path).startswith("replay_")
+            path = os.path.join(_project_path, "rec", path)
+        if not (os.path.basename(path).startswith("rec_")
                 and path.endswith(".jsonl")):
             self.set_status(400)
-            self.write({"ok": False, "error": "path must be a replay_*.jsonl file"})
+            self.write({"ok": False, "error": "path must be a rec_*.jsonl file"})
             return
         if not os.path.isfile(path):
             self.set_status(404)
