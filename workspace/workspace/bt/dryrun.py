@@ -63,7 +63,12 @@ def main():
     from workspace.workspace import Workspace
     from workspace.bt.launcher import load_recipes, run_protocol
 
-    ws = Workspace(config_path=merged_sim_scene(project, launch), port=args.port)
+    # The scene is merged into a TEMP file, so without this the core
+    # folder would resolve next to it (/tmp/core) — a sim run would then
+    # neither read nor warm the project's own caches, and on a Pi /tmp is
+    # tmpfs, so it would vanish on reboot.
+    ws = Workspace(config_path=merged_sim_scene(project, launch), port=args.port,
+                   project_dir=project)
     core = ws.components["core"]
     rcp = load_recipes(ws, core, os.path.join(project, launch.get("recipes", "recipes.j2")))
     core.robot_api.jmove(joint=[0, 45, -90, 0, -45, 0, 100, 0])

@@ -14,7 +14,8 @@ from dorna2.pose import T_to_xyzabc, xyzabc_to_T, inv_T
 
 
 class Workspace:
-    def __init__(self, config_path="config/config.yaml", port: int = 8000):
+    def __init__(self, config_path="config/config.yaml", port: int = 8000,
+                 project_dir=None):
 
         # --- normalize to list ---
         if isinstance(config_path, (str, Path)):
@@ -27,6 +28,20 @@ class Workspace:
         # Retained so components can locate the project folder (e.g. the
         # core IK cache writes core_ik.json next to the scene dir).
         self.config_paths = [str(Path(p)) for p in paths]
+
+        # THE PROJECT FOLDER, DECLARED — the folder holding the
+        # launch.yaml that started this run. Passed HERE, not set as an
+        # attribute afterwards, because components are built inside this
+        # constructor and some of them need it at that moment (the core
+        # binds its calibration file before __init__ returns).
+        #
+        # Without it a component can only guess "the folder above
+        # scene/", which lands on the WRONG project the moment projects
+        # share a scene (``scene: [../scene/...]``) — bna's _bna, _tph
+        # and root all resolve to bna/ and silently share one core
+        # folder. main.py passes it; anything that does not keeps the
+        # old guess.
+        self.project_dir = str(Path(project_dir)) if project_dir else None
 
         comp_cfgs = {}
 

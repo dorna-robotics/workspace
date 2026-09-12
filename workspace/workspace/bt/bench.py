@@ -70,8 +70,8 @@ class Bench:
             scene = self.launch["scene"]
             scene = [scene] if isinstance(scene, str) else list(scene)
             scene = [str(self.project_dir / p) for p in scene]
-            workspace = Workspace(config_path=scene, port=port)
-            workspace.project_dir = self.project_dir
+            workspace = Workspace(config_path=scene, port=port,
+                                  project_dir=self.project_dir)
         self.workspace = workspace
         self.core = workspace.components["core"]
         self.rt = workspace.rt

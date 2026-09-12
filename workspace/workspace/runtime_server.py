@@ -1929,7 +1929,11 @@ class RuntimeServer:
         # Replay recordings land in the project's core/ folder.
         global _record_core_dir
         if _proj is not None:
-            _record_core_dir = str(_proj / "core")
+            # The core folder the station actually resolved (launch.yaml
+            # ``core_dir``), never a second guess at "<project>/core".
+            _core = getattr(workspace.components.get("core", None), "_core_dir", None)
+            _resolved = _core() if callable(_core) else None
+            _record_core_dir = str(_resolved) if _resolved else str(_proj / "core")
             # rt.record runs land in the project's runs/ folder.
             self.rt.record_dir = str(_proj / "runs")
         if _proj is not None and (_proj / "hmi").is_dir():

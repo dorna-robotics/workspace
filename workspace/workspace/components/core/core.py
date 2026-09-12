@@ -882,34 +882,56 @@ class Core:
     }
 
     def _core_dir(self):
-        """Resolve (and create) the station's core folder. None when no
-        project folder is resolvable (bare harness). Never raises."""
+        """Resolve (and create) the station's core folder — every cache
+        and log this station reads or writes, calibration included.
+        ``None`` when no project folder is resolvable (bare harness).
+        Never raises.
+
+        THE PROJECT SAYS WHERE IT IS. ``Workspace(project_dir=...)``
+        carries the folder holding the launch.yaml that started the
+        run, and that launch.yaml's ``core_dir`` key names the folder
+        (relative to the project, or absolute); without the key it is
+        ``<project>/core``. Nothing is guessed.
+
+        The fallback below is for a workspace built without the
+        declaration (a notebook, a bare harness, a main.py older than
+        the argument): it infers "the folder above scene/", which is
+        right for a project that owns its scene and WRONG for one that
+        borrows a sibling's (``scene: [../scene/...]`` — bna's _bna,
+        _tph and root all land on bna/ and share one core folder).
+        Declaring the project folder is what separates them."""
         if hasattr(self, "_core_dir_cache"):
             return self._core_dir_cache
         d = None
         try:
-            paths = getattr(self.workspace, "config_paths", None) or []
-            if paths:
+            declared = getattr(self.workspace, "project_dir", None)
+            if declared:
+                proj = Path(declared).resolve()
+            else:
+                paths = getattr(self.workspace, "config_paths", None) or []
+                if not paths:
+                    raise ValueError("no scene path")
                 proj = Path(paths[0]).resolve().parent
                 if proj.name == "scene":
                     proj = proj.parent
-                if proj.is_dir():
-                    d = proj / "core"
-                    try:
-                        launch = proj / "launch.yaml"
-                        if launch.is_file():
-                            override = (yaml.safe_load(launch.read_text()) or {}).get("core_dir")
-                            if override:
-                                d = Path(override)
-                                if not d.is_absolute():
-                                    d = proj / d
-                    except Exception:
-                        pass  # unreadable launch.yaml → default location
-                    d.mkdir(parents=True, exist_ok=True)
-                    for old, new in self._CORE_DIR_LEGACY.items():
-                        src, dst = proj / old, d / new
-                        if src.is_file() and not dst.exists():
-                            os.replace(src, dst)
+            if proj.is_dir():
+                d = proj / "core"
+                try:
+                    launch = proj / "launch.yaml"
+                    if launch.is_file():
+                        override = (yaml.safe_load(launch.read_text()) or {}).get("core_dir")
+                        if override:
+                            d = Path(override)
+                            if not d.is_absolute():
+                                d = proj / d
+                except Exception:
+                    pass  # unreadable launch.yaml → default location
+                d = d.resolve()
+                d.mkdir(parents=True, exist_ok=True)
+                for old, new in self._CORE_DIR_LEGACY.items():
+                    src, dst = proj / old, d / new
+                    if src.is_file() and not dst.exists():
+                        os.replace(src, dst)
         except Exception:
             d = None
         self._core_dir_cache = d

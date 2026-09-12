@@ -105,17 +105,18 @@ def main():
         scene = [scene]
     scene = [str(_BASE_DIR / p) for p in scene]
 
-    ws = Workspace(config_path=scene, port=args.port)
-    # DECLARE the project folder; do not let the server guess it. It
-    # otherwise infers "the folder above scene/", which lands on the wrong
-    # project as soon as a project shares a sibling's scene
-    # (scene: [../scene/...]) — it would then serve the sibling's hmi/ and
-    # pendant, and save methods into the sibling's hmi/methods/.
+    # DECLARE the project folder; nothing guesses it. A platform left to
+    # infer "the folder above scene/" lands on the WRONG project as soon
+    # as a project borrows a sibling's scene (scene: [../scene/...]): it
+    # would serve the sibling's hmi/ and pendant, save methods into the
+    # sibling's hmi/methods/, and read and write the sibling's core/
+    # folder — calibration, every cache and the motion book included.
     #
-    # An attribute, not a constructor argument: a platform that does not
-    # read it yet just ignores it and keeps the old guess, so this file
-    # stays compatible with an unpatched workspace.
-    ws.project_dir = _BASE_DIR
+    # A CONSTRUCTOR ARGUMENT, because components are built inside it and
+    # some need the folder at that moment (the core binds its calibration
+    # file before the constructor returns). Where that folder is, is the
+    # project's own launch.yaml key ``core_dir`` (default <project>/core).
+    ws = Workspace(config_path=scene, port=args.port, project_dir=_BASE_DIR)
     RuntimeServer(runtime=ws.rt, workflow_fn=workflow_fn, workspace=ws).run()
 
 

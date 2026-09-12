@@ -322,7 +322,8 @@ def solve(project_dir, skeleton_path=None, port=5999):
     from workspace.bt.launcher import load_recipes
 
     launch = load_launch(project_dir)
-    ws = Workspace(config_path=merged_sim_scene(project_dir, launch), port=port)
+    ws = Workspace(config_path=merged_sim_scene(project_dir, launch), port=port,
+                   project_dir=project_dir)
     core = ws.components["core"]
 
     if skeleton_path:
