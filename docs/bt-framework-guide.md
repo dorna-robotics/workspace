@@ -1487,7 +1487,10 @@ at 4, 8 or 19 items) rather than merely faster.
 > `preconditions`/`effects` before it is used, and the ordinary search
 > runs if that fails. A protocol whose phase barriers genuinely couple
 > items falls back automatically — the fallback is the mechanism, not
-> an escape hatch.
+> an escape hatch. When the coupling is a DEVICE that holds several
+> items at once (a shaker bank, a rotor), the phase declares the sets
+> that move together (`Phase.group`, §13 "Groups") and the chain is
+> planned once per group and stamped — the search never runs.
 
 ### Phases — bounding DEPTH
 
@@ -1530,9 +1533,12 @@ class Unloaded(Phase):
 | `name` | attr | class name lowercased | display name |
 | `fact` | attr | `None` | sugar: `eff` becomes "this fact for every item in scope" |
 | `plan_window` | attr | `None` | WIDTH while this phase is open; `None` inherits launch.yaml's value. Same name on purpose — one concept. |
+| `schedule_budget` | attr | `None` | the scheduler's deterministic CP-SAT budget while this phase is open; `None` inherits the default. See "Groups". |
 | `scope(state, items)` | hook | all items | which items this phase concerns |
 | `pre(state, items)` | hook | `True` | may this phase open |
 | `eff(items)` | hook | from `fact` | facts that must hold for it to be done |
+| `group(items)` | hook | `None` | the sets of items that MOVE TOGETHER (a shaker bank, a rotor); `None` — every item alone. See "Groups". |
+| `layout(items)` | hook | `[]` | where the items physically rest once the phase closed — the bench applies it when starting past this phase. See "Checking one phase". |
 
 There is deliberately **no `execute`**. A phase performs no motion; its
 execution is the planner reaching `eff`, which is exactly why it can
@@ -1651,6 +1657,15 @@ Explicit, deterministic, verified by simulation like every stamped
 plan; a stamp that does not hold FAILS LOUDLY — a grouped phase is
 never searched. Default: every item on its own, today's behaviour.
 
+A replan mid-phase finds the groups at different stages — bank 0's
+tube in the arm, bank 1 on the shaker, bank 2 untouched. Each distinct
+stage is planned once, bounded by the group size, and stamped over the
+groups at that stage; and each chain is planned FROM THE STATE THE
+CHAINS BEFORE IT LEAVE, in the order the chains close (bank 1 cannot
+close while the arm carries bank 0's tube — it closes after bank 0's
+chain frees the arm). The order among candidates is the declared one,
+so the plan is the same for the same state.
+
 A grouped whole-batch window is a bigger scheduling model by design,
 so the phase also names its scheduler budget: `schedule_budget = 4.0`
 (CP-SAT's deterministic search budget; `None` inherits the default).
@@ -1662,6 +1677,13 @@ the wall.
 A grouped phase is the tool when stages overlap ACROSS groups. When a
 device must finish every group before anyone continues, the barrier —
 a plain phase — is still the right tool; the two are complementary.
+
+The gold exemplar is `examples/phased`: its 4-seat shaker couples the
+tubes into banks (`seat_free` capacity facts, seat `t mod 4`, bank
+`t // 4`), `Weighed2.group` names the banks, and the shake and the
+second weighing share the phase so bank 2 shakes while bank 1 is
+weighed. Read its `phases.py`, `actions/phase_2.py` and the
+`weighed_2` row of `doc/phases.md` before writing a grouped phase.
 
 #### Checking one phase — the bench
 

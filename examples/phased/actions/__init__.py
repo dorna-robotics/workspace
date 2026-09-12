@@ -4,7 +4,7 @@
       predicates.py   every fact, grouped by phase, one line of meaning each
       base.py         abstract action bodies (register=False) + shared helpers
       phase_1.py      the concrete actions of phase 1, in execution order
-      phase_2.py      the concrete actions of phase 2
+      phase_2.py      the concrete actions of phase 2 — the shake, then pass 2
       __init__.py     THIS FILE — imports the phases, holds the bookends and setup
     phases.py         one Phase class per phase, same order as the modules
     doc/phases.md     the boundary table — what the bench looks like at each line
@@ -15,14 +15,16 @@ actions. Nothing here lists actions by hand. To add a phase: one row in
 doc/phases.md, one ``phase_N.py``, one import below, one class in
 phases.py — in that order.
 
-Two weigh passes over one rack is a deliberately small protocol; the
-shape is what this example teaches (bt-framework-guide §13).
+Two weigh passes over one rack, a shake in banks of four between
+them, is a deliberately small protocol; the shape is what this example
+teaches (bt-framework-guide §13) — and, in phase 2, how items a device
+couples travel as a group.
 """
 
 from workspace.bt import Action
 
 from actions import phase_1, phase_2                      # noqa: F401 — registers the actions
-from actions.predicates import PASSES, hand_empty, home, pan_empty, parked, started
+from actions.predicates import PASSES, hand_empty, home, pan_empty, parked, seat_free, started
 from actions.base import item_id, slot_of
 
 
@@ -68,7 +70,8 @@ class Start(Action):
         return ~started()
 
     def eff(self):
-        return {"started": (+started(), +hand_empty(), +pan_empty())}
+        return {"started": (+started(), +hand_empty(), +pan_empty(),
+                            *(+seat_free[i]() for i in seat_free))}
 
     def execute(self):
         rt, rcp, ws = self.ctx.runtime, self.ctx.recipes, self.ctx.workspace

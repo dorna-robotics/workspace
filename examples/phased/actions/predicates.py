@@ -22,15 +22,27 @@ started = predicate("started")
 parked  = predicate("parked")
 
 # ── Single-occupancy resources (capacity facts) ────────────────────
-# One gripper, one balance pan. capacity=True makes the scheduler
-# derive an exclusive span between the action that clears the fact and
-# the one that restores it (project-guide §8).
+# One gripper, one balance top, four shaker seats. capacity=True makes
+# the scheduler derive an exclusive span between the action that clears
+# the fact and the one that restores it (project-guide §8).
 hand_empty = predicate("hand_empty", capacity=True)   # gripper holds no tube
-pan_empty  = predicate("pan_empty", capacity=True)    # balance pan is free
+pan_empty  = predicate("pan_empty", capacity=True)    # balance top is free
+
+# The shaker head holds N_SEATS tubes at once. A seat is a resource like
+# the pan; a tube's seat is static (``tube % N_SEATS``, actions/base.py)
+# so planner, replay and bench agree whatever the order. Four tubes
+# sharing one head is what couples them into a BANK (phases.py).
+N_SEATS   = 4
+seat_free = {i: predicate(f"seat_free_{i}", capacity=True) for i in range(N_SEATS)}
 
 # ── Per pass: phase_1.py (pass 1), phase_2.py (pass 2) ─────────────
 picked    = per_pass("picked")      # tube in the gripper, off its slot
-on_scale  = per_pass("on_scale")    # tube released on the balance pan
+on_scale  = per_pass("on_scale")    # tube released on the balance top
 weighed   = per_pass("weighed")     # a valid mass was read
-off_scale = per_pass("off_scale")   # tube re-gripped off the pan
+off_scale = per_pass("off_scale")   # tube re-gripped off the top
 home      = per_pass("home")        # back in its own slot — THE PHASE FACT
+
+# ── The shake, once, between the passes: phase_2.py ────────────────
+on_shaker = predicate("on_shaker")  # tube seated on the shaker head
+shaken    = predicate("shaken")     # its bank's shake has run
+unloaded  = predicate("unloaded")   # back in its own slot, shaken — pass 2's gate

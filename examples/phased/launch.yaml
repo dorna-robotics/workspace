@@ -1,9 +1,11 @@
 # phased example — launch config.
 #
-# The scale example's bench (one 2 ml rack, one balance), run as TWO
-# weigh passes over every tube. The point is the PROJECT SHAPE, not the
-# chemistry: a phased protocol whose actions live in a package, one
-# module per phase, with the batch regrouping at each phase boundary.
+# The shaker example's bench plus a balance (one amber 40 ml rack, a
+# 4-seat shaker, one balance), run as TWO weigh passes over every tube
+# with a shake in banks of four between them. The point is the PROJECT
+# SHAPE, not the chemistry: a phased protocol whose actions live in a
+# package, one module per phase, the batch regrouping at each phase
+# boundary — and, in phase 2, tubes a device couples moving as a group.
 
 project_name: phased
 port:         5010
@@ -13,7 +15,7 @@ actions:      actions/         # a PACKAGE — actions/__init__.py + one module 
 checks:       checks.py
 phases:       phases.py        # the batch crosses each phase together — DEPTH
 
-plan_window:  4                # WIDTH — tubes per plan/schedule cycle
+plan_window:  4                # WIDTH — tubes per plan/schedule cycle (phase 2 widens it to the rack)
 scheduler:    cpsat
 
 default:
@@ -21,6 +23,6 @@ default:
     type: int
     default: 4
     label: Batch size
-    hint: How many tubes to weigh, twice each (pass 1 for all, then pass 2 for all).
+    hint: How many tubes to weigh twice, shaken in banks of four between the passes. 8 shows the banks overlap.
     min: 1
-    max: 48
+    max: 8

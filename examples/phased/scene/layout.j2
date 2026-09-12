@@ -1,14 +1,22 @@
-# scale example — layout on the shared core_500 chassis.
+# phased example — layout on the shared core_500 chassis.
 # Devices attach to the fixture plates from scene/core_500.j2.
 #
-# Contents:
-#   - tool rack + 4-finger gripper (to pick/place tubes)
-#   - SBS tube rack on plate 4, loaded with 48 plain 2 ml tubes
-#   - OHAUS SPX222 balance on plate 6 (same placement as sample_prep:
-#     child hole_0, offset 90). It runs in sim by default — canned
-#     weight (~12.345 g). For the real balance set ip + simulation:false.
+# The shaker example's bench plus the scale example's balance:
+#   - tool rack 144 + large tube gripper on plate 5
+#   - amber 40 ml rack (2×4, FULL: 8 capped tubes) on plate 4
+#   - 4-seat shaker on plate 1 — holds FOUR tubes at once, which is
+#     what makes a bank of tubes move together (phases.py, Weighed2)
+#   - OHAUS SPX222 balance on plate 6 with the amber 40 ml top on its
+#     pan (the vial stands on the top, not on the pan)
+# All devices run in sim (no ip/port → no bus claim). For real
+# hardware add ip/port + simulation: false.
 
 # ── Tooling ─────────────────────────────────────────────────────────
+# B18, the scale example's spot — not the shaker example's A17. The
+# tool rack's collision box is a tall column on purpose (the arm never
+# passes over it); at A17 that column blocks the reach to the balance
+# top at rail 265, at B18 it clears (checked with the planner's own
+# validity checker, 2026-09-12).
 tool_rack_144mm_1:
   type: "tool_rack_144mm"
   attach:
@@ -19,8 +27,8 @@ tool_rack_144mm_1:
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
 
-gripper_4_finger_1:
-  type: "gripper_4_finger"
+gripper_tube_large_1:
+  type: "gripper_tube_large"
   has_tool_changer: true
   attach:
     parent_name: "tool_rack_144mm_1"
@@ -30,46 +38,68 @@ gripper_4_finger_1:
     child_anchor: "tool_rack_connection"
     offset: [0, 0, 0, 0, 0, 0]
 
-# ── SBS tube rack on plate 4, loaded with plain 2 ml tubes ───────────
-sbs_adapter_0:
-  type: "adapter_plate_sbs"
+# ── Amber 40 ml rack on plate 4 — FULL: 8 capped tubes ──────────────
+adapter_plate_amber_40ml_2x4_1:
+  type: "adapter_plate_amber_40ml_2x4"
   attach:
     parent_name: "fixture_plate_4"
     parent_solid: "body"
-    parent_anchor: "D6"
+    parent_anchor: "D9"
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
 
-rack_autosampler_2ml_1:
-  type: "rack_autosampler_2ml"
+rack_amber_40ml_2x4_1:
+  type: "rack_amber_40ml_2x4"
   attach:
-    parent_name: "sbs_adapter_0"
+    parent_name: "adapter_plate_amber_40ml_2x4_1"
     parent_solid: "body"
     parent_anchor: "place"
     child_solid: "body"
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 
-# 48 tubes (6×8), one per slot.
-{% for r in "ABCDEF" %}
-{% for c in range(1, 8+1) %}
-tube_autosampler_2ml_{{ r }}{{ c }}:
-  type: "tube_autosampler_2ml"
+{% for r in "AB" %}
+{% for c in range(1, 4+1) %}
+tube_amber_40ml_{{ r }}{{ c }}:
+  type: "tube_amber_40ml"
   attach:
-    parent_name: "rack_autosampler_2ml_1"
+    parent_name: "rack_amber_40ml_2x4_1"
     parent_solid: "body"
     parent_anchor: "{{ r }}{{ c }}"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]
+
+cap_amber_40ml_{{ r }}{{ c }}:
+  type: "cap_amber_40ml"
+  attach:
+    parent_name: "tube_amber_40ml_{{ r }}{{ c }}"
+    parent_solid: "body"
+    parent_anchor: "place"
     child_solid: "body"
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 {% endfor %}
 {% endfor %}
 
-# ── Scale (OHAUS SPX222) ────────────────────────────────────────────
-# Same placement style as sample_prep (child hole_0, offset 90). Sim by
-# default: ip "" → no bus claim, weight() returns the canned reading.
-# For the real balance: set ip to its address and simulation: false.
+# ── 4-seat shaker on plate 1 ────────────────────────────────────────
+# One clamp for the whole head, four seats A1..A4 on its rotating
+# solid. Sim: the IO rows are unset, the model toggles.
+shaker_4slot_1:
+  type: "shaker_4slot"
+  attach:
+    parent_name: "fixture_plate_1"
+    parent_solid: "body"
+    parent_anchor: "D12"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 90]
+
+# ── Scale (OHAUS SPX222) with the amber 40 ml top ───────────────────
+# Sim by default: ip "" → no bus claim, weight() returns the canned
+# reading. For the real balance: set ip to its address and
+# simulation: false.
 scale_spx222_1:
   type: "scale_spx222"
   ip: ""
@@ -82,3 +112,15 @@ scale_spx222_1:
     child_solid: "body"
     child_anchor: "hole_0"
     offset: [0, 0, 0, 0, 0, 90]
+
+# The vial drops through the top's guide bore and stands on its disc
+# ("place"); the pan itself never sees the vial.
+scale_top_amber_40ml_1:
+  type: "scale_top_amber_40ml"
+  attach:
+    parent_name: "scale_spx222_1"
+    parent_solid: "body"
+    parent_anchor: "place"
+    child_solid: "body"
+    child_anchor: "center"
+    offset: [0, 0, 0, 0, 0, 0]

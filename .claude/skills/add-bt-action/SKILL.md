@@ -64,7 +64,7 @@ The framework auto-registers every Action subclass — no domain.py.
 - **feeder actions**: `examples/feeder/actions.py` — minimal per-item template (Start → per-item action → Park)
 - **capping actions**: `examples/capping/actions.py` — multi-action protocol with progress reporting
 - **runtime actions**: `examples/runtime/actions.py` — full reference incl. runtime scene mutation
-- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases (`register = False`) in `base.py`, thin `PASS`/`register = True` subclasses per `phase_N.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project.
+- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases (`register = False`) in `base.py`, thin `PASS`/`register = True` subclasses per `phase_N.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project. When a device holds several items at once (a shaker bank, a rotor) the phase declares the sets that move together — `Phase.group` — so the planner stamps one group's chain instead of searching; bt-framework-guide §13 "Groups".
 
 ## Common pitfalls
 

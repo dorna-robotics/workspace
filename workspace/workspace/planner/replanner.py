@@ -273,19 +273,39 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
     objects = ctx.meta.get("objects") or {}
     saved = list(objects.get(dim, []))
 
-    def _plan_unit(unit):
-        """The chain for ONE unit, planned with objects restricted to it."""
+    def _plan_unit(unit, from_state):
+        """The chain for ONE unit, planned with objects restricted to it,
+        from ``from_state`` — the world as the chains already expanded
+        leave it. Mid-phase the units are at different stages and one
+        may hold what another needs (the arm carries bank 0's tube while
+        bank 1 waits on the shaker): bank 1's chain does not close from
+        the observed state, it closes from the state bank 0's chain
+        leaves — so each new chain is planned after the ones before it,
+        in the order they are expanded."""
         solo = frozenset(f for f in goal_facts if len(f) > 1 and f[1] in unit)
         if not solo:
             return None, None
         objects[dim] = list(unit)
         try:
-            one = plan_fn(state, (lambda st, _s=solo: _s <= st), solo)
+            one = plan_fn(from_state, (lambda st, _s=solo: _s <= st), solo)
         finally:
             objects[dim] = saved
         if not one:
             return None, None
         return [a for a in one if a.params], [a for a in one if not a.params]
+
+    def _advance(sim, actions):
+        """``sim`` after ``actions``, or None if one is not applicable."""
+        for a in actions:
+            try:
+                if not a.preconditions(sim):
+                    return None
+                sim = a.effects(sim)
+            except Exception:
+                return None
+            if not isinstance(sim, frozenset):
+                sim = frozenset(sim)
+        return sim
 
     def _signature(unit):
         """The unit's state, item positions in place of item ids — two
@@ -298,8 +318,17 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
         return (len(unit), frozenset((f[0], pos[f[1]]) + tuple(f[2:])
                                      for f in state if len(f) > 1 and f[1] in pos))
 
-    # 1. Plan the chain for the first unit (bookends come from it).
-    chain, bookends = _plan_unit(first)
+    # 1. Plan the chain for the first unit that closes from the observed
+    #    state (bookends come from it). Mid-phase the first declared unit
+    #    may be the one waiting on another — the order of expansion is
+    #    the order in which the chains close, declared order among the
+    #    candidates, so it is deterministic.
+    chain, bookends, first = None, None, None
+    for unit in units:
+        chain, bookends = _plan_unit(unit, state)
+        if chain:
+            first = unit
+            break
     if not chain:
         return None
     templates_by_sig = {_signature(first): (first, chain)}
@@ -321,36 +350,49 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
         )
 
     expanded = list(bookends[:1])
-    for unit in units:
-        sig = _signature(unit)
-        if sig not in templates_by_sig:
-            # A unit in another state (or of another size): its own
-            # chain, planned once, bounded by the group size.
-            own, _ = _plan_unit(unit)
-            if not own:
-                return None
-            templates_by_sig[sig] = (unit, own)
-        tmpl_unit, tmpl_chain = templates_by_sig[sig]
-        # Re-ground by POSITION: the k-th item of the template unit
-        # becomes the k-th item of this unit, in every parameter.
-        m = dict(zip(tmpl_unit, unit))
-        for a in tmpl_chain:
-            expanded.append(_ground(a.name, tuple(m.get(p, p) for p in a.params)))
+    sim = _advance(state, expanded)
+    if sim is None:
+        return None
+    remaining = list(units)
+    while remaining:
+        # The next chain: the first remaining unit whose chain closes
+        # from the world the expanded chains leave — a stamp of a known
+        # signature, or its own plan, bounded by the group size.
+        for unit in remaining:
+            sig = _signature(unit)
+            if sig in templates_by_sig:
+                tmpl_unit, tmpl_chain = templates_by_sig[sig]
+                # Re-ground by POSITION: the k-th item of the template
+                # unit becomes the k-th item of this unit, in every
+                # parameter.
+                m = dict(zip(tmpl_unit, unit))
+                stamped = [_ground(a.name, tuple(m.get(p, p) for p in a.params))
+                           for a in tmpl_chain]
+            else:
+                own, _ = _plan_unit(unit, sim)
+                if not own:
+                    continue
+                templates_by_sig[sig] = (unit, own)
+                stamped = list(own)
+            after = _advance(sim, stamped)
+            if after is None:
+                continue
+            expanded += stamped
+            sim = after
+            remaining.remove(unit)
+            break
+        else:
+            return None
     expanded += bookends[1:]
 
     # 3. Verify by simulation — every action applicable when its turn
     #    comes. Nothing here is assumed; if replication does not work
-    #    the simulation says so and we fall back.
-    sim = state
-    for a in expanded:
-        try:
-            if not a.preconditions(sim):
-                return None
-            sim = a.effects(sim)
-        except Exception:
-            return None
-        if not isinstance(sim, frozenset):
-            sim = frozenset(sim)
+    #    the simulation says so and we fall back. (Each chain was already
+    #    advanced as it was expanded; this is the whole plan, once more,
+    #    from the observed state — the same check bt.replay performs.)
+    sim = _advance(state, expanded)
+    if sim is None:
+        return None
 
     # 4. Tail. The chains are done but run-level goal facts (parked) may
     #    not be; search for the remainder from here. It is a handful of

@@ -8,20 +8,33 @@ robot:
   class: workspace.recipes.recipe.Recipe
   kwargs: {speed_factor: {{ sf }}}
 
-# 4-finger gripper, parked in the tool rack.
+# Large tube gripper, parked in the 144 mm tool rack.
 gripper:
   class: workspace.recipes.tool_rack.ToolRack
   kwargs: {component: tool_rack_144mm_1, left_approach: true, speed_factor: {{ sf }}}
 
-# Tube rack — Rack over the SBS adapter; resolves to rack_autosampler_2ml_1.
+# Amber 40 ml rack — Rack over the adapter (resolver walks down to
+# rack_amber_40ml_2x4_1). pick/place by slot name (A1..B4).
 tube_rack:
   class: workspace.recipes.rack.Rack
-  kwargs: {component: sbs_adapter_0, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+  kwargs: {component: adapter_plate_amber_40ml_2x4_1, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
 
-# Scale — pick/place onto the pan ("place" anchor) + weight().
-# base_distance 350 with rail_step 20 reaches the pan at plate_6/C13.
-# (rail_step 5 was too coarse to land a rail solution at 350 — IK
-# returned no joints; verified with core.IK.)
+# Shaker — place/pick tubes on its A1..A4 seats; shake(duration=...)
+# toggles the head and blocks until it is back at its start position.
+# The seats live on the "rotating" solid, so the boot IK targets that
+# solid's "place" anchor (the body has no place anchor).
+shaker:
+  class: workspace.recipes.shaker.Shaker
+  kwargs: {component: shaker_4slot_1, target_solid_name: rotating, left_approach: false, base_distance: 100, rail_step: 25, rail_span: 20, speed_factor: {{ sf }}}
+
+# Scale — weight() only. The vial never touches the pan: it stands on
+# the amber top, which scale_holder picks from and places on.
 scale:
   class: workspace.recipes.scale.Scale
   kwargs: {component: scale_spx222_1, base_distance: 350, rail_step: 20, rail_span: 5, speed_factor: {{ sf }}}
+
+# The amber 40 ml top on the pan — a plain Recipe over it: place("place")
+# stands the vial on its disc, pick("place") lifts it out.
+scale_holder:
+  class: workspace.recipes.recipe.Recipe
+  kwargs: {component: scale_top_amber_40ml_1, target_anchor: place, left_approach: true, base_distance: 350, rail_step: 20, rail_span: 5, speed_factor: {{ sf }}}
