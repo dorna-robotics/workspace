@@ -18,6 +18,7 @@ from workspace.planner.route import (
     State,
     Step,
     Template,
+    plan_cycle,
     plan_route,
 )
 from workspace.planner.plan_scheduler import (
@@ -34,6 +35,7 @@ __all__ = [
     "State",
     "Step",
     "Template",
+    "plan_cycle",
     "plan_route",
     "ActionMeta",
     "schedule_greedy",

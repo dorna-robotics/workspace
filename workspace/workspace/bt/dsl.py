@@ -998,6 +998,23 @@ class Action:
     # Sentinel that distinguishes "unset" from "set to None" for tool.
     _TOOL_UNSET = object()
 
+    def __class_getitem__(cls, spec):
+        """``Cls[offset]`` / ``Cls[offset, count]`` — this step tagged
+        with the round it acts on in a phase's ``cycle``
+        (:class:`workspace.bt.phase.CycleStep`)."""
+        from workspace.bt.phase import CycleStep
+        if isinstance(spec, tuple):
+            if len(spec) != 2:
+                raise TypeError(f"{cls.__name__}[offset, count] takes two values, got {spec!r}")
+            offset, count = spec
+        else:
+            offset, count = spec, None
+        if isinstance(offset, bool) or not isinstance(offset, int):
+            raise TypeError(f"{cls.__name__}[{offset!r}]: the round offset is an int (0 this round, -1 the previous)")
+        if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 1):
+            raise TypeError(f"{cls.__name__}[{offset}, {count!r}]: the count is a positive int")
+        return CycleStep(cls, offset, count)
+
     # ── Required class attributes (override in subclass) ────────────────
     params:              List[str] = []
     duration:            int = 1

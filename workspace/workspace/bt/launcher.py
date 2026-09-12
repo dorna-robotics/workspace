@@ -55,7 +55,7 @@ from workspace.bt.dsl import (
 from workspace.bt.engine import BTEngine, EngineConfig
 from workspace.bt.phase import PhaseNotReady, current_phase as _current_phase_impl, pick_window as _pick_window_impl
 from workspace.bt.protocol import Protocol, load_route
-from workspace.planner import Replanner, make_schedule_builder, plan_route
+from workspace.planner import Replanner, make_schedule_builder, plan_cycle, plan_route
 
 
 log = logging.getLogger(__name__)
@@ -717,7 +717,8 @@ def run_protocol(
                 window = _pick_window(state)
             c.meta["objects"][slice_dim] = window
             c.meta["current_phase"] = _cur[0].name if _cur else None
-            c.meta["schedule_budget"] = _cur[0].schedule_budget if _cur else None
+            # A phase with a cycle: its plan's order is the schedule.
+            c.meta["declared_order"] = bool(protocol.cycle(_cur[0].name)) if _cur else False
             # FREEZE THE PHASE FOR THIS REPLAN: the planning goal reads
             # this, never _current_phase(state) again.
             _frozen_phase["cur"] = _cur
@@ -742,6 +743,10 @@ def run_protocol(
         classes = protocol.candidates(cur[0].name if cur else None)
         templates = protocol.templates(ctx, classes)
         items = (ctx.meta["objects"].get(slice_dim, []) if slice_dim else [])
+        cycle = protocol.cycle(cur[0].name) if cur else []
+        if cycle:
+            return plan_cycle(templates, state, _planning_goal, cur[0].rounds(list(items)),
+                              cycle, explain=protocol.explainer(ctx))
         return plan_route(templates, state, _planning_goal, list(items),
                           explain=protocol.explainer(ctx))
 
@@ -766,8 +771,8 @@ def run_protocol(
         # SwapLeaf keeps ctx.meta["current_tool"] true — so a window
         # never opens with a swap onto the tool it already holds.
         initial_tool_fn=lambda: ctx.meta.get("current_tool"),
-        # The open phase's deterministic scheduling budget (Phase.schedule_budget).
-        budget_fn=lambda: ctx.meta.get("schedule_budget"),
+        # A phase with a cycle is timed in its declared order (Phase.cycle).
+        declared_order_fn=lambda: bool(ctx.meta.get("declared_order")),
     )
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 

@@ -222,15 +222,14 @@ def make_schedule_builder(
     precedence_fn: Optional[Callable[[Sequence[Action]], List[set]]] = None,
     capacity_fn: Optional[Callable[[Sequence[Action]], Dict[str, List[Tuple[int, int]]]]] = None,
     initial_tool_fn: Optional[Callable[[], Optional[str]]] = None,
-    budget_fn: Optional[Callable[[], Optional[float]]] = None,
+    declared_order_fn: Optional[Callable[[], bool]] = None,
 ) -> Callable[[Sequence[Action]], List[Tuple[str, int, float]]]:
     """Return a closure that schedules any plan with the given meta.
 
-    ``budget_fn`` — the deterministic CP-SAT budget for THIS schedule
-    (the open phase's ``schedule_budget``), ``None`` for the default.
-    The wall-clock limit rides along as a safety only, sized so the
-    budget always binds first (measured ~50 s per unit on the Pi at
-    238 actions; 100 s per unit leaves margin).
+    ``declared_order_fn`` — true when the plan's order IS the schedule
+    (the open phase declares a ``cycle``): the plan is then timed in
+    its own order by :func:`schedule_greedy`, never reordered by
+    CP-SAT. Milliseconds at any batch size.
 
     Project's ``schedule.py`` typically uses this to expose a single
     callable that the Replanner can invoke:
@@ -280,19 +279,16 @@ def make_schedule_builder(
         # The tool mounted NOW — read at build time, so every replan and
         # every window starts from the truth rather than from "nothing".
         initial_tool = initial_tool_fn() if initial_tool_fn is not None else None
-        if use_cpsat:
+        declared = bool(declared_order_fn()) if declared_order_fn is not None else False
+        if use_cpsat and not declared:
             try:
                 # Local import — ortools is an optional dependency. If
                 # the project doesn't have it, the failure surfaces here
                 # and we fall back to greedy without crashing the run.
                 from workspace.planner.cpsat_scheduler import schedule_cpsat
                 caps = capacity_fn(actions) if capacity_fn is not None else None
-                budget = budget_fn() if budget_fn is not None else None
-                limits = ({"deterministic_limit": float(budget),
-                           "time_limit_s": max(30.0, 100.0 * float(budget))}
-                          if budget is not None else {})
                 return schedule_cpsat(actions, meta, predecessors=preds, capacity_spans=caps,
-                                      initial_tool=initial_tool, **limits)
+                                      initial_tool=initial_tool)
             except Exception as ex:
                 log.warning(
                     "CP-SAT scheduler failed (%s: %s) — falling back to greedy",

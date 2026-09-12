@@ -194,12 +194,35 @@ frame is the tool TCP (shiftable by `tool_tcp_z_offset`).
 
 **The fold** (`_move_along_path`, `first_approach=True`, blend > 0):
 planner waypoints + the remaining offsets of the FIRST approach group
-become one executed path. For `smove`/`tmove` the approach legs are
-sampled every 5 mm and every sharp corner gets a G1 Bezier fillet
-(`blend` radius, default 75 from the recipe; each fillet validated
-against the slimmed envelope — an arc may not introduce a collision
-the sharp corner didn't have). For `cjmove`/`clmove` the offsets are
-BARE knots — the firmware blends corners; midpoints are never touched.
+become one executed path. The offsets ride as BARE knots for every
+primitive — one target per offset, no 5 mm sampling, so an approach
+leg runs NEAR its line and the corners carry the shaping. For
+`smove`/`tmove` every sharp corner then gets a G1 Bezier fillet
+(`blend` radius, default 100 from the recipe; the fillet itself is
+sampled every 5 mm and validated against the slimmed envelope — an arc
+may not introduce a collision the sharp corner didn't have). For
+`cjmove`/`clmove` the firmware blends the corners instead; midpoints
+are never touched either way.
+
+**`blend` is what fuses the travel to the approach**, and the corner it
+rounds first is the one where the travel meets the padding point: a
+hop arriving over the station and then dropping to `a_pad` turns ~90°,
+well past the 20° a corner is detected at. Two things bound that
+fillet, and the recipe owns both:
+
+* `blend` — the requested radius (default 100 mm).
+* the **run to the next corner, minus 5 mm** — each side of a fillet is
+  clamped to it (`blend_path_points`), and on the way down from `a_pad`
+  that run is the drop to `a_gap`/contact, i.e. about `padding`. So
+  with `padding: 50` a `blend` of 100 is clamped to ~45 on the way out;
+  raising `blend` alone changes nothing there, raising `padding` is
+  what gives the fillet room.
+
+`blend: 0` turns the fold off entirely — travel and approach become
+discrete motions with a stop at the pad. `fuse` is a DIFFERENT knob
+(§12): it decides whether the PREVIOUS verb's exit is held and merged
+onto the front of this travel, which changes where the chain starts,
+not how the padding corner is rounded.
 
 `[plan] START is inside the collision envelope` at plan time means the
 PREVIOUS motion ended inside a padded box — usually an `exit=False`

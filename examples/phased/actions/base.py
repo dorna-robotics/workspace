@@ -22,7 +22,7 @@ RACK   = "rack_amber_40ml_2x4_1"
 SHAKER = "shaker_4slot_1"
 
 # The rack: 2 × 4 slots (launch.yaml batch_size.max). Two banks of
-# N_SEATS — the pass-2 window holds both so the scheduler can overlap
+# N_SEATS — the pass-2 window holds both so its cycle can overlap
 # them (phases.py, Weighed2).
 MAX_BATCH = 8
 

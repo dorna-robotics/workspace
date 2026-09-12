@@ -1457,10 +1457,10 @@ evaluated against the world that step leaves — the same simulation
 deadlock: an item never picks up a shared resource (the hand, a seat)
 while an earlier item could still finish and release one.
 
-The plan's order is only a VALID order, never the timing. The
-scheduler overlaps it on the resources (§11): the shake on the shaker
-lane while the arm weighs the previous bank, the swap where it costs
-least. The overlap never came from the planner.
+The plan's order is only a VALID order, never the timing. A phase
+without a `cycle` hands it to the scheduler, which overlaps it on the
+resources (§11); a phase WITH a `cycle` has declared the order across
+items itself, and that order is timed as written (§13 "The cycle").
 
 **Every failure is a named failure of the route.** There is no
 fallback and no search; `bt.replay` reports it before any bench does:
@@ -1541,7 +1541,8 @@ end.
 | `fact` | attr | `None` | sugar: `eff` becomes "this fact for every item in scope" |
 | `route` | attr | `[]` | THE STEPS, in the order an item meets them while this phase is open — Action classes. What it lists is what runs. |
 | `plan_window` | attr | `None` | WIDTH while this phase is open; `None` inherits launch.yaml's value. Same name on purpose — one concept. |
-| `schedule_budget` | attr | `None` | the scheduler's deterministic CP-SAT budget while this phase is open; `None` inherits the default. See "Steps that span items". |
+| `group` | attr | `None` | the cycle's ROUND: a function item → key; items sharing a key are one round (a shaker bank, a rack). `None`: every item its own round. |
+| `cycle` | attr | `[]` | THE ORDER ACROSS ITEMS, as stages of one round: each stage a list of this phase's route steps walked item by item, tagged with the round it acts on (`Extract[-1]`, `Extract[-1, 1]`). Repeated once per round and timed in that order — no search. See "The cycle". |
 | `scope(state, items)` | hook | all items | which items this phase concerns |
 | `pre(state, items)` | hook | `True` | may this phase open — a guard on the ROUTE's order |
 | `eff(items)` | hook | from `fact` | facts that must hold for it to be done |
@@ -1635,22 +1636,66 @@ the bank is a static rule (`tube // N_SEATS`, `actions.base.bank_of`
 over the window). Nothing else is declared: the route lookup carries
 each vial to the shake and waits there until the bank is complete.
 
-What the overlap needs is that the banks share a SCHEDULE: a phase
-that holds the shake AND the work after it — rest, extraction, the
-second weighing — with `plan_window = MAX_BATCH`, so bank k+1 shakes
-while bank k is extracted. Three barriers there would idle the arm
-through every shake. bna's shake-rest-extract pass went from 6750 s
-to 5070 s at 28 vials this way, and `examples/phased` is the small
-copy of it: `Weighed2` holds the shake and the second weighing, and
-bank 2 shakes while bank 1 is weighed.
+#### The cycle — the order across items, declared
 
-A whole-batch window is a bigger scheduling model by design, so such
-a phase also names its scheduler budget: `schedule_budget = 4.0`
-(CP-SAT's deterministic search budget; `None` inherits the default).
-bna's pass at 28 was FEASIBLE at 6460 s under the default and proven
-OPTIMAL at 5070 s with 4.0 — about 200 s of scheduling on the Pi, once
-per replan, and reproducible because the budget stops the search, not
-the wall.
+The route says what one item goes through. It does not say what the
+arm does WHILE a bank shakes, and a barrier at every stage idles it:
+bna's shake-rest-extract pass is 6750 s at 28 vials with barriers and
+5070 s pipelined. That order is not searched for; the phase declares
+it, as its `cycle`, the same way the route replaced the planner's
+search:
+
+```python
+class Extracted1(Phase):
+    fact = extracted[1]
+    route = [PickCapped1, LoadShaker1, Shake1, UnloadShaker1, PlaceInDecapper_s1,
+             Decap_s1, ParkCap_s1, ReturnOpen_s1, Rest1, Extract1]
+    group = bank                   # item -> its shaker bank: tube // N_SHAKER_SLOTS
+    cycle = [[PickCapped1, LoadShaker1, Shake1],     # this bank on; the shake fires with its last vial
+             [Extract1[-2]],                         # what is left of the bank before last
+             [Extract1[-1, 1]],                      # one vial of the last bank, its rest just over
+             [UnloadShaker1, PlaceInDecapper_s1, Decap_s1, ParkCap_s1, ReturnOpen_s1, Rest1]]
+    plan_window = MAX_BATCH        # a cycle spans banks: the whole batch in one window
+```
+
+Read it as the paragraph you would tell a technician. `group` says
+what one ROUND is — the items that share a key, here a bank; a rack
+would be `rack_of`; no `group` makes every item its own round. The
+cycle is the STAGES of one round. A stage is a list of the route's
+steps walked item by item, so `[Unload, Decap]` unloads and decaps
+each tube in turn while `[Unload], [Decap]` unloads every tube and
+then decaps every tube. Every step in a stage is tagged with the round
+it acts on: bare is this round, `[-1]` the previous, `[-2]` the one
+before, `[-1, 1]` one item of the previous. A step whose `pre` spans
+the round (the shake) fires with the item that completes it.
+
+The platform repeats the stages once per round, in window order,
+taking each step for the items whose facts allow it and applying its
+`eff` as it goes; the rounds keep going past the last bank while a
+negative offset still finds work, so the edges are never written. The
+result is timed in that order by the in-order scheduler: each step
+starts when its facts hold and its resources are free, tool swaps
+charged where the order puts them, and a step on another resource
+(the shake, the rest) runs alongside. Nothing is reordered. The batch
+size is not in the declaration: 28 vials is 7 rounds, 6 is a full bank
+and a bank of 2.
+
+The split extraction above is why the declaration reaches the
+optimum: a bank's rest ends late in the next round's shake, so one
+vial is extracted then and the other three during the round after —
+the arm never waits for a rest and the shaker is unloaded the moment
+it stops. Measured at 28 vials: 27338 s of bench time, identical to
+what CP-SAT proved optimal over the same window, and the window plans
+and schedules in 40 ms where the solver took 221 s. A phase without a
+cycle keeps the scheduler; its windows are small, and small windows
+solve in well under a second.
+
+What a cycle cannot do is invent an order you did not write: a bad
+cycle is a slow pass, visible at once in `bt.replay --show` and the
+scene builder's Gantt, and the fix is the cycle. `examples/phased` is
+the small copy: `Weighed2` holds the shake and the second weighing,
+`group = bank`, and its cycle unloads the last bank, loads and shakes
+this one, and weighs the last one meanwhile.
 
 #### Checking one phase — the bench
 
@@ -1740,25 +1785,28 @@ batch, because depth still needs bounding.
 ### Worked example
 
 bna at 28 vials, 44 actions per vial, on a Pi 5 (`bt.replay --show`
-ends with this table; 2026-09-12):
+ends with this table; 2026-09-12, the two extraction phases declaring
+their `cycle`):
 
 ```
-phase            windows  actions   plan s  cpsat s
-identified             7      253    0.059     0.23
+phase            windows  actions   plan s  sched s
+identified             7      253    0.112     0.23
 surrogate              7       28    0.007     0.03
 …
-capped_1               7       84    0.014     0.06
-extracted_1            1      238    0.460   221.35     (budget 4.0)
+capped_1               7       84    0.021     0.06
+extracted_1            1      238    0.016     0.02     (cycle)
 …
-extracted_2            1      238    0.563   310.33     (budget 4.0)
+extracted_2            1      238    0.017     0.03     (cycle)
 …
-TOTAL                        1235    1.219   532.43
+TOTAL                        1235    0.395     0.71
 batch=28  plan=1235 actions  fails=0  goal=True  makespan=27338  OK
 ```
 
-Planning is nothing; essentially all the time is CP-SAT on the two
-whole-batch passes, and that is a budget the phase names. If it ever
-matters, lower the budget or split the phase — both shrink the model.
+1.9 s wall for the whole run, planning and scheduling together. The
+same two passes, scheduled by CP-SAT over the whole-batch window
+instead of by their cycle, cost 221 s and 310 s for the same 27338 s
+makespan — the solver had to discover the order the cycle writes
+down. Small windows are cheap for the solver either way.
 
 Before this work the same protocol was **infeasible above 4 samples**,
 because each sample held one of four working slots from first pick to

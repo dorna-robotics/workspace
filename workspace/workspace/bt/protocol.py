@@ -49,7 +49,7 @@ from workspace.bt.dsl import (
     _normalise_eff,
     _to_snake,
 )
-from workspace.bt.phase import Phase
+from workspace.bt.phase import CycleStep, Phase
 from workspace.planner.plan_scheduler import ActionMeta
 from workspace.planner.route import State, Template
 
@@ -81,6 +81,7 @@ class Protocol:
         self.run_steps: List[Type[Action]] = []
         self._by_name: Dict[str, Type[Action]] = {}
         self._where: Dict[str, str] = {}     # name -> "run" | phase name
+        self._cycles: Dict[str, List[List[Tuple[str, int, Optional[int]]]]] = {}
 
         for i, entry in enumerate(route):
             if isinstance(entry, type) and issubclass(entry, Phase):
@@ -94,6 +95,7 @@ class Protocol:
                     )
                 for s in steps:
                     self._add(s, entry.name, f"phase {entry.name!r}")
+                self._cycles[entry.name] = self._read_cycle(entry, steps)
                 self.phases.append(entry)
                 self.entries.append(entry)
                 continue
@@ -118,6 +120,63 @@ class Protocol:
                         f"ROUTE — a park action is never a route step"
                     )
                 self.park_classes.append((name, cls))
+
+    def _read_cycle(self, phase: Phase, steps: Sequence[Any]) -> List[List[Tuple[str, int, Optional[int]]]]:
+        """The phase's ``cycle`` as stages of ``(step name, offset,
+        count)`` — each stage a list of the phase's own steps sharing
+        one round offset, a bare class meaning ``Cls[0]``. ``group``,
+        when set, must be callable."""
+        cycle = getattr(phase, "cycle", None) or []
+        bad = RouteDeclarationError(
+            f"{self.project}: phase {phase.name!r}: cycle is a list of STAGES, each a "
+            f"list of the phase's steps tagged with one round — "
+            f"[[Load, Shake], [Extract[-1]], [Unload, Rest]]"
+        )
+        if not isinstance(cycle, (list, tuple)):
+            raise bad
+        group = getattr(phase, "group", None)
+        if group is not None and not callable(group):
+            raise RouteDeclarationError(
+                f"{self.project}: phase {phase.name!r}: group is {group!r} — it is a "
+                f"function item -> round key (a bank rule such as ``lambda t: t // 4``)"
+            )
+        names_in_route = {_to_snake(c.__name__) for c in steps}
+        out: List[List[Tuple[str, int, Optional[int]]]] = []
+        for stage in cycle:
+            if not isinstance(stage, (list, tuple)) or not stage:
+                raise bad
+            entries: List[Tuple[str, int, Optional[int]]] = []
+            for e in stage:
+                if _is_action_class(e):
+                    e = CycleStep(e, 0, None)
+                if not isinstance(e, CycleStep):
+                    raise bad
+                name = _to_snake(e.cls.__name__)
+                if name not in names_in_route:
+                    raise RouteDeclarationError(
+                        f"{self.project}: phase {phase.name!r}: cycle lists {e!r}, which is "
+                        f"not in the phase's route — a cycle orders the route's own steps"
+                    )
+                entries.append((name, int(e.offset), e.count))
+            if len({off for _, off, _ in entries}) != 1:
+                raise RouteDeclarationError(
+                    f"{self.project}: phase {phase.name!r}: cycle stage {stage!r} mixes "
+                    f"rounds — a stage walks the items of ONE round; split it"
+                )
+            out.append(entries)
+        if out:
+            missing = names_in_route - {n for st in out for n, _, _ in st}
+            if missing:
+                raise RouteDeclarationError(
+                    f"{self.project}: phase {phase.name!r}: cycle leaves out "
+                    f"{sorted(missing)} — every step of the route has its place in the cycle"
+                )
+        return out
+
+    def cycle(self, phase_name: str) -> List[List[Tuple[str, int, Optional[int]]]]:
+        """The phase's cycle as stages of ``(step name, offset, count)``;
+        empty for a phase that runs its route item after item."""
+        return list(self._cycles.get(phase_name, ()))
 
     def _add(self, cls: Any, where: str, at: str) -> None:
         if not _is_action_class(cls):

@@ -38,7 +38,8 @@ def main():
     from workspace.recipes.solve import load_launch, merged_sim_scene
     from workspace.bt.replay import resolve_kwargs
     launch = load_launch(project)
-    kwargs = resolve_kwargs(launch, batch=args.batch, overrides=args.kw)
+    kwargs = resolve_kwargs(launch, batch=args.batch, overrides=args.kw,
+                            project_dir=project)
 
     # Stub PLAYBACK only: moves land at their targets instantly. Planning,
     # IK, collision, attach/detach and device sims all stay real.

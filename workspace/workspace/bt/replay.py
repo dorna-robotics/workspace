@@ -215,7 +215,8 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     from workspace.bt.launcher import _load_route
     from workspace.bt.phase import PhaseNotReady, current_phase, pick_window
     from workspace.planner.cpsat_scheduler import schedule_cpsat
-    from workspace.planner.route import RouteError, plan_route
+    from workspace.planner.plan_scheduler import schedule_greedy
+    from workspace.planner.route import RouteError, plan_cycle, plan_route
 
     spec = A.setup(**kwargs)
     initial = frozenset(spec["initial_facts"])
@@ -273,7 +274,7 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             else:
                 window = list(all_items)
                 goal = spec["goal"]
-            name, budget = None, None
+            name, cycle, rounds = None, [], []
         else:
             ph, items = cur
             window = pick_window(fstate, phases, all_items, item_done, plan_window)
@@ -282,7 +283,8 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
                 break
             scoped = [it for it in window if it in items] or list(items)
             goal = (lambda st, _p=ph, _s=scoped: _p.reached(st, _s))
-            name, budget = ph.name, ph.schedule_budget
+            name, cycle = ph.name, protocol.cycle(ph.name)
+            rounds = ph.rounds(list(window)) if cycle else []
         if slice_dim:
             ctx.meta["objects"][slice_dim] = list(window)
         ctx.meta["current_phase"] = name
@@ -290,7 +292,10 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         t1 = time.perf_counter()
         templates = protocol.templates(ctx, protocol.candidates(name))
         try:
-            res = plan_route(templates, fstate, goal, list(window), explain=protocol.explainer(ctx))
+            if cycle:
+                res = plan_cycle(templates, fstate, goal, rounds, cycle, explain=protocol.explainer(ctx))
+            else:
+                res = plan_route(templates, fstate, goal, list(window), explain=protocol.explainer(ctx))
         except RouteError as ex:
             failures.append(f"{name or 'tail'} window {list(window)}: {ex}")
             break
@@ -301,16 +306,18 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             break
         preds = build_precedence(res, protocol, initial_state=fstate, ctx=ctx)
         caps = derive_capacity_spans(res, protocol, initial_state=fstate, ctx=ctx)
-        limits = ({"deterministic_limit": float(budget), "time_limit_s": max(30.0, 100.0 * float(budget))}
-                  if budget is not None else {})
-        out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
-                                    initial_tool=tool_now, **limits)
+        if cycle:
+            # The cycle's order is the schedule: timed as declared, never reordered.
+            out, swaps = schedule_greedy(res, meta, predecessors=preds, initial_tool=tool_now)
+        else:
+            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
+                                        initial_tool=tool_now)
         t3 = time.perf_counter()
         timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
-                       "plan_s": round(t2 - t1, 3), "cpsat_s": round(t3 - t2, 3)})
+                       "plan_s": round(t2 - t1, 3), "sched_s": round(t3 - t2, 3)})
         if os.environ.get("REPLAY_TRACE"):
             print(f"[replay] {name or 'tail':<16} window {list(window)} actions {len(res):3d} "
-                  f"plan {t2 - t1:6.3f}s cpsat {t3 - t2:5.2f}s",
+                  f"plan {t2 - t1:6.3f}s sched {t3 - t2:5.2f}s",
                   file=sys.__stderr__, flush=True)
         if show:
             lines.append(f"── {name or 'tail'} · window {list(window)} · t0={t_off:.0f} ──")
@@ -344,18 +351,18 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         # Where the seconds went, per phase (bt-framework-guide §13).
         agg = {}
         for row in timing:
-            a = agg.setdefault(row["phase"], {"windows": 0, "actions": 0, "plan_s": 0.0, "cpsat_s": 0.0})
+            a = agg.setdefault(row["phase"], {"windows": 0, "actions": 0, "plan_s": 0.0, "sched_s": 0.0})
             a["windows"] += 1; a["actions"] += row["actions"]
-            for k in ("plan_s", "cpsat_s"):
+            for k in ("plan_s", "sched_s"):
                 a[k] += row[k]
         lines.append("")
-        lines.append(f"  {'phase':<16}{'windows':>8}{'actions':>9}{'plan s':>9}{'cpsat s':>9}")
-        tot = {"plan_s": 0.0, "cpsat_s": 0.0}
+        lines.append(f"  {'phase':<16}{'windows':>8}{'actions':>9}{'plan s':>9}{'sched s':>9}")
+        tot = {"plan_s": 0.0, "sched_s": 0.0}
         for nm, a in agg.items():
-            lines.append(f"  {nm:<16}{a['windows']:>8}{a['actions']:>9}{a['plan_s']:>9.3f}{a['cpsat_s']:>9.2f}")
+            lines.append(f"  {nm:<16}{a['windows']:>8}{a['actions']:>9}{a['plan_s']:>9.3f}{a['sched_s']:>9.2f}")
             for k in tot:
                 tot[k] += a[k]
-        lines.append(f"  {'TOTAL':<16}{'':>8}{len(res_all):>9}{tot['plan_s']:>9.3f}{tot['cpsat_s']:>9.2f}")
+        lines.append(f"  {'TOTAL':<16}{'':>8}{len(res_all):>9}{tot['plan_s']:>9.3f}{tot['sched_s']:>9.2f}")
     extra = []
     if show:
         extra.append(lines)

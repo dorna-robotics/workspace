@@ -207,13 +207,7 @@ def plan_route(
         _, unit, step = best
         key = (step.name, step.params)
         if key in taken:
-            who = "the run" if unit is None else f"item {unit!r}"
-            raise RouteError(
-                f"{step!r} applies again after it ran for {who} in this plan: "
-                f"a step's pre() must be false once the step is behind the "
-                f"item — guard it with the negation of a fact a later step "
-                f"asserts (~unloaded(t) on a load, ~done(t) on the last step)."
-            )
+            raise _repeat(step, unit)
         taken.add(key)
         try:
             nxt = step.eff(sim)
@@ -225,8 +219,11 @@ def plan_route(
 
     if goal(sim):
         return plan
+    raise _stall(templates, sim, units, last, explain)
 
-    # ── Nothing applies and the goal is not reached: name it ──────────
+
+def _stall(templates, sim, units, last, explain) -> RouteError:
+    """Nothing applies and the goal is not reached: name it, per unit."""
     lines = []
     for unit in units:
         who = "run-level steps" if unit is None else f"item {unit!r}"
@@ -246,7 +243,125 @@ def plan_route(
         if wants:
             head += "; not applicable: " + "; ".join(wants[:4])
         lines.append(head)
-    raise RouteError(
+    return RouteError(
         "the route does not reach the goal from this state — no step applies "
         "and the goal is not met:\n  " + "\n  ".join(lines)
     )
+
+
+def _step_of(t: Template, state: State, unit: Any) -> Optional[Step]:
+    """``t`` grounded for ``unit`` if its pre holds now, else ``None``."""
+    for params in _bindings_for(t, state, unit):
+        try:
+            ok = t.pre(state, params)
+        except Exception as ex:
+            raise RouteError(f"{t.name}{params}: pre() raised {type(ex).__name__}: {ex}") from ex
+        if ok:
+            return t.ground(params)
+    return None
+
+
+def _repeat(step: Step, unit: Any) -> RouteError:
+    who = "the run" if unit is None else f"item {unit!r}"
+    return RouteError(
+        f"{step!r} applies again after it ran for {who} in this plan: "
+        f"a step's pre() must be false once the step is behind the "
+        f"item — guard it with the negation of a fact a later step "
+        f"asserts (~unloaded(t) on a load, ~done(t) on the last step)."
+    )
+
+
+def plan_cycle(
+    templates: Sequence[Template],
+    state: State,
+    goal: Goal,
+    rounds: Sequence[Sequence[Any]],
+    cycle: Sequence[Sequence[Tuple[str, int, Optional[int]]]],
+    *,
+    explain: Optional[Callable[[Template, State, Tuple[Any, ...]], str]] = None,
+) -> List[Step]:
+    """The plan for a phase that DECLARES its order across items.
+
+    ``rounds`` are the window's items grouped as the phase's ``group``
+    says (``Phase.rounds``); ``cycle`` is the phase's cycle as STAGES
+    (``Protocol.cycle``): each stage a list of ``(step name, round
+    offset, count)`` sharing one offset. Round ``k`` takes the stages
+    in order; a stage tagged ``offset`` acts on round ``k + offset``,
+    walking that round's items one by one and taking, for each item,
+    the stage's steps in order when they apply now (``count``: at most
+    that many items take the step this round), each step's ``eff``
+    applied as it is taken. So ``[Unload, Decap]`` is "unload and decap
+    each tube", and ``[Unload], [Decap]`` is "unload every tube, then
+    decap every tube". A step whose ``pre`` spans the round (a shake)
+    fires with the item that completes it. The rounds run ``0, 1, …``
+    and keep going past the last one while a negative offset still
+    finds work (the last bank's extraction), so the list never has to
+    mention the edges. Run-level steps (``Start``) are taken whenever
+    they apply, ahead of the round.
+
+    Same contract as :func:`plan_route`: the plan stops the moment the
+    goal holds; a step that applies again after it ran, or a goal not
+    reached when nothing applies, is a named :class:`RouteError`.
+    Linear in the batch, no search.
+    """
+    if not isinstance(state, frozenset):
+        state = frozenset(state)
+    by_name = {t.name: t for t in templates}
+    for stage in cycle:
+        for name, _off, _cnt in stage:
+            if name not in by_name:
+                raise RouteError(f"cycle names {name!r}, which is not a step of this phase")
+    sim = state
+    plan: List[Step] = []
+    taken: set = set()
+    last: dict = {}
+    items = [it for r in rounds for it in r]
+    K = len(rounds)
+
+    def take(step: Step, unit: Any) -> None:
+        nonlocal sim
+        key = (step.name, step.params)
+        if key in taken:
+            raise _repeat(step, unit)
+        taken.add(key)
+        try:
+            nxt = step.eff(sim)
+        except Exception as ex:
+            raise RouteError(f"{step!r}: eff() raised {type(ex).__name__}: {ex}") from ex
+        sim = nxt if isinstance(nxt, frozenset) else frozenset(nxt)
+        plan.append(step)
+        last[unit] = step
+
+    k = 0
+    while not goal(sim):
+        moved = False
+        for t in templates:                      # run-level steps first (Start)
+            step = _step_of(t, sim, None)
+            if step is not None:
+                take(step, None)
+                moved = True
+        for stage in cycle:
+            if not stage:
+                continue
+            r = k + stage[0][1]
+            if r < 0 or r >= K:
+                continue
+            took = [0] * len(stage)
+            for it in rounds[r]:
+                for e, (name, _off, count) in enumerate(stage):
+                    if count is not None and took[e] >= count:
+                        continue
+                    step = _step_of(by_name[name], sim, it)
+                    if step is None:
+                        continue
+                    take(step, it)
+                    took[e] += 1
+                    moved = True
+                    if goal(sim):
+                        return plan
+        k += 1
+        if k >= K and not moved:
+            break                                # the trailing offsets ran dry
+    if goal(sim):
+        return plan
+    raise _stall(templates, sim, [None] + items, last, explain)

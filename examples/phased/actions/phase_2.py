@@ -11,9 +11,10 @@ batch wait for everyone's ``home_1``.
 
 The shake couples four tubes — one head, one clamp, one cycle: its
 ``pre`` spans the bank, so the route lookup simply waits until the
-bank is seated. The shake and the second weighing are ONE phase so
-the scheduler overlaps the banks: bank 2 shakes while bank 1 is
-weighed. Boundary at exit: doc/phases.md row ``weighed_2``.
+bank is seated. The shake and the second weighing are ONE phase, and
+``phases.Weighed2.cycle`` declares the order across banks: bank 2
+shakes while bank 1 is weighed. Boundary at exit: doc/phases.md row
+``weighed_2``.
 """
 
 from workspace.bt import Action
@@ -60,11 +61,11 @@ class Shake(Action):
     """One shake for this tube's BANK — every tube of its load.
 
     Parameterised by a tube (four identical params-free actions cannot
-    be told apart by the scheduler), the bank is static (``tube // N_SEATS``)
-    so planner and replay agree whatever the order. Holds the shaker,
-    NOT the robot: the arm keeps working through the cycle — on the
-    Gantt the shake sits on the shaker lane while the robot lane weighs
-    the previous bank."""
+    be told apart), the bank is static (``tube // N_SEATS``) so planner
+    and replay agree whatever the order. Holds the shaker, NOT the
+    robot: the arm keeps working through the cycle — on the Gantt the
+    shake sits on the shaker lane while the robot lane weighs the
+    previous bank, the order ``phases.Weighed2.cycle`` declares."""
     params   = ["tube"]
     duration = SHAKE_S
     resource = "shaker"

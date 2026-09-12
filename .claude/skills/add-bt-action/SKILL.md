@@ -64,7 +64,7 @@ Listing the class in the project's `ROUTE` (or a phase's `route`) is what makes 
 - **feeder actions**: `examples/feeder/actions.py` — minimal per-item template (Start → per-item action → Park)
 - **capping actions**: `examples/capping/actions.py` — multi-action protocol with progress reporting
 - **runtime actions**: `examples/runtime/actions.py` — full reference incl. runtime scene mutation
-- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases in `base.py`, thin `PASS` subclasses per `phase_N.py`, each phase's `route` and the `ROUTE` in `phases.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project. When a device holds several items at once (a shaker bank, a rotor) the step's `pre` spans the bank and the phase holds the work after it in one window; bt-framework-guide §13 "Steps that span items".
+- **phased actions**: `examples/phased/actions/` — a PHASED protocol as a package: pass-indexed facts in `predicates.py`, abstract bases in `base.py`, thin `PASS` subclasses per `phase_N.py`, each phase's `route` and the `ROUTE` in `phases.py`, the boundary table in `doc/phases.md`. Copy this shape for any multi-phase project. When a device holds several items at once (a shaker bank, a rotor) the step's `pre` spans the bank, the phase holds the work after it in one window, and the phase DECLARES the order across banks as its `cycle` (`group = bank`; stages of one round, `Extract[-1]` for the previous bank) — nothing searches for the overlap; bt-framework-guide §13 "The cycle".
 
 ## Common pitfalls
 

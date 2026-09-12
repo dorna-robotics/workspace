@@ -31,6 +31,22 @@ end of the protocol.
 
     ROUTE = [Start, Dispensed, Unloaded, Racked, Park]
 
+A phase whose items overlap — a bank shakes while the previous bank
+is worked — declares that order too, as its ``cycle``: the STAGES of
+one round, each stage a list of steps walked item by item, tagged
+with the round it acts on (``Extract[-1]``: the previous round), and
+``group``, the rule that says which items make a round. The platform
+unrolls the cycle over the rounds and times it in that order; nothing
+searches for a better one.
+
+    class Extracted(Phase):
+        fact = extracted
+        route = [Load, Shake, Unload, Rest, Extract]
+        group = bank                          # item -> its bank
+        cycle = [[Load, Shake],               # this bank on, the shake fires with the last
+                 [Extract[-1]],               # while it shakes: extract the last bank
+                 [Unload, Rest]]              # each of this bank off; the rest starts
+
 THE ORDER IS THE ROUTE'S. ``ROUTE`` lists the phases in the order the
 batch crosses them; ``pre`` is a guard on that order, not its source —
 a phase that opens while its ``pre`` is false is an error at once, not
@@ -45,7 +61,27 @@ startup and warns.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, List, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class CycleStep:
+    """One entry of a ``Phase.cycle``: an Action class, the round it
+    acts on relative to the current one (``0`` this round, ``-1`` the
+    previous), and how many of that round's items it takes this time
+    (``None``: every item it applies to). Spelled ``Cls[offset]`` or
+    ``Cls[offset, count]``; a bare class is ``Cls[0]``."""
+
+    cls: Any
+    offset: int = 0
+    count: Optional[int] = None
+
+    def __repr__(self) -> str:
+        name = getattr(self.cls, "__name__", repr(self.cls))
+        if self.count is None:
+            return f"{name}[{self.offset}]"
+        return f"{name}[{self.offset}, {self.count}]"
 
 
 class Phase:
@@ -78,14 +114,25 @@ class Phase:
     #: window halves the model.
     plan_window: Optional[int] = None
 
-    #: The scheduler's DETERMINISTIC search budget while this phase is
-    #: open (``schedule_cpsat(deterministic_limit=...)``); ``None``
-    #: inherits the scheduler's default. A whole-batch window is a
-    #: bigger model by design: bna's shake-rest-extract pass (238
-    #: actions) is FEASIBLE at 6460 s under the default and proven
-    #: OPTIMAL at 5070 s with 4.0 — about 200 s of scheduling on the
-    #: Pi, reproducible because the budget, not the wall, stops it.
-    schedule_budget: Optional[float] = None
+    #: THE ROUND: ``item -> key``; the items that share a key are one
+    #: round of the ``cycle`` (a shaker bank: ``tube // N_SEATS``; a
+    #: rack: ``rack_of``). Rounds are ordered by first appearance in
+    #: the window. ``None`` — every item is its own round.
+    group: Optional[Callable[[Any], Any]] = None
+
+    #: THE ORDER ACROSS ITEMS, when the route alone does not say it:
+    #: the stages of one round, in the order they run. A stage is a
+    #: list of this phase's route steps walked ITEM BY ITEM — ``[Unload,
+    #: Decap]`` unloads and decaps each tube, ``[Unload], [Decap]``
+    #: unloads every tube then decaps every tube — and all its steps
+    #: are tagged with the round they act on: ``Load`` (this round),
+    #: ``Extract[-1]`` (the previous round), ``Extract[-1, 1]`` (one
+    #: item of the previous round). The platform repeats the stages
+    #: once per round and times the result in that order. It is what
+    #: "while this bank shakes, extract the last one" is written as. A
+    #: phase without a cycle runs its route item after item
+    #: (bt-framework-guide §13 "The cycle").
+    cycle: List[Any] = []
 
     def __init_subclass__(cls, **kw):
         super().__init_subclass__(**kw)
@@ -156,6 +203,21 @@ class Phase:
     def reached(self, state, items) -> bool:
         """Every fact ``eff`` names is true."""
         return all(t in state for t in self.eff_tuples(items))
+
+    # ── The cycle's rounds ────────────────────────────────────────────
+    def rounds(self, items) -> List[list]:
+        """The window's items as rounds of the ``cycle``: one list per
+        distinct ``group`` key, in order of first appearance; without a
+        ``group`` every item is a round of its own."""
+        # Read from the class: ``group = bank`` is a plain function of
+        # the item, not a method of the phase.
+        group = type(self).group
+        if group is None:
+            return [[it] for it in items]
+        keyed: dict = {}
+        for it in items:
+            keyed.setdefault(group(it), []).append(it)
+        return list(keyed.values())
 
     # ── Introspection used by the launcher ────────────────────────────
     def fact_names(self, items) -> List[str]:

@@ -17,7 +17,7 @@ What it teaches, and where:
 | What happens in phase N? | `actions/phase_N.py` — the concrete actions, in execution order |
 | Where are Start / Park / setup? | `actions/__init__.py` — the bookends and setup, nothing per phase |
 | Which line does the batch cross next, and which steps does a tube take there? | `phases.py` — one class per phase with its `route`, and the `ROUTE` that orders them |
-| How do the banks overlap? | `phases.py` — `Weighed2` holds the shake and the second weighing in one window; `actions/phase_2.py` — the shake's `pre` spans the bank and holds the shaker, not the arm (bt-framework-guide §13 "Steps that span items") |
+| How do the banks overlap? | `phases.py` — `Weighed2` holds the shake and the second weighing in one window and DECLARES the order across banks in its `cycle` (`group = bank`); `actions/phase_2.py` — the shake's `pre` spans the bank and holds the shaker, not the arm (bt-framework-guide §13 "The cycle") |
 | How do I check ONE phase, from a notebook, with no numbers of its own? | `dev/phase.ipynb` — `Bench(PROJ).phase(name)`; the project is the only source of truth (bt-framework-guide §13 "Checking one phase") |
 
 Conventions this encodes:
@@ -35,10 +35,12 @@ Conventions this encodes:
 - **A device that holds several items couples them.** The shaker
   seats four; a tube's seat (`t mod 4`) is a capacity fact and its
   bank (`t // 4`) is a static rule the shake's `pre` spans. `Weighed2`
-  widens its window to the rack so both banks share one schedule, and
-  the scheduler overlaps them: bank 2 shakes while bank 1 is weighed.
-  The shake and the second weighing are ONE phase for that reason — a
-  barrier between them would idle the arm through every shake.
+  widens its window to the rack and DECLARES the order across banks
+  as its `cycle`: unload the last bank, load and shake this one, weigh
+  the last one meanwhile. Nothing searches for that overlap; it is
+  written down and timed. The shake and the second weighing are ONE
+  phase for that reason — a barrier between them would idle the arm
+  through every shake.
 - **The audit row is written where the value is produced**: `Weigh`
   writes `weight_N_g` on a valid reading, Start seeds the rows,
   Park derives `status` from the facts (`rt.record`, project-guide §3).
@@ -53,6 +55,6 @@ cd ~/Downloads/workspace/workspace && sudo python3 -m workspace.bt.replay ~/Down
 cd ~/Downloads/workspace/examples/phased && sudo python3 main.py
 ```
 
-At batch 8 the schedule (`--show`) reads: bank 1 loaded, shaken,
-unloaded; bank 2 loaded and shaken on the shaker lane while the robot
-lane weighs bank 1.
+At batch 8 the schedule (`--show`) reads the cycle: bank 1 loaded and
+shaken; bank 1 unloaded, bank 2 loaded and shaken on the shaker lane
+while the robot lane weighs bank 1; bank 2 unloaded and weighed.
