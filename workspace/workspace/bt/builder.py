@@ -22,7 +22,7 @@ All helpers return py_trees Behaviours and can be composed freely.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Set, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import py_trees
 
@@ -163,6 +163,46 @@ class _ReplanOnFailure(py_trees.decorators.Decorator):
             raise ReplanRequested(self._reason)
         # Mirror the child's status otherwise.
         return self.decorated.status
+
+
+class _AfterPredecessors(py_trees.decorators.Decorator):
+    """Hold a leaf until every scheduled PREDECESSOR has succeeded.
+
+    ``from_schedule`` runs overlapping actions as parallel resource
+    branches — the shaker's branch beside the robot's. Branches are
+    sequential inside, concurrent across, and nothing across them
+    carried the plan's precedence: a shake scheduled AFTER the four
+    loads that fill its bank started the moment its branch did, while
+    the loads were still running on the robot branch (bna, the first
+    pipelined window, 2026-09-11). The schedule was right; the tree
+    lost the edge.
+
+    So every action leaf is wrapped with the predecessor set the
+    scheduler honoured (``build_precedence``) and does not tick its
+    child until each of them has reported SUCCESS — RUNNING meanwhile,
+    which is what a parallel branch expects of a member that is not
+    yet due. Completion is shared through ``done`` (one set per tree);
+    a predecessor in an earlier sequential phase is already in it.
+    Deadlock is impossible for a schedule that honours the same edges,
+    which is the only kind the scheduler emits.
+    """
+
+    def __init__(self, child, key: str, preds, done: set, name: Optional[str] = None):
+        super().__init__(child=child, name=name or f"after[{len(preds)}]")
+        self._key, self._preds, self._done = key, set(preds), done
+
+    def tick(self):
+        if not self._preds <= self._done:
+            self.status = py_trees.common.Status.RUNNING
+            yield self
+            return
+        yield from super().tick()
+
+    def update(self) -> py_trees.common.Status:
+        st = self.decorated.status
+        if st == py_trees.common.Status.SUCCESS:
+            self._done.add(self._key)
+        return st
 
 
 class _SliceCheck(py_trees.behaviour.Behaviour):
@@ -403,6 +443,7 @@ def from_schedule(
     resources: Optional[Dict[str, Tuple[str, ...]]] = None,
     tool_resource: str = "robot",
     name: str = "from_schedule",
+    predecessors: Optional[Dict[str, Set[str]]] = None,
 ) -> py_trees.behaviour.Behaviour:
     """Build a tree from a schedule (actions + swaps), resource-aware.
 
@@ -431,9 +472,15 @@ def from_schedule(
             a resource sub-sequence inside the Parallel.
         tool_resource: The resource swaps run on (typically ``"robot"``).
         name: Top-level sequence name.
+        predecessors: ``{entry_name: {entry_name, ...}}`` — the plan's
+            precedence the scheduler honoured, keyed like the entries
+            (``"load_shaker1(t4)"``). Each action leaf then waits for
+            its predecessors before it ticks, so a parallel phase keeps
+            the edges the schedule was built on (``_AfterPredecessors``).
     """
     durations = durations or {}
     resources = resources or {}
+    done: set = set()
 
     # Unify actions and swaps into a single "entry" representation
     # so the grouping pass can treat them uniformly. Each entry knows
@@ -448,7 +495,8 @@ def from_schedule(
             "end":       float(start) + dur,
             "resources": tuple(resources.get(action_name, ())) or ("__none__",),
             "make_leaf": (lambda an=action_name, ii=item_index:
-                          _safe_leaf(leaf_factory, an, ii)),
+                          _after_predecessors(_safe_leaf(leaf_factory, an, ii),
+                                              f"{an}(t{ii})", predecessors, done)),
         })
     for swap_start, from_t, to_t, dur in swaps:
         if swap_factory is None:
@@ -497,6 +545,14 @@ def from_schedule(
     return py_trees.composites.Sequence(
         name=name, memory=True, children=phase_nodes,
     )
+
+
+def _after_predecessors(leaf, key, predecessors, done):
+    """Wrap an action leaf so it waits for its scheduled predecessors;
+    identity when no precedence was given (tests, greedy callers)."""
+    if leaf is None or not predecessors:
+        return leaf
+    return _AfterPredecessors(leaf, key, predecessors.get(key, ()), done, name=f"after:{key}")
 
 
 def _safe_leaf(

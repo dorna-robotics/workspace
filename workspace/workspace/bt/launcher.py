@@ -700,7 +700,7 @@ def run_protocol(
         # the classic Sussman trap (achieving goal B undoes goal A);
         # catching it at launch beats discovering it mid-batch.
         mono = _mono()
-        for nm, _scope, _pre, _fn, _w, _gf in phases:
+        for nm, _scope, _pre, _fn, _w, _gf, _grp, _bud in phases:
             if nm not in mono and nm != "phase":
                 log.warning(
                     "Launcher: phase %r is not monotonic — some action "
@@ -708,7 +708,7 @@ def run_protocol(
                     "must be facts that only ever get added.", nm,
                 )
         log.info("Launcher: %d phase(s): %s",
-                 len(phases), " -> ".join(nm for nm, _s, _p, _g, _w, _f in phases))
+                 len(phases), " -> ".join(nm for nm, *_ in phases))
 
     def _current_phase(state):
         """First unmet phase as ``(name, items, reached_fn, window, goal_facts_fn)``."""
@@ -731,7 +731,7 @@ def run_protocol(
     def _until_reached(state) -> bool:
         if _until is None:
             return False
-        _nm, scope_fn, _pre, reached_fn, _w, _gf = _until
+        _nm, scope_fn, _pre, reached_fn, _w, _gf, _grp, _bud = _until
         items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
         return (not items) or reached_fn(state, items)
 
@@ -777,7 +777,7 @@ def run_protocol(
                 # NOT ``goal_fn`` — binding that name here would make
                 # it local to this whole function and turn every other
                 # ``goal_fn(state)`` read below into an UnboundLocalError.
-                _nm, items, phase_reached, _w, _gf = cur
+                _nm, items, phase_reached, _w, _gf, _grp, _bud = cur
                 window = ctx.meta["objects"].get(slice_dim, [])
                 # Target the phase over the items actually in the
                 # window, so a window smaller than the scope still
@@ -825,9 +825,9 @@ def run_protocol(
                 # planner puts Start first because the target needs it.
                 _cur = _current_phase_impl(state, phases, all_items, item_done, log=None)
                 if _cur is None:
-                    _nm, scope_fn, _pre, reached_fn, _w, _gf = _until
+                    _nm, scope_fn, _pre, reached_fn, _w, _gf, _grp, _bud = _until
                     items = list(scope_fn(state)) if scope_fn is not None else list(all_items)
-                    _cur = (_nm, items, reached_fn, _w, _gf)
+                    _cur = (_nm, items, reached_fn, _w, _gf, _grp, _bud)
                 elif _cur[0] != _until[0] and not _until_warned["done"]:
                     _until_warned["done"] = True
                     log.warning(
@@ -838,6 +838,11 @@ def run_protocol(
             else:
                 _cur = _current_phase(state) if phases else None
             c.meta["current_phase"] = _cur[0] if _cur else None
+            # The window's partition into the sets that move together
+            # (Phase.group) — the planner stamps one group's chain per
+            # group and never searches a grouped phase (replanner).
+            c.meta["groups"] = (_cur[5](window) if (_cur is not None and _cur[5] is not None) else None)
+            c.meta["schedule_budget"] = _cur[6] if _cur is not None else None
             # FREEZE THE PHASE FOR THIS REPLAN. The planning goal and the
             # heuristic read this, never _current_phase(state) again: a
             # goal that re-asks "which phase is current" while the
@@ -921,6 +926,8 @@ def run_protocol(
         # SwapLeaf keeps ctx.meta["current_tool"] true — so a window
         # never opens with a swap onto the tool it already holds.
         initial_tool_fn=lambda: ctx.meta.get("current_tool"),
+        # The open phase's deterministic scheduling budget (Phase.schedule_budget).
+        budget_fn=lambda: ctx.meta.get("schedule_budget"),
     )
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 
@@ -1025,6 +1032,13 @@ def run_protocol(
             # straight to replan. Retry only where a project explicitly
             # opts in with its own with_retry wrapper.
             return with_retry(leaf_factory(action_name, item_index), max_attempts=1)
+        # The plan's precedence, keyed like the tree's entries, so a leaf
+        # in a parallel branch waits for what the schedule put before it.
+        _plan = list(replanner.last_plan or [])
+        _key = lambda a: f"{a.name}(t{a.params[0] if a.params else 0})"
+        _preds = _precedence(_plan) if _plan else []
+        pred_names = {_key(_plan[i]): {_key(_plan[j]) for j in _preds[i]}
+                      for i in range(len(_plan))} if _plan else None
         body = from_schedule(
             actions_list, _wrapped,
             swaps=swaps_list,
@@ -1032,6 +1046,7 @@ def run_protocol(
             durations=durations,
             resources=action_resources,
             name=f"{project_name}/body",
+            predecessors=pred_names,
         )
         # When slicing is on, end-of-slice check decides "exit or
         # replan for next window". When off, it's a no-op (the body

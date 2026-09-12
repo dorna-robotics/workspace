@@ -284,9 +284,9 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             outstanding = [it for it in all_items
                            if item_done is None or not item_done(fstate, it)]
             window = outstanding or list(all_items)
-            name, goal = None, spec["goal"]
+            name, goal, budget = None, spec["goal"], None
         else:
-            name, items, reached_fn, width, facts_fn = cur
+            name, items, reached_fn, width, facts_fn, group_fn, budget = cur
             window = pick_window(fstate, phases, all_items, item_done, width or plan_window)
             if not window:
                 failures.append(f"phase {name}: no window to plan")
@@ -296,6 +296,8 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         if slice_dim:
             ctx.meta["objects"][slice_dim] = list(window)
         ctx.meta["current_phase"] = name
+        groups = (group_fn(scoped) if (cur is not None and group_fn is not None) else None)
+        ctx.meta["groups"] = groups
         rid += 1
         t0 = time.perf_counter()
         templates = reg.to_templates(ctx)
@@ -314,13 +316,21 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         plan_fn = (lambda st, g, facts, _d=domain: pddl_plan(st, _d, g, goal_facts=facts))
         res = None
         expanded = False
-        if cur is not None and slice_dim and len(scoped) > 1:
+        if cur is not None and slice_dim and (len(scoped) > 1 or groups):
             try:
                 res = expand_template_plan(templates, fstate, goal, gf, list(scoped),
-                                           ctx, slice_dim, plan_fn)
+                                           ctx, slice_dim, plan_fn, groups=groups)
             except Exception:
+                if groups:
+                    raise
                 res = None
             expanded = res is not None
+        if res is None and groups:
+            # A grouped phase is NEVER searched (the search grows with the
+            # batch): a stamp that does not hold is a project fault.
+            failures.append(f"phase {name} window {window}: the group chain did not stamp "
+                            f"onto the other groups — groups not uniform or not self-contained")
+            break
         if res is None:
             res = pddl_plan(fstate, domain, goal, goal_facts=gf)
         t2 = time.perf_counter()
@@ -329,8 +339,10 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             break
         preds = build_precedence(res, reg, initial_state=fstate, ctx=ctx)
         caps = derive_capacity_spans(res, reg, initial_state=fstate, ctx=ctx)
+        limits = ({"deterministic_limit": float(budget), "time_limit_s": max(30.0, 100.0 * float(budget))}
+                  if budget is not None else {})
         out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
-                                    initial_tool=tool_now)
+                                    initial_tool=tool_now, **limits)
         t3 = time.perf_counter()
         timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
                        "expanded": expanded, "domain_s": round(t1 - t0, 3),

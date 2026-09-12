@@ -73,6 +73,15 @@ class Phase:
     #: halving the window halves the model.
     plan_window: Optional[int] = None
 
+    #: The scheduler's DETERMINISTIC search budget while this phase is
+    #: open (``schedule_cpsat(deterministic_limit=...)``); ``None``
+    #: inherits the scheduler's default. A grouped whole-batch window is
+    #: a bigger model by design: bna's shake-rest-extract pass (238
+    #: actions) is FEASIBLE at 6460 s under the default and proven
+    #: OPTIMAL at 5070 s with 4.0 — about 200 s of scheduling on the
+    #: Pi, reproducible because the budget, not the wall, stops it.
+    schedule_budget: Optional[float] = None
+
     _order: int = 0
 
     def __init_subclass__(cls, **kw):
@@ -119,6 +128,30 @@ class Phase:
         return [self.fact(it) for it in items]
 
     # ── Starting past this phase (workspace.bt.bench) ─────────────────
+    def group(self, items):
+        """How the items travel through this phase: a partition of
+        ``items`` into the sets that MOVE TOGETHER — a shaker bank, a
+        centrifuge rotor, a tray. Default: every item on its own, which
+        is today's behaviour everywhere.
+
+        A device that holds several items at once couples them: one
+        shake action spans the four vials of a bank. Then the planner
+        cannot plan one ITEM and stamp it, and without this hook it
+        falls back to a search over every coupled item — the search
+        that grows with the batch. With the partition declared, the
+        planner plans ONE GROUP's chain and stamps it per group, the
+        window never splits a group, and the scheduler overlaps the
+        groups on their resources (bank k+1 shakes while bank k rests
+        and bank k-1 is extracted). Explicit, deterministic, verified
+        by simulation like every stamped plan; a stamp that does not
+        hold fails loudly rather than searching.
+
+        ``None`` (the default) means NO grouping: the phase plans as it
+        always did — per-item stamping when the items are independent,
+        the search otherwise. Only an override declares groups.
+        """
+        return None
+
     def layout(self, items):
         """Where the items PHYSICALLY rest after this phase closed, as
         attach clauses relative to the launch-time scene:
@@ -181,7 +214,11 @@ def _always_ready(_st, _items):
 
 def normalise_phases(spec_val, all_items):
     """Normalise a phases spec to
-    ``[(name, scope, pre, reached, plan_window, goal_facts)]``.
+    ``[(name, scope, pre, reached, plan_window, goal_facts, group,
+    schedule_budget)]``. ``group(items)`` partitions items into the sets
+    that move together (``Phase.group``); ``None`` for a bare entry —
+    every item alone. ``schedule_budget`` is the scheduler's
+    deterministic budget for the phase, ``None`` for the default.
 
     ``goal_facts(items)`` is the phase's own facts for those items — what
     the planner's GBFS heuristic aims at while the phase is open. Aiming
@@ -216,6 +253,8 @@ def normalise_phases(spec_val, all_items):
                 (lambda st, items, _e=entry: _e.reached(st, items)),
                 getattr(entry, "plan_window", None),
                 (lambda items, _e=entry: _e.eff_tuples(items)),
+                (lambda items, _e=entry: _e.group(items)),
+                getattr(entry, "schedule_budget", None),
             ))
             continue
         if isinstance(entry, dict):
@@ -235,14 +274,14 @@ def normalise_phases(spec_val, all_items):
             goal_fn = (lambda st, items, _n=str(goal):
                        all((_n, it) in st for it in items))
             facts_fn = (lambda items, _n=str(goal): [(_n, it) for it in items])
-        out.append((name, scope_fn, _always_ready, goal_fn, None, facts_fn))
+        out.append((name, scope_fn, _always_ready, goal_fn, None, facts_fn, None, None))
     return out
 
 
 def current_phase(state, phases, all_items, item_done, log=None):
     """First unmet phase as ``(name, items_in_scope, reached_fn, window,
-    goal_facts_fn)``, or None when every phase is reached (or blocked —
-    logged).
+    goal_facts_fn, group_fn, schedule_budget)``, or None when every
+    phase is reached (or blocked — logged).
 
     Scope is resolved here, once, so the planning goal and the window
     picker see the same item set. Order is derived: the first phase
@@ -252,7 +291,7 @@ def current_phase(state, phases, all_items, item_done, log=None):
     live = [it for it in all_items if not item_done(state, it)] \
         if item_done is not None else list(all_items)
     blocked = []
-    for nm, scope_fn, pre_fn, reached_fn, _win, facts_fn in phases:
+    for nm, scope_fn, pre_fn, reached_fn, _win, facts_fn, group_fn, budget in phases:
         items = list(scope_fn(state)) if scope_fn is not None else (live or all_items)
         if not items:
             continue                     # scope empty — phase vacuous
@@ -261,7 +300,7 @@ def current_phase(state, phases, all_items, item_done, log=None):
         if not pre_fn(state, items):
             blocked.append(nm)
             continue                     # not ready — try the next
-        return nm, items, reached_fn, _win, facts_fn
+        return nm, items, reached_fn, _win, facts_fn, group_fn, budget
     if blocked and log is not None:
         log.warning("Launcher: phases %s are all blocked by their pre() "
                     "— check their order and conditions.", blocked)
@@ -292,4 +331,18 @@ def pick_window(state, phases, all_items, item_done, plan_window, log=None):
         out.append(it)
         if len(out) >= width:
             break
+    # A GROUP IS NEVER SPLIT. A bank half in the window cannot be planned
+    # (its shake spans the other half), so the window rounds up to whole
+    # groups — the width is a floor, the partition decides the edge.
+    if out and cur is not None and cur[5] is not None:
+        eligible = [it for it in all_items
+                    if (item_done is None or not item_done(state, it))
+                    and it in scope and not cur[2](state, [it])]
+        groups = cur[5](eligible)
+        if groups:
+            chosen = set(out)
+            for g in groups:
+                if any(it in chosen for it in g):
+                    chosen.update(g)
+            out = [it for it in eligible if it in chosen]
     return out

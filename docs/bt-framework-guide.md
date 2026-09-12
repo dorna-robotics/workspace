@@ -1616,6 +1616,53 @@ many-action protocol readable, and that every phased project follows
    seeds the rows, the reading action writes the field, Park derives
    `status` from the facts (`rt.record`, project-guide §3).
 
+#### Groups — items that move together
+
+A phase is a barrier on DEPTH; overlap is not a phase concept. Overlap
+lives in the scheduler: within one window CP-SAT overlaps whatever the
+resources allow (a shake holds only the shaker, a rest only its own
+clock, an extraction the arm). What limits that window is PLANNING: the
+planner plans one item's chain and stamps it for the rest, and that
+stamp is only valid while items are independent. A device that holds
+several items at once — a shaker bank, a rotor, a tray — couples them,
+the stamp fails, and the planner falls back to a search over every
+coupled item, which grows with the batch (bna: 28 coupled vials took
+the bench Pi down).
+
+So a phase declares how its items travel:
+
+```python
+class Extracted1(Phase):
+    fact = extracted[1]
+    plan_window = MAX_BATCH           # the whole batch — the pipeline never drains
+
+    def group(self, items):           # the sets that move together
+        return banks(items)           # [[0,1,2,3], [4,5,6,7], ...]
+```
+
+With a partition declared: the planner plans ONE group's chain and
+stamps it per group (a last, partial group is planned on its own,
+bounded by its size); the window never splits a group; the scheduler
+overlaps the groups. bna's shake-rest-extract pass planned as one
+four-vial search plus seven stamps, and the scheduler produced the
+pipeline — bank k+1 shaking while bank k rests and bank k-1 is
+extracted — cutting the pass from 6750 s to 5070 s at 28 vials.
+Explicit, deterministic, verified by simulation like every stamped
+plan; a stamp that does not hold FAILS LOUDLY — a grouped phase is
+never searched. Default: every item on its own, today's behaviour.
+
+A grouped whole-batch window is a bigger scheduling model by design,
+so the phase also names its scheduler budget: `schedule_budget = 4.0`
+(CP-SAT's deterministic search budget; `None` inherits the default).
+bna's pass at 28 was FEASIBLE at 6460 s under the default and proven
+OPTIMAL at 5070 s with 4.0 — about 200 s of scheduling on the Pi, once
+per replan, and reproducible because the budget stops the search, not
+the wall.
+
+A grouped phase is the tool when stages overlap ACROSS groups. When a
+device must finish every group before anyone continues, the barrier —
+a plain phase — is still the right tool; the two are complementary.
+
 #### Checking one phase — the bench
 
 A phase is a contract, so it can be checked alone — without running the

@@ -105,6 +105,7 @@ def plan(
     goal_facts: Optional[Iterable[Fact]] = None,
     max_depth: int = 500,
     max_states: int = 200_000,
+    max_frontier: int = 100_000,
 ) -> Optional[List[Action]]:
     """Forward-search for a plan from ``initial_state`` to ``goal``.
 
@@ -135,6 +136,13 @@ def plan(
             terminal effects, or an explicit list).
         max_depth: Refuse to search past this plan length.
         max_states: Refuse to expand more than this many states.
+        max_frontier: Refuse to HOLD more than this many unexpanded
+            states. The frontier is where the memory goes — every
+            expanded state pushes its successors, each a full fact set
+            — and it can outgrow the machine long before ``max_states``
+            expansions (a 28-vial coupled window hung the bench Pi,
+            2026-09-11). Hitting it means the window is too wide for a
+            searched phase: narrow ``plan_window``.
 
     Returns:
         Ordered list of Actions, or ``None`` if no plan within bounds.
@@ -212,6 +220,14 @@ def plan(
                 "pddl: state cap (%d) hit — giving up. May need a stronger "
                 "domain encoding or a real planner.",
                 max_states,
+            )
+            return None
+        if len(frontier) >= max_frontier:
+            log.warning(
+                "pddl: frontier cap (%d) hit after %d expansions — giving up "
+                "before the search outgrows memory. The window is too wide "
+                "for a searched phase: narrow plan_window.",
+                max_frontier, expanded,
             )
             return None
 

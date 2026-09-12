@@ -159,21 +159,38 @@ class Replanner:
         # falls back, because its phase barriers genuinely couple items.
         actions = None
         objs = (self.ctx.meta or {}).get("objects") or {}
+        # The current phase's partition of the window into the sets that
+        # move together (launcher._observe, from Phase.group). With a
+        # partition declared the plan is one group's chain stamped per
+        # group — and NEVER a search over the coupled items: that search
+        # grows with the batch (it took the bench Pi down), so a stamp
+        # that does not hold is an error to fix, not a reason to search.
+        groups = (self.ctx.meta or {}).get("groups")
         dims = [k for k, v in objs.items() if v]
         if self._templates is not None and len(dims) == 1:
             dim = dims[0]
             try:
                 actions = expand_template_plan(
                     self._templates, state, self._goal, gf,
-                    list(objs[dim]), self.ctx, dim, _plan,
+                    list(objs[dim]), self.ctx, dim, _plan, groups=groups,
                 )
             except Exception:
+                if groups:
+                    raise
                 log.debug("Replanner: template expansion raised; searching.",
                           exc_info=True)
                 actions = None
             if actions is not None and self._cfg.verbose:
-                log.info("Replanner[#%d]: template-expanded %d item(s)",
-                         self._calls, len(objs[dim]))
+                log.info("Replanner[#%d]: template-expanded %d item(s)%s",
+                         self._calls, len(objs[dim]),
+                         f" in {len(groups)} group(s)" if groups else "")
+        if actions is None and groups:
+            raise RuntimeError(
+                "Replanner: the phase declares groups but one group's chain did "
+                "not stamp onto the others — the groups are not uniform, or a "
+                "group's chain does not close on its own. Fix the phase; a "
+                "grouped phase is never searched."
+            )
         if actions is None:
             actions = _plan(state)
         if actions is None:
@@ -207,8 +224,16 @@ class Replanner:
         return root
 
 
-def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, plan_fn):
-    """Plan ONE item, replicate the chain for every item, verify.
+def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, plan_fn,
+                         groups=None):
+    """Plan ONE item (or ONE GROUP), replicate the chain for every other, verify.
+
+    ``groups``: a partition of ``items`` into the sets that move together
+    (``Phase.group``). Then the unit that is planned once and stamped is
+    the group, not the item — the first group's chain, re-grounded onto
+    every other group by position; a group of a different size (the
+    batch's last, partial bank) is planned on its own, a search bounded
+    by the group size. Everything else is unchanged.
 
     Searching over N interchangeable items rediscovers the same chain N
     times while wading through their orderings. When the items really
@@ -227,14 +252,17 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
 
     Returns the expanded plan, or ``None`` to mean "fall back".
     """
-    if not items or len(items) < 2 or not dim or not goal_facts:
+    if not items or not dim or not goal_facts:
         return None
-    # THE ONE-ITEM GOAL IS THE ONE-ITEM SLICE OF goal_facts. Planning
-    # with objects restricted to one item but the FULL goal still asking
+    units = [list(g) for g in groups if g] if groups else [[it] for it in items]
+    if len(units) < 2 and not groups:
+        return None
+    # THE ONE-UNIT GOAL IS THE ONE-UNIT SLICE OF goal_facts. Planning
+    # with objects restricted to one unit but the FULL goal still asking
     # for all N leaves the search unable to finish — it was the first
-    # thing this got wrong. Keep the facts that mention item[0] plus any
-    # that mention no item at all (Start/Park bookends).
-    first = items[0]
+    # thing this got wrong. Keep the facts that mention the unit's items
+    # plus none of the itemless ones.
+    first = units[0]
     # PER-ITEM FACTS ONLY. Itemless goal facts (``started``, ``parked``)
     # belong to the whole run, and a project's Park typically gates on
     # ``_ctx_all_objects()`` — every item recapped — which one item can
@@ -242,24 +270,39 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
     # unsatisfiable, which is exactly how this first failed. The tail is
     # planned separately at step 4, from a state where the chains are
     # already done, so that search is trivial.
-    solo = frozenset(f for f in goal_facts if len(f) > 1 and f[1] == first)
-    if not solo:
-        return None
-    solo_goal = lambda st, _s=solo: _s <= st
     objects = ctx.meta.get("objects") or {}
     saved = list(objects.get(dim, []))
-    try:
-        # 1. Plan the chain for a single item.
-        objects[dim] = [first]
-        one = plan_fn(state, solo_goal, solo)
+
+    def _plan_unit(unit):
+        """The chain for ONE unit, planned with objects restricted to it."""
+        solo = frozenset(f for f in goal_facts if len(f) > 1 and f[1] in unit)
+        if not solo:
+            return None, None
+        objects[dim] = list(unit)
+        try:
+            one = plan_fn(state, (lambda st, _s=solo: _s <= st), solo)
+        finally:
+            objects[dim] = saved
         if not one:
-            return None
-        chain = [a for a in one if a.params]
-        bookends = [a for a in one if not a.params]
-        if not chain:
-            return None
-    finally:
-        objects[dim] = saved
+            return None, None
+        return [a for a in one if a.params], [a for a in one if not a.params]
+
+    def _signature(unit):
+        """The unit's state, item positions in place of item ids — two
+        units with the same signature have the same chain ahead of
+        them. A replan mid-phase finds groups at different stages
+        (bank 0 extracted, bank 1 loaded, bank 2 untouched): each
+        distinct signature is planned once, bounded by the group size,
+        and stamped over its class — never a search over the batch."""
+        pos = {it: k for k, it in enumerate(unit)}
+        return (len(unit), frozenset((f[0], pos[f[1]]) + tuple(f[2:])
+                                     for f in state if len(f) > 1 and f[1] in pos))
+
+    # 1. Plan the chain for the first unit (bookends come from it).
+    chain, bookends = _plan_unit(first)
+    if not chain:
+        return None
+    templates_by_sig = {_signature(first): (first, chain)}
 
     # 2. Re-ground the chain for every item. Templates are indexed by
     #    name so an action can be built for an item the search never
@@ -278,9 +321,21 @@ def expand_template_plan(templates, state, goal, goal_facts, items, ctx, dim, pl
         )
 
     expanded = list(bookends[:1])
-    for it in items:
-        for a in chain:
-            expanded.append(_ground(a.name, (it,) + tuple(a.params[1:])))
+    for unit in units:
+        sig = _signature(unit)
+        if sig not in templates_by_sig:
+            # A unit in another state (or of another size): its own
+            # chain, planned once, bounded by the group size.
+            own, _ = _plan_unit(unit)
+            if not own:
+                return None
+            templates_by_sig[sig] = (unit, own)
+        tmpl_unit, tmpl_chain = templates_by_sig[sig]
+        # Re-ground by POSITION: the k-th item of the template unit
+        # becomes the k-th item of this unit, in every parameter.
+        m = dict(zip(tmpl_unit, unit))
+        for a in tmpl_chain:
+            expanded.append(_ground(a.name, tuple(m.get(p, p) for p in a.params)))
     expanded += bookends[1:]
 
     # 3. Verify by simulation — every action applicable when its turn
