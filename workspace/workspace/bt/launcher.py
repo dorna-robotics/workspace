@@ -681,12 +681,25 @@ def run_protocol(
         return goal_fn(state)
 
     def _global_goal(state) -> bool:
-        """Goal for the slice_check leaf — all items in the full batch done."""
+        """Is the RUN over? The slice_check leaf asks this after every
+        window: met -> the engine exits, unmet -> replan the next one.
+
+        THE PROJECT'S OWN GOAL, exactly what ``bt.replay`` breaks on —
+        a preview that stops somewhere the bench does not is worse than
+        no preview. This used to be ``all items done``, which drops
+        everything the goal asks for BEYOND the items: bna's goal is
+        started + every vial inspected + PARKED, so the engine exited
+        the moment the last vial was inspected and the tail window
+        holding Park was never planned. The bench never parked; replay
+        always did.
+
+        A goal the route cannot reach is not silence here either: the
+        tail window plans toward it and ``plan_route`` raises a named
+        RouteError. ``until_phase`` still short-circuits — a single
+        phase run stops at its boundary and parks nothing."""
         if _until_reached(state):
             return True
-        if item_done is None:
-            return goal_fn(state)
-        return all(item_done(state, it) for it in all_items)
+        return goal_fn(state)
 
     def _observe(c) -> Any:
         """Observe + (when windowing) advance the window and the phase."""
