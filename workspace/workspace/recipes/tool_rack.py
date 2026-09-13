@@ -179,7 +179,7 @@ class ToolRack(Recipe):
             # into the rack slot is the contact group after the stop.
             "approach": [
                             [
-                                [-3*padding,0,-2*padding-height_offset,0,0,0],
+                                [-3*padding,0,-4*padding-height_offset,0,0,0],
                                 [-padding,0,-2*padding-height_offset,0,0,0],
                             ],
                             [
