@@ -311,6 +311,135 @@ def _add_capacity_mutex(
         model.AddNoOverlap(intervals)
 
 
+def _schedule_feasible(
+    starts: Sequence[float],
+    durations: Sequence[int],
+    resources_list: Sequence[Tuple[str, ...]],
+    predecessors: Optional[List[set]],
+    capacity_spans: "Optional[dict[str, List[Tuple[int, int]]]]",
+    n: int,
+    tol: float = 1e-6,
+) -> bool:
+    """Re-check EVERY constraint the model imposed, on concrete start
+    times: causal precedence, per-resource non-overlap, and the
+    capacity mutex. Used to verify a proposed reordering before it is
+    accepted — a schedule that reads nicely is never worth one that
+    cannot run."""
+    if predecessors is not None:
+        for i in range(n):
+            for p in predecessors[i]:
+                if starts[i] + tol < starts[p] + durations[p]:
+                    return False
+    by_res: "Dict[str, List[int]]" = {}
+    for i in range(n):
+        for r in (resources_list[i] or ()):
+            by_res.setdefault(r, []).append(i)
+    for idxs in by_res.values():
+        idxs.sort(key=lambda i: (starts[i], i))
+        for a, b in zip(idxs, idxs[1:]):
+            if starts[a] + durations[a] > starts[b] + tol:
+                return False
+    for spans in (capacity_spans or {}).values():
+        iv = sorted((starts[f], starts[l] + durations[l]) for f, l in spans)
+        for (_s1, e1), (s2, _e2) in zip(iv, iv[1:]):
+            if e1 > s2 + tol:
+                return False
+    return True
+
+
+def _canonicalise_item_order(
+    start_vals: List[float],
+    actions: Sequence[Action],
+    items: Sequence[int],
+    has_item: Sequence[bool],
+    durations: Sequence[int],
+    resources_list: Sequence[Tuple[str, ...]],
+    predecessors: Optional[List[set]],
+    capacity_spans: "Optional[dict[str, List[Tuple[int, int]]]]",
+    n: int,
+) -> List[float]:
+    """Make the schedule READ in item order wherever that is free.
+
+    The model's own ordering constraint (see "Interchangeable items
+    start in declared order") can only bind items whose ACTION LISTS
+    match, because only those are provably isomorphic — ordering two
+    items that are not would be a real constraint, and could cut off
+    the optimum. That leaves a gap exactly where one item carries an
+    action the others do not: a batch-spanning ``shake`` or
+    ``vortex_run`` is parameterised by ONE vial, so that vial's list
+    differs from its bank-mates' and nothing orders it against them.
+    Every position ties on makespan and the solver drops it wherever
+    it likes — bna at batch 4 unloaded the vortex 1, 2, 3, 0.
+
+    This pass closes that gap AFTER the solve, where it costs nothing
+    and can prove itself. For each action NAME and each occurrence of
+    it within an item, the instances hold a set of start times; the
+    pass hands the EARLIEST time to the LOWEST item index, the next to
+    the next, and so on.
+
+    Two properties make it safe rather than clever:
+
+    * **The makespan cannot move.** Instances of one name share a
+      duration and a resource (both come from the same ``ActionMeta``),
+      so the pass permutes start times WITHIN a group and the multiset
+      of occupied intervals — on every resource, and overall — is
+      exactly what the solver produced. A group whose durations or
+      resources are not uniform is skipped rather than trusted.
+    * **Each group is verified before it is kept.** Only precedence and
+      the capacity mutex can object, and both are re-checked over the
+      whole schedule by :func:`_schedule_feasible`. A group that would
+      break either is reverted and the solver's order stands.
+
+    Deterministic: groups are walked in sorted name order, and the
+    assignment inside a group is a sort.
+    """
+    occ: "Dict[Tuple[str, int], List[int]]" = {}
+    seen: "Dict[Tuple[str, int], int]" = {}
+    for i in range(n):
+        if not has_item[i]:
+            continue                      # Start / Park belong to no item
+        key = (actions[i].name, items[i])
+        k = seen.get(key, 0)
+        seen[key] = k + 1
+        occ.setdefault((actions[i].name, k), []).append(i)
+
+    out = list(start_vals)
+    moved = 0
+    for gkey in sorted(occ, key=lambda kv: (str(kv[0]), kv[1])):
+        group = occ[gkey]
+        if len(group) < 2:
+            continue
+        if len({durations[i] for i in group}) != 1:
+            continue                      # not a uniform group — never guess
+        if len({tuple(resources_list[i] or ()) for i in group}) != 1:
+            continue
+        by_item = sorted(group, key=lambda i: (items[i], i))
+        slots = sorted(out[i] for i in group)
+        if all(out[i] == s for i, s in zip(by_item, slots)):
+            continue                      # already canonical
+        trial = list(out)
+        for i, s in zip(by_item, slots):
+            trial[i] = s
+        if _schedule_feasible(trial, durations, resources_list, predecessors,
+                              capacity_spans, n):
+            out = trial
+            moved += 1
+        else:
+            log.debug("CP-SAT: %r cannot be put in item order without "
+                      "breaking a constraint — keeping the solver's order",
+                      gkey[0])
+    if moved:
+        before = max((start_vals[i] + durations[i] for i in range(n)), default=0.0)
+        after = max((out[i] + durations[i] for i in range(n)), default=0.0)
+        if after != before:               # cannot happen; refuse to ship it if it does
+            log.warning("CP-SAT: item-order pass moved the makespan "
+                        "%s -> %s — discarded", before, after)
+            return list(start_vals)
+        log.info("CP-SAT: %d action group%s put back in item order",
+                 moved, "" if moved == 1 else "s")
+    return out
+
+
 def schedule_cpsat(
     actions: Sequence[Action],
     meta: ActionMetaMap,
@@ -720,9 +849,17 @@ def schedule_cpsat(
     )
 
     # ── Extract action start times ────────────────────────────────────
+    # Canonicalised first: the model can only order items whose action
+    # lists match, so a batch-spanning action leaves its own item
+    # unordered against its bank-mates. The pass fixes that where it is
+    # free, and proves it (see _canonicalise_item_order). Swaps below
+    # are derived from these times, so it has to happen here.
+    start_vals = [float(solver.Value(starts[i])) for i in range(n)]
+    start_vals = _canonicalise_item_order(
+        start_vals, actions, items, has_item, durations, resources_list,
+        predecessors, capacity_spans, n)
     actions_out: List[Tuple[str, int, float]] = [
-        (actions[i].name, items[i], float(solver.Value(starts[i])))
-        for i in range(n)
+        (actions[i].name, items[i], start_vals[i]) for i in range(n)
     ]
 
     # ── Derive swap events from the solved tool_resource sequence ─────
@@ -732,7 +869,7 @@ def schedule_cpsat(
     # drops, so the GUI shows the drop step).
     swaps_out: List[Tuple[float, Optional[str], Optional[str], int]] = []
     if k > 0:
-        ordered = sorted(tool_actions, key=lambda i: solver.Value(starts[i]))
+        ordered = sorted(tool_actions, key=lambda i: (start_vals[i], i))
         current_tool: Optional[str] = initial_tool
         for i in ordered:
             if not tool_required[i]:
@@ -742,7 +879,7 @@ def schedule_cpsat(
                 # Place the swap so it ends exactly when action i starts.
                 # The solver already reserved this gap via the setup
                 # constraint, so start[i] - dur >= prev_end.
-                swap_start = max(0.0, float(solver.Value(starts[i])) - dur)
+                swap_start = max(0.0, start_vals[i] - dur)
                 swaps_out.append((swap_start, current_tool, tools[i], dur))
                 current_tool = tools[i]
 
