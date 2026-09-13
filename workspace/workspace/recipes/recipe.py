@@ -3098,7 +3098,7 @@ class Recipe:
                     f"moves ONLY straight along the axis")
 
     def immerse(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, fuse=None, **kwargs):
+                vaj=None, axis_tol=5.0, fuse=False, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm BELOW the top of
         the payload at ``anchor`` — ONE straight vertical lmove, at the
         dip speed, executed NOW.
@@ -3158,7 +3158,7 @@ class Recipe:
         return True
 
     def retract(self, dist=0, anchor="place", solid_name="body", component=None,
-                vaj=None, axis_tol=5.0, fuse=None, **kwargs):
+                vaj=None, axis_tol=5.0, fuse=False, **kwargs):
         """Put the held tool's TIP exactly ``dist`` mm ABOVE the top of
         the payload at ``anchor`` — the mirror of ``immerse``: ONE
         straight vertical lmove up, at the dip speed.
@@ -3174,12 +3174,14 @@ class Recipe:
         observable happens between a lift and the next motion, so the
         hold is safe by construction.
 
-        ``fuse`` overrides the recipe's flag FOR THIS CALL, resolved
-        the way ``touch`` resolves its own: ``None`` takes the recipe's
-        ``fuse``, ``False`` makes this one lift discrete (it executes
-        here and stops), ``True`` offers it to the next motion. Reach
-        for ``False`` on a lift that must land before whatever follows
-        it — a reading, an operator hand-off, a lift you want to watch.
+        ``fuse`` is FALSE BY DEFAULT, and the recipe's own ``fuse``
+        flag does not reach here: a dip verb is a PROCESS motion, and
+        the straight line out of a vessel is the shape the verb draws.
+        A deferred lift is redrawn as part of the next travel's
+        primitive — one spline through those knots — so it bows out of
+        the vessel instead. Pass ``fuse=True`` at the call to offer
+        this one lift to the next motion, where that bow is known to
+        be harmless and the stop is worth saving.
 
         CONTRACT: same axis check as ``immerse`` — pulling out of a
         vessel from off-axis is refused loudly.
@@ -3193,9 +3195,6 @@ class Recipe:
                                 "retract", **kwargs)
         vel, accel, jerk = self.scaled_vaj(vaj if vaj is not None else self.lmove_vaj)
         rt = self.rt
-        # Resolve fuse HERE, as touch does: None takes the recipe's.
-        if fuse is None:
-            fuse = self.fuse
         if fuse and rt._is_workflow_thread():
             self._tail_deposit_lift(
                 rt, J, (vel, accel, jerk),

@@ -386,6 +386,14 @@ run recorded that the next motion merges there. Design + decision log:
   `fuse=True` means "allowed to consult the book"; `fuse=False` keeps
   a station permanently classic (a deliberate stop, a read that needs
   a clear robot).
+* **The dip verbs are the exception: they never fuse unless asked.**
+  `immerse` REFUSES `fuse=True` outright (a held dive would leave the
+  needle at the hover while the pump doses), and `retract` defaults to
+  `False` and does not read the recipe flag at all — a deferred lift is
+  redrawn as the next travel's primitive, so it bows out of the vessel
+  instead of drawing the straight line the verb promises. The rule:
+  process motions never defer, travel motions may. Pass `fuse=True` on
+  a lift where that bow is known to be harmless.
 * **The book** (`core/motion_book.json`, JSONL + scene stamp like the
   other caches): one row per PROVEN seam partner —
   `(owner, held points) -> (next primitive, next solved final target)`,
