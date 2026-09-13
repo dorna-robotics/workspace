@@ -134,10 +134,11 @@ class Bench:
         The facts are the state the earlier phases leave behind,
         FACT-REPLAYED from the project's own actions (``bt.replay
         .state_before``: each earlier phase planned and its effects
-        applied, no motion) — minus what Start asserts, because Start
-        still executes in the run (motors, homing) and asserts those
-        itself. The layout is every closed phase's ``layout``; the
-        skipped list is their names. Pure; ``prepare`` applies it."""
+        applied, no motion) — minus the handful Start's own ``pre``
+        reads, because Start still executes in the run (motors, homing)
+        and must stay applicable (``_gate_facts``). The layout is every
+        closed phase's ``layout``; the skipped list is their names.
+        Pure; ``prepare`` applies it."""
         from workspace.bt.replay import state_before
 
         kw = self.kwargs(**overrides)
@@ -152,7 +153,7 @@ class Bench:
             raise RuntimeError(
                 f"the phases before {name!r} do not replay clean — fix the project first:\n  "
                 + "\n  ".join(failures))
-        seeds = sorted(state - self._start_facts(kw))
+        seeds = sorted(state - self._gate_facts(kw))
 
         layout: List[Tuple[str, dict]] = []
         skipped: List[str] = []
@@ -168,13 +169,40 @@ class Bench:
                     layout = [(c, a) for c, a in layout if c != child] + [(child, att)]
         return seeds, layout, skipped
 
-    def _start_facts(self, kw) -> set:
-        """Facts the parameterless actions (Start and its kin) assert
-        from the initial state — their default eff branch, applied
-        whenever their pre holds, to a fixpoint. Not seeded: Start runs
-        for real and asserts them itself."""
+    def _gate_facts(self, kw) -> set:
+        """The facts a seeded start must WITHHOLD so the parameterless
+        actions (Start and its kin) still run.
+
+        Start asserts a whole opening state — capacity facts, the
+        manifest's per-item facts — and it runs for real in a seeded
+        phase run, so seeding all of that again would be redundant.
+        It is not optional, though: a phase that SCOPES on one of those
+        facts (bna's ``spiked_bna`` / ``spiked_pest`` scope on the
+        manifest's spike facts) reads as vacuous at the first observe,
+        before Start has executed — and a vacuous target phase is a
+        reached one, so the run either ends without moving or walks on
+        to a later phase and raises PhaseNotReady.
+
+        So seed everything Start asserts EXCEPT what its own ``pre``
+        reads — for bna, ``started``. Those alone would stop it from
+        running; the rest it simply re-asserts, which costs nothing."""
         from workspace.bt.behaviours import WorkspaceContext
-        from workspace.bt.dsl import Fact, _normalise_eff, _default_branch
+        from workspace.bt.dsl import Expr, Fact, _normalise_eff, _default_branch
+
+        def gated(expr) -> set:
+            """Predicate names an opening action's ``pre`` reads."""
+            if isinstance(expr, Fact):
+                return {expr.pred}
+            if not isinstance(expr, Expr):
+                return set()
+            fact = getattr(expr, "fact", None)
+            if fact is not None:
+                return {fact.pred}
+            out: set = set()
+            for a in expr.args:
+                out |= gated(a)
+            return out
+
         spec = self.actions.setup(**kw)
         objects = dict(spec.get("objects") or {})
         ctx = WorkspaceContext(
@@ -200,7 +228,11 @@ class Bench:
                 for f in eff[_default_branch(eff)]:
                     if isinstance(f, Fact) and f.polarity and f.as_tuple() not in out:
                         out.add(f.as_tuple()); changed = True
-        return out - set(spec["initial_facts"])
+        reads: set = set()
+        for cls in bookends:
+            inst = cls(); inst.ctx = ctx; inst.state = frozenset(out)
+            reads |= gated(inst.pre())
+        return {t for t in out - set(spec["initial_facts"]) if t[0] in reads}
 
     def _apply_layout(self, layout) -> None:
         """Over the model AS IT STANDS — what the last phase left, or the
