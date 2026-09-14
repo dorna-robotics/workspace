@@ -288,6 +288,7 @@ class Recipe:
         with window:
             if rt.is_homed(index=axis_cfg["axis"]):
                 return True
+            rt.delay(1)
             api.set_axis(
                 index=axis_cfg["axis"],
                 usem=axis_cfg["usem"], usee=axis_cfg["usee"],
