@@ -557,6 +557,7 @@
        content view first, then mode switches, then display tweak,
        then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnFiles" title="Files — data, results, recordings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
@@ -709,7 +710,7 @@
       </span>
     </div>
     <div class="topbar-actions">
-      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
+            <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
     </div>
   </header>
@@ -750,6 +751,21 @@
         </div>
       </div>
       <div class="pendant-panes">
+        <!-- Run parameters, IN the pendant. A kiosk tablet is often the
+             only screen at the bench: before launch this is where the
+             operator sets up the run and starts it, so the Main tab is
+             never a dead end waiting on a desktop. Replaced by the
+             project's own screen once the run is up. -->
+        <div class="pendant-params" id="pendantParamsPane" style="display:none">
+          <div class="pp-head">
+            <span class="pp-title">Run parameters</span>
+            <div class="spacer"></div>
+            <button class="btn btn-sm" id="ppUpload" title="Upload a parameter file from this computer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload</button>
+            <button class="btn btn-sm" id="ppOpen" title="Open a parameter file already on the bench"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg> Open</button>
+          </div>
+          <div class="pp-scroll"><div class="kwargs-form" id="pendantParamsForm"></div></div>
+          <div class="pp-foot" id="pendantParamsFoot"></div>
+        </div>
         <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
         <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
         <!-- Devices tab: devices on the left, operator controls on the
@@ -779,15 +795,13 @@
     </aside>
   </div>
 
-  <!-- Bottom bar: the four run controls (Launch takes Start's slot
-       until the workspace is launched). Kill stands apart on the
-       right; a hairline divider separates the run pair from the
-       ending pair. -->
+  <!-- Bottom bar: the four run controls. Start holds its slot always —
+       disabled like every other control until the workspace is up,
+       rather than being swapped out for a Launch button that appears
+       and vanishes. Launching is the Main tab's job (Set & Launch).
+       Kill stands apart on the right; a hairline divider separates the
+       run pair from the ending pair. -->
   <div class="pendant-bar">
-    <button class="pendant-btn pendant-launch" id="pendantLaunch" data-cmd="launch">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      <span>Launch</span>
-    </button>
     <button class="pendant-btn pendant-start" id="pendantStart" data-cmd="start">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       <span>Start</span>
@@ -814,7 +828,8 @@
     <div class="modal-head">
       <h3 id="paramsModalTitle">Parameters</h3>
       <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm" id="btnParamsLoad" title="Load from file"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Load</button>
+      <button class="btn btn-ghost btn-sm" id="btnParamsLoad" title="Upload a parameter file from this computer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Upload</button>
+      <button class="btn btn-ghost btn-sm" id="btnParamsBrowse" title="Open a parameter file already on the bench"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg> Open</button>
       <button class="btn btn-ghost btn-sm btn-icon" id="btnParamsClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="modal-body">

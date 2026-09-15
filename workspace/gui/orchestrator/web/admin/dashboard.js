@@ -31,6 +31,10 @@ const _lastCardHtml = new Map();
 const _lastCardCls  = new Map();
 
 // ---- Toast ----
+// kwargs.js opens the file browser from inside a field; give it this
+// page's notifier rather than a second toast implementation.
+window.__toast = (m, k) => toast(m, k);
+
 function toast(msg, type = "ok") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
@@ -150,7 +154,7 @@ async function openParamsModal(name, frozen) {
       paramsFoot.innerHTML = `
         <button class="btn" id="btnParamsCancel">Cancel</button>
         <div class="spacer"></div>
-        <button class="btn" id="btnParamsReset">Reset All</button>
+        <button class="btn" id="btnParamsReset">Reset all</button>
         <button class="btn btn-primary" id="btnParamsSet">Set</button>`;
       paramsFoot.querySelector("#btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
       paramsFoot.querySelector("#btnParamsReset").addEventListener("click", () => {
@@ -159,7 +163,11 @@ async function openParamsModal(name, frozen) {
       });
       paramsFoot.querySelector("#btnParamsSet").addEventListener("click", async () => {
         const errs = validateKwargsForm(paramsForm, schema);
-        if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
+        if (errs.length) {
+          const e = errs[0];
+          toast(e.key ? `${e.message} (${e.key})` : e.message, "bad");
+          return;
+        }
         const vals = readKwargsForm(paramsForm);
         try {
           await apiFetch(`/workspace/${encodeURIComponent(name)}/kwargs`, {
@@ -330,6 +338,8 @@ function render() {
           <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
         </span>
+        <a class="btn btn-sm btn-ghost btn-icon pendant-link" title="Open the pendant for ${esc(ws.name)}"
+           href="workspace.html?name=${encodeURIComponent(ws.name)}&pendant=1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></a>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">

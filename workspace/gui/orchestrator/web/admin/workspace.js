@@ -10,7 +10,8 @@
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
+import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts, setPreviewRunner } from "./schedule.js";
 
 const params  = new URLSearchParams(window.location.search);
@@ -92,6 +93,10 @@ const pendantProjectEl = $("pendantProject");
 if (pendantProjectEl) pendantProjectEl.textContent = wsName;
 
 // ---- Toast ----
+// kwargs.js opens the browser from inside a field; give it this page's
+// notifier rather than a second toast implementation.
+window.__toast = (m, k) => toast(m, k);
+
 function toast(msg, type = "ok") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
@@ -124,6 +129,23 @@ const paramsFoot  = $("paramsModalFoot");
 
 $("btnParamsClose").addEventListener("click", () => paramsModal.classList.remove("show"));
 $("btnParamsLoad").addEventListener("click", () => loadKwargsFromFile(paramsForm, toast));
+// Open — the same load, but from the bench's own data/ folder rather
+// than the operator's laptop. Uploaded once, picked every run after.
+$("btnParamsBrowse").addEventListener("click", () => loadKwargsFromBench(paramsForm, wsName, toast));
+// The same panel from the top bar, opened on results: browse runs
+// newest-first, read a run's records.csv in place, download what you
+// want. Nothing to pick, so it opens in browse mode.
+// The pendant pane's two ways in, the same pair the desktop modal
+// head carries: Upload from this machine, Open from the bench.
+// No re-render afterwards: the load writes INTO the mounted form (or
+// hands the file to the project screen, which re-renders itself), and
+// rebuilding here would throw away exactly what was just loaded.
+$("ppUpload").addEventListener("click", () => loadKwargsFromFile($("pendantParamsForm"), toast));
+$("ppOpen").addEventListener("click", () => loadKwargsFromBench($("pendantParamsForm"), wsName, toast));
+
+$("btnFiles").addEventListener("click", () =>
+  openFileBrowser({ wsName, root: "results", mode: "browse", toast,
+                    title: `Files — ${wsName}` }));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
 // Device detail modal — close on X button or backdrop click.
@@ -178,6 +200,85 @@ function _invalidateLaunchConfig() {
   _launchConfigCache = null;
 }
 
+/**
+ * Build the parameters form and its buttons into ANY host.
+ *
+ * Two surfaces want the identical thing: the desktop modal, and the
+ * pendant's Main tab, where a kiosk tablet is the only screen there is.
+ * One builder, so Set and Set & Launch cannot drift apart between them.
+ *
+ *   host.form / host.foot   the two elements to fill
+ *   host.close              what "done" means here — the modal closes,
+ *                           the pendant pane stays where it is
+ *   host.cancel             whether a Cancel button makes sense
+ */
+function mountParams(host, schema, values, frozen, wsName) {
+  const { form, foot } = host;
+  const done = () => { if (typeof host.close === "function") host.close(); };
+  const cancelBtn = host.cancel === false ? ""
+    : `<button class="btn" id="${host.id}Cancel">Cancel</button>`;
+
+  renderKwargsForm(form, schema, values, frozen, wsName);
+
+  if (frozen || !Object.keys(schema).length) {
+    foot.innerHTML = host.cancel === false
+      ? `<div class="kwargs-empty">${frozen ? "The run is using these values." : "This project declares no parameters."}</div>`
+      : `<button class="btn" id="${host.id}Cancel">Close</button>`;
+    if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
+    return;
+  }
+
+  foot.innerHTML = `
+    ${cancelBtn}
+    <div class="spacer"></div>
+    <button class="btn" id="${host.id}Reset">Reset all</button>
+    <button class="btn" id="${host.id}Set">Set</button>
+    <button class="btn btn-primary" id="${host.id}SetLaunch">Set &amp; Launch</button>`;
+  if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
+  $(`${host.id}Reset`).addEventListener("click", () => {
+    renderKwargsForm(form, schema, {}, false, wsName);
+    toast("Reset to defaults", "ok");
+  });
+
+  // Set = store the values. Set & Launch = store, then launch in one
+  // action — the run-setup flow the operator actually wants, without a
+  // second trip to the panel.
+  const applyParams = async (btn, launch) => {
+    const errs = validateKwargsForm(form, schema);
+    if (errs.length) {
+      const e = errs[0];
+      toast(e.key ? `${e.message} (${e.key})` : e.message, "bad");
+      return;
+    }
+    const vals = readKwargsForm(form);
+    const label = btn.textContent;
+    btn.disabled = true;
+    if (launch) btn.textContent = "Launching…";
+    try {
+      await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
+        method: "POST", body: JSON.stringify({ kwargs_values: vals })
+      });
+      _wsKwargsValues = vals;
+      _invalidateLaunchConfig();
+      if (launch) {
+        await sendCmd("launch");
+        toast("Parameters set — launching", "ok");
+      } else {
+        toast("Parameters set", "ok");
+      }
+      done();
+      if (launch) { await refreshStatus(); loadRunParams(); }
+    } catch (err) {
+      toast(String(err), "bad");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  };
+  $(`${host.id}Set`).addEventListener("click", (e) => applyParams(e.currentTarget, false));
+  $(`${host.id}SetLaunch`).addEventListener("click", (e) => applyParams(e.currentTarget, true));
+}
+
 async function openParamsModal(frozen) {
   let schema = {}, values = {}, fetchError = false;
   try {
@@ -194,62 +295,13 @@ async function openParamsModal(frozen) {
 
   if (fetchError) {
     paramsForm.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
-    paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
+    paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Close</button>`;
     $("btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));
   } else {
-    renderKwargsForm(paramsForm, schema, values, frozen, wsName);
-
-    if (frozen) {
-      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
-      $("btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));
-    } else if (Object.keys(schema).length) {
-      paramsFoot.innerHTML = `
-        <button class="btn" id="btnParamsCancel">Cancel</button>
-        <div class="spacer"></div>
-        <button class="btn" id="btnParamsReset">Reset All</button>
-        <button class="btn" id="btnParamsSet">Set</button>
-        <button class="btn btn-primary" id="btnParamsSetLaunch">Set &amp; Launch</button>`;
-      $("btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
-      $("btnParamsReset").addEventListener("click", () => {
-        renderKwargsForm(paramsForm, schema, {}, false, wsName);
-        toast("Reset to defaults", "ok");
-      });
-      // Set = store the values. Set & Launch = store, then launch in
-      // one action — the run-setup flow the operator actually wants
-      // (mockup L's "Start run"), without a second trip to the panel.
-      const applyParams = async (btn, launch) => {
-        const errs = validateKwargsForm(paramsForm, schema);
-        if (errs.length) { toast(`Invalid: ${errs[0].message} (${errs[0].key})`, "bad"); return; }
-        const vals = readKwargsForm(paramsForm);
-        const label = btn.textContent;
-        btn.disabled = true;
-        if (launch) btn.textContent = "Launching…";
-        try {
-          await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
-            method: "POST", body: JSON.stringify({ kwargs_values: vals })
-          });
-          _wsKwargsValues = vals;
-          if (launch) {
-            await sendCmd("launch");
-            toast("Parameters set — launching", "ok");
-          } else {
-            toast("Parameters set", "ok");
-          }
-          paramsModal.classList.remove("show");
-          if (launch) { await refreshStatus(); loadRunParams(); }
-        } catch (err) {
-          toast(String(err), "bad");
-        } finally {
-          btn.disabled = false;
-          btn.textContent = label;
-        }
-      };
-      $("btnParamsSet").addEventListener("click", (e) => applyParams(e.currentTarget, false));
-      $("btnParamsSetLaunch").addEventListener("click", (e) => applyParams(e.currentTarget, true));
-    } else {
-      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
-      $("btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));
-    }
+    mountParams({
+      form: paramsForm, foot: paramsFoot, id: "btnParams",
+      close: () => paramsModal.classList.remove("show"),
+    }, schema, values, frozen, wsName);
   }
 
   paramsModal.classList.add("show");
@@ -473,7 +525,14 @@ function updateStatusUI(st) {
   // run params when going NOT_LAUNCHED → IDLE after a fresh Launch).
   const prevUpper = (_lastState || "").toUpperCase();
   const curUpper  = state.toUpperCase();
+  const wasLaunched = isLaunched(_lastState);
   _lastState = state;
+  // Crossing into or out of a launched run swaps what the pendant's
+  // Main tab is FOR: run setup before, the project's screen after.
+  if (_pendantMode && wasLaunched !== isLaunched(state)) {
+    renderPendantParams(true);
+    _applyPendantTab();
+  }
   startedVal.textContent = fmtTimestamp(st?.started_at) || "—";
 
   if (st?.last_error) {
@@ -2316,9 +2375,15 @@ function _applyPendantTab() {
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
   const dev = $("pendantDevicesPane");
+  const pp  = $("pendantParamsPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
-  if (hmi) hmi.style.display = (is3d || isDevices || !hasScreen) ? "none" : "";
+  // Before the run is up, the Main tab IS the run setup — the operator
+  // sets the parameters and launches from here. After that the
+  // project's own screen owns the tab.
+  const showParams = !is3d && !isDevices && !isLaunched(_lastState);
+  if (pp) pp.style.display = showParams ? "" : "none";
+  if (hmi) hmi.style.display = (is3d || isDevices || !hasScreen || showParams) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
   const hero = $("pendantHero");
@@ -2388,6 +2453,33 @@ function togglePendant(on) {
     // Resume audio context (required after user gesture)
     if (_audioCtx.state === "suspended") _audioCtx.resume();
     updatePendantUI();
+    renderPendantParams();
+  }
+}
+
+// Fill the pendant's parameters pane. A kiosk tablet is often the only
+// screen at the bench, so entering the pendant before launch must not
+// be a dead end — Start refuses without parameters, and until now
+// nothing on the pendant could set them.
+let _pendantParamsFor = null;          // the state we last built for
+async function renderPendantParams(force) {
+  const pane = $("pendantParamsPane");
+  if (!pane) return;
+  const launched = isLaunched(_lastState);
+  const key = launched ? "launched" : "setup";
+  if (!force && _pendantParamsFor === key) return;
+  _pendantParamsFor = key;
+  const form = $("pendantParamsForm");
+  const foot = $("pendantParamsFoot");
+  try {
+    const j = await _getLaunchConfig();
+    mountParams(
+      { form, foot, id: "pp", cancel: false },          // nowhere to close TO
+      j.kwargs_schema || {}, j.kwargs_values || {}, launched, wsName);
+  } catch (_) {
+    form.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
+    foot.innerHTML = "";
+    _pendantParamsFor = null;                            // try again next time
   }
 }
 
@@ -2575,10 +2667,13 @@ function updatePendantUI() {
   // is disabled (no new run while parking is in flight).
   const parking = state.toUpperCase() === "PARKING";
   const active  = running || parking;
-  $("pendantLaunch").style.display = launched ? "none" : "";
-  $("pendantStart").style.display  = launched ? "" : "none";
-  $("pendantLaunch").disabled  = launched;
+  // Start keeps its slot whatever the state — an operator learns where
+  // the button IS. Not launched yet simply means disabled, like Pause
+  // and Park are when there is nothing to pause or park; the Main tab
+  // is where a run gets launched.
   $("pendantStart").disabled   = !launched || active;
+  $("pendantStart").title      = launched ? ""
+    : "Set the run parameters on the Main tab, then Set & Launch";
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;
