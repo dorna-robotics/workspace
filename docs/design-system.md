@@ -481,6 +481,15 @@ Two universal rules:
 - Operator surfaces speak operator words ("Filling tube 3 of 8");
   the engineer timeline lives behind a details toggle.
 - Buttons are verbs ("Rescan", "Skip disc"), never nouns or codes.
+- **Sentence case for every label** — "Add workspace", "Reset all",
+  "Load parameters", "New folder". Only the first word and proper nouns
+  are capitalised. (The app had one "Reset All" against one "Add
+  workspace"; the tie is broken here so the next label is not a
+  judgement call.) The documented exceptions are the pendant action
+  grid and state pills, which are tracked caps by design (§6).
+- **A confirm button says what it will DO**, not "OK" or "Use this
+  file": "Load parameters", "Use for Manifest". A label that leaves
+  "for what?" unanswered is the defect.
 - Errors: one sentence, then the next action — the guided-recovery
   pattern is the template.
 
@@ -499,6 +508,46 @@ Before a new page/panel/widget merges:
 9. Any new grammar the surface introduces gets a section here or in
    the relevant guide — the rule that keeps the NEXT surface
    consistent.
+
+### 3.10 File browser — one panel, three roots
+
+`files.js` + `.fb-*` in `admin/style.css`. A project's data / results /
+rec folders over the web (project-guide "The project's folders").
+
+The grammar, for the next surface that needs a list of things on disk:
+
+- **Roots are tabs, not a dropdown.** Three is few enough to show, and
+  which folder you are in is the first thing to know.
+- **The panel stacks on the shared `.modal` shell** at `z-index: 50001`
+  — one above `.modal-overlay`, because it opens OVER the Parameters
+  modal. There is still only one modal shell (§3.5).
+- **Row actions appear on hover or selection**, never permanently: a
+  list of twelve runs with twenty-four buttons reads as noise.
+- **Selection carries a border AND a filled icon** (§9) — accent alone
+  is not the signal.
+- **The foot says where the folder actually is**, in mono, plus a
+  `default` chip when `launch.yaml` does not name it. "Where did my
+  file go?" is answerable from the screen.
+- **Destructive is gated twice**: a confirm, and the server refuses a
+  non-empty folder.
+- **It closes on the X, not on the backdrop or Escape.** A panel the
+  operator is mid-task in (picking a manifest) must not be dismissed by
+  a click that missed.
+
+**Button size is positional, not a judgement call** — this is the rule
+the whole admin already followed, written down after the file browser
+got it wrong:
+
+| Where | Class |
+|---|---|
+| Modal / panel **foot** (Set, Launch, Cancel, Close, Use this file) | `.btn`, `.btn btn-primary` |
+| Modal / page **head** strip (Upload, Open, and every icon button) | `.btn btn-ghost btn-sm`, `+ btn-icon` |
+| **Toolbar** over a list (New folder, Upload) | `.btn btn-sm` |
+| **Row** actions inside a dense list | `.btn btn-ghost btn-sm btn-icon` |
+
+A foot button is 7 px/13 px; a `btn-sm` is 5 px/12 px. Two feet at
+different heights in the same app is the tell that someone picked by
+eye.
 
 ## 14. Process: mockup first, grammar on sign-off
 

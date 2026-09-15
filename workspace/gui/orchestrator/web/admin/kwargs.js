@@ -1,4 +1,5 @@
 // kwargs.js — Shared kwargs form renderer and reader.
+import { openFileBrowser } from "./files.js";
 // Used by dashboard.js and workspace.js.
 
 const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
@@ -238,8 +239,9 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         if (spec.accept) fileInput.accept = spec.accept;
 
         const chooseBtn = document.createElement("button");
+        chooseBtn.title = "Upload a file from this computer";
         chooseBtn.className = "btn btn-sm";
-        chooseBtn.textContent = currentFile ? "Replace" : "Choose";
+        chooseBtn.textContent = currentFile ? "Replace" : "Upload";
         chooseBtn.addEventListener("click", () => fileInput.click());
 
         fileInput.addEventListener("change", async () => {
@@ -261,14 +263,39 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
             chooseBtn.textContent = "Replace";
           } catch (err) {
             fileLabel.textContent = "Upload failed";
-            chooseBtn.textContent = currentFile ? "Replace" : "Choose";
+            chooseBtn.textContent = currentFile ? "Replace" : "Upload";
           } finally {
             chooseBtn.disabled = false;
           }
         });
 
+        // Browse the project's own data/ folder instead of the
+        // operator's laptop: the file they uploaded last run is
+        // already there, which is the whole point of data_dir.
+        const browseBtn = document.createElement("button");
+        browseBtn.className = "btn btn-sm kw-browse";
+        browseBtn.textContent = "Open";
+        browseBtn.title = "Browse files already on the bench";
+        browseBtn.addEventListener("click", async () => {
+          const label = spec.label || key;
+          const picked = await openFileBrowser({
+            wsName, root: "data", mode: "pick",
+            accept: spec.accept || "",
+            title: `Choose a file for ${label}`,
+            purpose: `The file this run uses for <b>${label}</b>.`,
+            pickLabel: `Use for ${label}`,
+            toast: (m, k) => (window.__toast ? window.__toast(m, k) : undefined),
+          });
+          if (!picked) return;
+          fileLabel.textContent = picked.name;
+          fileLabel.title = picked.abs || picked.path;
+          fileWrap.dataset.kwValue = picked.abs || picked.path;
+          chooseBtn.textContent = "Replace";
+        });
+
         fileWrap.appendChild(fileInput);
         fileWrap.appendChild(chooseBtn);
+        fileWrap.appendChild(browseBtn);
       }
 
       fileWrap.dataset.kwKey = key;
@@ -403,20 +430,24 @@ export function validateKwargsForm(container, schema) {
                       (v && typeof v === "object" && !Array.isArray(v) &&
                        !Object.keys(v).length);
       if (missing && !spec.optional) {
-        errors.push(`${spec.label || key} is required`);
+        errors.push({ key, message: `${spec.label || key} is required` });
         continue;
       }
       if (missing) continue;
       const t = (spec.type || "").toLowerCase();
       if ((t === "int" || t === "float") && typeof v === "number") {
-        if (spec.min !== undefined && v < spec.min) errors.push(`${spec.label || key} must be ≥ ${spec.min}`);
-        if (spec.max !== undefined && v > spec.max) errors.push(`${spec.label || key} must be ≤ ${spec.max}`);
+        if (spec.min !== undefined && v < spec.min)
+          errors.push({ key, message: `${spec.label || key} must be ≥ ${spec.min}` });
+        if (spec.max !== undefined && v > spec.max)
+          errors.push({ key, message: `${spec.label || key} must be ≤ ${spec.max}` });
       }
     }
     if (host.module && typeof host.module.validate === "function") {
       try {
         const msg = host.module.validate();
-        if (msg) errors.push(String(msg));
+        // The screen's own sentence — it already reads as the reason,
+        // so it carries no key to prefix it with.
+        if (msg) errors.push({ key: null, message: String(msg) });
       } catch (err) { console.error("setup validate() threw:", err); }
     }
     return errors;
@@ -488,6 +519,108 @@ export function validateKwargsForm(container, schema) {
  * Only fills fields that exist in the form — everything else is ignored.
  * Returns a Promise that resolves when done.
  */
+/**
+ * Hand one file's text to whatever is actually showing.
+ *
+ * A project that declares a setup screen REPLACES the generic field
+ * list, so filling `[data-kw-key]` elements fills nothing — bna's
+ * manifest lives inside its screen, not in a kwargs field. A screen
+ * may therefore export ``load(text, filename)`` and take the file
+ * itself; it returns a message, a count, or a boolean, and whatever it
+ * returns is what the operator is told (project-guide §3).
+ *
+ * Without a screen this is the plain parameter-file path.
+ */
+async function deliverFile(container, text, filename) {
+  const host = container._setupHost;
+  const take = host && host.module && host.module.load;
+  if (typeof take === "function") {
+    const r = await take.call(host.module, text, filename);
+    if (typeof r === "string") return { ok: true, msg: r };
+    if (typeof r === "number") return { ok: r > 0, msg: null, filled: r };
+    if (r === false) return { ok: false, msg: `${filename} was not accepted` };
+    return { ok: true, msg: `Loaded ${filename}` };
+  }
+  const filled = applyKwargsText(container, text, filename);
+  return {
+    ok: filled > 0,
+    filled,
+    msg: filled
+      ? `Loaded ${filled} parameter${filled > 1 ? "s" : ""} from ${filename}`
+      : `${filename} set no parameters — it holds no keys this screen has. `
+        + `A parameter file is yaml or json of name: value.`,
+  };
+}
+
+/**
+ * Apply one YAML/JSON parameter file's text to the form. Shared by both
+ * ways in: a file off the operator's laptop, and a file already on the
+ * bench in the project's data/ folder. Returns how many fields filled.
+ */
+export function applyKwargsText(container, text, filename) {
+  let data;
+  if (filename.endsWith(".json")) {
+    data = JSON.parse(text);
+  } else {
+    data = {};
+    for (const line of text.split("\n")) {
+      const m = line.match(/^\s*([a-zA-Z_]\w*)\s*:\s*(.+?)\s*$/);
+      if (m) {
+        let val = m[2].replace(/^["']|["']$/g, "");
+        if (val === "true") val = true;
+        else if (val === "false") val = false;
+        else if (val !== "" && !isNaN(Number(val))) val = Number(val);
+        data[m[1]] = val;
+      }
+    }
+  }
+  let filled = 0;
+  container.querySelectorAll("[data-kw-key]").forEach(el => {
+    const key = el.dataset.kwKey;
+    if (!(key in data)) return;
+    const val = data[key];
+    const type = el.dataset.kwType;
+    if (type === "bool") {
+      el.checked = val === true || val === "true";
+    } else if (type === "file") {
+      // skip file fields — a path in a preset is not a file
+    } else {
+      el.value = (val === null || val === undefined) ? "" : val;
+    }
+    filled++;
+  });
+  return filled;
+}
+
+/**
+ * Load a parameter file that already lives on the bench, picked from
+ * the project's data/ folder — the counterpart to loadKwargsFromFile,
+ * which reaches for the operator's own machine.
+ */
+export async function loadKwargsFromBench(container, wsName, toastFn) {
+  const picked = await openFileBrowser({
+    wsName, root: "data", mode: "pick", accept: ".yaml,.yml,.json",
+    title: "Open a parameter file",
+    purpose: "Its values fill the parameters on this screen — it does "
+           + "not start a run, and fields it does not mention are left alone.",
+    pickLabel: "Load parameters",
+    toast: toastFn,
+  });
+  if (!picked) return false;
+  try {
+    const url = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}` +
+                `/files/data?path=${encodeURIComponent(picked.path)}&download=1`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error("could not read the file");
+    const r = await deliverFile(container, await resp.text(), picked.name);
+    if (toastFn && r.msg) toastFn(r.msg, r.ok ? "ok" : "warn");
+    return r.ok;
+  } catch (err) {
+    if (toastFn) toastFn(`Failed to read ${picked.name}: ${err.message}`, "bad");
+    return false;
+  }
+}
+
 export function loadKwargsFromFile(container, toastFn) {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -501,47 +634,11 @@ export function loadKwargsFromFile(container, toastFn) {
       input.remove();
       if (!file) { resolve(false); return; }
       try {
-        const text = await file.text();
-        let data;
-        if (file.name.endsWith(".json")) {
-          data = JSON.parse(text);
-        } else {
-          data = {};
-          for (const line of text.split("\n")) {
-            const m = line.match(/^\s*([a-zA-Z_]\w*)\s*:\s*(.+?)\s*$/);
-            if (m) {
-              let val = m[2].replace(/^["']|["']$/g, "");
-              if (val === "true") val = true;
-              else if (val === "false") val = false;
-              else if (val !== "" && !isNaN(Number(val))) val = Number(val);
-              data[m[1]] = val;
-            }
-          }
-        }
-
-        let filled = 0;
-        container.querySelectorAll("[data-kw-key]").forEach(el => {
-          const key = el.dataset.kwKey;
-          if (!(key in data)) return;
-          const val = data[key];
-          const type = el.dataset.kwType;
-          if (type === "bool") {
-            el.checked = val === true || val === "true";
-          } else if (type === "file") {
-            // skip file fields — can't set from yaml
-          } else {
-            el.value = (val === null || val === undefined) ? "" : val;
-          }
-          filled++;
-        });
-
-        if (toastFn) toastFn(
-          filled ? `Loaded ${filled} parameter${filled > 1 ? "s" : ""} from ${file.name}` : "No matching parameters found",
-          filled ? "ok" : "warn"
-        );
-        resolve(true);
+        const r = await deliverFile(container, await file.text(), file.name);
+        if (toastFn && r.msg) toastFn(r.msg, r.ok ? "ok" : "warn");
+        resolve(r.ok);
       } catch (err) {
-        if (toastFn) toastFn(`Failed to parse ${file.name}: ${err.message}`, "bad");
+        if (toastFn) toastFn(`Failed to read ${file.name}: ${err.message}`, "bad");
         resolve(false);
       }
     });
