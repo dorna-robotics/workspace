@@ -233,5 +233,13 @@ core.json
 core_ik.json
 core_path.json
 
-# rt.record run folders (audit data, one per run — see project-guide §3)
+# rt.record run folders (audit data, one per run — see project-guide §3).
+# `runs/` was the old fixed name; the folder is `results_dir` in
+# launch.yaml now and defaults to results/ (project_dirs.py).
 runs/
+results/
+examples/*/results/
+# Operator input files — uploaded through the GUI's file browser, never
+# source (data_dir in launch.yaml, defaults to data/).
+data/
+examples/*/data/

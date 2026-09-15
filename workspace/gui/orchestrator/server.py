@@ -49,6 +49,8 @@ from gui.orchestrator.handlers import (  # noqa: F401
     AddWorkspaceHandler,
     AuthedHandler,
     FileUploadHandler,
+    ProjectFilesActionHandler,
+    ProjectFilesHandler,
     LaunchConfigHandler,
     ProjectSetupFileHandler,
     RemoveWorkspaceHandler,
@@ -125,6 +127,8 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/setup/(.*)", ProjectSetupFileHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/files/([^/]+)/([^/]+)", ProjectFilesActionHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/files/([^/]+)", ProjectFilesHandler, dict(orch=self.orch)),
 
             # ---- WebSocket live status ----
             (r"/ws/status", StatusWebSocket, dict(orch=self.orch)),

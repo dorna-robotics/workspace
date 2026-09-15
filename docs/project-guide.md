@@ -87,6 +87,9 @@ Top-level keys:
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
+| `data_dir` | *Optional, default `data`.* THE OPERATOR'S INPUT FILES — manifests, parameter presets, anything uploaded through the GUI. Uploads land here and STAY, so the next run browses to the same file instead of the operator finding it on their laptop again. Relative to the project folder, or absolute; a subproject can keep its own (`data`) or share the parent's (`../data`) exactly the way `recipes.j2` is shared. Created on demand. |
+| `results_dir` | *Optional, default `results`.* ONE FOLDER PER RUN — `records.jsonl` and `records.csv` from `rt.record`, named by the run's start stamp. This is what `runs/` used to be: the name was fixed inside the platform and is now the project's to choose. Created on demand. |
+| `rec_dir` | *Optional, default `rec`.* Replay recordings, `rec_<stamp>.jsonl`. The scene builder's Replay panel and the GUI file browser read this same folder. Created on demand. |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
 | `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase whose items overlap declares the order across them as its `cycle` (`Phase.group`, `Phase.cycle`; bt-framework-guide §13 "The cycle"). See bt-framework-guide.md §13. |
@@ -360,15 +363,46 @@ What the platform does with it:
 
 | | |
 |---|---|
-| `<project>/runs/<YYYYmmdd_HHMMSS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
-| `<project>/runs/<stamp>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
+| `<results_dir>/<YYYYmmdd_HHMMSS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
+| `<results_dir>/<stamp>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
 | `GET /records` · `GET /records.csv` | the same, live, at any moment of the run — the download link on the pendant |
 | `record_state` on `/ws` | snapshot then deltas, the `op_state` shape keyed `item → {field: value}`; feeds the pendant's `records` widget (hmi-guide §4) and `api.onRecords` for a project screen (§4b) |
 
-Keep `runs/` out of the project's git — it is data, one folder per run.
+`results_dir` names that folder (default `results/`, the old fixed
+`runs/`); keep it out of the project's git — it is data, one folder per
+run. The GUI's file browser reads it, so an operator can pull a run's
+records without a shell.
 A script without a server (a dev notebook) sets `rt.record_dir` itself
 and calls `rt.record_drain()` once at the end; otherwise records stay in
 memory and `rt.records()` / `rt.record_csv()` still answer.
+
+
+### The project's folders, and the file browser
+
+Three folders belong to the project rather than to the platform, and
+`launch.yaml` names all three (`data_dir` / `results_dir` / `rec_dir`
+above). `workspace/project_dirs.py` is the one place that resolves
+them; the runtime server writes run records and recordings through it,
+and the orchestrator's file browser lists and serves them through it.
+Nothing else may hardcode `runs/` or `rec/` again.
+
+The operator reaches them from the workspace page:
+
+* **Files** in the top bar — the browser, opened on `results`. Runs
+  are folders, newest first; a `records.csv` opens as a table in the
+  panel, and any file downloads.
+* **Open**, next to **Load** in the Parameters modal — the same panel
+  in *pick* mode over `data`, for choosing a parameter file that is
+  already on the bench.
+* **Open** on any `type: file` parameter — pick that field's file from
+  `data` instead of uploading it again.
+
+Uploading, creating a folder and deleting are all available; delete
+takes a confirm, and refuses a folder that still has anything in it, so
+a run's records cannot go in one click. Every path from the browser is
+checked against its root by `project_dirs.safe_join` before it reaches
+the filesystem — a request that climbs out of its folder is refused,
+symlinks included.
 
 ## 4. Recipes — `recipes.yaml` or `recipes.j2`
 

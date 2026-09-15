@@ -1926,15 +1926,19 @@ class RuntimeServer:
         # and any asset they import). Project-owned files, served from
         # the project — the platform holds none of it.
         _proj = _project_dir(workspace)
-        # Replay recordings land in the project's core/ folder.
         global _record_dir
         if _proj is not None:
-            # Recordings live with the PROJECT, in rec/ — not in the
-            # station's core/, which core_dir may point anywhere. The
-            # scene builder's Replay panel lists this same folder.
-            _record_dir = str(_proj / "rec")
-            # rt.record runs land in the project's runs/ folder.
-            self.rt.record_dir = str(_proj / "runs")
+            # The project's own folders, named by ITS launch.yaml —
+            # data_dir / results_dir / rec_dir (project_dirs.py). They
+            # live with the PROJECT, not in the station's core/, which
+            # core_dir may point anywhere; the scene builder's Replay
+            # panel and the file browser read the same three paths.
+            # Created here so a first run never fails on a missing
+            # folder and the browser never 404s an empty project.
+            from workspace.project_dirs import project_dirs
+            _dirs = project_dirs(_proj, ensure=True)
+            _record_dir = str(_dirs["rec"])
+            self.rt.record_dir = str(_dirs["results"])
         if _proj is not None and (_proj / "hmi").is_dir():
             routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler,
                               {"path": str(_proj / "hmi")}))

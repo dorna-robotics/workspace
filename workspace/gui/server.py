@@ -65,6 +65,8 @@ from gui.orchestrator.server import (
     ProjectSetupFileHandler,
     UpdateKwargsHandler,
     FileUploadHandler,
+    ProjectFilesActionHandler,
+    ProjectFilesHandler,
     StatusWebSocket,
     _ws_poll_loop,
     WorkspaceDevicesHandler,
@@ -337,6 +339,8 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/setup/(.*)", ProjectSetupFileHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/files/([^/]+)/([^/]+)", ProjectFilesActionHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/files/([^/]+)", ProjectFilesHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices", WorkspaceDevicesHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices/([^/]+)/(recover|release)", WorkspaceDeviceCmdHandler, dict(orch=orch)),
 

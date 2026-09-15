@@ -433,3 +433,286 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
         except Exception as e:
             self.set_status(400)
             self.write({"error": str(e)})
+
+
+# ── The project's folders, over HTTP ──────────────────────────────────
+# One handler for all three roots (data / results / rec). Every request
+# names its root and a path inside it, and EVERY path goes through
+# ``safe_join`` before it reaches the filesystem — see project_dirs.py.
+#
+# Remote workspaces are proxied like the upload handler: this
+# orchestrator holds no files of its own, it answers for the machine
+# that has them.
+
+def _project_roots(ws):
+    """The workspace's three folders, created on demand."""
+    from workspace.project_dirs import project_dirs
+    project_dir = os.path.dirname(ws.path_to_file)
+    if not project_dir:
+        raise ValueError("this workspace has no project folder")
+    return project_dirs(project_dir, ensure=True)
+
+
+def _root_path(ws, root: str):
+    roots = _project_roots(ws)
+    if root not in roots:
+        raise ValueError(f"unknown folder: {root}")
+    return roots[root]
+
+
+def _entry(p: Path, rel_to: Path) -> dict:
+    """One row for the browser: what it is, how big, how old."""
+    st = p.stat()
+    return {
+        "name": p.name,
+        "path": str(p.relative_to(rel_to)),
+        "dir": p.is_dir(),
+        "size": 0 if p.is_dir() else st.st_size,
+        "mtime": st.st_mtime,
+    }
+
+
+class ProjectFilesHandler(AuthedHandler):
+    """List / download a folder or file under one of the project roots.
+
+    ``GET  …/files/<root>?path=sub/dir``        → listing
+    ``GET  …/files/<root>?path=f.csv&download=1`` → the bytes
+    ``GET  …/files/<root>?path=f.csv&preview=1``  → parsed CSV rows
+    """
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    def _ws(self, name):
+        if name not in self.orch.workspaces:
+            raise ValueError(f"Unknown workspace: {name}")
+        return self.orch.workspaces[name]
+
+    async def get(self, name, root):
+        if not self.ensure_auth():
+            return
+        try:
+            ws = self._ws(name)
+            rel = self.get_argument("path", "")
+            if ws.is_remote():
+                self._proxy_get(ws, name, root, rel)
+                return
+            from workspace.project_dirs import ROOT_LABELS, declared_roots, safe_join
+            base = _root_path(ws, root)
+            target = safe_join(base, rel)
+
+            if target.is_file():
+                if self.get_argument("preview", ""):
+                    self.write(self._preview(target))
+                    return
+                self.set_header("Content-Type", "application/octet-stream")
+                self.set_header("Content-Disposition",
+                                f'attachment; filename="{target.name}"')
+                with open(target, "rb") as fp:
+                    while chunk := fp.read(1 << 16):
+                        self.write(chunk)
+                await self.flush()
+                return
+
+            if not target.exists():
+                # An absent folder lists EMPTY rather than 404: the
+                # operator asked "what is in results?", and "nothing
+                # yet" is the honest answer, not an error.
+                entries = []
+            else:
+                entries = sorted(
+                    (_entry(c, base) for c in target.iterdir()
+                     if not c.name.startswith(".")),
+                    key=lambda e: (not e["dir"], -e["mtime"]),
+                )
+            self.write({
+                "root": root,
+                "label": ROOT_LABELS.get(root, ""),
+                "declared": declared_roots(os.path.dirname(ws.path_to_file)).get(root, False),
+                "abs": str(base),
+                "path": rel,
+                "entries": entries,
+            })
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+    @staticmethod
+    def _preview(target: Path) -> dict:
+        """Read a file well enough to judge it without downloading it.
+
+        A run's two files are the point: ``records.csv`` is already a
+        table, and ``records.jsonl`` is one JSON object per line, which
+        is a table too once you take the union of its keys. Everything
+        else falls back to text. A file we cannot read says so rather
+        than rendering half a table.
+        """
+        import csv
+        import io
+        import json as _json
+        MAX_ROWS = 500
+        MAX_TEXT = 20000
+        try:
+            text = target.read_text(errors="replace")
+        except OSError as ex:
+            return {"kind": "error", "error": str(ex)}
+        suffix = target.suffix.lower()
+
+        if suffix in (".csv", ".tsv"):
+            rows = list(csv.reader(io.StringIO(text),
+                                   delimiter="\t" if suffix == ".tsv" else ","))
+            if not rows:
+                return {"kind": "table", "columns": [], "rows": [], "truncated": False}
+            return {"kind": "table", "columns": rows[0], "rows": rows[1:MAX_ROWS + 1],
+                    "truncated": len(rows) - 1 > MAX_ROWS, "total": len(rows) - 1}
+
+        if suffix in (".jsonl", ".ndjson"):
+            objs, bad = [], 0
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    o = _json.loads(line)
+                except ValueError:
+                    bad += 1
+                    continue
+                objs.append(o if isinstance(o, dict) else {"value": o})
+            if not objs:
+                return {"kind": "text", "text": text[:MAX_TEXT],
+                        "truncated": len(text) > MAX_TEXT}
+            cols: list = []
+            for o in objs:                      # union of keys, first-seen order
+                for k in o:
+                    if k not in cols:
+                        cols.append(k)
+            def cell(v):
+                if v is None:
+                    return ""
+                if isinstance(v, (dict, list)):
+                    return _json.dumps(v, separators=(",", ":"))
+                return str(v)
+            return {"kind": "table", "columns": cols,
+                    "rows": [[cell(o.get(c)) for c in cols] for o in objs[:MAX_ROWS]],
+                    "truncated": len(objs) > MAX_ROWS, "total": len(objs),
+                    "note": f"{bad} unreadable line(s)" if bad else ""}
+
+        if suffix == ".json":
+            try:
+                text = _json.dumps(_json.loads(text), indent=2)
+            except ValueError:
+                pass                            # show it raw; it is not valid JSON
+        return {"kind": "text", "text": text[:MAX_TEXT],
+                "truncated": len(text) > MAX_TEXT}
+
+    def _proxy_get(self, ws, name, root, rel):
+        url = self.orch._orch_url(
+            ws, f"/workspace/{requests.utils.quote(name)}/files/{requests.utils.quote(root)}")
+        r = requests.get(url, params=dict(self.request.arguments and
+                                          {k: v[0].decode() for k, v in
+                                           self.request.arguments.items()} or {}),
+                         timeout=30, headers=self.orch._auth_headers())
+        r.raise_for_status()
+        ctype = r.headers.get("Content-Type", "application/json")
+        self.set_header("Content-Type", ctype)
+        if "application/json" not in ctype:
+            self.set_header("Content-Disposition",
+                            r.headers.get("Content-Disposition", ""))
+        self.write(r.content)
+
+
+class ProjectFilesActionHandler(AuthedHandler):
+    """Upload / delete / new folder under a project root.
+
+    ``POST …/files/<root>/upload``  multipart ``file``, ``path`` = folder
+    ``POST …/files/<root>/mkdir``   json ``{"path": "sub/new"}``
+    ``POST …/files/<root>/delete``  json ``{"path": "sub/f.csv"}``
+
+    Delete removes a file or an EMPTY folder only. A run's folder full
+    of records cannot go in one click — emptying it is a deliberate
+    sequence, not a mis-click.
+    """
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def post(self, name, root, action):
+        if not self.ensure_auth():
+            return
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            ws = self.orch.workspaces[name]
+            if ws.is_remote():
+                self.write(self._proxy_post(ws, name, root, action))
+                return
+            from workspace.project_dirs import hand_back, safe_join
+            base = _root_path(ws, root)
+
+            if action == "upload":
+                if not self.request.files or "file" not in self.request.files:
+                    raise ValueError("No file uploaded")
+                folder = safe_join(base, self.get_argument("path", ""))
+                folder.mkdir(parents=True, exist_ok=True)
+                up = self.request.files["file"][0]
+                filename = os.path.basename(up["filename"] or "")
+                if not filename:
+                    raise ValueError("Empty filename")
+                dest = safe_join(folder, filename)
+                with open(dest, "wb") as fp:
+                    fp.write(up["body"])
+                hand_back(dest)
+                self.write({"ok": True, "path": str(dest.relative_to(base)),
+                            "name": dest.name, "abs": str(dest)})
+                return
+
+            body = json.loads(self.request.body or b"{}")
+            rel = body.get("path") or ""
+            target = safe_join(base, rel)
+
+            if action == "mkdir":
+                if not rel:
+                    raise ValueError("name is required")
+                target.mkdir(parents=True, exist_ok=True)
+                hand_back(target)
+                self.write({"ok": True, "path": str(target.relative_to(base))})
+                return
+
+            if action == "delete":
+                if target == base:
+                    raise ValueError("cannot delete the folder itself")
+                if not target.exists():
+                    raise ValueError("no such file")
+                if target.is_dir():
+                    if any(target.iterdir()):
+                        raise ValueError("folder is not empty — empty it first")
+                    target.rmdir()
+                else:
+                    target.unlink()
+                self.write({"ok": True})
+                return
+
+            raise ValueError(f"unknown action: {action}")
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+    def _proxy_post(self, ws, name, root, action):
+        url = self.orch._orch_url(
+            ws, f"/workspace/{requests.utils.quote(name)}/files/"
+                f"{requests.utils.quote(root)}/{requests.utils.quote(action)}")
+        if action == "upload" and self.request.files:
+            import io
+            up = self.request.files["file"][0]
+            r = requests.post(url, params={"path": self.get_argument("path", "")},
+                              files={"file": (os.path.basename(up["filename"]),
+                                              io.BytesIO(up["body"]),
+                                              up.get("content_type",
+                                                     "application/octet-stream"))},
+                              timeout=60, headers=self.orch._auth_headers())
+        else:
+            r = requests.post(url, data=self.request.body, timeout=30,
+                              headers={**self.orch._auth_headers(),
+                                       "Content-Type": "application/json"})
+        r.raise_for_status()
+        return r.json()

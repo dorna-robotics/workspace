@@ -603,7 +603,14 @@ class Runtime:
         if not run_dir:
             return
         try:
+            fresh = not os.path.isdir(run_dir)
             os.makedirs(run_dir, exist_ok=True)
+            if fresh:
+                # The server runs under sudo, so this folder would be
+                # root's — and the operator's file browser could see a
+                # run it cannot delete. Hand it to whoever launched.
+                from workspace.project_dirs import hand_back
+                hand_back(run_dir)
             path = os.path.join(run_dir, "records.jsonl")
             if lines:
                 fresh = not os.path.exists(path)
