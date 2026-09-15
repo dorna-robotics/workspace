@@ -8,7 +8,7 @@ from workspace.components.work import pure
 @register("decapper")
 class Decapper:
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 45, 0, 0, 90], "top":[0, 0, 55, 0, 0, 90],
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "place":[0, 0, 40, 0, 0, 90], "top":[0, 0, 57, 0, 0, 90],
             "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],
             "clb_0": [0, 25, 0, 0, 0, 0], "clb_1": [0, -25, 0, 0, 0, 0]}},
         collision_box = 
