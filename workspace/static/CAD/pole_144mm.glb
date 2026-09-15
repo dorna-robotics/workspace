@@ -7,12 +7,12 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 110010
+      "count": 109398
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 35366,
+      "count": 35230,
       "max": [
         3.249725341796875,
         15,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 35366
+      "count": 35230
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 98232
+      "byteLength": 97826
     }
   ],
   "buffers": [
     {
       "uri": "pole_144mm.glb.bin",
-      "byteLength": 98232
+      "byteLength": 97826
     }
   ],
   "materials": [

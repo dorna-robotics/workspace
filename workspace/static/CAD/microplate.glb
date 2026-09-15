@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 28545
+      "byteLength": 28593
     }
   ],
   "buffers": [
     {
       "uri": "microplate.glb.bin",
-      "byteLength": 28545
+      "byteLength": 28593
     }
   ],
   "materials": [

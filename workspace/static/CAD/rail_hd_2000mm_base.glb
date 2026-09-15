@@ -12,7 +12,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 28115,
+      "count": 28124,
       "max": [
         171.10000610351562,
         7.590490341186523,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 28115
+      "count": 28124
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 78609
+      "byteLength": 78512
     }
   ],
   "buffers": [
     {
       "uri": "rail_hd_2000mm_base.glb.bin",
-      "byteLength": 78609
+      "byteLength": 78512
     }
   ],
   "materials": [
