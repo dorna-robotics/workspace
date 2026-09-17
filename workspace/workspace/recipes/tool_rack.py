@@ -18,6 +18,21 @@ class ToolRack(Recipe):
         # overlapped with motion (bench: the latch visibly opened as
         # the next motion started). Discrete IO for every verb here.
         io_overlap=False,
+        # Nothing leaves the tool rack fused. THE reason is place's
+        # exit: its exit IO is the changer's RE-ARM, and deferred onto
+        # a fused exit it fired while the flange was still lifting off
+        # the seated tool — the changer re-engaged and the tool never
+        # separated (real bench, pins verified; sim cannot catch the
+        # mechanics). The re-arm needs the corridor fully cleared, i.e.
+        # a classic exit. One explicit default here, no per-call
+        # override inside the verbs: what recipes.j2 says is what runs.
+        fuse=False,
+        # Refuse inbound tails: the rack approach ends in tight bends,
+        # and one certified profile for a fused chain would drive the
+        # whole travel at the speed of that last corner (bench). The
+        # previous exit stops classically, the hop here is planned and
+        # certified on its own. Override per project in recipes.j2.
+        fuse_in=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -34,7 +49,7 @@ class ToolRack(Recipe):
         )
 
 
-    def pick(self, anchor="place", solid_name="body", padding=None, gap=1.5, **kwargs):
+    def pick(self, anchor="place", solid_name="body", padding=None, gap=1.25, **kwargs):
         """Pick a tool from the rack via the tool-changer interface.
 
         Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
@@ -107,14 +122,13 @@ class ToolRack(Recipe):
                         [-3*padding,0,-4*padding-height_offset,0,0,0]
                     ],
                 ],
-            "fuse": False,
         }
 
         # motion
         return self.touch(**motion_prm)
 
 
-    def place(self, anchor="place", solid_name="body", padding=None, gap=1.5, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 45}, **kwargs):
+    def place(self, anchor="place", solid_name="body", padding=None, gap=1.25, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 45}, **kwargs):
         """Put the currently-held tool back into the rack slot at ``anchor``.
 
         Inverse of ``pick``. Verifies that the rack slot is free and that the
@@ -122,13 +136,10 @@ class ToolRack(Recipe):
         deactivates the changer, transfers the tool solid to the rack, and
         retracts.
 
-        NEVER fuses its exit: the exit IO is the changer's RE-ARM
-        (output_attach) — deferred onto a fused exit it fired while
-        the flange was still lifting off the seated tool, the changer
-        re-engaged, and the tool never separated (real bench — pins
-        verified, sim cannot catch the mechanics). The re-arm must
-        run with the corridor fully cleared, i.e. after a classic
-        exit. PICK exits keep fusing.
+        The exit IO is the changer's RE-ARM (output_attach), and it
+        needs a classic exit — see ``fuse=False`` in DEFAULTS for the
+        bench story. Nothing here forces it per call: the recipe's own
+        ``fuse`` is what runs.
 
         Raises:
             RecipeError: If the slot is already occupied, no tool on robot,
@@ -201,7 +212,6 @@ class ToolRack(Recipe):
                             [-3*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
             "output_exit": output_exit,
-            "fuse": False,   # see docstring — the re-arm needs a cleared corridor
         }
 
         # motion

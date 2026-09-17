@@ -86,6 +86,17 @@ class Recipe:
         # permanently classic (a deliberate stop, a read that needs a
         # clear robot).
         fuse=True,
+        # The INBOUND side of the same seam: may this recipe's travel
+        # absorb a tail the previous verb left held? ``fuse`` governs
+        # what leaves a station, ``fuse_in`` what arrives at it. False
+        # flushes any held tail (and cancels the pending recording, so
+        # the seam never becomes a book row) before the hop is planned:
+        # the previous exit runs to its normal stop, the hop is
+        # certified on its own. The reason to want it: certification
+        # picks ONE profile for a whole chain, so a station whose
+        # approach ends in tight bends (the tool rack) throttles the
+        # entire fused travel to the speed of its last corner.
+        fuse_in=True,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
@@ -176,6 +187,7 @@ class Recipe:
         self.has_motion_plan = prm["has_motion_plan"]
         self.io_overlap = prm["io_overlap"]
         self.fuse = prm["fuse"]
+        self.fuse_in = prm["fuse_in"]
         self.speed_factor = prm["speed_factor"]
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
@@ -1086,6 +1098,11 @@ class Recipe:
         # (park, direct planned moves) fuses a held tail exactly like
         # the fold does — the tail rides in front of the planner's
         # waypoints as one chain. Anything unfusable flushes first.
+        # fuse_in=False: this station refuses inbound tails — flush
+        # (disarming the pending record too) BEFORE the note below
+        # would make this hop the seam's recorded partner.
+        if not self.fuse_in:
+            self.core.tail_flush(reason=f"{type(self).__name__} fuse_in=False")
         # Replay fusion: a planned hop is a merge-capable site — record
         # the armed seam's partner BEFORE the settle below (its target
         # J is already solved by the caller).
@@ -1199,6 +1216,12 @@ class Recipe:
         # consume at the successful splice; every other path executes
         # the tail to its normal stop before moving.
         fuse_tail = None
+        if first_approach and not self.fuse_in:
+            # This station refuses inbound tails (see DEFAULTS): the
+            # previous exit runs to its stop and its pending recording
+            # is cancelled, so the peek below finds nothing to merge
+            # and the fold's book_note has nothing to record.
+            self.core.tail_flush(reason=f"{type(self).__name__} fuse_in=False")
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
             fuse_tail = self.core._motion_tail
