@@ -208,9 +208,7 @@ function _jumpToCurrent() {
 
 // Attach the gantt to an inline host element (the viewport's
 // Schedule pane). Renders happen only while the host is visible.
-export function attachSchedule(el, opts = {}) {
-  // opts.preview === false: no preview control in the top bar — the
-  // host drives ingestPreview() from its own controls (scene builder).
+export function attachSchedule(el) {
   if (!el) { _ganttEl = null; _gutterEl = null; _stickyEl = null; return; }
   // FOUR ELEMENTS, EACH WITH ONE JOB. A single scrolling SVG loses the
   // row labels and the phase name the moment you pan, and lets blocks
@@ -264,7 +262,6 @@ export function attachSchedule(el, opts = {}) {
   _stickyEl = body.querySelector(".sched-phase-sticky");
   _ganttEl.addEventListener("scroll", _syncStickyBands, { passive: true });
   _wireTip(_ganttEl, el);
-  if (opts.preview !== false) _mountPreviewControls(bar);
   _mountZoomControls(bar);
   _startNowMarker();
 }
@@ -389,17 +386,10 @@ function _wireMinimap(el) {
 }
 
 // ── Preview — draw a plan that never ran ──────────────────────────────
-// The host wires ``setPreviewRunner(async batch => event)``; the runner
-// asks the runtime server for ``bt.replay --json`` and hands back the
-// same ``schedule`` event a live run publishes, phase by phase.
-let _previewRunner = null;
-let _previewEls = null;
-
-export function setPreviewRunner(fn) {
-  _previewRunner = fn;
-  if (_previewEls) _previewEls.btn.disabled = !fn;
-}
-
+// The scene builder's Schedule tab plans a batch at its project path
+// and hands the ``schedule`` event here; it draws with the live
+// renderer, phase by phase. The workspace page has no preview: a live
+// run publishes its real schedule to this chart.
 export function ingestPreview(event) {
   _slices.length = 0;
   _leafState.clear();
@@ -413,44 +403,6 @@ export function ingestPreview(event) {
   });
   _render();
   requestAnimationFrame(() => { if (_ganttEl) _ganttEl.scrollLeft = 0; });
-}
-
-function _mountPreviewControls(host) {
-  if (host.querySelector(".sched-preview")) return;
-  const bar = document.createElement("div");
-  bar.className = "sched-preview";
-  bar.innerHTML =
-    '<label class="sched-preview-lbl">Preview batch ' +
-    '<input class="sched-preview-n" type="number" min="1" max="56" value="4" aria-label="Batch size"></label>' +
-    '<button class="sched-preview-btn" type="button">Preview</button>' +
-    '<span class="sched-preview-msg" aria-live="polite"></span>';
-  host.appendChild(bar);
-  const n = bar.querySelector(".sched-preview-n");
-  const btn = bar.querySelector(".sched-preview-btn");
-  const msg = bar.querySelector(".sched-preview-msg");
-  _previewEls = { n, btn, msg };
-  btn.disabled = !_previewRunner;
-  btn.addEventListener("click", async () => {
-    if (!_previewRunner) return;
-    const batch = Math.max(1, parseInt(n.value, 10) || 1);
-    btn.disabled = true;
-    msg.textContent = `planning ${batch}…`;
-    msg.dataset.state = "busy";
-    try {
-      const ev = await _previewRunner(batch);
-      ingestPreview(ev);
-      const broken = (ev.fails && ev.fails.length) || ev.goal_ok === false;
-      msg.textContent = broken
-        ? `PREVIEW batch ${batch} — ${ev.fails.length} precondition failure(s)`
-        : `PREVIEW batch ${batch} — ${(ev.actions || []).length} actions, ${Math.round(ev.makespan)} s`;
-      msg.dataset.state = broken ? "error" : "ok";
-    } catch (err) {
-      msg.textContent = `preview failed: ${err && err.message ? err.message : err}`;
-      msg.dataset.state = "error";
-    } finally {
-      btn.disabled = !_previewRunner;
-    }
-  });
 }
 
 // ── The now-marker — where the run is, on the X axis ─────────────────
@@ -663,7 +615,7 @@ function _wireTip(host, panel) {
 function _clearChart(host) {
   if (!host) return;
   for (const child of [...host.children]) {
-    if (!child.classList.contains("sched-zoom") && !child.classList.contains("sched-preview")) child.remove();
+    if (!child.classList.contains("sched-zoom")) child.remove();
   }
 }
 

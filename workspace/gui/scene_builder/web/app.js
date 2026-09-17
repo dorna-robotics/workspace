@@ -11139,7 +11139,7 @@ function startRectPattern() {
   async function ensure() {
     if (mod) return mod;
     mod = await import("/orchestrator/schedule.js");
-    mod.attachSchedule(pane, { preview: false });
+    mod.attachSchedule(pane);
     return mod;
   }
 
