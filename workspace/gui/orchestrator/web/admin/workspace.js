@@ -1500,12 +1500,14 @@ function _opActionsHtml(disabled) {
     "backward": '<polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/>',
     "rotate":   '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
     "activity": '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    "bell":     '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   };
   const OP_ICONS = {
     ...OP_BASE,
     "power-off": OP_BASE["power"] + OP_SLASH,
     "zap-off":   OP_BASE["zap"]   + OP_SLASH,
     "link-off":  OP_BASE["link"]  + OP_SLASH,
+    "bell-off":  OP_BASE["bell"]  + OP_SLASH,
   };
   const opIcon = (name) => (name && OP_ICONS[name])
     ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`

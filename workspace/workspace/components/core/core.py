@@ -755,6 +755,17 @@ class Core:
     def motor_disable(self):
         self.workspace.rt.motor(0)
 
+    def alarm_enable(self):
+        """Raise the controller's alarm flag (``alarm(1)``)."""
+        self.workspace.rt.alarm(1)
+
+    def alarm_disable(self):
+        """Clear the controller's alarm flag (``alarm(0)``) — the panel
+        affordance for the alarm a paused workflow is waiting on, so the
+        operator can clear it here instead of at the robot before
+        clicking Resume."""
+        self.workspace.rt.alarm(0)
+
     def tool_attach(self):
         """Fire the tool-changer engage IO. Operator caution: safe only
         when the robot is at a tool-rack position; firing elsewhere can
@@ -803,6 +814,8 @@ class Core:
         actions = [
             {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "motors"},
             {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off", "group": "motors"},
+            {"label": "Enable Alarm",   "method": "alarm_enable",  "icon": "bell",      "group": "alarm"},
+            {"label": "Disable Alarm",  "method": "alarm_disable", "icon": "bell-off",  "group": "alarm"},
             {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap",       "group": "tool"},
             {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off",   "group": "tool"},
         ]
@@ -4718,6 +4731,9 @@ class SimulationAPI:
         on. Lets scan-while-moving flows (BarcodeReader.code_rotate
         continuous mode) run the same call sequence in sim and real."""
         return True
+
+    def alarm(self, val=None):
+              return True
 
     def solve_third_degree(self,a, b, c, d):
         """
