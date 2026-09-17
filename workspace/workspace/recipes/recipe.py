@@ -86,13 +86,15 @@ class Recipe:
         # permanently classic (a deliberate stop, a read that needs a
         # clear robot).
         fuse=True,
-        # The INBOUND side of the same seam: may this recipe's travel
-        # absorb a tail the previous verb left held? ``fuse`` governs
-        # what leaves a station, ``fuse_in`` what arrives at it. False
-        # flushes any held tail (and cancels the pending recording, so
-        # the seam never becomes a book row) before the hop is planned:
-        # the previous exit runs to its normal stop, the hop is
-        # certified on its own. The reason to want it: certification
+        # The INBOUND side: does anything flow INTO this recipe's
+        # approach? ``fuse`` governs what leaves a station, ``fuse_in``
+        # what arrives at it. False means NOTHING does: (1) a tail the
+        # previous verb left held is flushed (and its pending recording
+        # cancelled) before the hop is planned, so the previous exit
+        # runs to its normal stop; (2) this recipe's OWN travel is not
+        # folded into its approach — the hop lands on the approach's
+        # first point and stops, and the approach group then runs as
+        # one chain by itself. The reason to want it: certification
         # picks ONE profile for a whole chain, so a station whose
         # approach ends in tight bends (the tool rack) throttles the
         # entire fused travel to the speed of its last corner.
@@ -1222,6 +1224,33 @@ class Recipe:
             # is cancelled, so the peek below finds nothing to merge
             # and the fold's book_note has nothing to record.
             self.core.tail_flush(reason=f"{type(self).__name__} fuse_in=False")
+            if len(path) > 1:
+                # ... and its own TRAVEL is not folded into the approach
+                # either: the hop lands on the group's first point and
+                # STOPS; the group then runs as ONE chain through its
+                # continuous twin (grouping is continuity), exactly like
+                # every other multi-point group. Nothing flows into this
+                # station's approach — not the previous exit, not its
+                # own travel. (A merged tail's deferred IO cannot exist
+                # here — the tail was just flushed — so nothing rides.)
+                J0 = self._solve_ik(target_solid, target_anchor, path[0], tool_dict, j5_override)
+                rt.checkpoint()
+                self._execute_motion_planned(rt, J0, vaj_map, use_planning=has_motion_plan,
+                                             motion_plan_kwargs=motion_plan_kwargs,
+                                             tool_dict=tool_dict, j5_override=j5_override)
+                pts = [[float(v) for v in rt.joint()]]
+                for offset in path[1:]:
+                    pts.append([float(v) for v in self._solve_ik(target_solid, target_anchor, offset, tool_dict, j5_override)])
+                rt.checkpoint()
+                tp = None
+                if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+                    tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
+                                                 in_frame=self.core.robot_flange,
+                                                 offset=tool_dict["offset"])
+                chain = "cjmove" if self.motion_type == "jmove" else "clmove"
+                self._run_path_motion(rt, pts, vaj_map[self.motion_type], chain, tool_pose=tp,
+                                      padding=motion_plan_kwargs.get("padding", 10))
+                return
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
             fuse_tail = self.core._motion_tail

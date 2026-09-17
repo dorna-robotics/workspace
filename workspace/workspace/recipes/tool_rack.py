@@ -27,11 +27,12 @@ class ToolRack(Recipe):
         # a classic exit. One explicit default here, no per-call
         # override inside the verbs: what recipes.j2 says is what runs.
         fuse=False,
-        # Refuse inbound tails: the rack approach ends in tight bends,
-        # and one certified profile for a fused chain would drive the
-        # whole travel at the speed of that last corner (bench). The
-        # previous exit stops classically, the hop here is planned and
-        # certified on its own. Override per project in recipes.j2.
+        # Nothing flows into the approach: the previous exit stops
+        # classically, and the rack's own travel stops at the first
+        # approach point; the approach group then runs as one chain.
+        # The rack approach ends in tight bends, and one certified
+        # profile for a fused chain would drive the whole travel at the
+        # speed of that last corner (bench). Override in recipes.j2.
         fuse_in=False,
     )
 

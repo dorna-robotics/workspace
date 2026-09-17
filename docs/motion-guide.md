@@ -399,12 +399,15 @@ run recorded that the next motion merges there. Design + decision log:
   `fuse=True` means "allowed to consult the book"; `fuse=False` keeps
   a station permanently classic (a deliberate stop, a read that needs
   a clear robot).
-* **`fuse_in` is the inbound side of the same seam.** `fuse` says
-  whether a station's EXIT may be held; `fuse_in` (recipes.j2, default
-  true) says whether a station's ARRIVAL may absorb a tail the previous
-  verb left held. `fuse_in: false` flushes the held tail and cancels
-  its pending recording before the hop is planned, so the previous
-  exit stops classically and the seam never becomes a book row. Why
+* **`fuse_in` is the inbound side.** `fuse` says whether a station's
+  EXIT may be held; `fuse_in` (recipes.j2, default true) says whether
+  anything may flow INTO a station's approach. `fuse_in: false` does
+  two things: the tail the previous verb left held is flushed (and its
+  pending recording cancelled) before the hop is planned, so the
+  previous exit stops classically; and the station's own travel is not
+  folded into its approach — the hop lands on the approach's first
+  point and stops, and the approach group then runs as one chain by
+  itself (grouping is continuity, the seam into the group is not). Why
   you would: certification picks one profile for a whole chain, so a
   station whose approach ends in tight bends drags the entire fused
   travel down to its last corner. The tool rack ships with
