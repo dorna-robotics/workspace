@@ -78,7 +78,7 @@ def record_start():
         return {"ok": False, "error": "no project connected yet — run a "
                 "workspace with a project scene first"}
     os.makedirs(rec_dir, exist_ok=True)
-    name = time.strftime("rec_%Y%m%d_%H%M%S.jsonl")
+    name = time.strftime("rec_%Y-%m-%d_%H-%M-%S.jsonl")
     path = os.path.join(rec_dir, name)
     try:
         fp = open(path, "w")

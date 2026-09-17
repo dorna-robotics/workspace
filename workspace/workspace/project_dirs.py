@@ -6,8 +6,9 @@ of them was a hardcoded name inside the platform:
     data/      the operator's INPUT files. Uploads land here and stay;
                the next run browses to the same file instead of the
                operator hunting for it on their laptop again.
-    results/   one folder per run — records.jsonl, records.csv.
-    rec/       replay recordings, rec_<stamp>.jsonl.
+    results/   one folder per run, named by its start time
+               (2026-09-12_15-35-17) — records.jsonl, records.csv.
+    rec/       replay recordings, rec_<start time>.jsonl.
 
 ``launch.yaml`` names all three, the same way it names ``core_dir``::
 

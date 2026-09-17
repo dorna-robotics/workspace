@@ -232,7 +232,7 @@ def _record_start():
     if not _record_dir:
         return {"ok": False, "error": "no project rec/ dir known"}
     os.makedirs(_record_dir, exist_ok=True)
-    name = time.strftime("rec_%Y%m%d_%H%M%S.jsonl")
+    name = time.strftime("rec_%Y-%m-%d_%H-%M-%S.jsonl")
     path = os.path.join(_record_dir, name)
     try:
         fp = open(path, "w")

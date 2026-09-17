@@ -590,7 +590,8 @@ class Runtime:
             self._record_persist(run_dir, c_lines, c_csv)
         if lines or csv_text:
             if self._rec_run_dir is None and self.record_dir:
-                stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(started or time.time()))
+                # Human-readable, sorts by time, no spaces: 2026-09-12_15-35-17.
+                stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(started or time.time()))
                 cand, n = os.path.join(self.record_dir, stamp), 1
                 while os.path.exists(cand):          # two runs in one second
                     n += 1
