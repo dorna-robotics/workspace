@@ -120,6 +120,9 @@ async def connect(sid, environ, auth):
         await sio.emit("scene_update", world_state, room=sid)
     if not _has_meshurl(world_state):
         await sio.emit("request_snapshot")
+    # The recorder's state rides the same socket as the scene: a viewer
+    # opened mid-recording shows the red dot from its first frame.
+    await sio.emit("recorder", _record_status(), room=sid)
 
 
 def _compact_delta(payload: dict, state: dict) -> dict:
@@ -247,6 +250,7 @@ def _record_start():
     for ev in list(_schedule_history) + list(_schedule_runtime_events):
         _record_event(ev)
     print(f"[record] started -> {path}")
+    _recorder_broadcast()
     return {"ok": True, "path": path, "name": name}
 
 
@@ -262,6 +266,7 @@ def _record_stop():
         pass
     secs = round(time.time() - t0, 1) if t0 else 0
     print(f"[record] stopped: {path} ({n} lines, {secs}s)")
+    _recorder_broadcast()
     return {"ok": True, "path": path, "frames": n, "seconds": secs}
 
 
@@ -270,6 +275,26 @@ def _record_status():
     return {"ok": True, "recording": on, "path": _recorder["path"],
             "seconds": round(time.time() - _recorder["t0"], 1) if on else 0,
             "frames": _recorder["frames"], "rec_dir": _record_dir}
+
+
+def _recorder_broadcast() -> None:
+    """Tell EVERY viewer the recorder changed state.
+
+    The recorder is server-side, so a second browser watching the same
+    bench must see the red dot the moment a first one presses Record —
+    it used to learn nothing, because each viewer only polled /record/
+    status while it already believed a recording was on. Called from
+    inside start/stop so every entry point broadcasts: the button, the
+    run-end hook, a write failure, exit. Scheduled onto the IO loop
+    because those callers run on BT and hook threads; sio.emit is a
+    coroutine and Tornado's add_callback drives it. Best-effort — at
+    exit the loop may already be gone."""
+    if _main_ioloop is None:
+        return
+    try:
+        _main_ioloop.add_callback(sio.emit, "recorder", _record_status())
+    except Exception:
+        pass
 
 
 class RecordHandler(tornado.web.RequestHandler):

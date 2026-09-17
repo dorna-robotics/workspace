@@ -1295,6 +1295,13 @@ function makeRenderer(opts, mountEl) {
         _hasMeshData = false;
       });
 
+      // The recorder is server-side and its state is broadcast to every
+      // viewer on this socket. The record button lives in a separate
+      // classic script (it must work where this module is absent), so
+      // the state crosses over as a DOM event instead of a shared object.
+      socket.on("recorder", (st) =>
+        window.dispatchEvent(new CustomEvent("recorder", { detail: st })));
+
       // ── Live joints chip ──────────────────────────────────────────
       // A "__joints__" pseudo-entry rides the scene stream (Display
       // sends it only when the values change). One textContent write —
@@ -1401,53 +1408,69 @@ function makeRenderer(opts, mountEl) {
       try { st = await api("status", "GET"); } catch (_) { return; }
       if (!st || st.ok !== true) return;
       btn.style.display = "";
-      let pollT = null;
+      // STATE ARRIVES BY PUSH — the server emits "recorder" on every
+      // start/stop over the scene's websocket (see the module above).
+      // Nothing here polls: the elapsed badge ticks from a LOCAL clock
+      // anchored on the pushed `seconds`, and the only GET after page
+      // load is the one right after this client's own click.
+      let tickT = null, startedAt = null;
       const fmt = (s) => {
         s = Math.max(0, Math.floor(s));
         return String(Math.floor(s / 60)).padStart(2, "0") + ":" +
                String(s % 60).padStart(2, "0");
       };
+      const tick = () => {
+        badge.textContent = "REC " + fmt((Date.now() - startedAt) / 1000);
+        badge.style.top = btn.offsetTop + "px";
+      };
       function render(status) {
         const on = !!(status && status.recording);
         btn.classList.toggle("rec-on", on);
         btn.title = on ? "Stop recording" : "Record replay";
-        badge.style.display = on ? "" : "none";
+        clearInterval(tickT);
         if (on) {
-          badge.textContent = "REC " + fmt(status.seconds || 0);
-          badge.style.top = btn.offsetTop + "px";
+          startedAt = Date.now() - 1000 * (status.seconds || 0);
+          badge.style.display = "";
+          tick();
+          tickT = setInterval(tick, 1000);
+        } else if (!badge.dataset.transient) {
+          badge.style.display = "none";
         }
-        clearInterval(pollT);
-        if (on) pollT = setInterval(async () => {
-          try { render(await api("status", "GET")); } catch (_) {}
-        }, 1000);
       }
+      // A short message on the badge ("saved ✓", "record failed") that a
+      // push arriving a moment later must not wipe.
+      const flash = (text, title, ms) => {
+        badge.dataset.transient = "1";
+        badge.style.display = "";
+        badge.style.top = btn.offsetTop + "px";
+        badge.textContent = text;
+        badge.title = title || "";
+        setTimeout(() => {
+          delete badge.dataset.transient;
+          if (!btn.classList.contains("rec-on")) badge.style.display = "none";
+        }, ms);
+      };
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         try {
-          const cur = await api("status", "GET");
-          if (cur.recording) {
+          // Toggle on what THIS button shows — no status round-trip
+          // first; the server refuses a double start/stop anyway.
+          if (btn.classList.contains("rec-on")) {
             const out = await api("stop");
-            render(await api("status", "GET"));
-            if (out && out.ok) {
-              badge.style.display = "";
-              badge.style.top = btn.offsetTop + "px";
-              badge.textContent = "saved \u2713";
-              badge.title = out.path || "";
-              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 2500);
-            }
+            if (out && out.ok) flash("saved \u2713", out.path, 2500);
           } else {
             const out = await api("start");
-            if (!out || !out.ok) {
-              badge.style.display = "";
-              badge.style.top = btn.offsetTop + "px";
-              badge.textContent = "record failed";
-              badge.title = (out && out.error) || "";
-              setTimeout(() => { if (!btn.classList.contains("rec-on")) badge.style.display = "none"; }, 3000);
-            }
-            render(await api("status", "GET"));
+            if (!out || !out.ok) flash("record failed", out && out.error, 3000);
           }
+          // One request/response for the actor, so the button reflects
+          // the outcome even if the socket is down. Not a poll.
+          render(await api("status", "GET"));
         } finally { btn.disabled = false; }
       });
+      // Pushed state — another browser pressed Record, the run ended and
+      // closed the file, a write failed. Same render as a poll result,
+      // so every viewer shows the same red dot at the same moment.
+      window.addEventListener("recorder", (e) => render(e.detail));
       render(st);
     })();
   </script>

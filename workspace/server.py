@@ -89,6 +89,7 @@ def record_start():
                           "rec_dir": rec_dir}})
     record_line({"t": 0.0, "snap": world_state})
     print(f"[record] started -> {path}")
+    recorder_broadcast()
     return {"ok": True, "path": path, "name": name}
 
 
@@ -104,6 +105,7 @@ def record_stop():
         pass
     secs = round(time.time() - t0, 1) if t0 else 0
     print(f"[record] stopped: {path} ({n} lines, {secs}s)")
+    recorder_broadcast()
     return {"ok": True, "path": path, "frames": n, "seconds": secs}
 
 
@@ -114,6 +116,17 @@ def record_status():
             "seconds": round(time.time() - recorder["t0"], 1) if on else 0,
             "frames": recorder["frames"],
             "rec_dir": rec_dir}
+
+def recorder_broadcast() -> None:
+    """Every viewer sees the recorder change state — same contract as
+    the runtime server. Everything here runs on the IO loop (the HTTP
+    handler and the socket.io events), so add_callback just defers the
+    coroutine to the next tick."""
+    try:
+        tornado.ioloop.IOLoop.current().add_callback(sio.emit, "recorder", record_status())
+    except Exception:
+        pass
+
 
 
 # --------------------------------------------------
@@ -246,6 +259,8 @@ async def connect(sid, environ, auth):
         await sio.emit("scene_update", world_state, room=sid)
     else:
         await sio.emit("request_snapshot", room=sid)
+    # A viewer opened mid-recording shows the red dot from its first frame.
+    await sio.emit("recorder", record_status(), room=sid)
 
 
 @sio.event
