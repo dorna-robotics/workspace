@@ -394,8 +394,10 @@ run recorded that the next motion merges there. Design + decision log:
   instead of drawing the straight line the verb promises. The rule:
   process motions never defer, travel motions may. Pass `fuse=True` on
   a lift where that bow is known to be harmless.
-* **The book** (`core/motion_book.json`, JSONL + scene stamp like the
-  other caches): one row per PROVEN seam partner —
+* **The book** (`core/motion_book.json`, JSONL, NOT scene-stamped —
+  it holds no geometry, so a scene edit does not empty it; a moved
+  station re-keys itself, a changed future is re-learned at the
+  mismatch site): one row per PROVEN seam partner —
   `(owner, held points) -> (next primitive, next solved final target)`,
   points canonical-j5. A seam may hold MANY partners (one row each,
   match-any): the tool-rack place exit fuses into the next pick

@@ -37,8 +37,11 @@ per-call override): it now means "allowed to use the book."
 
 ## The book
 
-- File: `core/motion_book.json` — JSONL, same scene-stamp header and
-  degrade-to-memory rules as `ik.json` / `traj.json`.
+- File: `core/motion_book.json` — JSONL, same degrade-to-memory rules
+  as `ik.json` / `traj.json` but NO scene-stamp header: the book holds
+  no geometry (keys and partners are solved targets), so a scene edit
+  must not empty it. Decided after the bench: a +5 mm bin edit emptied
+  107 proven seams and the next batch ran classic end to end.
 - One record per seam:
   `{owner, tail_pts, next_class, next_pts_prefix, tool_pose}` —
   points stored canonical-j5 with turn re-carry on replay (the same
@@ -85,8 +88,8 @@ proven pairs.
 
 ## Open knobs (decide at review)
 
-- Book invalidation: scene stamp only (like ik.json), or also a recipe
-  fingerprint? Proposed: scene stamp only — changed points fail the
-  match anyway, which self-heals by re-recording.
+- Book invalidation: DECIDED — none by stamp. Changed points fail the
+  match anyway, which self-heals by re-recording; a changed future is
+  learned at the mismatch site.
 - Should Park/Start seams be recorded too? Proposed: yes — they are
   seams like any other.

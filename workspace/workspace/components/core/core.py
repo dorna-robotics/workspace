@@ -1912,9 +1912,19 @@ class Core:
     # turns — same rule as the traj cache.
 
     def _book_init(self):
-        """Load core/motion_book.json — JSONL + scene stamp like the
-        other caches; a row with v=None is a tombstone (last wins).
-        Never raises."""
+        """Load core/motion_book.json — JSONL; a row with v=None is a
+        tombstone (last wins). Never raises.
+
+        NOT scene-stamped, unlike ik/path/traj/fold. Those caches hold
+        geometry, so a scene edit makes them wrong. The book holds no
+        geometry: a record says "after this seam the next motion is an
+        smove to target e", and both the seam key and e are SOLVED
+        targets. A station that moved re-keys itself (no match, classic,
+        re-record); a future that changed is caught by book_check
+        (flush classic, learn). Stamping it only threw away every
+        proven seam on the bench each time the operator nudged one
+        anchor (bench: a cap-bin +5 mm edit emptied 107 seams and the
+        whole next batch ran classic)."""
         self._book = {}
         try:
             d = self._core_dir()
@@ -1923,9 +1933,6 @@ class Core:
         except Exception:
             self._book_path = None
         if self._book_path is None or not self._book_path.is_file():
-            return
-        if not self._cache_scene_ok(self._book_path):
-            self._cache_discard_stale(self._book_path, "motion_book.json")
             return
         try:
             for line in self._book_path.read_text().splitlines():
@@ -1981,6 +1988,13 @@ class Core:
             return {"p": str(primitive), "e": self._book_canon_pt(end_pt)}
         except Exception:
             return None
+
+    def book_size(self):
+        """How many seams this run can consult — the boot snapshot's
+        size, for the start-of-run line."""
+        if self._book is None:
+            self._book_init()
+        return len(self._book)
 
     def book_lookup(self, key):
         """The seam's list of proven partner signatures, or None."""
@@ -2117,10 +2131,7 @@ class Core:
         try:
             if self._book_path is None:
                 return
-            _fresh = not self._book_path.is_file()
             with open(self._book_path, "a") as f:
-                if _fresh:
-                    self._cache_stamp(f)
                 f.write(json.dumps({"k": key, "v": val},
                                    separators=(",", ":")) + "\n")
         except Exception:

@@ -965,6 +965,14 @@ def run_protocol(
     # lookups see exactly the book as it stood at its start.
     try:
         core.book_reload()
+        # Say which pass this is BEFORE the robot moves: an empty book
+        # means every seam runs classic and records (the summary at
+        # the end only explains it after the operator watched it).
+        n = core.book_size()
+        line = (f"fusion: {n} seam(s) in the book" if n
+                else "fusion: book empty — recording pass, fuses on the next run")
+        ctx.runtime.step(line)
+        log.info("%s: %s", project_name, line)
     except Exception:
         log.warning("%s: motion-book reload failed", project_name, exc_info=True)
     try:
