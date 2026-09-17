@@ -79,10 +79,13 @@ class Recipe:
         # there (core/motion_book.json). Unrecorded seams execute
         # exactly like fuse=False and record themselves; a held seam
         # whose next motion doesn't match its record flushes classic
-        # and drops the record. First run after any cache wipe is
-        # therefore ALWAYS classic motion; fusion appears from run 2,
-        # only where proven — which is why ON is a safe default: it
-        # never gambles. ``fuse: false`` in recipes.j2 keeps a station
+        # and drops the record. A seam's first pass is therefore
+        # ALWAYS classic motion; its second pass fuses — in the next
+        # run, or later in the same run if the seam comes round again
+        # — and fuses WARM: the classic pass pre-warms the fold and
+        # profile caches for the fused chain (_prewarm_fused). Only
+        # where proven, which is why ON is a safe default: it never
+        # gambles. ``fuse: false`` in recipes.j2 keeps a station
         # permanently classic (a deliberate stop, a read that needs a
         # clear robot).
         fuse=True,
@@ -707,6 +710,7 @@ class Recipe:
         key = self.core.book_key(type(self).__name__, pts[1:])
         sig = self.core.book_lookup(key)
         if sig is None:
+            self.core.book_candidate(key, pts)   # for run 1's pre-warm
             return False, key
 
         tp = [0, 0, 0, 0, 0, 0]
@@ -783,6 +787,7 @@ class Recipe:
         if sig is None:
             rt.lmove(joint=list(J), vel=vel, accel=accel, jerk=jerk,
                      tool_pose=list(tp))
+            self.core.book_candidate(key, pts)   # for run 1's pre-warm
             self.core.book_arm(key)
             return
 
@@ -821,6 +826,7 @@ class Recipe:
         key = self.core.book_key(who, [pts[-1]])
         sig = self.core.book_lookup(key)
         if sig is None:
+            self.core.book_candidate(key, pts)   # for run 1's pre-warm
             return False, key
 
         def _flush():
@@ -844,6 +850,37 @@ class Recipe:
             tail["io_sync"] = io[2]
         self.core.tail_deposit(tail)
         return True, None
+
+    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map):
+        """Run 1 just RECORDED a seam (its tail ran classic, this fold
+        followed). Build the chain run 2 will splice — tail + this fold
+        — and put it in the fold cache under the seam-keyed row and in
+        the profile cache, so run 2 fuses WARM instead of computing
+        both on its first fused pass (bench: run 2 spent 3.2 s on folds
+        and certification that run 3 then found cached). Runs after
+        the classic motion returned, so it delays nothing; never
+        raises."""
+        try:
+            key, tail_pts = rec
+            if not tail_pts or len(tail_pts) < 2:
+                return
+            _t0 = _time.perf_counter()
+            spliced = [list(q) for q in tail_pts] + [list(q) for q in points[1:]]
+            self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced)
+            chain = self.core.chain_sliver_dedup(
+                [[float(v) for v in tail_pts[0]]] + [list(q) for q in spliced[1:]])
+            if len(chain) >= 2:
+                vel, accel, jerk = self.scaled_vaj(vaj_map["jmove"])
+                s = self.speed_factor
+                caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
+                        for r in self.max_vaj_joint]
+                self.core.smove_certify(chain, vel, accel, jerk, joint_caps=caps)
+            ms = round((_time.perf_counter() - _t0) * 1000)
+            print(f"[fusion] pre-warmed the fused chain for the next run ({ms} ms)")
+            self.core.fusion_journal("prewarm", owner=type(self).__name__,
+                                     pts=len(spliced), ms=ms)
+        except Exception as ex:
+            print(f"[fusion] pre-warm skipped: {ex}")
 
     def _fuse_tail_points(self, tail, points, primitive):
         """Splice a held tail onto the front of a fold path — ONE fused
@@ -1310,6 +1347,7 @@ class Recipe:
             points = None
             cached = False
             pending_io = None
+            _rec = None
             _t_ik0 = _t_plan = _t_sample = _t_blend = 0.0
             if _fold_base is not None:
                 if fuse_tail is not None:
@@ -1327,7 +1365,7 @@ class Recipe:
                     # the row's final target (row invariant: p[-1] IS
                     # the fold's solved final target) — no early solve,
                     # no ik-cache pollution.
-                    self.core.book_note(planned, hit[-1])
+                    _rec = self.core.book_note(planned, hit[-1])
                     if fuse_tail is not None:
                         if self.core.book_check(fuse_tail, planned, hit[-1]):
                             self.core.tail_consume()
@@ -1409,7 +1447,7 @@ class Recipe:
                 # flushes pass disarm=False. Then verify a held tail
                 # against its record; a mismatch flushes classic and
                 # drops the record (tail_flush does both).
-                self.core.book_note(planned, points[-1])
+                _rec = self.core.book_note(planned, points[-1])
                 if (fuse_tail is not None
                         and not self.core.book_check(fuse_tail, planned,
                                                      points[-1])):
@@ -1475,6 +1513,8 @@ class Recipe:
                                   padding=motion_plan_kwargs.get("padding", 10))
             if pending_io:
                 pending_io[1](io_h)
+            if _rec is not None and fuse_tail is None and _fold_base is not None:
+                self._prewarm_fused(_rec, _fold_base, points, planned, vaj_map)
             return
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.

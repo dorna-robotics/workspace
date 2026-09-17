@@ -428,13 +428,18 @@ run recorded that the next motion merges there. Design + decision log:
   points canonical-j5. A seam may hold MANY partners (one row each,
   match-any): the tool-rack place exit fuses into the next pick
   mid-run and into Park at the end.
-* **First run is classic, by construction.** An unrecorded seam
-  executes exactly like `fuse=False` and records its partner at the
-  next merge-capable fold. Records go to the FILE only and become
-  consultable at the NEXT run start (`book_reload`, launcher) — the
-  SNAPSHOT rule: a seam recorded early in a run must never fuse later
-  in the same run (repeated stations would self-fuse, shift solve
-  moments, and re-roll IK candidate selection — bench-caught).
+* **The first pass of a seam is classic, by construction; the
+  second fuses warm.** An unrecorded seam executes exactly like
+  `fuse=False` and records its partner at the next merge-capable
+  fold. The record goes to the file AND the in-memory book, so a seam
+  that comes round again later in the same run already fuses. At the
+  same moment run 1 PRE-WARMS the fused chain run 2 will splice (the
+  classic tail + this fold): the seam-keyed fold row and its certified
+  profile are written then, ~0.3 s of compute after the classic
+  motion returned. Measured on bna `vortex_loaded` (4 tubes, empty
+  caches): run 1 records 7 seams; run 2 merges all 7 with every fold
+  and profile cached (6 ms of compute for the phase). Without the
+  pre-warm, run 2 spent 3.2 s computing what run 3 then found cached.
 * **Later runs**: a recorded seam's exit group is IK-solved and held
   on `core` (`tail_deposit`); the next verb's fold verifies the
   arriving motion against the seam's partners — match → splice

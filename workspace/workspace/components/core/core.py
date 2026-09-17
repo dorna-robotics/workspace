@@ -373,6 +373,8 @@ class Core:
         self._book = None
         self._book_path = None
         self._book_pending = None
+        self._book_pending_points = None
+        self._book_candidates = {}
         self._book_written = set()
 
 
@@ -1773,6 +1775,7 @@ class Core:
         # learns the new future separately, book_learn).
         if disarm:
             self._book_pending = None
+            self._book_pending_points = None
         t = self.tail_consume()
         if t is None:
             return
@@ -2022,6 +2025,8 @@ class Core:
         snapshot rule (book_note) keeps them invisible mid-run."""
         self._book_init()
         self._book_pending = None
+        self._book_pending_points = None
+        self._book_candidates = {}
         self._book_written = set()
         # Fresh tallies for this run's summary line (fusion_summary).
         self._fusion_counts = {"merged": 0, "recorded": 0, "mismatched": 0}
@@ -2043,33 +2048,46 @@ class Core:
             line += " (geometry moved — those seams re-learned, fuse next run)"
         return line
 
+    def book_candidate(self, key, points):
+        """A seam that just ran CLASSIC: remember the tail it would have
+        held (live start + solved exit targets). If the seam gets armed
+        and recorded, these points let run 1 pre-warm the fused chain
+        run 2 will ask for (recipe._prewarm_fused)."""
+        if key:
+            self._book_candidates[key] = [[float(v) for v in q] for q in points]
+
     def book_arm(self, key):
         """Arm a classic seam for recording — the next merge-capable
-        motion (book_note) becomes its recorded partner."""
+        motion (book_note) becomes its recorded partner. The tail
+        points stashed by book_candidate travel with the arming."""
         if key:
             self._book_pending = key
+            self._book_pending_points = self._book_candidates.pop(key, None)
 
     def book_disarm(self):
         self._book_pending = None
+        self._book_pending_points = None
 
     def book_note(self, primitive, end_pt):
         """Called at every merge-capable site: records the armed seam's
-        partner. No-op unless a seam is pending.
+        partner. No-op unless a seam is pending. Returns the recorded
+        (key, tail points) so the caller can pre-warm the fused chain,
+        or None when nothing was recorded.
 
-        SNAPSHOT RULE: the record goes to the FILE only — never into
-        the in-memory book this run reads from. A seam recorded early
-        in a run must not fuse later in the SAME run (repeated
-        stations — the tool rack — hit their own fresh record and the
-        run stopped being classic; the shifted solve moments re-rolled
-        the IK dice — bench-caught). Records become consultable when
-        the next run reloads the book (book_reload)."""
+        The record goes to the file AND the in-memory book: a seam
+        recorded early in a run fuses when it comes round again later
+        in the same run (user decision, 2026-09-17 — the earlier
+        snapshot rule guarded the tool rack, which is now fuse=False /
+        fuse_in=False by default and never fuses)."""
         if self._book_pending is None:
-            return
+            return None
         key, self._book_pending = self._book_pending, None
+        pts, self._book_pending_points = self._book_pending_points, None
         sig = self.book_sig(primitive, end_pt)
         if sig is None:
-            return
+            return None
         self._book_write(key, sig)
+        return key, pts
 
     def book_learn(self, key, primitive, end_pt):
         """A HELD seam met an arriving motion its records didn't cover:
@@ -2096,6 +2114,7 @@ class Core:
             return
         self._book_written.add(wid)
         self._book_append(key, sig)
+        self._book.setdefault(key, []).append(sig)    # RAM copy, same run
         print(f"[fusion] book: {verb} -> {sig['p']} "
               f"(fuses on the next run)")
         self.fusion_journal("record", what=verb, partner=sig.get("p"),
