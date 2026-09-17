@@ -116,7 +116,7 @@ class Recipe:
         # j0..j5, rail, aux; sf applies on top (vel*s, accel*s^2,
         # jerk*s^3). Override per recipe in recipes.j2.
         max_vaj_joint=[
-            [150, 500, 3000],   # j0
+            [120, 500, 3000],   # j0
             [150, 500, 3000],   # j1
             [240, 800, 3000],   # j2
             [200, 600, 3000],   # j3
