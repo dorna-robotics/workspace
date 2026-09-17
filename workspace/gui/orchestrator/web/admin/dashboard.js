@@ -595,6 +595,21 @@ document.getElementById("btnModalClose").addEventListener("click",  () => modal.
 document.getElementById("btnModalCancel").addEventListener("click", () => modal.classList.remove("show"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("show"); });
 
+// One global ESC handler closes whichever modal is open — the same rule
+// the workspace page uses, so both pages dismiss the same way. Closes
+// the topmost visible modal only; the file browser takes ESC on the
+// capture phase, so it is never reached while that panel is up.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  for (const id of ["paramsModalOverlay", "modalOverlay"]) {
+    const m = document.getElementById(id);
+    if (m && m.classList.contains("show")) {
+      m.classList.remove("show");
+      break;
+    }
+  }
+});
+
 // Load from file (YAML or JSON)
 const fileInput = document.getElementById("fileInput");
 document.getElementById("btnLoadFile").addEventListener("click", () => fileInput.click());

@@ -398,25 +398,35 @@ export function openFileBrowser(opts = {}) {
   // ---- open / close ----
   function done(entry) {
     el.classList.remove("show");
-    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("keydown", onKey, true);
     const r = resolveFn; resolveFn = null;
     if (r) r(entry || null);
   }
-  // Escape is swallowed, not honoured: the panel closes on the X or on
-  // Close, never on a stray key or a click that missed the modal. An
-  // operator half-way through picking a manifest should not lose it to
-  // a mis-click on the backdrop.
+  // Escape closes the panel, like every other modal. CAPTURE phase +
+  // stopImmediatePropagation because this panel is usually opened from
+  // INSIDE the parameters modal: the page's own global ESC handler is a
+  // bubble-phase listener on document, so without taking the key first
+  // one press would close the browser AND the modal underneath it.
   function onKey(ev) {
-    if (ev.key === "Escape" && el.classList.contains("show")) ev.stopPropagation();
+    if (ev.key !== "Escape" || !el.classList.contains("show")) return;
+    ev.stopImmediatePropagation();
+    ev.preventDefault();
+    done(null);
   }
   q(".fb-close").onclick = () => done(null);
   q(".fb-cancel").onclick = () => done(null);
   useBtn.onclick = () => done(selected);
-  el.onclick = null;
+  // Backdrop click closes, same as the params and device modals. The
+  // press must START on the backdrop too: this panel has a drag-to-
+  // resize splitter, and releasing a drag outside the modal delivers a
+  // click whose target is the overlay — a pick would be lost to it.
+  let downOnBackdrop = false;
+  el.onpointerdown = (ev) => { downOnBackdrop = (ev.target === el); };
+  el.onclick = (ev) => { if (ev.target === el && downOnBackdrop) done(null); };
 
   select(null);
   load();
   el.classList.add("show");
-  document.addEventListener("keydown", onKey);
+  document.addEventListener("keydown", onKey, true);
   return new Promise((res) => { resolveFn = res; });
 }
