@@ -3783,6 +3783,126 @@ def _joint_space_distance(q, qref):
     return float(np.linalg.norm(diffs))
 
 
+# ── cmove: the firmware's circle (server/motion.cpp createCircle /
+# traverse, pathType 1), ported verbatim. The circle lives in the first
+# ``dim`` components of the 8-vector (default 3: x, y, z of the xyzj
+# vector — or j0, j1, j2 in joint space); every component from ``dim``
+# on moves LINEARLY with the arc length, exactly like the firmware's
+# lineA_/lineB_ terms. ``turn`` adds whole extra revolutions.
+
+_FW_AXES = 8
+
+
+def _fw_create_circle(initial, final, middle, dim, turn):
+    """Motion::createCircle — the circle through ``initial`` (A),
+    ``middle`` (C) and ``final`` (B), traversed A -> C -> B.
+
+    Returns the path dict the traverse reads: centre ``p0``, in-plane
+    basis ``r1`` (A - p0) and ``r4`` (the perpendicular of length r
+    pointing toward C's side), radius ``r``, arc length ``d`` and the
+    linear terms for the components outside the circle's ``dim``.
+
+    Two degeneracies the firmware does not guard (it divides by zero
+    and commands NaN): collinear or coincident points, which have no
+    circle — raised as ValueError; and B diametrically opposite A,
+    where the firmware's perpendicular vanishes — resolved through C,
+    the only point that still says which way round."""
+    n = _FW_AXES
+    A = [float(initial[i]) if i < dim else 0.0 for i in range(n)]
+    B = [float(final[i]) if i < dim else 0.0 for i in range(n)]
+    C = [float(middle[i]) if i < dim else 0.0 for i in range(n)]
+    a = [A[i] - C[i] for i in range(n)]
+    b = [B[i] - C[i] for i in range(n)]
+    dot = lambda u, v: sum(x * y for x, y in zip(u, v))
+    a_a, b_b, a_b = dot(a, a), dot(b, b), dot(a, b)
+    den = 2.0 * (a_a * b_b - a_b * a_b)
+    if abs(den) < 1e-12:
+        raise ValueError("cmove: start, midpoint and target are collinear or coincide — no circle through them")
+    p0 = [(b_b * (a_a - a_b) * a[i] - a_a * (a_b - b_b) * b[i]) / den + C[i] for i in range(n)]
+    r1 = [A[i] - p0[i] for i in range(n)]
+    r = math.sqrt(dot(r1, r1))
+    r2 = [B[i] - p0[i] for i in range(n)]
+    r1_r2 = dot(r1, r2)
+    r3 = [r2[i] - (r1_r2 / (r * r)) * r1[i] for i in range(n)]
+    n3 = math.sqrt(dot(r3, r3))
+    r5 = [C[i] - p0[i] for i in range(n)]
+    if n3 < 1e-9 * r:
+        # A and B antipodal: r3 == 0 in the firmware. Take C's own
+        # in-plane perpendicular instead — same construction, C for B.
+        r1_r5 = dot(r1, r5)
+        r3 = [r5[i] - (r1_r5 / (r * r)) * r1[i] for i in range(n)]
+        n3 = math.sqrt(dot(r3, r3))
+    r4 = [(r / n3) * r3[i] for i in range(n)]
+    cos_t_b = min(max(-1.0, r1_r2 / (r * r)), 1.0)
+    t_b = math.acos(cos_t_b)
+    if dot(r4, r5) < 0 or math.acos(min(max(-1.0, dot(r1, r5) / (r * r)), 1.0)) > t_b:
+        r4 = [-v for v in r4]
+        t_b = 2.0 * math.pi - t_b
+    d = r * (2.0 * math.pi * int(turn) + t_b)
+    lineA = [0.0 if i < dim else float(initial[i]) for i in range(n)]
+    lineB = [0.0 if i < dim else (float(final[i]) - float(initial[i])) / d for i in range(n)]
+    return {"p0": p0, "r1": r1, "r4": r4, "r": r, "d": d, "dim": int(dim),
+            "lineA": lineA, "lineB": lineB}
+
+
+def _fw_circle_traverse(path, q):
+    """Motion::traverse for pathType 1 — the 8-vector at arc length q."""
+    t0 = q / path["r"]
+    c, sn = math.cos(t0), math.sin(t0)
+    out = []
+    for i in range(_FW_AXES):
+        if i < path["dim"]:
+            out.append(path["p0"][i] + path["r1"][i] * c + path["r4"][i] * sn)
+        else:
+            out.append(path["lineA"][i] + q * path["lineB"][i])
+    return out
+
+
+_FW_XYZ_KEYS = ("x", "y", "z", "a", "b", "c", "d", "e")
+
+
+def _fw_target_position(kw, prefix, cur_joints, cur_xyz, rel, kinematic):
+    """Motion::calculateTargetPosition for one point — the target
+    (``prefix`` "") or the midpoint (``prefix`` "m"): joints ``j0..j7``
+    win over a pose ``x..e``; absent components are the CURRENT ones
+    (absolute) or a zero delta (``rel``); a pose resolves to the joint
+    branch nearest the current joints. Returns (joints, xyz) as
+    8-vectors, xyz = [x, y, z, a, b, c, rail, aux]."""
+    jk = [f"{prefix}j{i}" for i in range(_FW_AXES)]
+    xk = [f"{prefix}{k}" for k in _FW_XYZ_KEYS]
+    if any(k in kw for k in jk):
+        tar = [cur_joints[i] + float(kw[jk[i]]) if (rel and jk[i] in kw)
+               else (float(kw[jk[i]]) if jk[i] in kw else cur_joints[i])
+               for i in range(_FW_AXES)]
+        # cur_xyz is None for a joint-space arc to joint targets: no
+        # pose is needed then, so none is computed (no tool involved).
+        xyz = (list(kinematic.fw(tar[:6]))[:6] + tar[6:8]) if cur_xyz is not None else None
+        return tar, xyz
+    if any(k in kw for k in xk):
+        if cur_xyz is None:
+            raise ValueError("cmove: a pose needs the current pose — internal, cur_xyz missing")
+        xyz = [cur_xyz[i] + float(kw[xk[i]]) if (rel and xk[i] in kw)
+               else (float(kw[xk[i]]) if xk[i] in kw else cur_xyz[i])
+               for i in range(_FW_AXES)]
+        for i in (3, 4, 5):
+            xyz[i] = -((-xyz[i] + 180.0) % 360.0 - 180.0)     # adjustDegree
+        # dorna2's inv returns an (n, 6) array — with joint_current the
+        # single nearest branch, the firmware's XYZToJoints choice.
+        sol = np.asarray(kinematic.inv(list(xyz[:6]), joint_current=list(cur_joints[:6])), dtype=float)
+        if sol.size == 0 or not np.all(np.isfinite(sol)):
+            raise ValueError(f"cmove: {'midpoint' if prefix else 'target'} pose {xyz[:6]} is out of reach")
+        tar = [float(v) for v in sol.reshape(-1, 6)[0]] + xyz[6:8]
+        return tar, xyz
+    raise ValueError(f"cmove: no {'midpoint' if prefix else 'target'} given "
+                     f"({'mj0..mj7 or mx..me' if prefix else 'j0..j7 or x..e'})")
+
+
+def _fw_xyzj(xyz, joints):
+    """xyzabc_and_joints_to_xyzj — x, y, z from the pose, j3, j4, j5
+    from the joints, rail and aux from the pose's tail."""
+    return [joints[i] if i in (3, 4, 5) else xyz[i] for i in range(_FW_AXES)]
+
+
 def _xyzj_to_joints(xyzj, curJoints, tool_pose, kinematic):
 
     T_tool = dorna2.pose.xyzabc_to_T(tool_pose)
@@ -4474,7 +4594,7 @@ class J5WindingGuard:
        Never blocks; prints the offending command with the call stack.
     """
 
-    _MOTION = ("jmove", "lmove", "cjmove", "clmove", "smove", "tmove")
+    _MOTION = ("jmove", "lmove", "cmove", "cjmove", "clmove", "smove", "tmove")
     # Non-motion commands worth the wire journal — pin writes, the
     # motor switch, and axis setup/homing. Reads (joint, status,
     # inputs) stay unlogged: they are noise, not commands.
@@ -4513,7 +4633,7 @@ class J5WindingGuard:
                     # recording BEFORE they command their motion).
                     core.book_disarm()
                 if (core is not None and core.j5_infinite
-                        and name in ("jmove", "cjmove", "smove", "tmove")):
+                        and name in ("jmove", "cmove", "cjmove", "smove", "tmove")):
                     self._audit(name, a, k)
                 return self._call_journaled(name, attr, a, k)
             _watched.__name__ = name
@@ -4556,6 +4676,12 @@ class J5WindingGuard:
                     t5s = [float(j[5])]
                 elif k.get("j5") is not None:
                     t5s = [float(k["j5"])]
+            elif name == "cmove":
+                # j5 is a joint in both spaces (the xyzj vector carries
+                # j3..j5 as joints); the midpoint's mj5 is commanded too.
+                if k.get("rel"):
+                    return
+                t5s = [float(k[key]) for key in ("j5", "mj5") if k.get(key) is not None]
             elif name in ("cjmove", "smove"):
                 pts = a[0] if a else k.get("joints", k.get("points", []))
                 t5s = [float(p[5]) for p in pts if len(p) > 5 and p[5] is not None]
@@ -5060,7 +5186,107 @@ class SimulationAPI:
         # ensure exact final value
         self.joints = tgt_joints
         return 2  # success
-    
+
+    def cmove(self, pose=[], joint=[], rel=0, tool_pose=[0, 0, 0, 0, 0, 0],
+              vel=100, accel=1000, jerk=4000, space=0, turn=0, dim=3, **kwargs):
+        """The firmware's cmove: a circular arc from the current pose,
+        THROUGH a midpoint, TO a target, on one S-curve over the arc
+        length — server/motion.cpp pathType 1. Same signature as
+        dorna2.cmove, lmove's shape with two points per list, in the
+        order the arc visits them:
+
+            joint = [joint_mid, joint_end]   each [j0..j7]
+            pose  = [pose_mid,  pose_end]    each [x, y, z, a, b, c, d, e]
+
+        A shorter vector names only its leading components; the rest
+        stay where they are. ``joint`` wins over ``pose`` (the
+        firmware's rule). The wire fields themselves (``j0..``,
+        ``mj0..``, ``x..``, ``mx..``) are accepted too and win over the
+        lists, exactly as dorna2 merges them.
+
+            rel     0 absolute (default) / 1 relative to the current pose
+            space   0 (default, and the platform's): the circle is drawn
+                    in joint space; 1: the circle is in Cartesian x, y,
+                    z, the wrist j3..j5 and rail/aux interpolate linearly
+                    with the arc, joints solved every tick (like lmove).
+                    NOTE the firmware's OWN default for an absent field
+                    is 1 — dorna2.cmove and Runtime.cmove both send it.
+            dim     how many leading components carry the circle (3)
+            turn    extra full revolutions before reaching the target (0)
+            vel, accel, jerk   the profile over the arc length
+
+        ``tool_pose`` is the sim's stand-in for the controller's current
+        tool. It is applied only when it can matter — a pose to solve,
+        or a Cartesian circle; a joint-space arc to joint targets never
+        touches the kinematics (dorna2.cmove skips its ``tool`` command
+        on the same condition). Returns 2, or -1 on a point that has no
+        circle or no joint solution, like lmove.
+        """
+        fields = {}
+        if joint:
+            mid, end = (list(joint) + [[]])[:2]
+            fields.update({f"j{i}": end[i] for i in range(len(end))})
+            fields.update({f"mj{i}": mid[i] for i in range(len(mid))})
+        elif pose:
+            keys = _FW_XYZ_KEYS
+            mid, end = (list(pose) + [[]])[:2]
+            fields.update({keys[i]: end[i] for i in range(len(end))})
+            fields.update({"m" + keys[i]: mid[i] for i in range(len(mid))})
+        fields.update(kwargs)
+        ik = bool(space)
+        cur = [float(v) for v in self.joints[:]]
+        kin = self.dorna.kinematic
+        needs_pose = ik or any(k in fields for k in _FW_XYZ_KEYS) or any(("m" + k) in fields for k in _FW_XYZ_KEYS)
+        if needs_pose:
+            kin.set_tcp_xyzabc(tool_pose)
+            cur_xyz = list(kin.fw(cur[0:6]))[:6] + cur[6:8]
+        else:
+            cur_xyz = None
+        try:
+            tar, tar_xyz = _fw_target_position(fields, "", cur, cur_xyz, rel, kin)
+            mid, mid_xyz = _fw_target_position(fields, "m", cur, cur_xyz, rel, kin)
+            if ik:
+                path = _fw_create_circle(_fw_xyzj(cur_xyz, cur), _fw_xyzj(tar_xyz, tar),
+                                         _fw_xyzj(mid_xyz, mid), dim, turn)
+            else:
+                path = _fw_create_circle(cur, tar, mid, dim, turn)
+        except ValueError as ex:
+            print(f"[sim] {ex}")
+            return -1
+        d = path["d"]
+        if d <= 0.0:
+            return 2
+
+        prof = self.create_profile(jerk=jerk, accel=accel, vel=vel, d=d)
+        jerks, ticks, t_total = prof.get("jerks", []), prof.get("ticks", []), prof.get("t_total", 0.0)
+        if t_total <= 0.0 or not ticks:
+            return 2
+
+        dt = 1.0 / float(self.INTERP_FREQ)
+        t0 = time.perf_counter()
+        step = 0
+        while True:
+            t_sim = step * dt   # simulated time — stalls slow, never skip
+            if t_sim >= t_total:
+                break
+            q, v, a = self.traverse(jerks, ticks, q0=0.0, v0=0.0, a0=0.0, t=t_sim)
+            pt = _fw_circle_traverse(path, min(max(q, 0.0), d))
+            if ik:
+                J = _xyzj_to_joints(pt, self.joints, tool_pose, self.dorna.kinematic)
+                if J is None:
+                    print("[sim] cmove: a point on the arc has no joint solution")
+                    return -1
+                self.joints = J
+            else:
+                self.joints = pt
+            step += 1
+            sleep_for = t0 + step * dt - time.perf_counter()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+        self.joints = tar
+        return 2  # success
+
 
     # sleep
     def sleep(self, val=0):

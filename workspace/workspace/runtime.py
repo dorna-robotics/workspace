@@ -1070,6 +1070,20 @@ class Runtime:
             return _wrapped
         return attr
 
+    def cmove(self, **kwargs):
+        """Forward cmove — dorna2.cmove and SimulationAPI.cmove share
+        one signature (``joint=[mid, end]`` / ``pose=[mid, end]``,
+        ``rel``, ``tool_pose``, ``space``, ``dim``, ``turn``, vaj), so
+        this only guarantees ``space`` is on the wire: the platform's
+        circle is in JOINT space unless a caller says ``space=1``,
+        while the firmware's own default for an absent field is
+        Cartesian. Sim and real must draw the same circle for the
+        same call.
+        """
+        kwargs.setdefault("space", 0)
+        rb = self._require_robot()
+        return self.call(rb.cmove, **kwargs)
+
     def smove(self, points, **kwargs):
         """Forward smove with strictly duplicate-free waypoints.
 

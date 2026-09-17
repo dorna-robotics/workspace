@@ -53,7 +53,7 @@ pick / place / above / stand / immerse / retract   ← public recipe verbs
             _move_along_path (per group)           ← IK-solve offsets, fold or
                     │                                chain, pin j5
                     ▼
-   rt.jmove | lmove | cjmove | clmove | smove | tmove
+   rt.jmove | lmove | cmove | cjmove | clmove | smove | tmove
                     │                                pause-aware execution
                     ▼
               core.robot_api                       ← real firmware or
@@ -77,7 +77,20 @@ Two **motion classes** exist, declared per recipe as `motion_type`
 A continuous twin is a **chain**: sections queued `cont=1` with a
 per-section corner radius, final section `cont=0` (decelerate to
 stop). The firmware blends the corners; the robot does not stop
-between sections. `smove` is one spline through all points; `tmove` is
+between sections. `cmove` is the firmware's circular arc: from the
+current pose through a midpoint to a target, lmove's shape with two
+points per list in the order the arc visits them —
+`rt.cmove(joint=[joint_mid, joint_end])` or
+`rt.cmove(pose=[pose_mid, pose_end])`, the same signature in dorna2
+and in `SimulationAPI` (each unpacks it into the wire fields `j0..`/`x..`
+and `mj0..`/`mx..`) — one S-curve over
+the arc length, `space=0`
+(the platform default, `rt.cmove` puts it on the wire) in joint space,
+`space=1` in Cartesian x, y, z with the wrist and rail interpolating
+linearly along the arc, `turn` for extra revolutions — the same fields
+on the wire and in `SimulationAPI.cmove`, which is the firmware's
+`createCircle`/`traverse` ported verbatim.
+`smove` is one spline through all points; `tmove` is
 a TOPP-RA-timed PVT trajectory (see `docs/tmove-firmware-spec.md`).
 
 **`has_motion_plan` — one grammar owns both decisions** (whether the

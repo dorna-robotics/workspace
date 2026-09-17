@@ -2908,7 +2908,8 @@ class Recipe:
         rt.delay(0.1)
         return True
 
-    def vibrate(self, pattern=[[2.5, 0, 0], [-2.5, 0, 0]], cnt=5, vaj=[300, 10000, 20000], **kwargs):
+    def vibrate(self, pattern=[[2.5, 0, 0], [-2.5, 0, 0]], cnt=5, vaj=[300, 10000, 20000],
+                primitive="jmove", space=0, **kwargs):
         """Oscillate the robot flange through a small Cartesian pattern.
 
         Useful for shaking a tip free, loosening a seal, or mixing.
@@ -2925,6 +2926,17 @@ class Recipe:
             cnt: Repeat count.
             vaj: [velocity, accel, jerk] for each jmove. The default
                 uses high jerk for the snappy shake feel.
+            primitive: ``"jmove"`` (default) — the pattern's points are
+                visited one jmove each, ``cnt`` times over. ``"cmove"``
+                — the pattern is exactly TWO offsets, ``[middle, end]``,
+                and the shake is ONE circular arc from the current pose
+                through the middle to the end, ``cnt`` extra full
+                revolutions on the way (the firmware's ``turn``); the
+                same vaj governs the arc. Both end with a jmove back to
+                the starting joints.
+            space: for ``"cmove"`` only — 0 (default): the circle is
+                drawn in joint space through the solved joints of the
+                two offsets; 1: on the TCP, in Cartesian x, y, z.
 
         Solved at the CURRENT pose — rail fixed, arm seeded from the live
         joints — so it is the same shake through any recipe; the recipe
@@ -2982,10 +2994,21 @@ class Recipe:
             else:
                 raise RecipeError(f"vibrate: no IK solution for offset {p[:3]} at the current pose (code {C})")
 
+        vel, accel, jerk = self.scaled_vaj(vaj)
+        if primitive == "cmove":
+            if len(joint_list) != 2:
+                raise RecipeError(f"vibrate(primitive='cmove'): the pattern is [middle, end], "
+                                  f"two offsets — got {len(joint_list)}")
+            rt.checkpoint()
+            rt.cmove(joint=[list(joint_list[0]), list(joint_list[1])], turn=int(cnt),
+                     space=space, vel=vel, accel=accel, jerk=jerk)
+            rt.checkpoint()
+            rt.jmove(joint=current_joint, vel=vel, accel=accel, jerk=jerk)
+            return True
+        if primitive != "jmove":
+            raise RecipeError(f"vibrate: primitive must be 'jmove' or 'cmove', got {primitive!r}")
         joint_list = cnt * joint_list
         joint_list.append(current_joint)
-
-        vel, accel, jerk = self.scaled_vaj(vaj)
         for J in joint_list:
             rt.checkpoint()
             rt.jmove(joint=J, vel=vel, accel=accel, jerk=jerk)
