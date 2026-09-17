@@ -50,7 +50,7 @@ class ToolRack(Recipe):
         )
 
 
-    def pick(self, anchor="place", solid_name="body", padding=None, gap=1.5, **kwargs):
+    def pick(self, anchor="place", solid_name="body", padding=None, gap=4, **kwargs):
         """Pick a tool from the rack via the tool-changer interface.
 
         Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
@@ -129,7 +129,7 @@ class ToolRack(Recipe):
         return self.touch(**motion_prm)
 
 
-    def place(self, anchor="place", solid_name="body", padding=None, gap=1.5, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 45}, **kwargs):
+    def place(self, anchor="place", solid_name="body", padding=None, gap=4, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 45}, **kwargs):
         """Put the currently-held tool back into the rack slot at ``anchor``.
 
         Inverse of ``pick``. Verifies that the rack slot is free and that the
@@ -207,8 +207,10 @@ class ToolRack(Recipe):
             "sleep": 0.1,
             "attach": [tool, {"parent": self.component.assembly[solid_name], "parent_anchor": anchor, "child_anchor":"tool_rack_connection"}],
             "exit_tool": {"solid": self.core.tool_changer_robot_side, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            "exit": [[
-                            [0, 0, -12-gap-height_offset, 0, 0, 0],
+            "exit": [   [
+                            [0, 0, -(12+2)-height_offset, 0, 0, 0]
+                        ],
+                        [
                             [0, 0, -padding-height_offset, 0, 0, 0],
                             [-3*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
