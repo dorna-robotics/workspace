@@ -9,10 +9,10 @@ class GripperTubeLarge(Gripper):
     DEFAULTS = dict(
         #anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 48, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
         # anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 48.5, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 49.5, 0, 0, -90], "tip": [0, 0, 59.5, 0, 0, -90]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 49.5+2.5, 0, 0, -90], "tip": [0, 0, 59.5+2.5, 0, 0, -90]}},
         collision_box = 
             {"body":[
-                {"pose":[0,0,60/2,0,0,0], "scale":[40,70,60]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0,0,(60+2.5)/2,0,0,0], "scale":[40,70,60+2.5]},#[xyzabc] , [lx,ly,lz]
 
         ]},
 

@@ -43,9 +43,9 @@ log = logging.getLogger(__name__)
 @register("pipettor_sp28_40mm")
 class PipettorSP2840mm(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174+1, 0, 0, 0], "tip": [0, 0, 185.375-1.25, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 174+1+2.5, 0, 0, 0], "tip": [0, 0, 185.375-1.25+2.5, 0, 0, 0]}},
         collision_box = {"body":[
-                {"pose":[0,0,90+3.25,0,0,0], "scale":[9 ,9,180+6.45]},
+                {"pose":[0,0,90+3.25+2.5/2,0,0,0], "scale":[9 ,9,180+6.45+2.5]},
                 {"pose":[0,-3.863,146.4/2,0,0,0], "scale":[43,55,146.4]}
         ]},
         #cfg

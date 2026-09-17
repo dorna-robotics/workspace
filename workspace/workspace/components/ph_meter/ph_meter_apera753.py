@@ -74,14 +74,14 @@ from workspace.components.ph_meter.ph_meter import PhMeter
 @register("ph_meter_apera753")
 class PhMeterApera753(PhMeter):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 188.5, 0, 0, 0], "tip": [0, 0, 188.5, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 188.5+2.5, 0, 0, 0], "tip": [0, 0, 188.5+2.5, 0, 0, 0]}},
         # Two boxes: everything wide (flange + cage + electrode body) in
         # one block, the slim tapering spear in the other, split at the
         # z=120 shoulder.
         collision_box =
             {"body":[
                 {"pose":[0.0, 0.0, 110.0/2, 0.0, 0.0, 0.0], "scale":[44.5, 44.5, 110.0]},
-                {"pose":[0.0, 0.0, (110.0+188.5)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 188.5-110.0]},
+                {"pose":[0.0, 0.0, (110.0+188.5+2.5)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 188.5+2.5-110.0]},
         ]},
     )
 

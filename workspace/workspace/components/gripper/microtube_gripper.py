@@ -7,10 +7,10 @@ from workspace.components.gripper.gripper import Gripper
 @register("microtube_gripper")
 class SuctionGripper(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 51.35, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 51.35+2.5, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[0, 0, 27, 0, 0, 0], "scale":[43,43,57]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0, 0, 27+2.5/2, 0, 0, 0], "scale":[43,43,57+2.5]},#[xyzabc] , [lx,ly,lz]
         ]},
 
         #cfg

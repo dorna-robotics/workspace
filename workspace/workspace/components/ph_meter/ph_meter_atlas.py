@@ -28,10 +28,10 @@ from workspace.components.ph_meter.ph_meter import PhMeter
 @register("ph_meter_atlas")
 class PhMeterAtlas(PhMeter):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 192.1, 0, 0, 0], "tip": [0, 0, 192.1, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 192.1+2.5, 0, 0, 0], "tip": [0, 0, 192.1+2.5, 0, 0, 0]}},
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, (53.5+192.1)/2, 0.0, 0.0, 0.0], "scale":[16.3, 16.3, 192.1-53.5]},
+                {"pose":[0.0, 0.0, (53.5+192.1+2.5)/2, 0.0, 0.0, 0.0], "scale":[16.3, 16.3, 192.1+2.5-53.5]},
                 {"pose":[0.0, 0.0, (40.0+53.5)/2, 0.0, 0.0, 0.0], "scale":[47.6, 47.6, 53.5-40.0]},
                 {"pose":[0.0, 0.0, 40.0/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 40.0]},
 

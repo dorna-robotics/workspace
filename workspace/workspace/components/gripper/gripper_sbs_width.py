@@ -6,10 +6,10 @@ from workspace.components.gripper.gripper import Gripper
 @register("gripper_sbs_width")
 class gripperSBSWidth(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41, 0, 0, 0], "tip": [119, 0, 56, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[119, 0, 41+2.5, 0, 0, 0], "tip": [119, 0, 56+2.5, 0, 0, 0]}},
         collision_box = 
             {"body":[
-                {"pose":[54-10.5, 0, 56/2, 0.0, 0.0, 0.0], "scale":[130, 132, 56]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[54-10.5, 0, (56+2.5)/2, 0.0, 0.0, 0.0], "scale":[130, 132, 56+2.5]},#[xyzabc] , [lx,ly,lz]
         ]},
         #cfg
         has_tool_changer = False,

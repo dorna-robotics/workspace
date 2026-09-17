@@ -7,11 +7,11 @@ from workspace.components.gripper.gripper import Gripper
 @register("gripper_suction")
 class GripperSuction(Gripper):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 139, 0, 0, 0],  "tip":[0, 0, 140, 0, 0, 0]}},
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp":[0, 0, 139+2.5, 0, 0, 0],  "tip":[0, 0, 140+2.5, 0, 0, 0]}},
         collision_box = 
             {"body":[
                 {"pose":[0.0, 0.0, 43.5/2, 0.0, 0.0, 0.0], "scale":[43.0, 43.0, 43.50]},#[xyzabc] , [lx,ly,lz]
-                {"pose":[0.0, 0.0, 140/2, 0.0, 0.0, 0.0], "scale":[12, 12, 140]},#[xyzabc] , [lx,ly,lz]
+                {"pose":[0.0, 0.0, (140+2.5)/2, 0.0, 0.0, 0.0], "scale":[12, 12, 140+2.5]},#[xyzabc] , [lx,ly,lz]
 
         ]},
         #cfg
