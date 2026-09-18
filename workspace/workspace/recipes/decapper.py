@@ -449,13 +449,24 @@ class Decapper(Recipe):
             # lift). Callers may force either.
             _soft = (not release) if soft_exit is None else bool(soft_exit)
             if _soft:
-                # Discrete TRUE lmove up by gap + the carried stack
-                # (height_total when carrying, rim gap alone when
-                # empty); only the free-air remainder may deposit.
+                # Discrete TRUE lmove up by exactly what clears the
+                # jaws: when carrying, the vial's bottom sits at the
+                # seat and must rise past the chuck's top by ``gap`` —
+                # ``top - seat`` from the component's own anchors (30 mm
+                # on the two-slot chuck), NOT the whole carried stack
+                # (~100 mm for a 40 mL vial, three times the need —
+                # user, 2026-09-18). Empty, the rim gap alone. Only the
+                # free-air remainder may deposit.
+                body = self.component.assembly["body"]
+                jaw_depth = abs(dorna_pose.transform_pose(
+                    [0, 0, 0, 0, 0, 0],
+                    from_frame=body.pose(anchor),
+                    to_frame=body.pose("top"),
+                )[2])
                 J_gap, C = self.core.IK(
                     target_solid=tool.assembly[next(iter(tool.assembly))],
                     target_anchor="tcp",
-                    target_offset=[0, 0, -gap - (height_total if not release else 0), 0, 0, 0],
+                    target_offset=[0, 0, -gap - (jaw_depth if not release else 0), 0, 0, 0],
                     tool_solid=tool.assembly[next(iter(tool.assembly))],
                     tool_anchor="tcp",
                     tool_offset=[0, 0, 0, 0, 0, 0],

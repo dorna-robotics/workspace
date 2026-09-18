@@ -10,9 +10,10 @@ class Scale(Recipe):
         base_distance = 100,
         rail_step=20, #10
         rail_span=5, # 5 
-        # No fusing at the balance: the arm parks CLEAR before a
-        # reading — a held exit would leave it hovering over the pan.
-        fuse=False,
+        # The exit fuses like any other place: the reading is a
+        # component call, and every component call settles a held
+        # tail before it runs (components/work.py), so the arm is
+        # clear of the pan before the balance is read, fused or not.
     )
 
     def __init__(self, workspace, core, component, **kwargs):

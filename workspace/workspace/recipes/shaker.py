@@ -87,10 +87,11 @@ class Shaker(Recipe):
     def place(self, anchor="A1", solid_name="rotating", **kwargs):
         """Place into a shaker well — targets the ``rotating`` solid.
 
-        NEVER fuses by default: the head ROTATES after loading — a
-        held exit would leave the robot parked inside the swept volume
-        when the shake starts (bench-observed hazard). Pick fuses
-        normally (unloading works on a parked head that stays parked);
-        an explicit per-call ``fuse`` still wins here."""
-        kwargs.setdefault("fuse", False)
+        The exit fuses like any other place (the recipe's ``fuse``).
+        It used to be forced classic because a held exit would leave
+        the robot inside the swept volume when the head starts; that
+        is covered now by the work gate — the shake is a component
+        call, and every component call settles a held tail before it
+        runs (components/work.py) — so the robot is out of the head's
+        way before it rotates, fused or not."""
         return super().place(anchor=anchor, solid_name=solid_name, **kwargs)
