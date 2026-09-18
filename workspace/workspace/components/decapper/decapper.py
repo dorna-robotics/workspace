@@ -16,8 +16,8 @@ class Decapper:
                 {"pose":[0.0, 0.0, 24.0, 0.0, 0.0, 0.0], "scale":[72, 68, 62], "padding_enabled": True}   #[xyzabc] , [lx,ly,lz]
         ]},
         # cfg
-        output_enable = [[None, None, 0.1]], # [[pin, index, time]]
-        output_disable = [[None, None, 0.25], [None, None, 0.1]], # [[pin, index, time]]
+        output_enable = [[None, None, 0.25]], # [[pin, index, time]]
+        output_disable = [[None, None, 0.25]], # [[pin, index, time]]
     )
 
     def __init__(self, name: str, cfg: dict, workspace, **kwargs):

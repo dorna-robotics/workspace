@@ -18,7 +18,7 @@ class GripperTubeLarge(Gripper):
 
         #cfg
         has_tool_changer = False,
-        output_enable=[[1, 0, 0], [0, 0, 0.1]],
+        output_enable=[[1, 0, 0], [0, 0, 0.5]],
         output_disable=[[0, 1, 0.5], [1, 1, 0.75], [1, 0, 0.1]],
     )
 
