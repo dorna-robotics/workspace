@@ -2978,7 +2978,7 @@ class Recipe:
         return True
 
     def vibrate(self, pattern=[[2.5, 0, 0], [-2.5, 0, 0]], cnt=5, vaj=[300, 10000, 20000],
-                primitive="jmove", space=0, **kwargs):
+                primitive="jmove", **kwargs):
         """Oscillate the robot flange through a small Cartesian pattern.
 
         Useful for shaking a tip free, loosening a seal, or mixing.
@@ -3001,11 +3001,15 @@ class Recipe:
                 and the shake is ONE circular arc from the current pose
                 through the middle to the end, ``cnt`` extra full
                 revolutions on the way (the firmware's ``turn``); the
-                same vaj governs the arc. Both end with a jmove back to
-                the starting joints.
-            space: for ``"cmove"`` only — 0 (default): the circle is
-                drawn in joint space through the solved joints of the
-                two offsets; 1: on the TCP, in Cartesian x, y, z.
+                same vaj governs the arc. The arc is drawn in Cartesian
+                space AT THE FLANGE (tool frame all zeros — nothing is
+                looked up from the held tool), so the pattern's radius is
+                what the flange traces; the wrist drifts linearly from
+                the start pose to the end pose over the arc, so a long
+                tool's tip wanders a little more (sim, bna pH probe:
+                6 mm for a 2 mm pattern; a joint-space arc through the
+                same poses would have swung it 18 mm). Both primitives
+                end with a jmove back to the starting joints.
 
         Solved at the CURRENT pose — rail fixed, arm seeded from the live
         joints — so it is the same shake through any recipe; the recipe
@@ -3068,9 +3072,12 @@ class Recipe:
             if len(joint_list) != 2:
                 raise RecipeError(f"vibrate(primitive='cmove'): the pattern is [middle, end], "
                                   f"two offsets — got {len(joint_list)}")
+            # The circle is drawn at the FLANGE: tool frame all zeros,
+            # explicitly — the pattern is a flange pattern (user
+            # decision, 2026-09-18), nothing is read from the held tool.
             rt.checkpoint()
             rt.cmove(joint=[list(joint_list[0]), list(joint_list[1])], turn=int(cnt),
-                     space=space, vel=vel, accel=accel, jerk=jerk)
+                     space=1, tool_pose=[0, 0, 0, 0, 0, 0], vel=vel, accel=accel, jerk=jerk)
             rt.checkpoint()
             rt.jmove(joint=current_joint, vel=vel, accel=accel, jerk=jerk)
             return True

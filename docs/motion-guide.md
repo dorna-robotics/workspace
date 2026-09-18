@@ -84,10 +84,10 @@ points per list in the order the arc visits them —
 `rt.cmove(pose=[pose_mid, pose_end])`, the same signature in dorna2
 and in `SimulationAPI` (each unpacks it into the wire fields `j0..`/`x..`
 and `mj0..`/`mx..`) — one S-curve over
-the arc length, `space=0`
-(the platform default, `rt.cmove` puts it on the wire) in joint space,
-`space=1` in Cartesian x, y, z with the wrist and rail interpolating
-linearly along the arc, `turn` for extra revolutions — the same fields
+the arc length, `space=1` (the default, `rt.cmove` puts it on the wire)
+in Cartesian x, y, z with the wrist and rail interpolating linearly
+along the arc, `space=0` for a circle drawn in joint space, `turn` for
+extra revolutions — the same fields
 on the wire and in `SimulationAPI.cmove`, which is the firmware's
 `createCircle`/`traverse` ported verbatim.
 `smove` is one spline through all points; `tmove` is

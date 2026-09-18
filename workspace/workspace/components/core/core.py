@@ -5223,7 +5223,7 @@ class SimulationAPI:
         return 2  # success
 
     def cmove(self, pose=[], joint=[], rel=0, tool_pose=[0, 0, 0, 0, 0, 0],
-              vel=100, accel=1000, jerk=4000, space=0, turn=0, dim=3, **kwargs):
+              vel=100, accel=1000, jerk=4000, space=1, turn=0, dim=3, **kwargs):
         """The firmware's cmove: a circular arc from the current pose,
         THROUGH a midpoint, TO a target, on one S-curve over the arc
         length — server/motion.cpp pathType 1. Same signature as
@@ -5240,12 +5240,11 @@ class SimulationAPI:
         lists, exactly as dorna2 merges them.
 
             rel     0 absolute (default) / 1 relative to the current pose
-            space   0 (default, and the platform's): the circle is drawn
-                    in joint space; 1: the circle is in Cartesian x, y,
-                    z, the wrist j3..j5 and rail/aux interpolate linearly
-                    with the arc, joints solved every tick (like lmove).
-                    NOTE the firmware's OWN default for an absent field
-                    is 1 — dorna2.cmove and Runtime.cmove both send it.
+            space   1 (default, the platform's and the firmware's): the
+                    circle is in Cartesian x, y, z, the wrist j3..j5 and
+                    rail/aux interpolate linearly with the arc, joints
+                    solved every tick (like lmove); 0: the circle is
+                    drawn in joint space. Runtime.cmove always sends it.
             dim     how many leading components carry the circle (3)
             turn    extra full revolutions before reaching the target (0)
             vel, accel, jerk   the profile over the arc length

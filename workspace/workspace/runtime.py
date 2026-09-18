@@ -1075,12 +1075,13 @@ class Runtime:
         one signature (``joint=[mid, end]`` / ``pose=[mid, end]``,
         ``rel``, ``tool_pose``, ``space``, ``dim``, ``turn``, vaj), so
         this only guarantees ``space`` is on the wire: the platform's
-        circle is in JOINT space unless a caller says ``space=1``,
-        while the firmware's own default for an absent field is
-        Cartesian. Sim and real must draw the same circle for the
-        same call.
+        circle is CARTESIAN (space=1 — on the TCP's x, y, z, the way
+        lmove draws a line, wrist and rail interpolating along the arc)
+        unless a caller says ``space=0`` for a joint-space circle. It
+        is sent explicitly so sim and real draw the same circle for
+        the same call whatever the firmware's own default.
         """
-        kwargs.setdefault("space", 0)
+        kwargs.setdefault("space", 1)
         rb = self._require_robot()
         return self.call(rb.cmove, **kwargs)
 

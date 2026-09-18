@@ -34,6 +34,12 @@ class ToolRack(Recipe):
         # profile for a fused chain would drive the whole travel at the
         # speed of that last corner (bench). Override in recipes.j2.
         fuse_in=False,
+        # How much DEEPER than the mated anchors the pick presses the
+        # changer plates together, mm, positive = deeper (the recipe
+        # puts the sign on: in the rack anchor's frame "down" is a plus
+        # on the contact offset). Applies to the pick's contact point
+        # only. Per project in recipes.j2, per call on pick().
+        latch_press=0.0,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -41,6 +47,7 @@ class ToolRack(Recipe):
         prm = deepcopy(Recipe.DEFAULTS) # default
         merge(prm, self.DEFAULTS) # self
         merge(prm, kwargs) # kwargs
+        self.latch_press = float(prm.pop("latch_press"))
 
         super().__init__(
             workspace=workspace,
@@ -50,10 +57,13 @@ class ToolRack(Recipe):
         )
 
 
-    def pick(self, anchor="place", solid_name="body", padding=None, gap=4, **kwargs):
+    def pick(self, anchor="place", solid_name="body", padding=None, gap=4, latch_press=None, **kwargs):
         """Pick a tool from the rack via the tool-changer interface.
 
-        Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
+        ``latch_press`` (mm, positive = deeper) presses the changer
+        plates that much past the mated anchors at the contact point;
+        None takes the recipe's (``latch_press`` in recipes.j2, default
+        0). Requires ``core.has_tool_changer`` and that ``anchor`` currently holds
         a tool. Approaches from above, drops onto the changer's
         ``tool_changer_connection``, actuates the changer, attaches the tool
         to the robot side, and retracts.
@@ -66,6 +76,8 @@ class ToolRack(Recipe):
         # per-call > recipe (recipes.j2 kwargs) > 60 — the shared
         # Recipe.padding resolution, same as the rack/doser verbs.
         padding = self._padding(padding, default=60)
+        # per-call > recipe (latch_press in DEFAULTS / recipes.j2)
+        latch_press = self.latch_press if latch_press is None else float(latch_press)
         # ref joints
         if self.ref_joints is None:
             raise RecipeError("no reference joints defined")
@@ -106,7 +118,8 @@ class ToolRack(Recipe):
                                 [0, 0, -12-gap-height_offset, 0, 0, 0],
                             ],
                             [
-                                [0, 0, -height_offset, 0, 0, 0],
+                                # contact: the mated anchors, plus latch_press deeper
+                                [0, 0, -height_offset + latch_press, 0, 0, 0],
                             ],
                         ],
             "output_touch": output_touch,
