@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -418,24 +418,11 @@ function render() {
       });
     }
 
-    // Action buttons (launch / kill / restart)
+    // Action buttons (launch / start / pause / park / kill). Park and
+    // Kill are hold-to-activate (api.js holdToActivate), never a click.
     el.querySelectorAll(".action-btn").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        const cmd = btn.dataset.cmd;
-        if (cmd === "park" && !await confirmDialog({
-          title: `Park "${ws.name}"?`,
-          message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
-          confirm: "Park Workflow",
-          icon: "park",
-          variant: "danger",
-        })) return;
-        if (cmd === "kill" && !await confirmDialog({
-          title: `Kill "${ws.name}"?`,
-          message: "This will immediately terminate the process. Any running workflow will be aborted.",
-          confirm: "Kill Process",
-          icon: "kill",
-        })) return;
+      const cmd = btn.dataset.cmd;
+      const act = async () => {
         // Device-fault gate for Start / Resume. Fetches fresh status
         // from the workspace and prompts if any critical device is
         // still down. See deviceFaultGate in api.js for the full
@@ -460,7 +447,12 @@ function render() {
           toast(String(err), "bad");
           btn.disabled = false;
         }
-      });
+      };
+      if (cmd === "park" || cmd === "kill") {
+        holdToActivate(btn, act, { verb: cmd });
+        return;
+      }
+      btn.addEventListener("click", async (e) => { e.preventDefault(); await act(); });
     });
 
     // Remove button

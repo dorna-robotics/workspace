@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -1828,20 +1828,8 @@ function renderControls(state, launched, running) {
     b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}${opts.warn ? " btn-warn" : ""}`;
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
-    b.addEventListener("click", async () => {
-      if (cmd === "park" && !await confirmDialog({
-        title: "Park Workflow?",
-        message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
-        confirm: "Park Workflow",
-        icon: "park",
-        variant: "danger",
-      })) return;
-      if (cmd === "kill" && !await confirmDialog({
-        title: "Kill Process?",
-        message: "This will immediately terminate the workspace. Any running workflow will be aborted.",
-        confirm: "Kill Process",
-        icon: "kill",
-      })) return;
+    // Park and Kill are hold-to-activate (api.js holdToActivate).
+    const act = async () => {
       // Device-fault gate for Start / Resume. Identical contract to
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
@@ -1865,7 +1853,9 @@ function renderControls(state, launched, running) {
         toast(String(err), "bad");
         b.disabled = false;
       }
-    });
+    };
+    if (cmd === "park" || cmd === "kill") holdToActivate(b, act, { verb: cmd });
+    else b.addEventListener("click", act);
     controls.appendChild(b);
   };
 
@@ -2680,23 +2670,12 @@ function updatePendantUI() {
   }
 }
 
-// Wire pendant buttons
+// Wire pendant buttons. Park and Kill are hold-to-activate (api.js
+// holdToActivate): the tile fills for two seconds under the finger,
+// releasing early cancels. Start / Pause are a tap.
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
-  btn.addEventListener("click", async () => {
-    const cmd = btn.dataset.cmd;
-    if (cmd === "park" && !await confirmDialog({
-      title: "Park Workflow?",
-      message: "The current action will finish, then the project's Park steps run and the workflow ends. Click Start to begin a new run.",
-      confirm: "Park Workflow",
-      icon: "park",
-      variant: "danger",
-    })) return;
-    if (cmd === "kill" && !await confirmDialog({
-      title: "Kill Process?",
-      message: "This will immediately terminate the workspace.",
-      confirm: "Kill Process",
-      icon: "kill",
-    })) return;
+  const cmd = btn.dataset.cmd;
+  const act = async () => {
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button. Pendant pressed sound/haptics
     // come AFTER the gate so a canceled prompt doesn't beep falsely.
@@ -2727,26 +2706,9 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
       toast(String(err), "bad");
     }
     updatePendantUI();
-  });
-});
-
-// Pendant Kill button (secondary, separate from pendant-btn grid)
-$("pendantKill").addEventListener("click", async () => {
-  if (!await confirmDialog({
-    title: "Emergency Stop",
-    message: "Kill the process immediately? This cannot be undone.",
-    confirm: "Kill Now",
-    icon: "kill",
-  })) return;
-  try {
-    await sendCmd("kill");
-    pendantErrorSound();
-    toast("kill sent", "ok");
-    await refreshStatus();
-    updatePendantUI();
-  } catch (err) {
-    toast(String(err), "bad");
-  }
+  };
+  if (cmd === "park" || cmd === "kill") holdToActivate(btn, act, { verb: cmd });
+  else btn.addEventListener("click", act);
 });
 
 

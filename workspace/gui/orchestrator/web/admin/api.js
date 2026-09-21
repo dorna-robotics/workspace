@@ -152,6 +152,54 @@ export function wsViewerUrl(ws) {
 // Re-export for ES module imports in dashboard.js / workspace.js
 export const confirmDialog = window.confirmDialog;
 
+// ── Hold-to-activate ──────────────────────────────────────────────────
+// Park and Kill are never a click. The operator presses and HOLDS the
+// button for HOLD_MS; the button fills while they do (style.css .hold)
+// and the command fires when the fill completes. Releasing, leaving or
+// blurring before that cancels, fill and all. One grammar for every
+// surface that shows those two buttons: dashboard cards, the workspace
+// page, the pendant. Keyboard: hold Space or Enter the same way.
+export const HOLD_MS = 2000;
+export function holdToActivate(btn, onActivate, { ms = HOLD_MS, verb } = {}) {
+  if (!btn || btn.dataset.holdWired) return;
+  btn.dataset.holdWired = "1";
+  btn.classList.add("hold");
+  btn.style.setProperty("--hold-ms", `${ms}ms`);
+  // The sweep's colour is the COMMAND's, whatever the button looks
+  // like: red for kill, the warn orange for park (style.css swaps it
+  // to white on the filled variants, where those colours vanish).
+  if (verb === "kill" || verb === "park") btn.classList.add(`hold-${verb}`);
+  const what = verb || btn.textContent.trim().toLowerCase();
+  btn.title = `Hold ${Math.round(ms / 1000)} s to ${what}`;
+  btn.setAttribute("aria-label", `${btn.textContent.trim()} — hold ${Math.round(ms / 1000)} seconds`);
+  let timer = null;
+  const arm = (e) => {
+    if (btn.disabled || timer) return;
+    if (e.type === "pointerdown" && e.button !== 0) return;
+    if (e.type === "keydown" && (e.repeat || !(e.key === " " || e.key === "Enter"))) return;
+    e.preventDefault();
+    btn.classList.add("holding");
+    timer = setTimeout(async () => {
+      timer = null;
+      btn.classList.remove("holding");
+      btn.classList.add("hold-fired");
+      setTimeout(() => btn.classList.remove("hold-fired"), 400);
+      try { await onActivate(); } catch (err) { console.error(`hold-to-activate ${what}:`, err); }
+    }, ms);
+  };
+  const disarm = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    btn.classList.remove("holding");
+  };
+  btn.addEventListener("pointerdown", arm);
+  for (const t of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(t, disarm);
+  btn.addEventListener("keydown", arm);
+  btn.addEventListener("keyup", disarm);
+  btn.addEventListener("blur", disarm);
+  // A plain click never fires the command — the hold is the only path.
+  btn.addEventListener("click", (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+}
+
 
 // ── Device-fault gate ─────────────────────────────────────────────────
 // Bulletproof guard for Start/Resume actions when one or more critical

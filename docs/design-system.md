@@ -158,6 +158,17 @@ The pendant cinematic tile (`.pendant-btn`) uses `--radius-xl` — a
 deliberate "this is a big touch target, not a normal button" cue.
 Don't apply that radius elsewhere.
 
+**Hold-to-activate.** Park and Kill are never a click and never a
+confirm modal. The operator presses and holds; the button fills from
+the left over 2 s (`.hold` + `.holding`, `api.js holdToActivate`) and
+the command fires when the fill completes. Releasing, leaving the
+button or losing focus before that cancels and the fill snaps back.
+The fill is the timer, so its linear 2 s sweep is the documented
+exception to the motion tokens. Same grammar on every surface that
+shows those two buttons: dashboard cards, the workspace page, the
+pendant tile. Keyboard: hold Space or Enter. The button's title says
+"Hold 2 s to park".
+
 ### 3.4 Step lists
 
 One shared primitive in `base.css` (`:is(.step-card, .pendant-step-card)`)

@@ -743,6 +743,45 @@
 .pendant-start:disabled {
   background: var(--surface); border-color: var(--border); color: var(--text);
 }
+/* ── Hold-to-activate (Park, Kill — api.js holdToActivate) ─────────
+   The button fills from the left while held; the fill IS the timer,
+   so its 2 s linear sweep is a documented exception to the motion
+   tokens (§2.4). Release before the end: the fill snaps back at
+   --motion-fast. Same rule on .btn (cards, workspace page) and on
+   the pendant tile. */
+.hold { position: relative; overflow: hidden; isolation: isolate;
+        user-select: none; -webkit-user-select: none; touch-action: none; }
+/* the sweep: diagonal stripes in the button's own colour, REVEALED
+   from the left edge over --hold-ms — a clip that slides open over a
+   fixed pattern, so stripes are added, never stretched (a scaleX
+   would squash them). The clip animates on the compositor, no
+   relayout per frame; the stripes crawl while held so the button
+   reads as "working". */
+.hold::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: repeating-linear-gradient(-45deg,
+              var(--hold-color, currentColor) 0 8px, transparent 8px 16px);
+  background-size: 22.63px 100%;          /* one diagonal period along x */
+  opacity: 0.6;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--motion-fast) var(--ease);
+  will-change: clip-path;
+}
+.hold.holding::before {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path var(--hold-ms, 2000ms) linear;
+  animation: hold-stripes 0.5s linear infinite;
+}
+@keyframes hold-stripes { to { background-position: 22.63px 0; } }
+/* the command's colour, on any surface: kill red, park orange … */
+.hold-kill { --hold-color: var(--red); }
+.hold-park { --hold-color: #ff7a3f; }
+/* … except on the filled variants (orange warn, green
+   primary), where the command colour would vanish and white stripes
+   would eat the white label: dark stripes, the label stays readable */
+.btn.btn-warn.hold, .btn.btn-primary.hold { --hold-color: rgba(0, 0, 0, 0.55); }
+.hold.hold-fired { animation: pendant-flash 0.4s ease; }
+
 /* Kill — red outline, never filled */
 .pendant-kill { color: var(--red); border: 1.5px solid var(--red); }
 .pendant-kill:hover:not(:disabled) { background: var(--red-dim); }
