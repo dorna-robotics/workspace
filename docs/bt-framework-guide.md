@@ -329,6 +329,18 @@ overloading other attributes.
 | `None` *(default)* | Action fires as part of the goal-directed plan. |
 | `"park"` | Action runs only when the operator clicks Park. Never a route step, never scheduled. The launcher collects every `trigger="park"` class into the Park-cleanup subtree (one leaf per class, `item_index=0`). |
 
+**When Park actually starts.** The engine keeps ticking after the
+click. Leaves that have not started refuse to start (`RecipeAction._park_hold`),
+except a robot leaf while the hand is full — the item must be put down.
+The cleanup subtree is swapped in the moment no robot leaf is in flight
+(started and not yet reported; the whole tree, every branch of a
+parallel phase) and the hand is empty. Leaves that do not use the robot
+(`resource="shaker"`, `"rest"`, `"vortex"` — `uses_robot()` comes from the
+action's `resource`) never delay the park: their device op finishes on its
+own thread. So a Park clicked mid-cap parks right after the vial is back
+in its slot, not after the 5 min shake on the other branch (bna bench,
+2026-09-21).
+
 Typical use — park the tool when the operator stops the run:
 
 ```python

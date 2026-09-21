@@ -962,6 +962,15 @@ sudo python3 projects/my_project/main.py --port 5010
 
 Then open `http://<ip>:5010` for the 3D viewer, or use the orchestrator to send start/pause/kill commands.
 
+### Autoreload is off
+
+The runtime server does not restart itself when a source file changes.
+That is a dev convenience with a sharp edge: it re-execs the process on
+any write to an imported `.py` — a `git pull` into the project, an edit
+in the library — silently and mid-run, run state lost. Turn it on only
+on a dev box with `WORKSPACE_AUTORELOAD=1` in the environment of
+`main.py`; the log then says so at boot.
+
 ### Recording a run — the replay recorder
 
 The 3D viewer's record button (red while capturing) drives a recorder

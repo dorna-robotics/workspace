@@ -1291,6 +1291,12 @@ class _DSLActionLeaf(RecipeAction):
         # name; apply_effects looks it up here. ``None`` = use default.
         self._branch_choice: Optional[str] = None
 
+    def uses_robot(self) -> bool:
+        """From the action's declared ``resource``, normalised the way
+        the launcher does for the scheduler: unset means the robot."""
+        from workspace.planner.plan_scheduler import _resources
+        return "robot" in (_resources(getattr(self._cls, "resource", None)) or ("robot",))
+
     def _params(self) -> Tuple[Any, ...]:
         # Convention: single-param actions use the item index directly.
         # Zero-param actions (e.g. global cleanup, per-resource hardware

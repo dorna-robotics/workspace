@@ -204,24 +204,29 @@ class BTEngine:
                 # of motion commands → robot alarm. Polling the worker
                 # here is the only safe handoff point.
                 if self._runtime_parking() and not self._in_cleanup:
-                    leaf = self._active_recipe_leaf()
-                    if leaf is not None:
-                        worker = getattr(leaf, "_worker", None)
-                        if worker is not None and worker.is_alive():
-                            time.sleep(min(period, 0.1))
-                            next_tick = time.monotonic()
-                            continue
-                    # Defer Park while the robot is holding a picked item:
-                    # keep ticking the plan until the current item is placed
-                    # (the hand is empty), so a graceful Park never strands a
-                    # load mid-air (drop / collision risk). Only with an empty
-                    # hand do we swap in the trigger="park" cleanup tree.
-                    if not self._tool_holds_load():
+                    # KEEP TICKING under a park. The tree keeps being
+                    # ticked so in-flight leaves can finish and report;
+                    # leaves that have not started refuse to start while
+                    # parking (RecipeAction._park_hold) unless the hand
+                    # is full and they use the robot — the item must be
+                    # put down. Cleanup starts the moment no ROBOT
+                    # worker is alive and the hand is empty. Non-robot
+                    # workers (a shake, a rest) never block the park:
+                    # their device op finishes on its own thread.
+                    #
+                    # Why the whole tree, and why robot workers only: a
+                    # parallel phase (from_schedule's overlap) puts the
+                    # shaker or rest branch BEFORE the robot branch, so
+                    # "the first RUNNING leaf" was the 300 s Shake, and
+                    # the engine sat here without ticking while the robot
+                    # stood still with a vial in the gripper (bna bench,
+                    # 2026-09-21).
+                    if not self._robot_workers_alive() and not self._tool_holds_load():
                         if not self._enter_cleanup():
                             # nothing to clean (no trigger="park" actions)
                             return py_trees.common.Status.SUCCESS
-                    # else: hand not empty — fall through and advance the
-                    # plan one more action, then re-check at the next boundary
+                    # else: a robot leaf is mid-motion, or the hand is
+                    # full — tick on; re-check at the next tick
 
                 if self._runtime_paused():
                     # Don't tick during pause. Sleep a short period and
@@ -310,24 +315,35 @@ class BTEngine:
         except Exception:
             return False
 
-    def _active_recipe_leaf(self):
-        """Find the currently-running RecipeAction leaf, if any.
-
-        Returns the leaf whose ``_worker`` thread is in flight, so the
-        Park path can wait for it to finish before tearing down the
-        tree. ``None`` when no leaf is mid-motion (tree quiescent).
-        """
+    def _alive_workers(self):
+        """Every leaf in the tree with a worker IN FLIGHT — the whole
+        tree, every branch of every parallel. In flight means the leaf
+        still holds its worker: started and not yet reported. A thread
+        that has just finished counts until the leaf's next tick turns
+        it into SUCCESS and applies the effects (RecipeAction.terminate
+        drops the reference then) — tearing the tree down in between
+        loses those effects (base: Park right after Start ended, the
+        cleanup's own pre saw no ``started``)."""
+        out = []
         def walk(node):
             children = getattr(node, "children", []) or []
             if not children:
-                return node if node.status == py_trees.common.Status.RUNNING else None
+                if getattr(node, "_worker", None) is not None:
+                    out.append(node)
+                return
             for c in children:
-                if c.status == py_trees.common.Status.RUNNING:
-                    leaf = walk(c)
-                    if leaf is not None:
-                        return leaf
-            return None
-        return walk(self._root)
+                walk(c)
+        walk(self._root)
+        return out
+
+    def _robot_workers_alive(self) -> bool:
+        """Is any leaf that USES THE ROBOT mid-motion? A leaf without
+        the ``uses_robot`` hook counts as a robot leaf (safe default)."""
+        for leaf in self._alive_workers():
+            fn = getattr(leaf, "uses_robot", None)
+            if not callable(fn) or fn():
+                return True
+        return False
 
     def _enter_cleanup(self) -> bool:
         """Swap the live tree for the trigger="park" cleanup subtree.
@@ -352,6 +368,14 @@ class BTEngine:
         if cleanup is None:
             log.info("BTEngine: no trigger='park' actions in project — exiting")
             return False
+        # The cleanup tree's own leaves must start while parking — they
+        # ARE the park. Mark them exempt from the leaf-level park hold.
+        def _exempt(node):
+            if not (getattr(node, "children", []) or []):
+                node._park_exempt = True
+            for c in getattr(node, "children", []) or []:
+                _exempt(c)
+        _exempt(cleanup)
         self._root = cleanup
         return True
 

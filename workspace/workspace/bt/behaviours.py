@@ -142,6 +142,34 @@ class RecipeAction(WorkspaceBehaviour):
         self._result: Optional[bool] = None
         self._exc: Optional[BaseException] = None
         self._started_at: float = 0.0
+        self._held: bool = False
+
+    def uses_robot(self) -> bool:
+        """Does this leaf move the robot? The engine's Park path waits
+        only for robot leaves, and the park hold below lets only robot
+        leaves start with a full hand. Default True (safe); the DSL leaf
+        derives it from the action's declared ``resource``."""
+        return True
+
+    def _park_hold(self) -> bool:
+        """Should this leaf REFUSE to start right now? Yes while the
+        operator has clicked Park — unless the hand is full and this
+        leaf uses the robot, because the item must be put down first.
+        Lives at the leaf: a Sequence starts its next child inside the
+        tick its predecessor finished in, before the engine can look."""
+        if getattr(self, "_park_exempt", False):
+            return False                    # a leaf of the cleanup tree
+        rt = getattr(self.ctx, "runtime", None)
+        p = getattr(rt, "parking", None)
+        if not (p() if callable(p) else p):
+            return False
+        core = getattr(rt, "robot_api", None)
+        fn = getattr(core, "tool_holds_load", None)
+        try:
+            hand_full = bool(fn()) if callable(fn) else False
+        except Exception:
+            hand_full = False
+        return not (hand_full and self.uses_robot())
 
     # ── Override these in subclasses ────────────────────────────────────
 
@@ -167,6 +195,10 @@ class RecipeAction(WorkspaceBehaviour):
         self._result = None
         self._exc = None
         self._started_at = time.monotonic()
+        self._held = self._park_hold()
+        if self._held:
+            self.log.info("RecipeAction[%s]: parking — not started", self.name)
+            return
 
         def _target():
             try:
@@ -184,6 +216,8 @@ class RecipeAction(WorkspaceBehaviour):
         self.log.debug("RecipeAction.initialise: worker started")
 
     def update(self) -> py_trees.common.Status:
+        if self._held:
+            return py_trees.common.Status.RUNNING   # parking: never started
         # Worker hasn't finished yet.
         if self._worker is not None and self._worker.is_alive():
             return py_trees.common.Status.RUNNING
@@ -209,10 +243,14 @@ class RecipeAction(WorkspaceBehaviour):
     def terminate(self, new_status: py_trees.common.Status) -> None:
         # If we're being aborted while the worker is still in flight, halt
         # the robot. Workspace recipes already poll runtime.stop().
+        # A NON-robot worker (a shake, a rest) is left to finish on its
+        # own thread: stopping the runtime for it would halt the park
+        # motion that is about to start.
         if (
             self._worker is not None
             and self._worker.is_alive()
             and new_status != py_trees.common.Status.SUCCESS
+            and self.uses_robot()
         ):
             try:
                 # Workspace Runtime stop() is the canonical cancellation.
@@ -222,6 +260,7 @@ class RecipeAction(WorkspaceBehaviour):
             except Exception:
                 self.log.exception("terminate: runtime.stop() raised")
         self._worker = None
+        self._held = False
 
 
 # ── PredicateCondition ──────────────────────────────────────────────────────

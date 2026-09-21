@@ -1954,11 +1954,17 @@ class RuntimeServer:
             lambda: _record_flush(self.rt), OP_FLUSH_MS
         ).start()
 
-        # autoreload for dev
-        for p in (self.web_dir, self.static_dir):
-            if os.path.exists(p):
-                autoreload.watch(p)
-        autoreload.start()
+        # Autoreload is a DEV tool, off unless asked: it re-execs this
+        # process on any write to an imported .py — a git pull into the
+        # project, an edit in the library — silently, mid-run, run state
+        # lost (bna bench, 2026-09-18 and 09-21). WORKSPACE_AUTORELOAD=1
+        # turns it on.
+        if os.environ.get("WORKSPACE_AUTORELOAD") == "1":
+            for p in (self.web_dir, self.static_dir):
+                if os.path.exists(p):
+                    autoreload.watch(p)
+            autoreload.start()
+            print("[runtime] autoreload ON (WORKSPACE_AUTORELOAD=1) — the runtime restarts on any source edit")
 
         tornado.ioloop.IOLoop.current().start()
 
