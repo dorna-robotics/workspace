@@ -151,6 +151,16 @@ class RecipeAction(WorkspaceBehaviour):
         derives it from the action's declared ``resource``."""
         return True
 
+    def cancel(self) -> bool:
+        """Ask a running worker to stop GRACEFULLY — a device loop's
+        own stop signal (the shaker's stop_shaking, the vortex's
+        stop_run), so it ends its cycle cleanly. Returns True when such
+        a path exists and was taken. Default: none — the worker is then
+        cancelled HARD: its thread is marked and unwinds at its next
+        rt.checkpoint()/sleep/call (Runtime.ActionCancelled). The DSL
+        leaf forwards to the action's ``cancel()`` when it defines one."""
+        return False
+
     def _park_hold(self) -> bool:
         """Should this leaf REFUSE to start right now? Yes while the
         operator has clicked Park — unless the hand is full and this
@@ -212,6 +222,9 @@ class RecipeAction(WorkspaceBehaviour):
             name=f"bt-action-{self.name}",
             daemon=True,
         )
+        # The runtime reads this to know whether work on this thread
+        # may touch the robot's held motion tail (Runtime.settle).
+        self._worker._bt_leaf = self
         self._worker.start()
         self.log.debug("RecipeAction.initialise: worker started")
 
@@ -243,22 +256,32 @@ class RecipeAction(WorkspaceBehaviour):
     def terminate(self, new_status: py_trees.common.Status) -> None:
         # If we're being aborted while the worker is still in flight, halt
         # the robot. Workspace recipes already poll runtime.stop().
-        # A NON-robot worker (a shake, a rest) is left to finish on its
-        # own thread: stopping the runtime for it would halt the park
-        # motion that is about to start.
-        if (
-            self._worker is not None
-            and self._worker.is_alive()
-            and new_status != py_trees.common.Status.SUCCESS
-            and self.uses_robot()
-        ):
+        w = self._worker
+        if w is not None and w.is_alive() and new_status != py_trees.common.Status.SUCCESS:
+            # A robot worker: halt the robot (every recipe polls
+            # runtime.stop()). A NON-robot worker (a shake, a rest) is
+            # never stopped that way — it would halt the park motion
+            # about to start.
+            if self.uses_robot():
+                try:
+                    stop = getattr(self.ctx.runtime, "stop", None)
+                    if callable(stop):
+                        stop()
+                except Exception:
+                    self.log.exception("terminate: runtime.stop() raised")
+            # Either way the worker must END, not run its loop to the
+            # end on a tree that no longer exists (a replan used to pile
+            # up shake workers, each toggling the same shaker). Graceful
+            # when the action has a stop of its own, hard otherwise:
+            # the thread unwinds at its next checkpoint.
             try:
-                # Workspace Runtime stop() is the canonical cancellation.
-                stop = getattr(self.ctx.runtime, "stop", None)
-                if callable(stop):
-                    stop()
+                graceful = bool(self.cancel())
             except Exception:
-                self.log.exception("terminate: runtime.stop() raised")
+                self.log.exception("terminate: cancel() raised")
+                graceful = False
+            w._bt_cancel = "soft" if graceful else "hard"
+            self.log.info("RecipeAction[%s]: terminated mid-flight — %s cancel",
+                          self.name, "graceful" if graceful else "hard")
         self._worker = None
         self._held = False
 

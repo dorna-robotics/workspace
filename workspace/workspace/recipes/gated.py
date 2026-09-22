@@ -53,7 +53,8 @@ class Gated:
         def work(*a, **k):
             rt = getattr(self._recipe, "rt", None)
             if rt is not None:
-                rt.settle(f"work: {getattr(self._obj, 'name', type(self._obj).__name__)}.{name}")
+                rt.settle(f"work: {getattr(self._obj, 'name', type(self._obj).__name__)}.{name}",
+                          owner=type(self._recipe).__name__)
                 rt.checkpoint()
             return attr(*a, **k)
         return work

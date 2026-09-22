@@ -440,6 +440,17 @@ run recorded that the next motion merges there. Design + decision log:
   caches): run 1 records 7 seams; run 2 merges all 7 with every fold
   and profile cached (6 ms of compute for the phase). Without the
   pre-warm, run 2 spent 3.2 s computing what run 3 then found cached.
+* **The tail is the robot's.** Every read-modify of the held tail
+  goes through one lock on `core`, and a fold that has peeked it holds
+  a claim until it consumes or flushes it. A gated component call on a
+  BT worker whose leaf does not use the robot (a shake, a rest, a
+  vortex run) clears only a tail hanging at its OWN station — the
+  robot standing in that station's way, `Runtime.settle(owner=…)` from
+  the gate — and leaves every other tail to the robot thread, with a
+  `settle-skip` journal line; if the robot thread has claimed the
+  tail, that flush waits for the splice instead of running the same
+  exit twice (bna bench 2026-09-21: the shaker's toggle flushed a Rack
+  exit the decapper fold was merging, two threads drove the robot).
 * **Later runs**: a recorded seam's exit group is IK-solved and held
   on `core` (`tail_deposit`); the next verb's fold verifies the
   arriving motion against the seam's partners — match → splice

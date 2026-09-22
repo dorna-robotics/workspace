@@ -1150,10 +1150,9 @@ class Recipe:
             self.core.book_note(planned, [float(v) for v in J])
 
         fuse_tail = None
-        if (use_planning and planned in ("smove", "tmove", "cjmove", "clmove")
-                and self.core._motion_tail is not None):
-            fuse_tail = self.core._motion_tail   # peek — frontier stays armed
-        else:
+        if use_planning and planned in ("smove", "tmove", "cjmove", "clmove"):
+            fuse_tail = self.core.tail_peek()   # peek + claim — frontier stays armed
+        if fuse_tail is None:
             self.core.tail_flush(reason="direct hop can't fuse", disarm=False)
         if use_planning:
             points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
@@ -1290,13 +1289,13 @@ class Recipe:
                 return
         if (first_approach and len(path) > 1 and blend and blend > 0
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
-            fuse_tail = self.core._motion_tail
+            fuse_tail = self.core.tail_peek()      # peek + claim
         elif (first_approach and len(path) == 1 and plan_on
                 and planned in ("smove", "tmove", "cjmove", "clmove")):
             # Single-point planned travel (above, hover phases): the
             # classic loop routes it through _execute_motion_planned,
             # which merges the tail itself — keep the frontier armed.
-            fuse_tail = self.core._motion_tail
+            fuse_tail = self.core.tail_peek()
         if fuse_tail is None:
             self.core.tail_flush(reason="next motion is not a fusable travel fold",
                                  disarm=False)

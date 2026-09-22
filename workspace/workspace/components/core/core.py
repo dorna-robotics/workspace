@@ -20,6 +20,7 @@ from workspace.components.core.robot_station import RobotStation
 from workspace.devices import AutoRecover, attach_device
 
 
+import threading
 import time
 
 
@@ -396,6 +397,15 @@ class Core:
         # group, deposited by the recipe layer instead of executed;
         # consumed by the next fold or flushed by any barrier.
         self._motion_tail = None
+        # The tail is the ROBOT's. Every read-modify of it goes through
+        # this lock, and a fold that has peeked it holds a CLAIM until
+        # it consumes or flushes it, so a flush from another thread (a
+        # station's gate) can never run the same exit the fold is
+        # splicing (bna bench 2026-09-21: the shaker's toggle flushed a
+        # Rack exit while the decapper fold merged it — two threads
+        # drove the robot, the arm hit an obstacle).
+        self._tail_lock = threading.Condition(threading.RLock())
+        self._tail_claim = None            # ident of the thread that peeked
 
         # Same lifecycle as the IK cache: lazy on the first motion_plan(),
         # every failure mode degrades to planning from scratch.
@@ -1745,56 +1755,108 @@ class Core:
         [0] = the live pose), ``motion_class``, ``tool_pose``,
         ``owner``, ``flush_fn`` (executes the tail exactly as the verb
         would have). An already-held tail is flushed first — never two."""
-        self.tail_flush(reason="replaced by next hold")
-        self._motion_tail = tail
+        with self._tail_lock:
+            self.tail_flush(reason="replaced by next hold")
+            self._motion_tail = tail
+            self._tail_claim = None
+            self._tail_lock.notify_all()
         print(f"[fusion] hold: {tail.get('owner')} "
               f"({len(tail.get('points', [])) - 1} leg(s))")
         self.fusion_journal("hold", owner=tail.get("owner"),
                             legs=len(tail.get("points", [])) - 1)
 
+    def tail_peek(self):
+        """The held tail, for a fold that may splice it — and a CLAIM
+        on it: until this thread consumes or flushes it, a flush from
+        any other thread waits. None when nothing is held."""
+        with self._tail_lock:
+            t = self._motion_tail
+            if t is not None:
+                self._tail_claim = threading.get_ident()
+            return t
+
     def tail_consume(self):
         """Take the held tail — the caller now owns its execution."""
-        t = self._motion_tail
-        self._motion_tail = None
-        return t
+        with self._tail_lock:
+            t = self._motion_tail
+            self._motion_tail = None
+            self._tail_claim = None
+            self._tail_lock.notify_all()
+            return t
 
-    def tail_flush(self, reason="", disarm=True):
+    def tail_flush(self, reason="", disarm=True, only_owner=None):
         """Execute the held tail to its normal stop, if any. The record
         is dropped BEFORE the closure runs: a flush aborted by a kill
         or pause must not retry a half-executed tail. A tail whose
         deposit pose no longer matches the live robot (a kill + jog,
         any out-of-band motion) is DROPPED loudly instead of executed —
-        replaying it from somewhere else would jump."""
-        # Replay fusion: a barrier cancels any pending seam recording
-        # (disarm=False is passed ONLY by the recipes' pre-merge
-        # settle calls, which are not barriers — real motion that
-        # can't merge disarms at the robot-api gate instead). A HELD
-        # tail that flushes is behaviorally classic — its records are
-        # KEPT: with multi-partner records, this occurrence simply
-        # wasn't one of the seam's proven futures (the mismatch site
-        # learns the new future separately, book_learn).
-        if disarm:
-            self._book_pending = None
-            self._book_pending_points = None
-        t = self.tail_consume()
-        if t is None:
-            return
-        try:
-            live = list(self.robot_api.joint())
-            if any(abs(float(a) - float(b)) > 1.0
-                   for a, b in zip(live, t["points"][0])):
-                print(f"[fusion] held tail from {t.get('owner')} dropped — "
-                      f"robot moved since deposit; executing it would jump")
-                self.fusion_journal("dropped", owner=t.get("owner"),
-                                    reason="robot moved since deposit")
+        replaying it from somewhere else would jump.
+
+        ``only_owner``: a flush from a thread that does NOT drive the
+        robot (a station's own worker — the shaker's toggle, a rest)
+        may only clear a tail that hangs at ITS station (owner == its
+        recipe class), the robot standing in its way; any other tail
+        is the robot thread's to merge, and is left alone with a
+        journal line. Such a flush never disarms a pending recording.
+        If the robot thread has CLAIMED the tail (peeked it for a
+        splice), the flush waits for that splice to consume or flush
+        it instead of running the same exit a second time."""
+        with self._tail_lock:
+            if only_owner is not None:
+                t = self._motion_tail
+                if t is None:
+                    return
+                if t.get("owner") != only_owner:
+                    self.fusion_journal("settle-skip", owner=t.get("owner"),
+                                        reason=reason, station=only_owner)
+                    return
+                deadline = time.time() + 30.0
+                while (self._motion_tail is t and self._tail_claim is not None
+                       and self._tail_claim != threading.get_ident()):
+                    if not any(th.ident == self._tail_claim for th in threading.enumerate()):
+                        self._tail_claim = None      # the claimant died mid-fold: stale claim
+                        break
+                    left = deadline - time.time()
+                    if left <= 0:
+                        print(f"[fusion] flush({reason}): tail claimed by the robot "
+                              f"thread for 30 s — leaving it")
+                        self.fusion_journal("settle-skip", owner=t.get("owner"),
+                                            reason=reason, station=only_owner,
+                                            claimed=True)
+                        return
+                    self._tail_lock.wait(min(left, 0.2))
+                if self._motion_tail is not t:
+                    return                 # the robot thread took it
+            # Replay fusion: a barrier cancels any pending seam recording
+            # (disarm=False is passed ONLY by the recipes' pre-merge
+            # settle calls, which are not barriers — real motion that
+            # can't merge disarms at the robot-api gate instead). A HELD
+            # tail that flushes is behaviorally classic — its records are
+            # KEPT: with multi-partner records, this occurrence simply
+            # wasn't one of the seam's proven futures (the mismatch site
+            # learns the new future separately, book_learn).
+            if disarm and only_owner is None:
+                self._book_pending = None
+                self._book_pending_points = None
+            t = self.tail_consume()
+            if t is None:
                 return
-        except Exception:
-            pass
-        print(f"[fusion] flush({reason or 'barrier'}): {t.get('owner')} "
-              f"runs to its stop")
-        self.fusion_journal("flush", owner=t.get("owner"),
-                            reason=reason or "barrier")
-        t["flush_fn"]()
+            try:
+                live = list(self.robot_api.joint())
+                if any(abs(float(a) - float(b)) > 1.0
+                       for a, b in zip(live, t["points"][0])):
+                    print(f"[fusion] held tail from {t.get('owner')} dropped — "
+                          f"robot moved since deposit; executing it would jump")
+                    self.fusion_journal("dropped", owner=t.get("owner"),
+                                        reason="robot moved since deposit")
+                    return
+            except Exception:
+                pass
+            print(f"[fusion] flush({reason or 'barrier'}): {t.get('owner')} "
+                  f"runs to its stop")
+            self.fusion_journal("flush", owner=t.get("owner"),
+                                reason=reason or "barrier")
+            t["flush_fn"]()
 
     def _chain_cache_init(self):
         """Load core/traj.json — same JSONL + scene-stamp machinery as

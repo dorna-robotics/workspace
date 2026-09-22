@@ -27,6 +27,13 @@ class RTState(str, Enum):
 class KillRequested(SystemExit):
     """Raised to terminate the gate/worker thread immediately (cooperative thread-exit)."""
 
+class ActionCancelled(BaseException):
+    """Raised at the next ``checkpoint()`` on a BT worker thread whose
+    leaf was terminated (replan, park, abort) and has no graceful stop
+    of its own. BaseException, like KillRequested: a recipe's
+    ``except Exception`` must not swallow it — the worker unwinds."""
+
+
 class ParkRequested(Exception):
     """Raised to gracefully park the workflow — finish current action, run trigger:park handler, then exit."""
 
@@ -967,6 +974,11 @@ class Runtime:
         # action hang while PAUSED.
         if not self._is_workflow_thread():
             return
+        # A terminated leaf's worker (RecipeAction.terminate marks its
+        # thread) unwinds here instead of running its loop to the end
+        # on a tree that no longer exists.
+        if getattr(threading.current_thread(), "_bt_cancel", None) == "hard":
+            raise ActionCancelled()
         with self._lock:
             while True:
                 if self._killed:
@@ -977,7 +989,7 @@ class Runtime:
                     continue
                 return
 
-    def settle(self, reason: str = "work") -> None:
+    def settle(self, reason: str = "work", owner: Optional[str] = None) -> None:
         """Execute the robot's held motion tail, if any, before non-motion
         WORK: a device op (through the recipe's gated component), a
         sleep, a delay. The tail is a deferred exit — the robot still
@@ -985,12 +997,25 @@ class Runtime:
         left — and work that acts on or measures the world must not run
         there. Motions never come here: the robot-api gate merges or
         flushes a tail itself. Workflow thread only: an operator call
-        must not move a paused workflow's robot."""
+        must not move a paused workflow's robot.
+
+        THE TAIL IS THE ROBOT'S. On a BT worker whose leaf does not use
+        the robot (a shake, a rest, a vortex run), the only tail this
+        may clear is one hanging at the calling station — ``owner``,
+        the recipe class the gate passes — because the robot stands in
+        that station's way; every other tail is the robot thread's to
+        merge, and stays (core.tail_flush only_owner)."""
         if not self._is_workflow_thread():
             return
         flush = getattr(self.robot_api, "tail_flush", None)
-        if callable(flush):
-            flush(reason=reason)
+        if not callable(flush):
+            return
+        leaf = getattr(threading.current_thread(), "_bt_leaf", None)
+        uses = getattr(leaf, "uses_robot", None)
+        if leaf is not None and callable(uses) and not uses():
+            flush(reason=reason, only_owner=owner or "")
+            return
+        flush(reason=reason)
 
     def call(self, fn: Callable[..., T], *a: Any, checkpoint: bool = True, **k: Any) -> T:
         if checkpoint:

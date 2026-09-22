@@ -162,6 +162,7 @@ Task-oriented routing — go straight to the file for what you want to change.
 | Change the GUI form | `launch.yaml` kwargs |
 | Add a new vision / sensor check | `checks.py` (method + `register_check` line) |
 | Wire a check into an action | `pre_check` / `post_check` class attr on the action |
+| Stop a device loop cleanly when its leaf is terminated mid-flight (replan, park, abort) | `cancel(self, *params)` on the action — signal the loop's own stop (`rcp["shaker"].stop_shaking()`); without it the worker is cancelled hard at its next `rt.checkpoint()` |
 | Add a Park-cleanup action | new `Action` subclass with `trigger="park"` (see §3.2) |
 | Change the scene | `scene/base.j2` |
 | Change recipe bindings (which class implements which alias) | `recipes.yaml` |

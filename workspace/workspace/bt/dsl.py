@@ -987,6 +987,13 @@ class Action:
         pre(self, *params)     -> Expr or Fact or bool
         eff(self, *params)     -> tuple of Facts (use +/- for add/remove)
         execute(self, *params) -> bool | None  (raise to signal failure)
+        cancel(self, *params)  -> None  (optional) — stop a running
+                                  execute GRACEFULLY when the leaf is
+                                  terminated mid-flight (replan, park,
+                                  abort): signal the device loop's own
+                                  stop (rcp["shaker"].stop_shaking()).
+                                  Without it the worker is cancelled
+                                  hard at its next rt.checkpoint().
 
     Sim vs. real mode is a **framework-level** decision driven by
     ``core._simulation_mode``. Action subclasses don't have to think
@@ -1290,6 +1297,15 @@ class _DSLActionLeaf(RecipeAction):
         # For non-deterministic eff (dict): execute() returns a branch
         # name; apply_effects looks it up here. ``None`` = use default.
         self._branch_choice: Optional[str] = None
+
+    def cancel(self) -> bool:
+        """Forward to the action's own ``cancel(*params)`` when it has
+        one — a graceful stop of its device loop; see Action."""
+        fn = getattr(self._instance, "cancel", None)
+        if not callable(fn):
+            return False
+        fn(*self._params())
+        return True
 
     def uses_robot(self) -> bool:
         """From the action's declared ``resource``, normalised the way

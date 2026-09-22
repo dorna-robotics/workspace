@@ -50,8 +50,11 @@ class Shaker(Recipe):
         self._wire_verb("shake")
         self._stop_event.clear()
         # The head is about to MOVE: the gate on ``self.component``
-        # executes any held motion tail first, so the robot is clear of
-        # the swept volume before the first IO.
+        # first clears a held motion tail that hangs at THIS station
+        # (a Shaker-owned exit — the robot still over the seat), so the
+        # robot is out of the swept volume before the first IO. Any
+        # other tail is the robot thread's and is left alone; this
+        # worker never drives the robot otherwise.
         # Workflow: clamp the vessels, swing until done, home the head,
         # settle, release. The component owns each atomic op (IO +
         # model); this loop owns the order and the timing.
