@@ -346,7 +346,7 @@ Two flags drive it:
 | `pick(approach=False, ...)` | No — no approach waypoint exists |
 | Exit from a pick/place | No — exit path always uses direct moves |
 | `retract(...)` | No — `has_motion_plan=False` by default |
-| `rotate(...)`, `vibrate(...)` | No — direct jmoves (or, with `vibrate(primitive="cmove")`, one circular arc through `[middle, end]` with `cnt` extra turns, then a jmove home). `vibrate` is solved AT THE CURRENT POSE (rail fixed, arm seeded from the live joints), so it is the same in-place shake through any recipe |
+| `rotate(...)`, `vibrate(...)` | No — direct jmoves (or, with `vibrate(primitive="cmove")`, one circular arc through `[middle, end]` with `cnt` extra turns, then a jmove home; with `vibrate(primitive="rail")`, the rail alone steps through `pattern` as offsets in mm while every arm joint stays put, then a jmove home). `vibrate` is solved AT THE CURRENT POSE (rail fixed, arm seeded from the live joints — or, for `rail`, arm fixed), so it is the same in-place shake through any recipe |
 | `park(...)` | Yes if `has_motion_plan=True` (or `core.has_motion_plan`), else single jmove |
 
 `lmove` (Cartesian straight line) is used only for subsequent

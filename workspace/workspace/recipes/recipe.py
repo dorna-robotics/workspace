@@ -3007,12 +3007,18 @@ class Recipe:
                 the start pose to the end pose over the arc, so a long
                 tool's tip wanders a little more (sim, bna pH probe:
                 6 mm for a 2 mm pattern; a joint-space arc through the
-                same poses would have swung it 18 mm). Both primitives
-                end with a jmove back to the starting joints.
+                same poses would have swung it 18 mm). ``"rail"`` — the
+                shake is the RAIL ALONE: ``pattern`` is a list of rail
+                offsets in mm from the current carriage position (e.g.
+                ``[3, -3]``), visited one jmove each, ``cnt`` times over,
+                every arm joint held exactly where it is; no IK. Each
+                offset must stay inside the rail's travel. All
+                primitives end with a jmove back to the starting joints.
 
-        Solved at the CURRENT pose — rail fixed, arm seeded from the live
-        joints — so it is the same shake through any recipe; the recipe
-        only contributes ``speed_factor`` and ``left_approach``.
+        Solved at the CURRENT pose — rail fixed for ``jmove`` / ``cmove``
+        (arm seeded from the live joints), arm fixed for ``rail`` — so it
+        is the same shake through any recipe; the recipe only contributes
+        ``speed_factor`` and ``left_approach``.
 
         Raises:
             RecipeError: If IK fails for any waypoint in the pattern.
@@ -3027,6 +3033,27 @@ class Recipe:
         # the tail; everything below is then the settled pose.
         self.core.tail_flush(reason="vibrate: shake from the settled pose")
         current_joint = rt.joint()
+        vel, accel, jerk = self.scaled_vaj(vaj)
+
+        if primitive == "rail":
+            axis = self.core.rail_cfg["axis"]
+            r0 = float(current_joint[axis])
+            joint_list = []
+            for off in pattern:
+                if isinstance(off, (list, tuple)) or not isinstance(off, (int, float)):
+                    raise RecipeError(f"vibrate(primitive='rail'): the pattern is a list of rail "
+                                      f"offsets in mm, got {off!r}")
+                r = r0 + float(off)
+                if not (self.core.rail_min <= r <= self.core.rail_max):
+                    raise RecipeError(f"vibrate(primitive='rail'): offset {off} mm puts the rail at "
+                                      f"{r:.1f}, outside [{self.core.rail_min}, {self.core.rail_max}]")
+                J = [float(v) for v in current_joint]
+                J[axis] = r
+                joint_list.append(J)
+            for J in cnt * joint_list + [current_joint]:
+                rt.checkpoint()
+                rt.jmove(joint=J, vel=vel, accel=accel, jerk=jerk)
+            return True
 
         pattern = [
             dorna_pose.transform_pose(
@@ -3066,7 +3093,6 @@ class Recipe:
             else:
                 raise RecipeError(f"vibrate: no IK solution for offset {p[:3]} at the current pose (code {C})")
 
-        vel, accel, jerk = self.scaled_vaj(vaj)
         if primitive == "cmove":
             if len(joint_list) != 2:
                 raise RecipeError(f"vibrate(primitive='cmove'): the pattern is [middle, end], "
@@ -3081,7 +3107,7 @@ class Recipe:
             rt.jmove(joint=current_joint, vel=vel, accel=accel, jerk=jerk)
             return True
         if primitive != "jmove":
-            raise RecipeError(f"vibrate: primitive must be 'jmove' or 'cmove', got {primitive!r}")
+            raise RecipeError(f"vibrate: primitive must be 'jmove', 'cmove' or 'rail', got {primitive!r}")
         joint_list = cnt * joint_list
         joint_list.append(current_joint)
         for J in joint_list:
