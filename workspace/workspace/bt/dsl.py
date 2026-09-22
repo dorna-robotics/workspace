@@ -731,6 +731,13 @@ def build_precedence(
     # tool ordering — see _capacity_relaxation_helps.
     skip_capacity = _capacity_relaxation_helps(plan, protocol)
     start = initial_state if initial_state is not None else frozenset()
+    return _causal_edges(metas, skip_capacity, start)
+
+
+def _causal_edges(metas: List[Dict[str, set]], skip_capacity: bool,
+                  start: FrozenSet[Tuple[Any, ...]]) -> List[set]:
+    """The producer-before-consumer edges of :func:`build_precedence`,
+    from the walked metas."""
     # A capacity fact that is FALSE when the plan starts is held from
     # before the plan — a replan from an observed state with a vial in
     # the arm. Its first release in the plan is a hard predecessor of
@@ -772,6 +779,61 @@ def build_precedence(
                     break
         predecessors.append(preds)
     return predecessors
+
+
+def build_ordering(
+    plan: Sequence[Any],
+    protocol: Any,
+    initial_state: Optional[FrozenSet[Tuple[Any, ...]]] = None,
+    ctx: Optional["WorkspaceContext"] = None,
+) -> List[set]:
+    """The plan's FULL partial order — what the tree runs on.
+
+    :func:`build_precedence` gives the scheduler the causal edges
+    (producer before consumer). The tree needs one more kind: a
+    consumer before the later action that UNDOES what it needed — an
+    action that needs X true runs before every later action that
+    removes X; one that needs X false runs before every later action
+    that adds it. The scheduler places actions on a clock and replay
+    checks that linearization, so it never needs these edges. The tree
+    runs on real durations: its resource branches drift from the
+    clock, and without these edges a branch that runs ahead could
+    undo a fact another branch has not consumed yet (``from_schedule``).
+
+    Every edge points from an earlier plan index to a later one, and
+    replay verifies each window in ``(start, plan index)`` order — the
+    order the tree keeps inside a branch — so a schedule that replays
+    clean satisfies every edge here: no wait can deadlock.
+
+    Capacity facts follow :func:`build_precedence` (skipped when the
+    scheduler relaxed them — their mutual exclusion is a same-resource
+    matter, kept by the branch order).
+    """
+    metas = _walk_plan_metas(plan, protocol, initial_state, ctx)
+    skip_capacity = _capacity_relaxation_helps(plan, protocol)
+    start = initial_state if initial_state is not None else frozenset()
+    edges = _causal_edges(metas, skip_capacity, start)
+    removers: Dict[Tuple[Any, ...], List[int]] = {}
+    adders: Dict[Tuple[Any, ...], List[int]] = {}
+    for k, mk in enumerate(metas):
+        for f in mk["removed"]:
+            removers.setdefault(f, []).append(k)
+        for f in mk["added"]:
+            adders.setdefault(f, []).append(k)
+    for i, m in enumerate(metas):
+        for f in m["pre_pos"]:
+            if skip_capacity and f[0] in _CAPACITY_PREDICATE_NAMES:
+                continue
+            for k in removers.get(f, ()):
+                if k > i:
+                    edges[k].add(i)
+        for f in m["pre_neg"]:
+            if skip_capacity and f[0] in _CAPACITY_PREDICATE_NAMES:
+                continue
+            for k in adders.get(f, ()):
+                if k > i:
+                    edges[k].add(i)
+    return edges
 
 
 def derive_capacity_spans(
@@ -1692,6 +1754,7 @@ __all__ = [
     "Fact",
     "Predicate",
     "bind_conditions",
+    "build_ordering",
     "build_precedence",
     "make_predicate_condition",
     "predicate",

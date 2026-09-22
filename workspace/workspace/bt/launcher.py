@@ -48,6 +48,7 @@ from workspace.bt.builder import (
 )
 from workspace.bt.dsl import (
     RecipeUnavailable,
+    build_ordering,
     build_precedence,
     derive_capacity_spans,
     state_to_frozen,
@@ -772,6 +773,11 @@ def run_protocol(
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
         return build_precedence(plan, protocol, initial_state=initial, ctx=ctx)
 
+    def _ordering(plan):
+        facts = ctx.state.get("facts", frozenset())
+        initial = facts if isinstance(facts, frozenset) else frozenset(facts)
+        return build_ordering(plan, protocol, initial_state=initial, ctx=ctx)
+
     def _capacity(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
@@ -790,9 +796,7 @@ def run_protocol(
     log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
 
     # 4. Tree: from_schedule + per-leaf retry + outer replan_on_failure.
-    # Durations + resources tables for from_schedule's overlap
-    # detection and resource-aware sub-grouping inside each phase.
-    durations = {name: float(m.duration) for name, m in meta.items()}
+    # The resources table groups the entries into from_schedule's branches.
     from workspace.planner.plan_scheduler import _resources as _resources_of
     action_resources = {
         name: _resources_of(m.resource) or ("robot",)
@@ -886,18 +890,19 @@ def run_protocol(
             # straight to replan. Retry only where a project explicitly
             # opts in with its own with_retry wrapper.
             return with_retry(leaf_factory(action_name, item_index), max_attempts=1)
-        # The plan's precedence, keyed like the tree's entries, so a leaf
-        # in a parallel branch waits for what the schedule put before it.
+        # The plan's full partial order (build_ordering: causal edges
+        # plus consumer-before-undoer), keyed like the tree's entries,
+        # so a leaf in a resource branch waits for exactly what the
+        # plan put before it and for nothing else.
         _plan_steps = list(replanner.last_plan or [])
         _key = lambda a: f"{a.name}(t{a.params[0] if a.params else 0})"
-        _preds = _precedence(_plan_steps) if _plan_steps else []
+        _preds = _ordering(_plan_steps) if _plan_steps else []
         pred_names = {_key(_plan_steps[i]): {_key(_plan_steps[j]) for j in _preds[i]}
                       for i in range(len(_plan_steps))} if _plan_steps else None
         body = from_schedule(
             actions_list, _wrapped,
             swaps=swaps_list,
             swap_factory=_make_swap_leaf,
-            durations=durations,
             resources=action_resources,
             name=f"{project_name}/body",
             predecessors=pred_names,

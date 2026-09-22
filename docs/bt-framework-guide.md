@@ -1381,6 +1381,22 @@ BTEngine.run()                        ← tick @ 10 Hz, runtime pause/kill,
 SUCCESS / FAILURE / INVALID (aborted)
 ```
 
+### 11.1 How the tree runs the schedule
+
+`from_schedule` builds one branch per resource — the robot's, the
+shaker's, the rest clock's — each a Sequence of its entries in
+schedule order, all under one Parallel. Across branches the ONLY
+ordering is the plan's own partial order (`build_ordering`): a leaf
+waits for the actions that produced what it needs (producer before
+consumer) and, since the tree runs on real durations, for the actions
+that still need what it would undo (consumer before undoer). Nothing
+in the tree reads the clock. The model's durations in the action meta
+decide the ORDER the scheduler picks; they never decide when a leaf
+runs. So an arm that gets ahead of the model keeps working until the
+plan says it needs the device — the unload waits for the shake, the
+extract of another bank does not — and a duration guess that is off
+costs a worse order, never an idle wait.
+
 ---
 
 ## 12. Authoring rules (the load-bearing ones)

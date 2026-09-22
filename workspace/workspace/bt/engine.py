@@ -214,9 +214,9 @@ class BTEngine:
                     # workers (a shake, a rest) never block the park:
                     # their device op finishes on its own thread.
                     #
-                    # Why the whole tree, and why robot workers only: a
-                    # parallel phase (from_schedule's overlap) puts the
-                    # shaker or rest branch BEFORE the robot branch, so
+                    # Why the whole tree, and why robot workers only:
+                    # from_schedule's Parallel may put the shaker or rest
+                    # branch BEFORE the robot branch, so
                     # "the first RUNNING leaf" was the 300 s Shake, and
                     # the engine sat here without ticking while the robot
                     # stood still with a vial in the gripper (bna bench,

@@ -11,8 +11,8 @@ Parallel, decorators); these helpers wrap the common workspace patterns:
 * ``replan_on_failure(...)`` — wrap a subtree so its FAILURE raises
   ``ReplanRequested`` to the engine instead of propagating up.
 * ``from_schedule(...)`` — consume an OR-tools schedule (list of
-  ``(action_name, item_index, start_t)`` tuples) and emit a Sequence /
-  Parallel tree that respects parallelism.
+  ``(action_name, item_index, start_t)`` tuples) and emit a Parallel
+  of resource branches ordered by the plan's own edges.
 
 Project trees compose these into ``build_tree()`` — typically <50 lines.
 
@@ -166,25 +166,28 @@ class _ReplanOnFailure(py_trees.decorators.Decorator):
 
 
 class _AfterPredecessors(py_trees.decorators.Decorator):
-    """Hold a leaf until every scheduled PREDECESSOR has succeeded.
+    """Hold a leaf until every plan PREDECESSOR has succeeded.
 
-    ``from_schedule`` runs overlapping actions as parallel resource
-    branches — the shaker's branch beside the robot's. Branches are
-    sequential inside, concurrent across, and nothing across them
-    carried the plan's precedence: a shake scheduled AFTER the four
-    loads that fill its bank started the moment its branch did, while
-    the loads were still running on the robot branch (bna, the first
-    pipelined window, 2026-09-11). The schedule was right; the tree
-    lost the edge.
-
-    So every action leaf is wrapped with the predecessor set the
-    scheduler honoured (``build_precedence``) and does not tick its
+    ``from_schedule`` runs the window as parallel resource branches —
+    the shaker's beside the robot's. Branches are sequential inside
+    and concurrent across, and this decorator is the ONLY thing that
+    orders them across: every action leaf waits for the predecessor
+    set of the plan's partial order (``build_ordering``: producer
+    before consumer, consumer before undoer) and does not tick its
     child until each of them has reported SUCCESS — RUNNING meanwhile,
     which is what a parallel branch expects of a member that is not
-    yet due. Completion is shared through ``done`` (one set per tree);
-    a predecessor in an earlier sequential phase is already in it.
-    Deadlock is impossible for a schedule that honours the same edges,
-    which is the only kind the scheduler emits.
+    yet due. Completion is shared through ``done`` (one set per tree).
+
+    Nothing here reads the clock. The schedule's start times only fix
+    the order INSIDE a branch; a branch that runs ahead of the model's
+    durations waits where the plan says it must and nowhere else.
+    Before this (2026-09-21) the builder also cut the window into
+    "overlap phases" by the model's clock and joined every branch at
+    each cut: with real durations the arm then idled for the rest of
+    a 300 s shake between two extracts that needed nothing from it.
+    Deadlock is impossible: every edge points forward in plan order,
+    branches run in ``(start, plan index)`` order, and replay verifies
+    each window in that same order.
     """
 
     def __init__(self, child, key: str, preds, done: set, name: Optional[str] = None):
@@ -439,7 +442,6 @@ def from_schedule(
     *,
     swaps: Sequence[Tuple[float, Optional[str], Optional[str], int]] = (),
     swap_factory: Optional[Callable[[Optional[str], Optional[str]], py_trees.behaviour.Behaviour]] = None,
-    durations: Optional[Dict[str, float]] = None,
     resources: Optional[Dict[str, Tuple[str, ...]]] = None,
     tool_resource: str = "robot",
     name: str = "from_schedule",
@@ -448,102 +450,86 @@ def from_schedule(
     """Build a tree from a schedule (actions + swaps), resource-aware.
 
     Tree shape:
-      * Top-level ``Sequence`` of **overlap phases** — actions whose
-        time windows don't overlap each other run sequentially.
-      * Each phase is either a single leaf (one entry in the phase)
-        or a ``Parallel(SuccessOnAll)`` of **resource branches**.
-      * Each resource branch is a ``Sequence`` of entries that share
-        that resource (or a single leaf). Within a branch they're
-        sequential; across branches they run concurrently — exactly
-        what the scheduler said is safe.
+      * One **resource branch** per primary resource — the robot's,
+        the shaker's, the rest clock's — each a ``Sequence`` of its
+        entries in schedule order (``(start, plan index)``), or the
+        single leaf when there is one entry.
+      * Several branches run under one ``Parallel(SuccessOnAll)``;
+        a single branch is the tree.
+      * Across branches nothing but the plan's own order: each action
+        leaf waits for its ``predecessors`` (``_AfterPredecessors``).
+        No cut, no join, no clock: the model's durations decide the
+        schedule, never how the run executes.
 
     Args:
-        actions: ``(action_name, item_index, start_t)`` tuples.
+        actions: ``(action_name, item_index, start_t)`` tuples, in
+            plan order.
         leaf_factory: ``(name, item) → Behaviour`` for action leaves.
         swaps: Optional ``(swap_start, from_tool, to_tool, duration)``
             tuples from the scheduler. If empty, swaps stay implicit
             (handled by each action leaf's ``_ensure_tool``).
         swap_factory: ``(from_tool, to_tool) → Behaviour`` for swap
             leaves. Required if ``swaps`` is non-empty.
-        durations: ``{action_name: duration}`` — used to compute end
-            times for overlap grouping.
-        resources: ``{action_name: tuple of resource names}`` — used
-            to group entries within a Parallel phase. Actions sharing
-            a resource sub-sequence inside the Parallel.
+        resources: ``{action_name: tuple of resource names}`` — the
+            first one is the entry's branch.
         tool_resource: The resource swaps run on (typically ``"robot"``).
-        name: Top-level sequence name.
+        name: Top-level node name.
         predecessors: ``{entry_name: {entry_name, ...}}`` — the plan's
-            precedence the scheduler honoured, keyed like the entries
-            (``"load_shaker1(t4)"``). Each action leaf then waits for
-            its predecessors before it ticks, so a parallel phase keeps
-            the edges the schedule was built on (``_AfterPredecessors``).
+            partial order (``build_ordering``), keyed like the entries
+            (``"load_shaker1(t4)"``). Without it (tests, greedy
+            callers) the branches are ordered only inside themselves.
     """
-    durations = durations or {}
     resources = resources or {}
     done: set = set()
 
-    # Unify actions and swaps into a single "entry" representation
-    # so the grouping pass can treat them uniformly. Each entry knows
-    # its time window, resources, and how to make its leaf.
+    # Actions and swaps as one entry list: branch, order key, leaf maker.
     entries: List[Dict[str, Any]] = []
-    for action_name, item_index, start in actions:
-        dur = float(durations.get(action_name, 0))
+    for idx, (action_name, item_index, start) in enumerate(actions):
+        res = tuple(resources.get(action_name, ())) or ("__none__",)
         entries.append({
-            "kind":      "action",
-            "name":      f"{action_name}(t{item_index})",
-            "start":     float(start),
-            "end":       float(start) + dur,
-            "resources": tuple(resources.get(action_name, ())) or ("__none__",),
+            "branch":    res[0],
+            "order":     (float(start), 1, idx),
             "make_leaf": (lambda an=action_name, ii=item_index:
                           _after_predecessors(_safe_leaf(leaf_factory, an, ii),
                                               f"{an}(t{ii})", predecessors, done)),
         })
-    for swap_start, from_t, to_t, dur in swaps:
+    for idx, (swap_start, from_t, to_t, _dur) in enumerate(swaps):
         if swap_factory is None:
             log.warning(
                 "from_schedule: got swap event but no swap_factory — skipping",
             )
             continue
+        # A swap sorts before an action at the same start, so the tool
+        # is on the flange before the action that needs it ticks.
         entries.append({
-            "kind":      "swap",
-            "name":      f"swap({from_t or '∅'}→{to_t or '∅'})",
-            "start":     float(swap_start),
-            "end":       float(swap_start) + float(dur),
-            "resources": (tool_resource,),
-            "make_leaf": (lambda ft=from_t, tt=to_t:
-                          swap_factory(ft, tt)),
+            "branch":    tool_resource,
+            "order":     (float(swap_start), 0, idx),
+            "make_leaf": (lambda ft=from_t, tt=to_t: swap_factory(ft, tt)),
         })
 
-    # Stable sort by start time. Ties: swap before action (so the
-    # tool is loaded before the action that needs it ticks).
-    entries.sort(key=lambda e: (e["start"], 0 if e["kind"] == "swap" else 1))
-
-    # Phase 1: group by overlap. Entries whose time windows overlap
-    # any current-phase entry go in the same phase.
-    phases: List[List[Dict[str, Any]]] = []
-    current: List[Dict[str, Any]] = []
-    current_end = -1.0
+    by_branch: Dict[str, List[Dict[str, Any]]] = {}
     for e in entries:
-        if current and e["start"] < current_end:
-            current.append(e)
-            current_end = max(current_end, e["end"])
+        by_branch.setdefault(e["branch"], []).append(e)
+
+    branches: List[py_trees.behaviour.Behaviour] = []
+    for r, group in by_branch.items():
+        group.sort(key=lambda e: e["order"])
+        leaves = [leaf for e in group if (leaf := e["make_leaf"]()) is not None]
+        if not leaves:
+            continue
+        if len(leaves) == 1:
+            branches.append(leaves[0])
         else:
-            if current:
-                phases.append(current)
-            current = [e]
-            current_end = e["end"]
-    if current:
-        phases.append(current)
+            branches.append(py_trees.composites.Sequence(
+                name=f"{name}/{r}", memory=True, children=leaves,
+            ))
 
-    # Phase 2: build each phase as resource-grouped Parallel.
-    phase_nodes: List[py_trees.behaviour.Behaviour] = []
-    for idx, phase in enumerate(phases):
-        node = _build_phase_node(phase, name=f"{name}/phase{idx}")
-        if node is not None:
-            phase_nodes.append(node)
-
-    return py_trees.composites.Sequence(
-        name=name, memory=True, children=phase_nodes,
+    if len(branches) == 1:
+        return branches[0]
+    return py_trees.composites.Parallel(
+        name=name,
+        policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
+        children=branches,
     )
 
 
@@ -568,46 +554,3 @@ def _safe_leaf(
             action_name, item_index,
         )
         return None
-
-
-def _build_phase_node(
-    phase: List[Dict[str, Any]],
-    *,
-    name: str,
-) -> Optional[py_trees.behaviour.Behaviour]:
-    """Build one phase: resource-grouped Sequence-of-Sequences inside a Parallel.
-
-    Within a phase, group entries by their **primary resource** (the
-    first one in the entry's resources tuple). Each group becomes a
-    sub-Sequence (or a single leaf if only one entry). The set of
-    sub-trees becomes a Parallel; if there's only one resource group,
-    we skip the Parallel and just emit the Sequence directly.
-    """
-    by_resource: Dict[str, List[Dict[str, Any]]] = {}
-    for e in phase:
-        primary = e["resources"][0] if e["resources"] else "__none__"
-        by_resource.setdefault(primary, []).append(e)
-
-    branches: List[py_trees.behaviour.Behaviour] = []
-    for r, group in by_resource.items():
-        # Sort the group sequentially within the resource.
-        group.sort(key=lambda e: (e["start"], 0 if e["kind"] == "swap" else 1))
-        leaves = [leaf for e in group if (leaf := e["make_leaf"]()) is not None]
-        if not leaves:
-            continue
-        if len(leaves) == 1:
-            branches.append(leaves[0])
-        else:
-            branches.append(py_trees.composites.Sequence(
-                name=f"{name}/{r}", memory=True, children=leaves,
-            ))
-
-    if not branches:
-        return None
-    if len(branches) == 1:
-        return branches[0]
-    return py_trees.composites.Parallel(
-        name=name,
-        policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
-        children=branches,
-    )
