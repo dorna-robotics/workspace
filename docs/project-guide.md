@@ -354,7 +354,7 @@ Rules, and the reasons behind them:
 * **Merge semantics per item.** Writing a field again overwrites it;
   `None` removes it; a value equal to the stored one writes nothing.
   Values are plain JSON — a barcode string, a number, a small list —
-  ≤ 4 KB each, ≤ 2000 items; over-cap values are dropped with one log
+  ≤ 4 KB each, ≤ 10 000 items; over-cap values are dropped with one log
   line per reason, never a crash.
 * **Never blocks.** Memory only from the workflow thread; the server
   drains on the `rt.op` cadence and does the file IO there.

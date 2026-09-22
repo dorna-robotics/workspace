@@ -446,7 +446,11 @@ class Runtime:
         # transition must never see a revision go backwards.
 
     # ── Per-item records (rt.record) ─────────────────────────────────
-    RECORD_MAX_ITEMS = 2000
+    # A bound on memory, not a batch size: a row is a few hundred bytes,
+    # so 10 000 rows is a few MB in the runtime and one snapshot of that
+    # size on a pendant connect. apc runs two full holders — 3570 discs,
+    # one row each — so the cap sits well above the largest known run.
+    RECORD_MAX_ITEMS = 10000
     RECORD_MAX_VALUE_BYTES = 4096
 
     def record(self, item: Any, **fields: Any) -> None:
