@@ -12,10 +12,9 @@ from workspace.components.factory import register
 # Measured off scale_top_amber_40ml.glb (solid cross-sections, least-squares
 # circle fits), z = 0 on the scale pan:
 #    0.0 -  6.0  d 5.18 locating stem (drops into the pan)
-#    6.0 - 11.0  d 83.00 base disc (83.0 x 82.77), 4 x d 4.22 at (+/-12.905, +/-12.905)
-#   11.0 - 71.0  4 posts, d 6.98, on that same +/-12.905 square
-#   71.0 - 83.0  40 x 40 top plate, d 29.50 guide bore with a 45 deg lead-in
-#                opening to d 36.9 over the top 4 mm
+#    6.0 - 11.0  d 83.00 base disc (83.0 x 82.77)
+#   11.0 - 36.0  40 x 40 guide block, d 29.50 bore through to the disc,
+#                45 deg lead-in opening to d 37.5 over the top 4 mm
 # The vial drops through the guide bore and bottoms out on the disc, so
 # `place` is the disc's top face at z = 11 — not the bore.
 #   anchors:  [x, y, z, a, b, c]  (position + orientation, relative to center)
@@ -26,14 +25,14 @@ class ScaleTopAmber40ml:
         anchors={"body": {
             "center": [0, 0, 0, 0, 0, 0],
             "place":  [0, 0, 11, 0, 0, 0],   # disc top face — the vial stands here
-            "top":    [0, 0, 83, 0, 0, 0],   # top plate face
+            "top":    [0, 0, 36, 0, 0, 0],   # guide block top face
             "clb_0":  [0, 0, 6, 0, 0, 0],   # bore axis at the top face
         }},
         collision_box =
             {"body":[
                 {"pose":[0.0, 0.0, 6.0/2, 0.0, 0.0, 0.0], "scale":[5.2, 5.2, 6.0], "padding_enabled": True},          # locating stem
                 {"pose":[0.0, 0.0, 6.0+(5.0/2), 0.0, 0.0, 0.0], "scale":[83.0, 82.768, 5.0], "padding_enabled": True},# base disc
-                {"pose":[0.0, 0.0, 11.0+(72.0/2), 0.0, 0.0, 0.0], "scale":[40.0, 40.0, 72.0], "padding_enabled": True}# posts + top plate
+                {"pose":[0.0, 0.0, 11.0+(25.0/2), 0.0, 0.0, 0.0], "scale":[40.0, 40.0, 25.0], "padding_enabled": True}# guide block
         ]},
     )
 

@@ -53,11 +53,15 @@ point does the same damage as air.
 
 Geometry, measured off ph_meter_apera753.glb (mm, z from the flange
 face):
-      0.0 -  10.0   mount flange       43.0 dia
-     10.0 - 100.0   slotted guard cage 38.5 dia over the ribs
-    100.0 - 120.0   electrode body     44.5 dia at its widest
-    120.0 - 173.5   spear shaft, tapering to the tip at 173.5
-                    (the Φ6x50 measuring tip; junction near its top)
+      0.0 -   9.0   mount flange       43.0 dia
+      9.0 -  93.0   slotted guard cage 38.5 dia over the ribs
+     93.0 -  99.0   neck               36.0 dia
+     99.0 - 113.0   electrode body     66.0 (x) x 40.0 (y) block,
+                    rounded corners
+    113.0 - 119.5   shoulder, tapering down to the spear
+    119.5 - 191.0   spear shaft        12.0 dia, tapering from ~140
+                    to the tip at 191.0 (the Φ6x50 measuring tip;
+                    junction near its top)
 """
 
 from __future__ import annotations
@@ -74,14 +78,16 @@ from workspace.components.ph_meter.ph_meter import PhMeter
 @register("ph_meter_apera753")
 class PhMeterApera753(PhMeter):
     DEFAULTS = dict(
-        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 188.5+2.5, 0, 0, 0], "tip": [0, 0, 188.5+2.5, 0, 0, 0]}},
-        # Two boxes: everything wide (flange + cage + electrode body) in
-        # one block, the slim tapering spear in the other, split at the
-        # z=120 shoulder.
+        anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [0, 0, 191.0, 0, 0, 0], "tip": [0, 0, 191.0, 0, 0, 0]}},
+        # Two boxes: everything wide (flange + cage + 66x40 electrode
+        # body) in one block up to the top of the body at z=113, the
+        # slim tapering spear in the other. The shoulder taper
+        # (113-119.5) rides in the spear box; its outer skirt is
+        # deliberately left out.
         collision_box =
             {"body":[
-                {"pose":[0.0, 0.0, 110.0/2, 0.0, 0.0, 0.0], "scale":[44.5, 44.5, 110.0]},
-                {"pose":[0.0, 0.0, (110.0+188.5+2.5)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 188.5+2.5-110.0]},
+                {"pose":[0.0, 0.0, 113.0/2, 0.0, 0.0, 0.0], "scale":[66.0, 43.0, 113.0]},
+                {"pose":[0.0, 0.0, (113.0+191.0)/2, 0.0, 0.0, 0.0], "scale":[12.0, 12.0, 191.0-113.0]},
         ]},
     )
 
