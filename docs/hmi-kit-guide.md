@@ -71,19 +71,22 @@ declared via `wellCss()`. Identity colors do **not** invert with the
 theme — the chart on the wall doesn't either. Only the empty well is
 themed.
 
-**Typography.** 13px base, line-height 1.5. Card titles and field
-labels are small uppercase letterspaced bold at reduced opacity — the
-screen's voice is quiet labels over legible values. Every number the
-operator compares (volumes, concentrations, counts) is monospace with
-`tabular-nums` (`ui-monospace, Menlo, Consolas`), right-aligned in
-tables (`td.n`).
+**Typography.** The generic form's, token for token: `--text-md`
+body, card titles `--text-lg` bold (the form's `.kw-label`), section
+labels `--text-xs` tracked caps in `--muted` (the form's hint voice).
+A project's screen sits in the same Parameters modal as every other
+project's, and the operator must not be able to tell a kit screen from
+a generic form by its type. Every number the operator compares
+(volumes, concentrations, counts) is monospace with `tabular-nums`
+(`ui-monospace, Menlo, Consolas`), right-aligned in tables (`td.n`).
 
-**Shapes.** Cards: 1px `--border`, 4px radius, 12–14px padding, one
-`h4` title. Inputs and buttons: `--surface2` fill, 3px radius. Wells
-are circles with a 1.5px stroke; a well being *placed* is dashed
-`--accent` and scales up on hover. Capacity bars are 3px tall,
-`--accent` fill, `--red` past the limit. Number inputs have their
-spinners removed.
+**Shapes.** The platform's surfaces, not the kit's own. Cards are the
+form's `.kw-field`: a panel on `--bg`, `--radius-lg`, `--space-5`
+padding, one `h4` title, full width of the modal. Inputs and buttons
+are `.input` and `.btn`: `--radius-sm`, `--bg` / `--surface2` fills,
+`--glow` on focus. Wells are circles with a 1.5px stroke; a well being
+*placed* is dashed `--accent` and scales up on hover. Capacity bars
+are 3px tall,
 
 **Messages.** One idiom for all feedback: a `.msg` box with an
 uppercase tag and a body, in four tones — `.m-bad` (blocking),

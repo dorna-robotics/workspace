@@ -45,27 +45,38 @@ export const KIT_VERSION = 2;
 //
 //   css: kitCss + wellCss({...}) + `/* project extras */`
 export const kitCss = `
-.hmi { font-size:13px; line-height:1.5; }
+/* THE SAME VOCABULARY AS THE GENERIC FORM (admin/style.css .kwargs-form,
+   vendor/base.css .btn / .input): a project's screen sits in the same
+   modal as every other project's parameters and must read as one thing.
+   Every size, radius and colour is the platform's token — no hex, no
+   private scale. Wells and racks are the only shapes the form has not. */
+.hmi { font-size:var(--text-md); line-height:1.5; }
 .hmi * { box-sizing:border-box; }
 
-/* cards — every section of the screen is one */
-.hmi .card { border:1px solid var(--border); border-radius:4px; padding:12px 14px; }
-.hmi .card > h4 { margin:0 0 2px; font-size:10.5px; letter-spacing:.13em;
-  text-transform:uppercase; font-weight:700; opacity:.75; }
-.hmi .stack { display:flex; flex-direction:column; gap:12px; }
-.hmi .inner { display:flex; flex-direction:column; gap:9px; }
-.hmi .cols { display:grid; grid-template-columns:minmax(0,1fr) 224px; gap:14px; align-items:start; }
+/* cards — every section of the screen is one, the generic form's
+   .kw-field: a rounded panel on --bg with a bold title, full width */
+.hmi .card { background:var(--bg); border:none; border-radius:var(--radius-lg);
+  padding:var(--space-5); }
+.hmi .card > h4 { margin:0 0 var(--space-3); font-size:var(--text-lg);
+  font-weight:700; letter-spacing:-0.1px; }
+.hmi .stack { display:flex; flex-direction:column; gap:var(--space-5); }
+.hmi .inner { display:flex; flex-direction:column; gap:var(--space-4); }
+.hmi .cols { display:grid; grid-template-columns:minmax(0,1fr) 224px; gap:var(--space-5); align-items:start; }
 @media (max-width:760px){ .hmi .cols { grid-template-columns:1fr; } }
 
-/* field labels — same voice as the card titles, one step quieter */
-.hmi label.lab { display:block; font-size:10px; letter-spacing:.1em;
-  text-transform:uppercase; opacity:.6; margin-bottom:3px; font-weight:700; }
+/* field labels — tracked caps, muted: the form's hint voice */
+.hmi label.lab { display:block; font-size:var(--text-xs); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:var(--space-2); font-weight:600; }
+/* a hint under a value — the form's .kw-hint */
+.hmi .hint { font-size:var(--text-md); color:var(--muted); line-height:1.5; }
 
-/* inputs */
+/* inputs — the platform's .input */
 .hmi input, .hmi select, .hmi textarea {
-  background:var(--surface2); color:inherit;
-  border:1px solid var(--border); border-radius:3px; padding:5px 7px;
-  font:inherit; font-size:12.5px; width:100%; min-width:0; }
+  background:var(--bg); color:var(--text);
+  border:1px solid var(--border2); border-radius:var(--radius-sm); padding:7px 12px;
+  font:inherit; font-size:var(--text-md); width:100%; min-width:0; outline:none;
+  transition:border-color var(--motion-med) var(--ease), box-shadow var(--motion-med) var(--ease); }
+.hmi input:focus, .hmi select:focus, .hmi textarea:focus { border-color:var(--accent); box-shadow:var(--glow); }
 .hmi input[type=number] { font-variant-numeric:tabular-nums;
   font-family:ui-monospace,Menlo,Consolas,monospace; }
 /* spinners are dead weight on a typed value and cost ~18px each */
@@ -73,27 +84,30 @@ export const kitCss = `
 .hmi input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
 .hmi input[type=number] { -moz-appearance:textfield; appearance:textfield; }
 /* a unit dropdown ("ppm"/"ppb") must always show in full */
-.hmi select.unit { flex:0 0 auto; width:70px; padding-left:6px; padding-right:2px; }
-.hmi .row { display:flex; gap:6px; align-items:center; }
+.hmi select.unit { flex:0 0 auto; width:80px; padding-left:8px; padding-right:4px; }
+.hmi .row { display:flex; gap:var(--space-3); align-items:center; }
 .hmi .row > input[type=number] { flex:1 1 auto; min-width:0; width:auto; }
 
-/* buttons */
-.hmi button { cursor:pointer; font:inherit; font-size:12px; padding:4px 10px;
-  border:1px solid var(--border); border-radius:3px;
-  background:var(--surface2); color:inherit; }
-.hmi button:hover { border-color:currentColor; }
-.hmi button.del { border-color:transparent; background:none; opacity:.6; padding:2px 6px; }
-.hmi button.del:hover { opacity:1; color:var(--red); }
+/* buttons — the platform's .btn */
+.hmi button { cursor:pointer; font:inherit; font-size:var(--text-md); font-weight:500;
+  padding:7px 14px; border:none; border-radius:var(--radius-sm);
+  background:var(--surface2); color:var(--text);
+  transition:background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease); }
+.hmi button:hover { background:var(--surface3); }
+.hmi button:focus-visible { outline:none; box-shadow:var(--glow); }
+.hmi button.del { background:none; color:var(--muted); padding:4px 8px; }
+.hmi button.del:hover { color:var(--red); background:none; }
 .hmi button.pos { font-family:ui-monospace,Menlo,Consolas,monospace; }
-.hmi button.pos.armed { background:var(--accent); border-color:var(--accent); color:#fff; }
+.hmi button.pos.armed { background:var(--accent); color:#fff; }
+.hmi button.pos.armed:hover { background:var(--accent-h); }
 
 /* tables — compact, hairline rows, right-aligned monospace numerics (.n) */
-.hmi table.t { width:100%; border-collapse:collapse; font-size:12px; }
-.hmi table.t th { text-align:left; font-size:9.5px; letter-spacing:.09em;
-  text-transform:uppercase; opacity:.6; padding:3px 6px 3px 0;
-  border-bottom:1px solid var(--border); font-weight:700; }
-.hmi table.t td { padding:4px 6px 4px 0; border-bottom:1px solid var(--border); }
-.hmi table.t td.n { text-align:right; padding-right:10px;
+.hmi table.t { width:100%; border-collapse:collapse; font-size:var(--text-sm); }
+.hmi table.t th { text-align:left; font-size:var(--text-xs); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); padding:var(--space-2) var(--space-2) var(--space-2) 0;
+  border-bottom:1px solid var(--border); font-weight:600; }
+.hmi table.t td { padding:var(--space-2) var(--space-2) var(--space-2) 0; border-bottom:1px solid var(--border); }
+.hmi table.t td.n { text-align:right; padding-right:var(--space-4);
   font-family:ui-monospace,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; }
 /* a select is as wide as its longest OPTION unless capped — cap it */
 .hmi table.t select:not(.unit) { max-width:132px; text-overflow:ellipsis; }
@@ -102,17 +116,18 @@ export const kitCss = `
 .hmi .warnv { color:var(--amber); }
 
 /* messages — the three tones plus neutral. <b> is the tag, <div> the body */
-.hmi .msg { padding:8px 10px; border-radius:3px; font-size:12px; display:flex; gap:8px; }
-.hmi .msg b { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
-  flex-shrink:0; padding-top:1px; }
+.hmi .msg { padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm);
+  font-size:var(--text-md); display:flex; gap:var(--space-3); }
+.hmi .msg b { font-size:var(--text-xs); letter-spacing:.08em; text-transform:uppercase;
+  flex-shrink:0; padding-top:2px; }
 .hmi .msg ul { margin:3px 0 0; padding-left:15px; }
 .hmi .msg li { margin-bottom:2px; }
 .hmi .m-bad  { background:rgba(200,40,35,.12); color:var(--red); }
 .hmi .m-good { background:rgba(30,140,90,.12); color:var(--green); }
 .hmi .m-warn { background:rgba(200,150,20,.14); color:var(--amber); }
 .hmi .m-info { background:rgba(127,127,127,.10); }
-.hmi .flag { display:inline-block; font-size:9px; letter-spacing:.09em;
-  text-transform:uppercase; font-weight:700; padding:1px 4px; border-radius:2px;
+.hmi .flag { display:inline-block; font-size:var(--text-xs); letter-spacing:.06em;
+  text-transform:uppercase; font-weight:600; padding:1px 6px; border-radius:var(--radius-xs);
   background:rgba(200,150,20,.2); color:var(--amber); }
 
 /* wells — circular, hover title carries the detail. Identity colors are
@@ -144,27 +159,28 @@ export const kitCss = `
 /* rack grid — wells in a grid with quiet monospace axis labels (.ax).
    Emit it TURNED: see rackOrder() and HMI_GUIDE.md §4. */
 .hmi .rack { display:grid; gap:3px; align-items:center; justify-items:center; }
-.hmi .rack .ax { font-size:9px; opacity:.6; text-align:center;
+.hmi .rack .ax { font-size:9px; color:var(--muted); text-align:center;
   font-family:ui-monospace,Menlo,Consolas,monospace; }
-.hmi .legend { margin-top:9px; display:flex; flex-direction:column; gap:3px; font-size:10.5px; }
-.hmi .legend div { display:flex; align-items:center; gap:6px; opacity:.85; }
+.hmi .legend { margin-top:var(--space-3); display:flex; flex-direction:column; gap:var(--space-1);
+  font-size:var(--text-sm); color:var(--muted); }
+.hmi .legend div { display:flex; align-items:center; gap:var(--space-2); }
 .hmi .legend i { width:10px; height:10px; border-radius:50%; flex-shrink:0;
   border:1.5px solid var(--c-stroke, #2b3338); }
 
 /* capacity bars — 3px, accent fill, red past the limit */
-.hmi .bars { margin-top:9px; padding-top:8px; border-top:1px solid var(--border);
-  display:flex; flex-direction:column; gap:6px; }
-.hmi .bars .lab { display:flex; justify-content:space-between; font-size:9.5px;
+.hmi .bars { margin-top:var(--space-3); padding-top:var(--space-3); border-top:1px solid var(--border);
+  display:flex; flex-direction:column; gap:var(--space-2); }
+.hmi .bars .lab { display:flex; justify-content:space-between; font-size:var(--text-xs);
   font-family:ui-monospace,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums;
-  opacity:.75; margin-bottom:2px; }
+  color:var(--muted); margin-bottom:2px; }
 .hmi .bar { height:3px; background:rgba(127,127,127,.2); border-radius:2px; overflow:hidden; }
 .hmi .bar span { display:block; height:100%; background:var(--accent); }
 .hmi .bar span.over { background:var(--red); }
 
 /* small monospace figure line (totals, "x / y allocated") */
-.hmi .fig { font-size:11.5px; opacity:.75;
+.hmi .fig { font-size:var(--text-sm); color:var(--muted);
   font-family:ui-monospace,Menlo,Consolas,monospace; }
-.hmi .fig.over { color:var(--red); opacity:1; font-weight:700; }
+.hmi .fig.over { color:var(--red); font-weight:700; }
 
 /* frozen while a run is active — read-only, still legible */
 .hmi[data-frozen="1"] input, .hmi[data-frozen="1"] select,

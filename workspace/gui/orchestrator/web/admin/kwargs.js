@@ -137,6 +137,16 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Launch buttons and schema validation. The generic form below is
   // for everyone else.
   container._setupHost = null;
+  // The banner is the modal's, not the form's: a project screen sits
+  // under the same line as the generic form, so every project's
+  // Parameters reads the same from the top down.
+  if (frozen) {
+    container.insertAdjacentHTML("beforeend",
+      `<div class="kwargs-banner frozen">${_lockSvg} Parameters are locked while the workspace is running</div>`);
+  } else {
+    container.insertAdjacentHTML("beforeend",
+      `<div class="kwargs-banner">${_infoSvg} Set parameters before launch. Saved values persist across runs.</div>`);
+  }
   if (schema && schema._setup) {
     mountProjectSetup(container, schema, values, frozen, wsName);
     return;
@@ -151,15 +161,6 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   if (!keys.length) {
     container.innerHTML = `<div class="kwargs-empty">No parameters defined in launch.yaml</div>`;
     return;
-  }
-
-  // Banner
-  if (frozen) {
-    container.insertAdjacentHTML("beforeend",
-      `<div class="kwargs-banner frozen">${_lockSvg} Parameters are locked while the workspace is running</div>`);
-  } else {
-    container.insertAdjacentHTML("beforeend",
-      `<div class="kwargs-banner">${_infoSvg} Set parameters before launch. Saved values persist across runs.</div>`);
   }
 
   // Build the row scaffold declared by _layout; every field lands in
