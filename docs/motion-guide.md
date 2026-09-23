@@ -421,7 +421,7 @@ run recorded that the next motion merges there. Design + decision log:
   bites on a hop between neighbouring seats: the lift turning into the
   travel is the tightest bend, and it sets the profile for the whole
   40 mm (apc bench: adjacent rack slots certified to accel 138 of 800,
-  "bound by rail accel"). `fuse_min_travel` (recipes.j2, default 100 mm)
+  "bound by rail accel"). `fuse_min_travel` (recipes.j2, default 75 mm)
   is a straight-line tool distance from where the tool stands as the
   verb starts to the verb's target; a hop shorter than it runs exactly
   as `fuse_in: false` would for that one call — the held lift executes

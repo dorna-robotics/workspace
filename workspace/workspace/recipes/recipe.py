@@ -112,7 +112,7 @@ class Recipe:
         # hop runs exactly as fuse_in=False: the held lift executes as
         # its own move, the travel stops at the approach's first point,
         # the approach runs as one chain. 0 disables it.
-        fuse_min_travel=100,
+        fuse_min_travel=75,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
