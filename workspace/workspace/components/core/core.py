@@ -1518,18 +1518,34 @@ class Core:
     # delete core/fold.json — same rule as path.json). Starts are
     # matched fuzzily (PATH_CACHE_START_TOL — encoder flutter) with
     # j5 re-carried by whole turns (the traj-cache rule), so a wound
-    # wrist replays the same fold. The tool's flange pose is matched
-    # the same way (FOLD_CACHE_TOOL_TOL): a held item sits a tenth of
-    # a millimetre differently in the gripper every grab, well under
-    # the grasp's own repeatability, and keyed exactly it made every
-    # fold with a held item a one-off (apc bench, 2026-09-23). A row
-    # replays verbatim — its points were solved for a tool pose within
-    # that tolerance of the live one. Row invariant: p[-1] is the
-    # fold's solved final target — the recipe's book_note/book_check
-    # run on it exactly as they would on the fresh solve.
+    # wrist replays the same fold. Row invariant: p[-1] is the fold's
+    # solved final target — the recipe's book_note/book_check run on it
+    # exactly as they would on the fresh solve.
+    #
+    # DECLARED vs MEASURED — the cache contract, made structural. The
+    # key holds DECLARED inputs only (anchors, offsets, settings: the
+    # same numbers every run). Every input READ from the robot is a
+    # MEASURED value, carries noise, and is never keyed: it travels in
+    # the ``measured`` dict, one entry per name in FOLD_MEASURED, and a
+    # row serves only when each entry matches within its tolerance.
+    # put/get REFUSE a measured dict whose names differ from the table
+    # (ValueError): a new noisy input cannot reach the cache without
+    # being declared here with its tolerance. Why each entry exists:
+    #   tool_pose — a held item sits 0.05-0.15 mm differently in the
+    #     gripper every grab (apc bench, 2026-09-23: 1614 keys split);
+    #   pin — "keep" pins the wrist at its live reading (bna bench,
+    #     2026-09-23: 65.555 vs 65.544, 27 decapper folds re-solved).
+    # The live start pose is the third measured input; it stays the
+    # row's p[0] (the replay snaps onto it) and is matched with the
+    # turn-carry rule above.
 
     FOLD_CACHE_MAX_PER_KEY = 8   # starts per request (prior stations vary)
-    FOLD_CACHE_TOOL_TOL = 0.25   # mm / deg per tool-pose element
+    FOLD_MEASURED = {
+        # name: (kind, tolerance) — "vec": per element, mm / deg;
+        # "angle": one wrist angle or None, compared on the circle, deg.
+        "tool_pose": ("vec", 0.25),
+        "pin":       ("angle", 0.1),
+    }
 
     @staticmethod
     def _fold_row_valid(v):
@@ -1537,7 +1553,8 @@ class Core:
                 and len(v["p"]) >= 2
                 and all(isinstance(q, list) and len(q) == len(v["p"][0])
                         for q in v["p"])
-                and isinstance(v.get("tp"), list) and len(v["tp"]) == 6)
+                and isinstance(v.get("m"), dict)
+                and set(v["m"]) == set(Core.FOLD_MEASURED))
 
     def _fold_cache_init(self):
         """Resolve + load core/fold.json (JSONL). Never raises."""
@@ -1595,10 +1612,38 @@ class Core:
                         <= self.PATH_CACHE_START_TOL
                         for i, (a, b) in enumerate(zip(start, s0))))
 
-    def _fold_tool_match(self, tp, tp0):
-        return (len(tp) == len(tp0)
-                and all(abs(float(a) - float(b)) <= self.FOLD_CACHE_TOOL_TOL
-                        for a, b in zip(tp, tp0)))
+    def _fold_measured_norm(self, measured):
+        """The measured dict as stored: every declared name present and
+        nothing else (ValueError otherwise — see FOLD_MEASURED), vectors
+        rounded, angles wrapped to one turn."""
+        if set(measured) != set(self.FOLD_MEASURED):
+            raise ValueError(f"fold cache: measured inputs {sorted(measured)} != "
+                             f"declared {sorted(self.FOLD_MEASURED)}")
+        out = {}
+        for name, (kind, _tol) in self.FOLD_MEASURED.items():
+            v = measured[name]
+            if kind == "vec":
+                out[name] = [round(float(x), 3) + 0.0 for x in v]
+            else:
+                out[name] = None if v is None else round(self._wrap180(v), 3) + 0.0
+        return out
+
+    def _fold_measured_match(self, m, m0):
+        """Every declared measured input within its tolerance."""
+        for name, (kind, tol) in self.FOLD_MEASURED.items():
+            a, b = m[name], m0[name]
+            if kind == "vec":
+                if len(a) != len(b) or any(abs(x - y) > tol for x, y in zip(a, b)):
+                    return False
+            else:
+                if a is None or b is None:
+                    if not (a is None and b is None):
+                        return False
+                    continue
+                d = abs(a - b) % 360.0
+                if min(d, 360.0 - d) > tol:
+                    return False
+        return True
 
     def _fold_rows_add(self, key, row):
         """Insert a row under its request key: replace the row whose
@@ -1609,7 +1654,7 @@ class Core:
         for i, r in enumerate(rows):
             s0 = r["p"][0]
             if (self._fold_start_match(s, s0, self._fold_start_shift(s, s0))
-                    and self._fold_tool_match(row["tp"], r["tp"])):
+                    and self._fold_measured_match(row["m"], r["m"])):
                 rows[i] = row
                 return
         rows.append(row)
@@ -1617,22 +1662,23 @@ class Core:
             rows.pop(0)
         self._cache_trim(self._fold_cache, self.FOLD_CACHE_MAX_ROWS)
 
-    def fold_cache_get(self, key, start, tool_pose):
-        """Return the stored fold for this request key, live start and
-        tool pose — j5 re-carried onto the live winding, start snapped
-        to ``start`` — or None. Newest rows win. No re-check:
-        validation is a creation-time event (see the block comment)."""
+    def fold_cache_get(self, key, start, measured):
+        """Return the stored fold for this DECLARED request key whose
+        live start and MEASURED inputs match (see FOLD_MEASURED) — j5
+        re-carried onto the live winding, start snapped to ``start`` —
+        or None. Newest rows win. No re-check: validation is a
+        creation-time event (see the block comment)."""
+        m = self._fold_measured_norm(measured)
         if self._fold_cache is None:
             self._fold_cache_init()
         rows = self._fold_cache.get(key)
         if not rows:
             return None
         start = [float(v) for v in start]
-        tp = [float(v) for v in tool_pose]
         for row in reversed(rows):
             try:
                 p = row["p"]
-                if not self._fold_tool_match(tp, row["tp"]):
+                if not self._fold_measured_match(m, row["m"]):
                     continue
                 shift = self._fold_start_shift(start, p[0])
                 if not self._fold_start_match(start, p[0], shift):
@@ -1648,11 +1694,13 @@ class Core:
                 continue
         return None
 
-    def fold_cache_put(self, key, points, tool_pose):
-        """Store a finished fold and append it to disk. Never raises."""
+    def fold_cache_put(self, key, points, measured):
+        """Store a finished fold and append it to disk. Never raises on
+        I/O; a measured dict that does not match FOLD_MEASURED raises
+        ValueError (a programming error, never swallowed)."""
+        m = self._fold_measured_norm(measured)
         try:
-            row = {"p": [[round(float(v), 3) for v in q] for q in points],
-                   "tp": [round(float(v), 3) + 0.0 for v in tool_pose]}
+            row = {"p": [[round(float(v), 3) for v in q] for q in points], "m": m}
             if not self._fold_row_valid(row):
                 return
             if self._fold_cache is None:

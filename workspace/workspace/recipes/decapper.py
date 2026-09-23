@@ -47,7 +47,7 @@ class Decapper(Recipe):
                              **self._keep_wrist(kwargs))
 
     def pick(self, anchor="place", approach=True, exit=True, padding=None, compliant=False,
-             soft_exit=False, **kwargs):
+             soft_exit=True, **kwargs):
         """Pick a tube from the decapper's ``anchor`` (default "place").
         Padding defaults to 30 mm.
 
@@ -56,9 +56,9 @@ class Decapper(Recipe):
         moves the tube on the tool and must fold into the attach offset (the
         base Recipe defaults compliant=True for suction/soft tools).
 
-        ``soft_exit`` defaults False here: the chuck is released when
-        the tube lifts, so the exit needs no staged pull-off — one
-        continuous lift out."""
+        ``soft_exit`` defaults True here: the tube leaves the chuck with
+        a straight pull-off first; only the free lift after it may fuse
+        into the next travel. Pass False for one continuous lift out."""
         return super().pick(anchor=anchor, approach=approach, exit=exit, padding=padding,
                             compliant=compliant, soft_exit=soft_exit,
                             **self._keep_wrist(kwargs))

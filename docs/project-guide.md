@@ -1244,7 +1244,11 @@ exit-coded for scripting.
   onto the live winding on replay; a seam key snaps to a known seam
   within the book's own partner tolerance. Eviction at a cap is
   least-recently-used, so a row every run needs is never the one a
-  full cache drops. Why every clause exists: apc bench, 2026-09-23 —
+  full cache drops. In the fold cache the rule is structural: the key
+  takes DECLARED inputs only, and every value read from the robot goes
+  in a `measured` dict whose names must equal `Core.FOLD_MEASURED`
+  (each with its tolerance) — put/get raise `ValueError` otherwise, so
+  a new noisy input cannot reach the cache without being declared. Why every clause exists: apc bench, 2026-09-23 —
   keyed exactly, one third of the fold rows and a sixth of the IK rows
   were unrepeatable, and every cached certify scanned the whole file.
 - The scene **builder owns `layout.j2`** and regenerates it wholesale.

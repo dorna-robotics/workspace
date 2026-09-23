@@ -867,7 +867,7 @@ class Recipe:
         self.core.tail_deposit(tail)
         return True, None
 
-    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map, tool_pose):
+    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map, measured):
         """Run 1 just RECORDED a seam (its tail ran classic, this fold
         followed). Build the chain run 2 will splice — tail + this fold
         — and put it in the fold cache under the seam-keyed row and in
@@ -882,7 +882,7 @@ class Recipe:
                 return
             _t0 = _time.perf_counter()
             spliced = [list(q) for q in tail_pts] + [list(q) for q in points[1:]]
-            self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced, tool_pose)
+            self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced, measured)
             chain = self.core.chain_sliver_dedup(
                 [[float(v) for v in tail_pts[0]]] + [list(q) for q in spliced[1:]])
             if len(chain) >= 2:
@@ -953,6 +953,14 @@ class Recipe:
             return str(v) if v is not None else None
         return sorted([str(k), _r(v)] for k, v in kwargs.items())
 
+    def _fold_measured(self, tool_pose, j5_override):
+        """The fold request's MEASURED inputs (core.FOLD_MEASURED): the
+        tool's flange pose (a held item's grasp) and the j5 pin ("keep"
+        is the live wrist). Never part of the key — matched within
+        tolerance in the rows."""
+        return {"tool_pose": [float(v) for v in tool_pose],
+                "pin": None if j5_override is None else float(j5_override)}
+
     def _fold_cache_key(self, path, target_solid, target_anchor, tool_dict,
                         j5_override, plan_on, planned, motion_plan_kwargs, blend):
         """Exact identity of a fold REQUEST, as a JSON string — every
@@ -1011,15 +1019,9 @@ class Recipe:
                 str(getattr(tool_solid, "component", "") or "") if tool_solid else "",
                 str(tool_dict.get("anchor") or ""),
                 [_r(v) for v in (tool_dict.get("offset") or [0, 0, 0, 0, 0, 0])],
-                # ONE turn, like ``ref`` below: the pin is resolved against
-                # the live winding (core.unwrap_j5) and the row replays
-                # shifted by whole turns (fold_cache_get), so the absolute
-                # value is not part of the request. Stored raw, the key
-                # never repeated on the infinite wrist: the decapper's
-                # "keep" pin is the live j5, a few turns further every
-                # tube (bench, run 2: 68 of 68 decapper folds fresh, each
-                # key an exact multiple of 360 from run 1's).
-                None if j5_override is None else _r(self.core._wrap180(j5_override)),
+                # Pinned or not — the pin's VALUE is a measured input
+                # (_fold_measured), never keyed.
+                j5_override is not None,
                 bool(plan_on), str(planned),
                 _r(blend),
                 self._fold_plan_sig(motion_plan_kwargs),
@@ -1431,10 +1433,12 @@ class Recipe:
                 j5_override, plan_on, planned, motion_plan_kwargs, blend)
             if fuse_tail is not None and not fuse_tail.get("book_key"):
                 _fold_base = None   # unkeyable seam — classic, uncached
+            _meas = self._fold_measured(tool_pose, j5_override)
             points = None
             cached = False
             pending_io = None
             _rec = None
+            _learned = None   # a held seam that met a new partner (book_learn)
             _t_ik0 = _t_plan = _t_sample = _t_blend = 0.0
             if _fold_base is not None:
                 if fuse_tail is not None:
@@ -1446,7 +1450,7 @@ class Recipe:
                     _start = [float(v) for v in self._cur_joints()]
                     _tk = ""
                 hit = self.core.fold_cache_get(
-                    json.dumps([_fold_base, _tk]), _start, tool_pose)
+                    json.dumps([_fold_base, _tk]), _start, _meas)
                 if hit is not None:
                     # Still the merge-capable site: note + verify from
                     # the row's final target (row invariant: p[-1] IS
@@ -1475,11 +1479,13 @@ class Recipe:
                                   f"{fuse_tail.get('owner')} tail flushes classic")
                             self.core.book_learn(fuse_tail.get("book_key"),
                                                  planned, hit[-1])
+                            _learned = (fuse_tail.get("book_key"),
+                                        [list(q) for q in fuse_tail["points"]])
                             self.core.tail_flush(reason="book mismatch")
                             fuse_tail = None
                             hit = self.core.fold_cache_get(
                                 json.dumps([_fold_base, ""]),
-                                [float(v) for v in self._cur_joints()], tool_pose)
+                                [float(v) for v in self._cur_joints()], _meas)
                 if hit is not None:
                     rt.checkpoint()
                     points = hit
@@ -1542,6 +1548,8 @@ class Recipe:
                           f"tail flushes classic")
                     self.core.book_learn(fuse_tail.get("book_key"),
                                          planned, points[-1])
+                    _learned = (fuse_tail.get("book_key"),
+                                [list(q) for q in fuse_tail["points"]])
                     self.core.tail_flush(reason="book mismatch")
                     fuse_tail = None
                 _spliced = ""
@@ -1578,7 +1586,7 @@ class Recipe:
                         points = blended
                 if _fold_base is not None:
                     self.core.fold_cache_put(
-                        json.dumps([_fold_base, _spliced]), points, tool_pose)
+                        json.dumps([_fold_base, _spliced]), points, _meas)
 
             if cached:
                 print(f"[fold] cache hit ({len(points)} pts)")
@@ -1600,8 +1608,16 @@ class Recipe:
                                   padding=motion_plan_kwargs.get("padding", 10))
             if pending_io:
                 pending_io[1](io_h)
-            if _rec is not None and fuse_tail is None and _fold_base is not None:
-                self._prewarm_fused(_rec, _fold_base, points, planned, vaj_map, tool_pose)
+            # Pre-warm what the NEXT run will splice: a seam recorded
+            # now (book_note) and a held seam that just learned this
+            # partner (book_learn) alike — without the second, every
+            # multi-partner seam (one decap lift, 28 cap slots) folded
+            # fresh on its first fused run (bench, 2026-09-23).
+            if fuse_tail is None and _fold_base is not None:
+                for rec in (_rec, _learned):
+                    if rec is not None:
+                        self._prewarm_fused(rec, _fold_base, points, planned, vaj_map,
+                                            _meas)
             return
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
