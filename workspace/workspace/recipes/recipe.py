@@ -974,7 +974,15 @@ class Recipe:
                 [round(float(v), 3)
                  for v in (tool_dict.get("offset") or [0, 0, 0, 0, 0, 0])],
                 [round(float(v), 3) for v in tool_pose],
-                None if j5_override is None else round(float(j5_override), 3),
+                # ONE turn, like ``ref`` below: the pin is resolved against
+                # the live winding (core.unwrap_j5) and the row replays
+                # shifted by whole turns (fold_cache_get), so the absolute
+                # value is not part of the request. Stored raw, the key
+                # never repeated on the infinite wrist: the decapper's
+                # "keep" pin is the live j5, a few turns further every
+                # tube (bench, run 2: 68 of 68 decapper folds fresh, each
+                # key an exact multiple of 360 from run 1's).
+                None if j5_override is None else round(self.core._wrap180(j5_override), 3),
                 bool(plan_on), str(planned),
                 round(float(blend), 3),
                 self._fold_plan_sig(motion_plan_kwargs),

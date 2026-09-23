@@ -2,6 +2,7 @@
 from copy import deepcopy
 import logging
 from mergedeep import merge
+import hashlib
 import json
 import math
 import os
@@ -1862,6 +1863,7 @@ class Core:
         """Load core/traj.json — same JSONL + scene-stamp machinery as
         ik.json. Never raises."""
         self._chain_cache = {}
+        self._chain_index = {}       # bucket -> keys (see _chain_bucket)
         try:
             d = self._core_dir()
             if d is not None:
@@ -1887,6 +1889,8 @@ class Core:
                 except Exception:
                     continue  # torn tail line
             self._cache_trim(self._chain_cache, self.CACHE_MAX_ROWS)
+            for k in self._chain_cache:
+                self._chain_index_add(k)
             # Compact when overwritten/evicted rows dominate the file —
             # same rule as ik/path/fold, so the FILE is bounded too.
             if lines > 100 and lines > 2 * len(self._chain_cache):
@@ -1900,6 +1904,7 @@ class Core:
                 os.replace(tmp, self._chain_cache_path)
         except Exception:
             self._chain_cache = {}
+            self._chain_index = {}
 
     def _chain_j5_turns(self, pts):
         """The chain's j5 turn carry (from its start point) — keys are
@@ -1929,6 +1934,27 @@ class Core:
             sig,
         ], separators=(",", ":"))
 
+    @staticmethod
+    def _chain_bucket(parts):
+        """The chain-cache BUCKET of a parsed key: everything but the
+        chain's head point. Only the head is ever noisy (it is the live
+        encoder reading; every other knot is a solve or a replayed row,
+        exact to the 3rd decimal), so rows that can fuzzy-match a key
+        all share its bucket. A sha1 so the index costs nothing beyond
+        a short string per row."""
+        return hashlib.sha1(json.dumps(
+            [parts[0], parts[1][1:]] + list(parts[2:]),
+            separators=(",", ":")).encode()).hexdigest()
+
+    def _chain_index_add(self, key, parts=None):
+        """Index a chain-cache key under its bucket (parsed once)."""
+        try:
+            if parts is None:
+                parts = json.loads(key)
+            self._chain_index.setdefault(self._chain_bucket(parts), []).append(key)
+        except Exception:
+            pass
+
     def _chain_fuzzy_get(self, key):
         """Tolerance fallback for the chain cache. The exact JSON key
         misses whenever the chain's FIRST point is live encoders —
@@ -1937,18 +1963,29 @@ class Core:
         lesson, resurfacing here). A row with identical non-point
         context whose points all sit within CHAIN_CACHE_PT_TOL is the
         same physical chain — replay it, and never mint a near-dup
-        row for it."""
+        row for it.
+
+        Looks only at the key's bucket (``_chain_bucket``): a handful
+        of rows, parsed as they are visited. Scanning and parsing the
+        whole cache instead cost ~150 ms per cached certify on the Pi
+        (bench, run 1: the whole of a warm verb's "thinking" time),
+        because on a real robot the head never matches exactly and
+        every cached certify came through here. Keys evicted by the
+        row cap fall out of the index as they are met."""
         try:
             want = json.loads(key)
             wpts = want[1]
-            for k2, row in self._chain_cache.items():
+            keys = self._chain_index.get(self._chain_bucket(want), [])
+            for k2 in list(keys):
+                row = self._chain_cache.get(k2)
+                if row is None:
+                    keys.remove(k2)          # evicted since it was indexed
+                    continue
                 if k2 == key:
                     continue
                 try:
                     have = json.loads(k2)
                 except Exception:
-                    continue
-                if have[0] != want[0] or have[2:] != want[2:]:
                     continue
                 hpts = have[1]
                 if len(hpts) != len(wpts):
@@ -1971,6 +2008,8 @@ class Core:
             }
             if extra:
                 row.update(extra)
+            if key not in self._chain_cache:
+                self._chain_index_add(key)
             self._chain_cache[key] = row
             self._cache_trim(self._chain_cache, self.CACHE_MAX_ROWS)
             if self._chain_cache_path is None:
