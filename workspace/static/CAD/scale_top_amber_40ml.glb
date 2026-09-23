@@ -7,16 +7,16 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 6042
+      "count": 1836
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1985,
+      "count": 605,
       "max": [
         4.150000095367432,
-        8.300000190734863,
-        4.138299465179443
+        3.5999999046325684,
+        4.1383957862854
       ],
       "min": [
         -4.150000095367432,
@@ -27,20 +27,20 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 1985
+      "count": 605
     }
   ],
   "bufferViews": [
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 5839
+      "byteLength": 2175
     }
   ],
   "buffers": [
     {
       "uri": "scale_top_amber_40ml.glb.bin",
-      "byteLength": 5839
+      "byteLength": 2175
     }
   ],
   "materials": [
@@ -65,7 +65,7 @@
   ],
   "meshes": [
     {
-      "name": "scaletop bottomg",
+      "name": "scaletop bottom",
       "primitives": [
         {
           "attributes": {
@@ -90,7 +90,7 @@
   ],
   "nodes": [
     {
-      "name": "scaletop bottomg",
+      "name": "scaletop bottom",
       "rotation": [
         0.7071068286895752,
         0,

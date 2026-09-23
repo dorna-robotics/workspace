@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4995
+      "byteLength": 4972
     }
   ],
   "buffers": [
     {
       "uri": "probe_rod.glb.bin",
-      "byteLength": 4995
+      "byteLength": 4972
     }
   ],
   "materials": [

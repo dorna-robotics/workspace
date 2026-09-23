@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 3393
+      "byteLength": 3350
     }
   ],
   "buffers": [
     {
       "uri": "adapter_liquid_waste.glb.bin",
-      "byteLength": 3393
+      "byteLength": 3350
     }
   ],
   "materials": [

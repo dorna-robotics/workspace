@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 1100
+      "byteLength": 1084
     }
   ],
   "buffers": [
     {
       "uri": "cap_falcon_15ml.glb.bin",
-      "byteLength": 1100
+      "byteLength": 1084
     }
   ],
   "materials": [

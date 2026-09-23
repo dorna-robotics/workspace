@@ -7,19 +7,19 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 49920
+      "count": 10716
     },
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17010,
+      "count": 3590,
       "max": [
-        2.150430202484131,
-        17.850000381469727,
-        2.150430202484131
+        3.299999952316284,
+        18.100000381469727,
+        2.1500000953674316
       ],
       "min": [
-        -2.1500000953674316,
+        -3.299999952316284,
         0,
         -2.1500000953674316
       ]
@@ -27,7 +27,7 @@
     {
       "type": "VEC3",
       "componentType": 5126,
-      "count": 17010
+      "count": 3590
     },
     {
       "type": "SCALAR",
@@ -39,13 +39,13 @@
       "componentType": 5126,
       "count": 144,
       "max": [
-        0.7999265789985657,
-        9.649999618530273,
-        0.7999265789985657
+        0.800000011920929,
+        9.899999618530273,
+        0.800000011920929
       ],
       "min": [
         -0.800000011920929,
-        4.25,
+        4.5,
         -0.800000011920929
       ]
     },
@@ -65,12 +65,12 @@
       "count": 48,
       "max": [
         0.4000000059604645,
-        4.25,
+        4.5,
         0.4000000059604645
       ],
       "min": [
         -0.4000000059604645,
-        3.450000047683716,
+        3.700000047683716,
         -0.4000000059604645
       ]
     },
@@ -89,13 +89,13 @@
       "componentType": 5126,
       "count": 72,
       "max": [
-        0.30001217126846313,
-        18.850000381469727,
-        0.30001217126846313
+        0.30000001192092896,
+        19.100000381469727,
+        0.30000001192092896
       ],
       "min": [
         -0.30000001192092896,
-        17.850000381469727,
+        18.100000381469727,
         -0.30000001192092896
       ]
     },
@@ -109,28 +109,28 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 51187
+      "byteLength": 9437
     },
     {
       "buffer": 0,
-      "byteOffset": 51187,
-      "byteLength": 677
+      "byteOffset": 9437,
+      "byteLength": 692
     },
     {
       "buffer": 0,
-      "byteOffset": 51864,
-      "byteLength": 311
+      "byteOffset": 10129,
+      "byteLength": 307
     },
     {
       "buffer": 0,
-      "byteOffset": 52175,
+      "byteOffset": 10436,
       "byteLength": 393
     }
   ],
   "buffers": [
     {
       "uri": "ph_meter_apera753.glb.bin",
-      "byteLength": 52568
+      "byteLength": 10829
     }
   ],
   "materials": [
@@ -153,7 +153,7 @@
       }
     },
     {
-      "name": "Paint_-_Enamel_Glossy_(White)",
+      "name": "Paint_-_Enamel_Glossy_(White).001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -171,7 +171,7 @@
       }
     },
     {
-      "name": "Powder_Coat_(Black)",
+      "name": "Powder_Coat_(Black).001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -189,7 +189,7 @@
       }
     },
     {
-      "name": "Aluminum_-_Anodized_Glossy_(Blue)",
+      "name": "Aluminum_-_Anodized_Glossy_(Blue).001",
       "doubleSided": true,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
@@ -209,7 +209,7 @@
   ],
   "meshes": [
     {
-      "name": "ph meter origin updatw",
+      "name": "ph meter origin.001",
       "primitives": [
         {
           "attributes": {
@@ -288,7 +288,7 @@
   ],
   "nodes": [
     {
-      "name": "ph meter origin updatw",
+      "name": "ph meter origin.001",
       "rotation": [
         0.7071068286895752,
         0,

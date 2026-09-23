@@ -34,13 +34,13 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 4897
+      "byteLength": 4865
     }
   ],
   "buffers": [
     {
       "uri": "rack_amber_40ml_2x4.glb.bin",
-      "byteLength": 4897
+      "byteLength": 4865
     }
   ],
   "materials": [
