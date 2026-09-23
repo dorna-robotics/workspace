@@ -2338,7 +2338,7 @@ class Recipe:
         tool_tcp_z_offset=0,
         tool_tip_z_offset=0,
         soft_approach=True,
-        soft_exit=False,
+        soft_exit=True,
         compliant=True,
         **kwargs,
     ):
