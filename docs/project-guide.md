@@ -1235,6 +1235,18 @@ exit-coded for scripting.
   discarded — scene changed since it was built`). The old "delete
   path.json after geometry changes" ritual is obsolete; legacy
   unstamped files count as stale once.
+- **The cache contract** (ik, path, traj, fold, the motion book), one
+  rule for all of them: a value that carries measurement noise is never
+  part of a key. The live start pose, the held item's flange pose and
+  the chain's head point are matched within a tolerance against the
+  rows stored under the key; every float in a key is rounded AND
+  normalised (`-0.0` is `0.0`); j5 is keyed to one turn and re-carried
+  onto the live winding on replay; a seam key snaps to a known seam
+  within the book's own partner tolerance. Eviction at a cap is
+  least-recently-used, so a row every run needs is never the one a
+  full cache drops. Why every clause exists: apc bench, 2026-09-23 —
+  keyed exactly, one third of the fold rows and a sixth of the IK rows
+  were unrepeatable, and every cached certify scanned the whole file.
 - The scene **builder owns `layout.j2`** and regenerates it wholesale.
   Hand-maintained scene content — consumable stock like caps in a
   feeder — lives in **`stock.j2`**, listed after `layout.j2` in

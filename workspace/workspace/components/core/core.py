@@ -978,16 +978,45 @@ class Core:
     @staticmethod
     def _ik_row_valid(v):
         return (isinstance(v, dict) and isinstance(v.get("arm"), list)
-                and len(v["arm"]) == 6)
+                and len(v["arm"]) == 6
+                and isinstance(v.get("tw"), list) and len(v["tw"]) == 6)
+
+    def _ik_tool_match(self, tw, tw0):
+        return (len(tw) == len(tw0)
+                and all(abs(float(a) - float(b)) <= self.IK_CACHE_TOOL_TOL
+                        for a, b in zip(tw, tw0)))
+
+    def _ik_rows_add(self, key, row):
+        """Insert a solve under its request key: replace the row whose
+        tool pose it matches, else append. Bounded per key."""
+        rows = self._ik_cache.setdefault(key, [])
+        for i, r in enumerate(rows):
+            if self._ik_tool_match(row["tw"], r["tw"]):
+                rows[i] = row
+                return
+        rows.append(row)
+        if len(rows) > self.IK_CACHE_MAX_PER_KEY:
+            rows.pop(0)
 
     @staticmethod
     def _cache_trim(d, cap):
         """Drop the oldest entries (dict insertion order) past ``cap``.
         Every core cache is bounded on purpose — an evicted row only
         ever costs a re-solve on the next recording run, never a wrong
-        result."""
+        result. A HIT moves its key to the end (``_cache_touch``), so
+        the order is least-recently-USED: a row every run needs is
+        never the one a full cache drops."""
         while len(d) > cap:
             d.pop(next(iter(d)))
+
+    @staticmethod
+    def _cache_touch(d, key):
+        """Mark ``key`` as just used (moved to the end of the eviction
+        order). Never raises."""
+        try:
+            d[key] = d.pop(key)
+        except KeyError:
+            pass
 
     def _ik_cache_init(self):
         """Resolve the cache path and load it. Never raises.
@@ -1026,11 +1055,11 @@ class Core:
             if isinstance(whole, dict):
                 if set(whole.keys()) == {"k", "v"}:
                     if self._ik_row_valid(whole.get("v")):
-                        self._ik_cache[whole["k"]] = whole["v"]
+                        self._ik_rows_add(whole["k"], whole["v"])
                     return
-                self._ik_cache = {
-                    k: v for k, v in whole.items() if self._ik_row_valid(v)
-                }
+                for k, v in whole.items():          # legacy whole-dict file
+                    if self._ik_row_valid(v):
+                        self._ik_rows_add(k, v)
                 self._ik_cache_rewrite()  # migrate legacy → JSONL
                 return
             lines = 0
@@ -1041,13 +1070,17 @@ class Core:
                 lines += 1
                 try:
                     rec = json.loads(line)
+                    # A row without its tool pose predates the tolerance
+                    # match (keys then carried the pose): dropped, solved
+                    # once more, stored in the current shape.
                     if self._ik_row_valid(rec.get("v")):
-                        self._ik_cache[rec["k"]] = rec["v"]
+                        self._ik_rows_add(rec["k"], rec["v"])
                 except Exception:
                     continue  # torn/corrupt line — drop it
             self._cache_trim(self._ik_cache, self.CACHE_MAX_ROWS)
+            live = sum(len(rows) for rows in self._ik_cache.values())
             # Compact when overwritten/dropped/evicted rows dominate.
-            if lines > 100 and lines > 2 * len(self._ik_cache):
+            if lines > 100 and lines > 2 * live:
                 self._ik_cache_rewrite()
         except Exception:
             self._ik_cache = {}  # unreadable file → start empty
@@ -1060,7 +1093,7 @@ class Core:
             stamp = (json.dumps({"__scene__": fp}) + "\n") if fp else ""
             tmp.write_text(stamp + "".join(
                 json.dumps({"k": k, "v": v}, separators=(",", ":")) + "\n"
-                for k, v in self._ik_cache.items()
+                for k, rows in self._ik_cache.items() for v in rows
             ))
             os.replace(tmp, self._ik_cache_path)
         except Exception:
@@ -1115,11 +1148,15 @@ class Core:
     def _ik_key(self, target_solid, target_anchor, target_offset, tool_solid,
                 tool_anchor, tool_offset, base_distance, rail_step, rail_span,
                 ref_joints, left_approach):
-        """Rounded numeric key for one solve, or None (= don't cache).
-        Only ref_joints-seeded solves are cacheable — without a fixed
-        reference the answer depends on live joints."""
+        """``(key, tool_pose)`` for one solve, or ``(None, None)`` (=
+        don't cache). Only ref_joints-seeded solves are cacheable —
+        without a fixed reference the answer depends on live joints.
+        The tool's flange pose is NOT in the key: it is matched within
+        IK_CACHE_TOOL_TOL against the rows stored under the key
+        (_ik_cache_get), because a held item's pose carries the
+        grasp's jitter and keyed exactly it never repeated."""
         if ref_joints is None:
-            return None
+            return None, None
         try:
             obj_w = target_solid.pose(anchor=target_anchor, offset=target_offset)
             tool_w = [0, 0, 0, 0, 0, 0]
@@ -1134,39 +1171,45 @@ class Core:
                 return round(float(v), 3) + 0.0
             parts = (
                 [r3(v) for v in obj_w]
-                + [r3(v) for v in tool_w]
                 + [r3(v) for v in base_w]
                 + [r3(v) for v in list(ref_joints)[:6]]
                 + [None if base_distance is None else r3(base_distance),
                    r3(rail_step), int(rail_span),
                    bool(left_approach), bool(self.has_rail)]
             )
-            return json.dumps(parts, separators=(",", ":"))
+            return json.dumps(parts, separators=(",", ":")), [r3(v) for v in tool_w]
         except Exception:
-            return None
+            return None, None
 
-    def _ik_cache_get(self, key, cur, aux):
+    def _ik_cache_get(self, key, tw, cur, aux):
         """Return a full joint list for a validated hit, else None.
-        The cached row stores arm (j0..j5) + rail only; all passthrough
-        joints come from the LIVE ``cur`` — identical to what a fresh
-        solve does. Validation re-checks collision against the live
-        scene (stricter than the solver's own last-pushed-scene check)."""
-        entry = self._ik_cache.get(key) if self._ik_cache else None
-        if not entry:
+        The rows under ``key`` differ by tool pose; the one within
+        IK_CACHE_TOOL_TOL of ``tw`` serves (newest first). The row
+        stores arm (j0..j5) + rail only; all passthrough joints come
+        from the LIVE ``cur`` — identical to what a fresh solve does.
+        Validation re-checks collision against the live scene (stricter
+        than the solver's own last-pushed-scene check)."""
+        rows = self._ik_cache.get(key) if self._ik_cache else None
+        if not rows:
             return None
-        try:
-            J = list(cur)
-            for i in range(6):
-                J[i] = float(entry["arm"][i])
-            if entry.get("rail") is not None:
-                J[aux] = float(entry["rail"])
-            if len(self.check_collision([float(v) for v in J[:6]])) > 0:
-                return None  # world changed — fall through to a full solve
-            return J
-        except Exception:
-            return None
+        for entry in reversed(rows):
+            try:
+                if not self._ik_tool_match(tw, entry["tw"]):
+                    continue
+                J = list(cur)
+                for i in range(6):
+                    J[i] = float(entry["arm"][i])
+                if entry.get("rail") is not None:
+                    J[aux] = float(entry["rail"])
+                if len(self.check_collision([float(v) for v in J[:6]])) > 0:
+                    return None  # world changed — fall through to a full solve
+                self._cache_touch(self._ik_cache, key)
+                return J
+            except Exception:
+                return None
+        return None
 
-    def _ik_cache_put(self, key, J, aux, with_rail):
+    def _ik_cache_put(self, key, tw, J, aux, with_rail):
         """Store a solved row and append it to disk. Never raises.
 
         One JSONL line per solve — constant cost regardless of cache
@@ -1177,8 +1220,9 @@ class Core:
             row = {
                 "arm": [float(J[i]) for i in range(6)],
                 "rail": float(J[aux]) if with_rail else None,
+                "tw": [float(v) for v in tw],
             }
-            self._ik_cache[key] = row
+            self._ik_rows_add(key, row)
             self._cache_trim(self._ik_cache, self.CACHE_MAX_ROWS)
             if self._ik_cache_path is None:
                 return  # no resolvable project folder — in-memory only
@@ -1253,6 +1297,14 @@ class Core:
     # the tight cap: a fold row is a full waypoint chain (~2 KB), and a
     # fold miss rebuilds in ~50 ms — eviction is nearly free.
     CACHE_MAX_ROWS = 30000       # ik / traj / book (light rows)
+    IK_CACHE_TOOL_TOL = 0.25     # mm / deg per tool-pose element: a held
+                                 # item's flange pose carries the grasp's
+                                 # jitter (apc bench: 16% of ik rows were
+                                 # duplicates 0.05-0.15 mm apart)
+    IK_CACHE_MAX_PER_KEY = 8     # tool poses per solve request
+    BOOK_KEY_TOL = 0.05          # deg: two seams whose solved targets sit
+                                 # this close are one seam (book_check's
+                                 # own partner tolerance)
     FOLD_CACHE_MAX_ROWS = 10000  # fold (fat rows)
                                  # caches (keys, oldest evicted first) —
                                  # NOTHING in core/ grows without limit;
@@ -1418,6 +1470,9 @@ class Core:
                 p = [[float(v) for v in w] for w in row["p"]]
                 p[0] = [float(v) for v in start]
                 p[-1] = [float(v) for v in goal]
+                # Least-recently-used: the hit becomes the newest row.
+                self._path_cache.remove(row)
+                self._path_cache.append(row)
                 return p
             except Exception:
                 continue
@@ -1463,18 +1518,26 @@ class Core:
     # delete core/fold.json — same rule as path.json). Starts are
     # matched fuzzily (PATH_CACHE_START_TOL — encoder flutter) with
     # j5 re-carried by whole turns (the traj-cache rule), so a wound
-    # wrist replays the same fold. Row invariant: p[-1] is the fold's
-    # solved final target — the recipe's book_note/book_check run on
-    # it exactly as they would on the fresh solve.
+    # wrist replays the same fold. The tool's flange pose is matched
+    # the same way (FOLD_CACHE_TOOL_TOL): a held item sits a tenth of
+    # a millimetre differently in the gripper every grab, well under
+    # the grasp's own repeatability, and keyed exactly it made every
+    # fold with a held item a one-off (apc bench, 2026-09-23). A row
+    # replays verbatim — its points were solved for a tool pose within
+    # that tolerance of the live one. Row invariant: p[-1] is the
+    # fold's solved final target — the recipe's book_note/book_check
+    # run on it exactly as they would on the fresh solve.
 
     FOLD_CACHE_MAX_PER_KEY = 8   # starts per request (prior stations vary)
+    FOLD_CACHE_TOOL_TOL = 0.25   # mm / deg per tool-pose element
 
     @staticmethod
     def _fold_row_valid(v):
         return (isinstance(v, dict) and isinstance(v.get("p"), list)
                 and len(v["p"]) >= 2
                 and all(isinstance(q, list) and len(q) == len(v["p"][0])
-                        for q in v["p"]))
+                        for q in v["p"])
+                and isinstance(v.get("tp"), list) and len(v["tp"]) == 6)
 
     def _fold_cache_init(self):
         """Resolve + load core/fold.json (JSONL). Never raises."""
@@ -1532,15 +1595,21 @@ class Core:
                         <= self.PATH_CACHE_START_TOL
                         for i, (a, b) in enumerate(zip(start, s0))))
 
+    def _fold_tool_match(self, tp, tp0):
+        return (len(tp) == len(tp0)
+                and all(abs(float(a) - float(b)) <= self.FOLD_CACHE_TOOL_TOL
+                        for a, b in zip(tp, tp0)))
+
     def _fold_rows_add(self, key, row):
         """Insert a row under its request key: replace the row whose
-        start it matches (same turn-shifted tolerance the lookup
+        start AND tool pose it matches (the same tolerances the lookup
         uses), else append. Bounded per key — oldest drops first."""
         rows = self._fold_cache.setdefault(key, [])
         s = row["p"][0]
         for i, r in enumerate(rows):
             s0 = r["p"][0]
-            if self._fold_start_match(s, s0, self._fold_start_shift(s, s0)):
+            if (self._fold_start_match(s, s0, self._fold_start_shift(s, s0))
+                    and self._fold_tool_match(row["tp"], r["tp"])):
                 rows[i] = row
                 return
         rows.append(row)
@@ -1548,20 +1617,23 @@ class Core:
             rows.pop(0)
         self._cache_trim(self._fold_cache, self.FOLD_CACHE_MAX_ROWS)
 
-    def fold_cache_get(self, key, start):
-        """Return the stored fold for this request key and live start —
-        j5 re-carried onto the live winding, start snapped to ``start``
-        — or None. Newest rows win. No re-check: validation is a
-        creation-time event (see the block comment)."""
+    def fold_cache_get(self, key, start, tool_pose):
+        """Return the stored fold for this request key, live start and
+        tool pose — j5 re-carried onto the live winding, start snapped
+        to ``start`` — or None. Newest rows win. No re-check:
+        validation is a creation-time event (see the block comment)."""
         if self._fold_cache is None:
             self._fold_cache_init()
         rows = self._fold_cache.get(key)
         if not rows:
             return None
         start = [float(v) for v in start]
+        tp = [float(v) for v in tool_pose]
         for row in reversed(rows):
             try:
                 p = row["p"]
+                if not self._fold_tool_match(tp, row["tp"]):
+                    continue
                 shift = self._fold_start_shift(start, p[0])
                 if not self._fold_start_match(start, p[0], shift):
                     continue
@@ -1570,15 +1642,17 @@ class Core:
                     for q in out:
                         q[5] += shift
                 out[0] = list(start)
+                self._cache_touch(self._fold_cache, key)
                 return out
             except Exception:
                 continue
         return None
 
-    def fold_cache_put(self, key, points):
+    def fold_cache_put(self, key, points, tool_pose):
         """Store a finished fold and append it to disk. Never raises."""
         try:
-            row = {"p": [[round(float(v), 3) for v in q] for q in points]}
+            row = {"p": [[round(float(v), 3) for v in q] for q in points],
+                   "tp": [round(float(v), 3) + 0.0 for v in tool_pose]}
             if not self._fold_row_valid(row):
                 return
             if self._fold_cache is None:
@@ -1919,20 +1993,31 @@ class Core:
         return 0
 
     def _chain_key(self, pts, vel, accel, jerk, corner_cap, padding, sig, turns, label):
+        # + 0.0 everywhere: -0.0 and 0.0 are one number and two JSON
+        # strings; an unnormalised key (and its bucket) split on it.
         kp = []
         for q in pts:
-            q = [round(float(v), 3) for v in q]
+            q = [round(float(v), 3) + 0.0 for v in q]
             if turns and len(q) > 5:
-                q[5] = round(q[5] - 360.0 * turns, 3)
+                q[5] = round(q[5] - 360.0 * turns, 3) + 0.0
             kp.append(q)
         return json.dumps([
             label,   # the chain's point SPACE (cjmove: joints, clmove: xyzj)
             kp,
-            round(float(vel), 3), round(float(accel), 3), round(float(jerk), 3),
-            round(float(corner_cap), 3),
-            -1 if padding is None else round(float(padding), 3),
+            round(float(vel), 3) + 0.0, round(float(accel), 3) + 0.0, round(float(jerk), 3) + 0.0,
+            round(float(corner_cap), 3) + 0.0,
+            -1 if padding is None else round(float(padding), 3) + 0.0,
             sig,
         ], separators=(",", ":"))
+
+    def _chain_get(self, key):
+        """Exact row, else the bucket's fuzzy match; a hit is touched
+        (least-recently-used eviction)."""
+        row = self._chain_cache.get(key)
+        if row is not None:
+            self._cache_touch(self._chain_cache, key)
+            return row
+        return self._chain_fuzzy_get(key)
 
     @staticmethod
     def _chain_bucket(parts):
@@ -1993,6 +2078,7 @@ class Core:
                 if all(len(a) == len(b)
                        and max(abs(x - y) for x, y in zip(a, b)) <= self.CHAIN_CACHE_PT_TOL
                        for a, b in zip(wpts, hpts)):
+                    self._cache_touch(self._chain_cache, k2)
                     return row
         except Exception:
             pass
@@ -2091,11 +2177,44 @@ class Core:
         never did). Callers pass targets only. None on any trouble
         (an unkeyable seam is just classic)."""
         try:
-            return json.dumps([str(owner),
-                               [self._book_canon_pt(q) for q in pts]],
-                              separators=(",", ":"))
+            canon = [self._book_canon_pt(q) for q in pts]
+            key = json.dumps([str(owner), canon], separators=(",", ":"))
+            if self._book is None:
+                self._book_init()
+            if key in self._book:
+                return key
+            # Snap to a KNOWN seam within BOOK_KEY_TOL: the solved
+            # targets carry the grasp's jitter at the hundredth of a
+            # degree, and a key rounded to 0.01 flips on it (apc bench:
+            # 14 of 400 seams were such twins). The tolerance is
+            # book_check's own, so a seam this close IS the same seam.
+            for k2, (o2, pts2) in self._book_parsed().items():
+                if o2 != str(owner) or len(pts2) != len(canon):
+                    continue
+                if all(len(a) == len(b) and all(
+                        (min(abs(x - y), 360.0 - abs(x - y)) if i == 5 else abs(x - y))
+                        <= self.BOOK_KEY_TOL
+                        for i, (x, y) in enumerate(zip(a, b)))
+                       for a, b in zip(canon, pts2)):
+                    return k2
+            return key
         except Exception:
             return None
+
+    def _book_parsed(self):
+        """The book's keys parsed once: {key: (owner, points)}. Rebuilt
+        when the key set changed (a record, a drop, a reload)."""
+        cache = getattr(self, "_book_parsed_cache", None)
+        if cache is None or set(cache) != set(self._book):
+            cache = {}
+            for k in self._book:
+                try:
+                    o, pts = json.loads(k)
+                    cache[k] = (str(o), [[float(v) for v in q] for q in pts])
+                except Exception:
+                    continue
+            self._book_parsed_cache = cache
+        return cache
 
     def book_sig(self, primitive, end_pt):
         """The next motion's identity: its primitive and its SOLVED
@@ -2118,6 +2237,8 @@ class Core:
         if self._book is None:
             self._book_init()
         sigs = self._book.get(key) if key else None
+        if sigs:
+            self._cache_touch(self._book, key)
         return sigs or None
 
     def book_reload(self):
@@ -2372,12 +2493,12 @@ class Core:
         # on live joints.
         if self._ik_cache is None:
             self._ik_cache_init()
-        _ck = self._ik_key(target_solid, target_anchor, target_offset,
-                           tool_solid, tool_anchor, tool_offset,
-                           base_distance, rail_step, rail_span,
-                           ref_joints, left_approach)
+        _ck, _tw = self._ik_key(target_solid, target_anchor, target_offset,
+                                tool_solid, tool_anchor, tool_offset,
+                                base_distance, rail_step, rail_span,
+                                ref_joints, left_approach)
         if _ck is not None:
-            _hit = self._ik_cache_get(_ck, cur, aux)
+            _hit = self._ik_cache_get(_ck, _tw, cur, aux)
             if _hit is not None:
                 return (self._ik_finish(_hit, cur), 2)
 
@@ -2457,7 +2578,7 @@ class Core:
                     best = (jd, joint_sol)
             if best:
                 if _ck is not None:
-                    self._ik_cache_put(_ck, best[1], aux, with_rail=False)
+                    self._ik_cache_put(_ck, _tw, best[1], aux, with_rail=False)
                 return (self._ik_finish(best[1], cur), 2)
 
             else:
@@ -2610,7 +2731,7 @@ class Core:
 
             if best:
                 if _ck is not None:
-                    self._ik_cache_put(_ck, best[1], aux, with_rail=True)
+                    self._ik_cache_put(_ck, _tw, best[1], aux, with_rail=True)
                 return (self._ik_finish(best[1], cur), 2)
 
             else:
@@ -2760,9 +2881,7 @@ class Core:
                 _turns = self._chain_j5_turns(points)
                 _ck = self._chain_key(points, radius, float(from_idx), step,
                                       0.0, padding, _sig, _turns, "blend")
-                _hit = self._chain_cache.get(_ck)
-                if _hit is None:
-                    _hit = self._chain_fuzzy_get(_ck)
+                _hit = self._chain_get(_ck)
                 if _hit is not None:
                     try:
                         out = [[float(v) for v in q] for q in _hit["p"]]
@@ -2910,9 +3029,7 @@ class Core:
                                              for row in caps]
             _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, _sig,
                                   _turns, "smove")
-            _hit = self._chain_cache.get(_ck)
-            if _hit is None:
-                _hit = self._chain_fuzzy_get(_ck)
+            _hit = self._chain_get(_ck)
             # A row without the binding joint predates the diagnostic:
             # certify once more so every motion can say what limits it.
             if _hit is not None and _hit.get("bound"):
@@ -3088,9 +3205,7 @@ class Core:
                 _sig = None
         _turns = self._chain_j5_turns(pts)
         _ck = self._chain_key(pts, vel, accel, jerk, corner_cap, padding, _sig, _turns, label)
-        _hit = self._chain_cache.get(_ck)
-        if _hit is None:
-            _hit = self._chain_fuzzy_get(_ck)
+        _hit = self._chain_get(_ck)
         if _hit is not None:
             try:
                 pts_h = [[float(v) for v in q] for q in _hit["p"]]

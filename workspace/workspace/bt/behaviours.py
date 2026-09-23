@@ -216,6 +216,11 @@ class RecipeAction(WorkspaceBehaviour):
             except BaseException as ex:  # noqa: BLE001 — log + carry forward
                 self._exc = ex
                 self._result = False
+            finally:
+                # Wake the engine now, not at its next tick (BTEngine.run).
+                wake = getattr(getattr(self.ctx, "runtime", None), "_bt_wake", None)
+                if wake is not None:
+                    wake.set()
 
         self._worker = threading.Thread(
             target=_target,

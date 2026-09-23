@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
 import json
+import math
 import threading
 import time as _time
 from mergedeep import merge
@@ -102,6 +103,16 @@ class Recipe:
         # approach ends in tight bends (the tool rack) throttles the
         # entire fused travel to the speed of its last corner.
         fuse_in=True,
+        # The SHORT HOP: a fused chain runs on ONE certified profile,
+        # and on a hop between neighbouring seats the tightest bend —
+        # the lift turning into the travel — sets that profile for the
+        # whole 40 mm (apc bench: adjacent rack slots certified to
+        # accel 138 of 800, "bound by rail accel"). Below this
+        # straight-line tool distance (mm, start pose to target) the
+        # hop runs exactly as fuse_in=False: the held lift executes as
+        # its own move, the travel stops at the approach's first point,
+        # the approach runs as one chain. 0 disables it.
+        fuse_min_travel=100,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
@@ -193,7 +204,12 @@ class Recipe:
         self.io_overlap = prm["io_overlap"]
         self.fuse = prm["fuse"]
         self.fuse_in = prm["fuse_in"]
+        self.fuse_min_travel = float(prm["fuse_min_travel"])
         self.speed_factor = prm["speed_factor"]
+        # The profile multipliers [kv, ka, kj] the speed factor stands
+        # for: a number s is the physical time-scale [s, s², s³]; a
+        # 3-vector is taken as written, one multiplier per term.
+        self.vaj_scale = self._vaj_scale(self.speed_factor)
         self.corner = prm["corner"]
         self.jmove_vaj = prm["jmove_vaj"]
         self.lmove_vaj = prm["lmove_vaj"]
@@ -851,7 +867,7 @@ class Recipe:
         self.core.tail_deposit(tail)
         return True, None
 
-    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map):
+    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map, tool_pose):
         """Run 1 just RECORDED a seam (its tail ran classic, this fold
         followed). Build the chain run 2 will splice — tail + this fold
         — and put it in the fold cache under the seam-keyed row and in
@@ -866,15 +882,12 @@ class Recipe:
                 return
             _t0 = _time.perf_counter()
             spliced = [list(q) for q in tail_pts] + [list(q) for q in points[1:]]
-            self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced)
+            self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced, tool_pose)
             chain = self.core.chain_sliver_dedup(
                 [[float(v) for v in tail_pts[0]]] + [list(q) for q in spliced[1:]])
             if len(chain) >= 2:
                 vel, accel, jerk = self.scaled_vaj(vaj_map["jmove"])
-                s = self.speed_factor
-                caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
-                        for r in self.max_vaj_joint]
-                self.core.smove_certify(chain, vel, accel, jerk, joint_caps=caps)
+                self.core.smove_certify(chain, vel, accel, jerk, joint_caps=self.scaled_caps())
             ms = round((_time.perf_counter() - _t0) * 1000)
             print(f"[fusion] pre-warmed the fused chain for the next run ({ms} ms)")
             self.core.fusion_journal("prewarm", owner=type(self).__name__,
@@ -906,6 +919,26 @@ class Recipe:
 
     # ── fold cache key (core/fold.json — see core's block comment) ───
 
+    def _hop_mm(self, target_solid, target_anchor, path, tool_dict):
+        """Straight-line distance (mm) from where the TOOL stands as the
+        verb starts to the verb's final target — the hop
+        ``fuse_min_travel`` judges. Both ends in the world frame from
+        the scene: the tool's anchor now (the held tail's frontier when
+        one is held; the live pose otherwise), and the target anchor
+        with the path's last offset. None when either cannot be read
+        (then the hop is treated as long)."""
+        try:
+            self.core.update_pose()
+            end = target_solid.pose(anchor=target_anchor, offset=path[-1])[:3]
+            if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+                start = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
+                                                offset=tool_dict["offset"])[:3]
+            else:
+                start = self.core.robot_flange.pose("output")[:3]
+            return math.sqrt(sum((float(a) - float(b)) ** 2 for a, b in zip(start, end)))
+        except Exception:
+            return None
+
     @staticmethod
     def _fold_plan_sig(kwargs):
         """Deterministic signature of motion_plan kwargs: sorted items,
@@ -921,16 +954,21 @@ class Recipe:
         return sorted([str(k), _r(v)] for k, v in kwargs.items())
 
     def _fold_cache_key(self, path, target_solid, target_anchor, tool_dict,
-                        tool_pose, j5_override, plan_on, planned,
-                        motion_plan_kwargs, blend):
+                        j5_override, plan_on, planned, motion_plan_kwargs, blend):
         """Exact identity of a fold REQUEST, as a JSON string — every
-        input the pipeline's output depends on except the live start
-        pose (matched fuzzily by fold_cache_get):
+        input the pipeline's output depends on except the two that
+        carry measurement noise, matched within a tolerance by
+        fold_cache_get instead: the live start pose and the tool's
+        flange pose (a held item sits 0.05-0.15 mm differently in the
+        gripper every grab; keyed to the micron, a third of a bench's
+        fold rows were unrepeatable — apc, 2026-09-23). Every float is
+        rounded AND normalised: ``-0.0`` and ``0.0`` are one number to
+        Python and two strings to JSON, and that alone split 1368 keys
+        of the same bench.
 
           * the target (owning component, the anchor's world pose, the
             anchor name) and the requested offsets,
-          * the tool (owning component, anchor, offset) and its flange
-            pose,
+          * the tool (owning component, anchor, offset),
           * the j5 pin, planner mode + primitive + kwargs, blend radius,
           * the planner's joint-weight metric,
           * the IK context (approach side, base distance, rail sweep,
@@ -946,6 +984,8 @@ class Recipe:
 
         None → this fold is uncacheable (unserializable input) and
         runs the classic pipeline."""
+        def _r(v, n=3):
+            return round(float(v), n) + 0.0      # + 0.0: -0.0 -> 0.0
         try:
             calib_sig = ""
             if self.calibration:
@@ -965,15 +1005,12 @@ class Recipe:
                 # everything else; runtime scene mutation can move a
                 # target without touching the scene stamp).
                 str(getattr(target_solid, "component", "") or ""),
-                [round(float(v), 3)
-                 for v in target_solid.pose(anchor=target_anchor)],
+                [_r(v) for v in target_solid.pose(anchor=target_anchor)],
                 str(target_anchor),
-                [[round(float(v), 3) for v in off] for off in path],
+                [[_r(v) for v in off] for off in path],
                 str(getattr(tool_solid, "component", "") or "") if tool_solid else "",
                 str(tool_dict.get("anchor") or ""),
-                [round(float(v), 3)
-                 for v in (tool_dict.get("offset") or [0, 0, 0, 0, 0, 0])],
-                [round(float(v), 3) for v in tool_pose],
+                [_r(v) for v in (tool_dict.get("offset") or [0, 0, 0, 0, 0, 0])],
                 # ONE turn, like ``ref`` below: the pin is resolved against
                 # the live winding (core.unwrap_j5) and the row replays
                 # shifted by whole turns (fold_cache_get), so the absolute
@@ -982,14 +1019,14 @@ class Recipe:
                 # "keep" pin is the live j5, a few turns further every
                 # tube (bench, run 2: 68 of 68 decapper folds fresh, each
                 # key an exact multiple of 360 from run 1's).
-                None if j5_override is None else round(self.core._wrap180(j5_override), 3),
+                None if j5_override is None else _r(self.core._wrap180(j5_override)),
                 bool(plan_on), str(planned),
-                round(float(blend), 3),
+                _r(blend),
                 self._fold_plan_sig(motion_plan_kwargs),
-                [round(float(v), 3) for v in self.core.JOINT_WEIGHTS],
-                bool(self.left_approach), round(float(self.base_distance), 3),
-                round(float(self.rail_step), 3), int(self.rail_span),
-                [round(v, 1) for v in ref],
+                [_r(v) for v in self.core.JOINT_WEIGHTS],
+                bool(self.left_approach), _r(self.base_distance),
+                _r(self.rail_step), int(self.rail_span),
+                [_r(v, 1) for v in ref],
                 str(self.calibration_name), bool(self.calibrate_abc),
                 calib_sig,
             ], separators=(",", ":"))
@@ -1051,22 +1088,53 @@ class Recipe:
                 f"exit leg, or a positive clearance in mm")
         return clearance
 
+    @staticmethod
+    def _vaj_scale(speed_factor):
+        """``[kv, ka, kj]`` from a ``speed_factor``: a number ``s`` is
+        the physical time-scale ``[s, s², s³]``; a 3-vector is the
+        three multipliers as written. Anything else is a RecipeError —
+        a speed is never guessed."""
+        try:
+            if isinstance(speed_factor, (list, tuple)):
+                if len(speed_factor) != 3:
+                    raise RecipeError(f"speed_factor: a vector must be [vel, accel, jerk] "
+                                      f"multipliers, got {speed_factor!r}")
+                k = [float(v) for v in speed_factor]
+            else:
+                s = float(speed_factor)
+                k = [s, s * s, s * s * s]
+        except (TypeError, ValueError):
+            raise RecipeError(f"speed_factor: a number or [vel, accel, jerk] multipliers, "
+                              f"got {speed_factor!r}")
+        if any(v <= 0 for v in k):
+            raise RecipeError(f"speed_factor: multipliers must be positive, got {speed_factor!r}")
+        return k
+
     def scaled_vaj(self, vaj):
-        """Apply ``speed_factor`` as a true time-scale: vel×s, accel×s²,
-        jerk×s³.
+        """Apply ``speed_factor``: with a number it is a true time-scale
+        — vel×s, accel×s², jerk×s³; with a 3-vector ``[kv, ka, kj]``
+        each term is multiplied as written (``vaj_scale``).
 
         Playing the identical path in 1/s of the time requires exactly
-        this law — q(s·t) differentiates to s·v, s²·a, s³·j. Scaling
-        all three by s (the old behaviour) under-scales acceleration,
-        so on short accel-limited legs (v = √(a·leg)) the felt speedup
-        was only √s: sf 1→1.5 measured 1.22×, which operators
-        correctly read as "nothing changed". The chain certifier
-        remains authoritative — it clamps to what the firmware model
-        can actually execute and reports requested vs achieved on
-        every [traj] line.
+        the cubic law — q(s·t) differentiates to s·v, s²·a, s³·j.
+        Scaling all three by s (the old behaviour) under-scales
+        acceleration, so on short accel-limited legs (v = √(a·leg)) the
+        felt speedup was only √s: sf 1→1.5 measured 1.22×, which
+        operators correctly read as "nothing changed". The vector form
+        exists for the operator who wants exactly that freedom — say a
+        gentler jerk with the same cruise — and takes it explicitly.
+        The chain certifier remains authoritative — it clamps to what
+        the firmware model can actually execute and reports requested
+        vs achieved on every [traj] line.
         """
-        s = self.speed_factor
-        return [vaj[0] * s, vaj[1] * s * s, vaj[2] * s * s * s]
+        kv, ka, kj = self.vaj_scale
+        return [vaj[0] * kv, vaj[1] * ka, vaj[2] * kj]
+
+    def scaled_caps(self):
+        """``max_vaj_joint`` under the speed factor — the per-joint caps
+        the certifier holds a chain to, scaled like every profile."""
+        kv, ka, kj = self.vaj_scale
+        return [[r[0] * kv, r[1] * ka, r[2] * kj] for r in self.max_vaj_joint]
 
     PLANNED_MOTIONS = ("smove", "tmove", "cjmove", "clmove", "jmove", "lmove")
     UNPLANNED_MOTIONS = ("jmove", "lmove", "cjmove", "clmove")
@@ -1262,12 +1330,24 @@ class Recipe:
         # consume at the successful splice; every other path executes
         # the tail to its normal stop before moving.
         fuse_tail = None
-        if first_approach and not self.fuse_in:
-            # This station refuses inbound tails (see DEFAULTS): the
-            # previous exit runs to its stop and its pending recording
-            # is cancelled, so the peek below finds nothing to merge
-            # and the fold's book_note has nothing to record.
-            self.core.tail_flush(reason=f"{type(self).__name__} fuse_in=False")
+        refuse = None
+        if first_approach:
+            if not self.fuse_in:
+                refuse = f"{type(self).__name__} fuse_in=False"
+            elif self.fuse_min_travel > 0:
+                hop = self._hop_mm(target_solid, target_anchor, path, tool_dict)
+                if hop is not None and hop < self.fuse_min_travel:
+                    refuse = (f"{type(self).__name__} hop {hop:.0f} mm < "
+                              f"fuse_min_travel {self.fuse_min_travel:g}")
+                    self.core.fusion_journal("short-hop", owner=type(self).__name__,
+                                             mm=round(hop), min=self.fuse_min_travel)
+        if refuse:
+            # This station refuses inbound tails (fuse_in=False), or
+            # the hop is shorter than fuse_min_travel (see DEFAULTS):
+            # the previous exit runs to its stop and its pending
+            # recording is cancelled, so the peek below finds nothing
+            # to merge and the fold's book_note has nothing to record.
+            self.core.tail_flush(reason=refuse)
             if len(path) > 1:
                 # ... and its own TRAVEL is not folded into the approach
                 # either: the hop lands on the group's first point and
@@ -1347,7 +1427,7 @@ class Recipe:
             # spliced rows embed their tail, so they only ever serve
             # the exact seam they were built on.
             _fold_base = self._fold_cache_key(
-                path, target_solid, target_anchor, tool_dict, tool_pose,
+                path, target_solid, target_anchor, tool_dict,
                 j5_override, plan_on, planned, motion_plan_kwargs, blend)
             if fuse_tail is not None and not fuse_tail.get("book_key"):
                 _fold_base = None   # unkeyable seam — classic, uncached
@@ -1366,7 +1446,7 @@ class Recipe:
                     _start = [float(v) for v in self._cur_joints()]
                     _tk = ""
                 hit = self.core.fold_cache_get(
-                    json.dumps([_fold_base, _tk]), _start)
+                    json.dumps([_fold_base, _tk]), _start, tool_pose)
                 if hit is not None:
                     # Still the merge-capable site: note + verify from
                     # the row's final target (row invariant: p[-1] IS
@@ -1399,7 +1479,7 @@ class Recipe:
                             fuse_tail = None
                             hit = self.core.fold_cache_get(
                                 json.dumps([_fold_base, ""]),
-                                [float(v) for v in self._cur_joints()])
+                                [float(v) for v in self._cur_joints()], tool_pose)
                 if hit is not None:
                     rt.checkpoint()
                     points = hit
@@ -1498,7 +1578,7 @@ class Recipe:
                         points = blended
                 if _fold_base is not None:
                     self.core.fold_cache_put(
-                        json.dumps([_fold_base, _spliced]), points)
+                        json.dumps([_fold_base, _spliced]), points, tool_pose)
 
             if cached:
                 print(f"[fold] cache hit ({len(points)} pts)")
@@ -1521,7 +1601,7 @@ class Recipe:
             if pending_io:
                 pending_io[1](io_h)
             if _rec is not None and fuse_tail is None and _fold_base is not None:
-                self._prewarm_fused(_rec, _fold_base, points, planned, vaj_map)
+                self._prewarm_fused(_rec, _fold_base, points, planned, vaj_map, tool_pose)
             return
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
@@ -1669,12 +1749,9 @@ class Recipe:
             [[float(v) for v in self._cur_joints()]] + [list(p) for p in points[1:]])
         if len(chain) < 2:
             return   # every knot within sliver tolerance — already there
-        s = self.speed_factor
-        caps = [[r[0] * s, r[1] * s * s, r[2] * s * s * s]
-                for r in self.max_vaj_joint]
         _tc = _time.perf_counter()
         vel, accel, jerk = self.core.smove_certify(chain, vel, accel, jerk,
-                                                   joint_caps=caps)
+                                                   joint_caps=self.scaled_caps())
         _ts = _time.perf_counter()
         rt.smove(chain[1:], vel=vel, accel=accel, jerk=jerk)
         _send_ms = (_time.perf_counter() - _ts) * 1000

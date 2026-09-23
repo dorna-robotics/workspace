@@ -275,7 +275,12 @@ diverges). Reading the line:
 * Recipes carry `jmove_vaj` and `lmove_vaj` (`[vel, accel, jerk]`)
   as DEFAULTS, overridable per recipe in `recipes.j2`.
 * `speed_factor` scales **physically**: vel × s, accel × s², jerk × s³
-  (`scaled_vaj`). Every builder-driven motion is scaled.
+  (`scaled_vaj`). Every builder-driven motion is scaled, and so are
+  the per-joint caps (`max_vaj_joint`) the certifier holds a chain to.
+  A 3-vector `speed_factor: [kv, ka, kj]` multiplies vel, accel and
+  jerk as written instead — the explicit way to, say, keep the cruise
+  and soften the jerk. A number is the cubic law; a vector is taken
+  literally; anything else is a RecipeError.
 * The **touch speed class**: the last approach group (the contact leg)
   runs lmove-class speeds — that is the point of the group boundary
   before it.
@@ -412,6 +417,17 @@ run recorded that the next motion merges there. Design + decision log:
   station whose approach ends in tight bends drags the entire fused
   travel down to its last corner. The tool rack ships with
   `fuse_in: false` for exactly that reason.
+* **`fuse_min_travel` is the short hop.** The same one-profile rule
+  bites on a hop between neighbouring seats: the lift turning into the
+  travel is the tightest bend, and it sets the profile for the whole
+  40 mm (apc bench: adjacent rack slots certified to accel 138 of 800,
+  "bound by rail accel"). `fuse_min_travel` (recipes.j2, default 100 mm)
+  is a straight-line tool distance from where the tool stands as the
+  verb starts to the verb's target; a hop shorter than it runs exactly
+  as `fuse_in: false` would for that one call — the held lift executes
+  as its own move, the travel stops at the approach's first point, the
+  approach runs as one chain — and the journal says so (`short-hop`).
+  Longer hops fuse as before. 0 disables it.
 * **The dip verbs are the exception: they never fuse unless asked.**
   `immerse` REFUSES `fuse=True` outright (a held dive would leave the
   needle at the hover while the pump doses), and `retract` defaults to

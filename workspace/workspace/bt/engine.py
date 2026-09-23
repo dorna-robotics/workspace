@@ -22,6 +22,7 @@ crystal-clear — when ``run()`` returns, the BT is done.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -61,10 +62,13 @@ class EngineConfig:
     """Knobs for the tick loop.
 
     Attributes:
-        tick_hz: How often to tick the tree. 10 Hz is the py_trees
-            convention and is plenty for lab work where actions take
-            seconds-to-minutes; the planning algorithms are 100-1000x
-            faster than any hardware action.
+        tick_hz: The FALLBACK tick rate. A finished worker wakes the
+            loop at once (RecipeAction signals ``runtime._bt_wake``),
+            so the hand-over from one action to the next costs
+            milliseconds, not a tick: at 10 Hz the bench measured 90 ms
+            of standing still at every action boundary (apc, 13 h,
+            2026-09-23). The period still bounds how long a pause,
+            park or kill goes unnoticed while nothing finishes.
         max_replans: Runaway backstop — abort after this many
             *consecutive replans with zero forward progress* (fact state
             unchanged between replans, observed via ``progress_probe``).
@@ -180,6 +184,13 @@ class BTEngine:
         (terminate is called on the active subtree on the way out).
         """
         period = 1.0 / max(0.1, self._cfg.tick_hz)
+        # Workers wake the loop through the runtime (RecipeAction._target).
+        self._wake = threading.Event()
+        if self._runtime is not None:
+            try:
+                self._runtime._bt_wake = self._wake
+            except Exception:
+                pass
         log.info(
             "BTEngine: starting tick loop @ %.1f Hz (period=%.0f ms)",
             self._cfg.tick_hz, period * 1000,
@@ -239,6 +250,9 @@ class BTEngine:
 
                 # Tick once. Replan signals come out as ReplanRequested
                 # propagating up from a leaf via the tree's update().
+                # Cleared BEFORE the tick: a worker that finishes during
+                # it sets the event and the next wait returns at once.
+                self._wake.clear()
                 try:
                     self._root.tick_once()
                 except ReplanRequested as ex:
@@ -265,11 +279,13 @@ class BTEngine:
                     log.info("BTEngine: root reached %s — exiting", status.name)
                     return status
 
-                # Pace the loop.
+                # Pace the loop: the period, or sooner when a worker
+                # finishes.
                 next_tick += period
                 sleep_for = next_tick - time.monotonic()
                 if sleep_for > 0:
-                    time.sleep(sleep_for)
+                    if self._wake.wait(sleep_for):
+                        next_tick = time.monotonic()
                 else:
                     # Behind schedule. Skip the catch-up; we'd rather miss
                     # ticks than burn CPU running back-to-back.
