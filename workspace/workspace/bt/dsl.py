@@ -1532,9 +1532,16 @@ class _DSLActionLeaf(RecipeAction):
         #    fault to SEE — named here, then a replan from the observed
         #    state — never a motion to make on a world the model does
         #    not describe.
+        #    A trigger="park" leaf is NOT a scheduled step: the operator
+        #    asked for it, at whatever point the run is. Its pre() is
+        #    the planned Park's (OperatorPark(Park) keeps the shape, no
+        #    override), which says "every item through the last phase"
+        #    — false by definition mid-run. Gating it here refused the
+        #    cleanup and the engine exited with the robot standing
+        #    where the last leaf left it (bna bench, 2026-09-22).
         facts = state_to_frozen(self.ctx.state)
         self._instance.state = facts
-        expr = self._instance.pre(*self._params())
+        expr = True if _is_park_trigger(self._cls) else self._instance.pre(*self._params())
         ok = expr if isinstance(expr, bool) else (
             expr.as_tuple() in facts if isinstance(expr, Fact) else expr.evaluate(facts))
         if not ok:

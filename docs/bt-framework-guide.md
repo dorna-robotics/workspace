@@ -342,6 +342,15 @@ own thread. So a Park clicked mid-cap parks right after the vial is back
 in its slot, not after the 5 min shake on the other branch (bna bench,
 2026-09-21).
 
+**The cleanup leaf is not gated on its `pre()`.** A scheduled leaf checks
+its declared `pre()` against the live facts before it runs, so a schedule
+that ran ahead of the facts is seen and replanned. A `trigger="park"` leaf
+is never scheduled: the operator asked for it, at whatever point the run
+is, and `OperatorPark(Park)` inherits the planned Park's `pre()` ("every
+item through the last phase"), which is false by definition mid-run. So
+the park leaf runs without that check (bna bench, 2026-09-22: the gate
+refused the cleanup and the robot stood where the last leaf left it).
+
 Typical use — park the tool when the operator stops the run:
 
 ```python
