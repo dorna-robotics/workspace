@@ -56,6 +56,7 @@ from workspace.bt.dsl import (
 from workspace.bt.engine import BTEngine, EngineConfig
 from workspace.bt.phase import PhaseNotReady, current_phase as _current_phase_impl, pick_window as _pick_window_impl
 from workspace.bt.protocol import Protocol, load_route
+from workspace.bt import skip as _skip
 from workspace.planner import Replanner, make_schedule_builder, plan_cycle, plan_route
 
 
@@ -589,6 +590,19 @@ def run_protocol(
     #     planner thinks about. Re-assigned each rebuild.
     all_items: list = list(objects.get(slice_dim, [])) if slice_dim else []
 
+    # ── Skip (bt/skip.py) ─────────────────────────────────────────────
+    # An item that leaves the run is FINISHED for every reader below:
+    # item_done counts skipped, and the run's goal is every item done
+    # or skipped plus the project's own goal. ``dependents`` follow.
+    dependents = spec.get("dependents")
+    if dependents is not None and item_done is None:
+        raise ValueError("setup() returned dependents but no item_done — skipping "
+                         "an item needs the per-item completion predicate")
+    item_done = _skip.with_skip(item_done)
+    goal_fn = _skip.run_goal(goal_fn, all_items, item_done)
+    ctx.meta["slice_dim"] = slice_dim
+    _skip.install(ctx, dependents)
+
     # ── Phases ────────────────────────────────────────────────────────
     #
     # A PHASE is a goal the whole batch reaches before any item moves
@@ -638,7 +652,7 @@ def run_protocol(
     def _until_reached(state) -> bool:
         if _until is None:
             return False
-        items = list(_until.scope(state, all_items))
+        items = list(_until.scope(state, _skip.open_items(state, all_items)))
         return (not items) or _until.reached(state, items)
 
     slicing_active = (
@@ -716,7 +730,7 @@ def run_protocol(
                 except PhaseNotReady:
                     _cur = None
                 if _cur is None:
-                    _cur = (_until, list(_until.scope(state, all_items)))
+                    _cur = (_until, list(_until.scope(state, _skip.open_items(state, all_items))))
                 elif _cur[0].name != _until.name and not _until_warned["done"]:
                     _until_warned["done"] = True
                     log.warning(

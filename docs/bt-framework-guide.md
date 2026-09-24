@@ -803,6 +803,12 @@ If you use `_ctx_objects()` for cross-batch seeding, later slices
 won't have the facts you seeded in the first slice — a subtle bug
 that surfaces only when `batch_size > plan_window`.
 
+A **gate** over the whole batch — Park's "every item through the last
+phase" — reads `self._ctx_items()` instead: the batch's items still in
+the run. A skipped item (§8.5) never reaches the last phase, and a gate
+over `_ctx_all_objects()` would wait for it forever. Seeding reads the
+whole batch; gating reads the items still in the run.
+
 ### 3.6 `params` and `objects` — the planner's wiring
 
 The `params` attribute on an Action class and the `objects` dict
@@ -1272,6 +1278,88 @@ Why this is the cleanest pattern:
 > updated world. No `setup()` re-call, no engine restart. The sensing
 > action is the visible, schedulable, debuggable home for "the world
 > keeps changing under us" logic.
+
+### 8.5 Skip — an item leaves the run
+
+An item that cannot continue (a barcode that never reads, a vial lost
+in transfer) leaves the run through ONE platform mechanism, whatever
+the project. The split is fixed: **the project owns the physical
+recovery, the platform owns the plan.**
+
+**The project** decides when, and does the recovery in the action that
+found the problem (put the item back, open the jaws, whatever its
+bench needs), then ends in an outcome branch that asserts the
+platform's reserved fact `skipped(item)`:
+
+```python
+from workspace.bt import Action, skipped
+
+class Scan(Action):
+    params = ["tube"]
+
+    def eff(self, tube):
+        return {
+            "read":       (+scanned(tube),),
+            "unreadable": (+skipped(tube), +hand_empty()),   # back in its slot, gripper open
+        }
+
+    def execute(self, tube):
+        code = self.ctx.recipes["barcode"].read(...)
+        if code is None:
+            ...                                   # the project's recovery
+            return "unreadable"
+        return "read"
+```
+
+**The platform** does the rest, the same for every project
+(`workspace/bt/skip.py`):
+
+1. **Finished means done or skipped.** `setup()`'s `item_done` is
+   wrapped once; the phase machinery, the window picker, the planning
+   goal and `bt.replay` all read the wrapped one. A skipped item is in
+   no phase scope and no window, so no step is planned for it again.
+2. **Everything derived from the item goes with it** — steps bound to
+   it, objects computed from it (bna's `recv_of(t)` / `prod_of(t)`),
+   and its place in a group step whose members come from the window
+   (a shake over `bank_of` the window). Group membership read from a
+   hard-coded list would NOT follow — take members from the window.
+3. **Dependents follow.** Other items of the batch that cannot continue
+   without it are declared once in `setup()` and skipped with it,
+   transitively:
+
+   ```python
+   return {..., "item_done": item_done,
+           "dependents": lambda t: [partner_of(t)]}   # items of the batch
+   ```
+4. **Stations it held are released.** Every capacity fact
+   (`predicate(..., capacity=True)`) an action bound to the item took
+   and no action gave back is re-asserted — derived from what ran, never
+   guessed. The project's recovery made the station physically free;
+   this makes the facts agree.
+5. **The run replans at once**, even when the skip branch is the
+   action's default. The skip is logged (`SKIP:` in the log, an
+   `items_skipped` event on the schedule socket) and kept for the audit
+   (`self._ctx_skip(item)` → `{"by", "outcome", "phase", "because_of"}`).
+
+**The contract this puts on a project** — three lines, the same in
+every project (examples/ and bna follow it):
+
+| Where | Write | Never |
+|---|---|---|
+| `setup()`'s `goal` | what lies beyond the items: `started` and `parked` — the platform adds "every item done or skipped" | a loop over the items (a skipped one would hold it false forever) |
+| A gate over the whole batch (Park) | `for t in self._ctx_items():` — the items still in the run | `self._ctx_all_objects()[dim]` |
+| The audit status at Park | `self._ctx_skip(t)` first, then the facts | a status that reports a skipped item as "stopped before …" |
+
+**Proving it** — `bt.replay` skips an item where you say, then checks
+the run still closes and no step is ever planned for an item that left:
+
+```bash
+sudo python3 -m workspace.bt.replay <project> --batch 4 8 --skip 1@extracted_1   # when that phase opens
+sudo python3 -m workspace.bt.replay <project> --batch 4 8 --skip 3@Shake1        # right after its step
+```
+
+Run it after any change to a gate or a group step. A project that
+still loops over all items fails here at the desk, never on the bench.
 
 ---
 
@@ -1816,6 +1904,11 @@ def setup(**kwargs):
 | `batch_size` (project's own name) | operator | "I have N samples" — a scientific quantity |
 | `plan_window` | project | "schedule this many at once" — scheduler tuning |
 
+With `item_done` given, the platform owns the per-item part of the run's
+goal: the run is over when every item is done or skipped (§8.5) AND
+`goal(state)` holds. So `goal` states only what lies beyond the items —
+`started` and `parked` — and never loops over them.
+
 With no phases and `batch_size <= plan_window`, windowing is a no-op.
 Phases keep windowing active even when the window covers the whole
 batch, because depth still needs bounding.
@@ -2039,6 +2132,10 @@ def goal(state):
     recorded = {f[1] for f in state if f[0] == "recorded"}
     return heavy <= recorded
 ```
+
+With `item_done` returned from `setup()`, the per-item part is the
+platform's — "every item done or skipped" — and `goal` states only what
+lies beyond the items (`started`, `parked`); see §8.5.
 
 Two rules:
 

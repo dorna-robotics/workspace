@@ -1234,6 +1234,40 @@ class Action:
         for combo in product(*pools):
             yield combo
 
+    def _ctx_items(self) -> List[Any]:
+        """The batch's items still IN THE RUN — every item of the
+        windowed dimension (``slice_dim``) that is not ``skipped``, read
+        from the state this pre/eff is evaluated against. What a gate
+        over the whole batch loops over (Park: "every item through the
+        last phase"), never ``_ctx_all_objects()`` — a skipped item never
+        reaches the last phase, and a gate over it would hold forever
+        (bt-framework-guide §8.5)."""
+        ctx = getattr(self, "ctx", None)
+        meta = (getattr(ctx, "meta", None) or {}) if ctx is not None else {}
+        pools = meta.get("all_objects") or {}
+        dim = meta.get("slice_dim") or (next(iter(pools)) if len(pools) == 1 else None)
+        if dim is None:
+            if not pools:
+                return []
+            raise ValueError(
+                f"{type(self).__name__}: _ctx_items() needs the item dimension — "
+                f"objects has {list(pools)}; set slice_dim in launch.yaml")
+        pool = list(pools.get(dim, []))
+        facts = getattr(self, "state", None)
+        if facts is None and ctx is not None:
+            facts = state_to_frozen(ctx.state)
+        from workspace.bt.skip import open_items
+        return open_items(facts or frozenset(), pool)
+
+    def _ctx_skip(self, item: Any) -> Optional[Dict[str, Any]]:
+        """How ``item`` left the run — ``{"by", "outcome", "phase",
+        "because_of"}`` — or ``None``: what an audit status reads."""
+        ctx = getattr(self, "ctx", None)
+        if ctx is None:
+            return None
+        from workspace.bt.skip import info
+        return info(ctx, item)
+
     # ── Internal — accessed by ActionRegistry / leaf factory ────────────
     def _ctx_objects(self) -> Dict[str, Iterable[Any]]:
         """Object pools the planner enumerates over **for the current
@@ -1704,16 +1738,26 @@ class _DSLActionLeaf(RecipeAction):
             chosen = default
 
         facts = _facts_from_state(state)
-        for f in effs[chosen]:
-            if f.polarity:
-                facts.add(f.as_tuple())
-            else:
-                facts.discard(f.as_tuple())
+        from workspace.bt import skip as _skip
+        added = [f.as_tuple() for f in effs[chosen] if f.polarity]
+        removed = [f.as_tuple() for f in effs[chosen] if not f.polarity]
+        newly_skipped = [t[1] for t in added if t[0] == _skip.SKIPPED and t not in facts]
+        for t in added:
+            facts.add(t)
+        for t in removed:
+            facts.discard(t)
+        # Capacity held per item — what a skip releases (bt/skip.py).
+        _skip.note_effects(self.ctx, self._item if self._cls.params else None, removed, added)
+        if newly_skipped:
+            gone = _skip.apply(self.ctx, facts, newly_skipped,
+                               by=self._cls.__name__, outcome=chosen)
+            self._publish({"type": "items_skipped", "items": list(gone),
+                           "by": self._cls.__name__, "outcome": chosen})
 
-        # Effects are now in state — if a non-default branch fired,
-        # tell the engine to rebuild the tree so downstream actions
-        # re-evaluate against the observed state.
-        if chosen != default:
+        # Effects are now in state — if a non-default branch fired, or
+        # an item left the run, tell the engine to rebuild the tree so
+        # downstream actions re-evaluate against the observed state.
+        if chosen != default or newly_skipped:
             # Replanning re-derives everything from OBSERVED state —
             # settle the robot first: a held motion tail executes to
             # its normal stop before the tree is rebuilt.
@@ -1726,6 +1770,8 @@ class _DSLActionLeaf(RecipeAction):
             # Local import to avoid circular dependency at module load.
             from workspace.bt.engine import ReplanRequested
             raise ReplanRequested(
+                f"{self._cls.__name__}({self._item}): skipped {newly_skipped}"
+                if newly_skipped else
                 f"{self._cls.__name__}({self._item}): observed branch "
                 f"{chosen!r} differs from planner's default {default!r}"
             )

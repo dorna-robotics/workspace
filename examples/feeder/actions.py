@@ -30,7 +30,6 @@ def setup(**kwargs):
     def goal(state):
         return (
             (started.name,) in state
-            and all(item_done(state, c) for c in caps)
             and (parked.name,) in state
         )
 
@@ -127,7 +126,7 @@ class Park(Action):
     PARK_JOINTS = [0, 90, 0, 0, 0, 0, 100]
 
     def pre(self):
-        caps = self._ctx_all_objects().get("cap", [])
+        caps = self._ctx_items()
         if not caps:
             return ~parked()
         expr = ~parked()

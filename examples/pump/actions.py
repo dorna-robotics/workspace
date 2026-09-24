@@ -74,7 +74,6 @@ def setup(**kwargs):
 
     def goal(state):
         return ((started.name,) in state
-                and all(item_done(state, v) for v in vials)
                 and (flushed.name,) in state
                 and (parked.name,) in state)
 
@@ -199,7 +198,7 @@ class Flush(Action):
 
     def pre(self):
         expr = started() & ~flushed()
-        for v in self._ctx_all_objects().get("vial", []):
+        for v in self._ctx_items():
             expr = expr & needle_dosed(v)
         return expr
 

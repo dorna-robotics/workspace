@@ -36,9 +36,10 @@ def setup(**kwargs):
         return (last.name, tube) in state
 
     def goal(state):
-        return ((started.name,) in state
-                and all(item_done(state, t) for t in tubes)
-                and (parked.name,) in state)
+        # What lies beyond the tubes — the platform adds "every tube
+        # done or skipped" (bt/skip.py), so a skipped tube cannot hold
+        # the run open.
+        return (started.name,) in state and (parked.name,) in state
 
 
     return {
@@ -49,8 +50,10 @@ def setup(**kwargs):
     }
 
 
-def _status_of(facts, tube):
+def _status_of(facts, tube, skip=None):
     """The audit status, DERIVED from the facts — never typed by hand."""
+    if skip is not None:
+        return f"skipped: {skip['by']} -> {skip['outcome']} ({skip['phase']})"
     reached = [p for p in PASSES if (home[p].name, tube) in facts]
     if len(reached) == len(PASSES):
         return "done"
@@ -96,9 +99,9 @@ class Park(Action):
     PARK_JOINTS = [0, 90, 0, 0, 0, 0, 100]
 
     def pre(self):
-        tubes = self._ctx_all_objects().get("tube", [])
+        # Every tube STILL IN THE RUN — a skipped one never gets home.
         expr = ~parked() & started()
-        for t in tubes:
+        for t in self._ctx_items():
             expr = expr & home[PASSES[-1]](t)
         return expr
 
@@ -109,7 +112,7 @@ class Park(Action):
         rt, rcp = self.ctx.runtime, self.ctx.recipes
         facts = (getattr(self.ctx, "state", None) or {}).get("facts") or set()
         for t in self._ctx_all_objects().get("tube", []):
-            rt.record(item_id(t), status=_status_of(facts, t))
+            rt.record(item_id(t), status=_status_of(facts, t, self._ctx_skip(t)))
         rcp["robot"].park(joint=self.PARK_JOINTS)
         return "parked"
 

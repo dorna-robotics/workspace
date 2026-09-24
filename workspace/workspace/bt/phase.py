@@ -248,10 +248,15 @@ def current_phase(state, phases, all_items, item_done) -> Optional[Tuple[Phase, 
     window picker see the same item set. A phase whose turn it is with
     a false ``pre`` raises :class:`PhaseNotReady`.
     """
+    from workspace.bt.skip import open_items
     live = [it for it in all_items if not item_done(state, it)] \
         if item_done is not None else list(all_items)
+    # Nothing outstanding: phases are judged over the items still in
+    # the run — a skipped item never reaches a phase and must not hold
+    # one open.
+    pool = live or open_items(state, all_items)
     for ph in phases:
-        items = list(ph.scope(state, live or all_items))
+        items = list(ph.scope(state, pool))
         if not items:
             continue                     # scope empty — phase vacuous
         if ph.reached(state, items):

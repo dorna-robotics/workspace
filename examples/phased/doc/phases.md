@@ -15,7 +15,9 @@ A row names three things:
   outcome fact plus the physical resting state it means. Every item
   ends with exactly one. A sorting phase has two ("in the heavy rack",
   "in the light rack"); a phase with a skip rule has the normal outcome
-  and "skipped". The next phase's actions gate on these.
+  and one that asserts the platform's `skipped(item)` — the item leaves
+  the run and no later phase waits for it (bt-framework-guide §8.5). The
+  next phase's actions gate on these.
 - **What is measured** — the audit fields the phase writes, and where.
 
 | phase | closure fact | outcomes → resting state | measured | opens when |

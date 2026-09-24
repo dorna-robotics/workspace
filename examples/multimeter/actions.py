@@ -45,7 +45,6 @@ def setup(**kwargs):
     def goal(state):
         return (
             (started.name,) in state
-            and all(item_done(state, s) for s in samples)
             and (parked.name,) in state
         )
 
@@ -151,7 +150,7 @@ class Park(Action):
 
     def pre(self):
         # All samples done + not yet parked.
-        samples = self._ctx_all_objects().get("sample", [])
+        samples = self._ctx_items()
         # ``pre`` returns Expr so build_precedence can read deps.
         expr = ~parked() & started()
         for s in samples:

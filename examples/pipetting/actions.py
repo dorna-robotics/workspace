@@ -44,7 +44,6 @@ def setup(**kwargs):
     def goal(state):
         return (
             (started.name,) in state
-            and all(item_done(state, t) for t in transfers)
             and (parked.name,) in state
         )
 
@@ -182,7 +181,7 @@ class Park(Action):
     PARK_JOINTS = [0, 90, 0, 0, 0, 0, 100]
 
     def pre(self):
-        transfers = self._ctx_all_objects().get("transfer", [])
+        transfers = self._ctx_items()
         if not transfers:
             return ~parked()
         expr = ~parked()

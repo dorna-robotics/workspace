@@ -317,6 +317,9 @@ def plan_cycle(
     last: dict = {}
     items = [it for r in rounds for it in r]
     K = len(rounds)
+    # How far past the last round a negative offset still reaches: the
+    # last bank's ``[-1]`` stages run in round K.
+    depth = max([-stage[0][1] for stage in cycle if stage and stage[0][1] < 0] + [0])
 
     def take(step: Step, unit: Any) -> None:
         nonlocal sim
@@ -360,7 +363,12 @@ def plan_cycle(
                     if goal(sim):
                         return plan
         k += 1
-        if k >= K and not moved:
+        # Every round a stage can still reach is tried before the walk
+        # ends: a replan that resumes mid-cycle (the window's bank
+        # already loaded, only its ``[-1]`` stages left) has nothing to
+        # do in round 0 and all its work in round 1 — ending on the
+        # first round that did not move stalled it.
+        if k >= K + depth and not moved:
             break                                # the trailing offsets ran dry
     if goal(sim):
         return plan
