@@ -968,6 +968,31 @@ class Recipe:
             [float(v) for v in tool_pose], from_frame=flange,
             to_frame=[0, 0, 0, 0, 0, 0])[:3]]
 
+    def _hop_judge(self, tool_pose, blend, padding):
+        """``path -> seconds``: what a planned hop would cost on the
+        wire, through the same pipeline that will send it — the corner
+        blend, then the split rule's certified time. core.motion_plan
+        judges the planner's path against its monotone re-profile with
+        this, so the faster of the two is stored and the rule can never
+        make a hop slower."""
+        vel, accel, jerk = self.scaled_vaj(self.jmove_vaj)
+        caps = self.scaled_caps()
+        tp = [float(v) for v in (tool_pose or [0, 0, 0, 0, 0, 0])]
+
+        def judge(path):
+            pts = [[float(v) for v in q] for q in path]
+            if blend and blend > 0:
+                bl = self.core.blend_points(pts, blend, tool_pose=tp, from_idx=1, padding=padding)
+                if bl is not None:
+                    pts = bl
+            pieces = self.core.smove_certify_split(
+                pts, vel, accel, jerk, joint_caps=caps,
+                throttle=self.split_throttle, min_gain=self.split_min_gain,
+                max_cuts=self.split_max_cuts, stop_s=self.split_stop_s,
+                owner=type(self).__name__, journal=False)
+            return sum(float(i["t"]) for _, _, i in pieces if i) + self.split_stop_s * (len(pieces) - 1)
+        return judge
+
     def _hop_mm(self, target_solid, target_anchor, path, tool_dict):
         """Straight-line distance (mm) of the hop ``fuse_min_travel``
         judges: ANCHOR TO ANCHOR — the previous verb's target anchor
@@ -1289,7 +1314,13 @@ class Recipe:
         if fuse_tail is None:
             self.core.tail_flush(reason="direct hop can't fuse", disarm=False)
         if use_planning:
-            points = self.core.motion_plan(joint=J, **motion_plan_kwargs)
+            _tp = [0, 0, 0, 0, 0, 0]
+            if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+                _tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"], in_frame=self.core.robot_flange,
+                                              offset=tool_dict["offset"])
+            points = self.core.motion_plan(
+                joint=J, judge=self._hop_judge(_tp, self.blend, motion_plan_kwargs.get("padding", 10)),
+                **motion_plan_kwargs)
             if not points and motion_plan_kwargs:
                 rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
                 points = self.core.motion_plan(joint=J)
@@ -1562,7 +1593,9 @@ class Recipe:
                 # First hop → smove waypoints, planned or not.
                 _t0 = _time.perf_counter()
                 if plan_on:
-                    points = self.core.motion_plan(joint=J0, **motion_plan_kwargs)
+                    points = self.core.motion_plan(
+                        joint=J0, judge=self._hop_judge(tool_pose, blend, motion_plan_kwargs.get("padding", 10)),
+                        **motion_plan_kwargs)
                     if not points and motion_plan_kwargs:
                         rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
                         points = self.core.motion_plan(joint=J0)

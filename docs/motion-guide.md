@@ -191,6 +191,27 @@ frame is the tool TCP (shiftable by `tool_tcp_z_offset`).
 
 1. **Scene build** — `compute_collision_boxes(padding)` (default
    padding 10 mm), boxes → planner cubes, planner updated.
+1b. **The monotone rule** — before a planned hop is decimated and
+   stored, every joint's path must move monotonically from its start
+   value to its goal value: a joint whose planned path doubles back,
+   beyond the endpoints' span or inside it, is re-profiled to move
+   linearly in path arc length from its start to its goal, the other
+   joints keeping the planner's path. The re-profiled path is kept only if
+   every segment passes the planner's own collision check; otherwise
+   the planner's path stays, the detour was needed. The planner's
+   clean-ups judge by its path-length metric, in which the rail is
+   nearly free, so a rail loop survives them; for the robot a
+   mid-travel reversal is the worst bend a chain can carry (bna bench,
+   2026-09-23: rail 310 -> 131 -> 191 on a hop to 191, certified to
+   accel 2, 26.6 s). The planner's path and the re-profiled one are
+   judged by the recipe's certified time through the same blend and
+   split rule that will send them, and the faster is stored, so the
+   rule can never make a hop slower (bench data, 165 hops: 114 faster,
+   8 kept the planner's path, 0 slower). The `plan` journal row
+   carries `excursion_raw`, `excursion` and `monotone`; a `monotone`
+   row holds both times. Path and fold rows carry a format version;
+   rows built under an older rule are dropped at load and solved once
+   more, so the first run after such a change is a slow one.
 2. **Path cache** — `core/path.json` in the project folder, keyed on
    (start, goal, tool-box signature). Hit = replay, validated at
    creation only. Stale on scene change (stamped).

@@ -1362,13 +1362,21 @@ class Core:
                 stack.append((best_i, b))
         return [[float(v) for v in p] for p in pts[keep]]
 
+    # Row format version of the plan-derived caches (path, fold). Bumped
+    # when the rule that shapes a stored path changes, so rows built
+    # under the old rule are dropped at load and solved once more
+    # instead of replaying the old geometry forever: v2 = the monotone
+    # rule (2026-09-23).
+    PLAN_ROW_VERSION = 2
+
     @staticmethod
     def _path_row_valid(v):
         return (isinstance(v, dict)
                 and isinstance(v.get("s"), list) and isinstance(v.get("g"), list)
                 and isinstance(v.get("t"), list)
                 and isinstance(v.get("p"), list) and len(v["p"]) >= 2
-                and all(isinstance(p, list) for p in v["p"]))
+                and all(isinstance(p, list) for p in v["p"])
+                and v.get("v") == Core.PLAN_ROW_VERSION)
 
     @staticmethod
     def _path_near(a, b, tol):
@@ -1487,6 +1495,7 @@ class Core:
                 "w": [round(float(v), 3) for v in self.JOINT_WEIGHTS],
                 "t": [[round(float(v), 3) for v in b] for b in sig],
                 "p": [[round(float(v), 3) for v in p] for p in path],
+                "v": self.PLAN_ROW_VERSION,
             }
             self._path_rows_add(row)
             if self._path_cache_path is None:
@@ -1554,7 +1563,8 @@ class Core:
                 and all(isinstance(q, list) and len(q) == len(v["p"][0])
                         for q in v["p"])
                 and isinstance(v.get("m"), dict)
-                and set(v["m"]) == set(Core.FOLD_MEASURED))
+                and set(v["m"]) == set(Core.FOLD_MEASURED)
+                and v.get("v") == Core.PLAN_ROW_VERSION)
 
     def _fold_cache_init(self):
         """Resolve + load core/fold.json (JSONL). Never raises."""
@@ -1700,7 +1710,8 @@ class Core:
         ValueError (a programming error, never swallowed)."""
         m = self._fold_measured_norm(measured)
         try:
-            row = {"p": [[round(float(v), 3) for v in q] for q in points], "m": m}
+            row = {"p": [[round(float(v), 3) for v in q] for q in points], "m": m,
+                   "v": self.PLAN_ROW_VERSION}
             if not self._fold_row_valid(row):
                 return
             if self._fold_cache is None:
@@ -3210,7 +3221,7 @@ class Core:
 
     def smove_certify_split(self, points, vel, accel, jerk, joint_caps=None,
                             throttle=0.5, min_gain=0.2, max_cuts=2, stop_s=0.1,
-                            owner=None):
+                            owner=None, journal=True):
         """``[(chain, (vel, accel, jerk), info), ...]`` — the pieces to
         send, in order, each certified on its own. One piece when the
         chain is not throttled, or when no cut pays. ``info`` is the
@@ -3246,24 +3257,25 @@ class Core:
             return [(chain, (v, a, j), info)]
         t_split = il["t"] + ir["t"] + float(stop_s)
         gain = 1.0 - t_split / info["t"] if info["t"] > 0 else 0.0
-        self.fusion_journal("split", owner=owner, knot=k, of=len(chain),
-                            bind=info["bind"].get("joint"), kind=info["bind"].get("kind"),
-                            throttle=round(thr, 3), t_whole=round(info["t"], 2),
-                            t_split=round(t_split, 2), gain=round(gain, 3),
-                            taken=bool(gain >= min_gain))
+        if journal:
+            self.fusion_journal("split", owner=owner, knot=k, of=len(chain),
+                                bind=info["bind"].get("joint"), kind=info["bind"].get("kind"),
+                                throttle=round(thr, 3), t_whole=round(info["t"], 2),
+                                t_split=round(t_split, 2), gain=round(gain, 3),
+                                taken=bool(gain >= min_gain))
         if gain < min_gain:
             return [(chain, (v, a, j), info)]
         c = getattr(self, "_fusion_counts", None)
-        if c is not None:
+        if c is not None and journal:
             c["split"] = c.get("split", 0) + 1
             c["split_saved_s"] = c.get("split_saved_s", 0.0) + (info["t"] - t_split)
         # Each half may still carry a bend of its own.
         out = self.smove_certify_split(left, vel, accel, jerk, joint_caps=joint_caps,
                                        throttle=throttle, min_gain=min_gain,
-                                       max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner)
+                                       max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner, journal=journal)
         out += self.smove_certify_split(right, vel, accel, jerk, joint_caps=joint_caps,
                                         throttle=throttle, min_gain=min_gain,
-                                        max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner)
+                                        max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner, journal=journal)
         return out
 
     def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0, label="cjmove"):
@@ -3800,7 +3812,7 @@ class Core:
                 continue
         return out
 
-    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004):
+    def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004, judge=None):
 
         """
         Collision-aware joint move:
@@ -3961,6 +3973,8 @@ class Core:
             # path may graze the full envelope within one resolution
             # step — the margin absorbs that. This is the ONE
             # validation a stored row ever gets (creation-time).
+            excursion_raw = self._path_excursion(res)
+            clamped = False
             if len(res) > 2:
                 try:
                     check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
@@ -3969,7 +3983,33 @@ class Core:
                     seg_ok = lambda seg: self.planner.check(seg, gravity=gravity, gravity_vec=gv,
                                                             gravity_thr=gravity_thr, rail_weight=rail_weight,
                                                             joint_weights=self.JOINT_WEIGHTS)
-                    res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
+                    # THE MONOTONE RULE — no joint doubles back inside a
+                    # hop unless the straight way is blocked (see
+                    # _clamp_excursion). ``judge(path) -> seconds`` (the
+                    # caller's certified time for a candidate) decides
+                    # between the planner's path and the re-profiled
+                    # one: the faster wins, so the rule can never make a
+                    # hop slower. Without a judge the re-profiled path
+                    # wins when the check passes.
+                    mono, clamped = self._clamp_excursion(res, seg_ok)
+                    if clamped:
+                        orig_d = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
+                        mono_d = self._decimate_path(mono, self.PATH_DECIMATE_EPS, check=seg_ok)
+                        if judge is not None:
+                            try:
+                                t_o, t_m = float(judge(orig_d)), float(judge(mono_d))
+                            except Exception:
+                                t_o, t_m = 0.0, 1.0
+                            if t_m < t_o:
+                                res, clamped = mono_d, True
+                            else:
+                                res, clamped = orig_d, False
+                            self.fusion_journal("monotone", t_planner=round(t_o, 2),
+                                                t_monotone=round(t_m, 2), taken=bool(t_m < t_o))
+                        else:
+                            res = mono_d
+                    else:
+                        res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
                 except Exception:
                     pass  # keep the dense path
             # Record EVERY solved hop — direct and OMPL alike. One
@@ -3983,8 +4023,77 @@ class Core:
 
         self.fusion_journal("plan", cached=False, wp=len(res) if res else 0,
                             ms=round(execution_time * 1000),
-                            excursion=self._path_excursion(res) if res else None)
+                            excursion=self._path_excursion(res) if res else None,
+                            excursion_raw=(excursion_raw if res else None),
+                            monotone=(clamped if res else None))
         return _recarry(res)
+
+    def _clamp_excursion(self, path, check):
+        """THE MONOTONE RULE for a planned hop: every joint moves
+        monotonically from its start value to its goal value. A joint
+        whose planned path doubles back mid-hop — beyond the endpoints'
+        span or inside it — is re-profiled to move linearly, in path
+        arc length, from its start to its goal (every other joint keeps
+        the planner's path), and the result is kept only if every
+        segment of the new polyline passes ``check``, the planner's
+        own validity gate. Returns ``(path, changed)``.
+
+        Why: the sampling planner's first solution wanders, and its
+        clean-ups (reduceVertices, ropeShortcutPath, smoothBSpline)
+        judge by the planner's path-length metric, in which the rail
+        is nearly free (rail_weight 0.004) — a rail loop costs nothing
+        there and survives them, while for the robot a mid-travel
+        reversal is the single worst bend a chain can carry (bna bench,
+        2026-09-23: rail 310 -> 131 -> 191 on a hop to 191, certified
+        to accel 2, 26.6 s). Why linear and not a hold: holding the
+        joint until the path catches up parks it on a plateau, and a
+        joint stopping and restarting inside a chain is itself a bend
+        (sim: a loop inside the span went from accel 5 to 7 held, to
+        full speed re-profiled). A hop runs between two clearance
+        points; nothing in it should double back unless it must to get
+        round an obstacle, and "must" is decided by the same collision
+        check the planner uses, on the re-profiled path. Anything the
+        check refuses keeps the planner's path as it was. Deterministic."""
+        if not path or len(path) < 3 or check is None:
+            return path, False
+        s, g = path[0], path[-1]
+        n = len(s)
+        eps = 1e-6
+        # arc length of the planner's path, the parameter every re-profiled joint follows
+        cum = [0.0]
+        for a, b in zip(path, path[1:]):
+            cum.append(cum[-1] + math.sqrt(sum((y - x) ** 2 for x, y in zip(a, b))))
+        total = cum[-1]
+        if total <= 0:
+            return path, False
+        out = [list(q) for q in path]
+        changed = False
+        for j in range(n):
+            up = g[j] >= s[j]
+            lo, hi = min(s[j], g[j]), max(s[j], g[j])
+            backtracks = any(((b[j] < a[j] - eps) if up else (b[j] > a[j] + eps))
+                             for a, b in zip(path, path[1:]))
+            beyond = any(q[j] < lo - eps or q[j] > hi + eps for q in path)
+            if not (backtracks or beyond):
+                continue
+            for k in range(1, len(out) - 1):
+                out[k][j] = s[j] + (g[j] - s[j]) * (cum[k] / total)
+            changed = True
+        if not changed:
+            return path, False
+        dedup = [out[0]]
+        for q in out[1:]:
+            if max(abs(a - b) for a, b in zip(q, dedup[-1])) > eps:
+                dedup.append(q)
+        if len(dedup) < 2:
+            return path, False
+        for a, b in zip(dedup, dedup[1:]):
+            try:
+                if not check([list(a), list(b)]):
+                    return path, False       # blocked: the detour was needed
+            except Exception:
+                return path, False
+        return dedup, True
 
     @staticmethod
     def _path_excursion(pts):
