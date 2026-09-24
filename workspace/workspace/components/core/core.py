@@ -1366,8 +1366,9 @@ class Core:
     # when the rule that shapes a stored path changes, so rows built
     # under the old rule are dropped at load and solved once more
     # instead of replaying the old geometry forever: v2 = the monotone
-    # rule (2026-09-23).
-    PLAN_ROW_VERSION = 2
+    # rule (2026-09-23); v3 = the rule judged on the decimated polyline
+    # (2026-09-23).
+    PLAN_ROW_VERSION = 3
 
     @staticmethod
     def _path_row_valid(v):
@@ -3991,9 +3992,20 @@ class Core:
                     # one: the faster wins, so the rule can never make a
                     # hop slower. Without a judge the re-profiled path
                     # wins when the check passes.
-                    mono, clamped = self._clamp_excursion(res, seg_ok)
+                    # The rule is judged on the DECIMATED polyline — the
+                    # geometry that is executed — never on the planner's
+                    # dense sampling. The dense path carries the B-spline's
+                    # wiggles in every joint; re-profiling it keeps those
+                    # wiggles in the joints it does not touch, and ONE of
+                    # its hundreds of segments grazing the envelope refused
+                    # the whole rule while the executed corners were clear
+                    # (bna bench 2026-09-23: rack C8 -> vortex, the dense
+                    # re-profile failed one check out of 320 and the 60 mm
+                    # rail loop shipped; the same hop's 6-corner re-profile
+                    # passes every segment).
+                    orig_d = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
+                    mono, clamped = self._clamp_excursion(orig_d, seg_ok)
                     if clamped:
-                        orig_d = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
                         mono_d = self._decimate_path(mono, self.PATH_DECIMATE_EPS, check=seg_ok)
                         if judge is not None:
                             try:
@@ -4009,7 +4021,7 @@ class Core:
                         else:
                             res = mono_d
                     else:
-                        res = self._decimate_path(res, self.PATH_DECIMATE_EPS, check=seg_ok)
+                        res = orig_d
                 except Exception:
                     pass  # keep the dense path
             # Record EVERY solved hop — direct and OMPL alike. One

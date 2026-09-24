@@ -191,14 +191,21 @@ frame is the tool TCP (shiftable by `tool_tcp_z_offset`).
 
 1. **Scene build** — `compute_collision_boxes(padding)` (default
    padding 10 mm), boxes → planner cubes, planner updated.
-1b. **The monotone rule** — before a planned hop is decimated and
-   stored, every joint's path must move monotonically from its start
-   value to its goal value: a joint whose planned path doubles back,
-   beyond the endpoints' span or inside it, is re-profiled to move
-   linearly in path arc length from its start to its goal, the other
-   joints keeping the planner's path. The re-profiled path is kept only if
-   every segment passes the planner's own collision check; otherwise
-   the planner's path stays, the detour was needed. The planner's
+1b. **The monotone rule** — once a planned hop is decimated to the
+   corners that will be executed, every joint's path must move
+   monotonically from its start value to its goal value: a joint whose
+   path doubles back, beyond the endpoints' span or inside it, is
+   re-profiled to move linearly in path arc length from its start to
+   its goal, the other joints keeping the planner's corners. The
+   re-profiled polyline is kept only if every segment passes the
+   planner's own collision check; otherwise the planner's path stays,
+   the detour was needed. The rule is judged on the decimated polyline,
+   never on the planner's dense sampling: the dense path carries the
+   B-spline's wiggles in every joint, and one of its hundreds of
+   segments grazing the envelope refused the whole rule while the
+   executed corners were clear (bna bench, 2026-09-23: rack C8 ->
+   vortex, one refused check out of 320 shipped a 60 mm rail loop that
+   the 6-corner re-profile of the same hop clears). The planner's
    clean-ups judge by its path-length metric, in which the rail is
    nearly free, so a rail loop survives them; for the robot a
    mid-travel reversal is the worst bend a chain can carry (bna bench,
