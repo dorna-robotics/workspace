@@ -113,6 +113,18 @@ class Recipe:
         # its own move, the travel stops at the approach's first point,
         # the approach runs as one chain. 0 disables it.
         fuse_min_travel=75,
+        # THE SPLIT RULE (core.smove_certify_split): an smove runs one
+        # profile for its whole chain, set by its single worst bend.
+        # When that profile is throttled below ``split_throttle`` of the
+        # requested vel/accel, the chain is cut at the binding knot and
+        # the halves certified on their own; the cut is kept only if the
+        # total, one stop (``split_stop_s``) included, beats the whole
+        # by ``split_min_gain``. At most ``split_max_cuts`` cuts. The
+        # whole chain is always a candidate, so nothing is made slower.
+        split_throttle=0.5,
+        split_min_gain=0.2,
+        split_max_cuts=2,
+        split_stop_s=0.1,
         # True playback-rate knob: sf asks for the SAME path in 1/sf of
         # the time. Physics fixes the law — vel×sf, accel×sf², jerk×sf³
         # (each time-derivative pulls down another factor of sf). See
@@ -205,6 +217,10 @@ class Recipe:
         self.fuse = prm["fuse"]
         self.fuse_in = prm["fuse_in"]
         self.fuse_min_travel = float(prm["fuse_min_travel"])
+        self.split_throttle = float(prm["split_throttle"])
+        self.split_min_gain = float(prm["split_min_gain"])
+        self.split_max_cuts = int(prm["split_max_cuts"])
+        self.split_stop_s = float(prm["split_stop_s"])
         self.speed_factor = prm["speed_factor"]
         # The profile multipliers [kv, ka, kj] the speed factor stands
         # for: a number s is the physical time-scale [s, s², s³]; a
@@ -906,7 +922,12 @@ class Recipe:
                 [[float(v) for v in tail_pts[0]]] + [list(q) for q in spliced[1:]])
             if len(chain) >= 2:
                 vel, accel, jerk = self.scaled_vaj(vaj_map["jmove"])
-                self.core.smove_certify(chain, vel, accel, jerk, joint_caps=self.scaled_caps())
+                # The split rule's certifies too, so run 2 finds them warm.
+                self.core.smove_certify_split(
+                    chain, vel, accel, jerk, joint_caps=self.scaled_caps(),
+                    throttle=self.split_throttle, min_gain=self.split_min_gain,
+                    max_cuts=self.split_max_cuts, stop_s=self.split_stop_s,
+                    owner=type(self).__name__)
             ms = round((_time.perf_counter() - _t0) * 1000)
             print(f"[fusion] pre-warmed the fused chain for the next run ({ms} ms)")
             self.core.fusion_journal("prewarm", owner=type(self).__name__,
@@ -1813,20 +1834,35 @@ class Recipe:
         if len(chain) < 2:
             return   # every knot within sliver tolerance — already there
         _tc = _time.perf_counter()
-        vel, accel, jerk = self.core.smove_certify(chain, vel, accel, jerk,
-                                                   joint_caps=self.scaled_caps())
+        pieces = self.core.smove_certify_split(
+            chain, vel, accel, jerk, joint_caps=self.scaled_caps(),
+            throttle=self.split_throttle, min_gain=self.split_min_gain,
+            max_cuts=self.split_max_cuts, stop_s=self.split_stop_s,
+            owner=type(self).__name__)
         _ts = _time.perf_counter()
-        rt.smove(chain[1:], vel=vel, accel=accel, jerk=jerk)
-        _send_ms = (_time.perf_counter() - _ts) * 1000
-        print(f"[fold] certify {(_ts - _tc)*1000:.0f} ms, send "
-              f"{_send_ms:.0f} ms")
-        # Journaled AFTER the motion returns: motion start = this
-        # event's ts - send_ms (completes the verb->fold->send
-        # kickstart timeline in core/fusion_log.jsonl).
-        self.core.fusion_journal(
-            "send", owner=type(self).__name__, primitive="smove",
-            certify_ms=round((_ts - _tc) * 1000),
-            send_ms=round(_send_ms))
+        _cert_ms = round((_ts - _tc) * 1000)
+        for n, (piece, (vel, accel, jerk), info) in enumerate(pieces):
+            rt.checkpoint()
+            _t1 = _time.perf_counter()
+            rt.smove(piece[1:], vel=vel, accel=accel, jerk=jerk)
+            _send_ms = (_time.perf_counter() - _t1) * 1000
+            print(f"[fold] certify {_cert_ms if n == 0 else 0} ms, send "
+                  f"{_send_ms:.0f} ms" + (f" (piece {n + 1}/{len(pieces)})" if len(pieces) > 1 else ""))
+            # Journaled AFTER the motion returns: motion start = this
+            # event's ts - send_ms (completes the verb->fold->send
+            # kickstart timeline in core/fusion_log.jsonl). ``bind``
+            # says which joint set this piece's profile and where.
+            bind = (info or {}).get("bind") or {}
+            req = (info or {}).get("req") or [None, None]
+            self.core.fusion_journal(
+                "send", owner=type(self).__name__, primitive="smove",
+                certify_ms=_cert_ms if n == 0 else 0, send_ms=round(_send_ms),
+                piece=f"{n + 1}/{len(pieces)}" if len(pieces) > 1 else None,
+                vaj=[round(vel), round(accel), round(jerk)],
+                throttle=(round(min(vel / req[0], accel / req[1]), 3) if req[0] and req[1] else None),
+                bound=(f"{bind.get('joint')} {bind.get('kind')} at {bind.get('arc', bind.get('frac', 0)):.0%}"
+                       if bind else None),
+                t_cert=(round(info["t"], 2) if info else None))
 
     def _emit_chain(self, rt, primitive, pts, vajs, corners, stops, tool_pose=None):
         """Send a chain, split at its internal STOPS.

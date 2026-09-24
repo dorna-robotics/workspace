@@ -281,6 +281,22 @@ diverges). Reading the line:
   jerk as written instead — the explicit way to, say, keep the cruise
   and soften the jerk. A number is the cubic law; a vector is taken
   literally; anything else is a RecipeError.
+* **The split rule.** An smove runs ONE profile for its whole chain,
+  and certify picks it from the single worst bend. Whatever put the
+  bend there — a planner detour, a rail reversal, a wrist peak —
+  throttles the entire chain (bna bench, 2026-09-23: a 60 mm rail
+  excursion in a planned path certified a one-metre travel to accel 2
+  of 800, 26.6 s instead of 3.5). So when the certified profile is
+  below `split_throttle` (default 0.5) of the requested vel or accel,
+  the chain is cut at the binding knot and the halves are certified
+  on their own; the cut is kept only if the total, one stop
+  (`split_stop_s`, 0.1 s) included, beats the whole by
+  `split_min_gain` (0.2), at most `split_max_cuts` (2) times. The whole
+  chain is always a candidate and the choice is made on certified
+  time, so no motion is ever made slower. Every decision is a `split`
+  row in `core/fusion_log.jsonl`; every `send` row carries the
+  certified vaj, the throttle ratio and the binding joint, and the
+  end-of-run line counts the cuts and the seconds saved.
 * The **touch speed class**: the last approach group (the contact leg)
   runs lmove-class speeds — that is the point of the group boundary
   before it.

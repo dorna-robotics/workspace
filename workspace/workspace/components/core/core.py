@@ -2312,6 +2312,8 @@ class Core:
             return None
         line = (f"fusion: {c['merged']} merged, {c['recorded']} recorded, "
                 f"{c['mismatched']} mismatched")
+        if c.get("split"):
+            line += f", {c['split']} chain(s) cut at a bend ({c.get('split_saved_s', 0.0):.0f} s saved)"
         if c["merged"] == 0 and c["recorded"]:
             line += " (recording pass — fuses on the next run)"
         elif c["mismatched"]:
@@ -3078,11 +3080,14 @@ class Core:
             _ck = self._chain_key(pts, vel, accel, jerk, 0.0, None, _sig,
                                   _turns, "smove")
             _hit = self._chain_get(_ck)
-            # A row without the binding joint predates the diagnostic:
-            # certify once more so every motion can say what limits it.
-            if _hit is not None and _hit.get("bound"):
+            # A row without the binding record (joint, kind, ratio,
+            # where along the path, and the motion time) predates the
+            # split rule: certify once more so the row can drive it.
+            if _hit is not None and _hit.get("bound") and isinstance(_hit.get("bind"), dict) and "t" in _hit:
                 try:
                     v_, a_, j_ = (float(x) for x in _hit["vaj"][0])
+                    self._last_certify = {"vel": v_, "accel": a_, "jerk": j_, "t": float(_hit["t"]),
+                                          "bind": dict(_hit["bind"]), "req": [float(vel), float(accel)]}
                     print(f"[traj] smove (cached): vaj [{v_:.0f}, {a_:.0f}, {j_:.0f}] — {_hit['bound']}")
                     return v_, a_, j_
                 except Exception:
@@ -3113,11 +3118,13 @@ class Core:
                     return 0.0, 0.0, 0.0
                 m = max(2, int(math.ceil(dur / dt)))
                 poses = []
+                qs = []
                 for i in range(m + 1):
                     q, _, _ = sim.traverse(jerks, ticks, q0=0.0, v0=0.0,
                                            a0=0.0, t=min(i * dur / m, dur))
                     pos, _, _ = path.get_curve_data(min(q, d))
                     poses.append([float(x) for x in pos])
+                    qs.append(min(float(q), d) / d)
                 st = dur / m
                 rv = ra = 0.0
                 rv_at = ra_at = (0, 0.0)
@@ -3140,7 +3147,8 @@ class Core:
                 jx, frac = rv_at if rv >= ra else ra_at
                 bind.update(joint=JOINT[jx] if jx < len(JOINT) else f"q{jx}",
                             kind="vel" if rv >= ra else "accel",
-                            ratio=max(rv, ra), frac=frac)
+                            ratio=round(max(rv, ra), 3), frac=round(frac, 3),
+                            arc=round(qs[min(int(round(frac * m)), m)], 3))
                 return rv, ra, dur
 
             # 1) converge down into the caps
@@ -3177,10 +3185,86 @@ class Core:
             print(f"[traj] smove certified: vaj [{v_c:.0f}, {a_c:.0f}, "
                   f"{j_c:.0f}] (req [{vel:.0f}, {accel:.0f}]), motion "
                   f"{best_dur:.1f}s, in {(time.perf_counter() - t0) * 1000:.0f} ms — {bound}")
-            self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [], extra={"bound": bound})
+            rec = {"bound": bound, "bind": dict(bind), "t": round(float(best_dur), 3)}
+            self._chain_cache_put(_ck, pts, [[v_c, a_c, j_c]], [], [], extra=rec)
+            self._last_certify = {"vel": v_c, "accel": a_c, "jerk": j_c, "t": float(best_dur),
+                                  "bind": dict(bind), "req": [float(vel), float(accel)]}
             return v_c, a_c, j_c
         except Exception:
+            self._last_certify = None
             return vel, accel, jerk   # certification must never block motion
+
+    # ── The split rule ───────────────────────────────────────────────
+    # An smove runs ONE profile for its whole chain, and certify picks
+    # it from the single worst bend. Whatever put the bend there — a
+    # planner detour, a rail reversal, a wrist peak, a recipe nobody
+    # has written yet — throttles the entire chain (bna bench,
+    # 2026-09-23: a 60 mm rail excursion in a planned path certified a
+    # one-metre travel to accel 2 of 800, 26.6 s instead of 3.5). The
+    # rule: when the profile is throttled below ``throttle`` of what
+    # was requested, cut the chain at the binding knot and certify the
+    # halves on their own; keep the cut only if the total, one stop
+    # included, beats the whole by ``min_gain``. The whole chain is
+    # always a candidate, and the choice is made on certified time,
+    # so no motion is ever made slower. Deterministic, journaled.
+
+    def smove_certify_split(self, points, vel, accel, jerk, joint_caps=None,
+                            throttle=0.5, min_gain=0.2, max_cuts=2, stop_s=0.1,
+                            owner=None):
+        """``[(chain, (vel, accel, jerk), info), ...]`` — the pieces to
+        send, in order, each certified on its own. One piece when the
+        chain is not throttled, or when no cut pays. ``info`` is the
+        certify record (t, bind, req)."""
+        chain = [[float(v) for v in q] for q in points]
+        v, a, j = self.smove_certify(chain, vel, accel, jerk, joint_caps=joint_caps)
+        info = getattr(self, "_last_certify", None)
+        if info is None or len(chain) < 3 or max_cuts <= 0:
+            return [(chain, (v, a, j), info)]
+        req_v, req_a = info["req"]
+        thr = min(v / req_v if req_v else 1.0, a / req_a if req_a else 1.0)
+        if thr >= throttle:
+            return [(chain, (v, a, j), info)]
+        # The binding knot: nearest knot to the bind's arc position.
+        seg = [math.sqrt(sum((q[i] - p[i]) ** 2 for i in range(len(p))))
+               for p, q in zip(chain, chain[1:])]
+        total = sum(seg)
+        if total <= 0:
+            return [(chain, (v, a, j), info)]
+        cum, acc = [0.0], 0.0
+        for x in seg:
+            acc += x
+            cum.append(acc)
+        target = float(info["bind"].get("arc", info["bind"].get("frac", 0.5))) * total
+        k = min(range(len(chain)), key=lambda i: abs(cum[i] - target))
+        k = max(1, min(len(chain) - 2, k))
+        left, right = chain[:k + 1], chain[k:]
+        vl, al, jl = self.smove_certify(left, vel, accel, jerk, joint_caps=joint_caps)
+        il = getattr(self, "_last_certify", None)
+        vr, ar, jr = self.smove_certify(right, vel, accel, jerk, joint_caps=joint_caps)
+        ir = getattr(self, "_last_certify", None)
+        if il is None or ir is None:
+            return [(chain, (v, a, j), info)]
+        t_split = il["t"] + ir["t"] + float(stop_s)
+        gain = 1.0 - t_split / info["t"] if info["t"] > 0 else 0.0
+        self.fusion_journal("split", owner=owner, knot=k, of=len(chain),
+                            bind=info["bind"].get("joint"), kind=info["bind"].get("kind"),
+                            throttle=round(thr, 3), t_whole=round(info["t"], 2),
+                            t_split=round(t_split, 2), gain=round(gain, 3),
+                            taken=bool(gain >= min_gain))
+        if gain < min_gain:
+            return [(chain, (v, a, j), info)]
+        c = getattr(self, "_fusion_counts", None)
+        if c is not None:
+            c["split"] = c.get("split", 0) + 1
+            c["split_saved_s"] = c.get("split_saved_s", 0.0) + (info["t"] - t_split)
+        # Each half may still carry a bend of its own.
+        out = self.smove_certify_split(left, vel, accel, jerk, joint_caps=joint_caps,
+                                       throttle=throttle, min_gain=min_gain,
+                                       max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner)
+        out += self.smove_certify_split(right, vel, accel, jerk, joint_caps=joint_caps,
+                                        throttle=throttle, min_gain=min_gain,
+                                        max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner)
+        return out
 
     def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0, label="cjmove"):
         """Chain parameters for cjmove tuned for MAXIMUM smoothness
