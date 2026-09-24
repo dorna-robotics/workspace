@@ -765,6 +765,8 @@ class Recipe:
             "flush_fn": _flush,
             "book_key": key,
             "book_sig": sig,
+            "start_xyz": self._tool_world_xyz(tp),   # for _hop_mm (fallback)
+            "target_xyz": [float(v) for v in target_solid.pose(anchor=target_anchor)[:3]],
         }
         if output_exit:
             tail["io_start"] = lambda: self._output_async(
@@ -819,6 +821,7 @@ class Recipe:
             "flush_fn": _flush,
             "book_key": key,
             "book_sig": sig,
+            "start_xyz": self._tool_world_xyz(tp),   # for _hop_mm
         })
 
     def _tail_deposit_chain(self, rt, points, primitive, vaj_map, motion_plan_kwargs, io=None):
@@ -860,6 +863,7 @@ class Recipe:
             "flush_fn": _flush,
             "book_key": key,
             "book_sig": sig,
+            "start_xyz": self._tool_world_xyz([0, 0, 0, 0, 0, 0]),   # for _hop_mm
         }
         if io:
             tail["io_start"], tail["io_join"] = io[0], io[1]
@@ -867,7 +871,8 @@ class Recipe:
         self.core.tail_deposit(tail)
         return True, None
 
-    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map, measured):
+    def _prewarm_fused(self, rec, fold_base, points, planned, vaj_map, measured,
+                       blend, padding):
         """Run 1 just RECORDED a seam (its tail ran classic, this fold
         followed). Build the chain run 2 will splice — tail + this fold
         — and put it in the fold cache under the seam-keyed row and in
@@ -875,13 +880,27 @@ class Recipe:
         both on its first fused pass (bench: run 2 spent 3.2 s on folds
         and certification that run 3 then found cached). Runs after
         the classic motion returned, so it delays nothing; never
-        raises."""
+        raises.
+
+        THE CHAIN STORED IS THE CHAIN A LIVE MERGE WOULD SEND: the
+        splice is blended, seam included, before it is stored. Without
+        that every pre-warmed row carried the raw corner where the
+        held lift meets the travel — 81 to 109 degrees on the bench
+        (bna, 2026-09-23, 118 of 118 rows) — and run 2 rode a spline
+        through it at speed while run 1, stopping at the lift top,
+        never had the corner at all."""
         try:
             key, tail_pts = rec
             if not tail_pts or len(tail_pts) < 2:
                 return
             _t0 = _time.perf_counter()
             spliced = [list(q) for q in tail_pts] + [list(q) for q in points[1:]]
+            if planned in ("smove", "tmove"):
+                blended = self.core.blend_points(
+                    spliced, blend, tool_pose=measured["tool_pose"], from_idx=1,
+                    padding=padding)
+                if blended is not None:
+                    spliced = blended
             self.core.fold_cache_put(json.dumps([fold_base, str(key)]), spliced, measured)
             chain = self.core.chain_sliver_dedup(
                 [[float(v) for v in tail_pts[0]]] + [list(q) for q in spliced[1:]])
@@ -919,18 +938,34 @@ class Recipe:
 
     # ── fold cache key (core/fold.json — see core's block comment) ───
 
+    def _tool_world_xyz(self, tool_pose):
+        """Where the tool point ``tool_pose`` (flange frame) is in the
+        world RIGHT NOW — the robot's live pose, no held frontier."""
+        self.core.update_pose()
+        flange = self.core.robot_flange.pose("output")
+        return [float(v) for v in dorna_pose.transform_pose(
+            [float(v) for v in tool_pose], from_frame=flange,
+            to_frame=[0, 0, 0, 0, 0, 0])[:3]]
+
     def _hop_mm(self, target_solid, target_anchor, path, tool_dict):
-        """Straight-line distance (mm) from where the TOOL stands as the
-        verb starts to the verb's final target — the hop
-        ``fuse_min_travel`` judges. Both ends in the world frame from
-        the scene: the tool's anchor now (the held tail's frontier when
-        one is held; the live pose otherwise), and the target anchor
-        with the path's last offset. None when either cannot be read
-        (then the hop is treated as long)."""
+        """Straight-line distance (mm) of the hop ``fuse_min_travel``
+        judges: ANCHOR TO ANCHOR — the previous verb's target anchor
+        (recorded in the held tail as ``target_xyz`` when it was
+        deposited) to this verb's target anchor, no grip offsets, no
+        lift heights, no gaps: two neighbouring rack slots 40 mm apart
+        read 40. With nothing held, or a tail that knows no target (a
+        planned hop), the tool's position at deposit or its live
+        position stands in for the previous anchor. None when either
+        end cannot be read (the hop is then treated as long)."""
         try:
             self.core.update_pose()
-            end = target_solid.pose(anchor=target_anchor, offset=path[-1])[:3]
-            if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
+            end = target_solid.pose(anchor=target_anchor)[:3]
+            tail = self.core._motion_tail
+            if tail is not None and tail.get("target_xyz") is not None:
+                start = tail["target_xyz"]
+            elif tail is not None and tail.get("start_xyz") is not None:
+                start = tail["start_xyz"]
+            elif tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
                 start = tool_dict["solid"].pose(anchor=tool_dict["anchor"],
                                                 offset=tool_dict["offset"])[:3]
             else:
@@ -1439,6 +1474,12 @@ class Recipe:
             pending_io = None
             _rec = None
             _learned = None   # a held seam that met a new partner (book_learn)
+            # The unblended fold, set only when this fold is computed
+            # fresh: a cache hit hands back the blended product, and a
+            # seam recorded on one is NOT pre-warmed — its first fused
+            # pass merges live (raw fold + tail, blended once) and is
+            # cached from then on. One fresh fold beats a kinked row.
+            _points_raw = None
             _t_ik0 = _t_plan = _t_sample = _t_blend = 0.0
             if _fold_base is not None:
                 if fuse_tail is not None:
@@ -1570,6 +1611,12 @@ class Recipe:
                     if fuse_tail.get("io_start"):
                         pending_io = (fuse_tail["io_start"], fuse_tail["io_join"])
                     fuse_tail = None
+                # The UNBLENDED fold, for the pre-warm: the chain run 2
+                # splices is blended ONCE, tail and fold together, as a
+                # live merge blends — a second pass over already-filleted
+                # geometry leaves slivers and kinks (sim: 38-65 deg in
+                # joint space where the classic chain had 3).
+                _points_raw = [list(q) for q in points]
                 if planned in ("smove", "tmove"):
                     # Corner blending: G1 Bezier fillets on EVERY sharp
                     # corner of the fused path — travel and approach
@@ -1613,11 +1660,11 @@ class Recipe:
             # partner (book_learn) alike — without the second, every
             # multi-partner seam (one decap lift, 28 cap slots) folded
             # fresh on its first fused run (bench, 2026-09-23).
-            if fuse_tail is None and _fold_base is not None:
+            if fuse_tail is None and _fold_base is not None and _points_raw is not None:
                 for rec in (_rec, _learned):
                     if rec is not None:
-                        self._prewarm_fused(rec, _fold_base, points, planned, vaj_map,
-                                            _meas)
+                        self._prewarm_fused(rec, _fold_base, _points_raw, planned, vaj_map,
+                                            _meas, blend, motion_plan_kwargs.get("padding", 10))
             return
             # Unplanned first-hop sampling failed — nothing executed
             # yet; fall through to the fully classic sequence.
