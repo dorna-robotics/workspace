@@ -100,8 +100,9 @@ class RemoveWorkspaceHandler(AuthedHandler):
 
 
 class ProjectSetupFileHandler(tornado.web.RequestHandler):
-    """Serves a project's own run-setup screen (``setup:``) and the
-    files beside it, out of the project's ``hmi/`` folder.
+    """Serves a project's run-setup screen (``setup:``) and the files
+    beside it, out of the declared screen's own folder (usually the
+    project's ``hmi/``; a sibling's, e.g. ``../_bna/hmi/setup.js``).
 
     The Parameters modal is used BEFORE launch, so the runtime server
     that serves the pendant screen is not up yet — the orchestrator

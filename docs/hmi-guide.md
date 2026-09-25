@@ -180,9 +180,12 @@ Three sources; two exist, one is a small addition:
 pendant: hmi/pendant.html     # or hmi/pendant.js
 ```
 
-Everything under the project's `hmi/` folder is served by the runtime
-server at `/hmi/…`, so a screen can pull in its own css, modules and
-assets with plain relative paths. The pendant is served by the
+Everything in the declared screen's folder — the project's `hmi/`,
+or a sibling project's when `launch.yaml` names one
+(`pendant: ../_bna/hmi/pendant.js`, as bna's TPH does) — is served by the
+runtime server at `/hmi/…`, so a screen can pull in its own css, modules
+and assets with plain relative paths. `setup:` works the same way: the
+orchestrator serves it from its file's own folder. The pendant is served by the
 orchestrator on a **different port**, so those files carry
 `Access-Control-Allow-Origin: *` (`HmiStaticFileHandler`) — without it
 `fetch()` and `import()` refuse the body and the screen never mounts.

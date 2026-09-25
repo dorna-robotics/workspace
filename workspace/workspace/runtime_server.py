@@ -327,8 +327,20 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
         return None if DEV_NOCACHE else super().compute_etag()
 
 
+def _pendant_dir(proj):
+    """The folder of the pendant screen ``launch.yaml`` declares
+    (``pendant:``), or None when none is declared or the file is missing."""
+    try:
+        launch = yaml.safe_load((proj / "launch.yaml").read_text()) or {}
+        rel = launch.get("pendant")
+        f = (proj / str(rel)) if rel else None
+        return f.resolve().parent if f is not None and f.is_file() else None
+    except Exception:
+        return None
+
+
 class HmiStaticFileHandler(NoCacheStaticFileHandler):
-    """The project's own hmi/ folder.
+    """The pendant screen's folder (``_pendant_dir``; hmi/ by default).
 
     The pendant page is served by the orchestrator GUI, on a different
     port from this runtime server, so every read of a project screen is
@@ -1931,9 +1943,15 @@ class RuntimeServer:
             _dirs = project_dirs(_proj, ensure=True)
             _record_dir = str(_dirs["rec"])
             self.rt.record_dir = str(_dirs["results"])
-        if _proj is not None and (_proj / "hmi").is_dir():
-            routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler,
-                              {"path": str(_proj / "hmi")}))
+        # The folder served is the DECLARED pendant screen's own — as
+        # the orchestrator serves ``setup:`` from its file's folder — so
+        # a project may name a screen outside its folder (a sibling's:
+        # ``pendant: ../_bna/hmi/pendant.js``). No declaration: hmi/.
+        _hmi = _pendant_dir(_proj) if _proj is not None else None
+        if _hmi is None and _proj is not None and (_proj / "hmi").is_dir():
+            _hmi = _proj / "hmi"
+        if _hmi is not None:
+            routes.insert(0, (r"/hmi/(.*)", HmiStaticFileHandler, {"path": str(_hmi)}))
 
         # Parse the project's HMI declaration once. Warnings are printed
         # at startup (a typo'd widget must be visible then, not silently
