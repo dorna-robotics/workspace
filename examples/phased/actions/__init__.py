@@ -25,7 +25,7 @@ teaches (bt-framework-guide §13) — and, in phase 2, how a step whose
 from workspace.bt import Action
 
 from actions.predicates import PASSES, hand_empty, home, pan_empty, parked, seat_free, started
-from actions.base import item_id, slot_of
+from actions.base import RACK, item_id, slot_of
 
 
 def setup(**kwargs):
@@ -42,11 +42,19 @@ def setup(**kwargs):
         return (started.name,) in state and (parked.name,) in state
 
 
+    def item_components(workspace, tube):
+        # The tube's 3D models — what an operator Replan clears from the
+        # scene when this tube is removed (bt-framework-guide §8.6).
+        # Every model attached under the tube must be named (its cap).
+        slot = workspace.components[RACK].slot["body"][tube]
+        return [f"tube_amber_40ml_{slot}", f"cap_amber_40ml_{slot}"]
+
     return {
-        "initial_facts": frozenset(),
-        "goal":          goal,
-        "item_done":     item_done,
-        "objects":       {"tube": tubes},
+        "initial_facts":   frozenset(),
+        "goal":            goal,
+        "item_done":       item_done,
+        "objects":         {"tube": tubes},
+        "item_components": item_components,
     }
 
 

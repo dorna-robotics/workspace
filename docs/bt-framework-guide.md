@@ -1349,6 +1349,7 @@ every project (examples/ and bna follow it):
 | `setup()`'s `goal` | what lies beyond the items: `started` and `parked` — the platform adds "every item done or removed" | a loop over the items (a removed one would hold it false forever) |
 | A gate over the whole batch (Park) | `for t in self._ctx_items():` — the items still in the run | `self._ctx_all_objects()[dim]` |
 | The audit status at Park | `self._ctx_removed(t)` first, then the facts | a status that reports a removed item as "stopped before …" |
+| `setup()`'s `item_components(workspace, item)` | every 3D model of one item — what an operator Replan clears (§8.6) | leaving it out (Replan refuses) or naming only the vial (its cap would be orphaned — refused too) |
 
 **Proving it** — `bt.replay` removes an item where you say, then checks
 the run still closes and no step is ever planned for an item that left:
@@ -1360,6 +1361,159 @@ sudo python3 -m workspace.bt.replay <project> --batch 4 8 --remove 3@Shake1     
 
 Run it after any change to a gate or a group step. A project that
 still loops over all items fails here at the desk, never on the bench.
+
+### 8.6 Replan — the operator removes items
+
+§8.5 is the project deciding an item leaves the run. **Replan** is the
+operator deciding it. It is the same removal; only who decides
+differs. It is built so that it cannot bend the run's logic: it adds
+no new way of stopping the robot, changes nothing until everything is
+checked, and ends in the engine's ordinary replan.
+
+#### The rules
+
+1. **Replan lives inside Pause.** The button is disabled unless the RUN
+   is paused (not a pause before Start, not while parking). It never
+   stops anything itself — Pause already did, at a checkpoint.
+2. **The list is the run's own.** Pressing Replan offers every item
+   still in the run — the items the planner is planning — grouped by
+   the phase each is IN, with a search box, and per item: what leaves
+   with it (its dependents, §8.5) and what it holds in the plan (a
+   station, a seat). Finished items are listed too: removing one
+   changes only its audit record. Nothing per project is written for
+   the list; `setup()` may return `"item_label": fn(item) -> str` for
+   friendlier names.
+3. **The operator chooses one or more items and a reason.** Cancel
+   closes the Replan with nothing changed; closing the window only
+   hides it (the button reads **Choose…** and reopens it); Resume also
+   closes an unapplied Replan.
+4. **Applied only when nothing is in flight.** The choice is applied
+   when every worker thread of the run stands at a checkpoint
+   (`Runtime.paused_workers`) — no robot command, no device command of
+   any action is on the wire. Until then the dialog reads *Applying —
+   waiting for … to reach a stop*.
+5. **Everything is checked before anything changes.** The items and
+   their dependents; the 3D models to clear (`item_components`, below)
+   — each must exist, must not be `core`, a mounted tool or a
+   device-backed component, and no other model may be attached under
+   one of them without being named too (a cap on a vial would be left
+   orphaned). A refusal says why in the dialog: **nothing was
+   changed**, the run is still paused exactly as it was.
+6. **Applying** does, in this order, all in the paused state:
+   * **the actions tied to a removed item are dropped** — an action is
+     tied when it is BOUND to the item (its item parameter) or its
+     precondition NAMES it (a bank's shake, whose pre spans the bank).
+     A tied device action's own `cancel()` stops its device (a shaker
+     stops shaking); every tied worker is marked and unwinds at the
+     checkpoint it stands at — `Runtime.checkpoint` re-checks the mark
+     on every wake, so a dropped action never sends another robot
+     command, not even on Resume. The robot is NOT halted (nothing is
+     moving). The dropped leaf reports RUNNING until the tree is
+     rebuilt: its effects never apply and it never fails the tree;
+   * **the items and their dependents leave the plan** — exactly
+     §8.5: `removed(item)`, the stations they held are freed in the
+     plan, each audit row reads `removed: operator -> <reason> (<phase>)`;
+   * **their 3D models are removed from the scene**
+     (`Workspace.remove_component`, children first);
+   * a step in the run's timeline says what was removed and stopped.
+7. **The new plan.** If nothing else was in flight, the engine
+   replans at once (still paused) and the new plan runs on Resume. If
+   actions NOT tied to the removed items were paused mid-way, they
+   keep their place: on Resume they finish, **no new action starts
+   meanwhile** (`Runtime.replan_hold` — no exception of any kind),
+   and then the engine replans. Park during that wait takes over as
+   usual (its cleanup replaces the tree).
+
+#### What stays where it was — deliberately
+
+* **Held motion.** The robot's held motion tail is the EXIT of a verb
+  that already finished (the lift out of the scale), deposited for
+  fusion. Replan does not drop it: dropping it would leave the arm
+  inside a station while the plan believes it left, and the next
+  motion would start inside a collision envelope. It executes on
+  Resume, before the next motion, exactly as it always does. What a
+  dropped action had NOT yet commanded is never sent.
+* **Positions.** A removed item's position is simply never visited
+  again: every step that would go there belongs to the item. A
+  position shared by turns (a shaker seat) is freed in the plan for
+  the next item. Groups do not re-form: in bna, bank 1 stays tubes 1–4
+  with tube 4 removed (three shaken, its seat empty), bank 2 stays
+  5–8 — a regroup would move tubes that may already sit on the
+  shaker.
+* **Park's own rule.** Park keeps its exception (a robot action may
+  start while the gripper is full, so Park's wait for an empty hand
+  can end). Replan never waits for an empty hand, so it needs none:
+  the rebuilt plan's next step for a held item is its place.
+
+#### The operator's part
+
+The platform removes the items from the PLAN and their models from the
+3D SCENE. **The real bench is the operator's**: take the item — and
+everything of it, wherever it is: in the gripper, on the shaker, a cap
+in the cap rack — off the bench before pressing Resume. A removed item
+held in the gripper is removed like any other: the plan counts the
+gripper empty, its model is cleared, the operator empties the real
+gripper.
+
+#### The project's part
+
+One declaration in `setup()` — which 3D models make up one item:
+
+```python
+def item_components(workspace, tube):
+    slot = workspace.components[RACK].slot["body"][tube]
+    return [f"tube_amber_40ml_{slot}", f"cap_amber_40ml_{slot}"]   # every model of the item
+
+return {..., "item_done": item_done, "item_components": item_components}
+```
+
+Name EVERY model that belongs to the item, wherever it may be at that
+moment (bna: the amber vial, its receiver, its product, each with its
+cap). A model that exists only part of the run is returned only while
+it is in the scene — apc creates a disc's model at Create and deletes
+it at Sort, so its `item_components` returns `[disc_n]` when
+`disc_n in workspace.components`, else `[]` (a disc not yet on the
+bench, or already sorted, has nothing to clear). A project without `item_components` cannot use Replan: the
+dialog refuses with that reason — the platform never guesses which
+models belong to an item. Plus the §8.5 contract (goal beyond the
+items, gates over `_ctx_items()`, status from `_ctx_removed()`), which
+`bt.replay --remove` proves.
+
+#### The pieces
+
+| Piece | Where |
+|---|---|
+| Request state, choice, hold, paused-worker set, cancel re-check | `workspace/runtime.py` (`replan`, `replan_offer`, `replan_choose`, `replan_failed`, `replan_done`, `replan_cancel`, `replan_hold`, `paused_workers`, `checkpoint`) |
+| One Replan step per paused engine loop: offer, wait for a stop, check, drop tied leaves, rebuild | `workspace/bt/engine.py` (`_replan_paused`, `_leaf_tied`, the pending rebuild in `run`) |
+| Dropping a leaf without halting the robot; the no-exception hold | `workspace/bt/behaviours.py` (`_replan_drop`, `_park_hold`) |
+| The list, the dependents, the scene check | `workspace/bt/remove.py` (`offer`, `dependents_of`, `scene_check`) |
+| Check and apply for this run (`item_components`, facts, scene) | `workspace/bt/launcher.py` (`_replan_prepare`, `_replan_commit`) |
+| Commands and status | `runtime_server.py` (`/cmd` replan, remove, replan_cancel; `status.replan`); relayed by the orchestrator |
+| The button (after Park, before Kill) and the dialog | `gui/orchestrator/web/admin/` — `workspace.js` (sidebar + pendant + dialog), `dashboard.js` (card; *Choose…* opens the workspace page), `workspace.html`, `style.css` |
+
+API:
+
+| Request | Effect |
+|---|---|
+| `POST /cmd {"cmd": "replan"}` | open a Replan — 409 with the reason unless the run is paused |
+| `status.replan` | `null`; `{"phase": "opening"}`; `{"phase": "choose", "items": [...], "error"?}`; `{"phase": "applying", "waiting"?}` |
+| `POST /cmd {"cmd": "remove", "items": [...], "reason": "..."}` | the choice (at least one item) — 409 when nothing is being chosen or an item is not in the run |
+| `POST /cmd {"cmd": "replan_cancel"}` | close it, nothing changed — 409 once the choice is being applied |
+
+Each item offered: `{"item", "label", "phase", "phase_index", "in_phase", "done", "with", "holds"}`.
+
+#### Proven (sim, the real launcher / engine / runtime / scene)
+
+`replan_scenarios.py`-style runs, one per case: the removed item idle
+in its slot; the item's own action paused mid-way (dropped, sends no
+further segment, before or after Resume); the item carried (its model
+moved onto another parent); the item on the shaker during its bank's
+shake (the shake stopped through its `cancel()`, the bank shaken again
+without it); an item with a dependent; two items at once; Park right
+after a Replan; Kill with the dialog open; a refused choice (nothing
+changed, Cancel, the run finishes every item); Pause/Resume with no
+Replan (unchanged); Replan refused while running. Every other item
+finishes and the run parks.
 
 ---
 
@@ -1908,6 +2062,14 @@ With `item_done` given, the platform owns the per-item part of the run's
 goal: the run is over when every item is done or removed (§8.5) AND
 `goal(state)` holds. So `goal` states only what lies beyond the items —
 `started` and `parked` — and never loops over them.
+
+The other per-item keys `setup()` may return, all optional:
+
+| Key | Shape | What reads it |
+|---|---|---|
+| `dependents` | `fn(item) -> [items]` | removal: items of the batch that leave with this one, transitively (§8.5) |
+| `item_components` | `fn(workspace, item) -> [component names]` | operator Replan: every 3D model of the item, cleared from the scene when it is removed — without it Replan refuses (§8.6) |
+| `item_label` | `fn(item) -> str` | operator Replan: the item's name in the dialog (default `str(item)`) |
 
 With no phases and `batch_size <= plan_window`, windowing is a no-op.
 Phases keep windowing active even when the window covers the whole

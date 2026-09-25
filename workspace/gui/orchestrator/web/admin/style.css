@@ -782,6 +782,51 @@
 .btn.btn-warn.hold, .btn.btn-primary.hold { --hold-color: rgba(0, 0, 0, 0.55); }
 .hold.hold-fired { animation: pendant-flash 0.4s ease; }
 
+/* Replan — accent outline: an ordinary run control, not a stop */
+.pendant-replan { color: var(--accent); border: 1.5px solid var(--accent); }
+.pendant-replan:hover:not(:disabled) { background: var(--accent-dim); }
+
+/* ── Replan dialog (workspace.html #replanModalOverlay) ── */
+.modal.replan-modal { width: min(720px, 100%); }
+.rp-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.rp-search, .rp-reason input {
+  width: 100%; min-height: 44px; padding: 0 var(--space-3);
+  font: inherit; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.rp-list {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.rp-group { display: flex; flex-direction: column; }
+.rp-group-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-height: 44px; padding: 0 var(--space-3);
+  font: inherit; font-weight: 600; color: var(--text); text-align: left;
+  background: var(--surface2); border: none; border-radius: var(--radius-md); cursor: pointer;
+}
+.rp-group-head:hover { background: var(--border2); }
+.rp-chev { width: 14px; color: var(--muted); }
+.rp-count { margin-left: auto; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.rp-row {
+  display: grid; grid-template-columns: 24px max-content 1fr; align-items: center; gap: var(--space-3);
+  min-height: 44px; padding: 0 var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--border2); cursor: pointer;
+}
+.rp-row:hover { background: var(--surface2); }
+.rp-row.selected .rp-label { color: var(--accent); }
+.rp-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.rp-label { font-weight: 600; }
+.rp-meta { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-empty, .rp-muted { color: var(--muted); font-size: var(--text-sm); padding: var(--space-3); }
+.rp-preview { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.rp-warn { color: var(--amber); font-weight: 600; }
+.rp-reason { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+.rp-state { font-size: var(--text-sm); font-weight: 600; }
+.rp-state:empty { display: none; }
+.rp-state.busy { color: var(--accent); }
+.rp-state.err { color: var(--red); }
+
 /* Kill — red outline, never filled */
 .pendant-kill { color: var(--red); border: 1.5px solid var(--red); }
 .pendant-kill:hover:not(:disabled) { background: var(--red-dim); }

@@ -388,9 +388,16 @@ function render() {
                 // keeps the vocabulary consistent across sidebar,
                 // pendant, and card.
                 const startLbl = isStarted(state) ? "Resume" : "Start";
+                // Replan (bt-framework-guide §8.6): enabled only while
+                // the run is paused; once opened it reads "Choose…",
+                // which opens the workspace page where the dialog lives.
+                const rp = st.replan?.phase;
+                const rpLbl = rp ? "Choose…" : "Replan";
+                const rpOff = !rp && state.toUpperCase() !== "PAUSED";
                 return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${startLbl}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
                <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
+               <button class="btn btn-sm action-btn"             data-cmd="replan" data-replan="${rp || ""}" ${rpOff ? "disabled" : ""}>${rpLbl}</button>
                <div class="spacer"></div>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`;
               })()
@@ -423,6 +430,10 @@ function render() {
     el.querySelectorAll(".action-btn").forEach(btn => {
       const cmd = btn.dataset.cmd;
       const act = async () => {
+        if (cmd === "replan" && btn.dataset.replan) {
+          window.location.href = `workspace.html?name=${encodeURIComponent(ws.name)}`;
+          return;
+        }
         // Device-fault gate for Start / Resume. Fetches fresh status
         // from the workspace and prompts if any critical device is
         // still down. See deviceFaultGate in api.js for the full

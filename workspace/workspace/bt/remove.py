@@ -175,6 +175,113 @@ def apply(ctx, facts: Set[Tuple], items: Iterable[Any], *, by: str, outcome: str
     return order
 
 
+def dependents_of(ctx, item: Any) -> List[Any]:
+    """Every item that would leave the run with ``item`` (transitive,
+    ``item`` itself excluded) — a preview, nothing applied."""
+    dependents = state_of(ctx)["dependents"]
+    out: List[Any] = []
+    queue = list(dependents(item) or ()) if dependents is not None else []
+    while queue:
+        d = queue.pop(0)
+        if d == item or d in out:
+            continue
+        out.append(d)
+        queue.extend(dependents(d) or ())
+    return out
+
+
+def offer(ctx, state, all_items: Iterable[Any], done: Optional[Callable], phases=(),
+          label: Optional[Callable] = None) -> List[Dict[str, Any]]:
+    """The operator's Replan list: every item of the batch still in
+    the run, as ``{"item", "label", "phase", "phase_index", "in_phase",
+    "done", "with", "holds"}`` — the last phase it reached (and its
+    place in the ROUTE, -1 before the first), the phase it is in now,
+    whether it is finished (removing a
+    finished item changes only its record), what would leave with it,
+    and the capacity it still holds. Read from the facts, the same ones
+    the planner reads — the list cannot disagree with the plan."""
+    ledger = state_of(ctx)["ledger"]
+    out = []
+    for it in all_items:
+        if (REMOVED, it) in state:
+            continue
+        reached, reached_i = None, -1
+        for i, ph in enumerate(phases):
+            try:
+                if ph.reached(state, [it]):
+                    reached, reached_i = ph.name, i
+            except Exception:
+                pass
+        try:
+            name = str(label(it)) if label is not None else str(it)
+        except Exception:
+            name = str(it)
+        out.append({
+            "item": it,
+            "label": name,
+            "phase": reached,
+            "phase_index": reached_i,
+            "in_phase": (phases[reached_i + 1].name if 0 <= reached_i + 1 < len(phases) else None),
+            "done": bool(done(state, it)) if done is not None else False,
+            "with": [str(label(d)) if label is not None else str(d) for d in dependents_of(ctx, it)],
+            "holds": [f[0] + (str(f[1:]) if len(f) > 1 else "") for f, owner in ledger.held.items() if owner == it],
+        })
+    return out
+
+
+def scene_check(workspace, names: List[str]) -> List[str]:
+    """Check that the 3D models ``names`` can be removed from the scene
+    together, BEFORE anything is changed; returns them ordered children
+    first. Raises ValueError naming the first problem:
+
+    * a name that is not a component of the scene;
+    * ``core``, a tool mounted on the robot, or a device-backed
+      component (the same refusals as ``Workspace.remove_component``);
+    * a component ATTACHED UNDER one of them that is not in the list —
+      it would be left orphaned (a cap on a removed vial). The project's
+      ``item_components`` must name it too.
+    """
+    comps = getattr(workspace, "components", {}) or {}
+    owner: Dict[int, str] = {}
+    for cname, comp in comps.items():
+        for solid in (getattr(comp, "assembly", {}) or {}).values():
+            owner[id(solid)] = cname
+    names = list(dict.fromkeys(names))
+    chosen = set(names)
+    from workspace.devices import component_device_ids
+    for n in names:
+        if n not in comps:
+            raise ValueError(f"3D model {n!r} is not in the scene")
+        if n == "core":
+            raise ValueError("'core' cannot be removed")
+        comp = comps[n]
+        if component_device_ids(comp):
+            raise ValueError(f"{n!r} is a device-backed component — it cannot be removed during a run")
+        mounted = getattr(workspace, "_is_mounted_on_robot", None)
+        if callable(mounted) and mounted(comp):
+            raise ValueError(f"{n!r} is the tool mounted on the robot — it cannot be removed")
+
+    def parent_of(cname):
+        for solid in (getattr(comps[cname], "assembly", {}) or {}).values():
+            ps = (getattr(solid, "parent", None) or {}).get("parent_solid")
+            if ps is not None and id(ps) in owner:
+                return owner[id(ps)]
+        return None
+
+    for cname in comps:
+        if cname in chosen:
+            continue
+        p = parent_of(cname)
+        if p in chosen:
+            raise ValueError(f"{cname!r} is attached to {p!r} and would be left behind — "
+                             f"item_components must name it too")
+
+    def depth(cname, seen=()):
+        p = parent_of(cname)
+        return 0 if p is None or p in seen else 1 + depth(p, seen + (cname,))
+    return sorted(names, key=depth, reverse=True)
+
+
 def info(ctx, item: Any) -> Optional[Dict[str, Any]]:
     """How ``item`` left the run — ``{"by", "outcome", "phase",
     "because_of"}`` — or ``None`` if it did not."""
@@ -182,4 +289,5 @@ def info(ctx, item: Any) -> Optional[Dict[str, Any]]:
 
 
 __all__ = ["removed", "REMOVED", "is_removed", "with_removed", "run_goal", "open_items",
-           "Ledger", "install", "note_effects", "apply", "info"]
+           "Ledger", "install", "note_effects", "apply", "dependents_of", "offer",
+           "scene_check", "info"]

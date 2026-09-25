@@ -158,6 +158,17 @@ The pendant cinematic tile (`.pendant-btn`) uses `--radius-xl` — a
 deliberate "this is a big touch target, not a normal button" cue.
 Don't apply that radius elsewhere.
 
+**Run controls, one order everywhere:** Start/Resume · Pause · Park ·
+Replan · Kill — the dashboard card, the workspace sidebar and the
+pendant bar. Replan is a plain tap, **enabled only while the run is
+paused** (its tooltip says so otherwise), accent outline on the
+pendant. Once opened it reads *Choose…* and reopens the dialog. The
+dialog: items grouped by the phase they are in (search, collapsible
+groups with counts, 44 px rows), a live preview of what leaves / what
+is freed, a reason, **Cancel** and **Remove N & replan**; its state line
+reads *Applying — waiting for …* (accent) or *Not applied — <reason>.
+Nothing was changed.* (red) (bt-framework-guide §8.6).
+
 **Hold-to-activate.** Park and Kill are never a click and never a
 confirm modal. The operator presses and holds; the button fills from
 the left over 2 s (`.hold` + `.holding`, `api.js holdToActivate`) and

@@ -280,6 +280,13 @@ class WorkspaceCmdHandler(AuthedHandler):
                 out = await loop.run_in_executor(_cmd_pool, self.orch.pause_runtime, name)
             elif cmd == "resume":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.resume_runtime, name)
+            elif cmd == "replan":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.replan_runtime, name)
+            elif cmd == "remove":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.remove_runtime, name,
+                                                 data.get("items") or [], data.get("reason") or "")
+            elif cmd == "replan_cancel":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.replan_cancel_runtime, name)
             elif cmd == "kill":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.stop_workspace, name)
                 out = out or {"status": "ok", "killed": True}

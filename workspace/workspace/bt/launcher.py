@@ -960,10 +960,66 @@ def run_protocol(
         leaves = [leaf_factory(name, 0) for name, _ in park_classes]
         return sequence(f"{project_name}/park", *leaves)
 
+    # Operator Replan (Runtime.replan, bt-framework-guide §8.6): the
+    # items offered, a choice CHECKED, a checked choice APPLIED — the
+    # same removal an action's outcome makes (bt/remove.py), by
+    # "operator", plus the items' 3D models out of the scene.
+    item_label = spec.get("item_label")
+    item_components = spec.get("item_components")
+    if item_components is not None and not callable(item_components):
+        raise TypeError("setup() returned item_components that is not callable: "
+                        "``def item_components(workspace, item): return [component names]``")
+
+    def _replan_items() -> list:
+        state = state_to_frozen(ctx.state)
+        return _remove.offer(ctx, state, all_items, item_done, phases, item_label)
+
+    def _replan_prepare(choice: dict) -> dict:
+        items = list(choice.get("items") or [])
+        state = state_to_frozen(ctx.state)
+        gone = []
+        for it in items:
+            for x in [it] + _remove.dependents_of(ctx, it):
+                if x not in gone and not _remove.is_removed(state, x):
+                    gone.append(x)
+        if item_components is None:
+            raise ValueError("this project does not declare item_components(workspace, item) "
+                             "in setup(), so Replan cannot clear the removed items' 3D models")
+        names = []
+        for it in gone:
+            try:
+                names += list(item_components(workspace, it) or [])
+            except Exception as ex:
+                raise ValueError(f"item_components({it!r}) raised {type(ex).__name__}: {ex}") from ex
+        names = _remove.scene_check(workspace, names)
+        return {"items": items, "gone": gone, "components": names,
+                "reason": choice.get("reason") or "removed by the operator"}
+
+    def _replan_commit(prep: dict) -> str:
+        facts = ctx.state.get("facts")
+        if not isinstance(facts, set):
+            facts = ctx.state["facts"] = set(facts or ())
+        gone = _remove.apply(ctx, facts, prep["items"], by="operator", outcome=prep["reason"])
+        for name in prep["components"]:
+            workspace.remove_component(name)
+        pub = ctx.meta.get("event_publisher")
+        if pub is not None:
+            try:
+                pub({"type": "items_removed", "items": list(gone), "by": "operator",
+                     "outcome": prep["reason"], "components": list(prep["components"])})
+            except Exception:
+                log.exception("event_publisher raised — ignoring")
+        label = (lambda x: str(item_label(x))) if item_label is not None else str
+        return (f"removed {', '.join(label(x) for x in gone)} ({prep['reason']}); "
+                f"{len(prep['components'])} 3D model(s) cleared")
+
     root = replanner.rebuild()
     engine = BTEngine(
         root=root,
         rebuild=replanner.rebuild,
+        replan_items=_replan_items,
+        replan_prepare=_replan_prepare,
+        replan_commit=_replan_commit,
         build_park_tree=build_park_tree,
         runtime=ctx.runtime,
         # The cap counts consecutive zero-progress replans: the probe

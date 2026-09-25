@@ -308,8 +308,8 @@ async function openParamsModal(frozen) {
 }
 
 // ---- API ----
-async function sendCmd(cmd, kwargs) {
-  const payload = { cmd };
+async function sendCmd(cmd, kwargs, extra) {
+  const payload = { cmd, ...(extra || {}) };
   if (kwargs) payload.kwargs = kwargs;
   return apiFetch(`/workspace/${encodeURIComponent(wsName)}/cmd`, {
     method: "POST",
@@ -554,6 +554,7 @@ function updateStatusUI(st) {
   // after a kill that no longer reflects what's running.
   renderStep(st?.step, running);
   updateProgress(st?.step?.progress, launched);
+  setReplan(st?.replan || null);
   renderControls(state, launched, running);
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
@@ -1462,6 +1463,172 @@ function escHtml(s) {
   }[c]));
 }
 
+// ───────────────────────────── Replan ─────────────────────────────────
+// The operator's half of Replan (bt-framework-guide §8.6). Only while
+// the run is PAUSED: pressing Replan asks the runtime to open one; it
+// publishes status.replan {phase: "opening"} -> {phase: "choose",
+// items: [...]} (every item still in the run) -> after the choice
+// {phase: "applying", waiting?} -> null once applied, or back to
+// "choose" with {error} when it was refused (nothing changed). The
+// dialog opens on "choose"; the button reads "Choose…" and reopens it.
+let _replan = null;
+let _replanShownFor = null;     // the offer the dialog already opened for
+const _rpSel = new Set();       // JSON keys of the selected items
+const _rpOpen = new Set();      // expanded phase groups
+
+function replanControl(state) {
+  // Replan lives inside Pause: enabled only while the run is paused.
+  // Once opened it reads "Choose…" and reopens the dialog.
+  if (_replan) return { label: "Choose…", disabled: false, title: "Choose the items to remove" };
+  const paused = (state || "").toUpperCase() === "PAUSED";
+  return { label: "Replan", disabled: !paused,
+           title: paused ? "Remove items from the run, then replan"
+                         : "Pause the run first — Replan works only while paused" };
+}
+
+function setReplan(rp) {
+  _replan = rp;
+  const ov = $("replanModalOverlay");
+  if (!rp) {
+    ov.classList.remove("show");
+    _replanShownFor = null;
+    return;
+  }
+  if (rp.phase === "choose" || rp.phase === "applying") {
+    const key = JSON.stringify((rp.items || []).map(it => it.item));
+    if (_replanShownFor !== key) { _replanShownFor = key; openReplanModal(true); }
+    else if (ov.classList.contains("show")) renderReplanList();
+  }
+}
+
+function _rpKey(it) { return JSON.stringify(it.item); }
+
+function _rpGroups(items) {
+  // One group per phase the items are IN (ROUTE order), Finished last.
+  // A project without phases has one group.
+  const groups = new Map();
+  for (const it of items) {
+    const g = it.done ? "__done" : (it.in_phase ?? "__run");
+    if (!groups.has(g)) groups.set(g, { key: g, order: it.done ? 1e9 : it.phase_index ?? -1,
+      title: it.done ? "Finished" : (it.in_phase ? `In ${it.in_phase}` : "In the run"), items: [] });
+    groups.get(g).items.push(it);
+  }
+  return [...groups.values()].sort((a, b) => a.order - b.order);
+}
+
+function openReplanModal(fresh) {
+  if (!["choose", "applying"].includes(_replan?.phase)) return;
+  if (fresh) {
+    _rpSel.clear(); _rpOpen.clear();
+    $("rpSearch").value = ""; $("rpReason").value = "";
+    // Short lists open whole; long ones open their earliest group of
+    // unfinished items, the rest collapsed with a count.
+    const groups = _rpGroups(_replan.items || []);
+    const total = (_replan.items || []).length;
+    for (const g of groups) if (g.key !== "__done" && (total <= 40 || !_rpOpen.size)) _rpOpen.add(g.key);
+  }
+  renderReplanList();
+  $("replanModalOverlay").classList.add("show");
+}
+
+function renderReplanList() {
+  const items = _replan?.items || [];
+  const q = $("rpSearch").value.trim().toLowerCase();
+  const hit = it => !q || it.label.toLowerCase().includes(q) || String(it.item).toLowerCase() === q;
+  const list = $("rpList");
+  if (!items.length) {
+    list.innerHTML = `<div class="rp-empty">No items in this run — Replan rebuilds the plan only.</div>`;
+  } else {
+    list.innerHTML = _rpGroups(items).map(g => {
+      const shown = g.items.filter(hit);
+      if (!shown.length) return "";
+      const open = q || _rpOpen.has(g.key);
+      const nSel = g.items.filter(it => _rpSel.has(_rpKey(it))).length;
+      const rows = open ? shown.map(it => {
+        const k = _rpKey(it);
+        const meta = [it.done ? "finished — record only" : "",
+                      it.with?.length ? `takes ${it.with.join(", ")}` : "",
+                      it.holds?.length ? `holds ${it.holds.join(", ")}` : ""].filter(Boolean).join(" · ");
+        return `<label class="rp-row${_rpSel.has(k) ? " selected" : ""}">
+          <input type="checkbox" data-k="${escAttr(k)}" ${_rpSel.has(k) ? "checked" : ""}>
+          <span class="rp-label">${escHtml(it.label)}</span>
+          <span class="rp-meta">${escHtml(meta)}</span></label>`;
+      }).join("") : "";
+      return `<div class="rp-group">
+        <button class="rp-group-head" data-g="${escAttr(g.key)}" aria-expanded="${open ? "true" : "false"}">
+          <span class="rp-chev">${open ? "▾" : "▸"}</span><span>${escHtml(g.title)}</span>
+          <span class="rp-count">${nSel ? `${nSel} / ` : ""}${g.items.length}</span></button>${rows}</div>`;
+    }).join("") || `<div class="rp-empty">No item matches “${escHtml(q)}”.</div>`;
+  }
+  // Preview: what leaves, what it takes with it, what is freed.
+  const chosen = items.filter(it => _rpSel.has(_rpKey(it)));
+  const takes = [...new Set(chosen.flatMap(it => it.with || []))].filter(l => !chosen.some(c => c.label === l));
+  const frees = [...new Set(chosen.flatMap(it => it.holds || []))];
+  $("rpPreview").innerHTML = chosen.length
+    ? `<div><b>Leaves the run:</b> ${escHtml(chosen.map(c => c.label).join(", "))}</div>`
+      + (takes.length ? `<div><b>Also leaves (dependents):</b> ${escHtml(takes.join(", "))}</div>` : "")
+      + (frees.length ? `<div><b>Freed in the plan:</b> ${escHtml(frees.join(", "))}</div>` : "")
+      + `<div class="rp-warn">Clear these from the bench before you resume — the platform removes them from the plan only.</div>`
+    : `<div class="rp-muted">Nothing selected.</div>`;
+  // Where the request stands: refused (nothing changed), or waiting
+  // for every action in flight to stand still before it is applied.
+  const applying = _replan?.phase === "applying";
+  const st = $("rpState");
+  st.className = "rp-state" + (_replan?.error ? " err" : applying ? " busy" : "");
+  st.textContent = _replan?.error ? `Not applied — ${_replan.error}. Nothing was changed.`
+    : applying ? (_replan.waiting ? `Applying — ${_replan.waiting}…` : "Applying…") : "";
+  const go = $("btnReplanGo");
+  go.disabled = !chosen.length || applying;
+  go.textContent = applying ? "Applying…" : chosen.length ? `Remove ${chosen.length} & replan` : "Remove & replan";
+  $("btnReplanCancel").disabled = applying;
+}
+
+async function sendReplanChoice(items) {
+  $("btnReplanGo").disabled = true;
+  try {
+    await sendCmd("remove", undefined, { items, reason: $("rpReason").value.trim() });
+    // The dialog stays open until the engine reports: applied (status
+    // replan -> null, the dialog closes) or refused (error shown here).
+    await refreshStatus();
+  } catch (err) {
+    toast(String(err), "bad");
+    renderReplanList();
+  }
+}
+
+async function cancelReplan() {
+  try {
+    await sendCmd("replan_cancel");
+    $("replanModalOverlay").classList.remove("show");
+    await refreshStatus();
+  } catch (err) {
+    toast(String(err), "bad");
+  }
+}
+
+$("rpSearch").addEventListener("input", renderReplanList);
+$("rpList").addEventListener("click", e => {
+  const head = e.target.closest(".rp-group-head");
+  if (head) {
+    e.preventDefault();
+    const g = head.dataset.g;
+    _rpOpen.has(g) ? _rpOpen.delete(g) : _rpOpen.add(g);
+    renderReplanList();
+  }
+});
+$("rpList").addEventListener("change", e => {
+  const k = e.target?.dataset?.k;
+  if (k == null) return;
+  e.target.checked ? _rpSel.add(k) : _rpSel.delete(k);
+  renderReplanList();
+});
+$("btnReplanGo").addEventListener("click", () =>
+  sendReplanChoice((_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item)));
+$("btnReplanCancel").addEventListener("click", cancelReplan);
+// Closing the window only hides it — the Replan stays open (the button
+// reads "Choose…"); Cancel closes the Replan itself.
+$("btnReplanClose").addEventListener("click", () => $("replanModalOverlay").classList.remove("show"));
+
 // ───────────────────────────── Operator Actions ─────────────────────────
 // Single WebSocket to /ws/operator_actions on the workspace runtime
 // handles both directions:
@@ -1819,8 +1986,9 @@ function renderControls(state, launched, running) {
   // changed, neither has the button set — short-circuit before
   // tearing down the DOM and reattaching listeners.
   const s = (state || "").toUpperCase();
-  if (s === _lastControlsState) return;
-  _lastControlsState = s;
+  const key = `${s}|${_replan?.phase || ""}`;
+  if (key === _lastControlsState) return;
+  _lastControlsState = key;
   controls.innerHTML = "";
 
   const addBtn = (label, cmd, opts = {}) => {
@@ -1828,8 +1996,12 @@ function renderControls(state, launched, running) {
     b.className = `btn btn-sm${opts.primary ? " btn-primary" : ""}${opts.danger ? " btn-danger" : ""}${opts.warn ? " btn-warn" : ""}`;
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
+    if (opts.title) b.title = opts.title;
     // Park and Kill are hold-to-activate (api.js holdToActivate).
     const act = async () => {
+      // Replan waiting for the operator's choice: the button reopens
+      // the dialog instead of sending another request.
+      if (cmd === "replan" && _replan) { openReplanModal(); return; }
       // Device-fault gate for Start / Resume. Identical contract to
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
@@ -1887,6 +2059,8 @@ function renderControls(state, launched, running) {
     // crash. Require ``active`` (running || parking) and disable when
     // already parking.
     addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
+    const rb = replanControl(s);
+    addBtn(rb.label, "replan", { disabled: rb.disabled, title: rb.title });
   }
 
   // Gear button for parameters — only before launch
@@ -2658,6 +2832,10 @@ function updatePendantUI() {
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;
+  const rb = replanControl(state);
+  $("pendantReplan").disabled  = rb.disabled;
+  $("pendantReplan").title     = rb.title;
+  $("pendantReplan").querySelector("span").textContent = rb.label;
   $("pendantKill").disabled    = !launched;
 
   // Relabel the Start tile to "Resume" once the workspace has begun
@@ -2676,6 +2854,7 @@ function updatePendantUI() {
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   const cmd = btn.dataset.cmd;
   const act = async () => {
+    if (cmd === "replan" && _replan) { openReplanModal(); return; }
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button. Pendant pressed sound/haptics
     // come AFTER the gate so a canceled prompt doesn't beep falsely.

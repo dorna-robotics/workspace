@@ -345,9 +345,10 @@ class Orchestrator:
     def _auth_headers(self) -> Dict[str, str]:
         return {"X-Orch-Token": ORCH_TOKEN} if ORCH_TOKEN else {}
 
-    def _proxy_cmd_to_node(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None):
+    def _proxy_cmd_to_node(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None,
+                           extra: Optional[Dict] = None):
         url = self._orch_url(ws, f"/workspace/{requests.utils.quote(ws.name)}/cmd")
-        payload = {"cmd": cmd}
+        payload = {"cmd": cmd, **(extra or {})}
         if kwargs:
             payload["kwargs"] = kwargs
         r = requests.post(url, json=payload, timeout=10, headers=self._auth_headers())
@@ -450,12 +451,22 @@ class Orchestrator:
 
     # ---------------- Runtime commands ----------------
 
-    def _send_runtime_cmd_local(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None):
+    def _send_runtime_cmd_local(self, ws: WorkspaceInfo, cmd: str, kwargs: Optional[Dict] = None,
+                                extra: Optional[Dict] = None):
         url = f"http://127.0.0.1:{ws.port}/cmd"
-        payload = {"cmd": cmd}
+        payload = {"cmd": cmd, **(extra or {})}
         if kwargs:
             payload["kwargs"] = kwargs
         r = requests.post(url, json=payload, timeout=4)
+        if not r.ok:
+            # The workspace's own reason ("no Replan is waiting for a
+            # choice"), not a bare status line.
+            try:
+                msg = r.json().get("error")
+            except Exception:
+                msg = None
+            if msg:
+                raise RuntimeError(msg)
         r.raise_for_status()
         return r.json()
 
@@ -518,6 +529,26 @@ class Orchestrator:
         if not self.is_launched(name):
             raise RuntimeError(f"Workspace {name} is not launched.")
         return self._send_runtime_cmd_local(ws, "park")
+
+    def replan_runtime(self, name: str):
+        """Operator Replan — only while the run is paused."""
+        return self._runtime_cmd(name, "replan")
+
+    def remove_runtime(self, name: str, items, reason: str = ""):
+        """The Replan choice: remove ``items`` and replan."""
+        return self._runtime_cmd(name, "remove", {"items": list(items or []), "reason": reason or ""})
+
+    def replan_cancel_runtime(self, name: str):
+        """Close an open Replan without changing anything."""
+        return self._runtime_cmd(name, "replan_cancel")
+
+    def _runtime_cmd(self, name: str, cmd: str, extra: Optional[Dict] = None):
+        ws = self.workspaces[name]
+        if ws.is_remote():
+            return self._proxy_cmd_to_node(ws, cmd, extra=extra)
+        if not self.is_launched(name):
+            raise RuntimeError(f"Workspace {name} is not launched.")
+        return self._send_runtime_cmd_local(ws, cmd, extra=extra)
 
     def get_status(self, name: str) -> Dict:
         ws = self.workspaces[name]

@@ -954,7 +954,8 @@ reason not to flag every predicate of this shape. Full rationale in
 4. Click the **gear icon** → set parameters → **Set**
 5. Click **Launch** → **Start**
 6. To park gracefully: **Park** (finishes current action → runs shutdown → exits)
-7. To emergency halt: **Kill** (instant stop, may leave robot in dirty state)
+7. To take items out of a running batch: **Pause**, then **Replan** (choose the items → the actions tied to them stop, their 3D models are cleared → clear them from the bench → Resume; the run carries on without them) — bt-framework-guide §8.6
+8. To emergency halt: **Kill** (instant stop, may leave robot in dirty state)
 
 ### From the command line
 
@@ -1007,12 +1008,13 @@ scene builder's Replay tab scrubs. Because it is server-side:
 `GET /record/status`, `POST /record/start|stop` are the endpoints.
 
 
-The runtime exposes three control signals. Each interacts differently with the currently executing state:
+The runtime exposes four control signals. Each interacts differently with the currently executing state:
 
 | Signal | When it takes effect | What runs after | Use when |
 |---|---|---|---|
 | **Pause** | At the next pause-aware call (`rt.sleep` / `rt.delay` / `rt.<robot>` / `rt.checkpoint`) — see [§8 Pause gate](#pause-gate) for the full list | Blocks until you Resume — state continues from where it stopped | You want to inspect, intervene, or wait |
 | **Park** | **Between states** — current state runs to completion first | If `trigger: park` is defined → that trigger runs and is the authoritative final cleanup. Otherwise → exit immediately, tools stay where they are | Graceful shutdown — the safe default |
+| **Replan** | **Only inside Pause** — applied once every action in flight stands at a checkpoint; nothing is halted | The actions tied to the chosen items are dropped, the items leave the plan and their 3D models the scene; on Resume the untied paused actions finish, then the new plan runs | An item must leave the batch (dropped, broken, bad) — bt-framework-guide §8.6 |
 | **Kill** | At the next pause-aware call (same set as Pause) | Nothing — process exits immediately, no cleanup | Emergency halt only — may leave robot/tools in a dirty state |
 
 **Why Park is "between states", not mid-state:** many states perform multi-step atomic operations (most importantly tool swaps: `place(old)` then `pick(new)`). Interrupting between those steps would leave the robot in an inconsistent state — e.g. tool placed back but the next pick never happened, while the runtime still thinks a tool is held. Park therefore lets the current state finish, then exits cleanly between states.

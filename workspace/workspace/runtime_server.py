@@ -426,6 +426,22 @@ class CmdHandler(tornado.web.RequestHandler):
             self.rt.pause()
         elif cmd == "resume":
             self.rt.resume()
+        elif cmd in ("replan", "remove", "replan_cancel"):
+            # Operator Replan — only inside Pause (bt-framework-guide §8.6):
+            #   replan         open it; the items appear on status["replan"]
+            #   remove         {"items": [...], "reason": "..."} — the choice
+            #   replan_cancel  close it, nothing changed
+            try:
+                if cmd == "replan":
+                    self.rt.replan()
+                elif cmd == "remove":
+                    self.rt.replan_choose(data.get("items") or [], data.get("reason") or "")
+                else:
+                    self.rt.replan_cancel()
+            except ValueError as ex:
+                self.set_status(409)
+                self.write({"error": str(ex)})
+                return
         elif cmd == "kill":
             self.rt.kill()
         else:
@@ -1130,6 +1146,10 @@ def _status_payload(rt, workspace) -> dict:
     si = getattr(rt, "step_info", None)
     if si:
         out["step"] = si
+    # Always present (None when no Replan is pending): the UI merges
+    # pushed status over its last poll, so an absent key would leave a
+    # finished Replan showing.
+    out["replan"] = getattr(rt, "replan_info", None)
     summary = _compute_devices_summary(workspace)
     if summary is not None:
         out["devices_summary"] = summary

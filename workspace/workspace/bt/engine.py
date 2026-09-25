@@ -57,6 +57,11 @@ class ReplanRequested(Exception):
 # ── Engine ─────────────────────────────────────────────────────────────────
 
 
+def _hashable(x):
+    """Items may arrive as JSON lists; compare them as tuples."""
+    return tuple(_hashable(v) for v in x) if isinstance(x, list) else x
+
+
 @dataclass
 class EngineConfig:
     """Knobs for the tick loop.
@@ -132,8 +137,21 @@ class BTEngine:
         runtime: Optional[object] = None,
         progress_probe: Optional[Callable[[], object]] = None,
         config: Optional[EngineConfig] = None,
+        replan_items: Optional[Callable[[], list]] = None,
+        replan_prepare: Optional[Callable[[dict], dict]] = None,
+        replan_commit: Optional[Callable[[dict], str]] = None,
     ):
         self._root = root
+        # Operator Replan (Runtime.replan, bt-framework-guide §8.6): the
+        # launcher's callbacks (bt/remove.py) — the items to offer; a
+        # choice CHECKED (raises ValueError, nothing changed); a checked
+        # choice APPLIED (facts + 3D scene, returns a summary).
+        self._replan_items = replan_items
+        self._replan_prepare = replan_prepare
+        self._replan_commit = replan_commit
+        # Applied while actions not tied to the removed items were
+        # paused mid-way: they finish first, then the plan is rebuilt.
+        self._rebuild_pending = False
         self._rebuild = rebuild
         self._build_park_tree = build_park_tree
         self._runtime = runtime
@@ -239,7 +257,27 @@ class BTEngine:
                     # else: a robot leaf is mid-motion, or the hand is
                     # full — tick on; re-check at the next tick
 
+                # Replan applied while untied actions were paused mid-way
+                # (see _replan_paused): they have finished — rebuild.
+                # Leaves of the old tree did not start meanwhile
+                # (runtime.replan_hold). Park takes over from a pending
+                # rebuild: its cleanup replaces the tree anyway.
+                if self._rebuild_pending and not self._runtime_paused():
+                    if self._runtime_parking() or self._in_cleanup:
+                        self._rebuild_pending = False
+                        self._runtime_call("set_replan_hold", False)
+                    elif not self._alive_workers():
+                        self._rebuild_pending = False
+                        self._runtime_call("set_replan_hold", False)
+                        if not self._handle_replan(ReplanRequested("operator replan — rebuild")):
+                            return self._abort()
+                        continue
+
                 if self._runtime_paused():
+                    # Replan lives inside Pause (bt-framework-guide §8.6).
+                    if self._runtime_replanning() and not self._in_cleanup:
+                        if not self._replan_paused():
+                            return self._abort()
                     # Don't tick during pause. Sleep a short period and
                     # re-check. The tree's currently-active leaf will be
                     # ticked again as soon as we resume — its state is
@@ -317,6 +355,121 @@ class BTEngine:
             return False
         e = getattr(self._runtime, "parking", None)
         return bool(e() if callable(e) else e)
+
+    def _replan_paused(self) -> bool:
+        """One step of an operator Replan, run from the paused loop
+        (never ticks). Returns False only when the engine must abort
+        (a rebuild failed).
+
+        1. ``opening`` -> offer the items (launcher callback).
+        2. A choice arrived -> it is applied only when EVERY worker in
+           flight stands at a checkpoint (Runtime.paused_workers): no
+           robot command of any of them is on the wire. Until then the
+           choice waits and the dialog says what for.
+        3. CHECK everything first (launcher ``replan_prepare`` — the
+           items, their dependents, the 3D models): a refusal changes
+           nothing and goes back to the dialog.
+        4. APPLY: the actions tied to a removed item — bound to it, or
+           naming it in their precondition (a bank's shake) — are
+           dropped without halting the robot (RecipeAction._replan_drop);
+           the items leave the plan and the 3D scene (``replan_commit``).
+        5. Rebuild the plan now if nothing else is in flight; otherwise
+           hold every new leaf until the untied actions that were paused
+           mid-way have finished on Resume, then rebuild.
+        """
+        rt = self._runtime
+        info = self._runtime_call("replan_info") if callable(getattr(rt, "replan_info", None)) \
+            else getattr(rt, "replan_info", None)
+        if not info:
+            return True
+        if info.get("phase") == "opening":
+            items = []
+            if self._replan_items is not None:
+                try:
+                    items = list(self._replan_items())
+                except Exception:
+                    log.exception("BTEngine: replan_items raised — offering none")
+            self._runtime_call("replan_offer", items)
+            return True
+        choice = self._runtime_call("replan_take")
+        if choice is None:
+            return True
+        alive = self._alive_workers()
+        parked = self._runtime_call("paused_workers") or set()
+        moving = [l.name for l in alive
+                  if getattr(getattr(l, "_worker", None), "ident", None) not in parked]
+        if moving:
+            self._runtime_call("replan_put_back", choice,
+                               f"waiting for {', '.join(sorted(moving))} to reach a stop")
+            return True
+        try:
+            if self._replan_prepare is None or self._replan_commit is None:
+                raise ValueError("this run cannot remove items (no item model)")
+            prep = self._replan_prepare(choice)
+            gone = set(map(_hashable, prep.get("items") or []))
+            tied = [l for l in alive if self._leaf_tied(l, gone)]
+            summary = self._replan_commit(prep)
+        except ValueError as ex:
+            self._runtime_call("replan_failed", str(ex))
+            return True
+        except Exception as ex:
+            log.exception("BTEngine: replan apply raised")
+            self._runtime_call("replan_failed", f"internal error: {type(ex).__name__}: {ex}")
+            return True
+        for leaf in tied:
+            drop = getattr(leaf, "_replan_drop", None)
+            if callable(drop):
+                drop()
+        self._runtime_call("wake_workers")
+        rest = [l for l in alive if l not in tied]
+        names = ", ".join(l.name for l in tied)
+        log.warning("BTEngine: operator replan — %s%s", summary,
+                    f"; dropped {names}" if names else "")
+        step = getattr(rt, "step", None)
+        if callable(step):
+            try:
+                step(f"Replan: {summary}" + (f"; stopped {names}" if names else "")
+                     + (f"; {len(rest)} paused action(s) finish on Resume, then the new plan"
+                        if rest else "; the new plan runs on Resume"), level="info")
+            except Exception:
+                pass
+        self._runtime_call("replan_done")
+        if rest:
+            self._runtime_call("set_replan_hold", True)
+            self._rebuild_pending = True
+            return True
+        return self._handle_replan(ReplanRequested(f"operator replan — {summary}"))
+
+    @staticmethod
+    def _leaf_tied(leaf, gone: set) -> bool:
+        """Is this in-flight leaf's action tied to a removed item? It
+        is when it is BOUND to one (its item parameter), or its
+        precondition NAMES one (a shake whose pre spans its bank)."""
+        cls = getattr(leaf, "_cls", None)
+        if cls is None:
+            return False
+        item = getattr(leaf, "_item", None)
+        if getattr(cls, "params", None) and _hashable(item) in gone:
+            return True
+        try:
+            from workspace.bt.dsl import _extract_pre_facts, state_to_frozen
+            inst = leaf._instance
+            inst.state = state_to_frozen(leaf.ctx.state)
+            pos, neg = _extract_pre_facts(inst.pre(*leaf._params()))
+            return any(_hashable(a) in gone for f in (pos | neg) for a in f[1:])
+        except Exception:
+            log.exception("BTEngine: could not read %s's precondition — treating it as tied", leaf.name)
+            return True
+
+    def _runtime_replanning(self) -> bool:
+        if self._runtime is None:
+            return False
+        r = getattr(self._runtime, "replan_requested", False)
+        return bool(r() if callable(r) else r)
+
+    def _runtime_call(self, name: str, *args):
+        fn = getattr(self._runtime, name, None)
+        return fn(*args) if callable(fn) else None
 
     def _tool_holds_load(self) -> bool:
         """True if the robot's mounted tool is holding a picked item.

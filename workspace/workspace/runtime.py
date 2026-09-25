@@ -117,6 +117,16 @@ class Runtime:
         # cleanup flag — suppresses ParkRequested in checkpoint() during trigger:park / release
         self._in_cleanup = False
 
+        # Replan (operator) — see ``replan``. ``None``, or the request's
+        # public state: {"phase": "finishing", "waiting": [...]} while
+        # the in-flight actions end, then {"phase": "choose", "items":
+        # [...]} while the operator picks what to remove.
+        self._replan: Optional[dict] = None
+        self._replan_choice: Optional[dict] = None
+        self._replan_hold = False
+        # Threads standing in checkpoint()'s pause wait (paused_workers).
+        self._paused_threads: set = set()
+
         # prevent concurrent worker() runs
         self._in_worker = False
 
@@ -727,6 +737,11 @@ class Runtime:
             if self._killed:
                 return
             if self._status.state == RTState.PAUSED:
+                # A Replan still open (not applied) closes with the
+                # pause: Replan lives inside Pause, never after it.
+                if self._replan is not None and self._replan_choice is None \
+                        and self._replan.get("phase") != "applying":
+                    self._replan = None
                 self._status.job_resumes += 1
                 # Restore the PRE-PAUSE state — resuming an idle pause
                 # must return to IDLE, not claim RUNNING: the workflow
@@ -753,6 +768,9 @@ class Runtime:
             if self._killed or self._parking:
                 return
             self._parking = True
+            self._replan = None             # Park wins over a pending Replan
+            self._replan_choice = None
+            self._replan_hold = False
             self._set_state(RTState.PARKING)
             # If paused, resume so the checkpoint can see the stop flag
             self._cv.notify_all()
@@ -760,6 +778,153 @@ class Runtime:
     @property
     def parking(self) -> bool:
         return self._parking
+
+    # ── Replan: the operator removes items, inside Pause ─────────────
+    #
+    # Replan exists only inside Pause — it adds no new way of stopping
+    # the robot. The flow (bt-framework-guide §8.6), each step a status
+    # push on ``status["replan"]``:
+    #
+    #   replan()          operator, PAUSED only  -> {"phase": "opening"}
+    #   replan_offer()    engine: the items      -> {"phase": "choose", "items"}
+    #   replan_choose()   operator: the choice   -> {"phase": "applying", ...}
+    #   replan_done()     engine: applied        -> None (a step says what was done)
+    #   replan_failed()   engine: refused        -> {"phase": "choose", "error"}
+    #   replan_cancel()   operator, or Resume    -> None, nothing changed
+    #
+    # The engine does the work (BTEngine._replan_paused): it waits until
+    # every worker thread stands at a checkpoint, checks everything,
+    # then terminates the actions tied to the removed items, removes
+    # them from the plan and the 3D scene, and replans.
+
+    def replan(self) -> None:
+        """Operator: open a Replan. Only while a RUN is paused (not a
+        pause before Start), not while parking, one at a time."""
+        with self._lock:
+            if self._killed or self._parking:
+                raise ValueError("Replan is not available while parking")
+            if self._status.state != RTState.PAUSED:
+                raise ValueError("Replan is available only while the run is paused")
+            if getattr(self, "_pre_pause_state", None) not in (RTState.RUNNING,):
+                raise ValueError("Replan needs a paused run — this pause is not inside one")
+            if self._replan is not None:
+                return
+            self._replan = {"phase": "opening"}
+            self._replan_choice = None
+            self._push_status()
+
+    @property
+    def replan_requested(self) -> bool:
+        with self._lock:
+            return self._replan is not None
+
+    @property
+    def replan_info(self) -> Optional[dict]:
+        with self._lock:
+            return None if self._replan is None else json.loads(json.dumps(self._replan, default=str))
+
+    def replan_offer(self, items) -> None:
+        """Engine: the items the operator may remove."""
+        with self._lock:
+            if self._replan is None or self._replan.get("phase") != "opening":
+                return
+            self._replan = {"phase": "choose", "items": list(items)}
+            self._push_status()
+
+    def replan_choose(self, items, reason: str = "") -> None:
+        """Operator: the items to remove. Only while they are offered."""
+        with self._lock:
+            if self._replan is None or self._replan.get("phase") != "choose":
+                raise ValueError("no Replan is waiting for a choice")
+            offered = {json.dumps(r["item"]): r["item"] for r in self._replan.get("items", [])}
+            chosen = []
+            for it in items or []:
+                key = json.dumps(it)
+                if key not in offered:
+                    raise ValueError(f"{it!r} is not an item of this run")
+                if offered[key] not in chosen:
+                    chosen.append(offered[key])
+            if not chosen:
+                raise ValueError("choose at least one item — or close the dialog")
+            self._replan_choice = {"items": chosen, "reason": str(reason or "").strip()}
+            self._replan = dict(self._replan, phase="applying", waiting=None, error=None)
+            self._push_status()
+            self._cv.notify_all()
+
+    def replan_take(self) -> Optional[dict]:
+        """Engine: the operator's choice, once (``None`` until made)."""
+        with self._lock:
+            c, self._replan_choice = self._replan_choice, None
+            return c
+
+    def replan_put_back(self, choice: dict, waiting: str) -> None:
+        """Engine: not yet — the choice waits (``waiting`` says why)."""
+        with self._lock:
+            if self._replan is None:
+                return
+            self._replan_choice = choice
+            if self._replan.get("waiting") != waiting:
+                self._replan = dict(self._replan, waiting=waiting)
+                self._push_status()
+
+    def replan_failed(self, error: str) -> None:
+        """Engine: the choice was refused; NOTHING was changed."""
+        with self._lock:
+            if self._replan is None:
+                return
+            self._replan = dict(self._replan, phase="choose", waiting=None, error=str(error))
+            self._push_status()
+
+    def replan_done(self) -> None:
+        with self._lock:
+            self._replan = None
+            self._replan_choice = None
+            self._push_status()
+
+    def replan_cancel(self) -> None:
+        """Operator: close the Replan without changing anything. Refused
+        once the choice is being applied."""
+        with self._lock:
+            if self._replan is None:
+                return
+            if self._replan.get("phase") == "applying" and self._replan_choice is None:
+                raise ValueError("the removal is being applied — it cannot be cancelled now")
+            self._replan = None
+            self._replan_choice = None
+            self._push_status()
+
+    @property
+    def replan_hold(self) -> bool:
+        """While True, no BT leaf starts: set by the engine between an
+        applied Replan and the rebuild of the plan (the actions that
+        were paused mid-way finish first). No exceptions."""
+        return bool(getattr(self, "_replan_hold", False))
+
+    def set_replan_hold(self, on: bool) -> None:
+        self._replan_hold = bool(on)
+
+    def paused_workers(self) -> set:
+        """Idents of the workflow threads standing in the pause wait of
+        ``checkpoint()`` right now — at a checkpoint, no robot command
+        in flight from them."""
+        with self._lock:
+            return set(self._paused_threads)
+
+    def wake_workers(self) -> None:
+        """Wake every thread waiting in ``checkpoint()`` — a worker the
+        engine just marked cancelled unwinds at once, still paused."""
+        with self._lock:
+            self._cv.notify_all()
+
+    def _push_status(self) -> None:
+        """A status change that is not a state transition (Replan) —
+        the same push a transition makes."""
+        cb = self.on_status
+        if cb is not None:
+            try:
+                cb({"state": str(self._status.state)})
+            except Exception:
+                pass
 
     @property
     def killed(self) -> bool:
@@ -771,6 +936,9 @@ class Runtime:
             if self._killed:
                 return
             self._killed = True
+            self._replan = None
+            self._replan_choice = None
+            self._replan_hold = False
             self._status.kills += 1
             self._set_state(RTState.KILLED)
             self._start_token += 1
@@ -787,6 +955,9 @@ class Runtime:
             self._killed = False
             self._parking = False
             self._in_cleanup = False
+            self._replan = None
+            self._replan_choice = None
+            self._replan_hold = False
             self._status.last_error = None
             self._status.state = RTState.IDLE
             self._cv.notify_all()
@@ -813,6 +984,9 @@ class Runtime:
         with self._lock:
             self._parking = False
             self._in_cleanup = False
+            self._replan = None
+            self._replan_choice = None
+            self._replan_hold = False
         self._set_state_with_callback(RTState.IDLE)
 
     def mark_error(self, ex: Exception) -> None:
@@ -981,17 +1155,28 @@ class Runtime:
         # A terminated leaf's worker (RecipeAction.terminate marks its
         # thread) unwinds here instead of running its loop to the end
         # on a tree that no longer exists.
-        if getattr(threading.current_thread(), "_bt_cancel", None) == "hard":
+        me = threading.current_thread()
+        if getattr(me, "_bt_cancel", None) == "hard":
             raise ActionCancelled()
         with self._lock:
-            while True:
-                if self._killed:
-                    raise KillRequested()
-                st = self._status.state
-                if st == RTState.PAUSED:
-                    self._cv.wait()
-                    continue
-                return
+            try:
+                while True:
+                    if self._killed:
+                        raise KillRequested()
+                    # Re-checked on EVERY wake: a worker the engine
+                    # cancels while it waits here (Replan) must unwind
+                    # now — never return into its next robot command
+                    # on Resume.
+                    if getattr(me, "_bt_cancel", None) == "hard":
+                        raise ActionCancelled()
+                    st = self._status.state
+                    if st == RTState.PAUSED:
+                        self._paused_threads.add(me.ident)
+                        self._cv.wait()
+                        continue
+                    return
+            finally:
+                self._paused_threads.discard(me.ident)
 
     def settle(self, reason: str = "work", owner: Optional[str] = None) -> None:
         """Execute the robot's held motion tail, if any, before non-motion

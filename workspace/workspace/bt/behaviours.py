@@ -162,14 +162,24 @@ class RecipeAction(WorkspaceBehaviour):
         return False
 
     def _park_hold(self) -> bool:
-        """Should this leaf REFUSE to start right now? Yes while the
-        operator has clicked Park — unless the hand is full and this
-        leaf uses the robot, because the item must be put down first.
+        """Should this leaf REFUSE to start right now?
+
+        * **Replan applied, plan not rebuilt yet** (``runtime.replan_hold``):
+          yes, always — no exception. The actions that were paused
+          mid-way finish, then the engine rebuilds the plan and the new
+          tree's leaves start (bt-framework-guide §8.6).
+        * **Park**: yes while the operator has clicked Park — unless the
+          hand is full and this leaf uses the robot, because the item
+          must be put down first (Park waits for an empty hand before
+          its cleanup; without this exception it would wait forever).
+
         Lives at the leaf: a Sequence starts its next child inside the
         tick its predecessor finished in, before the engine can look."""
         if getattr(self, "_park_exempt", False):
             return False                    # a leaf of the cleanup tree
         rt = getattr(self.ctx, "runtime", None)
+        if getattr(rt, "replan_hold", False) is True:
+            return True
         p = getattr(rt, "parking", None)
         if not (p() if callable(p) else p):
             return False
@@ -207,7 +217,7 @@ class RecipeAction(WorkspaceBehaviour):
         self._started_at = time.monotonic()
         self._held = self._park_hold()
         if self._held:
-            self.log.info("RecipeAction[%s]: parking — not started", self.name)
+            self.log.info("RecipeAction[%s]: park / replan hold — not started", self.name)
             return
 
         def _target():
@@ -235,7 +245,11 @@ class RecipeAction(WorkspaceBehaviour):
 
     def update(self) -> py_trees.common.Status:
         if self._held:
-            return py_trees.common.Status.RUNNING   # parking: never started
+            # Never started (park / replan hold), or terminated by an
+            # operator Replan (_replan_drop): it reports RUNNING and
+            # never finishes — no effects, no failure, no replan of its
+            # own. The engine rebuilds the tree around it.
+            return py_trees.common.Status.RUNNING
         # Worker hasn't finished yet.
         if self._worker is not None and self._worker.is_alive():
             return py_trees.common.Status.RUNNING
@@ -257,6 +271,27 @@ class RecipeAction(WorkspaceBehaviour):
                 self.log.exception("apply_effects raised — state may be stale")
             return py_trees.common.Status.SUCCESS
         return py_trees.common.Status.FAILURE
+
+    def _replan_drop(self) -> None:
+        """Operator Replan removed this leaf's item: end its worker
+        WITHOUT halting the robot. Called only while the run is paused
+        with the worker standing at a checkpoint (the engine checks),
+        so no robot command of it is in flight and none will be sent:
+        a device action's own ``cancel()`` stops its device (a shaker
+        stops shaking); otherwise the thread is marked and unwinds at
+        its checkpoint (Runtime.checkpoint re-checks on every wake).
+        The leaf then reports RUNNING forever (``_held``) — its effects
+        never apply and it never fails the tree."""
+        w = self._worker
+        if w is not None and w.is_alive():
+            try:
+                self.cancel()          # the action's own device stop, if any
+            except Exception:
+                self.log.exception("_replan_drop: cancel() raised")
+            w._bt_cancel = "hard"      # unwinds at its checkpoint
+        self.log.info("RecipeAction[%s]: dropped by operator Replan", self.name)
+        self._worker = None
+        self._held = True
 
     def terminate(self, new_status: py_trees.common.Status) -> None:
         # If we're being aborted while the worker is still in flight, halt
