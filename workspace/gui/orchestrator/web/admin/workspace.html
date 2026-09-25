@@ -830,8 +830,8 @@
 
 <!-- Replan Modal — the operator's half of Replan (bt-framework-guide
      §8.6). Only while the run is paused. The list is the run's own
-     (status.replan.items): every item still in the run, grouped by the
-     phase it is in. Removing takes the items (and their dependents) out
+     (status.replan.items): every item still in the run, one plain list
+     (finished items in their own section). Removing takes the items (and their dependents) out
      of the plan, stops the actions tied to them and clears their 3D
      models; clearing them from the real bench is the operator's. -->
 <div class="modal-overlay" id="replanModalOverlay">
@@ -839,14 +839,14 @@
     <div class="modal-head">
       <h3>Replan — remove items</h3>
       <div class="spacer"></div>
-      <button class="btn btn-ghost btn-sm btn-icon" id="btnReplanClose" title="Hide — the Replan stays open; Choose… reopens it">
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnReplanClose" title="Hide — the Replan stays open; the Replan button reopens it">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
     <div class="modal-body">
-      <p class="rp-note">The run is paused. Choose the items to take out of the run: the actions tied to them stop, their 3D models are cleared, and the run replans without them on Resume. Clearing them from the real bench is yours.</p>
+      <p class="rp-note">The run is paused. Choose the items to take out of the run — for good: nothing is done to them again, in any later step. The actions tied to them stop and their 3D models are cleared. Clearing them from the real bench is yours; the run carries on without them on Resume.</p>
       <input class="rp-search" id="rpSearch" type="search" placeholder="Search items" autocomplete="off">
       <div class="rp-list" id="rpList"></div>
       <div class="rp-preview" id="rpPreview"></div>

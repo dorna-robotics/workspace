@@ -124,6 +124,7 @@ class Runtime:
         self._replan: Optional[dict] = None
         self._replan_choice: Optional[dict] = None
         self._replan_hold = False
+        self._replan_engine = False     # a BT run that can apply one (attach_replan)
         # Threads standing in checkpoint()'s pause wait (paused_workers).
         self._paused_threads: set = set()
 
@@ -797,16 +798,41 @@ class Runtime:
     # then terminates the actions tied to the removed items, removes
     # them from the plan and the 3D scene, and replans.
 
-    def replan(self) -> None:
-        """Operator: open a Replan. Only while a RUN is paused (not a
-        pause before Start), not while parking, one at a time."""
+    def attach_replan(self, on: bool) -> None:
+        """Engine: a BT run that can apply a Replan is in progress
+        (BTEngine.run, for its whole duration) — or no longer."""
         with self._lock:
-            if self._killed or self._parking:
-                raise ValueError("Replan is not available while parking")
-            if self._status.state != RTState.PAUSED:
-                raise ValueError("Replan is available only while the run is paused")
-            if getattr(self, "_pre_pause_state", None) not in (RTState.RUNNING,):
-                raise ValueError("Replan needs a paused run — this pause is not inside one")
+            self._replan_engine = bool(on)
+            self._push_status()
+
+    def _replan_why_not(self) -> Optional[str]:
+        """Why a Replan cannot be opened now, or None when it can — THE
+        rule, used by ``replan()`` and published as ``status.replan_ok``
+        so a button is never clickable and then refused."""
+        if self._killed:
+            return "the run was killed"
+        if self._parking:
+            return "not while parking"
+        if not getattr(self, "_replan_engine", False):
+            return "no run in progress"
+        if self._status.state != RTState.PAUSED:
+            return "pause the run first — Replan works only while paused"
+        return None
+
+    @property
+    def replan_available(self) -> tuple:
+        """``(ok, why)`` — see ``_replan_why_not``."""
+        with self._lock:
+            why = self._replan_why_not()
+            return (why is None, why or "")
+
+    def replan(self) -> None:
+        """Operator: open a Replan (see ``_replan_why_not``), one at a
+        time."""
+        with self._lock:
+            why = self._replan_why_not()
+            if why is not None:
+                raise ValueError(f"Replan is not available: {why}")
             if self._replan is not None:
                 return
             self._replan = {"phase": "opening"}

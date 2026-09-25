@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -17,7 +17,6 @@ function wsColor(name) {
 // ---- DOM refs ----
 const wsGrid    = document.getElementById("wsGrid");
 const wsCount   = document.getElementById("wsCount");
-const toastArea = document.getElementById("toastArea");
 const wsSearch  = document.getElementById("wsSearch");
 
 // ---- Render cache ----
@@ -35,14 +34,6 @@ const _lastCardCls  = new Map();
 // page's notifier rather than a second toast implementation.
 window.__toast = (m, k) => toast(m, k);
 
-function toast(msg, type = "ok") {
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  el.addEventListener("click", () => el.remove());
-  toastArea.appendChild(el);
-  setTimeout(() => el.remove(), type === "bad" ? 7000 : 5000);
-}
 
 // ---- API ----
 async function loadWorkspaces() {
@@ -97,8 +88,7 @@ function checkStateTransitions() {
     const cur  = (ws.lastStatus?.state || "").toUpperCase();
     const prev = prevStates[ws.name];
     if (prev !== undefined && prev !== cur) {
-      if (cur === "RUNNING" || cur === "ACTIVE")          toast(`${ws.name} is running`, "ok");
-      else if (["ERROR","FAILED","OFFLINE"].includes(cur)) toast(`${ws.name}: ${cur.toLowerCase()}`, "bad");
+      if (["ERROR","FAILED","OFFLINE"].includes(cur)) toast(`${ws.name}: ${cur.toLowerCase()}`, "bad");
     }
     prevStates[ws.name] = cur;
   });
@@ -159,7 +149,6 @@ async function openParamsModal(name, frozen) {
       paramsFoot.querySelector("#btnParamsCancel").addEventListener("click", () => paramsModal.classList.remove("show"));
       paramsFoot.querySelector("#btnParamsReset").addEventListener("click", () => {
         renderKwargsForm(paramsForm, schema, {}, false, name);
-        toast("Reset to defaults", "ok");
       });
       paramsFoot.querySelector("#btnParamsSet").addEventListener("click", async () => {
         const errs = validateKwargsForm(paramsForm, schema);
@@ -174,7 +163,6 @@ async function openParamsModal(name, frozen) {
             method: "POST", body: JSON.stringify({ kwargs_values: vals })
           });
           ws.kwargs_values = vals;
-          toast("Parameters set", "ok");
           paramsModal.classList.remove("show");
         } catch (err) { toast(String(err), "bad"); }
       });
@@ -389,15 +377,15 @@ function render() {
                 // pendant, and card.
                 const startLbl = isStarted(state) ? "Resume" : "Start";
                 // Replan (bt-framework-guide §8.6): enabled only while
-                // the run is paused; once opened it reads "Choose…",
-                // which opens the workspace page where the dialog lives.
+                // the run is paused; while one is open the same button
+                // opens the workspace page, where the dialog lives.
                 const rp = st.replan?.phase;
-                const rpLbl = rp ? "Choose…" : "Replan";
-                const rpOff = !rp && state.toUpperCase() !== "PAUSED";
+                const rpLbl = "Replan";
+                const rpOff = !rp && !st.replan_ok;       // the runtime's own rule
                 return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${startLbl}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
                <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
-               <button class="btn btn-sm action-btn"             data-cmd="replan" data-replan="${rp || ""}" ${rpOff ? "disabled" : ""}>${rpLbl}</button>
+               <button class="btn btn-sm action-btn"             data-cmd="replan" data-replan="${rp || ""}" title="${esc(rp ? "Open the Replan dialog" : st.replan_ok ? "Remove items from the run, then replan" : `Replan: ${st.replan_why || "not available"}`)}" ${rpOff ? "disabled" : ""}>${rpLbl}</button>
                <div class="spacer"></div>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`;
               })()
@@ -453,7 +441,6 @@ function render() {
           await sendCmd(ws.name, cmd, kwargs);
           await refreshStatuses();
           render();
-          toast(`${cmd} → ${ws.name}`, "ok");
         } catch (err) {
           toast(String(err), "bad");
           btn.disabled = false;
@@ -490,7 +477,6 @@ function render() {
         _lastCardHtml.delete(ws.name);
         _lastCardCls.delete(ws.name);
         render();
-        toast(`Removed ${ws.name}`, "ok");
       } catch (err) { toast(String(err), "bad"); }
     });
 
@@ -670,7 +656,6 @@ document.getElementById("btnModalConfirm").addEventListener("click", async () =>
 
     await loadWorkspaces();
     await poll();
-    toast(`Workspace "${name}" added`, "ok");
   } catch (err) {
     toast(String(err), "bad");
   } finally { confirmBtn.disabled = false; }

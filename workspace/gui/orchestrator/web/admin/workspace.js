@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -80,7 +80,6 @@ const lastErrVal  = $("lastErrVal");
 const logPre      = $("logPre");
 const frame       = $("ws3dFrame");
 const placeholder = $("viewerPlaceholder");
-const toastArea   = $("toastArea");
 
 // Initial title carries the gray "off" dot so there's no flash before
 // the first status arrives. _setFaviconForState swaps it as state changes.
@@ -97,14 +96,6 @@ if (pendantProjectEl) pendantProjectEl.textContent = wsName;
 // notifier rather than a second toast implementation.
 window.__toast = (m, k) => toast(m, k);
 
-function toast(msg, type = "ok") {
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  el.addEventListener("click", () => el.remove());
-  toastArea.appendChild(el);
-  setTimeout(() => el.remove(), type === "bad" ? 7000 : 5000);
-}
 
 // ---- Log colorizer ----
 function colorizeLogs(text) {
@@ -237,7 +228,6 @@ function mountParams(host, schema, values, frozen, wsName) {
   if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
   $(`${host.id}Reset`).addEventListener("click", () => {
     renderKwargsForm(form, schema, {}, false, wsName);
-    toast("Reset to defaults", "ok");
   });
 
   // Set = store the values. Set & Launch = store, then launch in one
@@ -262,9 +252,6 @@ function mountParams(host, schema, values, frozen, wsName) {
       _invalidateLaunchConfig();
       if (launch) {
         await sendCmd("launch");
-        toast("Parameters set — launching", "ok");
-      } else {
-        toast("Parameters set", "ok");
       }
       done();
       if (launch) { await refreshStatus(); loadRunParams(); }
@@ -430,10 +417,7 @@ function _tryLogsWS(url) {
     _logsWsRetryMs = 1000;
     // Reset the retry counter on successful (re)connect so a later
     // hiccup gets the same N-retry grace window before the toast fires
-    // again.
-    if (_logsWsRetryCount > 0 && _logsWsToastShown) {
-      toast("Logs streaming restored", "ok");
-    }
+    // again. (No "restored" toast: the log pane itself shows it.)
     _logsWsRetryCount = 0;
     _logsWsToastShown = false;
   };
@@ -554,6 +538,7 @@ function updateStatusUI(st) {
   // after a kill that no longer reflects what's running.
   renderStep(st?.step, running);
   updateProgress(st?.step?.progress, launched);
+  _replanAvail = { ok: !!st?.replan_ok, why: st?.replan_why || "" };
   setReplan(st?.replan || null);
   renderControls(state, launched, running);
   updateIframe(state, launched);
@@ -1470,20 +1455,23 @@ function escHtml(s) {
 // items: [...]} (every item still in the run) -> after the choice
 // {phase: "applying", waiting?} -> null once applied, or back to
 // "choose" with {error} when it was refused (nothing changed). The
-// dialog opens on "choose"; the button reads "Choose…" and reopens it.
+// dialog opens on "choose"; the button (always "Replan") reopens it.
 let _replan = null;
+let _replanAvail = { ok: false, why: "" };   // status.replan_ok / replan_why
 let _replanShownFor = null;     // the offer the dialog already opened for
 const _rpSel = new Set();       // JSON keys of the selected items
 const _rpOpen = new Set();      // expanded phase groups
 
-function replanControl(state) {
-  // Replan lives inside Pause: enabled only while the run is paused.
-  // Once opened it reads "Choose…" and reopens the dialog.
-  if (_replan) return { label: "Choose…", disabled: false, title: "Choose the items to remove" };
-  const paused = (state || "").toUpperCase() === "PAUSED";
-  return { label: "Replan", disabled: !paused,
-           title: paused ? "Remove items from the run, then replan"
-                         : "Pause the run first — Replan works only while paused" };
+function replanControl() {
+  // Enabled exactly when the runtime says a Replan can be opened
+  // (status.replan_ok — its own rule, bt-framework-guide §8.6), so the
+  // button is never clickable and then refused.
+  // The label never changes; while a Replan is open the button just
+  // reopens its dialog.
+  if (_replan) return { label: "Replan", disabled: false, title: "Open the Replan dialog" };
+  return { label: "Replan", disabled: !_replanAvail.ok,
+           title: _replanAvail.ok ? "Remove items from the run, then replan"
+                                  : `Replan: ${_replanAvail.why || "not available"}` };
 }
 
 function setReplan(rp) {
@@ -1504,16 +1492,14 @@ function setReplan(rp) {
 function _rpKey(it) { return JSON.stringify(it.item); }
 
 function _rpGroups(items) {
-  // One group per phase the items are IN (ROUTE order), Finished last.
-  // A project without phases has one group.
-  const groups = new Map();
-  for (const it of items) {
-    const g = it.done ? "__done" : (it.in_phase ?? "__run");
-    if (!groups.has(g)) groups.set(g, { key: g, order: it.done ? 1e9 : it.phase_index ?? -1,
-      title: it.done ? "Finished" : (it.in_phase ? `In ${it.in_phase}` : "In the run"), items: [] });
-    groups.get(g).items.push(it);
-  }
-  return [...groups.values()].sort((a, b) => a.order - b.order);
+  // One plain list of the items still in the run; finished items (a
+  // removal changes only their record) in their own section below.
+  // No phase names — they read as places, and confused operators.
+  const open = items.filter(it => !it.done), done = items.filter(it => it.done);
+  const out = [];
+  if (open.length) out.push({ key: "__run", title: "Items", items: open });
+  if (done.length) out.push({ key: "__done", title: "Finished — removing changes only the record", items: done });
+  return out;
 }
 
 function openReplanModal(fresh) {
@@ -1521,11 +1507,8 @@ function openReplanModal(fresh) {
   if (fresh) {
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
-    // Short lists open whole; long ones open their earliest group of
-    // unfinished items, the rest collapsed with a count.
-    const groups = _rpGroups(_replan.items || []);
-    const total = (_replan.items || []).length;
-    for (const g of groups) if (g.key !== "__done" && (total <= 40 || !_rpOpen.size)) _rpOpen.add(g.key);
+    // The items open; the Finished section collapsed, with its count.
+    _rpOpen.add("__run");
   }
   renderReplanList();
   $("replanModalOverlay").classList.add("show");
@@ -1546,7 +1529,7 @@ function renderReplanList() {
       const nSel = g.items.filter(it => _rpSel.has(_rpKey(it))).length;
       const rows = open ? shown.map(it => {
         const k = _rpKey(it);
-        const meta = [it.done ? "finished — record only" : "",
+        const meta = ["",
                       it.with?.length ? `takes ${it.with.join(", ")}` : "",
                       it.holds?.length ? `holds ${it.holds.join(", ")}` : ""].filter(Boolean).join(" · ");
         return `<label class="rp-row${_rpSel.has(k) ? " selected" : ""}">
@@ -1625,8 +1608,8 @@ $("rpList").addEventListener("change", e => {
 $("btnReplanGo").addEventListener("click", () =>
   sendReplanChoice((_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item)));
 $("btnReplanCancel").addEventListener("click", cancelReplan);
-// Closing the window only hides it — the Replan stays open (the button
-// reads "Choose…"); Cancel closes the Replan itself.
+// Closing the window only hides it — the Replan stays open (the Replan
+// button reopens it); Cancel closes the Replan itself.
 $("btnReplanClose").addEventListener("click", () => $("replanModalOverlay").classList.remove("show"));
 
 // ───────────────────────────── Operator Actions ─────────────────────────
@@ -1986,7 +1969,7 @@ function renderControls(state, launched, running) {
   // changed, neither has the button set — short-circuit before
   // tearing down the DOM and reattaching listeners.
   const s = (state || "").toUpperCase();
-  const key = `${s}|${_replan?.phase || ""}`;
+  const key = `${s}|${_replan?.phase || ""}|${_replanAvail.ok}`;
   if (key === _lastControlsState) return;
   _lastControlsState = key;
   controls.innerHTML = "";
@@ -2018,7 +2001,6 @@ function renderControls(state, launched, running) {
         if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
         const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
         await sendCmd(cmd, kwargs);
-        toast(`${cmd} sent`, "ok");
         await refreshStatus();
         if (cmd === "launch") loadRunParams();
       } catch (err) {
@@ -2059,7 +2041,7 @@ function renderControls(state, launched, running) {
     // crash. Require ``active`` (running || parking) and disable when
     // already parking.
     addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
-    const rb = replanControl(s);
+    const rb = replanControl();
     addBtn(rb.label, "replan", { disabled: rb.disabled, title: rb.title });
   }
 
@@ -2832,7 +2814,7 @@ function updatePendantUI() {
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;
-  const rb = replanControl(state);
+  const rb = replanControl();
   $("pendantReplan").disabled  = rb.disabled;
   $("pendantReplan").title     = rb.title;
   $("pendantReplan").querySelector("span").textContent = rb.label;
@@ -2876,7 +2858,6 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
       await sendCmd(cmd, kwargs);
       pendantSuccessSound();
       pendantVibrate(20);
-      toast(`${cmd} sent`, "ok");
       await refreshStatus();
       updatePendantUI();
     } catch (err) {

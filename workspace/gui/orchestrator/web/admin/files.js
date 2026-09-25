@@ -356,7 +356,6 @@ export function openFileBrowser(opts = {}) {
     if (!ok) return;
     try {
       await post("delete", { path: e.path });
-      toast(`Deleted ${e.name}`, "ok");
       if (selected && selected.path === e.path) select(null);
       load();
     } catch (err) { toast(err.message, "bad"); }
@@ -367,7 +366,6 @@ export function openFileBrowser(opts = {}) {
     if (!name) return;
     try {
       await post("mkdir", { path: path ? `${path}/${name}` : name });
-      toast(`Created ${name}`, "ok");
       load();
     } catch (err) { toast(err.message, "bad"); }
   };
@@ -384,7 +382,6 @@ export function openFileBrowser(opts = {}) {
       const fd = new FormData();
       fd.append("file", f);
       await post("upload", fd, true);
-      toast(`Uploaded ${f.name}`, "ok");
       load();
     } catch (err) {
       toast(err.message, "bad");

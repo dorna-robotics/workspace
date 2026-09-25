@@ -1372,21 +1372,29 @@ checked, and ends in the engine's ordinary replan.
 
 #### The rules
 
-1. **Replan lives inside Pause.** The button is disabled unless the RUN
-   is paused (not a pause before Start, not while parking). It never
-   stops anything itself — Pause already did, at a checkpoint.
+1. **Replan lives inside Pause.** The button is enabled exactly when
+   the runtime says a Replan can be opened — a BT run is in progress
+   (the engine attaches for its whole duration), it is paused, and it
+   is not parking. The runtime publishes that rule as
+   `status.replan_ok` / `status.replan_why` and `replan()` applies the
+   same one, so the button is never clickable and then refused. It
+   never stops anything itself — Pause already did, at a checkpoint.
 2. **The list is the run's own.** Pressing Replan offers every item
-   still in the run — the items the planner is planning — grouped by
-   the phase each is IN, with a search box, and per item: what leaves
-   with it (its dependents, §8.5) and what it holds in the plan (a
-   station, a seat). Finished items are listed too: removing one
-   changes only its audit record. Nothing per project is written for
+   still in the run — the items the planner is planning — as ONE plain
+   list (no phase names: they read as places and confused operators),
+   with a search box, and per item: what leaves with it (its
+   dependents, §8.5) and what it holds in the plan (a station, a
+   seat). Finished items sit in their own collapsed section: removing
+   one changes only its audit record.
+   **A removal is for good.** A removed item is never planned again —
+   in no later window, no later phase, for the rest of the run; nothing
+   brings it back. Nothing per project is written for
    the list; `setup()` may return `"item_label": fn(item) -> str` for
    friendlier names.
 3. **The operator chooses one or more items and a reason.** Cancel
    closes the Replan with nothing changed; closing the window only
-   hides it (the button reads **Choose…** and reopens it); Resume also
-   closes an unapplied Replan.
+   hides it (the Replan button, whose label never changes, reopens
+   it); Resume also closes an unapplied Replan.
 4. **Applied only when nothing is in flight.** The choice is applied
    when every worker thread of the run stands at a checkpoint
    (`Runtime.paused_workers`) — no robot command, no device command of
@@ -1483,20 +1491,21 @@ items, gates over `_ctx_items()`, status from `_ctx_removed()`), which
 
 | Piece | Where |
 |---|---|
-| Request state, choice, hold, paused-worker set, cancel re-check | `workspace/runtime.py` (`replan`, `replan_offer`, `replan_choose`, `replan_failed`, `replan_done`, `replan_cancel`, `replan_hold`, `paused_workers`, `checkpoint`) |
+| Request state, availability rule, choice, hold, paused-worker set, cancel re-check | `workspace/runtime.py` (`_replan_why_not`, `attach_replan`, `replan`, `replan_offer`, `replan_choose`, `replan_failed`, `replan_done`, `replan_cancel`, `replan_hold`, `paused_workers`, `checkpoint`) |
 | One Replan step per paused engine loop: offer, wait for a stop, check, drop tied leaves, rebuild | `workspace/bt/engine.py` (`_replan_paused`, `_leaf_tied`, the pending rebuild in `run`) |
 | Dropping a leaf without halting the robot; the no-exception hold | `workspace/bt/behaviours.py` (`_replan_drop`, `_park_hold`) |
 | The list, the dependents, the scene check | `workspace/bt/remove.py` (`offer`, `dependents_of`, `scene_check`) |
 | Check and apply for this run (`item_components`, facts, scene) | `workspace/bt/launcher.py` (`_replan_prepare`, `_replan_commit`) |
 | Commands and status | `runtime_server.py` (`/cmd` replan, remove, replan_cancel; `status.replan`); relayed by the orchestrator |
-| The button (after Park, before Kill) and the dialog | `gui/orchestrator/web/admin/` — `workspace.js` (sidebar + pendant + dialog), `dashboard.js` (card; *Choose…* opens the workspace page), `workspace.html`, `style.css` |
+| The button (after Park, before Kill) and the dialog | `gui/orchestrator/web/admin/` — `workspace.js` (sidebar + pendant + dialog), `dashboard.js` (card; while a Replan is open it opens the workspace page), `workspace.html`, `style.css` |
 
 API:
 
 | Request | Effect |
 |---|---|
-| `POST /cmd {"cmd": "replan"}` | open a Replan — 409 with the reason unless the run is paused |
+| `POST /cmd {"cmd": "replan"}` | open a Replan — 409 with `replan_why` when it cannot be opened |
 | `status.replan` | `null`; `{"phase": "opening"}`; `{"phase": "choose", "items": [...], "error"?}`; `{"phase": "applying", "waiting"?}` |
+| `status.replan_ok` / `status.replan_why` | whether `replan` would be accepted now, and why not — what every button enables from |
 | `POST /cmd {"cmd": "remove", "items": [...], "reason": "..."}` | the choice (at least one item) — 409 when nothing is being chosen or an item is not in the run |
 | `POST /cmd {"cmd": "replan_cancel"}` | close it, nothing changed — 409 once the choice is being applied |
 

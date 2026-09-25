@@ -97,6 +97,28 @@ export function fmtTimestamp(v) {
   return new Date(t).toLocaleString();
 }
 
+/* ── Toast — the one implementation for the admin pages ────────────────
+   Only for something the operator cannot already see: an error, or a
+   result that shows nowhere else. Never an echo of a click whose effect
+   the page already shows (a state pill, a list, a closed modal).
+   ok: 2.5 s · warn: 5 s · bad: stays until clicked. Three at most.
+   Look: base.css .toast (a plain card with a mark, no tinted box). */
+const TOAST_MS = { ok: 2500, warn: 5000 };
+export function toast(msg, type = "ok") {
+  const area = document.getElementById("toastArea");
+  if (!area) return;
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.setAttribute("role", type === "bad" ? "alert" : "status");
+  el.textContent = msg;
+  el.title = type === "bad" ? "Click to dismiss" : "";
+  el.addEventListener("click", () => el.remove());
+  area.appendChild(el);
+  while (area.children.length > 3) area.firstElementChild.remove();
+  const ms = TOAST_MS[type];
+  if (ms) setTimeout(() => el.remove(), ms);
+}
+
 export function esc(s) {
   return String(s ?? "")
     .replace(/&/g,  "&amp;")

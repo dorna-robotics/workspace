@@ -158,16 +158,22 @@ The pendant cinematic tile (`.pendant-btn`) uses `--radius-xl` — a
 deliberate "this is a big touch target, not a normal button" cue.
 Don't apply that radius elsewhere.
 
-**Run controls, one order everywhere:** Start/Resume · Pause · Park ·
-Replan · Kill — the dashboard card, the workspace sidebar and the
-pendant bar. Replan is a plain tap, **enabled only while the run is
-paused** (its tooltip says so otherwise), accent outline on the
-pendant. Once opened it reads *Choose…* and reopens the dialog. The
-dialog: items grouped by the phase they are in (search, collapsible
-groups with counts, 44 px rows), a live preview of what leaves / what
-is freed, a reason, **Cancel** and **Remove N & replan**; its state line
-reads *Applying — waiting for …* (accent) or *Not applied — <reason>.
-Nothing was changed.* (red) (bt-framework-guide §8.6).
+**Run controls, one order and one colour set everywhere:**
+Start/Resume · Pause · Park · Replan · Kill — the dashboard card, the
+workspace sidebar and the pendant bar, each control the SAME colour on
+all three: Start/Resume accent (`.btn-primary`), Pause and Replan
+neutral, Park solid orange (`.btn-warn`), Kill red tint (`.btn-danger`);
+the pendant tiles (`.pendant-*`) mirror the `.btn` variants, and a
+disabled control keeps its colour, ghosted. Replan is a plain tap,
+enabled exactly when the runtime says a Replan can be opened
+(`status.replan_ok`; the tooltip gives `status.replan_why`
+otherwise), so it is never clickable and then refused. Its label never
+changes: while a Replan is open, the same button reopens the dialog. The dialog: one plain list of
+the items (no phase names), finished items in a collapsed section
+below (search, counts, 44 px rows), a live preview of what leaves / what is freed, a reason,
+**Cancel** and **Remove N & replan**; its state line reads *Applying —
+waiting for …* (accent) or *Not applied — <reason>. Nothing was
+changed.* (red) (bt-framework-guide §8.6).
 
 **Hold-to-activate.** Park and Kill are never a click and never a
 confirm modal. The operator presses and holds; the button fills from
@@ -179,6 +185,24 @@ exception to the motion tokens. Same grammar on every surface that
 shows those two buttons: dashboard cards, the workspace page, the
 pendant tile. Keyboard: hold Space or Enter. The button's title says
 "Hold 2 s to park".
+
+### 3.3b Toasts
+
+A toast is for something the operator **cannot already see**: an
+error, or a result that shows nowhere else (fields loaded from a file,
+an operator action's outcome). Never an echo of a click whose effect
+the page already shows — "pause sent", "Parameters set", "Removed X",
+"Uploaded Y" are gone for that reason: the state pill, the list or the
+closed modal already say it.
+
+Look (`base.css .toast`): a plain card on the page's own surface with
+a hairline and a soft shadow, normal text; the meaning is a small
+round mark at the left — ✓ green done, ! amber check, ! red failed —
+never a tinted box (§6, §9). Timing: success 2.5 s, warning 5 s, a
+failure stays until clicked (its × says so). At most three on screen,
+the oldest goes first. One implementation for the admin pages
+(`api.js toast`); the scene builder's `showToast` builds the same
+DOM with the same rules; its untyped hints get the card without a mark.
 
 ### 3.4 Step lists
 

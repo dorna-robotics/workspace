@@ -407,6 +407,13 @@ a:hover { color: var(--accent-h); }
 .meta-val.err { color: var(--red); font-size: var(--text-xs); }
 
 /* ── Toast ────────────────────────────────────────────────────────────── */
+/* A plain card — the page's own surface, a soft shadow, normal text.
+   The meaning rides on a small mark at the left, never on a tinted
+   box (design-system §6, §9): ✓ green = done, ! amber = check,
+   ! red = failed. Success fades on its own (2.5 s), a warning after
+   5 s; a failure stays until clicked (the × says so). At most three
+   are on screen (the oldest goes first). One implementation for the
+   admin pages (api.js toast); the scene builder builds the same DOM. */
 .toast-area {
   position: fixed;
   bottom: 24px; right: 24px;
@@ -415,27 +422,33 @@ a:hover { color: var(--accent-h); }
   pointer-events: none;
 }
 .toast {
+  display: flex; align-items: flex-start; gap: 10px;
   background: var(--surface);
-  border: none;
+  color: var(--text);
+  border: 1px solid var(--border2);
   border-radius: var(--radius-md);
-  padding: 12px 18px;
+  padding: 10px 14px;
   font-size: var(--text-md);
   font-weight: 500;
+  line-height: 1.35;
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.2s cubic-bezier(0.2,0.9,0.3,1);
-  max-width: 340px;
-  color: var(--text);
+  max-width: 360px;
   cursor: pointer;
   pointer-events: auto;
 }
-.toast.ok   { color: var(--green); background: rgba(52,199,89,0.18); border: 1px solid rgba(52,199,89,0.25); }
-.toast.bad  { color: var(--red);   background: rgba(255,69,58,0.18); border: 1px solid rgba(255,69,58,0.25); }
-.toast.warn { color: var(--amber); background: rgba(255,159,10,0.18); border: 1px solid rgba(255,159,10,0.25); }
-
-[data-theme="light"] .toast     { background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.12); color: var(--text); }
-[data-theme="light"] .toast.ok  { background: rgba(36,138,61,0.08); color: var(--green); }
-[data-theme="light"] .toast.bad { background: rgba(215,0,21,0.08); color: var(--red); }
-[data-theme="light"] .toast.warn{ background: rgba(199,124,10,0.08); color: var(--amber); }
+[data-theme="light"] .toast { box-shadow: 0 4px 24px rgba(0,0,0,0.12); }
+.toast::before {
+  flex: none;
+  width: 18px; height: 18px; margin-top: 1px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; color: #fff;
+}
+.toast.ok::before   { content: "✓"; background: var(--green); }
+.toast.warn::before { content: "!"; background: var(--amber); }
+.toast.bad::before  { content: "!"; background: var(--red); }
+.toast.bad::after   { content: "×"; margin-left: auto; padding-left: 6px; color: var(--muted); font-weight: 400; }
 
 @keyframes toast-in {
   from { transform: translateY(10px) scale(0.96); opacity: 0; }

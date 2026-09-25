@@ -214,6 +214,10 @@ class BTEngine:
             self._cfg.tick_hz, period * 1000,
         )
         next_tick = time.monotonic()
+        # Replan is offered only while an engine that can apply it runs.
+        can_replan = self._replan_prepare is not None and self._replan_commit is not None
+        if can_replan:
+            self._runtime_call("attach_replan", True)
 
         try:
             while True:
@@ -329,6 +333,8 @@ class BTEngine:
                     # ticks than burn CPU running back-to-back.
                     next_tick = time.monotonic()
         finally:
+            if can_replan:
+                self._runtime_call("attach_replan", False)
             self._safe_terminate(self._root)
 
     # ── Internals ──────────────────────────────────────────────────────

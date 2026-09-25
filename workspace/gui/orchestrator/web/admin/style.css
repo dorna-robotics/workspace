@@ -728,21 +728,18 @@
 }
 .pendant-btn:disabled { cursor: default; opacity: 0.45; }
 .pendant-btn:hover:not(:disabled) { background: var(--surface2); }
-/* Start — solid green when armed, pale green when not. (There was a
-   sibling .pendant-launch tile that took this slot before launch; the
-   slot is Start's alone now, disabled until the workspace is up.) */
-.pendant-start:not(:disabled) {
-  background: rgb(36,138,61); border-color: transparent; color: #fff;
-}
-.pendant-start:hover:not(:disabled) { background: rgb(31,120,53); }
-/* Disabled Start is a disabled TILE, like Pause and Park: the same
-   surface, the same border, ghosted by .pendant-btn:disabled. It used
-   to be a borderless green-tinted block, which made the one control
-   that is disabled most of the time the odd one out — and spent the
-   green on a button you cannot press. Green means armed (§9). */
-.pendant-start:disabled {
-  background: var(--surface); border-color: var(--border); color: var(--text);
-}
+/* The run controls wear the SAME colours on every surface — the
+   dashboard card, the workspace sidebar (.btn variants) and these
+   pendant tiles: Start/Resume = accent (.btn-primary), Pause and
+   Replan = neutral, Park = solid orange (.btn-warn), Kill = red tint
+   (.btn-danger). A disabled tile keeps its colour, ghosted by
+   .pendant-btn:disabled — as a disabled .btn does (design-system §3.3). */
+.pendant-start { background: var(--accent); border-color: transparent; color: #fff; }
+.pendant-start:hover:not(:disabled) { background: var(--accent-h); }
+.pendant-park { background: #ff7a3f; border-color: transparent; color: #fff; }
+.pendant-park:hover:not(:disabled) { background: #ff6a2a; }
+[data-theme="light"] .pendant-park { background: #d8651e; }
+[data-theme="light"] .pendant-park:hover:not(:disabled) { background: #c4541a; }
 /* ── Hold-to-activate (Park, Kill — api.js holdToActivate) ─────────
    The button fills from the left while held; the fill IS the timer,
    so its 2 s linear sweep is a documented exception to the motion
@@ -779,12 +776,10 @@
 /* … except on the filled variants (orange warn, green
    primary), where the command colour would vanish and white stripes
    would eat the white label: dark stripes, the label stays readable */
-.btn.btn-warn.hold, .btn.btn-primary.hold { --hold-color: rgba(0, 0, 0, 0.55); }
+.btn.btn-warn.hold, .btn.btn-primary.hold, .pendant-park.hold { --hold-color: rgba(0, 0, 0, 0.55); }
 .hold.hold-fired { animation: pendant-flash 0.4s ease; }
 
-/* Replan — accent outline: an ordinary run control, not a stop */
-.pendant-replan { color: var(--accent); border: 1.5px solid var(--accent); }
-.pendant-replan:hover:not(:disabled) { background: var(--accent-dim); }
+/* Replan — neutral like Pause (the default tile), as on the sidebar */
 
 /* ── Replan dialog (workspace.html #replanModalOverlay) ── */
 .modal.replan-modal { width: min(720px, 100%); }
@@ -827,10 +822,11 @@
 .rp-state.busy { color: var(--accent); }
 .rp-state.err { color: var(--red); }
 
-/* Kill — red outline, never filled */
-.pendant-kill { color: var(--red); border: 1.5px solid var(--red); }
-.pendant-kill:hover:not(:disabled) { background: var(--red-dim); }
-.pendant-kill:disabled { opacity: 0.4; }
+/* Kill — red tint, as .btn-danger */
+.pendant-kill { background: rgba(255,69,58,0.12); border-color: transparent; color: var(--red); }
+.pendant-kill:hover:not(:disabled) { background: rgba(255,69,58,0.22); }
+[data-theme="light"] .pendant-kill { background: rgba(215,0,21,0.08); }
+[data-theme="light"] .pendant-kill:hover:not(:disabled) { background: rgba(215,0,21,0.14); }
 .pendant-btn.pendant-pressed { animation: pendant-flash 0.4s ease; }
 @keyframes pendant-flash { 0% { box-shadow: 0 0 0 3px var(--accent-dim); } 100% { box-shadow: none; } }
 

@@ -1150,6 +1150,11 @@ def _status_payload(rt, workspace) -> dict:
     # pushed status over its last poll, so an absent key would leave a
     # finished Replan showing.
     out["replan"] = getattr(rt, "replan_info", None)
+    # Whether the Replan button may be pressed now, and why not — the
+    # runtime's own rule, so a button is never clickable-then-refused.
+    ok, why = getattr(rt, "replan_available", (False, ""))
+    out["replan_ok"] = bool(ok)
+    out["replan_why"] = why
     summary = _compute_devices_summary(workspace)
     if summary is not None:
         out["devices_summary"] = summary

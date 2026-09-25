@@ -2579,11 +2579,17 @@ window.__rulerHUD = function (m) {
 function showToast(msg, type="") {
   const area = document.getElementById("toastArea");
   if (area) {
+    // Same rules as the admin pages' toast (api.js; look: base.css):
+    // a hint or success fades, a warning after 5 s, a failure stays
+    // until clicked; three at most.
     const t = document.createElement("div");
     t.className = "toast" + (type ? " " + type : "");
+    t.setAttribute("role", type === "bad" ? "alert" : "status");
     t.textContent = msg;
+    t.addEventListener("click", () => t.remove());
     area.appendChild(t);
-    setTimeout(() => t.remove(), 2500);
+    while (area.children.length > 3) area.firstElementChild.remove();
+    if (type !== "bad") setTimeout(() => t.remove(), type === "warn" ? 5000 : 2500);
     return;
   }
   // Fallback: use legacy builderToast
