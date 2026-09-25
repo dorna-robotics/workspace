@@ -81,7 +81,7 @@ a generic form by its type. Every number the operator compares
 (`ui-monospace, Menlo, Consolas`), right-aligned in tables (`td.n`).
 
 **Shapes.** The platform's surfaces, not the kit's own. Cards are the
-form's `.kw-field`: a panel on `--bg`, `--radius-lg`, `--space-5`
+form's `.kw-field`: a white panel (`--surface`) with a `--border2` hairline, `--radius-lg`, `--space-5`
 padding, one `h4` title, full width of the modal. Inputs and buttons
 are `.input` and `.btn`: `--radius-sm`, `--bg` / `--surface2` fills,
 `--glow` on focus. Wells are circles with a 1.5px stroke; a well being

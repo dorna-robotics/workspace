@@ -164,9 +164,9 @@
 .modal.modal-wide { width: min(1560px, calc(100vw - 40px)); max-width: none; }
 .kwargs-form .kw-field {
   display: flex; flex-direction: column; gap: var(--space-3);
-  /* each parameter is its own SECTION — the gray panel in the mockup
-     was doing the dividing work this form had none of */
-  background: var(--bg); border-radius: var(--radius-lg);
+  /* each parameter is its own SECTION: a white panel (the modal's own
+     surface) divided by a hairline, not a gray fill */
+  background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius-lg);
   padding: var(--space-5);
 }
 .kwargs-form .kw-label-row { display: flex; align-items: center; gap: 6px; }

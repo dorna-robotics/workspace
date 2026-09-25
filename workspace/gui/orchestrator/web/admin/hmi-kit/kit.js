@@ -54,8 +54,9 @@ export const kitCss = `
 .hmi * { box-sizing:border-box; }
 
 /* cards — every section of the screen is one, the generic form's
-   .kw-field: a rounded panel on --bg with a bold title, full width */
-.hmi .card { background:var(--bg); border:none; border-radius:var(--radius-lg);
+   .kw-field: a white rounded panel with a hairline and a bold title,
+   full width */
+.hmi .card { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius-lg);
   padding:var(--space-5); }
 .hmi .card > h4 { margin:0 0 var(--space-3); font-size:var(--text-lg);
   font-weight:700; letter-spacing:-0.1px; }
