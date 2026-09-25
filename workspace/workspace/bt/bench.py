@@ -361,10 +361,10 @@ class Bench:
                     "event_publisher": None,
                 },
             )
-            from workspace.bt import skip as _skip
+            from workspace.bt import remove as _remove
             self._ctx.meta["slice_dim"] = self.launch.get("slice_dim") or (
                 next(iter(objects)) if len(objects) == 1 else None)
-            _skip.install(self._ctx, spec.get("dependents"))
+            _remove.install(self._ctx, spec.get("dependents"))
             if hasattr(self.workspace, "set_active_ctx"):
                 self.workspace.set_active_ctx(self._ctx)
         return self._ctx

@@ -69,8 +69,8 @@ from workspace.bt.protocol import Protocol, load_route
 # Bench — one phase of a phased project from a notebook, the project as
 # the only source of truth (``from workspace.bt import Bench``).
 from workspace.bt.bench import Bench
-# Skip — the platform-reserved ``skipped(item)`` fact (bt/skip.py).
-from workspace.bt.skip import skipped
+# Remove — the platform-reserved ``removed(item)`` fact (bt/remove.py).
+from workspace.bt.remove import removed
 
 
 __all__ = [
@@ -115,6 +115,6 @@ __all__ = [
     "load_route",
     # Phase bench (notebooks)
     "Bench",
-    # Skip (bt/skip.py)
-    "skipped",
+    # Remove (bt/remove.py)
+    "removed",
 ]

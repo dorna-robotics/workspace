@@ -1236,10 +1236,10 @@ class Action:
 
     def _ctx_items(self) -> List[Any]:
         """The batch's items still IN THE RUN — every item of the
-        windowed dimension (``slice_dim``) that is not ``skipped``, read
+        windowed dimension (``slice_dim``) that is not ``removed``, read
         from the state this pre/eff is evaluated against. What a gate
         over the whole batch loops over (Park: "every item through the
-        last phase"), never ``_ctx_all_objects()`` — a skipped item never
+        last phase"), never ``_ctx_all_objects()`` — a removed item never
         reaches the last phase, and a gate over it would hold forever
         (bt-framework-guide §8.5)."""
         ctx = getattr(self, "ctx", None)
@@ -1256,16 +1256,16 @@ class Action:
         facts = getattr(self, "state", None)
         if facts is None and ctx is not None:
             facts = state_to_frozen(ctx.state)
-        from workspace.bt.skip import open_items
+        from workspace.bt.remove import open_items
         return open_items(facts or frozenset(), pool)
 
-    def _ctx_skip(self, item: Any) -> Optional[Dict[str, Any]]:
+    def _ctx_removed(self, item: Any) -> Optional[Dict[str, Any]]:
         """How ``item`` left the run — ``{"by", "outcome", "phase",
         "because_of"}`` — or ``None``: what an audit status reads."""
         ctx = getattr(self, "ctx", None)
         if ctx is None:
             return None
-        from workspace.bt.skip import info
+        from workspace.bt.remove import info
         return info(ctx, item)
 
     # ── Internal — accessed by ActionRegistry / leaf factory ────────────
@@ -1738,26 +1738,26 @@ class _DSLActionLeaf(RecipeAction):
             chosen = default
 
         facts = _facts_from_state(state)
-        from workspace.bt import skip as _skip
+        from workspace.bt import remove as _remove
         added = [f.as_tuple() for f in effs[chosen] if f.polarity]
         removed = [f.as_tuple() for f in effs[chosen] if not f.polarity]
-        newly_skipped = [t[1] for t in added if t[0] == _skip.SKIPPED and t not in facts]
+        newly_removed = [t[1] for t in added if t[0] == _remove.REMOVED and t not in facts]
         for t in added:
             facts.add(t)
         for t in removed:
             facts.discard(t)
-        # Capacity held per item — what a skip releases (bt/skip.py).
-        _skip.note_effects(self.ctx, self._item if self._cls.params else None, removed, added)
-        if newly_skipped:
-            gone = _skip.apply(self.ctx, facts, newly_skipped,
-                               by=self._cls.__name__, outcome=chosen)
-            self._publish({"type": "items_skipped", "items": list(gone),
+        # Capacity held per item — what a removal releases (bt/remove.py).
+        _remove.note_effects(self.ctx, self._item if self._cls.params else None, removed, added)
+        if newly_removed:
+            gone = _remove.apply(self.ctx, facts, newly_removed,
+                                 by=self._cls.__name__, outcome=chosen)
+            self._publish({"type": "items_removed", "items": list(gone),
                            "by": self._cls.__name__, "outcome": chosen})
 
         # Effects are now in state — if a non-default branch fired, or
         # an item left the run, tell the engine to rebuild the tree so
         # downstream actions re-evaluate against the observed state.
-        if chosen != default or newly_skipped:
+        if chosen != default or newly_removed:
             # Replanning re-derives everything from OBSERVED state —
             # settle the robot first: a held motion tail executes to
             # its normal stop before the tree is rebuilt.
@@ -1770,8 +1770,8 @@ class _DSLActionLeaf(RecipeAction):
             # Local import to avoid circular dependency at module load.
             from workspace.bt.engine import ReplanRequested
             raise ReplanRequested(
-                f"{self._cls.__name__}({self._item}): skipped {newly_skipped}"
-                if newly_skipped else
+                f"{self._cls.__name__}({self._item}): removed {newly_removed}"
+                if newly_removed else
                 f"{self._cls.__name__}({self._item}): observed branch "
                 f"{chosen!r} differs from planner's default {default!r}"
             )

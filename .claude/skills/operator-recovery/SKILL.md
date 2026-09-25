@@ -41,7 +41,7 @@ All four set the same `paused` flag. The next pause-aware call (`rt.sleep`, `rt.
 2. **Recover doesn't mean resume.** Recovering the device clears the bus state to ok but the runtime stays paused. The operator must click Resume after fixing.
 3. **Robot alarms need physical clearance.** AutoRecover retries connections but won't clear alarms — `clear the alarm on the robot, then click Resume`. RobotStation distinguishes connection-lost from alarm to avoid spinning recovery on alarms.
 4. **Operator actions are disabled mid-run.** `operator_actions()` buttons are gated by workflow state. They're for **between** runs or **during pause**, not for parallel-with-running operation. component-guide.md §8.
-5. **State mutation is the escape hatch.** If an action is stuck and the operator needs to "fake done", use `workspace.add_fact(...)` to set the relevant predicate; the planner re-evaluates on the next replan. bt-framework-guide.md §9. An item that must LEAVE the run is not faked done — the project's action ends in an outcome asserting `skipped(item)` after its own physical recovery; the platform drops the item, its dependents and its held stations, and replans (bt-framework-guide.md §8.5).
+5. **State mutation is the escape hatch.** If an action is stuck and the operator needs to "fake done", use `workspace.add_fact(...)` to set the relevant predicate; the planner re-evaluates on the next replan. bt-framework-guide.md §9. An item that must LEAVE the run is not faked done — the project's action ends in an outcome asserting `removed(item)` after its own physical recovery; the platform drops the item, its dependents and its held stations, and replans (bt-framework-guide.md §8.5).
 
 ## Canonical doc references
 

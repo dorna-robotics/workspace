@@ -805,7 +805,7 @@ that surfaces only when `batch_size > plan_window`.
 
 A **gate** over the whole batch — Park's "every item through the last
 phase" — reads `self._ctx_items()` instead: the batch's items still in
-the run. A skipped item (§8.5) never reaches the last phase, and a gate
+the run. A removed item (§8.5) never reaches the last phase, and a gate
 over `_ctx_all_objects()` would wait for it forever. Seeding reads the
 whole batch; gating reads the items still in the run.
 
@@ -1279,7 +1279,7 @@ Why this is the cleanest pattern:
 > action is the visible, schedulable, debuggable home for "the world
 > keeps changing under us" logic.
 
-### 8.5 Skip — an item leaves the run
+### 8.5 Remove — an item leaves the run
 
 An item that cannot continue (a barcode that never reads, a vial lost
 in transfer) leaves the run through ONE platform mechanism, whatever
@@ -1289,10 +1289,10 @@ recovery, the platform owns the plan.**
 **The project** decides when, and does the recovery in the action that
 found the problem (put the item back, open the jaws, whatever its
 bench needs), then ends in an outcome branch that asserts the
-platform's reserved fact `skipped(item)`:
+platform's reserved fact `removed(item)`:
 
 ```python
-from workspace.bt import Action, skipped
+from workspace.bt import Action, removed
 
 class Scan(Action):
     params = ["tube"]
@@ -1300,7 +1300,7 @@ class Scan(Action):
     def eff(self, tube):
         return {
             "read":       (+scanned(tube),),
-            "unreadable": (+skipped(tube), +hand_empty()),   # back in its slot, gripper open
+            "unreadable": (+removed(tube), +hand_empty()),   # back in its slot, gripper open
         }
 
     def execute(self, tube):
@@ -1312,11 +1312,11 @@ class Scan(Action):
 ```
 
 **The platform** does the rest, the same for every project
-(`workspace/bt/skip.py`):
+(`workspace/bt/remove.py`):
 
-1. **Finished means done or skipped.** `setup()`'s `item_done` is
+1. **Finished means done or removed.** `setup()`'s `item_done` is
    wrapped once; the phase machinery, the window picker, the planning
-   goal and `bt.replay` all read the wrapped one. A skipped item is in
+   goal and `bt.replay` all read the wrapped one. A removed item is in
    no phase scope and no window, so no step is planned for it again.
 2. **Everything derived from the item goes with it** — steps bound to
    it, objects computed from it (bna's `recv_of(t)` / `prod_of(t)`),
@@ -1324,7 +1324,7 @@ class Scan(Action):
    (a shake over `bank_of` the window). Group membership read from a
    hard-coded list would NOT follow — take members from the window.
 3. **Dependents follow.** Other items of the batch that cannot continue
-   without it are declared once in `setup()` and skipped with it,
+   without it are declared once in `setup()` and removed with it,
    transitively:
 
    ```python
@@ -1336,26 +1336,26 @@ class Scan(Action):
    and no action gave back is re-asserted — derived from what ran, never
    guessed. The project's recovery made the station physically free;
    this makes the facts agree.
-5. **The run replans at once**, even when the skip branch is the
-   action's default. The skip is logged (`SKIP:` in the log, an
-   `items_skipped` event on the schedule socket) and kept for the audit
-   (`self._ctx_skip(item)` → `{"by", "outcome", "phase", "because_of"}`).
+5. **The run replans at once**, even when the removing branch is the
+   action's default. The removal is logged (`REMOVED:` in the log, an
+   `items_removed` event on the schedule socket) and kept for the audit
+   (`self._ctx_removed(item)` → `{"by", "outcome", "phase", "because_of"}`).
 
 **The contract this puts on a project** — three lines, the same in
 every project (examples/ and bna follow it):
 
 | Where | Write | Never |
 |---|---|---|
-| `setup()`'s `goal` | what lies beyond the items: `started` and `parked` — the platform adds "every item done or skipped" | a loop over the items (a skipped one would hold it false forever) |
+| `setup()`'s `goal` | what lies beyond the items: `started` and `parked` — the platform adds "every item done or removed" | a loop over the items (a removed one would hold it false forever) |
 | A gate over the whole batch (Park) | `for t in self._ctx_items():` — the items still in the run | `self._ctx_all_objects()[dim]` |
-| The audit status at Park | `self._ctx_skip(t)` first, then the facts | a status that reports a skipped item as "stopped before …" |
+| The audit status at Park | `self._ctx_removed(t)` first, then the facts | a status that reports a removed item as "stopped before …" |
 
-**Proving it** — `bt.replay` skips an item where you say, then checks
+**Proving it** — `bt.replay` removes an item where you say, then checks
 the run still closes and no step is ever planned for an item that left:
 
 ```bash
-sudo python3 -m workspace.bt.replay <project> --batch 4 8 --skip 1@extracted_1   # when that phase opens
-sudo python3 -m workspace.bt.replay <project> --batch 4 8 --skip 3@Shake1        # right after its step
+sudo python3 -m workspace.bt.replay <project> --batch 4 8 --remove 1@extracted_1   # when that phase opens
+sudo python3 -m workspace.bt.replay <project> --batch 4 8 --remove 3@Shake1        # right after its step
 ```
 
 Run it after any change to a gate or a group step. A project that
@@ -1905,7 +1905,7 @@ def setup(**kwargs):
 | `plan_window` | project | "schedule this many at once" — scheduler tuning |
 
 With `item_done` given, the platform owns the per-item part of the run's
-goal: the run is over when every item is done or skipped (§8.5) AND
+goal: the run is over when every item is done or removed (§8.5) AND
 `goal(state)` holds. So `goal` states only what lies beyond the items —
 `started` and `parked` — and never loops over them.
 
@@ -2134,7 +2134,7 @@ def goal(state):
 ```
 
 With `item_done` returned from `setup()`, the per-item part is the
-platform's — "every item done or skipped" — and `goal` states only what
+platform's — "every item done or removed" — and `goal` states only what
 lies beyond the items (`started`, `parked`); see §8.5.
 
 Two rules:

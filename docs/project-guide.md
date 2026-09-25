@@ -349,7 +349,7 @@ Rules, and the reasons behind them:
   asserts its fact (§8 "Device reads + declarative retry"). Never rebuild
   the record from memory at the end; the end only adds `status`.
 * **Status is derived from facts.** At Park, "done" is the item's final
-  fact; a skipped item reports how it left (`self._ctx_skip(t)` — the
+  fact; a removed item reports how it left (`self._ctx_removed(t)` — the
   action, its outcome, the phase; bt-framework-guide §8.5); anything else
   reports the last phase fact it reached plus its anomaly flags. The
   project owns the words, the facts own the truth.

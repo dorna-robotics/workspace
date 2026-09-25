@@ -106,15 +106,15 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     return out
 
 
-def _walk(res, out, protocol, ctx, meta, state, t_off, show, tool_now, phase=None, skips=None):
+def _walk(res, out, protocol, ctx, meta, state, t_off, show, tool_now, phase=None, removes=None):
     """Replay one scheduled window against the real pre()/eff(): every
     precondition at its scheduled moment, effects applied to ``state``.
-    ``skips`` (``{(item, step name)}``, consumed) skips an item right
+    ``removes`` (``{(item, step name)}``, consumed) removes an item right
     after that step of it — the rest of the window is dropped, as the
     live run drops its tree and replans. Returns (failures, lines,
     tool_now, ran): ``ran`` the indices that ran when the window was
     cut, else ``None``. Times are offset by ``t_off``."""
-    from workspace.bt import skip as _skip
+    from workspace.bt import remove as _remove
     from workspace.bt.dsl import _normalise_eff, Fact, _default_branch
     order = sorted(range(len(res)), key=lambda i: (out[i][2], i))
     failures, lines = [], []
@@ -123,7 +123,7 @@ def _walk(res, out, protocol, ctx, meta, state, t_off, show, tool_now, phase=Non
         a = res[i]
         cls = protocol.get(a.name)
         ran.append(i)
-        if cls.params and a.params and _skip.is_skipped(state, a.params[0]):
+        if cls.params and a.params and _remove.is_removed(state, a.params[0]):
             failures.append(f"{a.name}{a.params}: planned for an item that left the run")
         inst = cls(); inst.ctx = ctx; inst.state = frozenset(state)
         expr = inst.pre(*a.params)
@@ -164,17 +164,17 @@ def _walk(res, out, protocol, ctx, meta, state, t_off, show, tool_now, phase=Non
         state.update(added)
         state.difference_update(removed)
         item = a.params[0] if (cls.params and a.params) else None
-        _skip.note_effects(ctx, item, removed, added)
-        if skips and item is not None and (item, a.name) in skips:
-            skips.discard((item, a.name))
-            gone = _skip.apply(ctx, state, [item], by="replay --skip", outcome=f"after {a.name}")
+        _remove.note_effects(ctx, item, removed, added)
+        if removes and item is not None and (item, a.name) in removes:
+            removes.discard((item, a.name))
+            gone = _remove.apply(ctx, state, [item], by="replay --remove", outcome=f"after {a.name}")
             if show:
-                lines.append(f"  t={t:6.0f}  SKIP {gone} after {a.name}({item}) — replanning")
+                lines.append(f"  t={t:6.0f}  REMOVE {gone} after {a.name}({item}) — replanning")
             return failures, lines, tool_now, ran
     return failures, lines, tool_now, None
 
 
-def replay(project_dir, kwargs, show=False, event=False, launch=None, skips=None):
+def replay(project_dir, kwargs, show=False, event=False, launch=None, removes=None):
     """One replay. Returns (plan_len, failures, goal_ok, makespan).
 
     The replay WALKS THE RUN exactly as the launcher does — the same
@@ -205,7 +205,7 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None, skips=None
     try:
         n, failures, goal_ok, mk, _state, extra = _replay_loaded(
             A, kwargs, show=show, event=event, launch=launch,
-            project_name=os.path.basename(project_dir), skips=skips)
+            project_name=os.path.basename(project_dir), removes=removes)
         return (n, failures, goal_ok, mk, *extra)
     finally:
         sys.path.remove(project_dir)
@@ -225,11 +225,11 @@ def state_before(actions_module, launch, kwargs, phase):
 
 
 def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_name="",
-                   until_phase=None, skips=None):
+                   until_phase=None, removes=None):
     """The walk itself, on an imported actions module — see ``replay``.
-    ``until_phase`` stops before planning that phase. ``skips`` is a
+    ``until_phase`` stops before planning that phase. ``removes`` is a
     list of ``(item, at)``: the item leaves the run when phase ``at``
-    opens, or right after its step ``at`` runs (``--skip``). Returns
+    opens, or right after its step ``at`` runs (``--remove``). Returns
     ``(plan_len, failures, goal_ok, makespan, state, extra)``."""
     from workspace.bt.dsl import build_precedence, derive_capacity_spans, WorkspaceContext
     from workspace.bt.launcher import _load_route
@@ -261,31 +261,31 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     all_items = list(objects.get(slice_dim, [])) if slice_dim else []
     plan_window = int(launch.get("plan_window", 4))
     windowed = item_done is not None and slice_dim is not None
-    # Skip (bt/skip.py) — the same wrapping as the launcher.
-    from workspace.bt import skip as _skip
+    # Remove (bt/remove.py) — the same wrapping as the launcher.
+    from workspace.bt import remove as _remove
     dependents = spec.get("dependents")
     if dependents is not None and item_done is None:
-        raise ValueError("setup() returned dependents but no item_done — skipping "
+        raise ValueError("setup() returned dependents but no item_done — removing "
                          "an item needs the per-item completion predicate")
-    item_done = _skip.with_skip(item_done)
-    run_goal = _skip.run_goal(spec["goal"], all_items, item_done)
+    item_done = _remove.with_removed(item_done)
+    run_goal = _remove.run_goal(spec["goal"], all_items, item_done)
     ctx.meta["slice_dim"] = slice_dim
-    _skip.install(ctx, dependents)
+    _remove.install(ctx, dependents)
     from workspace.bt.dsl import _to_snake
     phase_names = {ph.name for ph in phases}
     # A step is named as in the project (``PlaceOnScale2``) or as the
     # plan names it (``place_on_scale2``).
-    skips = [(it, str(at) if (str(at) in phase_names or protocol.get(str(at)) is not None)
-              else _to_snake(str(at))) for it, at in (skips or [])]
-    for it, at in skips:
+    removes = [(it, str(at) if (str(at) in phase_names or protocol.get(str(at)) is not None)
+              else _to_snake(str(at))) for it, at in (removes or [])]
+    for it, at in removes:
         if at not in phase_names and protocol.get(at) is None:
-            raise ValueError(f"--skip {it}@{at}: {at!r} is neither a phase nor a step of this project")
+            raise ValueError(f"--remove {it}@{at}: {at!r} is neither a phase nor a step of this project")
         if at not in phase_names and not protocol.get(at).params:
-            raise ValueError(f"--skip {it}@{at}: {at!r} takes no item — name a step of the item")
+            raise ValueError(f"--remove {it}@{at}: {at!r} takes no item — name a step of the item")
     # A batch smaller than the item simply does not have it.
-    skips = [(it, at) for it, at in skips if it in all_items]
-    phase_skips = [(it, at) for it, at in skips if at in phase_names]
-    step_skips = {(it, at) for it, at in skips if (it, at) not in phase_skips}
+    removes = [(it, at) for it, at in removes if it in all_items]
+    phase_removes = [(it, at) for it, at in removes if at in phase_names]
+    step_removes = {(it, at) for it, at in removes if (it, at) not in phase_removes}
 
     timing = []            # one row per window: where the seconds go
     state = set(initial)
@@ -305,12 +305,12 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             except PhaseNotReady as ex:
                 failures.append(str(ex))
                 break
-        due = [it for it, at in phase_skips if cur is not None and at == cur[0].name]
+        due = [it for it, at in phase_removes if cur is not None and at == cur[0].name]
         if due:
-            phase_skips = [(it, at) for it, at in phase_skips if it not in due]
-            gone = _skip.apply(ctx, state, due, by="replay --skip", outcome=f"at {cur[0].name}")
+            phase_removes = [(it, at) for it, at in phase_removes if it not in due]
+            gone = _remove.apply(ctx, state, due, by="replay --remove", outcome=f"at {cur[0].name}")
             if show:
-                lines.append(f"── SKIP {gone} as {cur[0].name} opens ──")
+                lines.append(f"── REMOVE {gone} as {cur[0].name} opens ──")
             continue
         if until_phase is not None and cur is not None and cur[0].name == until_phase:
             break                          # the state this phase starts from
@@ -374,11 +374,11 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         if show:
             lines.append(f"── {name or 'tail'} · window {list(window)} · t0={t_off:.0f} ──")
         f_, l_, tool_now, cut = _walk(res, out, protocol, ctx, meta, state, t_off, show, tool_now,
-                                      phase=name, skips=step_skips)
+                                      phase=name, removes=step_removes)
         failures += f_
         lines += l_
         if cut is not None:
-            # Cut by a skip: only what ran counts; the rest is replanned.
+            # Cut by a removal: only what ran counts; the rest is replanned.
             keep = sorted(cut)
             res = [res[i] for i in keep]
             out = [(out[i][0], j, out[i][2]) for j, i in enumerate(keep)]
@@ -407,10 +407,10 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             failures.append("replay: more than 5000 windows — aborting")
             break
     goal_ok = run_goal(frozenset(state)) if until_phase is None else not failures
-    if skips and until_phase is None:
-        never = [f"{it}@{at}" for it, at in phase_skips] + [f"{it}@{at}" for it, at in step_skips]
+    if removes and until_phase is None:
+        never = [f"{it}@{at}" for it, at in phase_removes] + [f"{it}@{at}" for it, at in step_removes]
         if never:
-            failures.append(f"--skip never happened: {', '.join(sorted(never))} "
+            failures.append(f"--remove never happened: {', '.join(sorted(never))} "
                             f"(the item never reached that phase or step)")
     if show:
         # Where the seconds went, per phase (bt-framework-guide §13).
@@ -486,8 +486,8 @@ def main():
                     help="print the scheduled sequence: start time, action, tool, swaps")
     ap.add_argument("--json", action="store_true",
                     help="print ONLY the schedule as JSON (the GUI's schedule event) — one batch")
-    ap.add_argument("--skip", action="append", default=[], metavar="ITEM@AT",
-                    help="skip ITEM when phase AT opens, or right after its step AT "
+    ap.add_argument("--remove", action="append", default=[], metavar="ITEM@AT",
+                    help="remove ITEM when phase AT opens, or right after its step AT "
                          "(repeatable) — the run must still finish every other item")
     ap.add_argument("--kwargs-json", default=None,
                     help="a JSON object of kwargs applied over the defaults (before --kw)")
@@ -498,12 +498,12 @@ def main():
     launch = load_launch(project)
 
     extra_kw = json.loads(args.kwargs_json) if args.kwargs_json else {}
-    skips = []
-    for sp in args.skip:
+    removes = []
+    for sp in args.remove:
         it, sep, at = sp.partition("@")
         if not sep or not it or not at:
-            ap.error(f"--skip {sp!r}: expected ITEM@AT (a phase or a step name)")
-        skips.append((yaml.safe_load(it), at))
+            ap.error(f"--remove {sp!r}: expected ITEM@AT (a phase or a step name)")
+        removes.append((yaml.safe_load(it), at))
 
     if args.json:
         n = args.batch[0]
@@ -524,7 +524,7 @@ def main():
         kwargs.update(extra_kw)
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            r = replay(project, kwargs, show=args.show, launch=launch, skips=skips)
+            r = replay(project, kwargs, show=args.show, launch=launch, removes=removes)
         plan_len, fails, goal_ok, mk = r[:4]
         status = "OK" if (not fails and goal_ok) else "*** BROKEN ***"
         bad = bad or bool(fails) or not goal_ok
