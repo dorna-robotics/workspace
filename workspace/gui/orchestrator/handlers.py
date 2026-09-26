@@ -480,10 +480,61 @@ def _entry(p: Path, rel_to: Path) -> dict:
     }
 
 
+class _ZipSink:
+    """Write-only, non-seekable file object for ``zipfile``: bytes pile
+    up here and are drained to the socket after each member, so a
+    results or recordings folder streams instead of being built in
+    memory on the Pi. zipfile sees no ``seek`` and writes data
+    descriptors."""
+    def __init__(self):
+        self.buf = bytearray()
+        self.pos = 0
+
+    def write(self, b):
+        self.buf += b
+        self.pos += len(b)
+        return len(b)
+
+    def tell(self):
+        return self.pos
+
+    def flush(self):
+        pass
+
+    def drain(self) -> bytes:
+        out = bytes(self.buf)
+        self.buf.clear()
+        return out
+
+
+async def _stream_zip(handler, folder: Path, name: str) -> None:
+    """Stream ``folder`` as ``name.zip``, the folder itself at the top of
+    the archive. Stored, not deflated: a folder of images or recordings
+    gains little from compression, and deflating on the Pi costs CPU
+    the running project may need."""
+    import zipfile
+    handler.set_header("Content-Type", "application/zip")
+    handler.set_header("Content-Disposition", f'attachment; filename="{name}.zip"')
+    sink = _ZipSink()
+    with zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
+        for dirpath, dirnames, filenames in os.walk(folder):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for fn in sorted(filenames):
+                if fn.startswith("."):
+                    continue
+                p = Path(dirpath) / fn
+                zf.write(p, arcname=str(Path(name) / p.relative_to(folder)))
+                handler.write(sink.drain())
+                await handler.flush()
+    handler.write(sink.drain())      # the central directory
+    await handler.flush()
+
+
 class ProjectFilesHandler(AuthedHandler):
     """List / download a folder or file under one of the project roots.
 
     ``GET  …/files/<root>?path=sub/dir``        → listing
+    ``GET  …/files/<root>?path=sub/dir&zip=1``  → the folder, streamed as a zip
     ``GET  …/files/<root>?path=f.csv&download=1`` → the bytes
     ``GET  …/files/<root>?path=f.csv&preview=1``  → parsed CSV rows
     """
@@ -508,6 +559,10 @@ class ProjectFilesHandler(AuthedHandler):
             from workspace.project_dirs import ROOT_LABELS, declared_roots, safe_join
             base = _root_path(ws, root)
             target = safe_join(base, rel)
+
+            if target.is_dir() and self.get_argument("zip", ""):
+                await _stream_zip(self, target, target.name if target != base else root)
+                return
 
             if target.is_file():
                 if self.get_argument("preview", ""):

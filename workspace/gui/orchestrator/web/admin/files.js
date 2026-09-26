@@ -50,6 +50,7 @@ const ICON = {
   trash:  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   newdir: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>',
   close:  '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  zip:    '<path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
 };
 
 const svg = (d, size = 14) =>
@@ -74,6 +75,7 @@ function build() {
         <div class="fb-crumbs"></div>
         <div class="spacer"></div>
         <button class="btn btn-sm fb-mkdir" title="Create a folder here">${svg(ICON.newdir)} New folder</button>
+        <button class="btn btn-sm fb-zip" title="Download this folder as a zip">${svg(ICON.zip)} Download folder</button>
         <button class="btn btn-sm fb-upload" title="Upload a file into this folder">${svg(ICON.up)} Upload</button>
         <input type="file" class="fb-file" hidden />
       </div>
@@ -277,16 +279,16 @@ export function openFileBrowser(opts = {}) {
         <span class="fb-when">${fmtWhen(e.mtime)}</span>
         <span class="fb-acts"></span>`;
       const acts = row.querySelector(".fb-acts");
-      if (!e.dir) {
-        const dl = document.createElement("a");
-        dl.className = "btn btn-ghost btn-sm btn-icon";
-        dl.title = `Download ${e.name}`;
-        dl.href = api(wsName, root, `?path=${encodeURIComponent(e.path)}&download=1`);
-        dl.setAttribute("download", e.name);
-        dl.innerHTML = svg(ICON.down, 13);
-        dl.addEventListener("click", (ev) => ev.stopPropagation());
-        acts.appendChild(dl);
-      }
+      // A file downloads as itself, a folder as a zip (streamed by the
+      // server, so a large run folder never sits in memory).
+      const dl = document.createElement("a");
+      dl.className = "btn btn-ghost btn-sm btn-icon";
+      dl.title = e.dir ? `Download ${e.name} as a zip` : `Download ${e.name}`;
+      dl.href = api(wsName, root, `?path=${encodeURIComponent(e.path)}&${e.dir ? "zip" : "download"}=1`);
+      dl.setAttribute("download", e.dir ? `${e.name}.zip` : e.name);
+      dl.innerHTML = svg(e.dir ? ICON.zip : ICON.down, 13);
+      dl.addEventListener("click", (ev) => ev.stopPropagation());
+      acts.appendChild(dl);
       const del = document.createElement("button");
       del.className = "btn btn-ghost btn-sm btn-icon fb-del";
       del.title = e.dir ? `Delete the folder ${e.name}` : `Delete ${e.name}`;
@@ -368,6 +370,17 @@ export function openFileBrowser(opts = {}) {
       await post("mkdir", { path: path ? `${path}/${name}` : name });
       load();
     } catch (err) { toast(err.message, "bad"); }
+  };
+
+  // The folder on screen, as a zip. A throwaway <a download> so the
+  // browser's own download UI shows progress for a big folder.
+  q(".fb-zip").onclick = () => {
+    const a = document.createElement("a");
+    a.href = api(wsName, root, `?path=${encodeURIComponent(path)}&zip=1`);
+    a.setAttribute("download", "");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const upBtn = q(".fb-upload");
