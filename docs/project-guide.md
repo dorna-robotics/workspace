@@ -385,7 +385,7 @@ Three folders belong to the project rather than to the platform, and
 `launch.yaml` names all three (`data_dir` / `results_dir` / `rec_dir`
 above). `workspace/project_dirs.py` is the one place that resolves
 them; the runtime server writes run records and recordings through it,
-and the orchestrator's file browser lists and serves them through it.
+and the orchestrator's file browser resolves them through it.
 Nothing else may hardcode `runs/` or `rec/` again.
 
 The operator reaches them from the workspace page:
@@ -402,9 +402,27 @@ The operator reaches them from the workspace page:
 Uploading, creating a folder and deleting are all available; delete
 takes a confirm, and refuses a folder that still has anything in it, so
 a run's records cannot go in one click. Every path from the browser is
-checked against its root by `project_dirs.safe_join` before it reaches
-the filesystem — a request that climbs out of its folder is refused,
+checked against its root by `fslive.safe_join` before it reaches the
+filesystem — a request that climbs out of its folder is refused,
 symlinks included.
+
+The browser is live. `gui/orchestrator/fslive.py` carries it, and the
+vision server's file manager runs a byte-identical copy
+(`dorna_vision/server/fslive.py`) — change one, copy it to the other:
+
+* **Listing, mkdir and delete go over one WebSocket**
+  (`/orchestrator/ws/files/<workspace>`). The open folder is watched
+  with Linux inotify, so a file a run writes appears in the panel on
+  its own, ~150 ms later; bursts collapse into one push. Nothing polls:
+  an idle open panel costs the Pi nothing measurable.
+* **Bytes go over HTTP, streamed.** Download and zip stream in 64 KB
+  chunks; upload is a raw `PUT …/files/<root>/upload?path=&name=`
+  written straight to disk (`.name.part`, renamed when complete). Memory
+  stays flat whatever the file size — the server never holds a file.
+* **Filesystem work runs off the event loop** (a two-thread pool), so a
+  large zip never stalls the pendant or the device bus.
+* A remote workspace's socket and bytes are relayed to the node that has
+  the files.
 
 ## 4. Recipes — `recipes.yaml` or `recipes.j2`
 

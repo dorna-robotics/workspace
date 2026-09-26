@@ -128,25 +128,3 @@ def declared_roots(project_dir, launch: Optional[dict] = None) -> Dict[str, bool
     from the screen."""
     launch = _launch_of(Path(project_dir)) if launch is None else (launch or {})
     return {root: bool(launch.get(f"{root}_dir")) for root in ROOTS}
-
-
-def safe_join(root: Path, rel: str) -> Path:
-    """``root / rel``, or raise — the ONE gate between a web request and
-    the filesystem.
-
-    Everything reachable from the browser goes through here. A relative
-    path that climbs out of its root (``../../.ssh/id_rsa``), an
-    absolute path, or a symlink pointing outside is refused: the check
-    is on the RESOLVED path, so a link cannot smuggle a caller out of
-    the folder it was given.
-    """
-    root = Path(root).resolve()
-    rel = (rel or "").strip().lstrip("/")
-    if not rel or rel == ".":
-        return root
-    if os.path.isabs(rel) or ".." in Path(rel).parts:
-        raise ValueError("path escapes the folder")
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise ValueError("path escapes the folder")
-    return target

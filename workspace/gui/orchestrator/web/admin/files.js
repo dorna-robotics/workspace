@@ -25,6 +25,58 @@ const ROOTS = [
 const api = (ws, root, tail = "") =>
   `/orchestrator/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(root)}${tail}`;
 
+// ---- the folder socket (server: fslive.py, twin of the vision unit's) ----
+// Listing, New folder and Delete go over one WebSocket, answered by id;
+// the server PUSHES changes to the folder on screen (a run writing its
+// records, an upload landing), so the list updates without reloading.
+// File BYTES stay on HTTP (download, zip, preview, upload): streamed,
+// with the browser's own download handling. One socket per open panel,
+// closed with it — the server stops watching the folder.
+class FolderSocket {
+  constructor(url, onEvent) {
+    this.url = url; this.onEvent = onEvent;
+    this.seq = 0; this.wait = new Map(); this.closed = false; this.backoff = 500;
+    this.ready = this._connect();
+  }
+  _connect() {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(this.url);
+      this.ws = ws;
+      ws.onopen = () => { this.backoff = 500; resolve(); this.onEvent({ ev: "open" }); };
+      ws.onmessage = (m) => {
+        let d; try { d = JSON.parse(m.data); } catch { return; }
+        if (d.id != null && this.wait.has(d.id)) {
+          const { ok, fail } = this.wait.get(d.id); this.wait.delete(d.id);
+          d.ok ? ok(d) : fail(new Error(d.error || "request failed"));
+        } else if (d.ev) this.onEvent(d);
+      };
+      ws.onclose = () => {
+        for (const { fail } of this.wait.values()) fail(new Error("connection lost"));
+        this.wait.clear();
+        if (this.closed) return;
+        this.onEvent({ ev: "down" });
+        setTimeout(() => { if (!this.closed) this.ready = this._connect(); }, this.backoff);
+        this.backoff = Math.min(this.backoff * 2, 8000);
+      };
+    });
+  }
+  async request(op, args) {
+    await this.ready;
+    const id = ++this.seq;
+    return new Promise((ok, fail) => {
+      this.wait.set(id, { ok, fail });
+      this.ws.send(JSON.stringify({ id, op, ...args }));
+    });
+  }
+  close() { this.closed = true; try { this.ws.close(); } catch {} }
+}
+
+const socketUrl = (ws) =>
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/orchestrator/ws/files/${encodeURIComponent(ws)}`;
+
+// Folders first, then newest first — the server's order, kept on update.
+const byOrder = (a, b) => (a.dir === b.dir ? b.mtime - a.mtime : a.dir ? -1 : 1);
+
 function fmtSize(n) {
   if (!n) return "—";
   const u = ["B", "KB", "MB", "GB"];
@@ -96,6 +148,21 @@ function build() {
   return ov;
 }
 
+// PUT one file as the raw request body; resolves with the server's JSON.
+function putFile(url, file, onPct) {
+  return new Promise((ok, fail) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", url);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100)); };
+    x.onload = () => {
+      let d = {}; try { d = JSON.parse(x.responseText); } catch {}
+      x.status < 300 ? ok(d) : fail(new Error(d.error || `upload failed (${x.status})`));
+    };
+    x.onerror = () => fail(new Error("upload failed — connection lost"));
+    x.send(file);
+  });
+}
+
 /**
  * Open the browser.
  *   opts.wsName  workspace identifier (required)
@@ -119,6 +186,9 @@ export function openFileBrowser(opts = {}) {
   let path = "";
   let selected = null;
   let resolveFn = null;
+  let entries = [];              // the folder on screen, kept live by the socket
+  const rows = new Map();        // path -> its row element
+  const sock = new FolderSocket(socketUrl(wsName), onEvent);
 
   const list = q(".fb-list");
   const preview = q(".fb-preview");
@@ -242,68 +312,119 @@ export function openFileBrowser(opts = {}) {
   }
 
   // ---- listing ----
+  // One "open" per folder change; afterwards the server pushes what
+  // changed in it (onEvent) and only those rows are touched.
+  let opening = 0;
   async function load() {
     syncRoots();
     crumbs();
     showPane(false);
+    const mine = ++opening;
     list.innerHTML = `<div class="fb-loading">${[0, 1, 2].map(() =>
       '<div class="fb-skel"></div>').join("")}</div>`;
     let data;
     try {
-      const resp = await fetch(api(wsName, root, `?path=${encodeURIComponent(path)}`));
-      data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Could not read the folder");
+      data = (await sock.request("open", { root, path })).folder;
     } catch (err) {
+      if (mine !== opening) return;
       list.innerHTML = `<div class="fb-error">${svg(ICON.file)} ${err.message}</div>`;
       q(".fb-where").textContent = "";
       return;
     }
+    if (mine !== opening) return;      // a newer folder was opened meanwhile
     q(".fb-where").innerHTML =
       `<span class="fb-path" title="${data.abs || ""}">${data.abs || ""}</span>` +
-      (data.declared ? "" : `<span class="fb-default" title="launch.yaml does not name ${root}_dir — this is the default">default</span>`);
+      (data.declared ? "" : `<span class="fb-default" title="launch.yaml does not name ${root}_dir — this is the default">default</span>`) +
+      (data.live ? "" : `<span class="fb-default" title="this server cannot watch the folder — reopen it to refresh">not live</span>`);
+    entries = data.entries;
+    render();
+  }
 
-    if (!data.entries.length) {
+  function render() {
+    rows.clear();
+    if (!entries.length) {
       list.innerHTML = `<div class="fb-empty">Nothing here yet — <b>Upload</b> adds the first file.</div>`;
       return;
     }
+    const frag = document.createDocumentFragment();
+    for (const e of entries) frag.appendChild(rowFor(e));
     list.innerHTML = "";
-    for (const e of data.entries) {
-      const row = document.createElement("div");
-      row.className = "fb-row";
-      row.dataset.path = e.path;
-      row.setAttribute("role", "option");
-      row.innerHTML = `
-        <span class="fb-ic ${e.dir ? "is-dir" : ""}">${svg(e.dir ? ICON.folder : ICON.file, 15)}</span>
-        <span class="fb-name">${e.name}</span>
-        <span class="fb-size">${e.dir ? "" : fmtSize(e.size)}</span>
-        <span class="fb-when">${fmtWhen(e.mtime)}</span>
-        <span class="fb-acts"></span>`;
-      const acts = row.querySelector(".fb-acts");
-      // A file downloads as itself, a folder as a zip (streamed by the
-      // server, so a large run folder never sits in memory).
-      const dl = document.createElement("a");
-      dl.className = "btn btn-ghost btn-sm btn-icon";
-      dl.title = e.dir ? `Download ${e.name} as a zip` : `Download ${e.name}`;
-      dl.href = api(wsName, root, `?path=${encodeURIComponent(e.path)}&${e.dir ? "zip" : "download"}=1`);
-      dl.setAttribute("download", e.dir ? `${e.name}.zip` : e.name);
-      dl.innerHTML = svg(e.dir ? ICON.zip : ICON.down, 13);
-      dl.addEventListener("click", (ev) => ev.stopPropagation());
-      acts.appendChild(dl);
-      const del = document.createElement("button");
-      del.className = "btn btn-ghost btn-sm btn-icon fb-del";
-      del.title = e.dir ? `Delete the folder ${e.name}` : `Delete ${e.name}`;
-      del.innerHTML = svg(ICON.trash, 13);
-      del.addEventListener("click", (ev) => { ev.stopPropagation(); remove(e); });
-      acts.appendChild(del);
+    list.appendChild(frag);
+    select(selected && entries.find((x) => x.path === selected.path) || null);
+  }
 
-      row.addEventListener("click", () => {
-        if (e.dir) { path = e.path; select(null); load(); }
-        else { select(e); showPreview(e); }
-      });
-      row.addEventListener("dblclick", () => {
-        if (!e.dir && mode === "pick") { select(e); done(e); }
-      });
-      list.appendChild(row);
+  function rowFor(e) {
+    const row = document.createElement("div");
+    row.className = "fb-row";
+    row.dataset.path = e.path;
+    row.setAttribute("role", "option");
+    row.innerHTML = `
+      <span class="fb-ic ${e.dir ? "is-dir" : ""}">${svg(e.dir ? ICON.folder : ICON.file, 15)}</span>
+      <span class="fb-name">${e.name}</span>
+      <span class="fb-size">${e.dir ? "" : fmtSize(e.size)}</span>
+      <span class="fb-when">${fmtWhen(e.mtime)}</span>
+      <span class="fb-acts"></span>`;
+    const acts = row.querySelector(".fb-acts");
+    // A file downloads as itself, a folder as a zip (streamed by the
+    // server, so a large run folder never sits in memory).
+    const dl = document.createElement("a");
+    dl.className = "btn btn-ghost btn-sm btn-icon";
+    dl.title = e.dir ? `Download ${e.name} as a zip` : `Download ${e.name}`;
+    dl.href = api(wsName, root, `?path=${encodeURIComponent(e.path)}&${e.dir ? "zip" : "download"}=1`);
+    dl.setAttribute("download", e.dir ? `${e.name}.zip` : e.name);
+    dl.innerHTML = svg(e.dir ? ICON.zip : ICON.down, 13);
+    dl.addEventListener("click", (ev) => ev.stopPropagation());
+    acts.appendChild(dl);
+    const del = document.createElement("button");
+    del.className = "btn btn-ghost btn-sm btn-icon fb-del";
+    del.title = e.dir ? `Delete the folder ${e.name}` : `Delete ${e.name}`;
+    del.innerHTML = svg(ICON.trash, 13);
+    del.addEventListener("click", (ev) => { ev.stopPropagation(); remove(e.path); });
+    acts.appendChild(del);
+
+    row.addEventListener("click", () => {
+      const cur = entries.find((x) => x.path === e.path) || e;
+      if (cur.dir) { path = cur.path; select(null); load(); }
+      else { select(cur); showPreview(cur); }
+    });
+    row.addEventListener("dblclick", () => {
+      const cur = entries.find((x) => x.path === e.path) || e;
+      if (!cur.dir && mode === "pick") { select(cur); done(cur); }
+    });
+    rows.set(e.path, row);
+    return row;
+  }
+
+  // What the server pushes for the folder on screen: rows added,
+  // changed or gone — applied in place, order kept.
+  function onEvent(d) {
+    if (d.ev === "open" && entries.length + rows.size > 0) { load(); return; } // reconnected: resync
+    if (d.root !== root || d.path !== path) return;
+    if (d.ev === "gone") {                 // the folder itself was deleted
+      path = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      select(null); load(); return;
+    }
+    if (d.ev !== "change") return;
+    if (d.reset) { entries = d.upsert.sort(byOrder); render(); return; }
+    const rm = new Set(d.remove || []);
+    const up = new Map((d.upsert || []).map((e) => [e.path, e]));
+    entries = entries.filter((e) => !rm.has(e.path) && !up.has(e.path))
+                     .concat([...up.values()]).sort(byOrder);
+    if (!entries.length) { render(); return; }
+    if (!rows.size) { render(); return; }       // was the empty placeholder
+    for (const p of rm) { rows.get(p)?.remove(); rows.delete(p); }
+    for (const [p, e] of up) {                    // changed rows are rebuilt
+      rows.get(p)?.remove();
+      rows.delete(p);
+      rowFor(e);
+    }
+    const frag = document.createDocumentFragment();   // one reorder pass
+    for (const e of entries) frag.appendChild(rows.get(e.path));
+    list.appendChild(frag);
+    if (selected) {
+      if (rm.has(selected.path)) { select(null); showPane(false); }
+      else if (up.has(selected.path)) { select(up.get(selected.path)); showPreview(up.get(selected.path)); }
+      else select(selected);
     }
   }
 
@@ -342,24 +463,16 @@ export function openFileBrowser(opts = {}) {
   }
 
   // ---- actions ----
-  async function post(action, body, isForm = false) {
-    const url = api(wsName, root, `/${action}${isForm ? `?path=${encodeURIComponent(path)}` : ""}`);
-    const resp = await fetch(url, isForm
-      ? { method: "POST", body }
-      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const d = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(d.error || `${action} failed`);
-    return d;
-  }
-
-  async function remove(e) {
+  // New folder / Delete go over the socket; the list updates from the
+  // change the server then pushes — no reload.
+  async function remove(p) {
+    const e = entries.find((x) => x.path === p);
+    if (!e) return;
     const ok = window.confirm(
       e.dir ? `Delete the folder “${e.name}”?` : `Delete “${e.name}”?\n\nThis cannot be undone.`);
     if (!ok) return;
     try {
-      await post("delete", { path: e.path });
-      if (selected && selected.path === e.path) select(null);
-      load();
+      await sock.request("delete", { root, path: e.path });
     } catch (err) { toast(err.message, "bad"); }
   }
 
@@ -367,8 +480,7 @@ export function openFileBrowser(opts = {}) {
     const name = window.prompt("New folder name");
     if (!name) return;
     try {
-      await post("mkdir", { path: path ? `${path}/${name}` : name });
-      load();
+      await sock.request("mkdir", { root, path: path ? `${path}/${name}` : name });
     } catch (err) { toast(err.message, "bad"); }
   };
 
@@ -383,6 +495,9 @@ export function openFileBrowser(opts = {}) {
     a.remove();
   };
 
+  // Upload: the file is the request body, streamed to disk by the
+  // server as it arrives (fslive.UploadHandler) — never held in memory.
+  // XHR, not fetch, for the upload progress.
   const upBtn = q(".fb-upload");
   upBtn.onclick = () => fileInput.click();
   fileInput.onchange = async () => {
@@ -390,12 +505,9 @@ export function openFileBrowser(opts = {}) {
     const f = fileInput.files[0];
     const label = upBtn.innerHTML;
     upBtn.disabled = true;
-    upBtn.innerHTML = `<span class="fb-spin"></span> Uploading…`;
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      await post("upload", fd, true);
-      load();
+      await putFile(api(wsName, root, `/upload?${new URLSearchParams({ path, name: f.name })}`), f,
+        (pct) => { upBtn.innerHTML = `<span class="fb-spin"></span> Uploading ${pct}%`; });
     } catch (err) {
       toast(err.message, "bad");
     } finally {
@@ -407,6 +519,7 @@ export function openFileBrowser(opts = {}) {
 
   // ---- open / close ----
   function done(entry) {
+    sock.close();                        // the server stops watching
     el.classList.remove("show");
     document.removeEventListener("keydown", onKey, true);
     const r = resolveFn; resolveFn = null;

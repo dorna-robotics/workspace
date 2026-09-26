@@ -21,7 +21,9 @@ import os
 from pathlib import Path
 
 import requests
+import tornado.ioloop
 import tornado.web
+import tornado.websocket
 
 from gui.orchestrator.orchestrator import (
     ORCH_TOKEN,
@@ -443,14 +445,15 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
-# ── The project's folders, over HTTP ──────────────────────────────────
-# One handler for all three roots (data / results / rec). Every request
-# names its root and a path inside it, and EVERY path goes through
-# ``safe_join`` before it reaches the filesystem — see project_dirs.py.
-#
-# Remote workspaces are proxied like the upload handler: this
-# orchestrator holds no files of its own, it answers for the machine
-# that has them.
+# ── The project's folders: live over a WebSocket, bytes over HTTP ────
+# fslive.py (twin of dorna_vision/server/fslive.py) does the work; this
+# part only names the three roots (data / results / rec) of a workspace
+# and answers for REMOTE workspaces by relaying to the node that has the
+# files — this orchestrator holds none of its own. EVERY path goes
+# through ``safe_join`` before it reaches the filesystem.
+
+from gui.orchestrator import fslive  # noqa: E402
+
 
 def _project_roots(ws):
     """The workspace's three folders, created on demand."""
@@ -468,76 +471,35 @@ def _root_path(ws, root: str):
     return roots[root]
 
 
-def _entry(p: Path, rel_to: Path) -> dict:
-    """One row for the browser: what it is, how big, how old."""
-    st = p.stat()
-    return {
-        "name": p.name,
-        "path": str(p.relative_to(rel_to)),
-        "dir": p.is_dir(),
-        "size": 0 if p.is_dir() else st.st_size,
-        "mtime": st.st_mtime,
-    }
+def _token_ok(handler) -> bool:
+    """``X-Orch-Token`` (or ``?token=`` — a browser WebSocket cannot set
+    headers) when auth is on; always true when it is off."""
+    if not ORCH_TOKEN:
+        return True
+    tok = handler.request.headers.get("X-Orch-Token", "") or handler.get_argument("token", "")
+    return tok == ORCH_TOKEN
 
 
-class _ZipSink:
-    """Write-only, non-seekable file object for ``zipfile``: bytes pile
-    up here and are drained to the socket after each member, so a
-    results or recordings folder streams instead of being built in
-    memory on the Pi. zipfile sees no ``seek`` and writes data
-    descriptors."""
-    def __init__(self):
-        self.buf = bytearray()
-        self.pos = 0
-
-    def write(self, b):
-        self.buf += b
-        self.pos += len(b)
-        return len(b)
-
-    def tell(self):
-        return self.pos
-
-    def flush(self):
-        pass
-
-    def drain(self) -> bytes:
-        out = bytes(self.buf)
-        self.buf.clear()
-        return out
-
-
-async def _stream_zip(handler, folder: Path, name: str) -> None:
-    """Stream ``folder`` as ``name.zip``, the folder itself at the top of
-    the archive. Stored, not deflated: a folder of images or recordings
-    gains little from compression, and deflating on the Pi costs CPU
-    the running project may need."""
-    import zipfile
-    handler.set_header("Content-Type", "application/zip")
-    handler.set_header("Content-Disposition", f'attachment; filename="{name}.zip"')
-    sink = _ZipSink()
-    with zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
-        for dirpath, dirnames, filenames in os.walk(folder):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-            for fn in sorted(filenames):
-                if fn.startswith("."):
-                    continue
-                p = Path(dirpath) / fn
-                zf.write(p, arcname=str(Path(name) / p.relative_to(folder)))
-                handler.write(sink.drain())
-                await handler.flush()
-    handler.write(sink.drain())      # the central directory
-    await handler.flush()
+def _node_ws_url(ws, name: str) -> str:
+    """The remote node's folder socket: its ``…/orchestrator/api`` base →
+    ``ws(s)://…/orchestrator/ws/files/<name>``."""
+    from urllib.parse import quote, urlsplit, urlunsplit
+    u = urlsplit(ws.node_url.rstrip("/"))
+    path = u.path[:-len("/api")] if u.path.endswith("/api") else u.path
+    return urlunsplit(("wss" if u.scheme == "https" else "ws", u.netloc,
+                       f"{path}/ws/files/{quote(name)}", "", ""))
 
 
 class ProjectFilesHandler(AuthedHandler):
-    """List / download a folder or file under one of the project roots.
+    """The BYTES of a project folder's files (listing and actions are the
+    WebSocket's — ``ProjectFilesSocket``).
 
-    ``GET  …/files/<root>?path=sub/dir``        → listing
-    ``GET  …/files/<root>?path=sub/dir&zip=1``  → the folder, streamed as a zip
-    ``GET  …/files/<root>?path=f.csv&download=1`` → the bytes
-    ``GET  …/files/<root>?path=f.csv&preview=1``  → parsed CSV rows
+    ``GET  …/files/<root>?path=f.csv&download=1`` → the file, streamed
+    ``GET  …/files/<root>?path=sub/dir&zip=1``    → the folder, streamed as a zip
+    ``GET  …/files/<root>?path=f.csv&preview=1``  → parsed rows / text (capped)
     """
+
+    PREVIEW_BYTES = 2 << 20      # a preview reads at most this much of a file
 
     def initialize(self, orch: Orchestrator):
         self.orch = orch
@@ -554,55 +516,29 @@ class ProjectFilesHandler(AuthedHandler):
             ws = self._ws(name)
             rel = self.get_argument("path", "")
             if ws.is_remote():
-                self._proxy_get(ws, name, root, rel)
+                await self._proxy_get(ws, name, root)
                 return
-            from workspace.project_dirs import ROOT_LABELS, declared_roots, safe_join
             base = _root_path(ws, root)
-            target = safe_join(base, rel)
-
+            target = fslive.safe_join(base, rel)
             if target.is_dir() and self.get_argument("zip", ""):
-                await _stream_zip(self, target, target.name if target != base else root)
+                await fslive.send_zip(self, target, target.name if target != base else root)
                 return
-
-            if target.is_file():
-                if self.get_argument("preview", ""):
-                    self.write(self._preview(target))
-                    return
-                self.set_header("Content-Type", "application/octet-stream")
-                self.set_header("Content-Disposition",
-                                f'attachment; filename="{target.name}"')
-                with open(target, "rb") as fp:
-                    while chunk := fp.read(1 << 16):
-                        self.write(chunk)
-                await self.flush()
+            if not target.is_file():
+                raise ValueError("no such file")
+            if self.get_argument("preview", ""):
+                self.write(await asyncio.get_running_loop().run_in_executor(
+                    None, self._preview, target, self.PREVIEW_BYTES))
                 return
-
-            if not target.exists():
-                # An absent folder lists EMPTY rather than 404: the
-                # operator asked "what is in results?", and "nothing
-                # yet" is the honest answer, not an error.
-                entries = []
-            else:
-                entries = sorted(
-                    (_entry(c, base) for c in target.iterdir()
-                     if not c.name.startswith(".")),
-                    key=lambda e: (not e["dir"], -e["mtime"]),
-                )
-            self.write({
-                "root": root,
-                "label": ROOT_LABELS.get(root, ""),
-                "declared": declared_roots(os.path.dirname(ws.path_to_file)).get(root, False),
-                "abs": str(base),
-                "path": rel,
-                "entries": entries,
-            })
+            await fslive.send_file(self, target)
         except Exception as e:
-            self.set_status(400)
-            self.write({"error": str(e)})
+            if not self._headers_written:
+                self.set_status(400)
+                self.write({"error": str(e)})
 
     @staticmethod
-    def _preview(target: Path) -> dict:
-        """Read a file well enough to judge it without downloading it.
+    def _preview(target: Path, limit: int) -> dict:
+        """Read a file well enough to judge it without downloading it —
+        at most ``limit`` bytes, so a huge log never loads whole.
 
         A run's two files are the point: ``records.csv`` is already a
         table, and ``records.jsonl`` is one JSON object per line, which
@@ -616,9 +552,14 @@ class ProjectFilesHandler(AuthedHandler):
         MAX_ROWS = 500
         MAX_TEXT = 20000
         try:
-            text = target.read_text(errors="replace")
+            with open(target, "rb") as fp:
+                raw = fp.read(limit + 1)
         except OSError as ex:
             return {"kind": "error", "error": str(ex)}
+        clipped = len(raw) > limit
+        text = raw[:limit].decode(errors="replace")
+        if clipped:
+            text = text[:text.rfind("\n") + 1] or text      # no half last line
         suffix = target.suffix.lower()
 
         if suffix in (".csv", ".tsv"):
@@ -627,7 +568,8 @@ class ProjectFilesHandler(AuthedHandler):
             if not rows:
                 return {"kind": "table", "columns": [], "rows": [], "truncated": False}
             return {"kind": "table", "columns": rows[0], "rows": rows[1:MAX_ROWS + 1],
-                    "truncated": len(rows) - 1 > MAX_ROWS, "total": len(rows) - 1}
+                    "truncated": clipped or len(rows) - 1 > MAX_ROWS,
+                    "total": len(rows) - 1, "note": "first 2 MB read" if clipped else ""}
 
         if suffix in (".jsonl", ".ndjson"):
             objs, bad = [], 0
@@ -643,139 +585,191 @@ class ProjectFilesHandler(AuthedHandler):
                 objs.append(o if isinstance(o, dict) else {"value": o})
             if not objs:
                 return {"kind": "text", "text": text[:MAX_TEXT],
-                        "truncated": len(text) > MAX_TEXT}
+                        "truncated": clipped or len(text) > MAX_TEXT}
             cols: list = []
             for o in objs:                      # union of keys, first-seen order
                 for k in o:
                     if k not in cols:
                         cols.append(k)
+
             def cell(v):
                 if v is None:
                     return ""
                 if isinstance(v, (dict, list)):
                     return _json.dumps(v, separators=(",", ":"))
                 return str(v)
+            notes = [n for n in (f"{bad} unreadable line(s)" if bad else "",
+                                 "first 2 MB read" if clipped else "") if n]
             return {"kind": "table", "columns": cols,
                     "rows": [[cell(o.get(c)) for c in cols] for o in objs[:MAX_ROWS]],
-                    "truncated": len(objs) > MAX_ROWS, "total": len(objs),
-                    "note": f"{bad} unreadable line(s)" if bad else ""}
+                    "truncated": clipped or len(objs) > MAX_ROWS, "total": len(objs),
+                    "note": " · ".join(notes)}
 
-        if suffix == ".json":
+        if suffix == ".json" and not clipped:
             try:
                 text = _json.dumps(_json.loads(text), indent=2)
             except ValueError:
                 pass                            # show it raw; it is not valid JSON
         return {"kind": "text", "text": text[:MAX_TEXT],
-                "truncated": len(text) > MAX_TEXT}
+                "truncated": clipped or len(text) > MAX_TEXT}
 
-    def _proxy_get(self, ws, name, root, rel):
+    async def _proxy_get(self, ws, name, root):
+        """The node's bytes, relayed as they arrive — never buffered."""
+        from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+        from urllib.parse import urlencode
         url = self.orch._orch_url(
             ws, f"/workspace/{requests.utils.quote(name)}/files/{requests.utils.quote(root)}")
-        r = requests.get(url, params=dict(self.request.arguments and
-                                          {k: v[0].decode() for k, v in
-                                           self.request.arguments.items()} or {}),
-                         timeout=30, headers=self.orch._auth_headers())
-        r.raise_for_status()
-        ctype = r.headers.get("Content-Type", "application/json")
-        self.set_header("Content-Type", ctype)
-        if "application/json" not in ctype:
-            self.set_header("Content-Disposition",
-                            r.headers.get("Content-Disposition", ""))
-        self.write(r.content)
+        args = {k: v[0].decode() for k, v in self.request.arguments.items()}
+        url += "?" + urlencode(args)
+
+        def on_header(line: str):
+            k, _, v = line.partition(":")
+            if k.strip().lower() in ("content-type", "content-disposition", "content-length"):
+                self.set_header(k.strip(), v.strip())
+
+        def on_chunk(chunk: bytes):
+            self.write(chunk)
+            self.flush()
+
+        await AsyncHTTPClient().fetch(HTTPRequest(
+            url, headers=self.orch._auth_headers(), header_callback=on_header,
+            streaming_callback=on_chunk, request_timeout=3600))
 
 
-class ProjectFilesActionHandler(AuthedHandler):
-    """Upload / delete / new folder under a project root.
-
-    ``POST …/files/<root>/upload``  multipart ``file``, ``path`` = folder
-    ``POST …/files/<root>/mkdir``   json ``{"path": "sub/new"}``
-    ``POST …/files/<root>/delete``  json ``{"path": "sub/f.csv"}``
-
-    Delete removes a file or an EMPTY folder only. A run's folder full
-    of records cannot go in one click — emptying it is a deliberate
-    sequence, not a mis-click.
-    """
+class ProjectUploadHandler(fslive.UploadHandler):
+    """``PUT …/files/<root>/upload?path=<folder>&name=<file>`` — the file
+    as the raw body, streamed to disk (fslive.UploadHandler). A REMOTE
+    workspace's upload is spooled to a temp file here (bounded memory)
+    and then streamed on to the node."""
 
     def initialize(self, orch: Orchestrator):
         self.orch = orch
 
-    async def post(self, name, root, action):
-        if not self.ensure_auth():
-            return
+    def authorized(self) -> bool:
+        return _token_ok(self)
+
+    def _ws(self):
+        name = self.path_args[0]
+        if name not in self.orch.workspaces:
+            raise ValueError(f"Unknown workspace: {name}")
+        return self.orch.workspaces[name]
+
+    def resolve(self, name, root) -> Path:
+        return _root_path(self._ws(), root)
+
+    def created(self, path: Path) -> None:
+        from workspace.project_dirs import hand_back
+        hand_back(path)
+
+    def prepare(self):
+        self._remote = None
         try:
-            if name not in self.orch.workspaces:
-                raise ValueError(f"Unknown workspace: {name}")
-            ws = self.orch.workspaces[name]
-            if ws.is_remote():
-                self.write(self._proxy_post(ws, name, root, action))
-                return
-            from workspace.project_dirs import hand_back, safe_join
-            base = _root_path(ws, root)
+            ws = self._ws()
+        except Exception:
+            ws = None
+        if ws is not None and ws.is_remote():
+            import tempfile
+            self.request.connection.set_max_body_size(fslive.MAX_BODY)
+            self._err = None if self.authorized() else PermissionError("Unauthorized")
+            self._fp = tempfile.TemporaryFile()
+            self._remote = ws
+            return
+        super().prepare()
 
-            if action == "upload":
-                if not self.request.files or "file" not in self.request.files:
-                    raise ValueError("No file uploaded")
-                folder = safe_join(base, self.get_argument("path", ""))
-                folder.mkdir(parents=True, exist_ok=True)
-                up = self.request.files["file"][0]
-                filename = os.path.basename(up["filename"] or "")
-                if not filename:
-                    raise ValueError("Empty filename")
-                dest = safe_join(folder, filename)
-                with open(dest, "wb") as fp:
-                    fp.write(up["body"])
-                hand_back(dest)
-                self.write({"ok": True, "path": str(dest.relative_to(base)),
-                            "name": dest.name, "abs": str(dest)})
-                return
-
-            body = json.loads(self.request.body or b"{}")
-            rel = body.get("path") or ""
-            target = safe_join(base, rel)
-
-            if action == "mkdir":
-                if not rel:
-                    raise ValueError("name is required")
-                target.mkdir(parents=True, exist_ok=True)
-                hand_back(target)
-                self.write({"ok": True, "path": str(target.relative_to(base))})
-                return
-
-            if action == "delete":
-                if target == base:
-                    raise ValueError("cannot delete the folder itself")
-                if not target.exists():
-                    raise ValueError("no such file")
-                if target.is_dir():
-                    if any(target.iterdir()):
-                        raise ValueError("folder is not empty — empty it first")
-                    target.rmdir()
-                else:
-                    target.unlink()
-                self.write({"ok": True})
-                return
-
-            raise ValueError(f"unknown action: {action}")
-        except Exception as e:
-            self.set_status(400)
-            self.write({"error": str(e)})
-
-    def _proxy_post(self, ws, name, root, action):
+    async def put(self, name, root):
+        if self._remote is None:
+            return super().put(name, root)
+        if self._err is not None:
+            self.set_status(401)
+            self.write({"error": str(self._err)})
+            return
+        from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+        from urllib.parse import urlencode
+        fp, self._fp = self._fp, None
+        fp.seek(0)
         url = self.orch._orch_url(
-            ws, f"/workspace/{requests.utils.quote(name)}/files/"
-                f"{requests.utils.quote(root)}/{requests.utils.quote(action)}")
-        if action == "upload" and self.request.files:
-            import io
-            up = self.request.files["file"][0]
-            r = requests.post(url, params={"path": self.get_argument("path", "")},
-                              files={"file": (os.path.basename(up["filename"]),
-                                              io.BytesIO(up["body"]),
-                                              up.get("content_type",
-                                                     "application/octet-stream"))},
-                              timeout=60, headers=self.orch._auth_headers())
-        else:
-            r = requests.post(url, data=self.request.body, timeout=30,
-                              headers={**self.orch._auth_headers(),
-                                       "Content-Type": "application/json"})
-        r.raise_for_status()
-        return r.json()
+            self._remote, f"/workspace/{requests.utils.quote(name)}/files/"
+                          f"{requests.utils.quote(root)}/upload")
+        url += "?" + urlencode({"path": self.get_argument("path", ""),
+                                "name": self.get_argument("name", "")})
+
+        async def body(write):
+            while chunk := fp.read(fslive.CHUNK):
+                await write(chunk)
+        try:
+            r = await AsyncHTTPClient().fetch(HTTPRequest(
+                url, method="PUT", body_producer=body, headers=self.orch._auth_headers(),
+                request_timeout=3600), raise_error=False)
+            self.set_status(r.code)
+            self.set_header("Content-Type", "application/json")
+            self.write(r.body)
+        finally:
+            fp.close()
+
+
+class ProjectFilesSocket(fslive.FilesSocket):
+    """``WS /orchestrator/ws/files/<name>`` — a workspace's folders, live
+    (fslive.FilesSocket: open / mkdir / delete, changes pushed). A
+    REMOTE workspace's socket is a relay to the node's own, which does
+    the watching."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+        self._relay = None
+        self._ws = None
+
+    def authorized(self) -> bool:
+        return _token_ok(self)
+
+    def resolve(self, root: str) -> Path:
+        return _root_path(self._ws, root)
+
+    def meta(self, root: str, base: Path) -> dict:
+        from workspace.project_dirs import ROOT_LABELS, declared_roots
+        return {"label": ROOT_LABELS.get(root, ""), "base": str(base),
+                "declared": declared_roots(os.path.dirname(self._ws.path_to_file)).get(root, False)}
+
+    def created(self, path: Path) -> None:
+        from workspace.project_dirs import hand_back
+        hand_back(path)
+
+    async def open(self, name):
+        super().open(name)
+        if name not in self.orch.workspaces:
+            self.close(4404, "Unknown workspace")
+            return
+        self._ws = self.orch.workspaces[name]
+        if self._ws.is_remote():
+            from tornado.httpclient import HTTPRequest
+            from tornado.websocket import websocket_connect
+            try:
+                self._relay = await websocket_connect(HTTPRequest(
+                    _node_ws_url(self._ws, name), headers=self.orch._auth_headers()))
+            except Exception as ex:
+                self.close(4502, f"node unreachable: {ex}")
+                return
+            tornado.ioloop.IOLoop.current().spawn_callback(self._pump)
+
+    async def _pump(self):
+        """Node → page, until either side closes."""
+        while self._relay is not None:
+            msg = await self._relay.read_message()
+            if msg is None:
+                self.close(4502, "node closed")
+                return
+            try:
+                self.write_message(msg)
+            except tornado.websocket.WebSocketClosedError:
+                return
+
+    async def on_message(self, raw):
+        if self._relay is not None:
+            await self._relay.write_message(raw)
+            return
+        await super().on_message(raw)
+
+    def on_close(self):
+        if self._relay is not None:
+            self._relay.close()
+            self._relay = None
+        super().on_close()
