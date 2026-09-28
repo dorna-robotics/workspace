@@ -155,7 +155,7 @@ class Decapper(Recipe):
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,
-            total_twist=twist or component_cap.twist,
+            total_twist=component_cap.twist if twist is None else twist,
             max_rotation=max_rotation,
             direction=-1,
             lmove_vaj=lmove_vaj,
@@ -260,6 +260,7 @@ class Decapper(Recipe):
         lmove_vaj=[500, 1000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
+        twist=None,
         release=True,
         soft_exit=None,
         **kwargs,
@@ -269,6 +270,9 @@ class Decapper(Recipe):
         Inverse of ``decap``: lowers while rotating j5 forward in chunks of
         ``max_rotation`` degrees. Requires the cap to be gripped already and
         the tube to be present at ``anchor``. Attaches cap → tube on success.
+
+        ``twist``: total rotation to screw on (degrees). None (default)
+        uses the cap component's declared ``twist``.
 
         ``release=False``: the tighten's end state IS the pick — the
         gripper never opens. The capped tube is re-rooted on the tool
@@ -363,7 +367,7 @@ class Decapper(Recipe):
         last_J = self._screw_motion(
             tool=tool,
             pitch=component_cap.pitch,
-            total_twist=component_cap.twist,
+            total_twist=component_cap.twist if twist is None else twist,
             max_rotation=max_rotation,
             direction=+1,
             lmove_vaj=lmove_vaj,

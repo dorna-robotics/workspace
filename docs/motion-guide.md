@@ -390,8 +390,10 @@ layer in one reproduction.
 advances by pitch — a helix. Limited wrist: chunked ±`max_rotation`
 with gripper re-bites between chunks. Infinite wrist: ONE lmove for
 the whole twist, relative from the live wrist, no staging rotation, no
-rewind. Twist/pitch come from the cap component (`twist=None` default
-in `decap` — never silently override the component's value).
+rewind. Pitch comes from the cap component — it is the thread, never
+a call argument. Twist too, unless the call names one: `decap` and
+`cap` both take `twist=None` (the component's value); a number
+overrides it for that call only.
 
 **Immerse / retract**: the held tool's **tip** reaches `dist` below
 the target (`tool_tip_z_offset = height_load − dist` — a 30 mm tip
