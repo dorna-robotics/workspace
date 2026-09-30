@@ -165,6 +165,29 @@ on the VISION server's machine, resolved against its cwd; use absolute:
 Don't point saves at `/tmp` (tmpfs — gone on reboot), and remember a
 save per cycle is an SD write per cycle at production volume.
 
+**`save_img` on the client — the frame lands on YOUR machine.** The
+other half of the table above: after a run, the client pulls the image
+over the API and writes it on the computer calling it (a notebook, a
+script, the workspace Pi), not the vision server's.
+
+    det = vc.detection("cnt")
+    det.run()
+    det.save_img("captures/a.jpg", type="img_roi")               # quality 100
+    det.save_img("captures/", type="img_roi")                    # roi_<timestamp>.jpg
+    det.save_img("captures/a.jpg", type="img", quality=90)
+
+Full resolution (the server's downscale is preview-only and never
+applies here), JPEG at `quality` — 100 by default, because a saved
+frame is usually a dataset. Path rules match the server table: a folder
+(trailing `/` or an existing dir) gets `<timestamp>.jpg` /
+`roi_<timestamp>.jpg`, anything else is that file, overwritten; folders
+are created, the written path is returned, and the bytes are JPEG
+whatever the extension. `type`: `img` (annotated), `img_roi` (the
+unannotated crop — the one for training), `img_thr`, `color_img`,
+`depth_img`, `ir_img`. `get_img(type, quality)` returns the bytes
+instead. Reference: the client README and
+`example/jupyters/api_call.ipynb` in the vision repo.
+
 **ROI from a 3D box.** Two forms. The static one: `roi.corners`, a
 pixel polygon `[[u, v], ...]` — `detection_box_corners(name, box)`
 generates it once (fixed camera / fixed look pose; omit K/D — the
@@ -229,6 +252,19 @@ moves instead of re-drawing in the GUI.
   prior launch) already added the camera — pool idempotency.
 - Restart order after code changes: camera/vision repo changes need a
   vision-server restart; GUI-only changes need a browser hard-refresh.
+- **Files page — the vision machine's captures, from the browser.** The
+  server GUI's Files section browses one folder: `~/captures` of the
+  user who started the server (SUDO_USER under sudo, not /root),
+  created on start; `--captures <folder>` points it elsewhere. Same
+  grammar as the workspace file browser: breadcrumbs, a row per entry,
+  and a preview pane that opens when a file is clicked (images shown
+  fitted, ↑/↓ steps through a folder). Upload takes many files (button
+  or drop onto the panel), files download as themselves, folders as a
+  zip — streamed, stored not deflated, so a big capture folder never
+  sits in memory. Delete takes a file or an EMPTY folder only, and
+  everything the server writes is handed back to the invoking user.
+  Pointing `display.save_img_roi` at a folder under `~/captures` is
+  what makes server-side saves show up here.
 
 ## 8. The uEye XS — color + autofocus
 
