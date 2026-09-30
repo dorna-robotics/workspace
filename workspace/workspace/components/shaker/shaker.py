@@ -11,8 +11,8 @@ class Shaker:
         toggle_range = [0, -180], # [start, end] angle in degree
         toggle_period = 1, # second, time to toggle from one state to another
         # cfg
-        output_start = [[None, None, 0.1]], # [[pin, index, time]]
-        output_end = [[None, None, 0.1]], # [[pin, index, time]]
+        output_start = [[None, None, 0.5]], # [[pin, index, time]]
+        output_end = [[None, None, 0.5]], # [[pin, index, time]]
         # 0.5 s dwell on the clamp rows: the head settles and the
         # liquid stops sloshing before/after the jaws actuate (bench:
         # the clamp opened the instant the shake ended).
