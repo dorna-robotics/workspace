@@ -456,7 +456,7 @@ from gui.orchestrator import fslive  # noqa: E402
 
 
 def _project_roots(ws):
-    """The workspace's three folders, created on demand."""
+    """The project's folders (project_dirs.ROOTS), created on demand."""
     from workspace.project_dirs import project_dirs
     project_dir = os.path.dirname(ws.path_to_file)
     if not project_dir:
@@ -497,6 +497,7 @@ class ProjectFilesHandler(AuthedHandler):
     ``GET  …/files/<root>?path=f.csv&download=1`` → the file, streamed
     ``GET  …/files/<root>?path=sub/dir&zip=1``    → the folder, streamed as a zip
     ``GET  …/files/<root>?path=f.csv&preview=1``  → parsed rows / text (capped)
+    ``GET  …/files/<root>?path=a.jpg&raw=1``      → the file inline, typed (image preview)
     """
 
     PREVIEW_BYTES = 2 << 20      # a preview reads at most this much of a file
@@ -528,6 +529,13 @@ class ProjectFilesHandler(AuthedHandler):
             if self.get_argument("preview", ""):
                 self.write(await asyncio.get_running_loop().run_in_executor(
                     None, self._preview, target, self.PREVIEW_BYTES))
+                return
+            if self.get_argument("raw", ""):
+                # Inline, typed by extension: what the preview pane's
+                # <img> loads for an image (captures/).
+                import mimetypes
+                await fslive.send_file(self, target, inline=True,
+                                       ctype=mimetypes.guess_type(target.name)[0])
                 return
             await fslive.send_file(self, target)
         except Exception as e:

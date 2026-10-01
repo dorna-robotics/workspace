@@ -19,10 +19,22 @@ projects/my_project/
 │   ├── setup.js         # Screen to SET the kwargs (optional; .html or .js)
 │   ├── pendant.html     # Screen shown DURING the run (+ pendant.css)
 │   └── hmi.j2           # …or a platform widget list, if writing no markup
-└── scene/
-    ├── base.j2          # Hardware layout (Jinja2)
-    └── layout.j2        # Spatial arrangement
+├── scene/
+│   ├── base.j2          # Hardware layout (Jinja2)
+│   └── layout.j2        # Spatial arrangement
+├── model/               # vision models the detections load (checked in, like CAD)
+├── data/                # operator INPUT files — uploads, manifests (git-ignored)
+├── results/             # one folder per run — records.jsonl / .csv (git-ignored)
+├── rec/                 # replay recordings (git-ignored)
+└── captures/            # IMAGES the detections keep — one per run (git-ignored)
 ```
+
+The last four are DATA folders (§3 "The project's folders"): created
+on demand, never checked in, each named in `launch.yaml`. `captures/`
+is where a run's pictures land: a detection whose preset sets
+`display.client_save_img` / `client_save_img_roi` to a relative path
+writes every run's frame there — on THIS machine, not the vision unit
+(vision-guide §5) — so a run's images live next to its records.
 
 **Convention for new projects: operator-facing declarations live in
 `hmi/`.** `launch.yaml` stays a short list of pointers (scene,
@@ -90,6 +102,7 @@ Top-level keys:
 | `data_dir` | *Optional, default `data`.* THE OPERATOR'S INPUT FILES — manifests, parameter presets, anything uploaded through the GUI. Uploads land here and STAY, so the next run browses to the same file instead of the operator finding it on their laptop again. Relative to the project folder, or absolute; a subproject can keep its own (`data`) or share the parent's (`../data`) exactly the way `recipes.j2` is shared. Created on demand. |
 | `results_dir` | *Optional, default `results`.* ONE FOLDER PER RUN — `records.jsonl` and `records.csv` from `rt.record`, named by the run's start stamp. This is what `runs/` used to be: the name was fixed inside the platform and is now the project's to choose. Created on demand. |
 | `rec_dir` | *Optional, default `rec`.* Replay recordings, `rec_2026-09-12_15-35-17.jsonl`. The scene builder's Replay panel and the GUI file browser read this same folder. Created on demand. |
+| `captures_dir` | *Optional, default `captures`.* THE IMAGES THE DETECTIONS KEEP. A detection preset's `display.client_save_img` / `client_save_img_roi` resolves against it when relative: `"tube_od/"` is `<captures_dir>/tube_od/`, one `<timestamp>.jpg` (`roi_<timestamp>.jpg`) per run; `true` is the folder itself; an absolute path is taken as given. The vision client writes the files on the machine running the project — never the vision unit — so `save_img` / `save_img_roi` (the unit's own disk) can stay `false`. Shared like the others (`../captures`). Created at launch. |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
 | `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase whose items overlap declares the order across them as its `cycle` (`Phase.group`, `Phase.cycle`; bt-framework-guide §13 "The cycle"). See bt-framework-guide.md §13. |
@@ -381,18 +394,22 @@ memory and `rt.records()` / `rt.record_csv()` still answer.
 
 ### The project's folders, and the file browser
 
-Three folders belong to the project rather than to the platform, and
-`launch.yaml` names all three (`data_dir` / `results_dir` / `rec_dir`
-above). `workspace/project_dirs.py` is the one place that resolves
-them; the runtime server writes run records and recordings through it,
-and the orchestrator's file browser resolves them through it.
-Nothing else may hardcode `runs/` or `rec/` again.
+Four folders belong to the project rather than to the platform, and
+`launch.yaml` names all four (`data_dir` / `results_dir` / `rec_dir` /
+`captures_dir` above). `workspace/project_dirs.py` is the one place
+that resolves them; the runtime server writes run records and
+recordings through it, the vision station resolves a preset's
+`client_save_img` paths through it (`client_save_path`), and the
+orchestrator's file browser lists them through it — one tab each:
+Data, Results, Recordings, Captures. Nothing else may hardcode
+`runs/`, `rec/` or a captures path again.
 
 The operator reaches them from the workspace page:
 
 * **Files** in the top bar — the browser, opened on `results`. Runs
   are folders, newest first; a `records.csv` opens as a table in the
-  panel, and any file downloads.
+  panel, an image shows fitted in the same pane (the Captures tab), any
+  file downloads and any folder downloads as a zip.
 * **Open**, next to **Load** in the Parameters modal — the same panel
   in *pick* mode over `data`, for choosing a parameter file that is
   already on the bench.

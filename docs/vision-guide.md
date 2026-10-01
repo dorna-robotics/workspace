@@ -165,10 +165,30 @@ on the VISION server's machine, resolved against its cwd; use absolute:
 Don't point saves at `/tmp` (tmpfs — gone on reboot), and remember a
 save per cycle is an SD write per cycle at production volume.
 
-**`save_img` on the client — the frame lands on YOUR machine.** The
-other half of the table above: after a run, the client pulls the image
-over the API and writes it on the computer calling it (a notebook, a
-script, the workspace Pi), not the vision server's.
+**`display.client_save_img` / `client_save_img_roi` — the same, on the
+client's disk.** Same values as the table above, but the file is written
+on the computer that added the detection (the workspace Pi, a laptop):
+`True` -> `output/<timestamp>.jpg` under its working folder, a folder ->
+one `<timestamp>.jpg` / `roi_<timestamp>.jpg` per run, a file -> that
+file, overwritten. The frame travels with no extra request: the vision
+server encodes it on its own thread AFTER the run replies and pushes it
+over the detection's own socket (a `detection_img` event + one binary
+frame); the client writes it on its event thread. Full resolution,
+encoded exactly as `save_img` would write that name — JPEG for a folder
+or `.jpg` (~40 ms, <1 MB at 6 MP), lossless for `.png` (~300 ms, 5 MB).
+Set both pairs to keep a copy on each machine. In a project, a relative
+path (or `true`) resolves against launch.yaml's `captures_dir` when the
+detection is registered — `client_save_img: "tube_od/"` lands in
+`<project>/captures/tube_od/` and shows in the file browser's Captures
+tab (project-guide "The project's folders"). At most 4 frames per
+client are queued; past that the newest is dropped and `[push] dropped`
+logged once — a slow link never grows memory or stalls a camera.
+`vc.on_event(fn)` sees every frame after its file is written
+(`event["path"]`).
+
+**`save_img()` on the client — on demand.** For one image when you
+ask, rather than every run: after a run, the client pulls the image over
+the API (one extra request) and writes it on the computer calling it.
 
     det = vc.detection("cnt")
     det.run()

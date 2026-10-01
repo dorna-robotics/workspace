@@ -2864,6 +2864,12 @@ class Core:
         """
         return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
 
+    def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None):
+        """The named detection's last image as JPEG bytes (``"img"`` the
+        drawn frame, ``"img_roi"`` the crop); ``None`` in simulation or
+        on failure. See VisionStation.get_img."""
+        return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side)
+
     def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame
         first and runs on it (raises ``CameraUnavailableError`` on

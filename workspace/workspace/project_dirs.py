@@ -1,6 +1,6 @@
 """The project's own folders — declared in launch.yaml, never guessed.
 
-A project owns three folders besides its code, and until now every one
+A project owns four folders besides its code, and until now every one
 of them was a hardcoded name inside the platform:
 
     data/      the operator's INPUT files. Uploads land here and stay;
@@ -9,12 +9,18 @@ of them was a hardcoded name inside the platform:
     results/   one folder per run, named by its start time
                (2026-09-12_15-35-17) — records.jsonl, records.csv.
     rec/       replay recordings, rec_<start time>.jsonl.
+    captures/  the images the project's detections keep — a detection's
+               ``display.client_save_img`` / ``client_save_img_roi``
+               path, when relative (or ``True``), is resolved here (see
+               ``client_save_path``), so the files land with the project
+               instead of on the vision unit.
 
-``launch.yaml`` names all three, the same way it names ``core_dir``::
+``launch.yaml`` names all four, the same way it names ``core_dir``::
 
     data_dir:     data
     results_dir:  results
     rec_dir:      rec
+    captures_dir: captures
 
 Relative paths resolve against the project folder, so a SUBPROJECT can
 keep its own (``data``) or share the parent's (``../data``) exactly the
@@ -42,9 +48,10 @@ import yaml
 
 # key in launch.yaml -> folder name when the key is absent
 ROOTS: Dict[str, str] = {
-    "data":    "data",
-    "results": "results",
-    "rec":     "rec",
+    "data":     "data",
+    "results":  "results",
+    "rec":      "rec",
+    "captures": "captures",
 }
 
 # What each root is FOR, in one operator-facing line. The browser panel
@@ -54,6 +61,7 @@ ROOT_LABELS: Dict[str, str] = {
     "data":    "Input files you upload and re-use between runs",
     "results": "One folder per run — records and measurements",
     "rec":     "Replay recordings",
+    "captures": "Images the detections keep — one per run",
 }
 
 
@@ -94,7 +102,8 @@ def _launch_of(project_dir: Path) -> dict:
 
 def project_dirs(project_dir, launch: Optional[dict] = None,
                  ensure: bool = False) -> Dict[str, Path]:
-    """``{"data": Path, "results": Path, "rec": Path}`` for one project.
+    """``{"data": Path, "results": Path, "rec": Path, "captures": Path}``
+    for one project.
 
     ``launch`` is the already-parsed launch.yaml when the caller has it
     (the runtime server does); otherwise it is read here. ``ensure``
@@ -123,8 +132,52 @@ def project_dirs(project_dir, launch: Optional[dict] = None,
 
 
 def declared_roots(project_dir, launch: Optional[dict] = None) -> Dict[str, bool]:
-    """Which of the three folders launch.yaml names explicitly. The UI
+    """Which of the folders launch.yaml names explicitly. The UI
     marks the rest as defaults so "where does this go?" is answerable
     from the screen."""
     launch = _launch_of(Path(project_dir)) if launch is None else (launch or {})
     return {root: bool(launch.get(f"{root}_dir")) for root in ROOTS}
+
+
+def workspace_project_dir(workspace) -> Optional[Path]:
+    """The project folder of a running Workspace: the one it was started
+    with (``Workspace(project_dir=...)`` — main.py, Bench), else the
+    folder holding its first scene file (``scene/`` stepped over), the
+    same fallback the core folder uses for a notebook that built a
+    Workspace by hand. None when neither is known."""
+    declared = getattr(workspace, "project_dir", None)
+    if declared:
+        return Path(declared).resolve()
+    paths = getattr(workspace, "config_paths", None) or []
+    if not paths:
+        return None
+    proj = Path(paths[0]).resolve().parent
+    return proj.parent if proj.name == "scene" else proj
+
+
+def client_save_path(value, captures: Optional[Path]):
+    """Resolve one ``display.client_save_img`` / ``client_save_img_roi``
+    value against the project's captures folder — the one rule, applied
+    where a detection is registered:
+
+        False / 0 / ""      -> unchanged (off)
+        True / 1            -> "<captures>/"   (one file per run inside it)
+        "sub/" or "f.jpg"   -> "<captures>/sub/" / "<captures>/f.jpg"
+        "/abs/..." "~/..."  -> unchanged (taken as given)
+
+    A trailing "/" is kept: it is what says "a folder, one file per run".
+    With no captures folder known the value passes through untouched."""
+    if not value or captures is None:
+        return value
+    captures = Path(captures)
+    if value is True or value == 1:
+        return str(captures) + os.sep
+    if not isinstance(value, str):
+        return value
+    if os.path.isabs(os.path.expanduser(value)):
+        return value
+    out = str(captures / value)
+    if value.endswith(("/", os.sep)) and not out.endswith(os.sep):
+        out += os.sep
+    return out
+

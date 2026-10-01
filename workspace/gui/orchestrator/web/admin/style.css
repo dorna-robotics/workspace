@@ -1092,6 +1092,9 @@
 .fb-pv-name { font-size: var(--text-md); font-weight: 600; color: var(--text); }
 .fb-pv-meta { font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
 .fb-pv-scroll { overflow: auto; flex: 1 1 auto; }
+/* An image file, fitted in the pane (captures/) */
+.fb-pv-img { display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+.fb-pv-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .fb-table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
 .fb-table th, .fb-table td {
   text-align: left; padding: var(--space-2) var(--space-4);

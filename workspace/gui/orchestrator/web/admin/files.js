@@ -20,7 +20,10 @@ const ROOTS = [
   { key: "data",    label: "Data",       hint: "Input files" },
   { key: "results", label: "Results",    hint: "One folder per run" },
   { key: "rec",     label: "Recordings", hint: "Replay captures" },
+  { key: "captures", label: "Captures",  hint: "Images the detections keep" },
 ];
+
+const IMG_EXT = /\.(jpe?g|png|bmp|gif|webp|tiff?)$/i;
 
 const api = (ws, root, tail = "") =>
   `/orchestrator/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(root)}${tail}`;
@@ -431,6 +434,21 @@ export function openFileBrowser(opts = {}) {
   // ---- preview ----
   async function showPreview(e) {
     showPane(true);
+    if (IMG_EXT.test(e.name)) {
+      // An image shows itself, fitted — the same pane a table or text
+      // uses. mtime in the URL: a file overwritten in place reloads.
+      const esc = (v) => String(v).replace(/[<&"]/g, (c) => ({ "<": "&lt;", "&": "&amp;", '"': "&quot;" }[c]));
+      preview.innerHTML =
+        `<div class="fb-pv-head"><span class="fb-pv-name">${esc(e.name)}</span>` +
+        `<span class="fb-pv-meta">${fmtSize(e.size)} · ${fmtWhen(e.mtime)}</span></div>` +
+        `<div class="fb-pv-scroll fb-pv-img"><img alt="${esc(e.name)}" src="${api(wsName, root,
+          `?path=${encodeURIComponent(e.path)}&raw=1&t=${e.mtime}`)}"/></div>`;
+      preview.querySelector("img").onerror = () => {
+        const box = preview.querySelector(".fb-pv-img");
+        if (box) box.outerHTML = `<div class="fb-error">Could not load the image</div>`;
+      };
+      return;
+    }
     preview.innerHTML = `<div class="fb-loading"><div class="fb-skel"></div></div>`;
     try {
       const resp = await fetch(api(wsName, root, `?path=${encodeURIComponent(e.path)}&preview=1`));

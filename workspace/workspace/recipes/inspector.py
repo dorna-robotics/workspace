@@ -113,6 +113,16 @@ class Inspector(Recipe):
             self.detection_name, data=data,
             camera_in_world=self._camera_in_world())
 
+    def get_img(self, kind="img", quality=85, max_side=None):
+        """This inspector's last image as JPEG bytes — ``"img"`` the frame
+        as the server drew it (boxes and labels when the preset's
+        ``display.label`` is on), ``"img_roi"`` the crop the model saw.
+        ``None`` in simulation or on failure: a project that keeps its
+        captures with the project (``<project>/captures/``) writes what
+        it gets and never fails a run over a missing picture."""
+        return self._vision_owner.get_img(self.detection_name, kind=kind, quality=quality,
+                                          max_side=max_side)
+
     def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. By default, captures a fresh
         frame first (stamped with the lens's current world pose) and

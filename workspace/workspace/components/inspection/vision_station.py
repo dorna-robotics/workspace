@@ -101,7 +101,13 @@ class VisionStation:
         camera_cfg: Optional[dict] = None,
         simulation: bool = True,
         label: str = "vision",
+        captures_dir=None,
     ):
+        # The project's captures folder, as a callable returning a Path
+        # (or None) — asked when a detection is registered, so a preset's
+        # relative display.client_save_img / client_save_img_roi lands
+        # in the project (project_dirs.client_save_path).
+        self._captures_dir = captures_dir
         self.ip = ip
         self.port = int(port)
         # str() at the boundary: an unquoted serial in scene yaml
@@ -228,9 +234,14 @@ class VisionStation:
             raise
 
     def add_detection(self, name: str, **detection_preset: Any) -> bool:
-        """Register a detection on the server. Returns False in simulation."""
+        """Register a detection on the server. Returns False in simulation.
+
+        A relative ``display.client_save_img`` / ``client_save_img_roi``
+        (or ``True``) is resolved against the project's captures folder
+        first — the vision client then writes every run's frame there."""
         if self.simulation or self._client is None:
             return False
+        detection_preset = self._resolve_client_saves(detection_preset)
         self._detections[name] = dict(detection_preset)
         try:
             self._call(lambda: self._client.detection_add(
@@ -242,6 +253,23 @@ class VisionStation:
         except Exception as ex:
             print(f"[{self.label}] detection_add({name}) failed: {ex}")
             return False
+
+    def _resolve_client_saves(self, preset: dict) -> dict:
+        display = preset.get("display")
+        if not isinstance(display, dict) or self._captures_dir is None:
+            return preset
+        keys = [k for k in ("client_save_img", "client_save_img_roi") if display.get(k)]
+        if not keys:
+            return preset
+        from workspace.project_dirs import client_save_path
+        try:
+            captures = self._captures_dir()
+        except Exception:
+            captures = None
+        display = dict(display)
+        for k in keys:
+            display[k] = client_save_path(display[k], captures)
+        return {**preset, "display": display}
 
     def capture(self, name: str, data: Any = None, camera_in_world: Any = None,
                 focus: Any = None) -> dict:
@@ -279,6 +307,26 @@ class VisionStation:
                 name, data=data, camera_in_world=camera_in_world, focus=focus))
         except Exception as ex:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
+
+    def get_img(self, name: str, kind: str = "img", quality: int = 85,
+                max_side: Optional[int] = None) -> Optional[bytes]:
+        """The named detection's LAST image as JPEG bytes — ``"img"`` is the
+        full frame as the server drew it (boxes and labels when
+        ``display.label`` is on), ``"img_roi"`` the crop the model saw.
+        Fetched over the wire: this is how a project keeps its captures
+        with the project instead of on the vision unit's disk. ``None``
+        in simulation, and on any failure (logged once per call) — an
+        image is observability and never fails a run. ``max_side`` has
+        the server downscale before encoding (fewer bytes on the wire)."""
+        if self.simulation or self._client is None:
+            return None
+        try:
+            data, _meta = self._call(lambda: self._client.detection_get_img(
+                name, type=kind, quality=int(quality), max_side=max_side))
+            return data
+        except Exception as ex:
+            print(f"[{self.label}] get_img({name}, {kind}) failed: {ex}")
+            return None
 
     def detect(
         self,

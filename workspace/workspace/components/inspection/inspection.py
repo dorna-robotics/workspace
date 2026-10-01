@@ -80,11 +80,20 @@ class Inspection:
             camera_cfg=cam_cfg,
             simulation=prm["simulation"],
             label=self.name,
+            captures_dir=self._captures_dir,
         )
 
         # Detection the operator "Detect" button runs (the last one
         # registered via ``add_detection``; defaults to "default").
         self._default_detection = "default"
+
+    def _captures_dir(self):
+        """The project's captures folder (launch.yaml captures_dir), or
+        None outside a project — VisionStation resolves a preset's
+        relative client_save_img paths against it."""
+        from workspace.project_dirs import project_dirs, workspace_project_dir
+        proj = workspace_project_dir(self.workspace)
+        return project_dirs(proj)["captures"] if proj is not None else None
 
     # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
 
@@ -129,6 +138,12 @@ class Inspection:
         VisionStation.capture for the reply shape and ``data`` modes.
         """
         return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
+
+    def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None):
+        """The named detection's last image as JPEG bytes (``"img"`` the
+        drawn frame, ``"img_roi"`` the crop); ``None`` in simulation or
+        on failure. See VisionStation.get_img."""
+        return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side)
 
     def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, camera_in_world=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame
