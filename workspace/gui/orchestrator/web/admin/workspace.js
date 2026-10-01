@@ -1467,7 +1467,8 @@ let _replan = null;
 let _replanAvail = { ok: false, why: "" };   // status.replan_ok / replan_why
 let _replanShownFor = null;     // the offer the dialog already opened for
 const _rpSel = new Set();       // JSON keys of the selected items
-let _rpStep = "choose";         // "choose" | "confirm" — the dialog's two steps
+let _rpStep = "";               // the current step's key: the view's, or "choose", or "confirm"
+let _rpShown = null;            // the step the view was last told to draw
 const _rpOpen = new Set();      // expanded phase groups
 
 function replanControl() {
@@ -1511,14 +1512,15 @@ function _rpGroups(items) {
 }
 
 // ── the project's own view of the choice (launch.yaml ``replan:``) ──
-// A VIEW only: it shows the items on offer the project's way (bna: its
-// racks, a sample's bottle and vials crossed) and reports the selection
-// through ``value()`` — the offer's own ``item`` values. Everything
-// else stays the platform's: the preview, the reason, Cancel, Remove &
-// replan, and the request to the runtime (``remove``), which is the same
-// whichever view chose the items. No ``replan:`` → the plain list.
+// A VIEW only: it draws the choosing steps the project's way (bna: its
+// racks, a sample's bottle and vials crossed; then a checklist to clear
+// the bench) and reports the selection through ``value()`` — the offer's
+// own ``item`` values. The platform keeps the stepper, its Confirm step
+// (the reason), Cancel, Remove & replan, and the request to the runtime
+// (``remove``), the same whichever view chose. No ``replan:`` → the list.
 // Contract (bt-framework-guide §8.6): export default {css, mount(root,
-// api), value()}; api = {items, schema, values, theme, onTheme, changed}.
+// api), value(), steps?, ready(key)?, show(key)?, clearsBench?};
+// api = {items, schema, values, theme, onTheme, invoke, changed}.
 let _rpView = null;              // the mounted module, or null (the list)
 const _rpThemeCbs = [];
 new MutationObserver(() => {
@@ -1535,6 +1537,7 @@ function _rpShowView(on) {
 
 async function _mountReplanView() {
   _rpView = null;
+  _rpShown = null;
   _rpThemeCbs.length = 0;
   let j = null;
   try { j = await _getLaunchConfig(); } catch (_) {}
@@ -1556,7 +1559,12 @@ async function _mountReplanView() {
     },
     get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
     onTheme(cb) { _rpThemeCbs.push(cb); },
-    // The view's selection changed: read it, keep only what is on offer.
+    // The same operator-action path the platform buttons use (and the
+    // pendant screen's invoke) — a view can press what a component
+    // already declares (Disable tool, Disable Motors…), nothing more.
+    invoke(component, method) { return runOperatorAction(component, method); },
+    // The view's selection or its own steps changed: read the selection
+    // (keep only what is on offer) and re-judge the steps.
     changed() {
       if (!_rpView || typeof _rpView.value !== "function") return;
       _rpSel.clear();
@@ -1584,7 +1592,7 @@ async function openReplanModal(fresh) {
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
     $("rpCleared").checked = false;
-    _rpStep = "choose";
+    _rpStep = "";               // the first step, whichever the view declares
     document.querySelector("#replanModalOverlay .modal-body").style.minHeight = "";
     // The items open; the Finished section collapsed, with its count.
     _rpOpen.add("__run");
@@ -1653,28 +1661,69 @@ function renderReplanList() {
   $("btnReplanCancel").disabled = applying;
 }
 
-// The stepper: Choose ▸ Confirm. Choose is complete once something is
-// chosen; Confirm once the bench is ticked and a reason given. The
-// Confirm step and Next open only with something chosen.
+// The steps. The choosing steps are the VIEW's: a project view lists as
+// many as it needs (``steps``: [{key, title}] — bna: Choose, Clear the
+// bench) and says when each is done (``ready(key)``); without a view, or
+// without ``steps``, there is one: Choose. The platform appends its own
+// Confirm (what leaves, the reason). A step opens only when every step
+// before it is done, and Confirm only with something chosen. The bench
+// tick on Confirm is shown unless the view says its steps clear the
+// bench (``clearsBench: true``) — the operator never ticks twice.
+function _rpChoiceSteps() {
+  const v = _rpView;
+  let st = null;
+  try { st = v && (typeof v.steps === "function" ? v.steps() : v.steps); } catch (_) {}
+  return Array.isArray(st) && st.length
+    ? st.map(x => ({ key: String(x.key), title: String(x.title || x.key) }))
+    : [{ key: "choose", title: "Choose" }];
+}
+
+function _rpReady(key, nChosen) {
+  const v = _rpView;
+  if (v && typeof v.ready === "function") {
+    try { return !!v.ready(key); } catch (_) { return false; }
+  }
+  return nChosen > 0;           // the list's one step: something chosen
+}
+
+const _rpClearsBench = () => !!(_rpView && _rpView.clearsBench);
+
 function renderReplanSteps(nChosen) {
   const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
     stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const TICK = icon('<polyline points="20 6 9 17 4 12"/>');
-  const steps = [
-    { key: "choose",  title: "Choose",  ok: nChosen > 0, open: true },
-    { key: "confirm", title: "Confirm", ok: $("rpCleared").checked && !!$("rpReason").value.trim(),
-      open: nChosen > 0 },
-  ];
-  if (_rpStep === "confirm" && !nChosen) _rpStep = "choose";
+  const ticked = _rpClearsBench() || $("rpCleared").checked;
+  const steps = _rpChoiceSteps().map(x => ({ ...x, ok: _rpReady(x.key, nChosen) }));
+  steps.push({ key: "confirm", title: "Confirm", ok: ticked && !!$("rpReason").value.trim() });
+  let open = true;
+  for (const x of steps) {
+    x.open = open && (x.key !== "confirm" || nChosen > 0);
+    open = x.open && x.ok;
+  }
+  // The current step must be open; else fall back to the last open one.
+  if (!steps.some(x => x.key === _rpStep && x.open)) {
+    _rpStep = [...steps].reverse().find(x => x.open)?.key || steps[0].key;
+  }
+  const i = steps.findIndex(x => x.key === _rpStep);
   $("rpSteps").innerHTML = steps.map(x =>
     `<button class="rp-seg${x.key === _rpStep ? " cur" : ""}${x.ok ? " done" : ""}" data-rpstep="${x.key}"` +
-    `${x.open ? "" : " disabled"}${x.key === _rpStep ? ' aria-current="step"' : ""}>${x.ok ? TICK : ""}${x.title}</button>`
+    `${x.open ? "" : " disabled"}${x.key === _rpStep ? ' aria-current="step"' : ""}>${x.ok ? TICK : ""}${escHtml(x.title)}</button>`
   ).join("");
-  $("rpNav").innerHTML = _rpStep === "choose"
-    ? `<button class="btn btn-primary" data-rpstep="confirm"${nChosen ? "" : " disabled"}>Next ${icon('<polyline points="9 18 15 12 9 6"/>')}</button>`
-    : `<button class="btn btn-ghost" data-rpstep="choose">${icon('<polyline points="15 18 9 12 15 6"/>')} Back</button>`;
-  $("rpStepChoose").hidden = _rpStep !== "choose";
-  $("rpStepConfirm").hidden = _rpStep !== "confirm";
+  const back = i > 0
+    ? `<button class="btn btn-ghost" data-rpstep="${steps[i - 1].key}">${icon('<polyline points="15 18 9 12 15 6"/>')} Back</button>` : "";
+  const next = i < steps.length - 1
+    ? `<button class="btn btn-primary" data-rpstep="${steps[i + 1].key}"${steps[i + 1].open ? "" : " disabled"}>Next ${icon('<polyline points="9 18 15 12 9 6"/>')}</button>` : "";
+  $("rpNav").innerHTML = back + next;
+  const confirm = _rpStep === "confirm";
+  $("rpStepChoose").hidden = confirm;
+  $("rpStepConfirm").hidden = !confirm;
+  $("rpClearedRow").hidden = _rpClearsBench();
+  $("rpCleared").required = !_rpClearsBench();
+  // The view draws the step it is on.
+  if (!confirm && _rpView && typeof _rpView.show === "function" && _rpShown !== _rpStep) {
+    _rpShown = _rpStep;
+    try { _rpView.show(_rpStep); } catch (err) { console.error("replan view show() raised:", err); }
+  }
 }
 
 async function sendReplanChoice(items) {
@@ -1723,7 +1772,7 @@ for (const id of ["rpSteps", "rpNav"]) {
     if (!b || b.disabled) return;
     // Keep the dialog's height: Confirm is short, Choose draws a bench.
     const body = document.querySelector("#replanModalOverlay .modal-body");
-    if (_rpStep === "choose") body.style.minHeight = `${body.offsetHeight}px`;
+    if (_rpStep !== "confirm") body.style.minHeight = `${body.offsetHeight}px`;
     _rpStep = b.dataset.rpstep;
     renderReplanList();
     if (_rpStep === "confirm") $("rpReason").focus();
@@ -1734,7 +1783,7 @@ $("rpReason").addEventListener("input", () => renderReplanSteps(_rpSel.size));
 // Remove & replan: the bench ticked and a reason given — the browser's
 // own required bubble points at whichever is missing.
 $("btnReplanGo").addEventListener("click", () => {
-  for (const el of [$("rpCleared"), $("rpReason")]) {
+  for (const el of _rpClearsBench() ? [$("rpReason")] : [$("rpCleared"), $("rpReason")]) {
     if (!el.checkValidity() || (el.type === "text" && !el.value.trim())) {
       if (el.type === "text") el.value = "";
       el.reportValidity();

@@ -1455,10 +1455,20 @@ a second click keeps it:
 replan: hmi/replan.js          # explicit path; absent → the plain list
 ```
 
-It is a **view only** — the dialog's Choose step. The platform keeps
-everything else: the stepper, the Confirm step (what leaves and what it
-takes with it, the bench tick, the reason), Cancel, Remove & replan,
-the Applying / refused line, and the request to the runtime —
+It is a **view only** — the dialog's choosing steps. It may declare as
+many as it needs (`steps`), say when each is done (`ready`), and press
+the buttons a component already declares (`api.invoke`, the pendant
+screen's own call — Disable tool, Disable Motors, a decapper's Disable);
+the platform draws the stepper from them and appends its own **Confirm**.
+bna's: **Choose** (the racks) → **Clear the bench** (a numbered
+checklist for exactly the chosen samples — open the gripper, open the
+decapper jaws, motors off, move the arm upright by hand, take each
+sample's bottle, cap and vials off, motors on — each line ticked, with
+its button) → **Confirm** (the reason). The platform keeps the stepper,
+Back / Next, the Confirm step (what leaves and what it takes with it,
+the bench tick unless the view's steps clear the bench, the reason),
+Cancel, Remove & replan, the Applying / refused line, and the request
+to the runtime —
 `remove` with the offer's own `item` values, identical whichever view
 chose them. Nothing in the engine or the runtime knows a view exists.
 
@@ -1474,15 +1484,21 @@ export default {
   css,                         // optional, scoped to the view
   mount(root, api) {},         // draw; call api.changed() on every change
   value() { return [...] },    // the chosen items: offer rows' `item`
+  steps: [{key, title}, …],    // optional: the view's steps (default: one, "Choose")
+  ready(key) { return bool },  // optional: is that step done (default: something chosen)
+  show(key) {},                // optional: draw that step
+  clearsBench: true,           // optional: the steps clear the bench — no platform tick
 };
 // api.items    the offer — {item, label, phase, in_phase, done, with, holds}
 //              (an item not in it was removed earlier: draw it, don't offer it)
 // api.values   the run's parameters (what Start sent); api.schema
+// api.invoke(component, method)  a declared operator action — nothing more
 // api.theme / api.onTheme(cb)
-// api.changed()  the platform reads value() and updates the preview
+// api.changed()  the platform re-reads value() and ready(), redraws the stepper
 ```
 
-A view that fails to load falls back to the list, with a toast. bna's
+A step opens only when every step before it is done; Confirm also needs
+something chosen. A view that fails to load falls back to the list, with a toast. bna's
 `_tph` names bna's file (`replan: ../_bna/hmi/replan.js`).
 
 #### What stays where it was — deliberately
