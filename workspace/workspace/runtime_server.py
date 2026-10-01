@@ -413,6 +413,12 @@ class CmdHandler(tornado.web.RequestHandler):
             self.write({"error": "Invalid JSON"})
             return
 
+        # Start and Resume are the operator's "the robot may move now":
+        # its motors come on first, then the drives settle (Runtime.
+        # motors_on — off the IOLoop, it waits on the robot and 0.5 s).
+        if cmd in ("start", "resume"):
+            await tornado.ioloop.IOLoop.current().run_in_executor(None, self.rt.motors_on)
+
         if cmd == "start":
             extra_kwargs = data.get("kwargs") or {}
             # Always refresh pending kwargs BEFORE bumping the start

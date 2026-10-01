@@ -1130,6 +1130,20 @@ Pause therefore happens at the **boundary** before the next call, never
 mid-execution. If you need an instant freeze accepting the
 consequences, use **Kill** instead.
 
+#### Start and Resume turn the motors on
+
+The operator's **Start** and **Resume** presses mean "the robot may move
+now", so the runtime server turns the robot's motors on first and waits
+`Runtime.MOTOR_SETTLE_S` (0.5 s) for the drives before the run starts or
+continues (`Runtime.motors_on`). An operator who switched the motors off
+to move the arm by hand — a Replan's clearing, a jam — gets them back
+with the press that says "go"; nothing else ever turns them on (Pause,
+Replan and Park never do). If the robot refuses (in alarm) or is
+unreachable, a warning goes on the timeline and the press goes on: the
+first motion fails and pauses with its cause. Only those two presses do
+it — a notebook or a dry run calling `rt.start()` does not. Already on:
+a no-op plus the settle. Sim: it reaches the simulator.
+
 #### Resume semantics — work runs, nothing is skipped
 
 After Resume, the call that was blocked **runs its work** — it isn't

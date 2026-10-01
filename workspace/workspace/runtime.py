@@ -733,6 +733,36 @@ class Runtime:
                 self._set_state(RTState.PAUSED)
                 self._cv.notify_all()
 
+    # The drives' settle after a motors-on, before any work goes on.
+    MOTOR_SETTLE_S = 0.5
+
+    def motors_on(self, settle: Optional[float] = None) -> bool:
+        """The operator pressed Start or Resume: the robot may move now,
+        so its motors come on first, then ``MOTOR_SETTLE_S`` for the
+        drives before anything continues. Called by the runtime server
+        for those two presses only — never on its own (Replan never
+        turns the motors on; an operator who switched them off to move
+        the arm by hand gets them back with the press that means "go").
+
+        An operator call: it passes the pause gate. A refusal (robot in
+        alarm: a negative code) or a dead link (ConnectionError) is put
+        on the timeline as a warning and the press goes on — the first
+        motion then fails and pauses with its cause. In sim it reaches
+        the simulator. Returns True when the motors answered on."""
+        if self.robot_api is None or self._killed:
+            return False
+        try:
+            with self.operator_call():
+                rc = self.motor(1)
+        except Exception as ex:
+            self.step(f"Motors on failed: {type(ex).__name__}: {ex}", level="warning")
+            return False
+        if isinstance(rc, (int, float)) and not isinstance(rc, bool) and rc < 0:
+            self.step(f"Motors on refused (code {int(rc)}) — clear the robot alarm", level="warning")
+            return False
+        self._sleep(self.MOTOR_SETTLE_S if settle is None else float(settle))
+        return True
+
     def resume(self) -> None:
         with self._lock:
             if self._killed:

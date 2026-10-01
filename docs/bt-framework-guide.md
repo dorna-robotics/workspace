@@ -1466,8 +1466,9 @@ true` draws its confirmation itself as its LAST step and answers
 racks) → **Clear the bench** (how to release each sample — open the
 gripper, a decapper, the shaker clamp; lift the arm ~100 mm with the
 motors off — and what to take off, with the buttons) → **Confirm** (the
-samples, *I have taken these off the bench*, *the motors are on and the
-arm is clear* — Replan never turns them on — and the reason). The
+samples, *I have taken these off the bench*, a note that Resume turns
+the motors on and moves the robot, and the reason — Start and Resume
+turn the motors on, project-guide "Start and Resume turn the motors on"). The
 platform keeps the frame, the stepper, Back / Next, Cancel, Remove &
 replan (live on the confirming step), the Applying / refused line, and
 the request to the runtime —
