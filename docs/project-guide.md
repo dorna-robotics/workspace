@@ -30,7 +30,7 @@ projects/my_project/
 ```
 
 The last four are DATA folders (§3 "The project's folders"): created
-on demand, never checked in, each named in `launch.yaml`. `captures/`
+on demand, never checked in, each listed in `launch.yaml`'s `folders:`. `captures/`
 is where a run's pictures land: a detection whose preset sets
 `display.client_save_img` / `client_save_img_roi` to a relative path
 writes every run's frame there — on THIS machine, not the vision unit
@@ -99,10 +99,7 @@ Top-level keys:
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
-| `data_dir` | *Optional, default `data`.* THE OPERATOR'S INPUT FILES — manifests, parameter presets, anything uploaded through the GUI. Uploads land here and STAY, so the next run browses to the same file instead of the operator finding it on their laptop again. Relative to the project folder, or absolute; a subproject can keep its own (`data`) or share the parent's (`../data`) exactly the way `recipes.j2` is shared. Created on demand. |
-| `results_dir` | *Optional, default `results`.* ONE FOLDER PER RUN — `records.jsonl` and `records.csv` from `rt.record`, named by the run's start stamp. This is what `runs/` used to be: the name was fixed inside the platform and is now the project's to choose. Created on demand. |
-| `rec_dir` | *Optional, default `rec`.* Replay recordings, `rec_2026-09-12_15-35-17.jsonl`. The scene builder's Replay panel and the GUI file browser read this same folder. Created on demand. |
-| `captures_dir` | *Optional, default `captures`.* THE IMAGES THE DETECTIONS KEEP. A detection preset's `display.client_save_img` / `client_save_img_roi` resolves against it when relative: `"tube_od/"` is `<captures_dir>/tube_od/`, one `<timestamp>.jpg` (`roi_<timestamp>.jpg`) per run; `true` is the folder itself; an absolute path is taken as given. The vision client writes the files on the machine running the project — never the vision unit — so `save_img` / `save_img_roi` (the unit's own disk) can stay `false`. Shared like the others (`../captures`). Created at launch. |
+| `folders` | *Optional.* THE PROJECT'S FOLDERS — one entry each, all four fields written out: `{key, label, path, read_only}`. The list is the file browser: one tab per entry, in list order, `label` as the tab's text; the Files button opens on the first. `path` is relative to the project folder (`../x` shares a parent's) or absolute. `read_only: true` = browse, preview and download only — upload, new folder and delete are refused by the server; it is read on every request, so flipping it takes effect on the next open. Four keys mean something to the platform: `results` (one folder per run, `rt.record`), `data` (operator input files — a file parameter's Open picks here), `captures` (the images detections keep — a preset's relative `display.client_save_img` lands here) and `rec` (replay recordings). Any other key is just a tab (e.g. `{key: model, label: Models, path: model, read_only: true}`). A platform key left out still works at its default path (`<project>/<key>`), without a tab — said once at launch. No `folders:` key at all = the platform's four as tabs, at their defaults. The old `data_dir` / `results_dir` / `rec_dir` / `captures_dir` keys are refused. See "The project's folders". |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
 | `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase whose items overlap declares the order across them as its `cycle` (`Phase.group`, `Phase.cycle`; bt-framework-guide §13 "The cycle"). See bt-framework-guide.md §13. |
@@ -378,13 +375,13 @@ What the platform does with it:
 
 | | |
 |---|---|
-| `<results_dir>/<YYYY-mm-dd_HH-MM-SS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
-| `<results_dir>/<YYYY-mm-dd_HH-MM-SS>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
+| `<results>/<YYYY-mm-dd_HH-MM-SS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
+| `<results>/<YYYY-mm-dd_HH-MM-SS>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
 | `GET /records` · `GET /records.csv` | the same, live, at any moment of the run — the download link on the pendant |
 | `record_state` on `/ws` | snapshot then deltas, the `op_state` shape keyed `item → {field: value}`; feeds the pendant's `records` widget (hmi-guide §4) and `api.onRecords` for a project screen (§4b) |
 
-`results_dir` names that folder (default `results/`, the old fixed
-`runs/`); keep it out of the project's git — it is data, one folder per
+The `results` entry of `folders:` names that folder (default
+`results/`, the old fixed `runs/`); keep it out of the project's git — it is data, one folder per
 run. The GUI's file browser reads it, so an operator can pull a run's
 records without a shell.
 A script without a server (a dev notebook) sets `rt.record_dir` itself
@@ -394,30 +391,45 @@ memory and `rt.records()` / `rt.record_csv()` still answer.
 
 ### The project's folders, and the file browser
 
-Four folders belong to the project rather than to the platform, and
-`launch.yaml` names all four (`data_dir` / `results_dir` / `rec_dir` /
-`captures_dir` above). `workspace/project_dirs.py` is the one place
-that resolves them; the runtime server writes run records and
+`launch.yaml`'s `folders:` lists every folder the project exposes, and
+that list IS the file browser — one tab per entry, in its order:
+
+```yaml
+folders:                          # the project's folders — file-browser tabs, in this order
+  - {key: results,  label: Results,    path: results,     read_only: false}
+  - {key: captures, label: Captures,   path: ../captures, read_only: false}
+  - {key: data,     label: Data,       path: data,        read_only: false}
+  - {key: rec,      label: Recordings, path: rec,         read_only: false}
+  - {key: model,    label: Models,     path: ../model,    read_only: true}
+```
+
+(bna's `_bna`: three subprojects share `../captures` and the checked-in
+`../model`, the latter read-only so a model cannot be deleted from the
+bench.) `workspace/project_dirs.py` is the one place that reads it
+(`project_folders`); the runtime server writes run records and
 recordings through it, the vision station resolves a preset's
-`client_save_img` paths through it (`client_save_path`), and the
-orchestrator's file browser lists them through it — one tab each:
-Data, Results, Recordings, Captures. Nothing else may hardcode
-`runs/`, `rec/` or a captures path again.
+`client_save_img` paths through it (`client_save_path`), the display and
+the scene builder's Replay panel find recordings through it, and the
+orchestrator's browser lists, guards and serves through it. Nothing else
+may hardcode `runs/`, `rec/` or a captures path again. A malformed list
+fails the launch with the entry and the field that is wrong.
 
 The operator reaches them from the workspace page:
 
-* **Files** in the top bar — the browser, opened on `results`. Runs
-  are folders, newest first; a `records.csv` opens as a table in the
-  panel, an image shows fitted in the same pane (the Captures tab), any
-  file downloads and any folder downloads as a zip.
+* **Files** in the top bar — the browser, opened on the FIRST folder
+  listed. A run folder's `records.csv` opens as a table in the panel,
+  an image shows fitted in the same pane, any file downloads and any
+  folder downloads as a zip.
 * **Open**, next to **Load** in the Parameters modal — the same panel
   in *pick* mode over `data`, for choosing a parameter file that is
   already on the bench.
 * **Open** on any `type: file` parameter — pick that field's file from
   `data` instead of uploading it again.
 
-Uploading, creating a folder and deleting are all available; delete
-takes a confirm, and refuses a folder that still has anything in it, so
+Uploading, creating a folder and deleting are available in every folder
+not marked `read_only` (a read-only folder shows a "read-only" tag and
+no Upload, New folder or Delete — and the server refuses them anyway);
+delete takes a confirm, and refuses a folder that still has anything in it, so
 a run's records cannot go in one click. Every path from the browser is
 checked against its root by `fslive.safe_join` before it reaches the
 filesystem — a request that climbs out of its folder is refused,

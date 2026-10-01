@@ -177,7 +177,8 @@ frame); the client writes it on its event thread. Full resolution,
 encoded exactly as `save_img` would write that name — JPEG for a folder
 or `.jpg` (~40 ms, <1 MB at 6 MP), lossless for `.png` (~300 ms, 5 MB).
 Set both pairs to keep a copy on each machine. In a project, a relative
-path (or `true`) resolves against launch.yaml's `captures_dir` when the
+path (or `true`) resolves against the project's `captures` folder
+(launch.yaml `folders:`, default `captures/`) when the
 detection is registered — `client_save_img: "tube_od/"` lands in
 `<project>/captures/tube_od/` and shows in the file browser's Captures
 tab (project-guide "The project's folders"). At most 4 frames per

@@ -101,7 +101,8 @@ class Display:
     # Public utilities
     # ----------------------------------------------------
     def _rec_dir(self):
-        """The active project's ``rec/`` dir — where recordings land, and
+        """The active project's recordings folder (launch.yaml ``folders:``
+        key ``rec``, default ``rec/``) — where recordings land, and
         the one folder the scene builder's Replay panel lists. It is the
         PROJECT's own folder, not the station's core/: core/ is per-bench
         state that core_dir may point anywhere, recordings belong to the
@@ -114,10 +115,11 @@ class Display:
         bare scene files outside a project."""
         try:
             import pathlib
+            from workspace.project_dirs import project_dirs
             declared = getattr(self.workspace, "project_dir", None)
             if declared:
-                rec = pathlib.Path(str(declared)).resolve() / "rec"
-                rec.mkdir(exist_ok=True)
+                rec = project_dirs(pathlib.Path(str(declared)).resolve())["rec"]
+                rec.mkdir(parents=True, exist_ok=True)
                 return str(rec)
             cfg = getattr(self.workspace, "config_paths", None) or []
             if not cfg:
@@ -125,8 +127,8 @@ class Display:
             p = pathlib.Path(str(cfg[0])).resolve().parent
             for _ in range(6):
                 if (p / "launch.yaml").exists():
-                    rec = p / "rec"
-                    rec.mkdir(exist_ok=True)
+                    rec = project_dirs(p)["rec"]       # launch.yaml folders: (rec)
+                    rec.mkdir(parents=True, exist_ok=True)
                     return str(rec)
                 if p.parent == p:
                     break

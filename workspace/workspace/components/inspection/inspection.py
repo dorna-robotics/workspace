@@ -88,7 +88,7 @@ class Inspection:
         self._default_detection = "default"
 
     def _captures_dir(self):
-        """The project's captures folder (launch.yaml captures_dir), or
+        """The project's captures folder (launch.yaml folders:, key captures), or
         None outside a project — VisionStation resolves a preset's
         relative client_save_img paths against it."""
         from workspace.project_dirs import project_dirs, workspace_project_dir

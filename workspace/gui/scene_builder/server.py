@@ -1509,7 +1509,8 @@ async def reset_scene(sid):
 
 
 class ReplayListHandler(tornado.web.RequestHandler):
-    """GET → the active project's recordings (rec/rec_*.jsonl), newest
+    """GET → the active project's recordings (rec_*.jsonl in its declared
+    rec folder — launch.yaml folders:, default rec/), newest
     first. The Replay panel's dropdown.
 
     The PROJECT's own rec/ folder, which is where both recorders write
@@ -1518,7 +1519,13 @@ class ReplayListHandler(tornado.web.RequestHandler):
 
     def get(self):
         out = []
-        rec_dir = os.path.join(_project_path, "rec") if _project_path else None
+        rec_dir = None
+        if _project_path:
+            try:
+                from workspace.project_dirs import project_dirs
+                rec_dir = str(project_dirs(_project_path)["rec"])   # launch.yaml folders: (rec)
+            except ValueError as ex:
+                print(f"[replay] {ex}")
         if rec_dir and os.path.isdir(rec_dir):
             try:
                 for n in os.listdir(rec_dir):

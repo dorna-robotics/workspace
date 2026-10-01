@@ -1932,15 +1932,21 @@ class RuntimeServer:
         _proj = _project_dir(workspace)
         global _record_dir
         if _proj is not None:
-            # The project's own folders, named by ITS launch.yaml —
-            # data_dir / results_dir / rec_dir (project_dirs.py). They
-            # live with the PROJECT, not in the station's core/, which
-            # core_dir may point anywhere; the scene builder's Replay
-            # panel and the file browser read the same three paths.
-            # Created here so a first run never fails on a missing
-            # folder and the browser never 404s an empty project.
-            from workspace.project_dirs import project_dirs
-            _dirs = project_dirs(_proj, ensure=True)
+            # The project's own folders, listed by ITS launch.yaml
+            # (folders:, project_dirs.py). They live with the PROJECT,
+            # not in the station's core/; the scene builder's Replay
+            # panel and the file browser read the same paths. Created
+            # here so a first run never fails on a missing folder and
+            # the browser never 404s an empty project. A malformed list
+            # fails the launch (raised); a platform folder the list
+            # leaves out works at its default path, said once here.
+            from workspace.project_dirs import project_folders
+            _folders = project_folders(_proj, ensure=True)
+            for _f in _folders:
+                if not _f.shown:
+                    print(f"[folders] {_f.key}: not in launch.yaml folders: — "
+                          f"using {_f.path}, not shown in the file browser")
+            _dirs = {_f.key: _f.path for _f in _folders}
             _record_dir = str(_dirs["rec"])
             self.rt.record_dir = str(_dirs["results"])
         # The folder served is the DECLARED pendant screen's own — as

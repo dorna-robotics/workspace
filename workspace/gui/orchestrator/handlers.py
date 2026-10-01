@@ -455,20 +455,34 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
 from gui.orchestrator import fslive  # noqa: E402
 
 
-def _project_roots(ws):
-    """The project's folders (project_dirs.ROOTS), created on demand."""
-    from workspace.project_dirs import project_dirs
+def _project_folders(ws):
+    """The project's folders (launch.yaml folders:, project_dirs.py),
+    created on demand. Read on every request: read_only is live."""
+    from workspace.project_dirs import project_folders
     project_dir = os.path.dirname(ws.path_to_file)
     if not project_dir:
         raise ValueError("this workspace has no project folder")
-    return project_dirs(project_dir, ensure=True)
+    return project_folders(project_dir, ensure=True)
+
+
+def _folder(ws, root: str):
+    """The folder ``root`` names — "" is the first one listed (where the
+    Files button opens). Unlisted platform folders resolve too (a file
+    parameter's Open over ``data``), they just have no tab."""
+    folders = _project_folders(ws)
+    if not root:
+        shown = [f for f in folders if f.shown]
+        if not shown:
+            raise ValueError("launch.yaml lists no folders")
+        return shown[0]
+    for f in folders:
+        if f.key == root:
+            return f
+    raise ValueError(f"unknown folder: {root}")
 
 
 def _root_path(ws, root: str):
-    roots = _project_roots(ws)
-    if root not in roots:
-        raise ValueError(f"unknown folder: {root}")
-    return roots[root]
+    return _folder(ws, root).path
 
 
 def _token_ok(handler) -> bool:
@@ -665,6 +679,9 @@ class ProjectUploadHandler(fslive.UploadHandler):
     def resolve(self, name, root) -> Path:
         return _root_path(self._ws(), root)
 
+    def writable(self, name, root) -> bool:
+        return not _folder(self._ws(), root).read_only
+
     def created(self, path: Path) -> None:
         from workspace.project_dirs import hand_back
         hand_back(path)
@@ -733,9 +750,21 @@ class ProjectFilesSocket(fslive.FilesSocket):
         return _root_path(self._ws, root)
 
     def meta(self, root: str, base: Path) -> dict:
-        from workspace.project_dirs import ROOT_LABELS, declared_roots
-        return {"label": ROOT_LABELS.get(root, ""), "base": str(base),
-                "declared": declared_roots(os.path.dirname(self._ws.path_to_file)).get(root, False)}
+        # The tabs ride on every open answer — launch.yaml's folders:, in
+        # its order, read fresh — so the page never hardcodes a folder
+        # and a flipped read_only shows on the next open.
+        folders = _project_folders(self._ws)
+        f = _folder(self._ws, root)
+        return {"key": f.key, "label": f.label, "base": str(base),
+                "read_only": f.read_only,
+                "folders": [{"key": x.key, "label": x.label, "read_only": x.read_only}
+                            for x in folders if x.shown]}
+
+    def writable(self, root: str) -> bool:
+        return not _folder(self._ws, root).read_only
+
+    def canonical(self, root: str) -> str:
+        return _folder(self._ws, root).key        # "" -> the first listed folder
 
     def created(self, path: Path) -> None:
         from workspace.project_dirs import hand_back

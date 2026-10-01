@@ -1,68 +1,80 @@
-"""The project's own folders — declared in launch.yaml, never guessed.
+"""The project's folders — declared in launch.yaml, never guessed.
 
-A project owns four folders besides its code, and until now every one
-of them was a hardcoded name inside the platform:
+``launch.yaml`` lists every folder the project exposes, in the order the
+file browser shows them as tabs::
 
-    data/      the operator's INPUT files. Uploads land here and stay;
-               the next run browses to the same file instead of the
-               operator hunting for it on their laptop again.
-    results/   one folder per run, named by its start time
-               (2026-09-12_15-35-17) — records.jsonl, records.csv.
-    rec/       replay recordings, rec_<start time>.jsonl.
-    captures/  the images the project's detections keep — a detection's
-               ``display.client_save_img`` / ``client_save_img_roi``
-               path, when relative (or ``True``), is resolved here (see
-               ``client_save_path``), so the files land with the project
-               instead of on the vision unit.
+    folders:
+      - {key: results,  label: Results,    path: results,     read_only: false}
+      - {key: data,     label: Data,       path: data,        read_only: false}
+      - {key: captures, label: Captures,   path: ../captures, read_only: false}
+      - {key: rec,      label: Recordings, path: rec,         read_only: false}
+      - {key: model,    label: Models,     path: model,       read_only: true}
 
-``launch.yaml`` names all four, the same way it names ``core_dir``::
+Each entry, all four fields written out:
 
-    data_dir:     data
-    results_dir:  results
-    rec_dir:      rec
-    captures_dir: captures
+    key        the folder's identity, unique. Four keys mean something to
+               the platform (PLATFORM below):
+                 results   one folder per run — records.jsonl / .csv
+                 data      operator INPUT files; a file parameter's Open
+                           picks from here
+                 rec       replay recordings
+                 captures  the images the detections keep: a preset's
+                           relative display.client_save_img lands here
+               Any other key is the project's own: a tab, nothing more.
+    label      the tab's text.
+    path       relative to the project folder (``../x`` shares a parent's,
+               the way recipes.j2 is shared), or absolute.
+    read_only  true: browse, preview and download only — upload, new
+               folder and delete are refused by the server. Read on every
+               request, so flipping it takes effect on the next open.
 
-Relative paths resolve against the project folder, so a SUBPROJECT can
-keep its own (``data``) or share the parent's (``../data``) exactly the
-way ``recipes.j2`` is already shared — nothing in here decides that for
-it. Absolute paths are taken as given.
+The list IS the browser: only listed folders get a tab, in list order,
+and the first one is where the Files button opens. A platform key that
+is not listed still works at its default path (``<project>/<key>``) —
+the platform needs somewhere to write a run's records — but has no tab,
+and the runtime server says so once at launch. A launch.yaml with no
+``folders:`` key at all gets the platform's four as tabs (PLATFORM
+order, default paths, writable) — exactly what every project had before
+the list existed. The old ``data_dir`` /
+``results_dir`` / ``rec_dir`` / ``captures_dir`` keys are gone: a
+launch.yaml that still has one is refused with the line to write
+instead.
 
-Undeclared falls back to the plain name next to launch.yaml, so a
-project that says nothing gets ``<project>/data``. That is a DEFAULT,
-not a guess: it is one line in the file away from being explicit, and
-``project_dirs()`` reports which keys were declared so a UI can say so.
-
-WHY A MODULE. Two processes need the same answer — the runtime server
-writes run records and recordings, the orchestrator's file browser
-lists and serves them. Two readers of one contract, so the contract
-lives in one place.
+WHY A MODULE. Several processes need the same answer — the runtime
+server writes run records and recordings, the vision station resolves
+client saves, the orchestrator's file browser lists and serves them.
+One contract, one place.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 import yaml
 
-# key in launch.yaml -> folder name when the key is absent
-ROOTS: Dict[str, str] = {
-    "data":     "data",
-    "results":  "results",
-    "rec":      "rec",
-    "captures": "captures",
+# The platform's own folders: key -> (default path, default tab label).
+# A project that does not list one still gets it, at this path, untabbed.
+PLATFORM: Dict[str, tuple] = {
+    "results":  ("results",  "Results"),
+    "data":     ("data",     "Data"),
+    "captures": ("captures", "Captures"),
+    "rec":      ("rec",      "Recordings"),
 }
 
-# What each root is FOR, in one operator-facing line. The browser panel
-# shows these; they live here so the words and the paths can never drift
-# apart.
-ROOT_LABELS: Dict[str, str] = {
-    "data":    "Input files you upload and re-use between runs",
-    "results": "One folder per run — records and measurements",
-    "rec":     "Replay recordings",
-    "captures": "Images the detections keep — one per run",
-}
+_FIELDS = ("key", "label", "path", "read_only")
+_GONE_KEYS = ("data_dir", "results_dir", "rec_dir", "captures_dir")
+
+
+@dataclass(frozen=True)
+class Folder:
+    key: str
+    label: str
+    path: Path          # resolved
+    read_only: bool
+    shown: bool         # listed in launch.yaml folders: — has a tab
 
 
 def hand_back(path) -> None:
@@ -100,43 +112,83 @@ def _launch_of(project_dir: Path) -> dict:
     return {}
 
 
-def project_dirs(project_dir, launch: Optional[dict] = None,
-                 ensure: bool = False) -> Dict[str, Path]:
-    """``{"data": Path, "results": Path, "rec": Path, "captures": Path}``
-    for one project.
+def project_folders(project_dir, launch: Optional[dict] = None,
+                    ensure: bool = False) -> List[Folder]:
+    """Every folder of one project: the listed ones in list order
+    (``shown``), then any platform folder the list leaves out, at its
+    default path (not shown). Raises ValueError on a malformed list —
+    a typo must not quietly drop a folder.
 
-    ``launch`` is the already-parsed launch.yaml when the caller has it
-    (the runtime server does); otherwise it is read here. ``ensure``
-    creates the folders — a browser that lists an absent folder should
-    show it empty, not 404, and a run that writes one should not have to
-    care whether an operator made it first.
-    """
+    ``launch`` is the already-parsed launch.yaml when the caller has it;
+    otherwise it is read here (on every call — read_only is live).
+    ``ensure`` creates the folders, so a listing of an absent one is
+    empty rather than an error."""
     project_dir = Path(project_dir)
     launch = _launch_of(project_dir) if launch is None else (launch or {})
-    out: Dict[str, Path] = {}
-    for root, default in ROOTS.items():
-        declared = launch.get(f"{root}_dir")
-        rel = str(declared) if declared else default
-        p = Path(rel)
-        out[root] = (p if p.is_absolute() else (project_dir / p)).resolve()
+    gone = [k for k in _GONE_KEYS if k in launch]
+    if gone:
+        k = gone[0]
+        raise ValueError(
+            f"launch.yaml: {k} is gone — list the folder under folders: instead, e.g. "
+            f"- {{key: {k[:-4]}, label: {PLATFORM[k[:-4]][1]}, path: {launch[k]}, read_only: false}}")
+    raw = launch.get("folders")
+    if raw is None:
+        # No folders: key at all — the platform's four, as tabs, in
+        # PLATFORM order: what every project had before the list existed.
+        raw = [{"key": k, "label": lbl, "path": d, "read_only": False}
+               for k, (d, lbl) in PLATFORM.items()]
+    if not isinstance(raw, list):
+        raise ValueError("launch.yaml: folders must be a list of {key, label, path, read_only}")
+
+    def resolve(rel) -> Path:
+        p = Path(str(rel)).expanduser()
+        return (p if p.is_absolute() else (project_dir / p)).resolve()
+
+    out: List[Folder] = []
+    seen = set()
+    for i, e in enumerate(raw):
+        where = f"launch.yaml folders[{i}]"
+        if not isinstance(e, dict):
+            raise ValueError(f"{where}: an entry is {{key, label, path, read_only}}")
+        extra = sorted(set(e) - set(_FIELDS))
+        missing = [f for f in _FIELDS if f not in e]
+        if extra or missing:
+            raise ValueError(f"{where}: " + "; ".join(
+                ([f"unknown field(s) {', '.join(extra)}"] if extra else []) +
+                ([f"missing {', '.join(missing)}"] if missing else [])))
+        key, label, path, ro = e["key"], e["label"], e["path"], e["read_only"]
+        if not isinstance(key, str) or not key or "/" in key:
+            raise ValueError(f"{where}: key must be a plain name")
+        if key in seen:
+            raise ValueError(f"{where}: key {key!r} is listed twice")
+        if not isinstance(label, str) or not label:
+            raise ValueError(f"{where} ({key}): label must be text")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"{where} ({key}): path must be text")
+        if not isinstance(ro, bool):
+            raise ValueError(f"{where} ({key}): read_only must be true or false")
+        seen.add(key)
+        out.append(Folder(key, label, resolve(path), ro, True))
+    for key, (default, label) in PLATFORM.items():
+        if key not in seen:
+            out.append(Folder(key, label, resolve(default), False, False))
     if ensure:
-        for p in out.values():
+        for f in out:
             try:
-                fresh = not p.exists()
-                p.mkdir(parents=True, exist_ok=True)
+                fresh = not f.path.exists()
+                f.path.mkdir(parents=True, exist_ok=True)
                 if fresh:
-                    hand_back(p)
+                    hand_back(f.path)
             except OSError:
                 pass            # read-only mount: listing still works
     return out
 
 
-def declared_roots(project_dir, launch: Optional[dict] = None) -> Dict[str, bool]:
-    """Which of the folders launch.yaml names explicitly. The UI
-    marks the rest as defaults so "where does this go?" is answerable
-    from the screen."""
-    launch = _launch_of(Path(project_dir)) if launch is None else (launch or {})
-    return {root: bool(launch.get(f"{root}_dir")) for root in ROOTS}
+def project_dirs(project_dir, launch: Optional[dict] = None,
+                 ensure: bool = False) -> Dict[str, Path]:
+    """``{key: Path}`` for every folder of the project (project_folders),
+    the platform's four always included."""
+    return {f.key: f.path for f in project_folders(project_dir, launch, ensure)}
 
 
 def workspace_project_dir(workspace) -> Optional[Path]:

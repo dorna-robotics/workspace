@@ -10,6 +10,16 @@ checks:       checks.py
 plan_window:  4
 scheduler:    cpsat
 
+
+# The project's folders — the file browser's tabs, in this order.
+# key results / data / captures / rec are the platform's (run records,
+# input files, the images detections keep, recordings); any other key
+# is just a tab. read_only: true = browse and download only.
+folders:
+  - {key: results,  label: Results,    path: results,  read_only: false}
+  - {key: data,     label: Data,       path: data,     read_only: false}
+  - {key: captures, label: Captures,   path: captures, read_only: false}
+  - {key: rec,      label: Recordings, path: rec,      read_only: false}
 default:
   tube_count:
     type: int

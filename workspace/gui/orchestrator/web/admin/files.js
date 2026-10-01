@@ -1,7 +1,8 @@
-// files.js — the project's file browser, one panel for all three roots.
+// files.js — the project's file browser, one panel for all its folders.
 //
-// A project owns three folders (launch.yaml: data_dir / results_dir /
-// rec_dir — see workspace/project_dirs.py). This panel is how an
+// A project lists its folders in launch.yaml (folders: key, label, path,
+// read_only — see workspace/project_dirs.py); they are this panel's
+// tabs, in that order, sent by the server. This panel is how an
 // operator sees them: upload an input file once and pick it again next
 // run instead of hunting for it on a laptop, read a finished run's
 // records without leaving the bench, pull a recording down.
@@ -16,12 +17,9 @@
 // still there underneath), so it uses the shared .modal shell at a
 // higher layer rather than inventing a second one.
 
-const ROOTS = [
-  { key: "data",    label: "Data",       hint: "Input files" },
-  { key: "results", label: "Results",    hint: "One folder per run" },
-  { key: "rec",     label: "Recordings", hint: "Replay captures" },
-  { key: "captures", label: "Captures",  hint: "Images the detections keep" },
-];
+// The tabs are the project's: launch.yaml ``folders:`` (key, label,
+// path, read_only), in its order, sent with every folder the server
+// opens — nothing about which folders exist is hardcoded here.
 
 const IMG_EXT = /\.(jpe?g|png|bmp|gif|webp|tiff?)$/i;
 
@@ -185,7 +183,9 @@ export function openFileBrowser(opts = {}) {
   if (!el) el = build();
   const q = (s) => el.querySelector(s);
 
-  let root = opts.root || "data";
+  let root = opts.root || "";      // "" = the project's first folder
+  let folders = [];                // launch.yaml folders:, from the server
+  let readOnly = false;            // the folder on screen
   let path = "";
   let selected = null;
   let resolveFn = null;
@@ -265,27 +265,42 @@ export function openFileBrowser(opts = {}) {
     purpose.hidden = true;
   }
 
-  // ---- root tabs ----
+  // ---- folder tabs (launch.yaml folders:) ----
   const rootsWrap = q(".fb-roots");
   rootsWrap.innerHTML = "";
-  for (const r of ROOTS) {
-    const b = document.createElement("button");
-    b.className = "fb-root" + (r.key === root ? " is-active" : "");
-    b.type = "button";
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(r.key === root));
-    b.title = r.hint;
-    b.innerHTML = `<span class="fb-root-name">${r.label}</span>`;
-    b.addEventListener("click", () => { root = r.key; path = ""; select(null); load(); });
-    rootsWrap.appendChild(b);
+  let tabsSig = "";
+  function renderTabs() {
+    const sig = JSON.stringify(folders);
+    if (sig === tabsSig) { syncRoots(); return; }
+    tabsSig = sig;
+    rootsWrap.innerHTML = "";
+    for (const f of folders) {
+      const b = document.createElement("button");
+      b.className = "fb-root";
+      b.type = "button";
+      b.dataset.key = f.key;
+      b.setAttribute("role", "tab");
+      b.title = f.read_only ? `${f.label} — read-only` : f.label;
+      b.innerHTML = `<span class="fb-root-name">${f.label}</span>`;
+      b.addEventListener("click", () => { root = f.key; path = ""; select(null); load(); });
+      rootsWrap.appendChild(b);
+    }
+    syncRoots();
   }
 
   function syncRoots() {
-    [...rootsWrap.children].forEach((b, i) => {
-      const on = ROOTS[i].key === root;
+    [...rootsWrap.children].forEach((b) => {
+      const on = b.dataset.key === root;
       b.classList.toggle("is-active", on);
       b.setAttribute("aria-selected", String(on));
     });
+  }
+
+  // Upload / New folder / Delete exist only where the folder is
+  // writable — the server refuses them on a read-only one regardless.
+  function syncWritable() {
+    q(".fb-upload").hidden = readOnly;
+    q(".fb-mkdir").hidden = readOnly;
   }
 
   function select(entry) {
@@ -309,7 +324,7 @@ export function openFileBrowser(opts = {}) {
       wrap.appendChild(b);
       if (!last) wrap.insertAdjacentHTML("beforeend", '<span class="fb-sep">/</span>');
     };
-    mk(ROOTS.find((r) => r.key === root)?.label || root, "", parts.length === 0);
+    mk(folders.find((f) => f.key === root)?.label || root || "…", "", parts.length === 0);
     parts.forEach((p, i) =>
       mk(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1));
   }
@@ -335,9 +350,15 @@ export function openFileBrowser(opts = {}) {
       return;
     }
     if (mine !== opening) return;      // a newer folder was opened meanwhile
+    root = data.root;                  // "" asked -> the folder it named
+    folders = data.folders || [];
+    readOnly = !!data.read_only;
+    renderTabs();
+    crumbs();
+    syncWritable();
     q(".fb-where").innerHTML =
       `<span class="fb-path" title="${data.abs || ""}">${data.abs || ""}</span>` +
-      (data.declared ? "" : `<span class="fb-default" title="launch.yaml does not name ${root}_dir — this is the default">default</span>`) +
+      (readOnly ? `<span class="fb-default" title="launch.yaml folders: read_only: true — browse and download only">read-only</span>` : "") +
       (data.live ? "" : `<span class="fb-default" title="this server cannot watch the folder — reopen it to refresh">not live</span>`);
     entries = data.entries;
     render();
@@ -346,7 +367,9 @@ export function openFileBrowser(opts = {}) {
   function render() {
     rows.clear();
     if (!entries.length) {
-      list.innerHTML = `<div class="fb-empty">Nothing here yet — <b>Upload</b> adds the first file.</div>`;
+      list.innerHTML = readOnly
+        ? `<div class="fb-empty">Nothing here yet.</div>`
+        : `<div class="fb-empty">Nothing here yet — <b>Upload</b> adds the first file.</div>`;
       return;
     }
     const frag = document.createDocumentFragment();
@@ -378,12 +401,14 @@ export function openFileBrowser(opts = {}) {
     dl.innerHTML = svg(e.dir ? ICON.zip : ICON.down, 13);
     dl.addEventListener("click", (ev) => ev.stopPropagation());
     acts.appendChild(dl);
-    const del = document.createElement("button");
-    del.className = "btn btn-ghost btn-sm btn-icon fb-del";
-    del.title = e.dir ? `Delete the folder ${e.name}` : `Delete ${e.name}`;
-    del.innerHTML = svg(ICON.trash, 13);
-    del.addEventListener("click", (ev) => { ev.stopPropagation(); remove(e.path); });
-    acts.appendChild(del);
+    if (!readOnly) {
+      const del = document.createElement("button");
+      del.className = "btn btn-ghost btn-sm btn-icon fb-del";
+      del.title = e.dir ? `Delete the folder ${e.name}` : `Delete ${e.name}`;
+      del.innerHTML = svg(ICON.trash, 13);
+      del.addEventListener("click", (ev) => { ev.stopPropagation(); remove(e.path); });
+      acts.appendChild(del);
+    }
 
     row.addEventListener("click", () => {
       const cur = entries.find((x) => x.path === e.path) || e;

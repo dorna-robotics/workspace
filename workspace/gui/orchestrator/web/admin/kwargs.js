@@ -272,7 +272,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
         // Browse the project's own data/ folder instead of the
         // operator's laptop: the file they uploaded last run is
-        // already there, which is the whole point of data_dir.
+        // already there, which is the whole point of the data folder.
         const browseBtn = document.createElement("button");
         browseBtn.className = "btn btn-sm kw-browse";
         browseBtn.textContent = "Open";

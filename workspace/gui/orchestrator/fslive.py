@@ -367,10 +367,14 @@ class UploadHandler(tornado.web.RequestHandler):
     raw body. The bytes go to ``.<name>.part`` in the folder as they
     arrive and the file takes its name when complete — a half upload
     never looks like a file. Subclasses supply ``resolve(root) -> base``
-    (and may override ``created``)."""
+    (and may override ``writable`` — False refuses the upload — and
+    ``created``)."""
 
     def resolve(self, *args) -> Path:
         raise NotImplementedError
+
+    def writable(self, *args) -> bool:
+        return True
 
     def created(self, path: Path) -> None:
         """Called for every file / folder the upload created."""
@@ -388,6 +392,8 @@ class UploadHandler(tornado.web.RequestHandler):
             if self.request.method != "PUT":
                 raise ValueError("upload with PUT")
             base = self.resolve(*self.path_args)
+            if not self.writable(*self.path_args):
+                raise PermissionError("this folder is read-only")
             folder = safe_join(base, self.get_argument("path", ""))
             name = os.path.basename(self.get_argument("name", ""))
             if not name or name.startswith("."):
@@ -408,7 +414,8 @@ class UploadHandler(tornado.web.RequestHandler):
 
     def put(self, *args):
         if self._err is not None:
-            self.set_status(401 if isinstance(self._err, PermissionError) else 400)
+            self.set_status(403 if "read-only" in str(self._err)
+                            else 401 if isinstance(self._err, PermissionError) else 400)
             self.write({"error": str(self._err)})
             return
         self._fp.close()
@@ -445,13 +452,24 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
 
     Subclasses supply ``resolve(root) -> base Path``, and may add
     ``meta(root, base) -> dict`` (merged into the ``open`` answer),
-    ``created(path)`` and ``authorized()``."""
+    ``writable(root)`` (False refuses mkdir / delete), ``created(path)``
+    and ``authorized()``."""
 
     def resolve(self, root: str) -> Path:
         raise NotImplementedError
 
     def meta(self, root: str, base: Path) -> dict:
         return {}
+
+    def writable(self, root: str) -> bool:
+        """False: the folder is read-only — mkdir and delete are refused."""
+        return True
+
+    def canonical(self, root: str) -> str:
+        """The name a request's ``root`` stands for — answers and change
+        events carry it, so a client that asked for "" (a default) learns
+        which folder that was and matches later events."""
+        return root
 
     def created(self, path: Path) -> None:
         """Called for every file / folder a request created."""
@@ -492,6 +510,7 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
             self._send({"id": mid, "ok": False, "error": str(ex)})
 
     async def _op(self, op, root, rel):
+        root = self.canonical(root)
         base = Path(self.resolve(root)).resolve()
         target = safe_join(base, rel)
         if op == "open":
@@ -503,6 +522,8 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
             return {"folder": {"root": root, "path": rel, "abs": str(target),
                                "entries": entries, "live": token is not None,
                                **self.meta(root, base)}}
+        if op in ("mkdir", "delete") and not self.writable(root):
+            raise PermissionError("this folder is read-only")
         if op == "mkdir":
             if not rel:
                 raise ValueError("a name is required")

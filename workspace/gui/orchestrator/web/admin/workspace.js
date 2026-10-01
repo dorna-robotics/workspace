@@ -135,7 +135,7 @@ $("ppUpload").addEventListener("click", () => loadKwargsFromFile($("pendantParam
 $("ppOpen").addEventListener("click", () => loadKwargsFromBench($("pendantParamsForm"), wsName, toast));
 
 $("btnFiles").addEventListener("click", () =>
-  openFileBrowser({ wsName, root: "results", mode: "browse", toast,
+  openFileBrowser({ wsName, mode: "browse", toast,     // opens on the project's first folder
                     title: `Files — ${wsName}` }));
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
