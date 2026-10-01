@@ -29,9 +29,9 @@ class Shaker4slot(Shaker):
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "output":[0, 53, 160, 0, 0, 0], 
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0]},
-                "rotating": {"center": [0, 0, 0, 0, 0, 0], "input":[0, 0, 0, 0, 0, 0], "place": [0, 0, 37+5, 0, 0, 0],
-                    "A1": [0, 19, 37+5, 0, 0, 0], "A2": [0, 61, 37+5, 0, 0, 0],
-                    "A3": [0, 103, 37+5, 0, 0, 0], "A4": [0, 145, 37+5, 0, 0, 0],
+                "rotating": {"center": [0, 0, 0, 0, 0, 0], "input":[0, 0, 0, 0, 0, 0], "place": [0, 0, 37, 0, 0, 0],
+                    "A1": [0, 19, 37, 0, 0, 0], "A2": [0, 61, 37, 0, 0, 0],
+                    "A3": [0, 103, 37, 0, 0, 0], "A4": [0, 145, 37, 0, 0, 0],
                     # Calibration anchors on the two M5 tapped holes through
                     # the top plate (x = 0, y = 40 / 124, 84.0 apart), on the
                     # z = 76 top face. Ordered by +y, like place_1..4.
