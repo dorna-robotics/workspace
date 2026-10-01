@@ -134,9 +134,12 @@ $("btnParamsBrowse").addEventListener("click", () => loadKwargsFromBench(paramsF
 $("ppUpload").addEventListener("click", () => loadKwargsFromFile($("pendantParamsForm"), toast));
 $("ppOpen").addEventListener("click", () => loadKwargsFromBench($("pendantParamsForm"), wsName, toast));
 
-$("btnFiles").addEventListener("click", () =>
+// The same file browser from the desktop top bar and the pendant's nav.
+const _openFiles = () =>
   openFileBrowser({ wsName, mode: "browse", toast,     // opens on the project's first folder
-                    title: `Files — ${wsName}` }));
+                    title: `Files — ${wsName}` });
+$("btnFiles").addEventListener("click", _openFiles);
+$("pendantFiles").addEventListener("click", _openFiles);
 paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
 
 // Device detail modal — close on X button or backdrop click.

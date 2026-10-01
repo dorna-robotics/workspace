@@ -700,7 +700,7 @@
        run timer + time left) as the loudest cue right, then fullscreen
        and theme. -->
   <header class="pendant-nav ws-header-like" data-state="off">
-    <button class="btn btn-ghost btn-sm pendant-exit-btn" id="pendantExit" title="Exit pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>EXIT</button>
+    <button class="btn btn-ghost btn-sm btn-icon" id="pendantExit" title="Exit pendant mode" aria-label="Exit pendant mode"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
     <span class="pendant-project" id="pendantProject">—</span>
     <div class="spacer"></div>
     <div class="pendant-state-block off" id="pendantStateBlock">
@@ -712,7 +712,8 @@
       </span>
     </div>
     <div class="topbar-actions">
-            <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
+      <button class="btn btn-ghost btn-sm btn-icon" id="pendantFiles" title="Files — data, results, recordings" aria-label="Files"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
     </div>
   </header>
