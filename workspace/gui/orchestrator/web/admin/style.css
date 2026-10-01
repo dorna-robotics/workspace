@@ -472,11 +472,18 @@
   border-bottom: 1px solid var(--border);
   flex: none;
 }
-/* EXIT carries a label, so it is not a .btn-icon — but it shares the
-   navbar's 48 px tap target (base.css: .pendant-nav .btn-icon), so the
-   left and right of the nav line up. */
-.pendant-exit-btn { gap: 7px; font-weight: 700; letter-spacing: 0.06em;
-  min-height: 48px; padding: 0 16px; }
+/* EXIT mirrors the state block on the right: a full-height segment
+   flush with the nav's edge, the same letter size and weight — so the
+   two ends of the nav read as a pair, neutral on the left, the state's
+   colour on the right. */
+.pendant-nav .pendant-exit-btn {
+  height: 54px; margin: 0 0 0 -14px; padding: 0 22px 0 18px; gap: 8px;
+  border-radius: 0; background: var(--surface2); color: var(--text);
+  font-size: var(--text-lg); font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.pendant-nav .pendant-exit-btn:hover { background: var(--surface3); color: var(--text); }
+.pendant-nav .pendant-exit-btn svg { width: 18px; height: 18px; }
 .pendant-project {
   font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
