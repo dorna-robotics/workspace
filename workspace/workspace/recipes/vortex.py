@@ -49,8 +49,13 @@ class Vortex(Recipe):
         Workflow (the component owns each atomic op, this owns the
         order): execute any HELD exit first — the plate is about to
         shake, and a fused exit would leave the gripper parked on a
-        moving vial (the Shaker rule) — then enable, wait pause-aware,
-        disable. The switch-off is guaranteed on every exit path.
+        moving vial (the Shaker rule) — then enable, wait, disable.
+        ``duration`` is RUNNING time. A Pause switches the vortexer OFF
+        and holds; Resume switches it back on for what is left — the
+        plate never spins while the run is paused (an operator's hands
+        may be near it), and paused time is not counted (the shaker's
+        rule: its head stops at the end of its stroke). The switch-off
+        is guaranteed on every exit path (Kill, a Replan drop, Park).
 
         Use :meth:`stop_run` from another thread to end early.
         """
@@ -62,8 +67,12 @@ class Vortex(Recipe):
             deadline = float(duration)
             elapsed = 0.0
             while elapsed < deadline and not self._stop_event.is_set():
+                if rt.paused:
+                    self.driver.disable()
+                    rt.checkpoint()          # holds until Resume (raises on Kill / cancel)
+                    self.driver.enable()
                 step = min(0.2, deadline - elapsed)
-                rt.sleep(step)   # pause-aware: a paused run holds here
+                rt.sleep(step, checkpoint=False)   # running time only — the pause is above
                 elapsed += step
         finally:
             self.driver.disable()

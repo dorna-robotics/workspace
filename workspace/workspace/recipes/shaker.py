@@ -35,8 +35,8 @@ class Shaker(Recipe):
         """Block while toggling the shaker for ``duration`` seconds.
 
         Toggles the shaker back and forth until at least ``duration``
-        seconds have elapsed AND the shaker is back at its start
-        position. Always returns to the start position on exit. The
+        seconds of SHAKING (a Pause does not count) AND the shaker is
+        back at its start position. Always returns to the start position on exit. The
         settle dwell before the clamp opens is DECLARED in the
         component's own IO rows (Shaker.output_open delay), not here.
 
@@ -59,12 +59,20 @@ class Shaker(Recipe):
         # settle, release. The component owns each atomic op (IO +
         # model); this loop owns the order and the timing.
         self.component.close()
-        start = time.time()
+        # ``duration`` is SHAKING time: only strokes count. Each stroke
+        # waits out a Pause at its checkpoint first, and the clock runs
+        # from there — before, it ran on the wall clock from the start,
+        # so a 300 s shake paused for 5 min stopped right after Resume
+        # with its vials under-shaken.
+        shaken = 0.0
         while not self._stop_event.is_set():
-            # exit when duration elapsed and back at start position
-            if time.time() - start >= duration and self.component.toggle_state() == "start":
+            # exit when the duration is shaken and back at start position
+            if shaken >= duration and self.component.toggle_state() == "start":
                 break
+            self.rt.checkpoint()
+            t0 = time.time()
             self.component.toggle(stop_event=self._stop_event)
+            shaken += time.time() - t0
         self._go_to_start()
         self.component.open()
 

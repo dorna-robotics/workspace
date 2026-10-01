@@ -87,9 +87,16 @@ class VortexGenie2:
         return True
 
     def disable(self) -> bool:
-        """Switch the vortexer OFF. Idempotent."""
+        """Switch the vortexer OFF. Idempotent. Never held: switching a
+        spinning device off must not wait for Resume, and must still go
+        out on a Kill — a plain ``rt.output`` from the run's thread
+        blocks at its checkpoint while paused and raises there once
+        killed, which left the Genie spinning. Sent as an operator call,
+        which the pause / kill gate lets through."""
         if self._run_state != 0:
-            self.workspace.rt.output(config=self.output_disable)
+            rt = self.workspace.rt
+            with rt.operator_call():
+                rt.output(config=self.output_disable)
             self._run_state = 0
         return True
 
