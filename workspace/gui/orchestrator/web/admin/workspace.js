@@ -242,7 +242,14 @@ function mountParams(host, schema, values, frozen, wsName) {
     }
     const vals = readKwargsForm(form);
     const label = btn.textContent;
-    btn.disabled = true;
+    // While the values travel (and a launch can take a while), the form
+    // is frozen: nothing in it, the project screen included, answers a
+    // click, and no other footer button can fire a second request.
+    const foot = btn.parentElement;
+    const footBtns = [...foot.querySelectorAll("button")].filter(b => !b.disabled);
+    footBtns.forEach(b => { b.disabled = true; });
+    form.inert = true;
+    form.classList.add("kw-busy");
     if (launch) { btn.textContent = "Launching…"; feedback.press(); }
     try {
       await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
@@ -259,7 +266,9 @@ function mountParams(host, schema, values, frozen, wsName) {
       if (launch) feedback.err();
       toast(String(err), "bad");
     } finally {
-      btn.disabled = false;
+      form.inert = false;
+      form.classList.remove("kw-busy");
+      footBtns.forEach(b => { b.disabled = false; });
       btn.textContent = label;
     }
   };

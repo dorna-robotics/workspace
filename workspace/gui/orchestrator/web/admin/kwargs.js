@@ -3,7 +3,6 @@ import { openFileBrowser } from "./files.js";
 // Used by dashboard.js and workspace.js.
 
 const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
-const _infoSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
 // ── the project's own run-setup screen (``setup:``) ──────────────────
@@ -137,15 +136,12 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Launch buttons and schema validation. The generic form below is
   // for everyone else.
   container._setupHost = null;
-  // The banner is the modal's, not the form's: a project screen sits
-  // under the same line as the generic form, so every project's
-  // Parameters reads the same from the top down.
+  // The banner is the modal's, not the form's, and only when it says
+  // something the operator must know: the parameters are locked. Every
+  // project's Parameters reads the same from the top down.
   if (frozen) {
     container.insertAdjacentHTML("beforeend",
       `<div class="kwargs-banner frozen">${_lockSvg} Parameters are locked while the workspace is running</div>`);
-  } else {
-    container.insertAdjacentHTML("beforeend",
-      `<div class="kwargs-banner">${_infoSvg} Set parameters before launch. Saved values persist across runs.</div>`);
   }
   if (schema && schema._setup) {
     mountProjectSetup(container, schema, values, frozen, wsName);
@@ -446,9 +442,11 @@ export function validateKwargsForm(container, schema) {
     if (host.module && typeof host.module.validate === "function") {
       try {
         const msg = host.module.validate();
-        // The screen's own sentence — it already reads as the reason,
-        // so it carries no key to prefix it with.
-        if (msg) errors.push({ key: null, message: String(msg) });
+        // The screen's own sentence LEADS: it names the cause in the
+        // operator's terms ("No samples loaded"), where a schema line
+        // names a derived field ("batch_size must be ≥ 1"). It carries
+        // no key to prefix it with.
+        if (msg) errors.unshift({ key: null, message: String(msg) });
       } catch (err) { console.error("setup validate() threw:", err); }
     }
     return errors;

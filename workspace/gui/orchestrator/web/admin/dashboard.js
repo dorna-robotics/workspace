@@ -158,6 +158,11 @@ async function openParamsModal(name, frozen) {
           return;
         }
         const vals = readKwargsForm(paramsForm);
+        // Frozen while the values travel — see workspace.js applyParams.
+        const footBtns = [...paramsFoot.querySelectorAll("button")].filter(b => !b.disabled);
+        footBtns.forEach(b => { b.disabled = true; });
+        paramsForm.inert = true;
+        paramsForm.classList.add("kw-busy");
         try {
           await apiFetch(`/workspace/${encodeURIComponent(name)}/kwargs`, {
             method: "POST", body: JSON.stringify({ kwargs_values: vals })
@@ -165,6 +170,11 @@ async function openParamsModal(name, frozen) {
           ws.kwargs_values = vals;
           paramsModal.classList.remove("show");
         } catch (err) { toast(String(err), "bad"); }
+        finally {
+          paramsForm.inert = false;
+          paramsForm.classList.remove("kw-busy");
+          footBtns.forEach(b => { b.disabled = false; });
+        }
       });
     } else {
       paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;

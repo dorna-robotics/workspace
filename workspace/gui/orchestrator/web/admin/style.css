@@ -218,6 +218,9 @@
 .kwargs-form .kw-val-step:focus-visible { outline: none; box-shadow: var(--glow); }
 .kwargs-form .kw-val-apply { background: var(--bg); text-align: center; }
 .kwargs-empty { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
+/* A Parameters form whose values are being sent (Set / Set & Launch in
+   flight): inert, and visibly so — dimmed, the cursor says wait. */
+.kw-busy { opacity: 0.55; cursor: progress; transition: opacity var(--motion-fast) var(--ease); }
 .kwargs-banner {
   display: flex; align-items: center; gap: 8px;
   font-size: 12px; font-weight: 500; color: var(--muted);
