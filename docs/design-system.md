@@ -168,10 +168,16 @@ disabled control keeps its colour, ghosted. Replan is a plain tap,
 enabled exactly when the runtime says a Replan can be opened
 (`status.replan_ok`; the tooltip gives `status.replan_why`
 otherwise), so it is never clickable and then refused. Its label never
-changes: while a Replan is open, the same button reopens the dialog. The dialog: one plain list of
-the items (no phase names), finished items in a collapsed section
-below (search, counts, 44 px rows), a live preview of what leaves / what is freed, a reason,
-**Cancel** and **Remove N & replan**; its state line reads *Applying —
+changes: while a Replan is open, the same button reopens the dialog. The dialog has two
+steps on the setup screens' stepper (arrow segments, a check on each
+complete step, Back / Next at the top right): **Choose** — one plain
+list of the items (no phase names), finished items in a collapsed
+section below (search, counts, 44 px rows), or the project's own view
+(`replan:`); **Confirm** — what leaves as chips, what goes with them
+and what is freed, a required tick *I have taken these off the bench*
+and a required **Reason** (large, focused on arrival; the browser's own
+bubble points at whichever is missing). **Cancel** and **Remove N &
+replan** in the foot, Remove live on Confirm only; its state line reads *Applying —
 waiting for …* (accent) or *Not applied — <reason>. Nothing was
 changed.* (red) (bt-framework-guide §8.6).
 

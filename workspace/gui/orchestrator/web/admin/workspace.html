@@ -837,7 +837,7 @@
 <div class="modal-overlay" id="replanModalOverlay">
   <div class="modal replan-modal">
     <div class="modal-head">
-      <h3>Replan — remove items</h3>
+      <h3>Replan</h3>
       <div class="spacer"></div>
       <button class="btn btn-ghost btn-sm btn-icon" id="btnReplanClose" title="Hide — the Replan stays open; the Replan button reopens it">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -846,13 +846,26 @@
       </button>
     </div>
     <div class="modal-body">
-      <p class="rp-note">The run is paused. Choose the items to take out of the run — for good: nothing is done to them again, in any later step. The actions tied to them stop and their 3D models are cleared. Clearing them from the real bench is yours; the run carries on without them on Resume.</p>
-      <input class="rp-search" id="rpSearch" type="search" placeholder="Search items" autocomplete="off">
-      <div class="rp-list" id="rpList"></div>
-      <div class="rp-view" id="rpView" hidden></div>
-      <div class="rp-preview" id="rpPreview"></div>
+      <div class="rp-bar">
+        <nav class="rp-steps" id="rpSteps" aria-label="Replan steps"></nav>
+        <div class="spacer"></div>
+        <div class="rp-nav" id="rpNav"></div>
+      </div>
+      <section class="rp-step" id="rpStepChoose">
+        <input class="rp-search" id="rpSearch" type="search" placeholder="Search items" autocomplete="off">
+        <div class="rp-list" id="rpList"></div>
+        <div class="rp-view" id="rpView" hidden></div>
+      </section>
+      <section class="rp-step rp-confirm" id="rpStepConfirm" hidden>
+        <div class="rp-preview" id="rpPreview"></div>
+        <label class="rp-check" id="rpClearedRow">
+          <input type="checkbox" id="rpCleared" required>
+          <span>I have taken these off the bench <span class="rp-muted-inline">— the platform removes them from the plan only</span></span>
+        </label>
+        <label class="rp-reason"><span>Reason</span>
+          <input id="rpReason" type="text" required placeholder="Why they leave — e.g. dropped, broken, unreadable" autocomplete="off"></label>
+      </section>
       <div class="rp-state" id="rpState" role="status"></div>
-      <label class="rp-reason"><span>Reason</span><input id="rpReason" type="text" placeholder="e.g. dropped, broken, unreadable" autocomplete="off"></label>
     </div>
     <div class="modal-foot">
       <button class="btn" id="btnReplanCancel">Cancel</button>

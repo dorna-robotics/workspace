@@ -1401,7 +1401,9 @@ checked, and ends in the engine's ordinary replan.
    the list; `setup()` may return `"item_label": fn(item) -> str` for
    friendlier names, and `launch.yaml` may name the project's own VIEW
    of the choice (`replan:` — "The Replan view" below).
-3. **The operator chooses one or more items and a reason.** Cancel
+3. **The operator chooses one or more items and a reason** — two
+   steps: Choose, then Confirm (what leaves, a required tick that they
+   are off the bench, a required reason). Cancel
    closes the Replan with nothing changed; closing the window only
    hides it (the Replan button, whose label never changes, reopens
    it); Resume also closes an unapplied Replan.
@@ -1453,9 +1455,10 @@ a second click keeps it:
 replan: hmi/replan.js          # explicit path; absent → the plain list
 ```
 
-It is a **view only**. The platform keeps everything else: the note,
-what leaves and what it takes with it, the reason, Cancel, Remove &
-replan, the Applying / refused line, and the request to the runtime —
+It is a **view only** — the dialog's Choose step. The platform keeps
+everything else: the stepper, the Confirm step (what leaves and what it
+takes with it, the bench tick, the reason), Cancel, Remove & replan,
+the Applying / refused line, and the request to the runtime —
 `remove` with the offer's own `item` values, identical whichever view
 chose them. Nothing in the engine or the runtime knows a view exists.
 

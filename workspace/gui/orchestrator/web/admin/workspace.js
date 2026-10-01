@@ -1467,6 +1467,7 @@ let _replan = null;
 let _replanAvail = { ok: false, why: "" };   // status.replan_ok / replan_why
 let _replanShownFor = null;     // the offer the dialog already opened for
 const _rpSel = new Set();       // JSON keys of the selected items
+let _rpStep = "choose";         // "choose" | "confirm" — the dialog's two steps
 const _rpOpen = new Set();      // expanded phase groups
 
 function replanControl() {
@@ -1582,6 +1583,9 @@ async function openReplanModal(fresh) {
   if (fresh) {
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
+    $("rpCleared").checked = false;
+    _rpStep = "choose";
+    document.querySelector("#replanModalOverlay .modal-body").style.minHeight = "";
     // The items open; the Finished section collapsed, with its count.
     _rpOpen.add("__run");
     await _mountReplanView();
@@ -1621,28 +1625,56 @@ function renderReplanList() {
           <span class="rp-count">${nSel ? `${nSel} / ` : ""}${g.items.length}</span></button>${rows}</div>`;
     }).join("") || `<div class="rp-empty">No item matches “${escHtml(q)}”.</div>`;
   }
-  // Preview: what leaves, what it takes with it, what is freed.
+  // Confirm: what leaves, what it takes with it, what is freed.
   const chosen = items.filter(it => _rpSel.has(_rpKey(it)));
   const takes = [...new Set(chosen.flatMap(it => it.with || []))].filter(l => !chosen.some(c => c.label === l));
   const frees = [...new Set(chosen.flatMap(it => it.holds || []))];
+  const chips = labels => `<div class="rp-chips">${labels.map(l => `<span class="rp-chip">${escHtml(l)}</span>`).join("")}</div>`;
   $("rpPreview").innerHTML = chosen.length
-    ? `<div><b>Leaves the run:</b> ${escHtml(chosen.map(c => c.label).join(", "))}</div>`
-      + (takes.length ? `<div><b>Also leaves (dependents):</b> ${escHtml(takes.join(", "))}</div>` : "")
-      + (frees.length ? `<div><b>Freed in the plan:</b> ${escHtml(frees.join(", "))}</div>` : "")
-      + `<div class="rp-warn">Clear these from the bench before you resume — the platform removes them from the plan only.</div>`
-    : `<div class="rp-muted">Nothing selected.</div>`;
+    ? `<div class="rp-leaves-h">Leaves the run — ${chosen.length} item${chosen.length === 1 ? "" : "s"}</div>`
+      + chips(chosen.map(c => c.label))
+      + (takes.length ? `<div class="rp-also">Also leaves, with them: ${escHtml(takes.join(", "))}</div>` : "")
+      + (frees.length ? `<div class="rp-also">Freed in the plan: ${escHtml(frees.join(", "))}</div>` : "")
+    : `<div class="rp-muted">Nothing chosen — go back and choose the items.</div>`;
+  $("rpClearedRow").classList.toggle("on", $("rpCleared").checked);
+  renderReplanSteps(chosen.length);
   // Where the request stands: refused (nothing changed), or waiting
   // for every action in flight to stand still before it is applied.
   const applying = _replan?.phase === "applying";
-  $("rpView").inert = applying;          // the choice is sent — the view is read-only
+  $("rpStepChoose").inert = applying;    // the choice is sent — read-only
+  $("rpStepConfirm").inert = applying;
   const st = $("rpState");
   st.className = "rp-state" + (_replan?.error ? " err" : applying ? " busy" : "");
   st.textContent = _replan?.error ? `Not applied — ${_replan.error}. Nothing was changed.`
     : applying ? (_replan.waiting ? `Applying — ${_replan.waiting}…` : "Applying…") : "";
   const go = $("btnReplanGo");
-  go.disabled = !chosen.length || applying;
+  go.disabled = !chosen.length || applying || _rpStep !== "confirm";
   go.textContent = applying ? "Applying…" : chosen.length ? `Remove ${chosen.length} & replan` : "Remove & replan";
   $("btnReplanCancel").disabled = applying;
+}
+
+// The stepper: Choose ▸ Confirm. Choose is complete once something is
+// chosen; Confirm once the bench is ticked and a reason given. The
+// Confirm step and Next open only with something chosen.
+function renderReplanSteps(nChosen) {
+  const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+    stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const TICK = icon('<polyline points="20 6 9 17 4 12"/>');
+  const steps = [
+    { key: "choose",  title: "Choose",  ok: nChosen > 0, open: true },
+    { key: "confirm", title: "Confirm", ok: $("rpCleared").checked && !!$("rpReason").value.trim(),
+      open: nChosen > 0 },
+  ];
+  if (_rpStep === "confirm" && !nChosen) _rpStep = "choose";
+  $("rpSteps").innerHTML = steps.map(x =>
+    `<button class="rp-seg${x.key === _rpStep ? " cur" : ""}${x.ok ? " done" : ""}" data-rpstep="${x.key}"` +
+    `${x.open ? "" : " disabled"}${x.key === _rpStep ? ' aria-current="step"' : ""}>${x.ok ? TICK : ""}${x.title}</button>`
+  ).join("");
+  $("rpNav").innerHTML = _rpStep === "choose"
+    ? `<button class="btn btn-primary" data-rpstep="confirm"${nChosen ? "" : " disabled"}>Next ${icon('<polyline points="9 18 15 12 9 6"/>')}</button>`
+    : `<button class="btn btn-ghost" data-rpstep="choose">${icon('<polyline points="15 18 9 12 15 6"/>')} Back</button>`;
+  $("rpStepChoose").hidden = _rpStep !== "choose";
+  $("rpStepConfirm").hidden = _rpStep !== "confirm";
 }
 
 async function sendReplanChoice(items) {
@@ -1684,8 +1716,33 @@ $("rpList").addEventListener("change", e => {
   e.target.checked ? _rpSel.add(k) : _rpSel.delete(k);
   renderReplanList();
 });
-$("btnReplanGo").addEventListener("click", () =>
-  sendReplanChoice((_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item)));
+// Step changes: the stepper's segments and the Back / Next button.
+for (const id of ["rpSteps", "rpNav"]) {
+  $(id).addEventListener("click", e => {
+    const b = e.target.closest("[data-rpstep]");
+    if (!b || b.disabled) return;
+    // Keep the dialog's height: Confirm is short, Choose draws a bench.
+    const body = document.querySelector("#replanModalOverlay .modal-body");
+    if (_rpStep === "choose") body.style.minHeight = `${body.offsetHeight}px`;
+    _rpStep = b.dataset.rpstep;
+    renderReplanList();
+    if (_rpStep === "confirm") $("rpReason").focus();
+  });
+}
+$("rpCleared").addEventListener("change", renderReplanList);
+$("rpReason").addEventListener("input", () => renderReplanSteps(_rpSel.size));
+// Remove & replan: the bench ticked and a reason given — the browser's
+// own required bubble points at whichever is missing.
+$("btnReplanGo").addEventListener("click", () => {
+  for (const el of [$("rpCleared"), $("rpReason")]) {
+    if (!el.checkValidity() || (el.type === "text" && !el.value.trim())) {
+      if (el.type === "text") el.value = "";
+      el.reportValidity();
+      return;
+    }
+  }
+  sendReplanChoice((_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item));
+});
 $("btnReplanCancel").addEventListener("click", cancelReplan);
 // Closing the window only hides it — the Replan stays open (the Replan
 // button reopens it); Cancel closes the Replan itself.

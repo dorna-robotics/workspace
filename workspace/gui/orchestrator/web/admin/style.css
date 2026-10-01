@@ -792,8 +792,39 @@
 .rp-view { max-height: 62vh; overflow: auto; }
 /* .rp-list sets display:flex, which beats the UA's [hidden] rule */
 .replan-modal [hidden] { display: none !important; }
-.rp-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
-.rp-search, .rp-reason input {
+/* Two steps, as the project setup screens draw them: Choose the items,
+   Confirm what leaves (a required tick + the reason). The stepper is a
+   pill of arrow segments — current solid accent, complete tinted with a
+   check, upcoming neutral; Back / Next at the far right of the same row,
+   away from the foot's Remove & replan. */
+.rp-bar { display: flex; align-items: center; gap: var(--space-3);
+  padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+.rp-bar .spacer { flex: 1 1 auto; }
+.rp-steps { display: flex; height: 38px; border-radius: 999px; overflow: hidden; flex: none; }
+.rp-seg { --tip: 14px; display: flex; align-items: center; gap: var(--space-2);
+  padding: 0 calc(var(--tip) + 14px) 0 calc(var(--tip) + 16px);
+  margin-left: calc(-1 * var(--tip) + 3px);
+  font: inherit; font-size: var(--text-md); font-weight: 600; white-space: nowrap;
+  border: none; cursor: pointer; background: var(--surface2); color: var(--muted);
+  clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%,
+                     calc(100% - var(--tip)) 100%, 0 100%, var(--tip) 50%);
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease); }
+.rp-seg:first-child { margin-left: 0; padding-left: 20px;
+  clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%,
+                     calc(100% - var(--tip)) 100%, 0 100%); }
+.rp-seg:last-child { padding-right: 22px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--tip) 50%); }
+.rp-seg:hover:not(:disabled) { color: var(--text); }
+.rp-seg:disabled { cursor: default; }
+.rp-seg svg { width: 16px; height: 16px; flex: none; }
+.rp-seg.done { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
+.rp-seg.cur { background: var(--accent); color: #fff; }
+.rp-nav { display: flex; gap: var(--space-2); }
+.rp-nav .btn { display: inline-flex; align-items: center; gap: 6px; height: 38px;
+  border-radius: 999px; font-weight: 600; }
+.rp-nav .btn svg { width: 16px; height: 16px; }
+.rp-step { display: flex; flex-direction: column; gap: var(--space-3); }
+.rp-search {
   width: 100%; min-height: 44px; padding: 0 var(--space-3);
   font: inherit; color: var(--text);
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md);
@@ -823,9 +854,32 @@
 .rp-label { font-weight: 600; }
 .rp-meta { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp-empty, .rp-muted { color: var(--muted); font-size: var(--text-sm); padding: var(--space-3); }
-.rp-preview { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
-.rp-warn { color: var(--amber); font-weight: 600; }
-.rp-reason { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+/* Confirm: what leaves, then the two things the operator owns — the
+   bench and the reason — as large as the Final checks on setup screens. */
+.rp-confirm { max-width: 760px; gap: var(--space-4); padding-top: var(--space-2); }
+.rp-preview { display: flex; flex-direction: column; gap: var(--space-3); }
+.rp-leaves-h { font-size: var(--text-md); font-weight: 700; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.rp-chip { padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: var(--text-sm);
+  font-family: var(--mono); background: var(--surface2); border: 1px solid var(--border); }
+.rp-also { font-size: var(--text-sm); color: var(--muted); }
+.rp-check { display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font-size: var(--text-md); cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }
+.rp-check:hover { border-color: var(--accent); }
+.rp-check input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+.rp-check.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.rp-muted-inline { color: var(--muted); }
+.rp-reason { display: flex; flex-direction: column; gap: var(--space-2);
+  font-size: var(--text-md); font-weight: 600; color: var(--text); }
+.rp-reason input {
+  width: 100%; min-height: 48px; padding: 0 var(--space-4);
+  font: inherit; font-weight: 400; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.rp-reason input:focus { border-color: var(--accent); outline: none; }
 .rp-state { font-size: var(--text-sm); font-weight: 600; }
 .rp-state:empty { display: none; }
 .rp-state.busy { color: var(--accent); }
