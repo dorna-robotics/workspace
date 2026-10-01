@@ -186,6 +186,25 @@ shows those two buttons: dashboard cards, the workspace page, the
 pendant tile. Keyboard: hold Space or Enter. The button's title says
 "Hold 2 s to park".
 
+**Command feedback — sound and touch, every surface.** Every button
+that sends a run command (Launch, Start / Resume, Pause, Replan, Park,
+Kill — dashboard card, workspace page, pendant) is wired by ONE
+function, `api.js wireCommand`, and speaks through ONE voice,
+`api.js feedback`. A tap answers the instant it lands, before any
+network round trip: pressed flash (`.cmd-pressed`), disabled, a click
+tone and a short vibration. Then the outcome answers again: a done
+tone, or the error buzz plus a toast (the button comes back). A
+canceled confirm (the device-fault gate) puts the button back
+silently. A hold ticks upward under the finger with a pulse per tick
+for the whole 2 s; it fires with a two-note chime and a long pulse,
+and releasing early ends on a soft low blip. Robot alarms and a
+critical device going down use `feedback.alarm()`. The browser keeps
+audio muted until a gesture, so the first pointer or key press
+anywhere on the page unmutes it — a kiosk opened straight into the
+pendant has sound from its first touch. Vibration is what the browser
+offers (Android Chrome; iOS and desktops ignore it). No surface makes
+its own sounds.
+
 ### 3.3b Toasts
 
 A toast is for something the operator **cannot already see**: an

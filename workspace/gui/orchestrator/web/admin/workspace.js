@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -243,7 +243,7 @@ function mountParams(host, schema, values, frozen, wsName) {
     const vals = readKwargsForm(form);
     const label = btn.textContent;
     btn.disabled = true;
-    if (launch) btn.textContent = "Launching…";
+    if (launch) { btn.textContent = "Launching…"; feedback.press(); }
     try {
       await apiFetch(`/workspace/${encodeURIComponent(wsName)}/kwargs`, {
         method: "POST", body: JSON.stringify({ kwargs_values: vals })
@@ -254,8 +254,9 @@ function mountParams(host, schema, values, frozen, wsName) {
         await sendCmd("launch");
       }
       done();
-      if (launch) { await refreshStatus(); loadRunParams(); }
+      if (launch) { feedback.ok(); await refreshStatus(); loadRunParams(); }
     } catch (err) {
+      if (launch) feedback.err();
       toast(String(err), "bad");
     } finally {
       btn.disabled = false;
@@ -1040,7 +1041,7 @@ function _dispatchMuxMessage(env) {
         && d.critical !== false
         && (!prev || prev.state !== "down")
       ) {
-        _alarmBeep();
+        feedback.alarm();
         _alarmNotify(`${d.id}: ${(d.msg || "down").trim()}`);
       }
       renderDevicesPanel();
@@ -1888,7 +1889,7 @@ function _showBanner(msg, level) {
   }
   // Audio + notification for errors only
   if (level === "error") {
-    _alarmBeep();
+    feedback.alarm();
     _alarmNotify(msg);
   }
 }
@@ -1903,29 +1904,6 @@ function _hideBanner() {
   if (exitBtn) exitBtn.style.top = "";
   const pAlarm = $("pendantAlarm");
   if (pAlarm) pAlarm.style.display = "none";
-}
-
-function _alarmBeep() {
-  try {
-    const ctx = _audioCtx;
-    const now = ctx.currentTime;
-    // Two-tone alarm: high-low-high
-    [[880, 0.15], [0, 0.05], [660, 0.15], [0, 0.05], [880, 0.15]].reduce((t, [freq, dur]) => {
-      if (freq > 0) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "square";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.15, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(t);
-        osc.stop(t + dur);
-      }
-      return t + dur;
-    }, now);
-  } catch {}
 }
 
 function _alarmNotify(msg) {
@@ -1980,11 +1958,12 @@ function renderControls(state, launched, running) {
     b.textContent = label;
     if (opts.disabled) b.disabled = true;
     if (opts.title) b.title = opts.title;
-    // Park and Kill are hold-to-activate (api.js holdToActivate).
-    const act = async () => {
+    // api.js wireCommand: the tap answers at once (sound, vibration,
+    // pressed); Park and Kill are hold-to-activate.
+    wireCommand(b, cmd, async () => {
       // Replan waiting for the operator's choice: the button reopens
       // the dialog instead of sending another request.
-      if (cmd === "replan" && _replan) { openReplanModal(); return; }
+      if (cmd === "replan" && _replan) { openReplanModal(); return false; }
       // Device-fault gate for Start / Resume. Identical contract to
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
@@ -1992,24 +1971,15 @@ function renderControls(state, launched, running) {
       const isFreshStart = (cmd === "start" && s !== "PAUSED");
       if (cmd === "start") {
         const action = (s === "PAUSED") ? "Resume" : "Start";
-        const ok = await deviceFaultGate(wsName, action);
-        if (!ok) return;
+        if (!await deviceFaultGate(wsName, action)) return false;
       }
-      b.disabled = true;
-      try {
-        // Fresh run → fresh logs (skip on Resume; keep them mid-run).
-        if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
-        const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
-        await sendCmd(cmd, kwargs);
-        await refreshStatus();
-        if (cmd === "launch") loadRunParams();
-      } catch (err) {
-        toast(String(err), "bad");
-        b.disabled = false;
-      }
-    };
-    if (cmd === "park" || cmd === "kill") holdToActivate(b, act, { verb: cmd });
-    else b.addEventListener("click", act);
+      // Fresh run → fresh logs (skip on Resume; keep them mid-run).
+      if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
+      const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
+      await sendCmd(cmd, kwargs);
+      await refreshStatus();
+      if (cmd === "launch") loadRunParams();
+    });
     controls.appendChild(b);
   };
 
@@ -2463,31 +2433,6 @@ $("btnCopySteps").addEventListener("click", (e) => {
 let _pendantMode = false;
 const pendantOverlay = $("pendantOverlay");
 
-// Audio feedback — Web Audio API (no files needed)
-const _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function pendantBeep(freq = 880, duration = 0.08, type = "sine", vol = 0.12) {
-  try {
-    const osc = _audioCtx.createOscillator();
-    const gain = _audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(vol, _audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(_audioCtx.destination);
-    osc.start();
-    osc.stop(_audioCtx.currentTime + duration);
-  } catch(_) {}
-}
-function pendantClickSound()   { pendantBeep(660, 0.04, "sine", 0.10); }
-function pendantSuccessSound() { pendantBeep(1000, 0.1, "sine", 0.08); }
-function pendantErrorSound()   { pendantBeep(280, 0.12, "square", 0.10); setTimeout(() => pendantBeep(220, 0.15, "square", 0.08), 100); }
-
-// Haptic vibration for touch devices
-function pendantVibrate(ms = 30) {
-  try { navigator.vibrate?.(ms); } catch(_) {}
-}
-
 // Pendant main-section tab: "project" (the project's screen) or
 // "3d" (the live viewer, repositioned over the pane — one iframe,
 // one WebGL context, zero reloads). Persisted per browser.
@@ -2587,8 +2532,6 @@ function togglePendant(on) {
   } catch (_) {}
 
   if (_pendantMode) {
-    // Resume audio context (required after user gesture)
-    if (_audioCtx.state === "suspended") _audioCtx.resume();
     updatePendantUI();
     renderPendantParams();
   }
@@ -2830,45 +2773,31 @@ function updatePendantUI() {
   }
 }
 
-// Wire pendant buttons. Park and Kill are hold-to-activate (api.js
-// holdToActivate): the tile fills for two seconds under the finger,
-// releasing early cancels. Start / Pause are a tap.
+// Wire pendant buttons — api.js wireCommand, as on the sidebar and the
+// dashboard cards: the tap answers at once (sound, vibration, pressed),
+// Park and Kill are hold-to-activate (the tile fills and ticks for two
+// seconds under the finger, releasing early cancels).
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   const cmd = btn.dataset.cmd;
-  const act = async () => {
-    if (cmd === "replan" && _replan) { openReplanModal(); return; }
+  wireCommand(btn, cmd, async () => {
+    if (cmd === "replan" && _replan) { openReplanModal(); return false; }
     // Device-fault gate also covers the pendant Start/Resume — same
-    // contract as the sidebar button. Pendant pressed sound/haptics
-    // come AFTER the gate so a canceled prompt doesn't beep falsely.
+    // contract as the sidebar button.
     const isFreshStart = (cmd === "start" && (_lastState || "").toUpperCase() !== "PAUSED");
     if (cmd === "start") {
       const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
-      const ok = await deviceFaultGate(wsName, action);
-      if (!ok) return;
+      if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
     }
-    btn.disabled = true;
-    btn.classList.add("pendant-pressed");
-    pendantClickSound();
-    pendantVibrate(40);
-    setTimeout(() => btn.classList.remove("pendant-pressed"), 400);
     try {
       // Fresh run → fresh logs (skip on Resume; keep them mid-run).
       if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
       const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
       await sendCmd(cmd, kwargs);
-      pendantSuccessSound();
-      pendantVibrate(20);
       await refreshStatus();
+    } finally {
       updatePendantUI();
-    } catch (err) {
-      pendantErrorSound();
-      pendantVibrate([50, 30, 50]); // double buzz for error
-      toast(String(err), "bad");
     }
-    updatePendantUI();
-  };
-  if (cmd === "park" || cmd === "kill") holdToActivate(btn, act, { verb: cmd });
-  else btn.addEventListener("click", act);
+  });
 });
 
 
@@ -2912,8 +2841,8 @@ if (window.ResizeObserver) {
 
 // Enter pendant directly from the URL (kiosk mode):
 //   workspace.html?name=<ws>&pendant=1
-// The audio context stays suspended until the first touch (browser
-// gesture policy) — beeps simply start working from then on.
+// Sound starts with the first touch (api.js feedback: the browser keeps
+// audio muted until a gesture, and any tap on the page unmutes it).
 if (["1", "true"].includes((params.get("pendant") || "").toLowerCase())) {
   togglePendant(true);
 }

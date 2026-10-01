@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, holdToActivate, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -413,14 +413,15 @@ function render() {
       });
     }
 
-    // Action buttons (launch / start / pause / park / kill). Park and
-    // Kill are hold-to-activate (api.js holdToActivate), never a click.
+    // Action buttons (launch / start / pause / park / kill) — api.js
+    // wireCommand: the tap answers at once (sound, vibration, pressed),
+    // Park and Kill are hold-to-activate, never a click.
     el.querySelectorAll(".action-btn").forEach(btn => {
       const cmd = btn.dataset.cmd;
-      const act = async () => {
+      wireCommand(btn, cmd, async () => {
         if (cmd === "replan" && btn.dataset.replan) {
           window.location.href = `workspace.html?name=${encodeURIComponent(ws.name)}`;
-          return;
+          return false;
         }
         // Device-fault gate for Start / Resume. Fetches fresh status
         // from the workspace and prompts if any critical device is
@@ -429,28 +430,16 @@ function render() {
         if (cmd === "start") {
           const stateUpper = (ws.lastStatus?.state || "").toUpperCase();
           const action = stateUpper === "PAUSED" ? "Resume" : "Start";
-          const ok = await deviceFaultGate(ws.name, action);
-          if (!ok) return;
+          if (!await deviceFaultGate(ws.name, action)) return false;
         }
-        btn.disabled = true;
-        try {
-          let kwargs = undefined;
-          if (cmd === "start" && ws.kwargs_values && Object.keys(ws.kwargs_values).length) {
-            kwargs = ws.kwargs_values;
-          }
-          await sendCmd(ws.name, cmd, kwargs);
-          await refreshStatuses();
-          render();
-        } catch (err) {
-          toast(String(err), "bad");
-          btn.disabled = false;
+        let kwargs = undefined;
+        if (cmd === "start" && ws.kwargs_values && Object.keys(ws.kwargs_values).length) {
+          kwargs = ws.kwargs_values;
         }
-      };
-      if (cmd === "park" || cmd === "kill") {
-        holdToActivate(btn, act, { verb: cmd });
-        return;
-      }
-      btn.addEventListener("click", async (e) => { e.preventDefault(); await act(); });
+        await sendCmd(ws.name, cmd, kwargs);
+        await refreshStatuses();
+        render();
+      });
     });
 
     // Remove button

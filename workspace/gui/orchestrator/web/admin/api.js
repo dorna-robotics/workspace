@@ -174,6 +174,116 @@ export function wsViewerUrl(ws) {
 // Re-export for ES module imports in dashboard.js / workspace.js
 export const confirmDialog = window.confirmDialog;
 
+// ── Operator feedback: sound + vibration ──────────────────────────────
+// One voice for every surface that sends a run command (dashboard card,
+// workspace page, pendant). A tap answers the INSTANT it lands — before
+// any network round trip — and the outcome answers again: a tone for
+// done, a double buzz for refused. Park / Kill (hold-to-activate) tick
+// upward under the finger for the whole hold, so the operator hears
+// and feels that something is happening, not only sees it.
+//
+// Audio: browsers start an AudioContext muted until a user gesture
+// resumes it. The context is made, or resumed, by the first pointer or
+// key press ANYWHERE on the page — so a kiosk opened straight into the
+// pendant gets sound from its first touch. Vibration is what the
+// browser offers (Android Chrome; iOS and desktops ignore it).
+let _actx = null;
+function _audio() {
+  if (!_actx) {
+    try { _actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch { _actx = null; }
+  }
+  return _actx;
+}
+for (const t of ["pointerdown", "keydown"]) {
+  document.addEventListener(t, () => {
+    const c = _audio();
+    if (c && c.state === "suspended") c.resume().catch(() => {});
+  }, { capture: true, passive: true });
+}
+function _tone(freq, dur, { type = "sine", vol = 0.1, at = 0 } = {}) {
+  const c = _audio();
+  if (!c || c.state !== "running") return;
+  try {
+    const t0 = c.currentTime + at;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur);
+  } catch {}
+}
+function _buzz(pattern) { try { navigator.vibrate?.(pattern); } catch {} }
+
+export const feedback = {
+  /** The tap landed. */
+  press() { _tone(660, 0.04); _buzz(30); },
+  /** The command was accepted. */
+  ok() { _tone(1000, 0.1, { vol: 0.08 }); _buzz(15); },
+  /** The command was refused or failed. */
+  err() {
+    _tone(280, 0.12, { type: "square" });
+    _tone(220, 0.15, { type: "square", vol: 0.08, at: 0.1 });
+    _buzz([50, 30, 50]);
+  },
+  /** A robot alarm or a critical device down: high-low-high, a long buzz. */
+  alarm() {
+    _tone(880, 0.15, { type: "square", vol: 0.15 });
+    _tone(660, 0.15, { type: "square", vol: 0.15, at: 0.2 });
+    _tone(880, 0.15, { type: "square", vol: 0.15, at: 0.4 });
+    _buzz([200, 100, 200]);
+  },
+  /** A hold of ``ms`` began: ticks rising in pitch, a pulse each, until
+   *  ``fire()`` (the hold completed) or ``cancel()`` (released early). */
+  hold(ms) {
+    const TICKS = 8;
+    let n = 0;
+    const tick = () => {
+      _tone(440 * Math.pow(2, n / TICKS), 0.035, { vol: 0.07 });
+      _buzz(12);
+      n += 1;
+    };
+    tick();
+    const timer = setInterval(() => { if (n < TICKS) tick(); }, ms / TICKS);
+    const stop = () => clearInterval(timer);
+    return {
+      fire() { stop(); _tone(880, 0.07); _tone(1320, 0.12, { at: 0.07 }); _buzz(80); },
+      cancel() { stop(); _tone(300, 0.06, { vol: 0.05 }); },
+    };
+  },
+};
+
+// ── Run commands — one wiring for every button that sends one ─────────
+// ``run()`` does the command (gate, send, refresh). It returns false
+// when the operator backed out (a canceled confirm): the button comes
+// back as it was, nothing sounds. It throws when the command failed:
+// the error buzz, a toast, the button back. Otherwise the done tone;
+// the button stays disabled until the next status render sets it.
+// Park and Kill go through holdToActivate (the hold is their press);
+// every other command is a tap.
+export function wireCommand(btn, verb, run) {
+  const go = async (pressed) => {
+    if (pressed) feedback.press();
+    btn.disabled = true;
+    btn.classList.add("cmd-pressed");
+    setTimeout(() => btn.classList.remove("cmd-pressed"), 400);
+    try {
+      if (await run() === false) { btn.disabled = false; return; }
+      feedback.ok();
+    } catch (err) {
+      feedback.err();
+      toast(String(err?.message || err), "bad");
+      btn.disabled = false;
+    }
+  };
+  if (verb === "park" || verb === "kill") holdToActivate(btn, () => go(false), { verb });
+  else btn.addEventListener("click", (e) => { e.preventDefault(); if (!btn.disabled) go(true); });
+}
+
 // ── Hold-to-activate ──────────────────────────────────────────────────
 // Park and Kill are never a click. The operator presses and HOLDS the
 // button for HOLD_MS; the button fills while they do (style.css .hold)
@@ -195,14 +305,18 @@ export function holdToActivate(btn, onActivate, { ms = HOLD_MS, verb } = {}) {
   btn.title = `Hold ${Math.round(ms / 1000)} s to ${what}`;
   btn.setAttribute("aria-label", `${btn.textContent.trim()} — hold ${Math.round(ms / 1000)} seconds`);
   let timer = null;
+  let held = null;           // feedback.hold — the sound of the hold
   const arm = (e) => {
     if (btn.disabled || timer) return;
     if (e.type === "pointerdown" && e.button !== 0) return;
     if (e.type === "keydown" && (e.repeat || !(e.key === " " || e.key === "Enter"))) return;
     e.preventDefault();
     btn.classList.add("holding");
+    held = feedback.hold(ms);
     timer = setTimeout(async () => {
       timer = null;
+      held.fire();
+      held = null;
       btn.classList.remove("holding");
       btn.classList.add("hold-fired");
       setTimeout(() => btn.classList.remove("hold-fired"), 400);
@@ -211,6 +325,7 @@ export function holdToActivate(btn, onActivate, { ms = HOLD_MS, verb } = {}) {
   };
   const disarm = () => {
     if (timer) { clearTimeout(timer); timer = null; }
+    if (held) { held.cancel(); held = null; }
     btn.classList.remove("holding");
   };
   btn.addEventListener("pointerdown", arm);
