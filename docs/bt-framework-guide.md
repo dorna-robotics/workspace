@@ -1455,20 +1455,22 @@ a second click keeps it:
 replan: hmi/replan.js          # explicit path; absent → the plain list
 ```
 
-It is a **view only** — the dialog's choosing steps. It may declare as
-many as it needs (`steps`), say when each is done (`ready`), and press
+It is the project's **HMI for the choice**. It declares as many steps
+as it needs (`steps`), says when each is done (`ready`), and may press
 the buttons a component already declares (`api.invoke`, the pendant
-screen's own call — Disable tool, Disable Motors, a decapper's Disable);
-the platform draws the stepper from them and appends its own **Confirm**.
-bna's: **Choose** (the racks) → **Clear the bench** (a numbered
-checklist for exactly the chosen samples — open the gripper, open the
-decapper jaws, motors off, move the arm upright by hand, take each
-sample's bottle, cap and vials off, motors on — each line ticked, with
-its button) → **Confirm** (the reason). The platform keeps the stepper,
-Back / Next, the Confirm step (what leaves and what it takes with it,
-the bench tick unless the view's steps clear the bench, the reason),
-Cancel, Remove & replan, the Applying / refused line, and the request
-to the runtime —
+screen's own call — Disable tool, Disable Motors, a decapper's
+Disable). By default the platform appends its own **Confirm** (what
+leaves, the bench tick, the reason); a view that says `ownsConfirm:
+true` draws its confirmation itself as its LAST step and answers
+`reason()` and `validate()`. bna's view owns all three: **Choose** (the
+racks) → **Clear the bench** (how to release each sample — open the
+gripper, a decapper, the shaker clamp; lift the arm ~100 mm with the
+motors off — and what to take off, with the buttons) → **Confirm** (the
+samples, *I have taken these off the bench*, *the motors are on and the
+arm is clear* — Replan never turns them on — and the reason). The
+platform keeps the frame, the stepper, Back / Next, Cancel, Remove &
+replan (live on the confirming step), the Applying / refused line, and
+the request to the runtime —
 `remove` with the offer's own `item` values, identical whichever view
 chose them. Nothing in the engine or the runtime knows a view exists.
 
@@ -1487,7 +1489,9 @@ export default {
   steps: [{key, title}, …],    // optional: the view's steps (default: one, "Choose")
   ready(key) { return bool },  // optional: is that step done (default: something chosen)
   show(key) {},                // optional: draw that step
-  clearsBench: true,           // optional: the steps clear the bench — no platform tick
+  ownsConfirm: true,           // optional: the last step is the view's own Confirm …
+  reason() { return "…" },     // … then: the reason sent with the removal
+  validate() { return "" },    // … then: "" = send; else not (the view shows why)
 };
 // api.items    the offer — {item, label, phase, in_phase, done, with, holds}
 //              (an item not in it was removed earlier: draw it, don't offer it)

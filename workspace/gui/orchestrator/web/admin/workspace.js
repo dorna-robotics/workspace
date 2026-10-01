@@ -1519,8 +1519,9 @@ function _rpGroups(items) {
 // (the reason), Cancel, Remove & replan, and the request to the runtime
 // (``remove``), the same whichever view chose. No ``replan:`` → the list.
 // Contract (bt-framework-guide §8.6): export default {css, mount(root,
-// api), value(), steps?, ready(key)?, show(key)?, clearsBench?};
-// api = {items, schema, values, theme, onTheme, invoke, changed}.
+// api), value(), steps?, ready(key)?, show(key)?, ownsConfirm?,
+// reason()?, validate()?}; api = {items, schema, values, theme, onTheme,
+// invoke, changed}.
 let _rpView = null;              // the mounted module, or null (the list)
 const _rpThemeCbs = [];
 new MutationObserver(() => {
@@ -1656,19 +1657,20 @@ function renderReplanList() {
   st.textContent = _replan?.error ? `Not applied — ${_replan.error}. Nothing was changed.`
     : applying ? (_replan.waiting ? `Applying — ${_replan.waiting}…` : "Applying…") : "";
   const go = $("btnReplanGo");
-  go.disabled = !chosen.length || applying || _rpStep !== "confirm";
+  go.disabled = !chosen.length || applying || !_rpCanRemove;
   go.textContent = applying ? "Applying…" : chosen.length ? `Remove ${chosen.length} & replan` : "Remove & replan";
   $("btnReplanCancel").disabled = applying;
 }
 
-// The steps. The choosing steps are the VIEW's: a project view lists as
-// many as it needs (``steps``: [{key, title}] — bna: Choose, Clear the
-// bench) and says when each is done (``ready(key)``); without a view, or
-// without ``steps``, there is one: Choose. The platform appends its own
-// Confirm (what leaves, the reason). A step opens only when every step
-// before it is done, and Confirm only with something chosen. The bench
-// tick on Confirm is shown unless the view says its steps clear the
-// bench (``clearsBench: true``) — the operator never ticks twice.
+// The steps. A project view lists as many as it needs (``steps``:
+// [{key, title}]) and says when each is done (``ready(key)``); without a
+// view, or without ``steps``, there is one: Choose. Then Confirm — the
+// platform's own (what leaves, the bench tick, the reason), or, when the
+// view says ``ownsConfirm: true``, none: the view's LAST step is its
+// confirmation, it answers ``reason()`` and ``validate()``, and Remove &
+// replan is live there. Either way the platform keeps the frame, the
+// stepper, Cancel / Remove & replan and the request. A step opens only
+// when every step before it is done; Remove needs something chosen.
 function _rpChoiceSteps() {
   const v = _rpView;
   let st = null;
@@ -1686,15 +1688,18 @@ function _rpReady(key, nChosen) {
   return nChosen > 0;           // the list's one step: something chosen
 }
 
-const _rpClearsBench = () => !!(_rpView && _rpView.clearsBench);
+const _rpOwnsConfirm = () => !!(_rpView && _rpView.ownsConfirm);
+let _rpCanRemove = false;        // on the confirming step, and it is done
 
 function renderReplanSteps(nChosen) {
   const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
     stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const TICK = icon('<polyline points="20 6 9 17 4 12"/>');
-  const ticked = _rpClearsBench() || $("rpCleared").checked;
   const steps = _rpChoiceSteps().map(x => ({ ...x, ok: _rpReady(x.key, nChosen) }));
-  steps.push({ key: "confirm", title: "Confirm", ok: ticked && !!$("rpReason").value.trim() });
+  if (!_rpOwnsConfirm()) {
+    steps.push({ key: "confirm", title: "Confirm",
+                 ok: $("rpCleared").checked && !!$("rpReason").value.trim() });
+  }
   let open = true;
   for (const x of steps) {
     x.open = open && (x.key !== "confirm" || nChosen > 0);
@@ -1714,11 +1719,12 @@ function renderReplanSteps(nChosen) {
   const next = i < steps.length - 1
     ? `<button class="btn btn-primary" data-rpstep="${steps[i + 1].key}"${steps[i + 1].open ? "" : " disabled"}>Next ${icon('<polyline points="9 18 15 12 9 6"/>')}</button>` : "";
   $("rpNav").innerHTML = back + next;
-  const confirm = _rpStep === "confirm";
+  // Remove & replan is live on the confirming step: the platform's, or
+  // the view's last when it owns Confirm.
+  _rpCanRemove = nChosen > 0 && i === steps.length - 1 && (!_rpOwnsConfirm() || steps[i].open);
+  const confirm = _rpStep === "confirm" && !_rpOwnsConfirm();
   $("rpStepChoose").hidden = confirm;
   $("rpStepConfirm").hidden = !confirm;
-  $("rpClearedRow").hidden = _rpClearsBench();
-  $("rpCleared").required = !_rpClearsBench();
   // The view draws the step it is on.
   if (!confirm && _rpView && typeof _rpView.show === "function" && _rpShown !== _rpStep) {
     _rpShown = _rpStep;
@@ -1726,10 +1732,10 @@ function renderReplanSteps(nChosen) {
   }
 }
 
-async function sendReplanChoice(items) {
+async function sendReplanChoice(items, reason) {
   $("btnReplanGo").disabled = true;
   try {
-    await sendCmd("remove", undefined, { items, reason: $("rpReason").value.trim() });
+    await sendCmd("remove", undefined, { items, reason: String(reason || "").trim() });
     // The dialog stays open until the engine reports: applied (status
     // replan -> null, the dialog closes) or refused (error shown here).
     await refreshStatus();
@@ -1780,17 +1786,30 @@ for (const id of ["rpSteps", "rpNav"]) {
 }
 $("rpCleared").addEventListener("change", renderReplanList);
 $("rpReason").addEventListener("input", () => renderReplanSteps(_rpSel.size));
-// Remove & replan: the bench ticked and a reason given — the browser's
-// own required bubble points at whichever is missing.
+// Remove & replan. The platform's Confirm: the bench ticked and a reason
+// given — the browser's own required bubble points at whichever is
+// missing. A view's own Confirm: its validate() answers (and shows its
+// own bubble), its reason() is sent.
 $("btnReplanGo").addEventListener("click", () => {
-  for (const el of _rpClearsBench() ? [$("rpReason")] : [$("rpCleared"), $("rpReason")]) {
+  const items = (_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item);
+  if (_rpOwnsConfirm()) {
+    let msg = "";
+    try { msg = typeof _rpView.validate === "function" ? (_rpView.validate() || "") : ""; }
+    catch (err) { msg = String(err); }
+    if (msg) return;
+    let reason = "";
+    try { reason = typeof _rpView.reason === "function" ? _rpView.reason() : ""; } catch (_) {}
+    sendReplanChoice(items, reason);
+    return;
+  }
+  for (const el of [$("rpCleared"), $("rpReason")]) {
     if (!el.checkValidity() || (el.type === "text" && !el.value.trim())) {
       if (el.type === "text") el.value = "";
       el.reportValidity();
       return;
     }
   }
-  sendReplanChoice((_replan?.items || []).filter(it => _rpSel.has(_rpKey(it))).map(it => it.item));
+  sendReplanChoice(items, $("rpReason").value);
 });
 $("btnReplanCancel").addEventListener("click", cancelReplan);
 // Closing the window only hides it — the Replan stays open (the Replan
