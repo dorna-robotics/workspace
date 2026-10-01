@@ -72,7 +72,7 @@ of these:
 4. **Auto-pause respects both signals.** If `info.sim` is true on the
    bus OR the project claims `sim` for a device, a critical-down on
    that device does not pause the runtime. Either signal alone is
-   sufficient to opt out. Device-down is one of four pause triggers —
+   sufficient to opt out. Device-down is one of five pause triggers —
    see [project-guide.md §9 "What triggers Pause"](project-guide.md#what-triggers-pause)
    for the full list and the entry/atomicity/resume semantics that
    apply to all of them uniformly.
@@ -302,6 +302,13 @@ fail → wait 60s (capped), retry … and stay at 60s forever
 
 It never gives up entirely — the device might come back hours later, and
 you don't want a silently-abandoned recipe.
+
+**A retry is not a new outage.** AutoRecover flips the device to
+`recovering` before each attempt and back to `down` when it fails. The
+bus judges a down edge against the device's last *settled* state
+(`DeviceEntry.settled` — `recovering` never settles), and the admin GUI
+does the same for its alarm (`api.js downEdge`): one pause and one alarm
+per outage, however many retries it takes.
 
 ### What the operator sees
 
@@ -1334,7 +1341,12 @@ different failure modes both surface as `state="down"`:
 
 - **Connection lost** — any underlying `ConnectionError` / `OSError`
   from a wrapped Dorna call (TCP drop, host unreachable). The
-  exception still propagates to the recipe.
+  exception still propagates to the recipe. dorna2 ≥ 2.1.10 raises
+  `ConnectionError` on every command and every read while the link is
+  down — before `connect()`, after one that failed, after a drop — so a
+  dead link has exactly one error class (before, a command after the
+  drop raised asyncio's `RuntimeError('Event loop is closed')` and a
+  read returned the last value seen, and neither counted).
 - **Robot alarm** — motion commands return `int < 0` on alarm
   (limit hit, IK failed, E-stop). The wrapper sets
   `state="down"` with `msg="alarm code N"`.
@@ -1344,6 +1356,14 @@ state→down edge (IP devices have no hotplug, so the state edge is the
 substitute trigger). Successful calls after a non-`ok` state clear
 state back to `ok` — recipes that auto-retry resolve the panel state
 themselves without operator intervention.
+
+A drop while the arm is **idle** (a 300 s shake, a rest) is caught by
+the attachment's heartbeat (§3): `RobotStation.ping()` runs every
+`HEARTBEAT_INTERVAL_S` while the state is `ok` — no I/O while the
+controller has spoken within the interval (its own traffic is the
+pulse), one alarm query with a 1 s timeout on a silent link. A closed
+link or silence flips the robot `down`, the bus pauses the run and the
+heartbeat nudges AutoRecover.
 
 The wrapping is **pure composition** — dorna2 itself is unmodified.
 Recipes calling `core.dorna.move(...)` / `core.dorna.kinematic.inv(...)`

@@ -338,6 +338,21 @@ export function holdToActivate(btn, onActivate, { ms = HOLD_MS, verb } = {}) {
 }
 
 
+// ── Device down edge ──────────────────────────────────────────────────
+// "recovering" is a phase of the outage that began with the previous
+// "down", not a state of its own: a down edge is judged against the
+// last SETTLED state — the rule the bus applies before it pauses the
+// run (devices/orchestrator.py, DeviceEntry.settled). Else every
+// AutoRecover retry (recovering → down, seconds apart) rang the alarm
+// again. ``settled`` is a Map id → last settled state the caller owns
+// (seed it from a snapshot with the same call). Returns true when ``d``
+// begins a NEW outage of a critical device.
+export function downEdge(settled, d) {
+  const before = settled.get(d.id);
+  if (d.state !== "recovering") settled.set(d.id, d.state);
+  return d.state === "down" && d.critical !== false && before !== "down";
+}
+
 // ── Device-fault gate ─────────────────────────────────────────────────
 // Bulletproof guard for Start/Resume actions when one or more critical
 // devices are still down. Two layers:

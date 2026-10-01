@@ -448,6 +448,7 @@ rule as `eff()` being a dict.
 | **Runtime — execute() returns non-first key** | That branch applies. The framework raises `ReplanRequested` so downstream actions re-evaluate. |
 | **Runtime — execute() returns unknown key** | Warning + fall back to the default (first) key. |
 | **Runtime — execute() returns False** | Action failed; no effects applied. The planner replans from observed state (no implicit retry). |
+| **Runtime — execute() raises** (or `pre()`, the tool swap, a check) | Something is BROKEN — a dead link, a device that refused, a bug. The run **pauses** with the error on the timeline (level `error`: red banner, beep); no effects, nothing retried. Resume → the leaf fails → replan from observed state, the action runs again. Park / Kill as usual. (`RecipeUnavailable` stays fatal.) |
 | **Runtime — execute() returns `"killed"`** | **RESERVED — fatal abort.** The framework kills the runtime: the engine exits before its next tick, the run ends `INVALID` / `RTState.KILLED`, no further action runs, no motion happens. See below. |
 | **Runtime — execute() returns anything else (None / int / etc.)** | Programmer error — warning + treated as failure. |
 
@@ -490,12 +491,20 @@ Rules:
   For a recoverable failure, `return False` — the planner replans
   and the run stays alive.
 
-The two failure returns side by side:
+The three failure exits side by side:
 
-| Return | Meaning | What happens next |
+| Exit | Meaning | What happens next |
 |---|---|---|
 | `False` | *this attempt* failed | replan from observed state; run continues |
+| a raise | *something is broken* | the run pauses with the error on the timeline; Resume replans from observed state; or Park / Kill |
 | `"killed"` | *the run* must stop | runtime killed; run over; operator intervenes |
+
+Why a raise pauses rather than replans: the facts have not moved, so a
+replan reproduces the plan and the same action meets the same error —
+a spin at the speed the plan can be rebuilt (bna bench, 2026-09-24:
+8–14 a second until the no-progress cap ended the run INVALID, nothing
+on the operator's screen). Pause is trigger 5 of project-guide "What
+triggers Pause".
 
 #### When to use multiple branches
 

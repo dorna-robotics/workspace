@@ -54,6 +54,14 @@ class DeviceEntry:
     # False only by an LWT payload that carries ``online: false``. Used
     # by recover/release to fast-fail when nobody is listening.
     online: bool = False
+    # The last SETTLED state. "recovering" is a phase of the outage
+    # that began with the previous "down", not a state of its own, so
+    # a down edge is judged against this — never against "recovering".
+    # Else every AutoRecover retry (recovering → down, seconds apart)
+    # was a new outage: a pause, a log line and the operator's alarm
+    # each time, for as long as the device stayed down (bna, 2026-09-24).
+    # The admin GUI applies the same rule to its alarm (api.js downEdge).
+    settled: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -297,8 +305,10 @@ class MQTTOrchestrator:
                 # the first state arrived.
                 is_first_state = device_id not in self._seen_state_ids
                 self._seen_state_ids.add(device_id)
-                old_state = entry.state
+                old_settled = entry.settled
                 entry.state = new_state_str
+                if new_state_str != "recovering":
+                    entry.settled = new_state_str
                 entry.msg = new_msg
                 entry.ts = ts
                 entry.online = True
@@ -315,8 +325,9 @@ class MQTTOrchestrator:
             return
 
         # Pause runtime on a critical-down event. Two cases count:
-        #   (a) a real transition (old != down → new = down), e.g. a
-        #       cable was unplugged mid-run, OR
+        #   (a) a real transition (last settled state != down → new =
+        #       down), e.g. a cable was unplugged mid-run — a retry's
+        #       recovering → down is NOT one (see DeviceEntry.settled), OR
         #   (b) the FIRST state we ever see is "down" (no prior state
         #       to transition from) — happens at workspace launch when
         #       the robot is already unreachable. Without (b) the
@@ -331,7 +342,7 @@ class MQTTOrchestrator:
         #     for cameras: the daemon publishes truth on the bus, but
         #     this project doesn't care because it uses canned values.)
         is_initial_down = is_first_state and new_state == "down"
-        is_transition_to_down = (not is_first_state) and new_state == "down" and old_state != "down"
+        is_transition_to_down = (not is_first_state) and new_state == "down" and old_settled != "down"
         claim = None
         if self.claim_resolver is not None:
             try:

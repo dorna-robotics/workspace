@@ -22,6 +22,7 @@ dependencies = [
   "ortools>=9.4,<9.10", # CP-SAT scheduler — upper bound keeps numpy 1.x compatible
   "paho-mqtt>=2.0",     # device bus transport — see docs/device-guide.md
   "dorna_devices>=0.1", # device protocol + MQTTDeviceAdapter + AutoRecover (extracted)
+  "dorna2>=2.1.10",     # robot client — a dead link raises ConnectionError on every call; connected()/last_recv() feed the idle heartbeat
   "py_trees>=2.2",      # behaviour-tree primitives — bt/builder.py engine
   "toppra>=0.6",        # PVT time-parameterization — core.traj_points (tmove)
 ]

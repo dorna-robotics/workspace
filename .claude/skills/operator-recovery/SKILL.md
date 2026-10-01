@@ -1,6 +1,6 @@
 ---
 name: operator-recovery
-description: "Use when the user is troubleshooting a paused workflow — recovering a downed device, clearing a robot alarm, mutating state to skip a stuck action, or understanding why the system paused. Covers the four pause triggers, recovery affordances, and explicit-mutation APIs."
+description: "Use when the user is troubleshooting a paused workflow — recovering a downed device, clearing a robot alarm, mutating state to skip a stuck action, or understanding why the system paused. Covers the five pause triggers, recovery affordances, and explicit-mutation APIs."
 ---
 
 # Operator recovery
@@ -13,9 +13,9 @@ The user says any of:
 - "Can the operator skip this action?"
 - "Add an operator action button to clear / reset / re-home X"
 
-## Mental model — four pause triggers, one recovery surface
+## Mental model — five pause triggers, one recovery surface
 
-The runtime pauses for **four distinct reasons** (project-guide.md §9):
+The runtime pauses for **five distinct reasons** (project-guide.md §9):
 
 | # | Trigger | Resolution |
 |---|---|---|
@@ -23,6 +23,7 @@ The runtime pauses for **four distinct reasons** (project-guide.md §9):
 | 2 | **Critical device down on the bus** | Recover the device → state clears to ok → click Resume |
 | 3 | **Robot motion returns alarm code** | Clear alarm on the robot → click Resume |
 | 4 | **Code calls `rt.pause()`** (custom checks, action policy) | Project-specific — usually Resume after handling the situation |
+| 5 | **An action raises** — an exception escapes `pre()`, the tool swap, a check or `execute()` (a dead robot link, a device that refused, a bug) | Read the error on the timeline (red banner) → fix the cause (Recover the device) → click Resume: the engine replans from observed state; or Park / Kill |
 
 All four set the same `paused` flag. The next pause-aware call (`rt.sleep`, `rt.delay`, `rt.<robot>`, `rt.checkpoint`) blocks until Resume.
 
@@ -65,7 +66,7 @@ All four set the same `paused` flag. The next pause-aware call (`rt.sleep`, `rt.
 - **Auto-resuming after device recovery** — never. Operator decides. The "Recovery clears state but not pause" rule is deliberate.
 - **Operator action that doesn't gate on workflow state** — recipes and components must accept the "called while paused" entry condition; never assume runtime is RUNNING. The framework already gates buttons but defensive code matters.
 - **`workspace.add_fact()` without matching scene mutation** — if a fact references an object that doesn't exist in scene, the planner stalls. Pair every fact mutation with a scene mutation when adding/removing entities. component-guide.md §9.
-- **Catching exceptions in `execute()` to "skip"** — better to raise → BT marks failure → replanner finds alternative path. Silent catches lose audit trail. bt-framework-guide.md §3.
+- **Catching exceptions in `execute()` to "skip"** — don't. A raise PAUSES the run with the error on the timeline (trigger 5) and Resume replans from observed state; a clean attempt failure is `return False` (replan, no pause). A silent catch loses the audit trail and runs on a world the model does not describe. bt-framework-guide.md §3.
 
 ## Critical-device-down workflow (step by step)
 

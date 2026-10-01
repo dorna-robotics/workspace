@@ -1070,7 +1070,7 @@ If you need to stop *immediately* and accept the consequences, use Kill.
 
 #### What triggers Pause
 
-Four distinct sources can transition the runtime into PAUSED. The
+Five distinct sources can transition the runtime into PAUSED. The
 runtime treats them identically — once `paused == True`, the next
 pause-aware call blocks regardless of source. The differences are
 purely in **who set the flag** and **how the operator should respond**.
@@ -1081,11 +1081,21 @@ purely in **who set the flag** and **how the operator should respond**.
 | 2 | **Critical device goes down on the bus** (USB unplug, TCP drop, daemon crash, etc.) | Auto — by `MQTTOrchestrator` watching `device/+/state` topics | Fix the hardware → click Recover on the device row → wait for state=ok → click Resume | `devices/orchestrator.py:351` |
 | 3 | **Robot motion command returns an alarm code** (negative int from a `rt.<robot>` call — limit hit, IK failed, E-stop pressed) | Auto — by `rt.call` itself when a wrapped robot method returns < 0 | Clear the alarm on the robot itself → click Resume | `runtime.py:532` (inside `rt.call`) |
 | 4 | **Project code calls `rt.pause()`** directly (custom checks, action policy, "I want to wait for the operator here") | Your code | Whatever the project documents — usually Resume after handling the situation | Anywhere a `Check` / action / recipe calls `rt.pause()` |
+| 5 | **An action raises** — an exception escapes `pre()`, the tool swap, a check or `execute()` (a dead robot link, a device that refused, a bug) | Auto — by the BT leaf, which puts the error on the timeline at level `error` (red banner, beep) before it pauses | Read the error, fix the cause (Recover the device), click Resume — the engine replans from observed state and the action runs again; or Park / Kill | `bt/dsl.py` (`_DSLActionLeaf._execute_body` → `_pause_on_raise`) |
 
 Trigger 2 (device-down auto-pause) has additional gates: it fires only
-when the device is **critical**, **not sim**, and either transitioning
-from ok→down or first-observed-down. Sim devices and project-claimed-sim
-devices never auto-pause. See [device-guide.md §1 rule 4](device-guide.md)
+when the device is **critical**, **not sim**, and either entering `down`
+from its last *settled* state or first-observed-down — an AutoRecover
+retry's `recovering → down` is the same outage, not a new edge, so an
+outage pauses once however many retries it takes. Sim devices and
+project-claimed-sim devices never auto-pause.
+
+Trigger 5 is why a run never spins: with the facts unchanged, a replan
+reproduces the plan and the same action meets the same error — on the
+bna bench (2026-09-24) 8–14 replans a second, as fast as the plan could
+be rebuilt, until the no-progress cap ended the run INVALID. A raise now waits for the operator instead;
+`return False` keeps its meaning (this attempt failed — replan, no
+pause; bt-framework-guide "execute() returns False"). See [device-guide.md §1 rule 4](device-guide.md)
 and [§16 simulation model](device-guide.md) for the full claim
 aggregation logic.
 

@@ -42,10 +42,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 from dorna2 import Dorna
+
+from workspace.devices import HEARTBEAT_INTERVAL_S
 
 
 log = logging.getLogger(__name__)
@@ -282,7 +285,38 @@ class RobotStation:
 
     # ── Internal: state + delegation ─────────────────────────────────────
 
-    def _read_alarm_state(self) -> Any:
+    # ── Idle-link heartbeat (devices.DeviceAttachment, opt-in by ping) ──
+    # Every motion exercises the robot's link, so a connection that
+    # fails WHILE THE ARM IS IDLE — a 300 s shake, a rest — is the gap:
+    # nothing talks to the controller until the next action, which then
+    # fails. ping() is called by the attachment's heartbeat thread every
+    # HEARTBEAT_INTERVAL_S while the state is "ok" (never in sim, never
+    # while down — that is AutoRecover's), and answers on three levels:
+    #   1. the client says the link is closed    → down, no I/O;
+    #   2. the controller spoke within the interval → alive, no I/O
+    #      (a busy robot pays nothing — its own traffic is the pulse);
+    #   3. a silent link is PROBED with one alarm query, IDLE_PROBE_S to
+    #      answer: a reply is alive; silence — a cable pulled, a
+    #      controller off, where TCP says nothing for minutes — is down.
+    # False is returned only after the state is "down", so the bus pauses
+    # the run (ok → down edge) and the heartbeat nudges AutoRecover.
+    IDLE_PROBE_S = 1.0
+
+    def ping(self) -> bool:
+        c = self._client
+        if not c.connected():
+            self._set_state("down", "connection lost (link closed while idle)")
+            return False
+        if time.time() - c.last_recv() < HEARTBEAT_INTERVAL_S:
+            return True
+        if self._expected_alarm_depth > 0:
+            return True                  # a procedure owns the link's faults
+        if self._read_alarm_state(timeout=self.IDLE_PROBE_S) is None:
+            self._set_state("down", "connection lost (no reply from the controller)")
+            return False
+        return True
+
+    def _read_alarm_state(self, timeout: Optional[float] = None) -> Any:
         """Query the robot's current alarm code, bypassing the wrapper.
 
         Returns the value from ``self._client.get_alarm()`` — typically
@@ -298,9 +332,12 @@ class RobotStation:
         if not callable(get_alarm):
             return None
         try:
-            return get_alarm()
+            code = get_alarm() if timeout is None else get_alarm(timeout=timeout)
         except Exception:
             return None
+        # dorna2 answers False (not 0) when the controller never replied
+        # within the timeout: that is silence, not "no alarm".
+        return None if code is False else code
 
     def _fire_connection_lost(self) -> None:
         """Notify on_connection_lost listeners. Called by the wrapper

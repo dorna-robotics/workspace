@@ -1560,6 +1560,69 @@ class _DSLActionLeaf(RecipeAction):
             })
 
     def _execute_body(self) -> bool:
+        """The leaf's work, and the one rule for an exception out of it.
+
+        A raise — out of ``pre()``, the tool swap, a check, or
+        ``execute()`` itself — means something is BROKEN: a link that
+        is dead, a device that refused, a bug. Replanning cannot help:
+        the facts have not moved, so the plan comes out identical and
+        the same action runs into the same error — on the bna bench
+        (2026-09-24) that was 8-14 replans a second, as fast as the plan
+        could be rebuilt, until the no-progress cap ended the run
+        INVALID, with nothing on the operator's screen. So the run PAUSES with the error on the timeline
+        (``rt.step(level="error")``: red banner, beep) and nothing is
+        retried. Resume: the leaf's failure is seen on the next tick and
+        the engine replans from observed state — the action runs again
+        on a world the operator has fixed. Or Park / Kill.
+
+        ``return False`` keeps its meaning (this attempt failed —
+        replan, no pause: bt-framework-guide "execute() returns False");
+        ``RecipeUnavailable`` stays fatal; ``KillRequested`` and
+        ``ActionCancelled`` are control flow and pass through.
+        """
+        try:
+            return self._execute_steps()
+        except RecipeUnavailable as ex:
+            # FATAL, NOT REPLANNABLE — see RecipeUnavailable. Same exit
+            # as a "killed" return: stop the run and state the cause,
+            # instead of replanning into the identical plan until the
+            # no-progress cap.
+            log.error("BT leaf FATAL: %s — %s", self.name, ex)
+            self._kill_runtime()
+            self._settle_motion_tail()
+            return False
+        except Exception as ex:
+            # exc_info=True attaches the traceback so we can see WHICH
+            # line raised — without it the operator only sees the
+            # message and has to guess.
+            log.warning(
+                "BT leaf RAISE: %s — %s: %s",
+                self.name, type(ex).__name__, ex,
+                exc_info=True,
+            )
+            # A settled robot first (the held exit, if any), then the
+            # pause: the operator finds the robot at a normal stop.
+            self._settle_motion_tail()
+            self._pause_on_raise(ex)
+            return False
+
+    def _pause_on_raise(self, ex: BaseException) -> None:
+        """Trigger 5 of project-guide "What triggers Pause": the error,
+        with the action's name, on the timeline at level error — and
+        the pause. ``pause()`` is a no-op on a killed runtime."""
+        rt = getattr(self.ctx, "runtime", None)
+        step = getattr(rt, "step", None)
+        pause = getattr(rt, "pause", None)
+        if callable(step):
+            step(
+                f"{self.name}: {type(ex).__name__}: {ex} — fix the cause, then "
+                f"Resume (replans from here), or Park / Kill",
+                level="error",
+            )
+        if callable(pause):
+            pause()
+
+    def _execute_steps(self) -> bool:
         # 0. The declared pre() against the live facts. The schedule is
         #    derived from the plan and must never run a step ahead of
         #    what the facts allow; if it does, that is a scheduling
@@ -1606,28 +1669,7 @@ class _DSLActionLeaf(RecipeAction):
         #    themselves. The framework runs execute() in a worker
         #    thread (see RecipeAction.initialise) so a blocking
         #    execute() doesn't freeze the engine tick loop.
-        try:
-            rv = self._instance.execute(*self._params())
-        except RecipeUnavailable as ex:
-            # FATAL, NOT REPLANNABLE — see RecipeUnavailable. Same exit
-            # as a "killed" return: stop the run and state the cause,
-            # instead of replanning into the identical plan until the
-            # no-progress cap.
-            log.error("BT leaf FATAL: %s — %s", self.name, ex)
-            self._kill_runtime()
-            self._settle_motion_tail()
-            return False
-        except Exception as ex:
-            # exc_info=True attaches the traceback so we can see WHICH
-            # line raised inside execute() — without it the operator
-            # only sees the message and has to guess.
-            log.warning(
-                "BT leaf RAISE: %s — %s: %s",
-                self.name, type(ex).__name__, ex,
-                exc_info=True,
-            )
-            self._settle_motion_tail()
-            return False
+        rv = self._instance.execute(*self._params())
 
         # execute() must return:
         #   * str          — name of the chosen eff branch (the

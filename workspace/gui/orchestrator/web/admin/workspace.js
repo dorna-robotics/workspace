@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -613,7 +613,7 @@ function connectWs(runtimeUrl) {
     .then(r => r.ok ? r.json() : null)
     .then(payload => {
       if (!payload || !Array.isArray(payload.devices)) return;
-      for (const d of payload.devices) _devices.set(d.id, d);
+      for (const d of payload.devices) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
       renderDevicesPanel();
     })
     .catch(() => {});
@@ -1038,18 +1038,14 @@ function _dispatchMuxMessage(env) {
     case "device_state": {
       const d = payload;
       if (!d || !d.id) break;
-      const prev = _devices.get(d.id);
       _devices.set(d.id, d);
       if (_devicesPending.has(d.id) && d.state !== "recovering") {
         _devicesPending.delete(d.id);
       }
-      // Critical-down operator paging on the rising edge — same
-      // logic as the legacy /ws/devices handler.
-      if (
-        d.state === "down"
-        && d.critical !== false
-        && (!prev || prev.state !== "down")
-      ) {
+      // Critical-down operator paging on the edge into a NEW outage —
+      // the bus's own rule (api.js downEdge), so the alarm rings once
+      // per outage, not once per AutoRecover retry.
+      if (downEdge(_devicesSettled, d)) {
         feedback.alarm();
         _alarmNotify(`${d.id}: ${(d.msg || "down").trim()}`);
       }
@@ -1060,7 +1056,7 @@ function _dispatchMuxMessage(env) {
       const arr = Array.isArray(payload.devices) ? payload.devices : [];
       _devices.clear();
       for (const d of arr) {
-        if (d && d.id) _devices.set(d.id, d);
+        if (d && d.id) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
       }
       renderDevicesPanel();
       break;
@@ -1091,6 +1087,7 @@ function _dispatchMuxMessage(env) {
 // ── Devices panel (project-scoped) ───────────────────────────────────
 let _devicesUrl = "";   // base http URL, used for recover POST
 const _devices = new Map();   // id → snapshot
+const _devicesSettled = new Map();   // id → last settled state (api.js downEdge)
 // Devices we just clicked Recover on. Holds id → {note, until} so the
 // row keeps showing "Recovering…" until the device reports a non-recovering
 // state or the safety deadline passes (handles dropped MQTT replies).
