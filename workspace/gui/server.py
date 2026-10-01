@@ -62,7 +62,7 @@ from gui.orchestrator.server import (
     WorkspaceLogsHandler,
     WorkspaceLogsWebSocket,
     LaunchConfigHandler,
-    ProjectSetupFileHandler,
+    ProjectScreenFileHandler,
     UpdateKwargsHandler,
     FileUploadHandler,
     ProjectFilesHandler,
@@ -337,7 +337,8 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=orch)),
         (r"/orchestrator/ws/logs/([^/]+)", WorkspaceLogsWebSocket, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=orch)),
-        (r"/orchestrator/api/workspace/([^/]+)/setup/(.*)", ProjectSetupFileHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/setup/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="setup")),
+        (r"/orchestrator/api/workspace/([^/]+)/replan/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="replan")),
         (r"/orchestrator/api/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=orch)),
         # A project folder's files: bytes over HTTP (download / zip /

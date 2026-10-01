@@ -786,6 +786,12 @@
 
 /* ── Replan dialog (workspace.html #replanModalOverlay) ── */
 .modal.replan-modal { width: min(720px, 100%); }
+/* A project's own Replan view (launch.yaml replan:) draws the bench —
+   the modal takes the Parameters modal's width for it. */
+.modal.replan-modal.rp-wide { width: min(1560px, calc(100vw - 40px)); max-width: none; }
+.rp-view { max-height: 62vh; overflow: auto; }
+/* .rp-list sets display:flex, which beats the UA's [hidden] rule */
+.replan-modal [hidden] { display: none !important; }
 .rp-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
 .rp-search, .rp-reason input {
   width: 100%; min-height: 44px; padding: 0 var(--space-3);

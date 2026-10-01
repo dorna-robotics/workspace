@@ -32,6 +32,40 @@ function readBoundFields(root) {
   return out;
 }
 
+// ── a project's own screen, mounted in a shadow root ─────────────────
+// One hosting rule for every browser-only screen a project declares in
+// launch.yaml (``setup:``, ``replan:``): ``spec`` from the orchestrator
+// (workspace_info.screen_spec), files served same-origin under
+// ``base``. The JS shape is ``export default {css, mount(root, api), …}``;
+// the HTML shape is plain markup. Returns the module (JS shape) or null.
+// Throws when the screen fails to load — the caller decides the fallback.
+export async function mountScreen(holder, spec, base, api) {
+  const shadow = holder.shadowRoot || holder.attachShadow({ mode: "open" });
+  shadow.innerHTML = "";
+  if (spec.css) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = base + spec.css;
+    shadow.appendChild(link);
+  }
+  if (spec.kind === "js") {
+    const mod = await import(/* webpackIgnore: true */ base + spec.src);
+    const def = mod.default || mod;
+    if (def.css) {
+      const st = document.createElement("style");
+      st.textContent = def.css;
+      shadow.appendChild(st);
+    }
+    if (typeof def.mount === "function") await def.mount(shadow, api);
+    return def;
+  }
+  const res = await fetch(base + spec.src);
+  const wrap = document.createElement("div");
+  wrap.innerHTML = await res.text();
+  shadow.appendChild(wrap);
+  return null;
+}
+
 async function mountProjectSetup(container, schema, values, frozen, wsName) {
   const spec = schema._setup || {};
   const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/`;
@@ -52,12 +86,6 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
   container._setupHost = host;
 
   try {
-    if (spec.css) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = base + spec.css;
-      shadow.appendChild(link);
-    }
     const api = {
       get schema() {
         const s = {};
@@ -71,21 +99,8 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
       get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
       onTheme(cb) { (host.themeCbs ||= []).push(cb); },
     };
-    if (spec.kind === "js") {
-      const mod = await import(/* webpackIgnore: true */ base + spec.src);
-      const def = mod.default || mod;
-      host.module = def;
-      if (def.css) {
-        const st = document.createElement("style");
-        st.textContent = def.css;
-        shadow.appendChild(st);
-      }
-      if (typeof def.mount === "function") await def.mount(shadow, api);
-    } else {
-      const res = await fetch(base + spec.src);
-      const wrap = document.createElement("div");
-      wrap.innerHTML = await res.text();
-      shadow.appendChild(wrap);
+    host.module = await mountScreen(holder, spec, base, api);
+    if (spec.kind !== "js") {
       // Seed declared fields from current values / schema defaults.
       for (const el of shadow.querySelectorAll("[data-field]")) {
         const key = el.dataset.field;

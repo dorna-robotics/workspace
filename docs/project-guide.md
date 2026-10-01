@@ -225,6 +225,22 @@ first collection-typed kwarg's default, so the schedule gate keeps
 meaning "run N items" with no rack knowledge in the platform. Verify a
 real selection with `--kw 'tubes={"A1": 0.4, "C2": 1.5}'`.
 
+### `replan:` — the Replan choice, drawn the project's way
+
+The same idea for the paused-run Replan dialog: by default it lists the
+items; a project that already draws its bench can show the choice there.
+
+```yaml
+replan: hmi/replan.js       # explicit path; absent → the plain list
+```
+
+A view only — the items on offer, the run's parameters in, the chosen
+items out (`value()`); the dialog, the request and the replan itself
+stay the platform's. bna's `replan.js` imports its bench from
+`setup.js`, so the operator sees the run-setup racks with a sample's
+bottle and both vials crossed out. Contract and rules:
+bt-framework-guide §8.6 "The Replan view".
+
 ### `_layout` — arranging the run-setup form
 
 The schema renders stacked in declaration order. To place fields side

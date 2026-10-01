@@ -101,10 +101,11 @@ class RemoveWorkspaceHandler(AuthedHandler):
             self.write({"error": str(e)})
 
 
-class ProjectSetupFileHandler(tornado.web.RequestHandler):
-    """Serves a project's run-setup screen (``setup:``) and the files
-    beside it, out of the declared screen's own folder (usually the
-    project's ``hmi/``; a sibling's, e.g. ``../_bna/hmi/setup.js``).
+class ProjectScreenFileHandler(tornado.web.RequestHandler):
+    """Serves a project's browser-only screen — ``setup:`` (run setup)
+    or ``replan:`` (the Replan choice) — and the files beside it, out
+    of the declared screen's own folder (usually the project's
+    ``hmi/``; a sibling's, e.g. ``../_bna/hmi/setup.js``).
 
     The Parameters modal is used BEFORE launch, so the runtime server
     that serves the pendant screen is not up yet — the orchestrator
@@ -113,15 +114,16 @@ class ProjectSetupFileHandler(tornado.web.RequestHandler):
     Read-only, and confined to that one folder.
     """
 
-    def initialize(self, orch: Orchestrator):
+    def initialize(self, orch: Orchestrator, key: str):
         self.orch = orch
+        self.key = key            # the launch.yaml key: "setup" | "replan"
 
     async def get(self, name, rel):
         try:
             ws = self.orch.workspaces.get(name)
-            spec = ws.setup_spec() if ws else None
+            spec = ws.screen_spec(self.key) if ws else None
             if not spec:
-                raise ValueError("no setup screen declared")
+                raise ValueError(f"no {self.key} screen declared")
             root = Path(spec["dir"]).resolve()
             target = (root / rel).resolve()
             # Confine to the declared folder — a project screen may pull

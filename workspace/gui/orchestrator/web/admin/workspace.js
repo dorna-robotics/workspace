@@ -10,7 +10,7 @@
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
 
@@ -1509,13 +1509,82 @@ function _rpGroups(items) {
   return out;
 }
 
-function openReplanModal(fresh) {
+// ── the project's own view of the choice (launch.yaml ``replan:``) ──
+// A VIEW only: it shows the items on offer the project's way (bna: its
+// racks, a sample's bottle and vials crossed) and reports the selection
+// through ``value()`` — the offer's own ``item`` values. Everything
+// else stays the platform's: the preview, the reason, Cancel, Remove &
+// replan, and the request to the runtime (``remove``), which is the same
+// whichever view chose the items. No ``replan:`` → the plain list.
+// Contract (bt-framework-guide §8.6): export default {css, mount(root,
+// api), value()}; api = {items, schema, values, theme, onTheme, changed}.
+let _rpView = null;              // the mounted module, or null (the list)
+const _rpThemeCbs = [];
+new MutationObserver(() => {
+  const t = document.documentElement.getAttribute("data-theme") || "dark";
+  for (const cb of _rpThemeCbs) { try { cb(t); } catch (_) {} }
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+function _rpShowView(on) {
+  $("rpView").hidden = !on;
+  $("rpSearch").hidden = on;
+  $("rpList").hidden = on;
+  document.querySelector("#replanModalOverlay .replan-modal").classList.toggle("rp-wide", on);
+}
+
+async function _mountReplanView() {
+  _rpView = null;
+  _rpThemeCbs.length = 0;
+  let j = null;
+  try { j = await _getLaunchConfig(); } catch (_) {}
+  const schema = j?.kwargs_schema || {};
+  const spec = schema._replan;
+  if (!spec) { _rpShowView(false); return; }
+  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/replan/`;
+  const offered = new Set((_replan?.items || []).map(_rpKey));
+  const api = {
+    items: (_replan?.items || []).map(it => ({ ...it })),
+    get schema() {
+      const s = {};
+      for (const [k, v] of Object.entries(schema)) if (!k.startsWith("_")) s[k] = v;
+      return s;
+    },
+    // The run's parameters — what Start sent (the saved values).
+    get values() {
+      return { ...(Object.keys(_wsKwargsValues).length ? _wsKwargsValues : (j?.kwargs_values || {})) };
+    },
+    get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
+    onTheme(cb) { _rpThemeCbs.push(cb); },
+    // The view's selection changed: read it, keep only what is on offer.
+    changed() {
+      if (!_rpView || typeof _rpView.value !== "function") return;
+      _rpSel.clear();
+      for (const item of _rpView.value() || []) {
+        const k = JSON.stringify(item);
+        if (offered.has(k)) _rpSel.add(k);
+      }
+      renderReplanList();
+    },
+  };
+  try {
+    _rpView = await mountScreen($("rpView"), spec, base, api);
+    _rpShowView(true);
+  } catch (err) {
+    console.error("project Replan view failed to load:", err);
+    toast("This project's Replan view failed to load — showing the list", "warn");
+    _rpView = null;
+    _rpShowView(false);
+  }
+}
+
+async function openReplanModal(fresh) {
   if (!["choose", "applying"].includes(_replan?.phase)) return;
   if (fresh) {
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
     // The items open; the Finished section collapsed, with its count.
     _rpOpen.add("__run");
+    await _mountReplanView();
   }
   renderReplanList();
   $("replanModalOverlay").classList.add("show");
@@ -1526,7 +1595,9 @@ function renderReplanList() {
   const q = $("rpSearch").value.trim().toLowerCase();
   const hit = it => !q || it.label.toLowerCase().includes(q) || String(it.item).toLowerCase() === q;
   const list = $("rpList");
-  if (!items.length) {
+  if (_rpView) {
+    // the project's view draws the choice; the platform keeps the rest
+  } else if (!items.length) {
     list.innerHTML = `<div class="rp-empty">No items in this run — Replan rebuilds the plan only.</div>`;
   } else {
     list.innerHTML = _rpGroups(items).map(g => {
@@ -1563,6 +1634,7 @@ function renderReplanList() {
   // Where the request stands: refused (nothing changed), or waiting
   // for every action in flight to stand still before it is applied.
   const applying = _replan?.phase === "applying";
+  $("rpView").inert = applying;          // the choice is sent — the view is read-only
   const st = $("rpState");
   st.className = "rp-state" + (_replan?.error ? " err" : applying ? " busy" : "");
   st.textContent = _replan?.error ? `Not applied — ${_replan.error}. Nothing was changed.`

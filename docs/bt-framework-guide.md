@@ -1399,7 +1399,8 @@ checked, and ends in the engine's ordinary replan.
    in no later window, no later phase, for the rest of the run; nothing
    brings it back. Nothing per project is written for
    the list; `setup()` may return `"item_label": fn(item) -> str` for
-   friendlier names.
+   friendlier names, and `launch.yaml` may name the project's own VIEW
+   of the choice (`replan:` — "The Replan view" below).
 3. **The operator chooses one or more items and a reason.** Cancel
    closes the Replan with nothing changed; closing the window only
    hides it (the Replan button, whose label never changes, reopens
@@ -1440,6 +1441,46 @@ checked, and ends in the engine's ordinary replan.
    meanwhile** (`Runtime.replan_hold` — no exception of any kind),
    and then the engine replans. Park during that wait takes over as
    usual (its cleanup replaces the tree).
+
+#### The Replan view — `replan:` in launch.yaml
+
+By default the dialog lists the items. A project that has a picture of
+its own bench may show the choice there instead — bna's racks, where a
+click crosses a sample's 40 mL bottle and both its 2 mL vials out, and
+a second click keeps it:
+
+```yaml
+replan: hmi/replan.js          # explicit path; absent → the plain list
+```
+
+It is a **view only**. The platform keeps everything else: the note,
+what leaves and what it takes with it, the reason, Cancel, Remove &
+replan, the Applying / refused line, and the request to the runtime —
+`remove` with the offer's own `item` values, identical whichever view
+chose them. Nothing in the engine or the runtime knows a view exists.
+
+The file is served by the orchestrator from its own folder (like
+`setup:`, so it may import its siblings — bna's `replan.js` imports
+`benchHtml` / `benchState` from `setup.js` and draws exactly the
+run-setup bench) and mounted in a shadow root in place of the list. The
+dialog widens for it. Contract — the JS shape of `setup:` with a
+different api:
+
+```js
+export default {
+  css,                         // optional, scoped to the view
+  mount(root, api) {},         // draw; call api.changed() on every change
+  value() { return [...] },    // the chosen items: offer rows' `item`
+};
+// api.items    the offer — {item, label, phase, in_phase, done, with, holds}
+//              (an item not in it was removed earlier: draw it, don't offer it)
+// api.values   the run's parameters (what Start sent); api.schema
+// api.theme / api.onTheme(cb)
+// api.changed()  the platform reads value() and updates the preview
+```
+
+A view that fails to load falls back to the list, with a toast. bna's
+`_tph` names bna's file (`replan: ../_bna/hmi/replan.js`).
 
 #### What stays where it was — deliberately
 

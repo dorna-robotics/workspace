@@ -10,7 +10,7 @@
 //            rackOrder, slotIndex, bindToggles, runList } from "/orchestrator/hmi-kit/kit.js";
 //
 // The absolute path works because the orchestrator serves a project's
-// setup module same-origin (ProjectSetupFileHandler) and this folder
+// setup module same-origin (ProjectScreenFileHandler) and this folder
 // under /orchestrator/hmi-kit/ (the admin static route). NOTE: pendant
 // modules are served by the RUNTIME server (a different origin), so a
 // pendant cannot import this — see HMI_GUIDE.md §7 for what a pendant
