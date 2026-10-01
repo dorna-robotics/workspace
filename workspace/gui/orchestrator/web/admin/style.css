@@ -472,7 +472,11 @@
   border-bottom: 1px solid var(--border);
   flex: none;
 }
-.pendant-exit-btn { gap: 7px; font-weight: 700; letter-spacing: 0.06em; }
+/* EXIT carries a label, so it is not a .btn-icon — but it shares the
+   navbar's 48 px tap target (base.css: .pendant-nav .btn-icon), so the
+   left and right of the nav line up. */
+.pendant-exit-btn { gap: 7px; font-weight: 700; letter-spacing: 0.06em;
+  min-height: 48px; padding: 0 16px; }
 .pendant-project {
   font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
