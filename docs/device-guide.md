@@ -310,6 +310,20 @@ bus judges a down edge against the device's last *settled* state
 does the same for its alarm (`api.js downEdge`): one pause and one alarm
 per outage, however many retries it takes.
 
+**What nudges the retries.** AutoRecover runs on a trigger; for a
+device that went down without one (an initial connect that failed, a
+`recover()` that refused) the trigger is the attachment's heartbeat,
+which nudges it every `HEARTBEAT_INTERVAL_S` while the state is `down`
+— and the heartbeat runs only for a device with `ping()`. A device that
+must not be probed on its link can still opt in with a `ping()` that
+does no I/O (link flag only): the OHAUS SPX222 does, so a balance found
+in standby (it answers `I2`, weighs only underload until On/Zero) is
+`down` "balance in standby: press On/Zero" and turns `ok` by itself
+once someone presses the button — its `recover()` sends `ON`, polls `SI`
+for a usable reading, and never zeroes (a vial may be on the pan).
+Underload / overload on any weigh is `down` too; the reading still goes
+to the caller.
+
 ### What the operator sees
 
 While the loop runs, AutoRecover keeps `device.msg` informative so the

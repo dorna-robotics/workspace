@@ -97,10 +97,16 @@ class SPX222Station:
     def recover(self) -> bool:
         """(Re)establish the TCP link. ALWAYS attempts the real connect
         — sim does not change this (device-guide §16). Rebuilds the
-        driver, connects, and verifies the balance actually answers
-        (``check_connection`` via the I2 query). Fires a
+        driver, connects, verifies the balance answers (``I2``), then
+        WAKES it (``SPX222.wake``): a balance in standby answers I2 but
+        weighs only underload until On/Zero is pressed — reported ok it
+        was a green scale whose first weigh failed (bna, 2026-10-01).
+        ok only when a usable reading came back; otherwise down, and
+        AutoRecover retries (the heartbeat nudges it — see ``ping``), so
+        the panel turns green by itself once the balance is on. Never
+        zeroes: a vial may be on the pan after a restart. Fires a
         ``recovering → result`` transition so the bus/UI always see an
-        event. Matches BK879BStation.recover."""
+        event."""
         self._set_state("recovering", "reconnecting")
         try:
             # Rebuild from scratch — a stale socket after a network drop
@@ -118,6 +124,14 @@ class SPX222Station:
             if not self._driver.check_connection():
                 self._set_state("down", "no response")
                 return False
+            r = self._driver.wake()
+            if not r.connected:
+                self._set_state("down", "no reading")
+                return False
+            if not r.usable:
+                self._set_state("down", "balance in standby: press On/Zero"
+                                if r.status == "underload" else r.status)
+                return False
             self._set_state("ok", "")
             return True
         except Exception as ex:
@@ -133,6 +147,33 @@ class SPX222Station:
             except Exception:
                 log.exception("SPX222Station[%s]: close raised", self.label)
         self._set_state("down", "released")
+
+    def ping(self) -> bool:
+        """Heartbeat opt-in (devices.DeviceAttachment). No I/O — a probe
+        must never share the socket with a run's weigh — so it answers
+        from the link alone: no socket → down. What it buys is the
+        heartbeat itself, which nudges AutoRecover while the station is
+        down (a balance found in standby, an underload); without it
+        nothing retried and the scale stayed red."""
+        if self._driver is None or not self._driver.is_connected():
+            self._set_state("down", "connection lost")
+            return False
+        return True
+
+    def zero(self) -> str:
+        """Zero the balance (MT-SICS Z) — an operator action, never done
+        on connect. Real only; returns what to show the operator."""
+        if self.simulation:
+            return "zeroed (sim)"
+        if self._driver is None or not self._driver.is_connected():
+            return "not connected"
+        reply = self._driver.zero()
+        if not reply:
+            self._set_state("down", "no reading")
+            return "no reply"
+        if reply.startswith("ES") or reply.startswith("ZI I") or reply.startswith("Z I"):
+            return "balance in standby: press On/Zero"
+        return "zeroed"
 
     def set_simulation(self, sim: bool) -> None:
         """Live sim/real flip — flag only (device-guide §16). The TCP
@@ -163,8 +204,7 @@ class SPX222Station:
             return None
         try:
             r = self._driver.weigh()
-            if not r.connected:
-                self._set_state("down", "no reading")
+            self._judge(r)
             return r
         except Exception as ex:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
@@ -180,12 +220,21 @@ class SPX222Station:
             return None
         try:
             r = self._driver.weigh_stable(timeout=timeout)
-            if not r.connected:
-                self._set_state("down", "no reading")
+            self._judge(r)
             return r
         except Exception as ex:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
+
+    def _judge(self, r: Reading) -> None:
+        """A reading the caller gets regardless — and what it says about
+        the device: silence is a dead link; underload / overload is a
+        fault the panel must show (the pan is off, a vial too heavy, the
+        balance asleep). Recovery (``recover`` → ``wake``) turns it ok."""
+        if not r.connected:
+            self._set_state("down", "no reading")
+        elif not r.usable:
+            self._set_state("down", r.status)
 
     def weight(self, stable: bool = True, timeout: float = 10.0,
                sim_return: float = 12.345) -> Optional[float]:

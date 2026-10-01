@@ -21,6 +21,13 @@ class Reading:
     def stable(self) -> bool:
         return self.status == "stable"
 
+    @property
+    def usable(self) -> bool:
+        """A weight to use: the link answered and the pan is in range.
+        Underload is also what a balance in STANDBY reports for every
+        SI, so this is the "awake and weighing" test too."""
+        return self.connected and self.status not in ("underload", "overload")
+
     def __str__(self) -> str:
         if not self.connected:
             return "DISCONNECTED"
@@ -173,6 +180,28 @@ class SPX222:
 
     def weigh(self) -> Reading:
         return self._parse_weight(self._query("SI"))
+
+    def wake(self, timeout: float = 10.0, poll: float = 0.5) -> Reading:
+        """Bring a balance out of standby and wait until it weighs.
+
+        A balance in standby still answers the identity query (I2) but
+        every SI reads underload until someone presses On/Zero. Sends
+        the Ohaus native ``ON`` (not MT-SICS: the reply is a raw
+        ``OK!`` line, read as-is), then polls SI every ``poll`` s until
+        the reading is usable (not underload / overload) or ``timeout``
+        runs out. Returns the last Reading — the caller decides."""
+        self._query("ON")
+        end = time.monotonic() + float(timeout)
+        r = self.weigh()
+        while not r.usable and r.connected and time.monotonic() < end:
+            time.sleep(poll)
+            r = self.weigh()
+        return r
+
+    def zero(self) -> str:
+        """MT-SICS Z — zero the balance. Valid only when awake: a balance
+        in standby answers ``ES``. Returns the raw reply ("" = silent)."""
+        return self._query("Z")
 
     def weigh_stable(self, timeout: float = 10.0) -> Reading:
         """Block until the balance reports a stable weight (MT-SICS S).

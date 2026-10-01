@@ -201,6 +201,11 @@ class ScaleSpx222:
         r = self.scale.weigh_stable()
         return None if r is None else str(r)
 
+    def zero(self):
+        """Operator button — zero the balance (MT-SICS Z). Never automatic:
+        a vial may be on the pan after a restart."""
+        return self.scale.zero()
+
     def reconnect(self):
         """Re-run the connection sequence (AutoRecover's path)."""
         return self.scale.recover()
@@ -227,6 +232,7 @@ class ScaleSpx222:
     def operator_actions(self) -> list[dict]:
         return [
             {"label": "Weigh",     "method": "weigh_once",     "icon": "activity"},
+            {"label": "Zero",      "method": "zero"},
             {"label": "Reconnect", "method": "reconnect",      "icon": "rotate",   "group": "conn"},
             {"label": "Release",   "method": "release_scale",  "icon": "link-off", "group": "conn"},
         ]
