@@ -762,6 +762,42 @@ class Core:
             pass
         return False
 
+    def arm_clear(self, padding: float = 10.0) -> bool:
+        """True when the arm stands OUTSIDE every collision box — the
+        start the motion planner accepts. False when a step left it
+        inside a station on purpose (a place with ``exit=False`` handing
+        over to the next action: the gripper on a vial's cap in the
+        decapper's jaws) — the condition ``motion_plan`` reports as
+        "START is inside the collision envelope". The same check, the
+        same scene, the same padding, so the two never disagree.
+
+        Used by a graceful Park (bt/engine.py, bt/behaviours.py): the
+        cleanup plans the arm out, so it starts only once the robot is
+        free — hand empty AND arm clear. One pose check, not a plan.
+        Without a motion planner there is nothing to ask: True."""
+        if getattr(self, "planner", None) is None:
+            return True
+        try:
+            scene, tool = [], []
+            if hasattr(self.workspace, "compute_collision_boxes"):
+                world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
+                scene = self._boxes_to_cubes(world_boxes)
+                tool = self._boxes_to_cubes(tool_boxes)
+            base_in_world = list(self.rail_base.pose(anchor="carriage"))
+            start = list(self._live_joints())
+            if len(start) > 5:                      # the planner's canonical j5
+                start[5] = self._wrap180(start[5])
+            self.planner.update(scene=scene, gripper=tool, base_in_world=base_in_world)
+            return bool(self.planner.check([start, start], rail_weight=0.004,
+                                           joint_weights=self.JOINT_WEIGHTS))
+        except Exception:
+            # An unanswerable check never blocks Park (it behaves as
+            # before: the hand alone decides) — and says so.
+            import logging
+            logging.getLogger(__name__).warning("Core.arm_clear: check failed — treated as clear",
+                                                exc_info=True)
+            return True
+
     def motor_enable(self):
         self.workspace.rt.motor(1)
 

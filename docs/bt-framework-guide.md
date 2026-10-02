@@ -332,10 +332,20 @@ overloading other attributes.
 
 **When Park actually starts.** The engine keeps ticking after the
 click. Leaves that have not started refuse to start (`RecipeAction._park_hold`),
-except a robot leaf while the hand is full — the item must be put down.
-The cleanup subtree is swapped in the moment no robot leaf is in flight
-(started and not yet reported; the whole tree, every branch of a
-parallel phase) and the hand is empty. Leaves that do not use the robot
+except a robot leaf while the robot is not FREE. The robot is free when
+the hand holds nothing (`Core.tool_holds_load`) AND the arm stands clear
+of every collision box (`Core.arm_clear` — the motion planner's own
+start check, ~30 ms, asked only while parking and between actions).
+Not free means the item must be put down, or the arm was left inside a
+station by a handover the next action completes — a place with
+`exit=False` (bna's `PlaceInDecapper` seats the vial and keeps the
+gripper on its cap for `Decap`; in the model the hand is empty, the arm
+is in the decapper). The cleanup subtree is swapped in the moment no
+robot leaf is in flight (started and not yet reported; the whole tree,
+every branch of a parallel phase) and the robot is free — before this
+rule a Park clicked between `PlaceInDecapper` and `Decap` started the
+cleanup with the arm locked to a clamped vial, and the planner refused
+every path out (bna bench, 2026-10-01). Leaves that do not use the robot
 (`resource="shaker"`, `"rest"`, `"vortex"` — `uses_robot()` comes from the
 action's `resource`) never delay the park: their device op finishes on its
 own thread. So a Park clicked mid-cap parks right after the vial is back
@@ -1523,8 +1533,8 @@ something chosen. A view that fails to load falls back to the list, with a toast
   5–8 — a regroup would move tubes that may already sit on the
   shaker.
 * **Park's own rule.** Park keeps its exception (a robot action may
-  start while the gripper is full, so Park's wait for an empty hand
-  can end). Replan never waits for an empty hand, so it needs none:
+  start while the robot is not free — the hand full or the arm inside a
+  station — so Park's wait can end). Replan never waits for an empty hand, so it needs none:
   the rebuilt plan's next step for a held item is its place.
 
 #### The operator's part

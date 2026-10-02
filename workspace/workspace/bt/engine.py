@@ -254,7 +254,7 @@ class BTEngine:
                     # the engine sat here without ticking while the robot
                     # stood still with a vial in the gripper (bna bench,
                     # 2026-09-21).
-                    if not self._robot_workers_alive() and not self._tool_holds_load():
+                    if not self._robot_workers_alive() and self._robot_free():
                         if not self._enter_cleanup():
                             # nothing to clean (no trigger="park" actions)
                             return py_trees.common.Status.SUCCESS
@@ -476,6 +476,20 @@ class BTEngine:
     def _runtime_call(self, name: str, *args):
         fn = getattr(self._runtime, name, None)
         return fn(*args) if callable(fn) else None
+
+    def _robot_free(self) -> bool:
+        """The robot is free for Park's cleanup: the hand holds nothing
+        AND the arm is clear of every station (``Core.arm_clear`` — the
+        planner's own start check). Asked only while parking, between
+        actions (no robot worker alive): never mid-motion."""
+        if self._tool_holds_load():
+            return False
+        core = getattr(self._runtime, "robot_api", None)
+        fn = getattr(core, "arm_clear", None)
+        try:
+            return bool(fn()) if callable(fn) else True
+        except Exception:
+            return True
 
     def _tool_holds_load(self) -> bool:
         """True if the robot's mounted tool is holding a picked item.

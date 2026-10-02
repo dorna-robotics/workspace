@@ -169,9 +169,12 @@ class RecipeAction(WorkspaceBehaviour):
           mid-way finish, then the engine rebuilds the plan and the new
           tree's leaves start (bt-framework-guide §8.6).
         * **Park**: yes while the operator has clicked Park — unless the
-          hand is full and this leaf uses the robot, because the item
-          must be put down first (Park waits for an empty hand before
-          its cleanup; without this exception it would wait forever).
+          robot is not free yet and this leaf uses the robot: the hand
+          holds an item (it must be put down first), or the arm stands
+          inside a station (a handover ``exit=False`` — the next action
+          takes it out; ``Core.arm_clear``). Park's cleanup starts only
+          once the robot is free; without this exception it would wait
+          forever.
 
         Lives at the leaf: a Sequence starts its next child inside the
         tick its predecessor finished in, before the engine can look."""
@@ -183,13 +186,17 @@ class RecipeAction(WorkspaceBehaviour):
         p = getattr(rt, "parking", None)
         if not (p() if callable(p) else p):
             return False
+        if not self.uses_robot():
+            return True
         core = getattr(rt, "robot_api", None)
-        fn = getattr(core, "tool_holds_load", None)
+        held = getattr(core, "tool_holds_load", None)
+        clear = getattr(core, "arm_clear", None)
         try:
-            hand_full = bool(fn()) if callable(fn) else False
+            busy = (bool(held()) if callable(held) else False) or \
+                   (not clear() if callable(clear) else False)
         except Exception:
-            hand_full = False
-        return not (hand_full and self.uses_robot())
+            busy = False
+        return not busy
 
     # ── Override these in subclasses ────────────────────────────────────
 
