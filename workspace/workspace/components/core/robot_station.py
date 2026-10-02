@@ -204,7 +204,7 @@ class RobotStation:
                     self._set_state("down", f"connection lost after {reason or 'expected-alarm window'}")
                     self._fire_connection_lost()
                 elif alarm_code:
-                    self._set_state("down", f"robot alarm (code {alarm_code})")
+                    self._set_state("down", f"robot alarm (code {alarm_code}) — fix the cause, then Disable Alarm (Operator Controls)")
                 else:
                     self._set_state("ok", "")
 
@@ -251,7 +251,7 @@ class RobotStation:
                 if alarm_code:
                     self._set_state(
                         "down",
-                        f"robot in alarm state (code {alarm_code}) — clear on the robot",
+                        f"robot alarm (code {alarm_code}) — fix the cause, then Disable Alarm (Operator Controls)",
                     )
                     return False
             self._set_state("ok", "")
@@ -501,7 +501,7 @@ class RobotStation:
                 if station._expected_alarm_depth <= 0:
                     alarm_code = station._read_alarm_state()
                     if alarm_code:
-                        station._set_state("down", f"robot alarm (code {alarm_code})")
+                        station._set_state("down", f"robot alarm (code {alarm_code}) — fix the cause, then Disable Alarm (Operator Controls)")
                 # else: motion failed but robot is healthy — don't flip
                 # device state.
             elif (

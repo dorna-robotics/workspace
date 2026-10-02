@@ -1286,7 +1286,7 @@ class Runtime:
             # fire on the rising edge of critical-down. Anything
             # stronger here would double-fire for the same event.
             self.step(
-                f"Robot alarm (code {int(result)}). Clear the alarm on the robot, then click Resume.",
+                f"Robot alarm (code {int(result)}). Fix the cause, press Disable Alarm (Operator Controls), then Resume.",
                 level="info",
             )
             self.pause()

@@ -1200,7 +1200,13 @@ function renderDevicesPanel() {
       // which wrongly conflated "authored sim" with "no hardware to
       // recover" — e.g. a workspace scale with an ip set but
       // simulation:true.)
-      if (online) {
+      const clear = _robotAlarmAction(d);
+      if (clear) {
+        // A robot ALARM is not a link fault: Recover reconnects and still
+        // finds it. The fix is the Operator Controls action that clears
+        // it — offered here, the same call and the same label.
+        control = `<button class="btn btn-sm btn-primary" data-device-act="clear-alarm">${escHtml(clear.label)}</button>`;
+      } else if (online) {
         control = `<button class="btn btn-sm btn-primary" data-device-act="recover">Recover</button>`;
       } else {
         control = `<span class="device-pill">offline</span>`;
@@ -1248,10 +1254,28 @@ function _wireDevicesPanelDelegation() {
   for (const id of ["devicesList", "pendantDevicesList"]) _wireDeviceListClicks($(id));
 }
 
+// A robot down because of an ALARM (RobotStation: "robot alarm (code N)…")
+// and the Operator Controls action that clears it (core's alarm_disable,
+// as the runtime declares it) — or null: not an alarm, or no such action.
+function _robotAlarmAction(d) {
+  if (!d || d.kind !== "dorna" || (d.state || "down") !== "down") return null;
+  if (!/alarm/i.test(d.msg || "")) return null;
+  return _opActions.find(a => a.method === "alarm_disable") || null;
+}
+
 function _wireDeviceListClicks(el) {
   if (!el || el.dataset.delegated === "1") return;
   el.dataset.delegated = "1";
   el.addEventListener("click", async (ev) => {
+    // The robot's alarm button: the Operator Controls action itself.
+    const clearBtn = ev.target.closest('[data-device-act="clear-alarm"]');
+    if (clearBtn) {
+      ev.stopPropagation();
+      const d = _devices.get(clearBtn.closest(".device-row")?.getAttribute("data-device-id"));
+      const a = d && _robotAlarmAction(d);
+      if (a) runOperatorAction(a.component, a.method);
+      return;
+    }
     // Recover button takes priority + cancels row-click open-modal.
     const recoverBtn = ev.target.closest('[data-device-act="recover"]');
     if (recoverBtn) {
@@ -1365,8 +1389,16 @@ function _renderDeviceModalBody(d) {
     foot.appendChild(pill);
   } else if (state !== "ok") {
     // Recover is orthogonal to sim — shown for any down device whose
-    // publisher is online, regardless of sim. Mirrors the inline row.
-    if (online) {
+    // publisher is online, regardless of sim. Mirrors the inline row —
+    // a robot alarm offers the Operator Controls action that clears it.
+    const clear = _robotAlarmAction(d);
+    if (clear) {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-primary";
+      btn.textContent = clear.label;
+      btn.addEventListener("click", () => runOperatorAction(clear.component, clear.method));
+      foot.appendChild(btn);
+    } else if (online) {
       const btn = document.createElement("button");
       btn.className = "btn btn-primary";
       btn.textContent = "Recover";
