@@ -26,10 +26,11 @@ projects/my_project/
 ├── data/                # operator INPUT files — uploads, manifests (git-ignored)
 ├── results/             # one folder per run — records.jsonl / .csv (git-ignored)
 ├── rec/                 # replay recordings (git-ignored)
-└── captures/            # IMAGES the detections keep — one per run (git-ignored)
+├── captures/            # IMAGES the detections keep — one per run (git-ignored)
+└── counts/              # rt.count's file (launch.yaml counts:) — totals across every run (git-ignored)
 ```
 
-The last four are DATA folders (§3 "The project's folders"): created
+The last five are DATA folders (§3 "The project's folders"): created
 on demand, never checked in, each listed in `launch.yaml`'s `folders:`. `captures/`
 is where a run's pictures land: a detection whose preset sets
 `display.client_save_img` / `client_save_img_roi` to a relative path
@@ -100,6 +101,7 @@ Top-level keys:
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
 | `folders` | *Optional.* THE PROJECT'S FOLDERS — one entry each, all four fields written out: `{key, label, path, read_only}`. The list is the file browser: one tab per entry, in list order, `label` as the tab's text; the Files button opens on the first. `path` is relative to the project folder (`../x` shares a parent's) or absolute. `read_only: true` = browse, preview and download only — upload, new folder and delete are refused by the server; it is read on every request, so flipping it takes effect on the next open. Four keys mean something to the platform: `results` (one folder per run, `rt.record`), `data` (operator input files — a file parameter's Open picks here), `captures` (the images detections keep — a preset's relative `display.client_save_img` lands here) and `rec` (replay recordings). Any other key is just a tab (e.g. `{key: model, label: Models, path: model, read_only: true}`). A platform key left out still works at its default path (`<project>/<key>`), without a tab — said once at launch. No `folders:` key at all = the platform's four as tabs, at their defaults. The old `data_dir` / `results_dir` / `rec_dir` / `captures_dir` keys are refused. See "The project's folders". |
+| `counts` | *Optional.* The file `rt.count` keeps its totals in, relative to the project (`counts/counts.json`; `../counts/counts.json` to share one bench's totals between sibling projects). No key: `rt.count` totals stay in memory only, said once. Explicit and separate from `folders:` — a folder tab never decides where counts are written. See "`rt.count(name, **amounts)`". |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
 | `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase whose items overlap declares the order across them as its `cycle` (`Phase.group`, `Phase.cycle`; bt-framework-guide §13 "The cycle"). See bt-framework-guide.md §13. |
@@ -404,6 +406,78 @@ A script without a server (a dev notebook) sets `rt.record_dir` itself
 and calls `rt.record_drain()` once at the end; otherwise records stay in
 memory and `rt.records()` / `rt.record_csv()` still answer.
 
+### `rt.count(name, **amounts)` — the project's counters
+
+`rt.record` is per run, per item. `rt.count` is the project's running
+totals ACROSS runs — how many doses, how much of each reagent, how many
+tubes moved — kept in one file and never reset by a run, a
+restart or a `git pull`. The file is named explicitly in `launch.yaml`,
+relative to the project:
+
+```yaml
+counts: counts/counts.json     # rt.count's totals (+ counts.json.bak beside it)
+```
+
+No `counts:` key: the totals stay in memory and nothing is written —
+said once, at the first `rt.count`. A `folders:` entry over the same
+folder only gives it a file-browser tab; it has no say in where counts
+go. Projects sharing a bench's totals point at one file
+(`counts: ../counts/counts.json`) — one of them runs at a time; two at
+once would each save their own totals over the other's.
+
+```python
+rt.count("dose.MeCl", n=1, ul=3000)     # one more MeCl dose, 3000 µL more
+rt.count("tube.moved", n=1)
+```
+
+Rules, and the reasons behind them:
+
+* **Explicit.** Every keyword adds its value to the field of the same
+  name, and nothing else changes — no implicit "+1": `n=1` is written
+  out. A call with no amounts adds nothing. The name is any text; the
+  dot is only a grouping convention.
+* **Amounts are finite numbers ≥ 0** — a counter only grows. A call with
+  a bad amount is dropped WHOLE, never half-applied, with one log line
+  per reason.
+* **Count where it happened** — the action that did it, after it
+  succeeded (a dose after the pump accepted it), like `rt.record`. The
+  platform counts what it is told: a simulated run counts too, unless
+  the project guards the call.
+* **Never blocks.** `rt.count` is a few µs in memory; the save (an
+  fsync on the SD card, ~5–30 ms measured) runs on the server's own
+  worker thread — never the workflow thread, never the IO loop — at
+  most every `Runtime.COUNT_SAVE_S` (5 s) while a run counts, at once
+  when a run ends, and at exit. A save still running skips the next
+  tick instead of queueing.
+* **Missing is not an error.** No folder at launch: created at the first
+  save. No file: the totals start from zero. Folder or file deleted
+  mid-run: written again from the totals in memory, which always hold
+  everything. Not writable: counting goes on in memory, said once, and
+  every next save retries.
+* **Crash-safe.** Each save is a temp file, fsync, the old file kept as
+  `<file>.bak`, then an atomic rename. At launch the totals are loaded
+  from the file, else from the backup (one save behind); if both are
+  unreadable the bad file is set aside as `<file>.corrupt-<stamp>`,
+  never overwritten, and counting starts from zero — said once in the
+  log.
+
+```json
+{"updated": "2026-10-02T11:32:13",
+ "counts": {"dose.MeCl": {"n": 412, "ul": 1236000}, "tube.moved": {"n": 1650}}}
+```
+
+**`run.time` — the one counter the platform keeps itself**, because
+only it sees every way a run ends (done, error, kill, operator park):
+one explicit `count("run.time", n=1, s=<seconds>)` in `Runtime._set_state`
+when the run ends — the seconds are the GUI's "Up", start to end,
+paused time included. A run cut by a power loss never reaches its end,
+so its time is not counted.
+
+`rt.counts()` returns the totals (a copy). Keep the file out of the
+project's git. A script without a server sets `rt.count_file` itself —
+the totals already there are loaded, and anything counted before is
+added on top — and calls `rt.count_drain(force=True)` at the end.
+
 
 ### The project's folders, and the file browser
 
@@ -416,6 +490,7 @@ folders:                          # the project's folders — file-browser tabs,
   - {key: captures, label: Captures,   path: ../captures, read_only: false}
   - {key: data,     label: Data,       path: data,        read_only: false}
   - {key: rec,      label: Recordings, path: rec,         read_only: false}
+  - {key: counts,   label: Counts,     path: counts,      read_only: false}   # a plain tab — counts: says the file
   - {key: model,    label: Models,     path: ../model,    read_only: true}
 ```
 

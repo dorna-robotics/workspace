@@ -104,6 +104,17 @@ class Runtime:
         # the project dir; a script sets it itself. None = memory only.
         self.record_dir: Optional[str] = None
 
+        # Project counters (rt.count) — totals that outlive runs and
+        # upgrades, kept in the file launch.yaml's ``counts:`` names.
+        # Same discipline as rt.record: the workflow thread only adds in
+        # memory; the server's drain writes the file.
+        self._counts: dict = {}           # name -> {field: total}
+        self._count_dirty = False
+        self._count_saved_at = 0.0
+        self._count_dropped: set = set()
+        self._count_file: Optional[str] = None
+        self._count_io = threading.Lock()   # one save at a time (drain thread vs exit)
+
         # start-token handshake
         self._start_token = 0
         self._seen_start_token = 0
@@ -229,7 +240,11 @@ class Runtime:
         ):
             if self.run_started_at and not self.run_finished_at:
                 self.run_finished_at = time.time()
+            if self.run_started_at:
+                # The run's own clock — the GUI's "Up": start to end, paused included.
+                self.count("run.time", n=1, s=round(self.run_finished_at - self.run_started_at, 3))
             self._rec_finalize = True
+            self._count_saved_at = 0.0        # the run's counts are written on the next drain
             self._fire(self.on_run_end, new_state.value)
 
         self._cv.notify_all()
@@ -649,6 +664,176 @@ class Runtime:
                     fp.write(csv_text)
         except OSError as ex:
             self._rec_warn(run_dir, f"cannot write run records: {ex}")
+
+    # ── Project counters (rt.count) ──────────────────────────────────
+    #: At most one write of counts.json per this many seconds while a run
+    #: counts — the file lives on the Pi's SD card. Run end and process
+    #: exit write at once (count_drain(force=True)).
+    COUNT_SAVE_S = 5.0
+
+    def count(self, name: str, **amounts: Any) -> None:
+        """Add to a project counter — totals that survive runs, restarts
+        and upgrades, in the file launch.yaml's ``counts:`` names.
+
+        EXPLICIT: every keyword adds its value to the field of the same
+        name, and nothing else changes — there is no implicit "+1".
+
+            rt.count("dose.MeCl", n=1, ul=3000)    # one more dose, 3000 µL more
+            rt.count("tube.moved", n=1)
+
+        ``name`` is any text (the dot is only a convention for grouping).
+        Amounts are numbers ≥ 0 — a counter only grows. A call with an
+        invalid amount is dropped WHOLE (never half-applied), with one
+        log line per reason.
+
+        Count what really happened, where it happened — the action that
+        did it, after it succeeded. The platform counts what it is told:
+        a simulated run counts too unless the project says otherwise.
+
+        Never blocks: memory only from the workflow thread; the server's
+        drain writes the file. With no file set (no ``counts:`` in
+        launch.yaml) the totals stay in memory only — said once.
+        """
+        key = str(name)
+        if not key:
+            self._count_warn("", "empty counter name")
+            return
+        add: dict = {}
+        for f, v in amounts.items():
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                self._count_warn(key, f"{f}={v!r} is not a number")
+                return
+            if v != v or v in (float("inf"), float("-inf")) or v < 0:
+                self._count_warn(key, f"{f}={v!r} — amounts are finite and ≥ 0")
+                return
+            add[str(f)] = v
+        if not add:
+            return
+        if self._count_file is None and "no file" not in self._count_dropped:
+            self._count_dropped.add("no file")
+            print("[count] no counts file (launch.yaml has no counts: key) — "
+                  "rt.count totals stay in memory only")
+        with self._lock:
+            row = self._counts.setdefault(key, {})
+            for f, v in add.items():
+                row[f] = row.get(f, 0) + v
+            self._count_dirty = True
+
+    def counts(self) -> dict:
+        """Every counter's totals — a detached copy."""
+        with self._lock:
+            return json.loads(json.dumps(self._counts))
+
+    @property
+    def count_file(self) -> Optional[str]:
+        """The file rt.count's totals live in (launch.yaml ``counts:``).
+        Setting it loads the totals already there — the counters
+        continue, they never restart. Set by RuntimeServer from the
+        project; a script sets it itself and calls
+        ``count_drain(force=True)`` at the end."""
+        return self._count_file
+
+    @count_file.setter
+    def count_file(self, path: Optional[str]) -> None:
+        loaded = self._count_load(path) if path else {}
+        with self._lock:
+            # Anything counted before the file was known adds on top.
+            for name, row in self._counts.items():
+                dst = loaded.setdefault(name, {})
+                for f, v in row.items():
+                    dst[f] = dst.get(f, 0) + v
+            self._counts = loaded
+            self._count_dirty = bool(path) and self._count_dirty
+            self._count_file = path
+
+    def _count_load(self, main: str) -> dict:
+        """The counts file, else its ``.bak`` — a power cut between the
+        two renames of a save leaves only the backup. Neither readable:
+        the bad file is set aside (never overwritten) and counting starts
+        from zero, said once."""
+        for path in (main, main + ".bak"):
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path) as fp:
+                    data = json.load(fp)
+                counts = data.get("counts")
+                if isinstance(counts, dict) and all(isinstance(r, dict) for r in counts.values()):
+                    if path != main:
+                        print(f"[count] {main} unreadable — continuing from {path}")
+                    return counts
+            except (OSError, ValueError, AttributeError):
+                pass
+        if os.path.exists(main):
+            bad = f"{main}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+            try:
+                os.replace(main, bad)
+            except OSError:
+                pass
+            print(f"[count] {main} and its backup are unreadable — set aside as {bad}; "
+                  f"counting from zero")
+        return {}
+
+    def count_drain(self, force: bool = False) -> None:
+        """Write the counts file when something was counted — at most
+        once per COUNT_SAVE_S, or now with ``force`` (run end, exit). The
+        write is crash-safe: a temp file, fsync, the old file kept as
+        ``<file>.bak``, then an atomic rename.
+
+        Blocking file IO (an fsync on the SD card: ~5-30 ms) — call it
+        from a thread of its own, never the workflow thread or the
+        server's IO loop (RuntimeServer runs it on a worker). The
+        folder is created when missing; a missing or deleted file is
+        simply written again from the totals in memory."""
+        with self._count_io:
+            self._count_save(force)
+
+    def _count_save(self, force: bool) -> None:
+        with self._lock:
+            if not self._count_dirty or not self._count_file:
+                return
+            if not force and time.time() - self._count_saved_at < self.COUNT_SAVE_S:
+                return
+            main = self._count_file
+            blob = json.dumps({"updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                               "counts": self._counts}, indent=1, sort_keys=True)
+            self._count_dirty = False
+            self._count_saved_at = time.time()
+        folder = os.path.dirname(main) or "."
+        tmp = main + ".tmp"
+        try:
+            fresh = not os.path.isdir(folder)
+            os.makedirs(folder, exist_ok=True)
+            if fresh:
+                from workspace.project_dirs import hand_back
+                hand_back(folder)
+            with open(tmp, "w") as fp:
+                fp.write(blob)
+                fp.flush()
+                os.fsync(fp.fileno())
+            if os.path.exists(main):
+                os.replace(main, main + ".bak")
+            os.replace(tmp, main)
+            dfd = os.open(folder, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+            from workspace.project_dirs import hand_back
+            hand_back(main)
+        except OSError as ex:
+            with self._lock:
+                self._count_dirty = True          # try again next drain
+            why = f"cannot write {main}: {ex}"
+            if why not in self._count_dropped:
+                self._count_dropped.add(why)
+                print(f"[count] {why} — totals kept in memory, retried on the next save")
+
+    def _count_warn(self, key: str, why: str) -> None:
+        if why in self._count_dropped:
+            return
+        self._count_dropped.add(why)
+        print(f"[count] dropped {key!r}: {why} (further of this kind suppressed)")
 
     def _clear_records(self) -> None:
         # Anything the last run left unwritten travels with its own run

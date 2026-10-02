@@ -44,7 +44,8 @@ Listing the class in the project's `ROUTE` (or a phase's `route`) is what makes 
 
     Canonical reference: `examples/feeder/actions.py:Start/Park/OperatorPark` — every example follows the same shape.
 7. **A device read writes its audit row where the value is produced.** `rt.record(item_id, weight_g=grams)` right after the valid reading, keyed by the project's identity for the item (an L-number, a slot) — never a summary at the end. The runtime persists it and serves the CSV; project-guide.md §3 "`rt.record`".
-8. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
+8. **A counter is counted where the thing happened, explicitly.** `rt.count("dose.MeCl", n=1, ul=vol)` right after the step succeeded — every keyword adds its value, nothing is implicit (no hidden +1). Totals across runs land in the file `launch.yaml`'s `counts:` names; the platform itself counts only `run.time` at run end. project-guide.md §3 "`rt.count`".
+9. **Use `_ctx_all_objects()`** in `eff()` if you need to seed facts for the FULL object list, not just the current slice — bt-framework-guide.md §12.
 
 ## Canonical doc references
 

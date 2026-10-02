@@ -239,6 +239,9 @@ core_path.json
 runs/
 results/
 examples/*/results/
+# rt.count's counters (the file launch.yaml's counts: names — totals
+# across every run; data, not source, so a pull never resets them).
+counts/
 # Operator input files — uploaded through the GUI's file browser, never
 # source (data_dir in launch.yaml, defaults to data/).
 data/

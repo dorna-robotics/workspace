@@ -851,6 +851,26 @@ def _record_flush(rt: Runtime) -> None:
         _broadcast_dual(set(), "", "record_state", delta)
 
 
+# rt.count's saves run on ONE worker thread — an fsync on the SD card is
+# milliseconds, and the IO loop (every websocket) must never wait on it.
+_count_worker = {"pool": None, "busy": None}
+
+
+def _count_flush(rt: Runtime) -> None:
+    """Hand ``rt.count``'s save (Runtime.count_drain) to the worker; a
+    save still running means this tick is skipped, never queued."""
+    w = _count_worker
+    if w["busy"] is not None and not w["busy"].done():
+        return
+    if w["pool"] is None:
+        from concurrent.futures import ThreadPoolExecutor
+        w["pool"] = ThreadPoolExecutor(max_workers=1, thread_name_prefix="count")
+    try:
+        w["busy"] = w["pool"].submit(rt.count_drain)
+    except RuntimeError:
+        pass                                   # interpreter shutting down
+
+
 class StatusWebSocket(tornado.websocket.WebSocketHandler):
     """WS /ws/status — push RTStatus snapshots on every state transition.
 
@@ -1955,6 +1975,14 @@ class RuntimeServer:
             _dirs = {_f.key: _f.path for _f in _folders}
             _record_dir = str(_dirs["rec"])
             self.rt.record_dir = str(_dirs["results"])
+            # rt.count's file — launch.yaml ``counts:``, explicit, relative
+            # to the project. None: totals stay in memory (Runtime.count).
+            _launch = yaml.safe_load((_proj / "launch.yaml").read_text()) or {}
+            _counts = _launch.get("counts") or None
+            if _counts is not None:
+                _cf = Path(str(_counts)).expanduser()
+                self.rt.count_file = str(_cf if _cf.is_absolute() else (_proj / _cf).resolve())
+                atexit.register(lambda: self.rt.count_drain(force=True))
         # The folder served is the DECLARED pendant screen's own — as
         # the orchestrator serves ``setup:`` from its file's folder — so
         # a project may name a screen outside its folder (a sibling's:
@@ -2007,6 +2035,12 @@ class RuntimeServer:
         ).start()
         tornado.ioloop.PeriodicCallback(
             lambda: _record_flush(self.rt), OP_FLUSH_MS
+        ).start()
+        # rt.count: counts.json at most every Runtime.COUNT_SAVE_S while
+        # a run counts, at once after a run ends; never on the IO loop's
+        # critical path for longer than one small file write.
+        tornado.ioloop.PeriodicCallback(
+            lambda: _count_flush(self.rt), OP_FLUSH_MS
         ).start()
 
         # Autoreload is a DEV tool, off unless asked: it re-execs this
