@@ -998,6 +998,7 @@ function makeRenderer(opts, mountEl) {
         return mesh;
       }
       function clearCollisionMeshesFor(key) {
+        collisionSigByKey.delete(key);     // or the next identical data would be skipped as "unchanged"
         const e = collisionMeshesByKey.get(key);
         if (!e) return;
         for (const m of e.world)  { collisionWorldGroup.remove(m);  m.geometry.dispose(); m.material.dispose(); }
@@ -1017,13 +1018,36 @@ function makeRenderer(opts, mountEl) {
         return s;
       }
 
+      // A moving box (the robot's own, a camera on the wrist) keeps its
+      // mesh: when the boxes are the same set — same count, same scales —
+      // only the poses are written. Rebuilding geometry every frame was
+      // the viewer's own stutter with the boxes shown.
+      function moveCollisionMeshes(meshes, boxes) {
+        if (!meshes || meshes.length !== boxes.length) return false;
+        for (let i = 0; i < boxes.length; i++) {
+          const b = boxes[i], m = meshes[i];
+          if (!b?.pose || !b?.scale) return false;
+          const g = m.geometry.parameters;
+          if (g.width !== b.scale[0] || g.height !== b.scale[1] || g.depth !== b.scale[2]) return false;
+        }
+        for (let i = 0; i < boxes.length; i++) {
+          const [x,y,z,rx,ry,rz] = boxes[i].pose, m = meshes[i];
+          m.position.set(x,y,z);
+          m.quaternion.copy(rodriguesDegToQuaternion(rx,ry,rz));
+        }
+        return true;
+      }
       function updateCollisionMeshesFor(key, worldBoxes, flangeBoxes, meta) {
         // Skip rebuild if collision data hasn't changed
         const newSig = collisionSig(worldBoxes) + ";" + collisionSig(flangeBoxes);
         if (collisionSigByKey.get(key) === newSig) return;
         collisionSigByKey.set(key, newSig);
 
+        const have = collisionMeshesByKey.get(key);
+        if (have && moveCollisionMeshes(have.world, worldBoxes||[]) && moveCollisionMeshes(have.flange, flangeBoxes||[])) return;
+
         clearCollisionMeshesFor(key);
+        collisionSigByKey.set(key, newSig);
         const entry = { world: [], flange: [] };
         for (const box of (worldBoxes||[])) {
           if (!box?.pose || !box?.scale) continue;
@@ -1273,12 +1297,13 @@ function makeRenderer(opts, mountEl) {
         if (spec.solidName)     root.userData.solidName     = spec.solidName;
         if (spec.typeName)      root.userData.typeName      = spec.typeName;
         if (spec.type)          root.userData.typeName      = spec.type;
+        // No collision keys = no box information in this message (the
+        // Display sends boxes only while they are shown; a snapshot then
+        // carries both arrays for every solid, empty ones included).
         if ("collisionWorld" in spec || "collisionFlange" in spec) {
           updateCollisionMeshesFor(name, spec.collisionWorld||[], spec.collisionFlange||[], {
             componentName: root.userData.componentName, solidName: root.userData.solidName
           });
-        } else {
-          clearCollisionMeshesFor(name);
         }
       }
 

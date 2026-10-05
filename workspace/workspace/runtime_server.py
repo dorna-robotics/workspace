@@ -152,6 +152,24 @@ def _compact_delta(payload: dict, state: dict) -> dict:
     return out
 
 
+def _nodelay_handler(sio_server):
+    """The socket.io websocket handler with Nagle OFF. Tornado leaves it on
+    and python-socketio never turns it off: the small ack of a frame then
+    waits ~40 ms behind the frame's own echo for the peer's delayed TCP ACK,
+    which capped the Display at ~23 frames/s whatever the frame cost."""
+    base = socketio.get_tornado_handler(sio_server)
+
+    class NoDelayHandler(base):
+        def open(self, *args, **kwargs):
+            try:
+                self.set_nodelay(True)
+            except Exception:
+                pass
+            return super().open(*args, **kwargs)
+
+    return NoDelayHandler
+
+
 @sio.event
 async def upstream_update(sid, payload):
     if _recorder["fp"] is not None:
@@ -159,7 +177,7 @@ async def upstream_update(sid, payload):
         if delta:
             _record_line({"t": round(time.time() - _recorder["t0"], 4), "u": delta})
     merge_into_state(world_state, payload)
-    await sio.emit("scene_update", payload)   # back to payload
+    await sio.emit("scene_update", payload, skip_sid=sid)   # every viewer, not the sender
     return "ok"
 
 
@@ -1851,7 +1869,7 @@ class RuntimeServer:
 
         routes = [
             # realtime (viewer)
-            (r"/socket.io/", socketio.get_tornado_handler(sio)),
+            (r"/socket.io/", _nodelay_handler(sio)),
             (r"/record/(start|stop|status)", RecordHandler),
 
             # static assets (meshes/textures/etc) — project-local first, library fallback

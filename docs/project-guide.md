@@ -256,7 +256,10 @@ and every planner update passes all three. The viewer's collision-box
 toggle also draws the robot's own boxes, every URDF link box where the
 planner places it, in yellow next to the scene's robot (components:
 red, on the flange: blue): the way to see where collision is really
-checked.
+checked. The Display computes boxes only while a viewer shows them —
+a frame with them hidden (the usual case) is one pose pass, a few ms
+even on a 250-solid bench — and resends every solid's boxes in a
+snapshot when they are turned on.
 
 ---
 

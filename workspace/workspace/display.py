@@ -1,6 +1,5 @@
 # workspace/display.py
 import time
-import json
 import threading
 import socketio
 
@@ -259,14 +258,9 @@ class Display:
         return out
 
     def _build_snapshot(self):
-        """meshUrl + pose + visible (+ anchors, names) for each solid."""
-        try:
-            poses = self.workspace.compute_world_poses()
-        except Exception as e:
-            _log_once("poses_snapshot", f"compute_world_poses() failed in snapshot: {e}")
-            poses = {}
-
-        world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
+        """meshUrl + pose + visible (+ anchors, names) for each solid; the
+        collision boxes too while a viewer shows them."""
+        poses, world_boxes_by_solid, flange_boxes_by_solid = self._frame_data("snapshot")
 
         batch = {}
         try:
@@ -296,11 +290,12 @@ class Display:
                     if anchors:
                         item["anchors"] = anchors
 
-                    key_boxes = (comp_name, solid_name)
-                    # Always include collision arrays so consumers can clear
-                    # stale visuals when a solid no longer has any boxes.
-                    item["collisionWorld"] = world_boxes_by_solid.get(key_boxes, [])
-                    item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
+                    if self.collision_shown:
+                        # Both arrays, empty included, so the viewer clears
+                        # the boxes of a solid that no longer has any.
+                        key_boxes = (comp_name, solid_name)
+                        item["collisionWorld"] = world_boxes_by_solid.get(key_boxes, [])
+                        item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
             batch.update(self._robot_box_items())
@@ -325,15 +320,10 @@ class Display:
             return None
 
     def _build_pose_frame(self):
-        """Only pose + visible; DO NOT delete meshUrl. Delta: skip unchanged objects."""
-        try:
-            poses = self.workspace.compute_world_poses()
-            _log_clear("poses_frame", "world poses recovered")
-        except Exception as e:
-            _log_once("poses_frame", f"compute_world_poses() failed in frame: {e}")
-            poses = {}
-
-        world_boxes_by_solid, flange_boxes_by_solid = self._collision_boxes_by_solid()
+        """Only pose + visible (+ the boxes, while shown); DO NOT delete
+        meshUrl. Delta: skip unchanged objects."""
+        poses, world_boxes_by_solid, flange_boxes_by_solid = self._frame_data("frame")
+        shown = self.collision_shown
 
         out = {}
         total = 0
@@ -347,26 +337,29 @@ class Display:
                 total += 1
                 p = poses.get(key, [0, 0, 0, 0, 0, 0])
 
-                key_boxes = (comp_name, solid_name)
-                cw = world_boxes_by_solid.get(key_boxes, [])
-                cf = flange_boxes_by_solid.get(key_boxes, [])
+                if shown:
+                    key_boxes = (comp_name, solid_name)
+                    cw = world_boxes_by_solid.get(key_boxes, [])
+                    cf = flange_boxes_by_solid.get(key_boxes, [])
+                    col_sig = (len(cw), len(cf))
+                else:
+                    cw = cf = None
+                    col_sig = None
 
                 # Delta check: skip if pose and collision unchanged.
                 # Locked — send_snapshot (workflow thread) reads + clears
                 # this cache as its delete-diff base.
                 pose_t = tuple(p) if isinstance(p, list) else p
-                col_sig = (len(cw), len(cf))
                 with self._state_lock:
                     prev = self._last_sent.get(key)
                     if prev is not None and prev[0] == pose_t and prev[1] == col_sig:
                         continue  # unchanged — skip
                     self._last_sent[key] = (pose_t, col_sig)
-                out[key] = {
-                    "pose": p,
-                    "visible": True,
-                    "collisionWorld": cw,
-                    "collisionFlange": cf,
-                }
+                item = {"pose": p, "visible": True}
+                if shown:
+                    item["collisionWorld"] = cw
+                    item["collisionFlange"] = cf
+                out[key] = item
 
         # the robot's own boxes ride the frame too (they move with the joints)
         for key, item in self._robot_box_items().items():
@@ -395,33 +388,22 @@ class Display:
     # keeps rendering the raw boxes — padding is not a scene concept.
     PLAN_PADDING = 10.0
 
-    def _collision_boxes_by_solid(self, padding=None):
-        if padding is None:
-            padding = self.PLAN_PADDING
-        if not hasattr(self.workspace, "compute_collision_boxes"):
-            return {}, {}
-
+    def _frame_data(self, what):
+        """One tree pass: every solid's world pose and — only while a
+        viewer shows collision boxes — the boxes grouped per solid
+        (world + link-mounted together, flange apart). With the boxes
+        hidden, the usual case, no box is computed at all."""
+        padding = self.PLAN_PADDING if self.collision_shown else None
         try:
-            collision_world, collision_flange, collision_link = self.workspace.compute_collision_boxes(padding)
-            _log_clear("collision", "collision boxes recovered")
+            poses, cw, cf, cl = self.workspace.compute_frame(padding)
+            _log_clear("frame_" + what, f"{what} recovered")
         except Exception as e:
-            _log_once("collision", f"compute_collision_boxes() failed: {e}")
-            return {}, {}
-
+            _log_once("frame_" + what, f"compute_frame() failed in {what}: {e}")
+            return {}, {}, {}
         world_map = {}
-        for box in collision_world:
-            comp = box.get("componentName")
-            solid = box.get("solidName")
-            if comp is None or solid is None:
-                continue
-            world_map.setdefault((comp, solid), []).append({
-                "pose": box.get("pose"),
-                "scale": box.get("scale"),
-            })
-
         # link-mounted boxes (a camera on the wrist) come with their WORLD
         # pose at the current joints — drawn like any world box
-        for box in collision_link:
+        for box in cw + cl:
             comp = box.get("componentName")
             solid = box.get("solidName")
             if comp is None or solid is None:
@@ -430,9 +412,8 @@ class Display:
                 "pose": box.get("pose"),
                 "scale": box.get("scale"),
             })
-
         flange_map = {}
-        for box in collision_flange:
+        for box in cf:
             comp = box.get("componentName")
             solid = box.get("solidName")
             if comp is None or solid is None:
@@ -441,8 +422,7 @@ class Display:
                 "pose": box.get("pose"),
                 "scale": box.get("scale"),
             })
-
-        return world_map, flange_map
+        return poses, world_map, flange_map
     # ----------------------------------------------------
     # Emit with backpressure
     # ----------------------------------------------------
@@ -452,13 +432,6 @@ class Display:
         if not self.sio.connected:
             # No connection yet; drop silently
             return
-
-        try:
-            encoded = json.dumps(payload)
-        except Exception as e:
-            print("[Display] json.dumps failed:", e)
-            return
-
 
         with self._state_lock:
             if self._inflight:

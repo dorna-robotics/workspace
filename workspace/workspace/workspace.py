@@ -463,13 +463,27 @@ class Workspace:
            To the planner it is part of that link: it moves with it, collides with the world and
            with non-adjacent links as the link does, and is never a self-hit against its own link.
         """
-        collision_world = []
-        collision_flange = []
-        collision_link = []
+        self._update_world_T_full()
+        return self._collision_boxes_from_world_T(float(padding))
 
-        # ======================================================================
-        # PHASE 1: FULL KINEMATIC UPDATE (same as before): compute solid._world_T
-        # ======================================================================
+    def compute_frame(self, collision_padding=None):
+        """ONE tree pass for the viewer: the world pose of every solid (as
+        ``compute_world_poses``) and — only when ``collision_padding`` is a
+        number — the three collision groups read off those same transforms.
+        A frame with the boxes hidden (the usual case) computes no boxes at
+        all; a frame with them shown walks the tree once, not twice.
+        Returns ``(poses, collision_world, collision_flange, collision_link)``."""
+        poses = self.compute_world_poses()
+        if collision_padding is None:
+            return poses, [], [], []
+        cw, cf, cl = self._collision_boxes_from_world_T(float(collision_padding))
+        return poses, cw, cf, cl
+
+    def _update_world_T_full(self):
+        """Refresh the driving components (robot, rail, shaker …) and
+        recompute ``solid._world_T`` for EVERY solid from the roots down —
+        no cache. The collision pass the core runs before a check or plan
+        starts here, so a box is never placed from a stale transform."""
         for comp in list(self.components.values()):
             if hasattr(comp, "update_pose"):
                 comp.update_pose()
@@ -482,10 +496,7 @@ class Workspace:
                     seen.add(id(solid))
                     roots.append(solid)
 
-        stack = []
-        for root in roots:
-            stack.append((root, np.eye(4)))
-
+        stack = [(root, np.eye(4)) for root in roots]
         while stack:
             node, T_parent = stack.pop()
             T_world = T_parent @ node.local["T"]
@@ -494,9 +505,13 @@ class Workspace:
                 for entry in child_list:
                     stack.append((entry["child_solid"], T_world))
 
-        # ======================================================================
-        # Helpers for flange filtering / relative poses
-        # ======================================================================
+    def _collision_boxes_from_world_T(self, padding):
+        """The three collision groups (see ``compute_collision_boxes``) read
+        off the ``_world_T`` every solid carries. Callers refresh those first."""
+        collision_world = []
+        collision_flange = []
+        collision_link = []
+
         def _parent_solid(s):
             if s is None:
                 return None
@@ -505,35 +520,44 @@ class Workspace:
             return None
 
         core_comp = self.components.get("core", None)
-        robot_flange = None
-        if core_comp is not None and hasattr(core_comp, "assembly") and isinstance(core_comp.assembly, dict):
-            # Expecting the solid name used in your debug output: "robot_flange"
-            robot_flange = core_comp.assembly.get("robot_flange", None)
+        assembly = getattr(core_comp, "assembly", None)
+        if not isinstance(assembly, dict):
+            assembly = {}
+        robot_flange = assembly.get("robot_flange", None)
+        link_solids = {id(assembly[ln]): ln for ln in self.ROBOT_LINKS if assembly.get(ln) is not None}
 
         T_flange_world = getattr(robot_flange, "_world_T", None) if robot_flange is not None else None
         T_world_flange = inv_T(T_flange_world) if T_flange_world is not None else None
 
-        def _is_downstream_of_flange(solid, max_hops=200):
-            """
-            True iff walking parents reaches robot_flange.
-            NOTE: starting from parent means the flange itself is NOT counted as downstream.
-            """
-            if robot_flange is None:
-                return False
-
-            cur = _parent_solid(solid)
-            seen_ids = set()
-            for _ in range(max_hops):
-                if cur is None:
-                    return False
-                if cur is robot_flange:
-                    return True
-                cid = id(cur)
-                if cid in seen_ids:
-                    return False
-                seen_ids.add(cid)
-                cur = _parent_solid(cur)
-            return False
+        # Where every solid stands in the robot's tree, from ONE walk down from
+        # the roots: downstream of robot_flange (the tool and its load), or
+        # riding a link (robot_A1..A5). The same answers as walking each
+        # solid's parents (robot_link_of / "reaches robot_flange"), without a
+        # walk per solid: a child takes its parent's place unless the parent
+        # IS the flange (downstream from here, no link) or IS a link.
+        place = {}   # id(solid) -> (downstream_of_flange, link_solid_name)
+        stack = []
+        for comp in list(self.components.values()):
+            for solid in list(comp.assembly.values()):
+                if solid.parent["parent_solid"] is None and id(solid) not in place:
+                    place[id(solid)] = (False, None)
+                    stack.append(solid)
+        while stack:
+            node = stack.pop()
+            down, link = place[id(node)]
+            if node is robot_flange:
+                c_place = (True, None)
+            elif id(node) in link_solids:
+                c_place = (down, link_solids[id(node)])
+            else:
+                c_place = (down, link)
+            for child_list in list(node.children.values()):
+                for entry in child_list:
+                    child = entry["child_solid"]
+                    if child is None or id(child) in place:
+                        continue
+                    place[id(child)] = c_place
+                    stack.append(child)
 
         def _is_descendant_of(solid, ancestor, max_hops=200):
             if solid is None or ancestor is None:
@@ -596,9 +620,6 @@ class Workspace:
         tool_comp = _tool_attached_to_robot()
         tool_load_solid = _solid_attached_to_tool(tool_comp)
 
-        # ======================================================================
-        # PHASE 2: EXTRACT COLLISION DATA (from solids)
-        # ======================================================================
         def _solid_boxes(solid, solid_name):
             c_box_data = getattr(solid, "collision_box", None)
             if not c_box_data:
@@ -628,8 +649,7 @@ class Workspace:
                 if T_solid_world is None:
                     continue
 
-                downstream = _is_downstream_of_flange(solid)
-                link_solid = None if downstream else self.robot_link_of(solid)
+                downstream, link_solid = place.get(id(solid), (False, None))
 
                 if downstream and tool_load_solid is not None:
                     if _is_descendant_of(solid, tool_load_solid):
@@ -790,7 +810,16 @@ class Workspace:
                 if T is None:
                     T = solid.local["T"]
 
-                poses[key] = T_to_xyzabc(T)
+                # The angles are the expensive part (an SVD per solid, ~90%
+                # of this pass on a 250-solid bench): convert only when THIS
+                # solid's transform changed since the last call, whoever
+                # wrote it. Compared by value, so a full recompute that
+                # lands on the same numbers costs nothing here.
+                cached = getattr(solid, "_world_xyzabc", None)
+                if cached is None or not np.array_equal(cached[0], T):
+                    cached = (np.array(T, copy=True), T_to_xyzabc(T))
+                    solid._world_xyzabc = cached
+                poses[key] = cached[1]
 
         return poses
 
