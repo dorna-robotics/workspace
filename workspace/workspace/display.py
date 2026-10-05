@@ -449,9 +449,15 @@ class Display:
                     self._pending = payload
                 return
             self._inflight = True
+        t_emit = time.perf_counter()
+        n_objects = len(payload)
 
         def ack_cb(_ok=None):
             # Called by socket.io when server handler (upstream_update) returns
+            ack_ms = (time.perf_counter() - t_emit) * 1000.0
+            if ack_ms > self.LAG_MS:
+                self._lag_line(f"the ack for a {n_objects}-object frame arrived after {ack_ms:.0f} ms "
+                               f"(viewer server slow, or this process too busy to read it)")
             with self._state_lock:
                 self._inflight = False
                 next_payload = self._pending
@@ -465,16 +471,44 @@ class Display:
     # ----------------------------------------------------
     # Main loop
     # ----------------------------------------------------
+    # ── lag capture (workspace.lag.LAG_LINES, off by default) ────────
+    # The frame loop and the protocol share one interpreter. With the
+    # switch on, an iteration that begins this much later than its period
+    # prints what the other threads were doing at that moment
+    # (workspace.lag.busy_threads); so does an ack the viewer server took
+    # this long to return.
+    LAG_MS = 80
+
+    def _lag_line(self, msg):
+        from workspace.lag import say
+        say("Display", msg)
+
     def _loop(self):
         """Background loop: send pose-only frames at target FPS."""
+        from workspace.lag import LAG_LINES, busy_threads
         print(f"[Display] Running at {self.fps} fps")
         next_t = time.perf_counter()
         period = self._period
+        me = threading.get_ident()
+        t_prev = next_t
+        prev_build_ms = 0.0
+        prev_waited = False
 
         while not self._stop_event.is_set():
+            t_start = time.perf_counter()
+            late_ms = (t_start - t_prev - period) * 1000.0
+            t_prev = t_start
+            if LAG_LINES and late_ms > self.LAG_MS:
+                self._lag_line(lambda late_ms=late_ms, build=prev_build_ms, waited=prev_waited:
+                    f"frame loop late by {late_ms:.0f} ms (its own build took {build:.0f} ms"
+                    + (", while waiting for the viewer server's ack" if waited else "")
+                    + f") — busy: {busy_threads(exclude_ident=me)}")
+            prev_waited = self._inflight
+            prev_build_ms = 0.0
             try:
                 if not self._inflight and self.sio.connected:
                     frame = self._build_pose_frame()
+                    prev_build_ms = (time.perf_counter() - t_start) * 1000.0
                     if frame:  # delta: skip emit if nothing changed
                         self._emit_update(frame)
             except Exception as e:

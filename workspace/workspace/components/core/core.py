@@ -5432,6 +5432,44 @@ class SimulationAPI:
 
 
 
+    # ── lag capture (workspace.lag.LAG_LINES, off by default) ────────
+    # A tick this late is a freeze the viewer showed, followed by a jump:
+    # the schedule is absolute, so after a stall the loop runs its ticks
+    # back to back until it is on time again (a stall longer than the rest
+    # of the motion stretches it). The first late tick of a motion prints
+    # who had the interpreter (workspace.lag.busy_threads); the motion's
+    # end prints the count, the worst tick and the wall-vs-profile time.
+    STALL_S = 0.05
+
+    def _tick_late(self, verb, sleep_for, step):
+        from workspace.lag import LAG_LINES
+        if not LAG_LINES:
+            return
+        if step == 1:
+            self._stall = {"worst": 0.0, "n": 0, "said": False}
+        if sleep_for >= -self.STALL_S:
+            return
+        st = self._stall
+        late = -sleep_for
+        st["n"] += 1
+        if late > st["worst"]:
+            st["worst"] = late
+        if not st["said"]:
+            st["said"] = True
+            from workspace.lag import busy_threads, say
+            me = threading.get_ident()
+            say("sim", lambda: f"{verb} tick {step} ran {late*1000:.0f} ms late — busy: "
+                               f"{busy_threads(exclude_ident=me)}")
+
+    def _tick_summary(self, verb, t0, t_total):
+        from workspace.lag import LAG_LINES
+        st = getattr(self, "_stall", None) if LAG_LINES else None
+        if st and st["n"]:
+            wall = time.perf_counter() - t0
+            from workspace.lag import say
+            say("sim", f"{verb}: {st['n']} late tick(s), worst {st['worst']*1000:.0f} ms — a freeze, then the "
+                       f"catch-up jump; the motion took {wall:.2f} s for a {t_total:.2f} s profile")
+
     def jmove(self, joint, vel=100, accel=1000, jerk=4000, **kwargs):
         """
         Move from current joint vector to `joint` using an S-curve distance profile.
@@ -5489,10 +5527,12 @@ class SimulationAPI:
             step += 1
             next_tick_time = t0 + step * dt
             sleep_for = next_tick_time - time.perf_counter()
+            self._tick_late("jmove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
         self.joints = tgt[:]
+        self._tick_summary("jmove", t0, t_total)
 
         return 2  # success
 
@@ -5555,11 +5595,13 @@ class SimulationAPI:
             step += 1
             next_tick = t0 + step * dt
             sleep_for = next_tick - time.perf_counter()
+            self._tick_late("smove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
         # Ensure exact final position
         self.joints = points[-1][:]
+        self._tick_summary("smove", t0, t_total)
         return 2
 
     def jmove_multi_point(self, points, vel=100, accel=1000, jerk=4000):
@@ -5671,12 +5713,14 @@ class SimulationAPI:
             step += 1
             next_tick_time = t0 + step * dt
             sleep_for = next_tick_time - time.perf_counter()
+            self._tick_late("lmove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
 
         # ensure exact final value
         self.joints = tgt_joints
+        self._tick_summary("lmove", t0, t_total)
         return 2  # success
 
     def cmove(self, pose=[], joint=[], rel=0, tool_pose=[0, 0, 0, 0, 0, 0],

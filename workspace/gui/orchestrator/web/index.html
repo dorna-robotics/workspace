@@ -1256,7 +1256,9 @@ function makeRenderer(opts, mountEl) {
             root.children[0].traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
             root.remove(root.children[0]);
           }
+          _meshesLoading++;
           gltfLoader.load(versioned(spec.meshUrl), (gltf) => {
+            _meshesLoading--;
             gltf.scene.traverse(o => {
               if (o.isMesh) {
                 const mats = Array.isArray(o.material)?o.material:[o.material];
@@ -1265,7 +1267,7 @@ function makeRenderer(opts, mountEl) {
             });
             addEdgeOverlay(gltf.scene);
             root.add(gltf.scene); registerPickables(gltf.scene);
-          }, undefined, err => console.log("GLB load failed:", spec.meshUrl, err));
+          }, undefined, err => { _meshesLoading--; console.log("GLB load failed:", spec.meshUrl, err); });
         }
         if (spec.mesh) {
           gltfLoader.parse(base64ToArrayBuffer(spec.mesh), "", (gltf) => {
@@ -1383,17 +1385,39 @@ function makeRenderer(opts, mountEl) {
         }
       });
 
+      // ── Lag capture (browser side; LAG_LINES, off by default) ───────────
+      // The server has the same switch (workspace/lag.py). On: a render
+      // stall (a long gap between animation frames) and a large apply (a
+      // snapshot) print to the console, with how many meshes were still
+      // loading — so a startup stall reads as one. project-guide §10.5.
+      const LAG_LINES = false;
+      let _lastRaf = 0, _lastApplied = "", _lastApplyAt = 0, _meshesLoading = 0;
+      function lagLine(msg) {
+        if (!LAG_LINES) return;
+        console.warn(`[viewer +${(performance.now() / 1000).toFixed(1)}s] ` + msg);
+      }
       function flushPendingUpdates() {
         const keys = Object.keys(_pendingUpdates);
         if (!keys.length) return;
+        const t0 = performance.now();
         for (const n of keys) {
           upsertObject(n, _pendingUpdates[n]);
           delete _pendingUpdates[n];
         }
+        const ms = performance.now() - t0;
+        _lastApplied = `${keys.length} objects in ${ms.toFixed(0)} ms`;
+        _lastApplyAt = performance.now();
+        if (keys.length > 100 || ms > 50) lagLine(`applied ${_lastApplied}${keys.length > 100 ? " (a snapshot)" : ""}`);
       }
 
       // ── Animate ───────────────────────────────────────────────────────────
       function animate() {
+        const _now = performance.now();
+        if (LAG_LINES && _lastRaf && !document.hidden && _now - _lastRaf > 120)
+          lagLine(`render stall ${(_now - _lastRaf).toFixed(0)} ms`
+            + (_meshesLoading ? ` while ${_meshesLoading} meshes were still loading (startup)` : "")
+            + ` (last apply: ${_lastApplied || "none"}${_lastApplyAt ? `, ${((_now - _lastApplyAt) / 1000).toFixed(1)} s ago` : ""})`);
+        _lastRaf = _now;
         flushPendingUpdates();
         // Skip the heavy work when either the user has toggled the
         // eye off, *or* the parent has paused us (pendant open).

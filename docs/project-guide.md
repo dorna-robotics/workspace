@@ -1604,3 +1604,33 @@ exit-coded for scripting.
   feeder — lives in **`stock.j2`**, listed after `layout.j2` in
   `launch.yaml`'s scene list so the merge applies it on top and
   regeneration can never eat it.
+
+### 10.5 When the viewer lags — the capture
+
+The 3D viewer's motion comes from the Display's frame loop, which
+shares one interpreter with the protocol and the simulated robot. A
+stutter therefore has a few possible homes, and the platform carries a
+detector for each — **off by default**, printing nothing and costing a
+few comparisons per frame. To use them, flip the switch in the code and
+restart: `LAG_LINES = True` in `workspace/lag.py` (the server side) and
+`const LAG_LINES = true` in `gui/orchestrator/web/index.html` (the
+browser side). Then run the project from a terminal, open the browser
+console (F12), reproduce, and read:
+
+| line | where | meaning |
+|---|---|---|
+| `[Display] frame loop late by N ms (...) — busy: BT: recipes/recipe.py:L fn` | the server's terminal | the frame loop could not run for N ms; `busy:` names the thread that had the interpreter and where it was (`workspace.lag.busy_threads`) |
+| `[Display] the ack for a K-object frame arrived after N ms` | the server's terminal | the frame left on time; the viewer server was slow to take it, or this process too busy to read the answer |
+| `[sim] lmove tick T ran N ms late — busy: …` then `[sim] lmove: n late tick(s), worst N ms …` | the server's terminal | the simulated robot's playback stalled, then jumped to catch up (its schedule is absolute); the first line names the culprit |
+| `[gc] generation 2 collection took N ms` | the server's terminal | the garbage collector walked the whole heap; no thread is to blame |
+| `[viewer] render stall N ms …` / `[viewer] applied K objects in N ms (a snapshot)` | the browser console | the page itself stalled; the line says how many meshes were still loading, so a startup stall reads as one |
+
+A `busy:` naming workspace code is a fix in that code (release the
+interpreter, move the work, make it cheaper); "no workspace thread was
+busy" means the CPU went to another process on the Pi.
+
+Fixed this way, and kept whether the switch is on or off: the scene,
+recipes, planner and caches are moved out of the collector's reach when
+the scene is built and when a run starts (`workspace.lag.freeze_heap`),
+because a full collection over them froze the whole process for 60–120
+ms several times a run, for nothing — they are never garbage.

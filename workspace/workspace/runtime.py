@@ -1212,6 +1212,9 @@ class Runtime:
             raise KillRequested()
         if self._parking:
             raise ParkRequested()
+        # recipes, planner, caches built since the scene: long-lived too
+        from workspace.lag import freeze_heap
+        freeze_heap("run start")
         self._set_state_with_callback(RTState.RUNNING)
 
     def mark_idle(self) -> None:

@@ -69,6 +69,11 @@ class Workspace:
         # so the BT thread can hold it briefly across nested ops.
         self._scene_lock = threading.RLock()
 
+        # a long garbage collection is a freeze nobody else can explain:
+        # it says so (workspace.lag, project-guide §10.5)
+        from workspace.lag import watch_gc
+        watch_gc()
+
         # Active BT context — registered by ``workspace.bt.launcher`` at
         # run start, cleared on tear-down. ``add_fact`` / ``remove_fact``
         # operate on its ``state["facts"]`` set so observations propagate
@@ -79,6 +84,10 @@ class Workspace:
         self.components = {}
         for name, ccfg in comp_cfgs.items():
             self.components[name] = comp_factory.create_component(name, ccfg, self)
+        # the scene is long-lived: out of the garbage collector's reach
+        # (a full collection over it froze the process for ~100 ms)
+        from workspace.lag import freeze_heap
+        freeze_heap("scene built")
 
         # 1.5) runtime controller (pause/stop/resume/start)
         core = self.components.get("core")
