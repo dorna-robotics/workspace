@@ -33,6 +33,7 @@ folders:
   - {key: uploads,  label: Uploads,  path: uploads,  read_only: false}
   - {key: captures, label: Captures, path: captures, read_only: false}
   - {key: replays,  label: Replays,  path: replays,  read_only: false}
+  - {key: log,      label: Log,      path: log,      read_only: true}   # the project's console, orchestrator-written
 default:
   batch_size:
     type: int

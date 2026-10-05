@@ -197,11 +197,10 @@ cython_debug/
 # Workspace uploads (cleared on each run)
 _uploads/
 
-# Per-project run artifacts: timestamped log + last_run.json
-# Lives at <project_dir>/status/. Captures runtime stdout (with
-# wall-clock timestamps) and the most recent outcome (completed /
-# ended) so the dashboard card can show "Last run ✓ 14:10".
-status/
+# <project_dir>/log/ — the project's console as the orchestrator
+# captured it: workspace.log, every stdout/stderr line timestamped.
+# Data, never source.
+log/
 
 # Claude Code — per-user settings + transcripts stay local. The
 # skills/ subfolder is the exception: it's the project-shared task

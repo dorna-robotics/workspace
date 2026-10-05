@@ -173,14 +173,15 @@ pendant:    hmi/pendant.js       # screen shown DURING the run (optional)
 core_dir:   core                 # this station's calibration + caches
 records: / replays: / uploads:   # where the platform writes — absent = OFF
 counts:     counts/counts.json   # rt.count's totals, when the project counts
-folders:    records, uploads, captures, replays, counts   # the file browser's tabs, display only
+folders:    records, uploads, captures, replays, counts, log (read-only)   # the file browser's tabs, display only
 plan_window / scheduler
 ```
 
-The data folders (`records/ replays/ uploads/ captures/ counts/`) and
-`core/` are git-ignored; the orchestrator creates the declared ones at
-launch. `captures/` is named by the detections' `display.client_save_*`
-paths in `vision/*.yaml`, not by launch.yaml.
+The data folders (`records/ replays/ uploads/ captures/ counts/ log/`)
+and `core/` are git-ignored; the orchestrator creates the declared ones
+at launch. `captures/` is named by the detections' `display.client_save_*`
+paths in `vision/*.yaml`, and `log/` (the project's console,
+`workspace.log`) by the orchestrator — neither by a launch key.
 
 **A phased protocol is a package.** When the protocol has phases
 (bt-framework-guide §13) `actions:` names a folder and the boundary

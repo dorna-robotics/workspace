@@ -8,9 +8,9 @@ orchestrator proxies. Single source of truth for:
   * Local launch / kill (Popen with the timestamped log pump from
     ``workspace_info``).
   * Remote proxy: forwards cmd/status/logs to the registered node.
-  * Run-outcome bookkeeping: ``_record_last_run`` writes
-    ``<project_dir>/status/<name>.last_run.json`` whenever a run ends,
-    so the dashboard card can show "Last run ✓ 14:10".
+  * The project's console: ``<project_dir>/log/workspace.log``, every
+    stdout/stderr line timestamped (``workspace_info``); the admin
+    page's Log panel reads it, the project's Log tab lists it.
 
 WS subscriber lifecycle (``_start_status_subscriber`` /
 ``_stop_status_subscriber`` in ``websockets``) is wired via deferred
@@ -262,8 +262,8 @@ class Orchestrator:
         # writes at all. Cost: one recompile per module per boot.
         env.setdefault("PYTHONPYCACHEPREFIX", "/tmp/pycache")
 
-        # Make sure <project_dir>/status/ exists before opening the log.
-        ws.ensure_status_dir()
+        # Make sure <project_dir>/log/ exists before opening the log.
+        ws.ensure_log_dir()
 
         # log cap + append marker
         _truncate_log_if_needed(ws.log_path, MAX_LOG_BYTES)

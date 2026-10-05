@@ -3,7 +3,7 @@
 ``~/.workspace/`` — in the INVOKING user's home, SUDO_USER-resolved so
 the sudo-run servers and plain dev runs land on the same files — holds
 every piece of machine-local state the platform persists outside a
-project folder: the orchestrator registry, status/logs for remote or
+project folder: the orchestrator registry, the logs of remote or
 bare-name workspaces, scene-builder perf samples. One place, on
 purpose: /tmp is tmpfs (wiped every reboot) and install trees are
 replaced by upgrades — both have silently eaten user data before

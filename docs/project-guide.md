@@ -37,14 +37,17 @@ projects/my_project/
 ├── replays/             # replay recordings (launch.yaml replays:; git-ignored)
 ├── uploads/             # operator INPUT files — a file parameter's Open (launch.yaml uploads:; git-ignored)
 ├── captures/            # the detections' pictures — client_save_* in vision/*.yaml (git-ignored)
-└── counts/              # rt.count's totals across every run — counts.json (launch.yaml counts:; git-ignored)
+├── counts/              # rt.count's totals across every run — counts.json (launch.yaml counts:; git-ignored)
+└── log/                 # the project's console — log/workspace.log, written by the orchestrator (git-ignored)
 ```
 
-The last five are DATA folders (§3 "The project's folders"), never
+The last six are DATA folders (§3 "The project's folders"), never
 checked in. Each is there because something names it: launch.yaml's
 `records:` / `replays:` / `uploads:` (where the platform writes and
-reads), `counts:`, or a detection's own save path. Listing a folder in
-`folders:` only SHOWS it. `captures/` holds a run's pictures
+reads), `counts:`, a detection's own save path, or the orchestrator
+itself (`log/`: every stdout/stderr line of the project, timestamped —
+the admin page's Log panel is a live view of that file). Listing a
+folder in `folders:` only SHOWS it. `captures/` holds a run's pictures
 because the detections say so: `display.client_save_img: "../captures/tube_od/"`
 in `vision/tube_od.yaml` (relative to that file's folder) writes every
 run's frame there — on THIS machine, not the vision unit (vision-guide §5).
@@ -327,10 +330,15 @@ folders:
   - {key: captures, label: Captures, path: captures, read_only: false}
   - {key: replays,  label: Replays,  path: replays,  read_only: false}
   - {key: counts,   label: Counts,   path: counts,   read_only: false}
+  - {key: log,      label: Log,      path: log,      read_only: true}   # the project's console, orchestrator-written
 
 plan_window:  4
 scheduler:    cpsat
 ```
+
+`log/` is the one folder no launch key names: the orchestrator writes
+`log/workspace.log` there for every project it launches, so the tab is
+read-only — browse and download, never upload or delete.
 
 Sibling projects that share one bench (bna's `_bna`, `_tph`,
 `_calibration`) point the shared keys one level up — `scene: [../scene/...]`,

@@ -545,7 +545,7 @@ function updateStatusUI(st) {
 
   // Steps panel is purely a live view — when the workspace dies, the
   // panel resets cleanly to "No steps yet". History lives in the
-  // timestamped log file under <project_dir>/status/<name>.log; the
+  // timestamped log file under <project_dir>/log/workspace.log; the
   // dashboard card's "Last run" indicator and the LOGS panel here are
   // the durable surfaces. This avoids a stale half-rendered timeline
   // after a kill that no longer reflects what's running.

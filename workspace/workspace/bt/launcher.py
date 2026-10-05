@@ -76,7 +76,7 @@ def _configure_logging() -> None:
     launcher's slice windows, the MQTT connect/disconnect pair, and the
     CP-SAT summary line (action count, makespan, solver status, wall
     time). The orchestrator captures a launched project's stdout into
-    ``<project_dir>/status/workspace.log`` and the dashboard tails that
+    ``<project_dir>/log/workspace.log`` and the dashboard tails that
     file, so making these visible costs nothing but this handler.
 
     SCOPED TO THE ``workspace`` LOGGER, NEVER THE ROOT. ``basicConfig``

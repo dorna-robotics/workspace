@@ -5,8 +5,10 @@ registered project. Owns:
 
   * Identity (name, path_to_file, port, label, optional remote node).
   * Process handle (local) or remote node URL.
-  * Log file path under ``<project_dir>/status/workspace.log`` and the
-    daemon thread that timestamps every line of stdout/stderr.
+  * Log file path under ``<project_dir>/log/workspace.log`` — the
+    project's console, every stdout/stderr line timestamped by the
+    daemon thread that pumps it — the file the admin page's Log panel
+    shows and the project's ``folders:`` Log tab lists.
 
 Module-level helpers here are intentionally small and stdlib-only:
 
@@ -30,10 +32,10 @@ import yaml
 
 from gui.data_home import data_path
 
-# Status/log home for workspaces with no local project dir (remote or
+# Log home for workspaces with no local project dir (remote or
 # bare-name). Files are namespaced by workspace name — the dir is
 # shared across all of them.
-FALLBACK_STATUS_DIR = data_path("status")
+FALLBACK_LOG_DIR = data_path("log")
 
 
 MAX_LOG_BYTES = int(os.environ.get("ORCH_MAX_LOG_BYTES", str(2 * 1024 * 1024)))  # 2MB
@@ -231,19 +233,19 @@ class WorkspaceInfo:
         # Local process handle (only for local workspaces)
         self.process: Optional[subprocess.Popen] = None
 
-        # Log file lives in <project_dir>/status/workspace.log. Fixed
+        # Log file lives in <project_dir>/log/workspace.log. Fixed
         # name regardless of the workspace's registered identifier so
         # renaming or re-registering doesn't orphan files. The
-        # ``~/.workspace/status`` fallback applies for remote
+        # ``~/.workspace/log`` fallback applies for remote
         # workspaces and the rare case where path_to_file isn't a real
         # local file (namespace by ``<name>`` there because the dir is
         # shared — it was /tmp once, but tmpfs loses the logs on every
         # reboot; machine-local state lives in gui.data_home now).
-        self._status_dir: str = self._compute_status_dir(path_to_file)
-        if self._status_dir == FALLBACK_STATUS_DIR:
-            self.log_path: str = os.path.join(self._status_dir, f"{name}.log")
+        self._log_dir: str = self._compute_log_dir(path_to_file)
+        if self._log_dir == FALLBACK_LOG_DIR:
+            self.log_path: str = os.path.join(self._log_dir, f"{name}.log")
         else:
-            self.log_path: str = os.path.join(self._status_dir, "workspace.log")
+            self.log_path: str = os.path.join(self._log_dir, "workspace.log")
 
         # Orchestrator-level timing / error
         self.started_at: Optional[float] = None  # unix seconds; starts at LAUNCH for local
@@ -251,27 +253,27 @@ class WorkspaceInfo:
         self.last_error: Optional[str] = None
 
     @staticmethod
-    def _compute_status_dir(path_to_file: str) -> str:
-        """Project's status/ directory, or the ~/.workspace/status
+    def _compute_log_dir(path_to_file: str) -> str:
+        """Project's log/ directory, or the ~/.workspace/log
         fallback for remote / bare-name workspaces. Created lazily on
         first launch."""
         try:
             # An empty path_to_file (remote / bare-name) must NOT fall
             # into Path("").parent == "." — that "exists" and used to
-            # yield a RELATIVE status/ dir wherever the server happened
+            # yield a RELATIVE log/ dir wherever the server happened
             # to be launched from.
             if path_to_file:
                 parent = Path(path_to_file).parent
                 if str(parent) and parent.exists():
-                    return str(parent / "status")
+                    return str(parent / "log")
         except Exception:
             pass
-        return FALLBACK_STATUS_DIR
+        return FALLBACK_LOG_DIR
 
-    def ensure_status_dir(self) -> None:
-        """Create <project_dir>/status/ on demand. Safe to call repeatedly."""
+    def ensure_log_dir(self) -> None:
+        """Create <project_dir>/log/ on demand. Safe to call repeatedly."""
         try:
-            Path(self._status_dir).mkdir(parents=True, exist_ok=True)
+            Path(self._log_dir).mkdir(parents=True, exist_ok=True)
         except Exception:
             # Don't crash launch on a bookkeeping failure.
             pass
