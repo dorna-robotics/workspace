@@ -457,26 +457,38 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
 from gui.orchestrator import fslive  # noqa: E402
 
 
-def _project_folders(ws):
-    """The project's folders (launch.yaml folders:, project_dirs.py),
-    created on demand. Read on every request: read_only is live."""
-    from workspace.project_dirs import project_folders
+def _project_dir(ws) -> str:
     project_dir = os.path.dirname(ws.path_to_file)
     if not project_dir:
         raise ValueError("this workspace has no project folder")
-    return project_folders(project_dir, ensure=True)
+    return project_dir
+
+
+def _project_folders(ws):
+    """The browser's tabs (launch.yaml folders:, project_dirs.py), created
+    on demand. Read on every request: read_only is live."""
+    from workspace.project_dirs import project_folders
+    return project_folders(_project_dir(ws), ensure=True)
+
+
+UPLOADS = "@uploads"     # the root a file parameter's Open asks for — never a tab key
 
 
 def _folder(ws, root: str):
-    """The folder ``root`` names — "" is the first one listed (where the
-    Files button opens). Unlisted platform folders resolve too (a file
-    parameter's Open over ``data``), they just have no tab."""
+    """The folder ``root`` names: a ``folders:`` tab key, "" = the first tab
+    (where Files opens), or ``@uploads`` = the folder launch.yaml's
+    ``uploads:`` names (a file parameter's Open; it need not be a tab)."""
+    from workspace.project_dirs import Folder, project_paths
+    if root == UPLOADS:
+        p = project_paths(_project_dir(ws), ensure=True)["uploads"]
+        if p is None:
+            raise ValueError("launch.yaml declares no uploads: folder")
+        return Folder(UPLOADS, "Uploads", p, False)
     folders = _project_folders(ws)
     if not root:
-        shown = [f for f in folders if f.shown]
-        if not shown:
+        if not folders:
             raise ValueError("launch.yaml lists no folders")
-        return shown[0]
+        return folders[0]
     for f in folders:
         if f.key == root:
             return f
@@ -760,7 +772,7 @@ class ProjectFilesSocket(fslive.FilesSocket):
         return {"key": f.key, "label": f.label, "base": str(base),
                 "read_only": f.read_only,
                 "folders": [{"key": x.key, "label": x.label, "read_only": x.read_only}
-                            for x in folders if x.shown]}
+                            for x in folders]}
 
     def writable(self, root: str) -> bool:
         return not _folder(self._ws, root).read_only

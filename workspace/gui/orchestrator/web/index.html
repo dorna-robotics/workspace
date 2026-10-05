@@ -591,11 +591,18 @@ function makeRenderer(opts, mountEl) {
         document.getElementById("btnGrid").classList.toggle("active", showGrid);
       });
 
+      // Collision boxes: the components' (red: world, blue: on the flange)
+      // and the robot's own (yellow) — the URDF link boxes where the planner
+      // places them, which the Display only computes while they are shown.
+      function sendCollisionShown() {
+        socket.emit("upstream_update", { "__collision__": { show: showCollisionBoxes } });
+      }
       document.getElementById("btnCollision").addEventListener("click", () => {
         showCollisionBoxes = !showCollisionBoxes;
         collisionWorldGroup.visible  = showCollisionBoxes;
         collisionFlangeGroup.visible = showCollisionBoxes;
         document.getElementById("btnCollision").classList.toggle("active", showCollisionBoxes);
+        sendCollisionShown();
       });
 
       document.getElementById("btnTrail").addEventListener("click", () => {
@@ -1020,7 +1027,8 @@ function makeRenderer(opts, mountEl) {
         const entry = { world: [], flange: [] };
         for (const box of (worldBoxes||[])) {
           if (!box?.pose || !box?.scale) continue;
-          const m = makeCollisionMesh(box.pose, box.scale, 0xff3344, 0.28);
+          const m = box.robot ? makeCollisionMesh(box.pose, box.scale, 0xffd200, 0.4)
+                              : makeCollisionMesh(box.pose, box.scale, 0xff3344, 0.28);
           m.userData = { ...meta, frame: "world" };
           collisionWorldGroup.add(m); entry.world.push(m);
         }
@@ -1284,6 +1292,7 @@ function makeRenderer(opts, mountEl) {
       const _pendingUpdates = {};  // name → spec (merged between frames)
 
       socket.on("connect", () => {
+        sendCollisionShown();
         socket.emit("request_snapshot");
         _resyncTimer = setInterval(() => {
           if (!_hasMeshData) socket.emit("request_snapshot");
@@ -1337,6 +1346,7 @@ function makeRenderer(opts, mountEl) {
         for (const [n, s] of Object.entries(payload)) {
           if (!s) continue;
           if (n === "__joints__") { updateJointsChip(s.joints); continue; }
+          if (n === "__collision__") continue;              // our own toggle, echoed by the server
           // Merge: later fields overwrite earlier ones for same object
           const prev = _pendingUpdates[n];
           _pendingUpdates[n] = prev ? Object.assign(prev, s) : s;

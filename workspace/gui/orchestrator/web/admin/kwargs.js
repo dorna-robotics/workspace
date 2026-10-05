@@ -283,7 +283,8 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
 
         // Browse the project's own data/ folder instead of the
         // operator's laptop: the file they uploaded last run is
-        // already there, which is the whole point of the data folder.
+        // already there, which is the whole point of the uploads folder
+        // (launch.yaml uploads:).
         const browseBtn = document.createElement("button");
         browseBtn.className = "btn btn-sm kw-browse";
         browseBtn.textContent = "Open";
@@ -291,7 +292,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
         browseBtn.addEventListener("click", async () => {
           const label = spec.label || key;
           const picked = await openFileBrowser({
-            wsName, root: "data", mode: "pick",
+            wsName, root: "@uploads", mode: "pick",
             accept: spec.accept || "",
             title: `Choose a file for ${label}`,
             purpose: `The file this run uses for <b>${label}</b>.`,
@@ -608,12 +609,12 @@ export function applyKwargsText(container, text, filename) {
 
 /**
  * Load a parameter file that already lives on the bench, picked from
- * the project's data/ folder — the counterpart to loadKwargsFromFile,
+ * the project's uploads folder (launch.yaml uploads:) — the counterpart to loadKwargsFromFile,
  * which reaches for the operator's own machine.
  */
 export async function loadKwargsFromBench(container, wsName, toastFn) {
   const picked = await openFileBrowser({
-    wsName, root: "data", mode: "pick", accept: ".yaml,.yml,.json",
+    wsName, root: "@uploads", mode: "pick", accept: ".yaml,.yml,.json",
     title: "Open a parameter file",
     purpose: "Its values fill the parameters on this screen — it does "
            + "not start a run, and fields it does not mention are left alone.",

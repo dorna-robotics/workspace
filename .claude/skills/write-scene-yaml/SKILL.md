@@ -30,6 +30,8 @@ Scene yaml is the **source of truth for the workspace's physical layout**:
 4. **Component name = stable reference.** Names like `gripper`, `source_rack`, `multi_meter_1` are referenced from `recipes.yaml`, action params, check args. Choose names that read well in `rcp["..."]` lookups.
 5. **`simulation:` is component-local.** Each component picks its own simulation flag. There's no global "sim mode" — the operator decides device-by-device.
 6. **One scene yaml per project** (composed from multiple j2 files via the `scene:` list in `launch.yaml`). The list order is the rendering order.
+7. **Per-unit values come from `scene/bench.j2`, never literals.** Robot/device IPs and ports, serial-port paths, camera serials, the `simulation:` flags (`robot_sim` for core, `sim` for devices) and the rail offset are per unit: a git-ignored `scene/bench.j2` holds `{% set robot_ip = "..." %}` lines, each scene file does `{%- import "bench.j2" as bench -%}` and writes `ip: "{{ bench.robot_ip }}"`; a committed `bench.example.j2` lists the names. project-guide §2.
+8. **A component attached under a robot link rides the arm.** `attach` it to `core` / `robot_A1..robot_A5` (a robot camera: `inspection_*_robot` on `robot_A5`'s `hole_0`). Its `collision_box` is then a *link box* for the planner — part of that link, moving with it, never a self-hit against it. The core has no camera keys; a camera is always its own component. project-guide §2 "Riding the arm".
 
 ## Canonical doc references
 

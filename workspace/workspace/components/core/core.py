@@ -145,20 +145,6 @@ class Core:
         ip = "",
         has_rail = True,
         rail_cfg = {"type": "rail_hd_500mm", "axis": 6, "offset": 0, "usem":1, "pprm":4000, "tprm":75, "usee":1, "ppre":4000, "tpre":75, "p":0.01, "i":0.0001, "d":0, "duration":10000 , "threshold":200},
-        has_camera = False,
-        camera_cfg = {
-            "serial_number": "",
-            "ip": "127.0.0.1",
-            "port": 80,
-            # Camera driver on the vision server: "d405" (RealSense,
-            # depth+color) or "ueye_xs" (IDS uEye XS, color + autofocus).
-            "type": "d405",
-            "stream": {"width":1280, "height":720, "fps":30},
-            "mode": "bgrd",
-            "filter": {},
-            "exposure": None,
-            "native_res": None,
-        },
         has_tool_changer = True,
         # I/O signals fired on attach/detach. Each list-of-lists is a
         # sequence of [output_port, value, delay_s] rows played in order.
@@ -232,17 +218,12 @@ class Core:
         self.has_tool_changer = prm["has_tool_changer"]
         self.tool_changer_cfg = prm["tool_changer_cfg"]
 
-        # ------- camera
-        self.has_camera = prm["has_camera"]
-        self.camera_cfg = prm["camera_cfg"]
-        
         # planner
         self.planner = Planner()
 
         self.planner.update(
             aux_dir=[[1, 0, 0], [0, 0, 0]],
             aux_limit=[[self.rail_min, self.rail_max], [-1,1]],
-            has_camera=self.has_camera
         )
 
         # --- scene dirty tracking & last joints (for Workspace optimization)
@@ -332,14 +313,6 @@ class Core:
             print(f"🔵 {self.name} simulation api enabled")
 
 
-        # Robot-mounted camera: wired at the END of __init__ (the
-        # camera is a real component bolted to robot_A5, so the robot
-        # solids must exist first). See the block after the rail attach.
-        self.camera = None
-        # Detection the operator "Detect" button runs (last registered;
-        # mirrors Inspection). Only surfaced when has_camera (see
-        # operator_actions).
-        self._default_detection = "default"
 
         # --------- motion_planning
         self.has_motion_plan = prm["has_motion_plan"]
@@ -584,40 +557,6 @@ class Core:
             else:
                 self.robot_A0.attach_to(parent=self.rail_carriage, parent_anchor="hole_1", child_anchor="hole_0", offset=[0, 0, 0, 0, 0, 0])
 
-        # ------- robot-mounted camera: a real component, not core math.
-        # has_camera=true auto-adds an inspection_d405_robot component
-        # ("<core>_camera") bolted to robot_A5's camholder holes. ITS
-        # ``lens`` anchor states the camera frame (the scene tree is the
-        # kinematic truth — see lens_pose) and IT owns the VisionStation;
-        # core proxies capture/detect through it so recipes keep pointing
-        # at the core. has_camera=false keeps a detached sim station so
-        # the surface stays callable.
-        from workspace.components.inspection.vision_station import VisionStation
-        if self.has_camera:
-            from workspace.components import factory as comp_factory
-            cam_name = f"{self.name}_camera"
-            self.camera = comp_factory.create_component(cam_name, {
-                "type": "inspection_d405_robot",
-                "simulation": bool(prm["simulation"]),
-                "camera_cfg": deepcopy(self.camera_cfg),
-            }, workspace)
-            workspace.components[cam_name] = self.camera
-            self.camera.assembly["body"].attach_to(
-                parent=self.robot_A5,
-                parent_anchor="hole_0",
-                child_anchor="hole_0",
-                offset=[0, 0, 0, 0, 0, 0],
-            )
-            self.vision = self.camera.vision
-        else:
-            self.vision = VisionStation(
-                ip=self.camera_cfg.get("ip", "127.0.0.1"),
-                port=int(self.camera_cfg.get("port", 80)),
-                serial_number=self.camera_cfg.get("serial_number", ""),
-                camera_cfg=self.camera_cfg,
-                simulation=True,
-                label=f"{self.name} camera",
-            )
 
 
     # -------------------------------------------------------------------------
@@ -778,16 +717,17 @@ class Core:
         if getattr(self, "planner", None) is None:
             return True
         try:
-            scene, tool = [], []
+            scene, tool, link_boxes = [], [], []
             if hasattr(self.workspace, "compute_collision_boxes"):
-                world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
+                world_boxes, tool_boxes, link_boxes = self.workspace.compute_collision_boxes(padding)
                 scene = self._boxes_to_cubes(world_boxes)
                 tool = self._boxes_to_cubes(tool_boxes)
-            base_in_world = list(self.rail_base.pose(anchor="carriage"))
+            base_in_world = self._planner_base()
             start = list(self._live_joints())
             if len(start) > 5:                      # the planner's canonical j5
                 start[5] = self._wrap180(start[5])
-            self.planner.update(scene=scene, gripper=tool, base_in_world=base_in_world)
+            self.planner.update(scene=scene, gripper=tool, base_in_world=base_in_world,
+                                link_boxes=self._link_boxes_to_cubes(link_boxes, base_in_world))
             return bool(self.planner.check([start, start], rail_weight=0.004,
                                            joint_weights=self.JOINT_WEIGHTS))
         except Exception:
@@ -873,8 +813,6 @@ class Core:
                 {"label": "Attach Tool", "method": "tool_attach", "icon": "link",     "group": "tool_changer"},
                 {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "tool_changer"},
             ]
-        if self.has_camera:
-            actions += [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]
         return actions
 
     def _guard_api(self, api):
@@ -2852,70 +2790,6 @@ class Core:
             except Exception:
                 pass
 
-        # camera (vision-server client)
-        try:
-            self.vision.close()
-        except Exception:
-            pass
-
-    # ── Robot-mounted camera detection API ────────────────────────────
-    # Thin wrappers around the shared VisionStation helper (see
-    # workspace/components/inspection/vision_station.py). Mirrors the
-    # Inspection component's surface so recipes that touch either look
-    # identical.
-
-    def add_detection(self, name: str, **detection_preset) -> bool:
-        # Auto-attach the robot host so the server can wire this Detection
-        # to the matching dorna2.Dorna instance for hand-eye geometry.
-        if "robot_host" not in detection_preset and getattr(self, "ip", None):
-            detection_preset["robot_host"] = self.ip
-        self._default_detection = name
-        return self.vision.add_detection(name, **detection_preset)
-
-    def operator_detect(self):
-        """No-arg ``detect`` for the Operator Actions UI — runs the
-        default detection. Surfaced only when ``has_camera`` (see
-        ``operator_actions``). Mirrors ``Inspection.operator_detect``."""
-        return self.detect(self._default_detection)
-
-    def lens_pose(self) -> list:
-        """The robot-mounted lens's CURRENT world pose — the per-capture
-        frame the Inspector passes (camera_in_world), putting the robot
-        camera on the same contract as fixed stations (vision-guide §5).
-
-        Read straight from the auto-added camera component's ``lens``
-        anchor: the component is bolted to robot_A5's camholder holes,
-        so the scene tree — not kinematic math — is the single source
-        of the lens frame."""
-        if self.camera is None:
-            raise RuntimeError(
-                f"{self.name} has no camera component (has_camera is false) — no lens pose")
-        return self.camera.lens_pose()
-
-    def capture(self, name: str, data=None, camera_in_world=None) -> dict:
-        """Capture a fresh atomic snapshot (camera frames + robot joints)
-        and cache it server-side. Pair with ``detect(name, use_last=True)``
-        so detection runs only on a confirmed-fresh frame. See
-        VisionStation.capture for the reply shape and ``data`` modes.
-        """
-        return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
-
-    def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None):
-        """The named detection's last image as JPEG bytes (``"img"`` the
-        drawn frame, ``"img_roi"`` the crop); ``None`` in simulation or
-        on failure. See VisionStation.get_img."""
-        return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side)
-
-    def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, **kwargs):
-        """Run the named detection. By default, captures a fresh frame
-        first and runs on it (raises ``CameraUnavailableError`` on
-        capture failure). Pass ``use_last=True`` to skip capture and
-        run on the previously cached frame. See VisionStation.detect.
-
-        ``sim_return`` (device-guide §17) — the detection result returned
-        in sim (default ``[]``); pass detections to inject them.
-        """
-        return self.vision.detect(name, sim_return=sim_return, use_last=use_last, data=data, **kwargs)
 
     # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
 
@@ -2923,8 +2797,8 @@ class Core:
     def device_ids(self) -> list[str]:
         """Device ids this component depends on. See docs/device-guide.md §9.
 
-        The robot only — the robot-mounted camera is its own component
-        (``<core>_camera``, auto-added when has_camera) and reports the
+        The robot only — a robot-mounted camera is its own component
+        (written in the scene, attached to robot_A5) and reports the
         camera device itself.
         """
         ids: list[str] = []
@@ -2937,9 +2811,9 @@ class Core:
 
         For the robot, Core IS the bus publisher and the bus already
         carries the sim flag; this method just mirrors that for any
-        consumer that prefers the workspace-side surface. The robot-
+        consumer that prefers the workspace-side surface. A robot-
         mounted camera claims through its own component
-        (``<core>_camera`` — see Inspection.device_claim).
+        (see Inspection.device_claim).
         """
         if self.robot_ip and device_id == f"dorna:{self.robot_ip}":
             return "sim" if self._simulation_mode else "real"
@@ -2972,7 +2846,7 @@ class Core:
             _ck = None
             if padding is not None:
                 check_pad = max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN)
-                cw, ct = self.workspace.compute_collision_boxes(check_pad)
+                cw, ct, cl = self.workspace.compute_collision_boxes(check_pad)
                 # Validated blends cache like certified chains: the
                 # result is deterministic given points, radius, scene
                 # (stamped) and the attached tool — do the validation
@@ -2980,8 +2854,9 @@ class Core:
                 # encoder first point (see _chain_fuzzy_get).
                 if self._chain_cache is None:
                     self._chain_cache_init()
-                _sig = [self._path_tool_sig(ct), self._path_tool_sig(cw),
-                        [round(float(v), 2) for v in tool_pose]]
+                _sig = [self._path_tool_sig(ct), self._path_tool_sig(cw), self._path_tool_sig(cl),
+                        [round(float(v), 2) for v in tool_pose],
+                        [round(float(v), 2) for v in self._planner_base()]]
                 _turns = self._chain_j5_turns(points)
                 _ck = self._chain_key(points, radius, float(from_idx), step,
                                       0.0, padding, _sig, _turns, "blend")
@@ -2996,8 +2871,9 @@ class Core:
                         return out
                     except Exception:
                         pass  # malformed row — fall through to a fresh blend
-                base_in_world = list(self.rail_base.pose(anchor="carriage"))
-                self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
+                base_in_world = self._planner_base()
+                self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world,
+                                    link_boxes=self._link_boxes_to_cubes(cl, base_in_world))
                 check = lambda seg: self.planner.check([list(p) for p in seg], rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS)
             out = blend_sharp_corners(self.dorna.kinematic, points, radius, tool_pose, step, from_idx, check=check)
             if out is not None and _ck is not None:
@@ -3382,12 +3258,14 @@ class Core:
         _sig = None
         if padding is not None:
             try:
-                _cw, _ct = self.workspace.compute_collision_boxes(
+                _cw, _ct, _cl = self.workspace.compute_collision_boxes(
                     max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN))
-                # BOTH box sets join the key: corners are validated
+                # ALL box sets join the key: corners are validated
                 # against the WORLD too — a fillet cut beside an empty
-                # slot must not replay when the slot is occupied.
-                _sig = (self._path_tool_sig(_ct), self._path_tool_sig(_cw))
+                # slot must not replay when the slot is occupied — and
+                # against what rides the arm.
+                _sig = (self._path_tool_sig(_ct), self._path_tool_sig(_cw), self._path_tool_sig(_cl),
+                        tuple(round(float(v), 2) for v in self._planner_base()))
             except Exception:
                 _sig = None
         _turns = self._chain_j5_turns(pts)
@@ -3493,9 +3371,10 @@ class Core:
         check = None
         if padding is not None:
             check_pad = max(0.0, float(padding) - self.PATH_CHECK_PADDING_MARGIN)
-            cw, ct = self.workspace.compute_collision_boxes(check_pad)
-            base_in_world = list(self.rail_base.pose(anchor="carriage"))
-            self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world)
+            cw, ct, cl = self.workspace.compute_collision_boxes(check_pad)
+            base_in_world = self._planner_base()
+            self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=base_in_world,
+                                link_boxes=self._link_boxes_to_cubes(cl, base_in_world))
             check = lambda seg: self.planner.check([list(q) for q in seg], rail_weight=rail_weight, joint_weights=self.JOINT_WEIGHTS)
         for k in range(n_sec - 1):
             if corners[k] <= 0:
@@ -3840,6 +3719,69 @@ class Core:
             last_curve = curve
         return report
 
+    # The planner's URDF link each robot solid IS. robot_A{k} follows
+    # joints[k-1]; the URDF's joint k drives j{k}_link; robot_flange follows
+    # joints[5], j6_link. Proven by the link-box placement test: a box
+    # attached through this pairing stays within the two models' residual
+    # (<= ~20 mm) at every pose tried; any other pairing drifts 100-350 mm.
+    LINK_OF_SOLID = {"robot_A1": "j1_link", "robot_A2": "j2_link", "robot_A3": "j3_link",
+                     "robot_A4": "j4_link", "robot_A5": "j5_link", "robot_flange": "j6_link"}
+
+    def _link_boxes_to_cubes(self, link_boxes, base_in_world):
+        """Link-mounted boxes (compute_collision_boxes: WORLD pose at the
+        joints the scene tree holds, plus the robot solid they ride) ->
+        ``{planner link: [cube]}``, each cube's pose in the PLANNER's frame
+        for that link. The scene tree and the planner's URDF are two models
+        of one robot with different link frames, so a box is placed from
+        its world pose through the planner's own FK at the same joints —
+        never by assuming the two frames coincide."""
+        if not link_boxes:
+            return {}
+        joints = list(self._last_joints) if self._last_joints is not None else list(self._live_joints())
+        frames = self.planner.link_frames(joints, base_in_world=list(base_in_world))
+        out = {}
+        for box in link_boxes:
+            link = self.LINK_OF_SOLID[box["link_solid"]]
+            T_world = np.array(dorna2.pose.xyzabc_to_T(list(box["pose"])), dtype=float)
+            T_world[:3, 3] /= 1000.0                                  # planner frames are in metres
+            T_local = np.linalg.inv(frames[link]) @ T_world
+            pose = list(dorna2.pose.T_to_xyzabc(T_local))
+            pose[0], pose[1], pose[2] = pose[0] * 1000.0, pose[1] * 1000.0, pose[2] * 1000.0
+            scale = box["scale"]
+            out.setdefault(link, []).append(Planner.create_cube(pose, [scale[0], scale[1], scale[2]]))
+        return out
+
+    def _planner_base(self):
+        """``base_in_world`` for the planner: the robot's base frame
+        (robot_A0 ``input``) at rail zero, in world mm — the planner adds
+        the rail travel itself (joints[6] along its aux axis).
+
+        NOT the rail carriage anchor: robot_A0 is bolted to the carriage
+        through ``robot_attach`` (carriage hole_1 -> A0 hole_0), 15 mm
+        further along the rail on the core chassis. Handing the planner
+        the carriage anchor put its whole robot 15 mm behind the real one
+        for every check and plan (the axis-gap test in
+        workspace.tests.link_boxes reads 0.0 for all six joints with this
+        base, 15 mm with the anchor)."""
+        T_a0 = np.array(dorna2.pose.xyzabc_to_T(list(self.robot_A0.pose(anchor="input"))), dtype=float)
+        if not self.has_rail:
+            return [float(v) for v in dorna2.pose.T_to_xyzabc(T_a0)]
+        # carriage anchor on the rail base (rail zero) -> carriage frame now -> robot base now:
+        # the rail travel cancels, leaving the robot base as it stands at rail zero
+        T_anchor = np.array(dorna2.pose.xyzabc_to_T(list(self.rail_base.pose(anchor="carriage"))), dtype=float)
+        T_carriage = np.array(dorna2.pose.xyzabc_to_T(list(self.rail_carriage.pose(anchor="center"))), dtype=float)
+        T_base0 = T_anchor @ np.linalg.inv(T_carriage) @ T_a0
+        return [float(v) for v in dorna2.pose.T_to_xyzabc(T_base0)]
+
+    def planner_robot_boxes(self):
+        """The robot as the PLANNER sees it, at the joints the scene tree
+        holds: every URDF link's collision box in WORLD mm, placed with the
+        same base the planner is given for every check and plan. The viewer
+        draws them in yellow with the other collision boxes (Display:
+        _robot_box_items), so the two robot models can be compared by eye."""
+        joints = list(self._last_joints) if self._last_joints is not None else list(self._live_joints())
+        return self.planner.robot_boxes(joints, base_in_world=self._planner_base())
+
     @staticmethod
     def _boxes_to_cubes(boxes):
         out = []
@@ -3878,9 +3820,9 @@ class Core:
         # Build collision scene
         # -------------------------
 
-        scene, tool, tool_boxes = [], [], []
+        scene, tool, tool_boxes, link_boxes = [], [], [], []
         if hasattr(self.workspace, "compute_collision_boxes"):
-            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding)
+            world_boxes, tool_boxes, link_boxes = self.workspace.compute_collision_boxes(padding)
             scene = self._boxes_to_cubes(world_boxes)
             tool = self._boxes_to_cubes(tool_boxes)
 
@@ -3891,7 +3833,7 @@ class Core:
         # If no rail exists, fall back to robot_A0 (robot base link).
         base_solid = self.rail_base
 
-        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+        base_in_world = self._planner_base()
 
 
         # -------------------------
@@ -3954,7 +3896,8 @@ class Core:
 
         start_time = time.perf_counter()
 
-        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world))
+        self.planner.update(scene=scene, gripper=tool, base_in_world=list(base_in_world),
+                            link_boxes=self._link_boxes_to_cubes(link_boxes, base_in_world))
         # Loud diagnosis for a doomed solve: a start inside the padded
         # envelope means the PREVIOUS motion ended inside a box (its
         # exit should have auto-lifted) — the planner would silently
@@ -4021,8 +3964,9 @@ class Core:
             if len(res) > 2:
                 try:
                     check_pad = max(0.0, padding - self.PATH_CHECK_PADDING_MARGIN)
-                    cw, ct = self.workspace.compute_collision_boxes(check_pad)
-                    self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world))
+                    cw, ct, cl = self.workspace.compute_collision_boxes(check_pad)
+                    self.planner.update(scene=self._boxes_to_cubes(cw), gripper=self._boxes_to_cubes(ct), base_in_world=list(base_in_world),
+                                        link_boxes=self._link_boxes_to_cubes(cl, base_in_world))
                     seg_ok = lambda seg: self.planner.check(seg, gravity=gravity, gravity_vec=gv,
                                                             gravity_thr=gravity_thr, rail_weight=rail_weight,
                                                             joint_weights=self.JOINT_WEIGHTS)
@@ -4168,9 +4112,10 @@ class Core:
     def check_collision(self, j, internal=True):
         scene = []
         tool = []
+        link_boxes = []
         padding = 0
         if hasattr(self.workspace, "compute_collision_boxes"):
-            world_boxes, tool_boxes = self.workspace.compute_collision_boxes(padding) 
+            world_boxes, tool_boxes, link_boxes = self.workspace.compute_collision_boxes(padding)
             for box in world_boxes:
                 try:
                     pose = box["pose"]
@@ -4202,12 +4147,13 @@ class Core:
         # If no rail exists, fall back to robot_A0 (robot base link).
         base_solid = self.rail_base
 
-        base_in_world = list( self.rail_base.pose(anchor="carriage"))
+        base_in_world = self._planner_base()
 
         self.planner.update(
             scene=scene,
             gripper=tool,
-            base_in_world=list(base_in_world)
+            base_in_world=list(base_in_world),
+            link_boxes=self._link_boxes_to_cubes(link_boxes, base_in_world),
         )
 
         # State-space queries speak canonical j5 (same rule as IK

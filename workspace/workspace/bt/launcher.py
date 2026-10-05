@@ -30,6 +30,7 @@ to provide reusable pieces, not to hide where they're glued together.
 from __future__ import annotations
 
 import importlib
+import os
 import logging
 import sys
 from pathlib import Path
@@ -153,9 +154,8 @@ def read_yaml_or_j2(path: Path, **render_vars: Any) -> Optional[dict]:
     j2_path   = base.with_suffix(".j2")
     yaml_path = base.with_suffix(".yaml")
     if j2_path.is_file():
-        from jinja2 import Environment, FileSystemLoader
-        env = Environment(loader=FileSystemLoader(str(j2_path.parent)))
-        rendered = env.get_template(j2_path.name).render(**render_vars)
+        from workspace.j2 import render_file
+        rendered = render_file(j2_path, **render_vars)
         return yaml.safe_load(rendered) or {}
     if yaml_path.is_file():
         with open(yaml_path) as f:
@@ -231,6 +231,13 @@ def load_recipes(
             for ``.j2`` files). Use to inject project-wide knobs like
             ``speed_factor=50`` so every recipe sees the same value.
 
+    Paths: a relative path in the recipes file is relative to THAT file
+    (the one rule every project file follows — launch.yaml, a scene's
+    imports, a detection config). The only path a recipe writes is a
+    detection's ``detection_preset: {config: ...}``; it is made absolute
+    here, so bna's ``vision/tube_od.yaml`` is ``bna/vision/tube_od.yaml``
+    whichever subproject, notebook or tool loads the file.
+
     Behaviour on errors:
         * Missing file → empty dict, no log.
         * Missing component in scene → one-line warning per recipe,
@@ -238,14 +245,22 @@ def load_recipes(
         * Anything else (import error, bad class kwargs) → traceback
           logged, that entry skipped. Other recipes continue.
     """
-    defs = _read_yaml_or_j2(Path(recipes_path), **render_vars)
+    recipes_path = Path(recipes_path)
+    defs = _read_yaml_or_j2(recipes_path, **render_vars)
     if defs is None:
         return {}
+    here = recipes_path.resolve().parent
     rcp = _RecipeDict()
     for alias, defn in defs.items():
         try:
             cls = _import_class(defn["class"])
             kwargs = dict(defn.get("kwargs") or {})
+            preset = kwargs.get("detection_preset")
+            if isinstance(preset, dict) and isinstance(preset.get("config"), str):
+                cfg = Path(os.path.expanduser(preset["config"]))
+                if not cfg.is_absolute():
+                    cfg = Path(os.path.normpath(here / cfg))
+                kwargs["detection_preset"] = {**preset, "config": str(cfg)}
             # ``component`` is optional — the core-camera Inspector and similar
             # robot-camera-only recipes don't take one.
             comp_name = kwargs.pop("component", None)

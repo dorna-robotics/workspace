@@ -1,71 +1,62 @@
-"""The project's folders — declared in launch.yaml, never guessed.
+"""The project's folders and paths — declared in launch.yaml, never guessed.
 
-``launch.yaml`` lists every folder the project exposes, in the order the
-file browser shows them as tabs::
+Two separate things, each explicit:
 
-    folders:
-      - {key: results,  label: Results,    path: results,     read_only: false}
-      - {key: data,     label: Data,       path: data,        read_only: false}
-      - {key: captures, label: Captures,   path: ../captures, read_only: false}
-      - {key: rec,      label: Recordings, path: rec,         read_only: false}
-      - {key: model,    label: Models,     path: model,       read_only: true}
+1. WHERE THE PLATFORM WRITES — one launch.yaml key per job, naming a
+   folder (relative to the project folder, or absolute)::
 
-Each entry, all four fields written out:
+       records:  results      # each run's rt.record files: <run>/records.jsonl, .csv
+       replays:  rec          # replay recordings, rec_<start time>.jsonl
+       uploads:  data         # where a file parameter's Open browses
 
-    key        the folder's identity, unique. Four keys mean something to
-               the platform (PLATFORM below):
-                 results   one folder per run — records.jsonl / .csv
-                 data      operator INPUT files; a file parameter's Open
-                           picks from here
-                 rec       replay recordings
-                 captures  the images the detections keep: a preset's
-                           relative display.client_save_img lands here
-               Any other key is the project's own: a tab, nothing more.
-    label      the tab's text.
-    path       relative to the project folder (``../x`` shares a parent's,
-               the way recipes.j2 is shared), or absolute.
-    read_only  true: browse, preview and download only — upload, new
-               folder and delete are refused by the server. Read on every
-               request, so flipping it takes effect on the next open.
+   A key that is not declared means OFF: run records stay in memory (the
+   pendant and ``rt.records()`` still show them), no recording is written,
+   the Open button has no folder. There is no default folder.
 
-The list IS the browser: only listed folders get a tab, in list order,
-and the first one is where the Files button opens. A platform key that
-is not listed still works at its default path (``<project>/<key>``) —
-the platform needs somewhere to write a run's records — but has no tab,
-and the runtime server says so once at launch. A launch.yaml with no
-``folders:`` key at all gets the platform's four as tabs (PLATFORM
-order, default paths, writable) — exactly what every project had before
-the list existed. The old ``data_dir`` /
-``results_dir`` / ``rec_dir`` / ``captures_dir`` keys are gone: a
-launch.yaml that still has one is refused with the line to write
-instead.
+2. WHAT THE FILE BROWSER SHOWS — ``folders:``, display only::
+
+       folders:
+         - {key: results,  label: Results,  path: results,     read_only: false}
+         - {key: captures, label: Captures, path: ../captures, read_only: false}
+         - {key: model,    label: Models,   path: ../model,    read_only: true}
+
+   Each entry, all four fields written out: ``key`` (a plain name, the
+   tab's identity), ``label`` (its text), ``path`` (relative to the
+   project folder, or absolute), ``read_only`` (true: browse, preview and
+   download only — upload, new folder and delete are refused by the
+   server; read on every request, so a flip takes effect on the next
+   open). One tab per entry, in list order; Files opens on the first.
+   Listing a folder never makes anything be saved into it — a run's
+   records go where ``records:`` says, a detection's images where its own
+   path says. No ``folders:`` key = no tabs.
+
+The old ``data_dir`` / ``results_dir`` / ``rec_dir`` / ``captures_dir``
+keys are refused with the line to write instead.
 
 WHY A MODULE. Several processes need the same answer — the runtime
-server writes run records and recordings, the vision station resolves
-client saves, the orchestrator's file browser lists and serves them.
-One contract, one place.
+server writes records and replays, the scene builder lists replays, the
+orchestrator's file browser lists and serves the folders. One contract,
+one place.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import yaml
 
-# The platform's own folders: key -> (default path, default tab label).
-# A project that does not list one still gets it, at this path, untabbed.
-PLATFORM: Dict[str, tuple] = {
-    "results":  ("results",  "Results"),
-    "data":     ("data",     "Data"),
-    "captures": ("captures", "Captures"),
-    "rec":      ("rec",      "Recordings"),
-}
+# launch.yaml keys naming where the platform writes / reads, by job.
+PATHS = ("records", "replays", "uploads")
 
 _FIELDS = ("key", "label", "path", "read_only")
-_GONE_KEYS = ("data_dir", "results_dir", "rec_dir", "captures_dir")
+_GONE = {"results_dir": "records: <folder>", "rec_dir": "replays: <folder>",
+         "data_dir": "uploads: <folder>",
+         "captures_dir": "a folders: entry - {key: captures, label: Captures, path: <folder>, read_only: false}"}
+_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass(frozen=True)
@@ -74,7 +65,6 @@ class Folder:
     label: str
     path: Path          # resolved
     read_only: bool
-    shown: bool         # listed in launch.yaml folders: — has a tab
 
 
 def hand_back(path) -> None:
@@ -112,38 +102,58 @@ def _launch_of(project_dir: Path) -> dict:
     return {}
 
 
-def project_folders(project_dir, launch: Optional[dict] = None,
-                    ensure: bool = False) -> List[Folder]:
-    """Every folder of one project: the listed ones in list order
-    (``shown``), then any platform folder the list leaves out, at its
-    default path (not shown). Raises ValueError on a malformed list —
-    a typo must not quietly drop a folder.
+def _check_gone(launch: dict) -> None:
+    for k, line in _GONE.items():
+        if k in launch:
+            raise ValueError(f"launch.yaml: {k} is gone — write {line} instead")
 
-    ``launch`` is the already-parsed launch.yaml when the caller has it;
-    otherwise it is read here (on every call — read_only is live).
-    ``ensure`` creates the folders, so a listing of an absent one is
-    empty rather than an error."""
+
+def _resolve(project_dir: Path, rel) -> Path:
+    p = Path(str(rel)).expanduser()
+    return (p if p.is_absolute() else (project_dir / p)).resolve()
+
+
+def project_paths(project_dir, launch: Optional[dict] = None,
+                  ensure: bool = False) -> Dict[str, Optional[Path]]:
+    """``{"records": Path|None, "replays": Path|None, "uploads": Path|None}``
+    — the folders launch.yaml names for the platform's jobs; None = not
+    declared = off. ``ensure`` creates the declared ones."""
     project_dir = Path(project_dir)
     launch = _launch_of(project_dir) if launch is None else (launch or {})
-    gone = [k for k in _GONE_KEYS if k in launch]
-    if gone:
-        k = gone[0]
-        raise ValueError(
-            f"launch.yaml: {k} is gone — list the folder under folders: instead, e.g. "
-            f"- {{key: {k[:-4]}, label: {PLATFORM[k[:-4]][1]}, path: {launch[k]}, read_only: false}}")
+    _check_gone(launch)
+    out: Dict[str, Optional[Path]] = {}
+    for k in PATHS:
+        v = launch.get(k)
+        if v is None or v is False or v == "":
+            out[k] = None
+            continue
+        if not isinstance(v, str):
+            raise ValueError(f"launch.yaml: {k} must be a folder path")
+        out[k] = _resolve(project_dir, v)
+        if ensure:
+            try:
+                fresh = not out[k].exists()
+                out[k].mkdir(parents=True, exist_ok=True)
+                if fresh:
+                    hand_back(out[k])
+            except OSError:
+                pass
+    return out
+
+
+def project_folders(project_dir, launch: Optional[dict] = None,
+                    ensure: bool = False) -> List[Folder]:
+    """The file browser's tabs: launch.yaml ``folders:``, in order. Raises
+    ValueError on a malformed list — a typo must not quietly drop a tab.
+    Read on every call (read_only is live). ``ensure`` creates them."""
+    project_dir = Path(project_dir)
+    launch = _launch_of(project_dir) if launch is None else (launch or {})
+    _check_gone(launch)
     raw = launch.get("folders")
     if raw is None:
-        # No folders: key at all — the platform's four, as tabs, in
-        # PLATFORM order: what every project had before the list existed.
-        raw = [{"key": k, "label": lbl, "path": d, "read_only": False}
-               for k, (d, lbl) in PLATFORM.items()]
+        return []
     if not isinstance(raw, list):
         raise ValueError("launch.yaml: folders must be a list of {key, label, path, read_only}")
-
-    def resolve(rel) -> Path:
-        p = Path(str(rel)).expanduser()
-        return (p if p.is_absolute() else (project_dir / p)).resolve()
-
     out: List[Folder] = []
     seen = set()
     for i, e in enumerate(raw):
@@ -157,8 +167,8 @@ def project_folders(project_dir, launch: Optional[dict] = None,
                 ([f"unknown field(s) {', '.join(extra)}"] if extra else []) +
                 ([f"missing {', '.join(missing)}"] if missing else [])))
         key, label, path, ro = e["key"], e["label"], e["path"], e["read_only"]
-        if not isinstance(key, str) or not key or "/" in key:
-            raise ValueError(f"{where}: key must be a plain name")
+        if not isinstance(key, str) or not _KEY_RE.match(key):
+            raise ValueError(f"{where}: key must be a plain name (letters, digits, _ -)")
         if key in seen:
             raise ValueError(f"{where}: key {key!r} is listed twice")
         if not isinstance(label, str) or not label:
@@ -168,10 +178,7 @@ def project_folders(project_dir, launch: Optional[dict] = None,
         if not isinstance(ro, bool):
             raise ValueError(f"{where} ({key}): read_only must be true or false")
         seen.add(key)
-        out.append(Folder(key, label, resolve(path), ro, True))
-    for key, (default, label) in PLATFORM.items():
-        if key not in seen:
-            out.append(Folder(key, label, resolve(default), False, False))
+        out.append(Folder(key, label, _resolve(project_dir, path), ro))
     if ensure:
         for f in out:
             try:
@@ -182,13 +189,6 @@ def project_folders(project_dir, launch: Optional[dict] = None,
             except OSError:
                 pass            # read-only mount: listing still works
     return out
-
-
-def project_dirs(project_dir, launch: Optional[dict] = None,
-                 ensure: bool = False) -> Dict[str, Path]:
-    """``{key: Path}`` for every folder of the project (project_folders),
-    the platform's four always included."""
-    return {f.key: f.path for f in project_folders(project_dir, launch, ensure)}
 
 
 def workspace_project_dir(workspace) -> Optional[Path]:
@@ -205,31 +205,3 @@ def workspace_project_dir(workspace) -> Optional[Path]:
         return None
     proj = Path(paths[0]).resolve().parent
     return proj.parent if proj.name == "scene" else proj
-
-
-def client_save_path(value, captures: Optional[Path]):
-    """Resolve one ``display.client_save_img`` / ``client_save_img_roi``
-    value against the project's captures folder — the one rule, applied
-    where a detection is registered:
-
-        False / 0 / ""      -> unchanged (off)
-        True / 1            -> "<captures>/"   (one file per run inside it)
-        "sub/" or "f.jpg"   -> "<captures>/sub/" / "<captures>/f.jpg"
-        "/abs/..." "~/..."  -> unchanged (taken as given)
-
-    A trailing "/" is kept: it is what says "a folder, one file per run".
-    With no captures folder known the value passes through untouched."""
-    if not value or captures is None:
-        return value
-    captures = Path(captures)
-    if value is True or value == 1:
-        return str(captures) + os.sep
-    if not isinstance(value, str):
-        return value
-    if os.path.isabs(os.path.expanduser(value)):
-        return value
-    out = str(captures / value)
-    if value.endswith(("/", os.sep)) and not out.endswith(os.sep):
-        out += os.sep
-    return out
-

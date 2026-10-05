@@ -67,11 +67,11 @@ in `scene/core_500.j2`). No hardware needed — works on any machine.
 4. **More caps**: raise the `kwargs.cap_count.max` in `launch.yaml`
    and extend `CAP_HOLDER_SLOTS` in `actions.py`.
 
-5. **Add vision**: scene/core_500.j2 has `has_camera: false`. Flip to
-   `true`, add a vision component, and swap
-   `feeder.pick(approach=False)` for
-   `feeder.present_cap(rcp["inspector"])` — see
-   `sample_prep/actions.py:CapFed` for the full vision-driven version.
+5. **Real vision**: the robot camera is `inspection_d405_robot_1` in
+   `scene/layout.j2` — a component bolted to `robot_A5`, in sim here.
+   Give it the unit's `camera_cfg` (serial, ip, port), `simulation:
+   false`, and a `detection_preset` on the `inspector` recipe; the
+   actions already present each cap to it (`present_cap`).
 
 ## What's NOT in this example (kept simple on purpose)
 

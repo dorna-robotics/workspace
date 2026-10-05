@@ -54,6 +54,11 @@ class Display:
 
         # delta compression: cache last sent pose per object
         self._last_sent = {}  # key → (pose_tuple, collision_hash)
+        # The robot's own collision boxes: every URDF link box where the
+        # planner places it (Core.planner_robot_boxes). Computed only while a
+        # viewer shows collision boxes (its toggle sends
+        # {"__collision__": {"show": bool}} up the scene stream).
+        self.collision_shown = False
         # What the viewer has been told exists — the base for the
         # ``delete`` diff in send_snapshot. Separate from _last_sent on
         # purpose: that cache is cleared to force a full resend and only
@@ -97,12 +102,25 @@ class Display:
             except Exception as e:
                 print("[Display] error in request_snapshot:", e)
 
+        # the viewer's own messages come back down the scene stream; the
+        # one we act on is the collision-box toggle
+        @self.sio.on("scene_update")
+        def _on_scene(data=None):
+            try:
+                if isinstance(data, dict) and isinstance(data.get("__collision__"), dict):
+                    shown = bool(data["__collision__"].get("show"))
+                    if shown != self.collision_shown:
+                        self.collision_shown = shown
+                        self.send_snapshot()        # adds the robot's boxes, or deletes them
+            except Exception as e:
+                print("[Display] error in scene_update:", e)
+
     # ----------------------------------------------------
     # Public utilities
     # ----------------------------------------------------
     def _rec_dir(self):
-        """The active project's recordings folder (launch.yaml ``folders:``
-        key ``rec``, default ``rec/``) — where recordings land, and
+        """The active project's replays folder (launch.yaml ``replays:``;
+        None when not declared — no recording) — where recordings land, and
         the one folder the scene builder's Replay panel lists. It is the
         PROJECT's own folder, not the station's core/: core/ is per-bench
         state that core_dir may point anywhere, recordings belong to the
@@ -115,21 +133,19 @@ class Display:
         bare scene files outside a project."""
         try:
             import pathlib
-            from workspace.project_dirs import project_dirs
+            from workspace.project_dirs import project_paths
             declared = getattr(self.workspace, "project_dir", None)
             if declared:
-                rec = project_dirs(pathlib.Path(str(declared)).resolve())["rec"]
-                rec.mkdir(parents=True, exist_ok=True)
-                return str(rec)
+                rec = project_paths(pathlib.Path(str(declared)).resolve(), ensure=True)["replays"]
+                return str(rec) if rec else None
             cfg = getattr(self.workspace, "config_paths", None) or []
             if not cfg:
                 return None
             p = pathlib.Path(str(cfg[0])).resolve().parent
             for _ in range(6):
                 if (p / "launch.yaml").exists():
-                    rec = project_dirs(p)["rec"]       # launch.yaml folders: (rec)
-                    rec.mkdir(parents=True, exist_ok=True)
-                    return str(rec)
+                    rec = project_paths(p, ensure=True)["replays"]   # launch.yaml replays:
+                    return str(rec) if rec else None
                 if p.parent == p:
                     break
                 p = p.parent
@@ -220,6 +236,28 @@ class Display:
                     continue
         return out or None
 
+    def _robot_box_items(self):
+        """Virtual solids (no mesh) carrying the robot's own collision boxes
+        as world boxes, one per URDF box: ``robot_box_<link>_<i>``. Empty
+        unless a viewer shows collision boxes."""
+        if not self.collision_shown:
+            return {}
+        try:
+            core = self.workspace.components.get("core")
+            boxes = core.planner_robot_boxes() if core is not None else []
+        except Exception as e:
+            _log_once("robot_boxes", f"planner_robot_boxes() failed: {e}")
+            return {}
+        out = {}
+        for i, box in enumerate(boxes):
+            out[f"robot_box_{box['link']}_{i}"] = {
+                "meshUrl": None, "pose": box["pose"], "visible": True,
+                "componentName": "robot", "solidName": f"{box['link']}_{i}", "type": "",
+                "collisionWorld": [{"pose": box["pose"], "scale": box["scale"], "robot": True}],
+                "collisionFlange": [],
+            }
+        return out
+
     def _build_snapshot(self):
         """meshUrl + pose + visible (+ anchors, names) for each solid."""
         try:
@@ -265,6 +303,7 @@ class Display:
                     item["collisionFlange"] = flange_boxes_by_solid.get(key_boxes, [])
 
                     batch[key] = item
+            batch.update(self._robot_box_items())
             j = self._read_joints()
             if j is not None:
                 batch["__joints__"] = {"joints": j}
@@ -329,6 +368,17 @@ class Display:
                     "collisionFlange": cf,
                 }
 
+        # the robot's own boxes ride the frame too (they move with the joints)
+        for key, item in self._robot_box_items().items():
+            pose_t = tuple(item["pose"])
+            with self._state_lock:
+                prev = self._last_sent.get(key)
+                if prev is not None and prev[0] == pose_t:
+                    continue
+                self._last_sent[key] = (pose_t, (1, 0))
+            out[key] = {"pose": item["pose"], "visible": True,
+                        "collisionWorld": item["collisionWorld"], "collisionFlange": []}
+
         # Joints chip: append only on change (usually alongside pose
         # deltas that were being sent anyway).
         j = self._read_joints()
@@ -352,7 +402,7 @@ class Display:
             return {}, {}
 
         try:
-            collision_world, collision_flange = self.workspace.compute_collision_boxes(padding)
+            collision_world, collision_flange, collision_link = self.workspace.compute_collision_boxes(padding)
             _log_clear("collision", "collision boxes recovered")
         except Exception as e:
             _log_once("collision", f"compute_collision_boxes() failed: {e}")
@@ -360,6 +410,18 @@ class Display:
 
         world_map = {}
         for box in collision_world:
+            comp = box.get("componentName")
+            solid = box.get("solidName")
+            if comp is None or solid is None:
+                continue
+            world_map.setdefault((comp, solid), []).append({
+                "pose": box.get("pose"),
+                "scale": box.get("scale"),
+            })
+
+        # link-mounted boxes (a camera on the wrist) come with their WORLD
+        # pose at the current joints — drawn like any world box
+        for box in collision_link:
             comp = box.get("componentName")
             solid = box.get("solidName")
             if comp is None or solid is None:

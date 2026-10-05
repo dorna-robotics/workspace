@@ -208,6 +208,13 @@ pendant.
 
 ## Scene file ownership + caches
 
+- Per-unit VALUES (robot/device IPs and ports, serial ports, camera
+  serials, the sim flags, the rail offset)
+  live in a git-ignored ``scene/bench.j2`` that ``core_*.j2`` and
+  ``layout.j2`` import; commit ``scene/bench.example.j2`` beside it and
+  add ``scene/bench.j2`` to ``.gitignore``. Set this up with the scene,
+  before the first commit — project-guide §2.
+
 - The scene BUILDER owns ``layout.j2`` and regenerates it wholesale —
   hand-added blocks there get clobbered on the next export. Hand-
   maintained scene content (stock: caps in a feeder, consumables)

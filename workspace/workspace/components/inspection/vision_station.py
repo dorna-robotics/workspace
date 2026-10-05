@@ -33,6 +33,7 @@ Health monitoring: the vision server is the **sole publisher** for
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 
@@ -101,13 +102,9 @@ class VisionStation:
         camera_cfg: Optional[dict] = None,
         simulation: bool = True,
         label: str = "vision",
-        captures_dir=None,
     ):
-        # The project's captures folder, as a callable returning a Path
-        # (or None) — asked when a detection is registered, so a preset's
-        # relative display.client_save_img / client_save_img_roi lands
-        # in the project (project_dirs.client_save_path).
-        self._captures_dir = captures_dir
+        # Per detection: extra add arguments, re-sent on reconnect.
+        self._add_args: dict = {}
         self.ip = ip
         self.port = int(port)
         # str() at the boundary: an unquoted serial in scene yaml
@@ -194,7 +191,8 @@ class VisionStation:
         self._client.camera_add(serial_number=self.serial_number, **self.camera_cfg)
         for name, preset in self._detections.items():
             self._client.detection_add(
-                name=name, camera_serial_number=self.serial_number, **preset)
+                name=name, camera_serial_number=self.serial_number,
+                **preset, **self._add_args.get(name, {}))
         self._bus_connect()
         print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
 
@@ -229,47 +227,58 @@ class VisionStation:
             self._dead = False
         try:
             return thunk()
-        except Exception:
-            self._dead = True
+        except Exception as ex:
+            # An error the SERVER sent back (VisionServerError: a bad
+            # preset, a failed model call, a detection that raised)
+            # proves the socket is alive — the session stays. Only a
+            # transport failure marks it dead for the next call to
+            # re-establish.
+            if type(ex).__name__ != "VisionServerError":
+                self._dead = True
             raise
 
     def add_detection(self, name: str, **detection_preset: Any) -> bool:
         """Register a detection on the server. Returns False in simulation.
 
-        A relative ``display.client_save_img`` / ``client_save_img_roi``
-        (or ``True``) is resolved against the project's captures folder
-        first — the vision client then writes every run's frame there."""
+        ``config:`` (a detection config file, vision-guide §5) comes
+        absolute from a recipes file (the loader resolved it against that
+        file); written in Python it is relative to the working folder, as
+        any path in that code. A config that cannot be added — or a vlm
+        detection — RAISES (fails the launch: misconfiguration); any other
+        detection logs and returns False, as before. A vlm detection that
+        RUNS is like any other: no usable answer is an empty result
+        (vision-guide §9)."""
         if self.simulation or self._client is None:
             return False
-        detection_preset = self._resolve_client_saves(detection_preset)
+        if isinstance(detection_preset.get("config"), str):
+            p = Path(detection_preset["config"]).expanduser()
+            if not p.is_file():
+                raise RuntimeError(f"[{self.label}] detection {name!r}: config "
+                                   f"{detection_preset['config']!r} not found ({p.resolve()})")
+        self._add_args[name] = {}
         self._detections[name] = dict(detection_preset)
         try:
             self._call(lambda: self._client.detection_add(
                 name=name,
                 camera_serial_number=self.serial_number,
-                **detection_preset,
+                **detection_preset, **self._add_args[name],
             ))
             return True
         except Exception as ex:
+            if "config" in detection_preset or (detection_preset.get("detection") or {}).get("cmd") == "vlm":
+                raise           # a config or vlm detection that cannot be added fails the launch
             print(f"[{self.label}] detection_add({name}) failed: {ex}")
             return False
 
-    def _resolve_client_saves(self, preset: dict) -> dict:
-        display = preset.get("display")
-        if not isinstance(display, dict) or self._captures_dir is None:
-            return preset
-        keys = [k for k in ("client_save_img", "client_save_img_roi") if display.get(k)]
-        if not keys:
-            return preset
-        from workspace.project_dirs import client_save_path
-        try:
-            captures = self._captures_dir()
-        except Exception:
-            captures = None
-        display = dict(display)
-        for k in keys:
-            display[k] = client_save_path(display[k], captures)
-        return {**preset, "display": display}
+    def frame(self, quality: int = 100):
+        """One frame from this station's camera as JPEG bytes — no
+        detection runs. Collect one per pose, then
+        ``detect(name, data=[frame_1, frame_2, ...])`` judges them as the
+        views of one part (vlm). ``None`` in simulation."""
+        if self.simulation or self._client is None:
+            return None
+        return self._call(lambda: self._client.camera_get_img(
+            self.serial_number, type="color_img", quality=quality))[0]
 
     def capture(self, name: str, data: Any = None, camera_in_world: Any = None,
                 focus: Any = None) -> dict:
@@ -364,6 +373,15 @@ class VisionStation:
         """
         if self.simulation or self._client is None:
             return sim_return
+
+        if isinstance(data, (list, tuple)):
+            # several images of ONE part (vlm) — judged as given, no capture,
+            # no camera pose: the caller collected them (frame())
+            try:
+                return self._call(lambda: self._client.detection_run(name, data=list(data), **kwargs))
+            except Exception as ex:
+                print(f"[{self.label}] detect({name}) failed: {ex}")
+                return sim_return
 
         if not use_last:
             # capture → run pattern. Capture errors raise; detection

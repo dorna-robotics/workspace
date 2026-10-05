@@ -1164,8 +1164,8 @@ class ProjectBundleHandler(tornado.web.RequestHandler):
                 # deeper blocks (anchors: body: cap_seat:). cfg is the
                 # authoritative structure; text stays for display.
                 try:
-                    from jinja2 import Template as _T
-                    row["cfg"] = yaml.safe_load(_T(text).render()) or {}
+                    from workspace.j2 import render_text
+                    row["cfg"] = yaml.safe_load(render_text(text, os.path.dirname(p))) or {}
                 except Exception as ex:
                     row["cfg_error"] = str(ex)
                 out["scenes"].append(row)
@@ -1177,8 +1177,8 @@ class ProjectBundleHandler(tornado.web.RequestHandler):
         if os.path.isfile(rp):
             out["recipes_file"] = rel
             try:
-                from jinja2 import Template as _T
-                defs = yaml.safe_load(_T(open(rp, encoding="utf-8").read()).render()) or {}
+                from workspace.j2 import render_text
+                defs = yaml.safe_load(render_text(open(rp, encoding="utf-8").read(), os.path.dirname(rp))) or {}
                 for name, spec in defs.items():
                     kw = (spec or {}).get("kwargs") or {}
                     out["recipes"].append({
@@ -1509,8 +1509,8 @@ async def reset_scene(sid):
 
 
 class ReplayListHandler(tornado.web.RequestHandler):
-    """GET → the active project's recordings (rec_*.jsonl in its declared
-    rec folder — launch.yaml folders:, default rec/), newest
+    """GET → the active project's recordings (rec_*.jsonl in the folder
+    launch.yaml ``replays:`` names; none when not declared), newest
     first. The Replay panel's dropdown.
 
     The PROJECT's own rec/ folder, which is where both recorders write
@@ -1522,8 +1522,9 @@ class ReplayListHandler(tornado.web.RequestHandler):
         rec_dir = None
         if _project_path:
             try:
-                from workspace.project_dirs import project_dirs
-                rec_dir = str(project_dirs(_project_path)["rec"])   # launch.yaml folders: (rec)
+                from workspace.project_dirs import project_paths
+                rp = project_paths(_project_path)["replays"]          # launch.yaml replays:
+                rec_dir = str(rp) if rp else None
             except ValueError as ex:
                 print(f"[replay] {ex}")
         if rec_dir and os.path.isdir(rec_dir):

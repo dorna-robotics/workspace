@@ -51,16 +51,24 @@ class Inspector(Recipe):
         merge(prm, self.DEFAULTS)
         merge(prm, kwargs)
 
+        # The camera is a component, always: a station's, or a camera
+        # bolted to the arm (an inspection_*_robot written in the scene).
+        # The core is a robot, not a camera.
+        if component is None:
+            raise ValueError(f"inspector {detection_name!r}: no component — name the camera "
+                             f"component (a station, or a robot-mounted inspection_*_robot)")
+        camera = component
+        # A camera attached under a robot link is no station: the recipe
+        # gets no component — no reference IK, present() refused. The
+        # scene's attach decides (Workspace.rides_robot), nothing else.
+        station = None if workspace.rides_robot(camera) else camera
         super().__init__(
             workspace=workspace,
             core=core,
-            component=component,
+            component=station,
             **prm,
         )
-
-        # component=None -> the robot-mounted core camera (no station,
-        # no motion surface); detections run through core's vision.
-        self._vision_owner = component if component is not None else core
+        self._vision_owner = camera
 
         # Cache the name we registered the detection under so detect() can
         # find it. Each Inspector instance owns one named detection.
@@ -113,6 +121,14 @@ class Inspector(Recipe):
             self.detection_name, data=data,
             camera_in_world=self._camera_in_world())
 
+    def frame(self, quality=100):
+        """One frame from this inspector's camera as JPEG bytes — no
+        detection runs. For a vlm verdict over several poses: move, take
+        a frame, move, take a frame, then ``detect(data=[f1, f2, ...])``
+        judges them as the views of one part in ONE request. ``None`` in
+        simulation."""
+        return self._vision_owner.frame(quality=quality)
+
     def get_img(self, kind="img", quality=85, max_side=None):
         """This inspector's last image as JPEG bytes — ``"img"`` the frame
         as the server drew it (boxes and labels when the preset's
@@ -129,7 +145,8 @@ class Inspector(Recipe):
         runs on it; raises ``CameraUnavailableError`` on capture
         failure. Returns ``sim_return`` (default True) in simulation —
         device-guide §17. ``use_last=True`` skips capture; ``data=...``
-        bypasses the live camera for replay/testing.
+        bypasses the live camera for replay/testing; ``data=[f1, f2, ...]``
+        (vlm) judges those frames as the views of one part, as given.
         """
         kwargs.setdefault("camera_in_world", self._camera_in_world())
         return self._vision_owner.detect(self.detection_name, sim_return=sim_return, **kwargs)

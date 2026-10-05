@@ -226,23 +226,28 @@ __marimo__/
 workspace/gui/orchestrator/registry.json
 # Per-station core folder (calibrate/ik/path.json) + legacy root files
 examples/*/core/
-# recordings — one JSONL per viewer recording (<project>/rec/rec_*.jsonl)
+# replays — one JSONL per viewer recording (launch.yaml replays:)
 examples/*/rec/
 rec/
+replays/
 core.json
 core_ik.json
 core_path.json
 
-# rt.record run folders (audit data, one per run — see project-guide §3).
-# `runs/` was the old fixed name; the folder is `results_dir` in
-# launch.yaml now and defaults to results/ (project_dirs.py).
+# rt.record run folders (audit data, one per run — see project-guide §3),
+# the folder launch.yaml's records: names. runs/ and results/ were the
+# older names.
 runs/
 results/
 examples/*/results/
+records/
 # rt.count's counters (the file launch.yaml's counts: names — totals
 # across every run; data, not source, so a pull never resets them).
 counts/
 # Operator input files — uploaded through the GUI's file browser, never
-# source (data_dir in launch.yaml, defaults to data/).
+# source (the folder launch.yaml's uploads: names).
 data/
 examples/*/data/
+uploads/
+# Images detections keep (display.client_save_img paths) — data, not source.
+captures/

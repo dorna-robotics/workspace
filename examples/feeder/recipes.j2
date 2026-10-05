@@ -26,10 +26,11 @@ feeder:
       - [-1, {}]
       - [1, {}]
 
-# Core-camera Inspector — the robot's mounted camera (no component).
+# The robot's mounted camera — a component like any station
+# (inspection_d405_robot_1 in scene/layout.j2, bolted to robot_A5).
 inspector:
   class: workspace.recipes.inspector.Inspector
-  kwargs: {detection_preset: {}}
+  kwargs: {component: inspection_d405_robot_1, detection_preset: {}}
 
 cap_holder:
   class: workspace.recipes.rack.Rack

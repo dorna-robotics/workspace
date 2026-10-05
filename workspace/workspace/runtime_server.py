@@ -230,7 +230,7 @@ def _record_start():
     if _recorder["fp"] is not None:
         return {"ok": False, "error": "already recording"}
     if not _record_dir:
-        return {"ok": False, "error": "no project rec/ dir known"}
+        return {"ok": False, "error": "launch.yaml declares no replays: folder"}
     os.makedirs(_record_dir, exist_ok=True)
     name = time.strftime("rec_%Y-%m-%d_%H-%M-%S.jsonl")
     path = os.path.join(_record_dir, name)
@@ -322,6 +322,13 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
             self.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.set_header("Pragma", "no-cache")
             self.set_header("Expires", "0")
+        elif str(path).endswith(".html"):
+            # A page is never served stale: with no Cache-Control the browser
+            # keeps it on a heuristic (the viewer iframe survived a hard
+            # reload of its parent after an upgrade). Assets carry versioned
+            # URLs (index.html versioned()) and may stay cached; pages
+            # revalidate every time — an ETag answers 304 when unchanged.
+            self.set_header("Cache-Control", "no-cache")
 
     def compute_etag(self):
         return None if DEV_NOCACHE else super().compute_etag()
@@ -760,8 +767,8 @@ def _load_pendant_spec(workspace) -> dict:
 
         text = f.read_text()
         if str(rel).endswith(".j2") or "{%" in text or "{{" in text:
-            from jinja2 import Template
-            text = Template(text).render()
+            from workspace.j2 import render_text
+            text = render_text(text, f.parent)
         data = yaml.safe_load(text) or {}
         widgets = data.get("hmi", data) if isinstance(data, dict) else data
         if isinstance(widgets, dict):
@@ -1958,23 +1965,22 @@ class RuntimeServer:
         _proj = _project_dir(workspace)
         global _record_dir
         if _proj is not None:
-            # The project's own folders, listed by ITS launch.yaml
-            # (folders:, project_dirs.py). They live with the PROJECT,
-            # not in the station's core/; the scene builder's Replay
-            # panel and the file browser read the same paths. Created
-            # here so a first run never fails on a missing folder and
-            # the browser never 404s an empty project. A malformed list
-            # fails the launch (raised); a platform folder the list
-            # leaves out works at its default path, said once here.
-            from workspace.project_dirs import project_folders
-            _folders = project_folders(_proj, ensure=True)
-            for _f in _folders:
-                if not _f.shown:
-                    print(f"[folders] {_f.key}: not in launch.yaml folders: — "
-                          f"using {_f.path}, not shown in the file browser")
-            _dirs = {_f.key: _f.path for _f in _folders}
-            _record_dir = str(_dirs["rec"])
-            self.rt.record_dir = str(_dirs["results"])
+            # Where the platform writes, named by THIS project's
+            # launch.yaml (records: / replays:, project_dirs.py) — a key
+            # not declared is OFF: records stay in memory, no recording
+            # is written; said once here. Created now, so a first run
+            # never fails on a missing folder. The browser's folders:
+            # tabs are created too (an empty tab, not an error). A
+            # malformed launch.yaml fails the launch (raised).
+            from workspace.project_dirs import project_folders, project_paths
+            _paths = project_paths(_proj, ensure=True)
+            project_folders(_proj, ensure=True)
+            for _k, _what in (("records", "run records stay in memory"),
+                              ("replays", "no replay recordings are written")):
+                if _paths[_k] is None:
+                    print(f"[paths] {_k}: not declared in launch.yaml — {_what}")
+            _record_dir = str(_paths["replays"]) if _paths["replays"] else None
+            self.rt.record_dir = str(_paths["records"]) if _paths["records"] else None
             # rt.count's file — launch.yaml ``counts:``, explicit, relative
             # to the project. None: totals stay in memory (Runtime.count).
             _launch = yaml.safe_load((_proj / "launch.yaml").read_text()) or {}

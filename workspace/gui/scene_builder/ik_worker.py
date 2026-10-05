@@ -28,7 +28,7 @@ import tempfile
 from copy import deepcopy
 
 import yaml
-from jinja2 import Template
+from workspace.j2 import render_text
 
 
 def _pose6(solid, anchor=None):
@@ -58,7 +58,7 @@ def main(project_dir):
     for rel in scene:
         text = open(os.path.join(project_dir, rel)).read()
         if rel.endswith(".j2") or "{%" in text or "{{" in text:
-            text = Template(text).render()
+            text = render_text(text, os.path.dirname(os.path.join(project_dir, rel)))
         cfgs.update(yaml.safe_load(text) or {})
     for cfg in cfgs.values():
         if isinstance(cfg, dict):
@@ -83,7 +83,7 @@ def main(project_dir):
     # passes through ref_joints) so the drag seeds from the recipe's
     # own reference branch.
     rp = os.path.join(project_dir, launch.get("recipes", "recipes.j2"))
-    defs = yaml.safe_load(Template(open(rp).read()).render()) or {}
+    defs = yaml.safe_load(render_text(open(rp).read(), os.path.dirname(rp))) or {}
     recipes, info = {}, {}
     for name, spec in defs.items():
         try:

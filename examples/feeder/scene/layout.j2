@@ -68,3 +68,21 @@ cap_autosampler_2ml_{{ i }}:
     child_anchor: "center"
     offset: [0, 0, 0, 0, 0, 0]
 {% endfor %}
+
+# The robot camera — a component like any other, bolted to robot_A5's
+# camholder holes. Its collision box is part of robot_A5 (a link box).
+inspection_d405_robot_1:
+  type: "inspection_d405_robot"
+  simulation: true
+  camera_cfg:
+    serial_number: ""
+    ip: ""
+    port: 80
+    type: "d405"
+  attach:
+    parent_name: "core"
+    parent_solid: "robot_A5"
+    parent_anchor: "hole_0"
+    child_solid: "body"
+    child_anchor: "hole_0"
+    offset: [0, 0, 0, 0, 0, 0]

@@ -1,6 +1,6 @@
 # workspace/workspace.py
 import threading
-from jinja2 import Template
+from workspace.j2 import render_text
 from pathlib import Path
 import yaml
 import numpy as np
@@ -50,7 +50,7 @@ class Workspace:
             text = Path(path).read_text()
 
             if str(path).endswith(".j2") or "{%" in text or "{{" in text:
-                text = Template(text).render()
+                text = render_text(text, Path(path).parent)
 
             cfg = yaml.safe_load(text) or {}
             comp_cfgs.update(cfg)  # later files override earlier ones
@@ -417,15 +417,55 @@ class Workspace:
         """
         self._apply_initial_attachments()
 
+    ROBOT_LINKS = ("robot_A1", "robot_A2", "robot_A3", "robot_A4", "robot_A5")
+
+    def robot_link_of(self, solid):
+        """The core's robot link solid name (``robot_A1..A5``) this solid rides, walking
+        the kinematic tree's parents — or None when it sits on the bench or downstream of
+        ``robot_flange`` (the tool's case). This is what "riding the arm" means, for the
+        collision boxes and for the Inspector alike: the scene's ``attach`` decides."""
+        core_comp = self.components.get("core", None)
+        assembly = getattr(core_comp, "assembly", None)
+        if not isinstance(assembly, dict):
+            return None
+        link_solids = {id(assembly[ln]): ln for ln in self.ROBOT_LINKS if assembly.get(ln) is not None}
+        robot_flange = assembly.get("robot_flange", None)
+        cur = solid
+        seen_ids = set()
+        for _ in range(200):
+            parent = cur.parent.get("parent_solid", None) if isinstance(getattr(cur, "parent", None), dict) else None
+            if parent is None or parent is robot_flange or id(parent) in seen_ids:
+                return None
+            if id(parent) in link_solids:
+                return link_solids[id(parent)]
+            seen_ids.add(id(parent))
+            cur = parent
+        return None
+
+    def rides_robot(self, comp):
+        """The robot link (``robot_A1..A5``) a component is attached under, or None."""
+        for solid in list(getattr(comp, "assembly", {}).values()):
+            link = self.robot_link_of(solid)
+            if link is not None:
+                return link
+        return None
+
     def compute_collision_boxes(self, padding=0.0):
 
         """
-        Returns two lists:
-        1) collision_world: boxes in WORLD frame for everything not downstream of robot_flange
-        2) collision_flange: boxes in FLANGE frame for anything downstream of robot_flange
+        Returns three lists:
+        1) collision_world:  boxes in WORLD frame — everything on the bench
+        2) collision_flange: boxes in FLANGE frame — anything downstream of robot_flange (the tool, its load)
+        3) collision_link:   boxes that BELONG TO A ROBOT LINK — a component attached under
+           robot_A1..robot_A5 (a camera on the wrist, a bracket on the forearm). Each carries
+           ``link_solid`` (the robot solid it rides) and its ``pose`` in WORLD frame at the current
+           joints; the core expresses it in the planner's link frame (Core._link_boxes_to_cubes).
+           To the planner it is part of that link: it moves with it, collides with the world and
+           with non-adjacent links as the link does, and is never a self-hit against its own link.
         """
         collision_world = []
         collision_flange = []
+        collision_link = []
 
         # ======================================================================
         # PHASE 1: FULL KINEMATIC UPDATE (same as before): compute solid._world_T
@@ -589,6 +629,7 @@ class Workspace:
                     continue
 
                 downstream = _is_downstream_of_flange(solid)
+                link_solid = None if downstream else self.robot_link_of(solid)
 
                 if downstream and tool_load_solid is not None:
                     if _is_descendant_of(solid, tool_load_solid):
@@ -616,6 +657,16 @@ class Workspace:
                             "solidName": solid_name,
                             "frame": "flange",
                         })
+                    elif link_solid is not None:
+                        # Rides a robot link: world pose NOW, plus which link
+                        collision_link.append({
+                            "pose": T_to_xyzabc(T_box_world),
+                            "scale": pad(box),
+                            "componentName": comp_name,
+                            "solidName": solid_name,
+                            "frame": "link",
+                            "link_solid": link_solid,
+                        })
                     else:
                         # Pose in world frame (old behavior)
                         pose_out = T_to_xyzabc(T_box_world)
@@ -630,7 +681,7 @@ class Workspace:
                             entry["poseLocal"] = list(box["pose"])
                         collision_world.append(entry)
 
-        return collision_world, collision_flange
+        return collision_world, collision_flange, collision_link
 
     # ---------- pose calculation (the only thing Display needs) ----------
     def compute_world_poses(self):

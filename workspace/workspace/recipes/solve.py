@@ -56,7 +56,7 @@ import pkgutil
 import sys
 
 import yaml
-from jinja2 import Template
+from workspace.j2 import render_text
 
 
 # The planner's collision inflation — one padding per box face
@@ -70,7 +70,7 @@ BD_CANDIDATES = (50, 75, 100, 125, 150, 175, 200, 250, 300, 350)
 def _load_yaml_j2(path):
     text = open(path).read()
     if path.endswith(".j2") or "{%" in text or "{{" in text:
-        text = Template(text).render()
+        text = render_text(text, os.path.dirname(os.path.abspath(path)))
     return yaml.safe_load(text) or {}
 
 
@@ -185,7 +185,7 @@ def _ray_clearance(ws, solid, anchor):
     except Exception:
         pass
 
-    world, _tool = ws.compute_collision_boxes(PLANNER_PADDING)
+    world, _tool, _link = ws.compute_collision_boxes(PLANNER_PADDING)   # link boxes ride the arm — not bench obstacles
     ts = np.arange(0.0, RAY_HORIZON, RAY_STEP)
     pts = origin[None, :] + ts[:, None] * direction[None, :]
     pts_h = np.hstack([pts, np.ones((len(ts), 1))])

@@ -882,7 +882,7 @@ is the map. The same pattern applies to every device.
 | The **sim API stub** (no-op `print()`, `dose()`, …) | A small `XxxSimAPI` class in the same module as the real driver | Same shape as the real driver. Methods return success without touching hardware. |
 | The **`device_ids` declaration** | A `@property` on the component — `[f"<kind>:<id>"] if self.<id_field> else []` | Empty list when the field is empty → row hidden from the Devices panel (see §10 visibility rule). |
 | The **`device_claim` method** | A method on the component — returns `"sim"` if `self.<simulation_flag>` else `"real"` | Surfaces sim intent to the panel + auto-pause gate (rule 3 in §1). |
-| **Method calls on the device** (in recipes, actions, checks) | Anywhere — `printer.print(payload)`, `core.vision.snapshot()`, etc. | Sim-agnostic. Never `if printer.simulation: …` in these call sites. |
+| **Method calls on the device** (in recipes, actions, checks) | Anywhere — `printer.print(payload)`, `inspector.detect()`, etc. | Sim-agnostic. Never `if printer.simulation: …` in these call sites. |
 
 If you ever feel the urge to write `if some_component.simulation:` in
 a recipe or action, stop — the component is missing a method, or its
@@ -900,17 +900,18 @@ if not self._simulation_mode:
 else:
     self.robot_api = SimulationAPI()      # no-op stub
 
-# And the camera helper is constructed with the flag baked in:
-self.vision = VisionStation(
-    ...,
-    simulation=(not self.has_camera) or bool(prm["simulation"]),
-)
 ```
 
-After construction, `self.robot_api.jmove(...)` and
-`self.vision.snapshot()` always do the right thing — the recipe
-calls `core.jmove(...)` / `core.vision.snapshot()` and never has
-to know whether it ran against real hardware or a stub.
+and, in the inspection component (a camera is its own component,
+whether it sits on a fixture plate or on a robot link):
+
+```python
+self.vision = VisionStation(..., simulation=prm["simulation"])
+```
+
+After construction, `core.jmove(...)` and `camera.detect(...)` always
+do the right thing — the recipe never has to know whether it ran
+against real hardware or a stub.
 
 **Why this is the rule:**
 

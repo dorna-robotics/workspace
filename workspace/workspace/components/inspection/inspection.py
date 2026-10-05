@@ -80,22 +80,11 @@ class Inspection:
             camera_cfg=cam_cfg,
             simulation=prm["simulation"],
             label=self.name,
-            captures_dir=self._captures_dir,
         )
 
         # Detection the operator "Detect" button runs (the last one
         # registered via ``add_detection``; defaults to "default").
         self._default_detection = "default"
-
-    def _captures_dir(self):
-        """The project's captures folder (launch.yaml folders:, key captures), or
-        None outside a project — VisionStation resolves a preset's
-        relative client_save_img paths against it."""
-        from workspace.project_dirs import project_dirs, workspace_project_dir
-        proj = workspace_project_dir(self.workspace)
-        return project_dirs(proj)["captures"] if proj is not None else None
-
-    # ── DeviceComponent contract (workspace.devices.DeviceComponent) ───
 
     @property
     def device_ids(self) -> list[str]:
@@ -138,6 +127,11 @@ class Inspection:
         VisionStation.capture for the reply shape and ``data`` modes.
         """
         return self.vision.capture(name, data=data, camera_in_world=camera_in_world)
+
+    def frame(self, quality: int = 100):
+        """One frame from this camera as JPEG bytes, no detection
+        (VisionStation.frame); ``None`` in simulation."""
+        return self.vision.frame(quality=quality)
 
     def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None):
         """The named detection's last image as JPEG bytes (``"img"`` the

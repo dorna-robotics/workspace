@@ -60,10 +60,11 @@ rule 6.
    match the hotel's level count.
 2. **Different plate type**: swap `rack_autosampler_2ml` (used here
    as the moved plate) for whatever SBS-footprint rack you have.
-3. **Vision-based plate detection**: scene/core_500.j2 has
-   `has_camera: false`. Flip to true, add a MobileInspector
-   recipe, and call `inspector.detect(...)` before each pick if
-   you want runtime "is the plate actually there?" checks.
+3. **Vision-based plate detection**: add a robot camera component
+   (`inspection_d405_robot`, bolted to `core` / `robot_A5` — see
+   `examples/feeder/scene/layout.j2`) and an `Inspector` recipe on it,
+   then call `inspector.detect(...)` before each pick if you want
+   runtime "is the plate actually there?" checks.
 
 ## Files
 

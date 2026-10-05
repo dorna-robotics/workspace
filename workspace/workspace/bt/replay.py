@@ -51,10 +51,10 @@ def resolve_kwargs(launch, batch=None, overrides=(), project_dir=None):
     if isinstance(schema, str) and project_dir:
         from pathlib import Path
         try:
-            from jinja2 import Template
+            from workspace.j2 import render_text
             text = (Path(project_dir) / schema).read_text()
             if schema.endswith(".j2") or "{%" in text or "{{" in text:
-                text = Template(text).render()
+                text = render_text(text, (Path(project_dir) / schema).parent)
             data = yaml.safe_load(text) or {}
             if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
                 data = data["kwargs"]

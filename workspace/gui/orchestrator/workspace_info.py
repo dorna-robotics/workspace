@@ -200,10 +200,10 @@ def load_kwargs_schema(launch: Dict, project_dir) -> Optional[Dict]:
     if spec is None:
         return None
     try:
-        from jinja2 import Template
+        from workspace.j2 import render_text
         text = (_P(project_dir) / str(spec)).read_text()
         if str(spec).endswith(".j2") or "{%" in text or "{{" in text:
-            text = Template(text).render()
+            text = render_text(text, (_P(project_dir) / str(spec)).parent)
         data = yaml.safe_load(text) or {}
         if isinstance(data, dict) and isinstance(data.get("kwargs"), dict):
             data = data["kwargs"]

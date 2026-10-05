@@ -186,6 +186,7 @@ export function openFileBrowser(opts = {}) {
   let root = opts.root || "";      // "" = the project's first folder
   let folders = [];                // launch.yaml folders:, from the server
   let readOnly = false;            // the folder on screen
+  let rootLabel = "";              // its name, from the server (a tab, or Uploads)
   let path = "";
   let selected = null;
   let resolveFn = null;
@@ -324,7 +325,7 @@ export function openFileBrowser(opts = {}) {
       wrap.appendChild(b);
       if (!last) wrap.insertAdjacentHTML("beforeend", '<span class="fb-sep">/</span>');
     };
-    mk(folders.find((f) => f.key === root)?.label || root || "…", "", parts.length === 0);
+    mk(rootLabel || folders.find((f) => f.key === root)?.label || "…", "", parts.length === 0);
     parts.forEach((p, i) =>
       mk(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1));
   }
@@ -351,6 +352,7 @@ export function openFileBrowser(opts = {}) {
     }
     if (mine !== opening) return;      // a newer folder was opened meanwhile
     root = data.root;                  // "" asked -> the folder it named
+    rootLabel = data.label || "";
     folders = data.folders || [];
     readOnly = !!data.read_only;
     renderTabs();

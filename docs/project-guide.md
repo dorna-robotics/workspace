@@ -21,21 +21,97 @@ projects/my_project/
 │   └── hmi.j2           # …or a platform widget list, if writing no markup
 ├── scene/
 │   ├── base.j2          # Hardware layout (Jinja2)
-│   └── layout.j2        # Spatial arrangement
-├── model/               # vision models the detections load (checked in, like CAD)
-├── data/                # operator INPUT files — uploads, manifests (git-ignored)
-├── results/             # one folder per run — records.jsonl / .csv (git-ignored)
-├── rec/                 # replay recordings (git-ignored)
+│   ├── layout.j2        # Spatial arrangement
+│   ├── bench.j2         # THIS unit's values — IPs, ports, sim flags, rail offset (git-ignored, §2)
+│   └── bench.example.j2 # the committed template for bench.j2
+├── vision/              # the detections: configs, the models beside them, a vlm key (*.key, git-ignored)
+├── uploads/             # operator INPUT files (launch.yaml uploads:) (git-ignored)
+├── records/             # one folder per run — records.jsonl / .csv (launch.yaml records:) (git-ignored)
+├── replays/             # replay recordings (launch.yaml replays:) (git-ignored)
 ├── captures/            # IMAGES the detections keep — one per run (git-ignored)
 └── counts/              # rt.count's file (launch.yaml counts:) — totals across every run (git-ignored)
 ```
 
-The last five are DATA folders (§3 "The project's folders"): created
-on demand, never checked in, each listed in `launch.yaml`'s `folders:`. `captures/`
-is where a run's pictures land: a detection whose preset sets
-`display.client_save_img` / `client_save_img_roi` to a relative path
+The last five are DATA folders (§3 "The project's folders"), never
+checked in. Each is there because something names it: launch.yaml's
+`records:` / `replays:` / `uploads:` (where the platform writes and
+reads), `counts:`, or a detection's own save path. Listing a folder in
+`folders:` only SHOWS it. `captures/` holds a run's pictures
+because the detections say so: `display.client_save_img: "captures/tube_od/"`
 writes every run's frame there — on THIS machine, not the vision unit
-(vision-guide §5) — so a run's images live next to its records.
+(vision-guide §5).
+
+**The one path rule: a relative path is relative to the file it is
+written in.** The same rule as a web page's `src`, a stylesheet's
+`url()`, a compose file — and the only one here:
+
+| Written in | Relative to |
+|---|---|
+| `launch.yaml` (`scene:`, `recipes:`, `records:`, `folders:` paths, ...) | its folder — the project folder |
+| `recipes.j2` (`detection_preset: {config: vision/tube_od.yaml}`) | its folder (bna's recipes.j2 sits in `bna/`, so `vision/` is `bna/vision/`) |
+| a scene `.j2` (`{% import "bench.j2" %}`) | its folder |
+| a detection config (`detection.path`, `references[].image`, `key_path`, `display.client_save_*`) | its folder (`vision/`); `true` is the folder `output/` |
+| Python — `main.py`, a notebook, `rt.*` calls | the folder that program runs in: the orchestrator runs `main.py` from the project folder, Jupyter runs a notebook from its own |
+
+A path that names a place on ANOTHER computer (a vision unit's
+`save_img`, a `config: {server: ...}` file) cannot be relative to a file
+here; it is written absolute.
+
+### The `vision/` folder — the detections
+
+Everything a project's detections use sits in ONE checked-in folder:
+
+```
+vision/
+├── tube_od.yaml              # EVERY setting of one detection (below)
+├── tube_autosampler_2ml.pkl  # the model, beside the config that names it
+├── tube_cls.yaml
+├── tube_cropped.pkl
+├── cap_check.yaml            # a vlm config (vision-guide §9) ...
+├── refs/                     # ... its reference images
+└── vlm.key                   # ... and its key — git-ignored (*.key)
+```
+
+A config holds EVERY setting of its detection — nothing split between
+it and `recipes.j2`, which only names the file:
+
+```yaml
+# vision/tube_od.yaml
+detection:
+  cmd: od
+  path: tube_autosampler_2ml.pkl        # relative to vision/ — the model beside it
+  conf: 0.5
+frames_avg: 1
+display:
+  label: 1
+  save_img: false
+  save_img_roi: false
+  client_save_img: "../captures/tube_od/"   # relative to vision/ too — <project>/captures/tube_od/
+  client_save_img_roi: "../captures/tube_od/"
+```
+```yaml
+# recipes.j2
+inspector:
+  class: workspace.recipes.inspector.Inspector
+  kwargs: {..., detection_name: tube_od, detection_preset: {config: vision/tube_od.yaml}}
+```
+
+- One config per detection setup; several detections may share it
+  (apc's station and robot cameras both use `disc_od.yaml`). An inline
+  key would win over the config's, key by key (vision-guide §5 "Config
+  files") — keep that for a one-off test, not a project.
+- Every path inside a config is relative to `vision/`, and `config:` is
+  relative to recipes.j2 — the project runs from any folder on any
+  machine, from `main.py` or a notebook alike; never an absolute
+  `/home/.../model/x.pkl`.
+- `.gitignore` gets `*.key`, before any key exists. `vision/` is NEVER a
+  `folders:` entry: only declared folders are shown, so the file browser
+  cannot list or serve the key.
+- A config detection that cannot be added (missing file, bad key) fails
+  the launch.
+
+bna (`vision/tube_*.yaml`) and apc (`vision/disc_*.yaml`) follow it; the
+vision repo's `example/vlm/` is the vlm example.
 
 **Convention for new projects: operator-facing declarations live in
 `hmi/`.** `launch.yaml` stays a short list of pointers (scene,
@@ -90,6 +166,98 @@ if __name__ == "__main__":
 
 Defines the physical hardware: robots, racks, tools, peripherals. Built using the **Scene Builder** GUI. The Jinja2 templates (`.j2` files) describe every component and its position. This is the source of truth for component names used in recipes.
 
+**This unit's values — `scene/bench.j2`.** The same project runs on
+several benches, and each one's robot IP, device IPs, serial ports,
+simulation flags and measured rail offset differ. Those live in ONE git-ignored file per unit, and the scene files
+import it — so a `git pull` never carries one bench's addresses to
+another, and nothing has to be edited back after a pull. Set this up
+when you make a project:
+
+1. `scene/bench.j2` — one `set` per value, nothing else:
+
+   ```
+   {% set robot_sim     = false %}   {# the robot (core_*.j2) #}
+   {% set sim           = false %}   {# every device in layout.j2 #}
+   {% set rail_offset   = -212.1 %}  {# the rail's measured zero, mm #}
+   {% set robot_ip      = "10.0.3.10" %}
+   {% set scale_ip      = "10.0.3.50" %}
+   {% set vision_ip     = "10.0.3.40" %}
+   {% set camera_serial = "130322274110" %}
+   {% set pump_port     = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0" %}
+   ```
+
+2. Every scene file that uses one imports it at the top and uses the
+   names — `core_*.j2` for the robot, `layout.j2` for the rest:
+
+   ```
+   {%- import "bench.j2" as bench -%}
+   core:
+     simulation: {{ bench.robot_sim }}
+     ip: "{{ bench.robot_ip }}"
+     rail_cfg:
+       offset: {{ bench.rail_offset }}
+   ```
+
+3. `.gitignore` gets `scene/bench.j2`; commit `scene/bench.example.j2`
+   with the same names, placeholder addresses and simulation on. A new
+   unit copies the example to `bench.j2` and fills it in.
+
+What goes in it: what is true of THIS unit and not of the design — IPs,
+ports, serial-port paths, camera serials, which devices are simulated,
+measured calibration like the rail offset. Positions, anchors and device
+settings (a pump's bus `address:`, a baud rate) describe the design and
+stay in the scene files. bna is the reference (`scene/bench.j2`,
+`core_1000.j2`, `layout.j2`).
+
+The rules, all plain Jinja: `import` / `include` paths are relative to
+the importing file's folder; an undefined name FAILS the render naming
+it (a typo like `bench.robot_ipx`, or no `bench.j2` on a fresh clone) —
+never an empty value. Every renderer — the workspace, launcher, replay,
+the orchestrator and the scene builder — goes through `workspace/j2.py`,
+so the scene renders the same everywhere; `recipes.j2` and
+`hmi/default.j2` can import the same way. The scene builder's export
+(`projects/builder/config.j2`) is rendered output: these values come out as
+literals — when merging an export into
+`layout.j2`, keep the `{{ bench.* }}` references.
+
+### Riding the arm — a component attached to a robot link
+
+A component can be attached under a robot link exactly as under a
+fixture plate: `attach: {parent_name: core, parent_solid: robot_A5,
+parent_anchor: hole_0, ...}`. A robot-mounted camera is the usual case
+(`inspection_d405_robot`, `inspection_poe_robot`); a bracket or a
+sensor on the forearm is the same thing. The core has no camera keys —
+a camera is always its own component, wherever it sits.
+
+What riding the arm means, and nothing else:
+
+- **Pose from the tree.** Its anchors (a camera's `lens`) move with the
+  link; a capture reports that pose. No eye-in-hand / eye-to-hand
+  concept, no mount transform, no robot on the vision side.
+- **Its collision box is part of the link.** The planner gets it as a
+  *link box* on that link (`robot_A1..A5` → the URDF's `j1..j5_link`;
+  the flange's children are the tool's boxes, as before): it moves with
+  the link, collides with the world and with non-adjacent links as the
+  link does, and is never a self-hit against its own link or its
+  neighbours. One body. Give such a component its real box — nothing
+  else protects it.
+- **No station geometry.** An `Inspector` on a camera attached under a
+  robot link has no reference IK and refuses `present()`; the arm moves
+  the camera to the part. The attach is the only thing that says
+  "riding the arm" (`Workspace.rides_robot` walks the tree); a class
+  never declares it.
+
+The scene tree and the planner's URDF are two models of one robot with
+different link frames, so a link box is placed from its world pose at
+the current joints through the planner's own FK (`Core.
+_link_boxes_to_cubes`), never by assuming the frames coincide.
+`compute_collision_boxes` returns three groups — world, flange, link —
+and every planner update passes all three. The viewer's collision-box
+toggle also draws the robot's own boxes, every URDF link box where the
+planner places it, in yellow next to the scene's robot (components:
+red, on the flange: blue): the way to see where collision is really
+checked.
+
 ---
 
 ## 3. Launch config — `launch.yaml`
@@ -100,7 +268,10 @@ Top-level keys:
 |-----|-------------|
 | `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
-| `folders` | *Optional.* THE PROJECT'S FOLDERS — one entry each, all four fields written out: `{key, label, path, read_only}`. The list is the file browser: one tab per entry, in list order, `label` as the tab's text; the Files button opens on the first. `path` is relative to the project folder (`../x` shares a parent's) or absolute. `read_only: true` = browse, preview and download only — upload, new folder and delete are refused by the server; it is read on every request, so flipping it takes effect on the next open. Four keys mean something to the platform: `results` (one folder per run, `rt.record`), `data` (operator input files — a file parameter's Open picks here), `captures` (the images detections keep — a preset's relative `display.client_save_img` lands here) and `rec` (replay recordings). Any other key is just a tab (e.g. `{key: model, label: Models, path: model, read_only: true}`). A platform key left out still works at its default path (`<project>/<key>`), without a tab — said once at launch. No `folders:` key at all = the platform's four as tabs, at their defaults. The old `data_dir` / `results_dir` / `rec_dir` / `captures_dir` keys are refused. See "The project's folders". |
+| `records` | *Optional.* WHERE RUN RECORDS GO — the folder `rt.record` writes one sub-folder per run into (`<run start>/records.jsonl`, `records.csv`). Relative to the project folder, or absolute. Not declared = OFF: records stay in memory (the pendant and `rt.records()` still show them), nothing is written. |
+| `replays` | *Optional.* WHERE REPLAY RECORDINGS GO — the viewer recorder's `rec_<start>.jsonl` files, and the folder the scene builder's Replay panel lists. Not declared = OFF: the record button says so. |
+| `uploads` | *Optional.* WHERE A FILE PARAMETER'S **Open** BROWSES — operator input files, manifests, parameter presets. Not declared = OFF: Open has no folder. |
+| `folders` | *Optional.* THE FILE BROWSER'S TABS — DISPLAY ONLY. One entry each, all four fields written out: `{key, label, path, read_only}`; one tab per entry, in list order, `label` as its text; Files opens on the first. `key` is a plain name (letters, digits, `_ -`), `path` relative to the project folder (`../x` shares a parent's) or absolute. `read_only: true` = browse, preview and download only — upload, new folder and delete are refused by the server; read on every request, so a flip applies on the next open. Listing a folder never makes anything be saved into it. Not declared = no tabs. The old `data_dir` / `results_dir` / `rec_dir` / `captures_dir` keys are refused, naming the line to write. See "The project's folders". |
 | `counts` | *Optional.* The file `rt.count` keeps its totals in, relative to the project (`counts/counts.json`; `../counts/counts.json` to share one bench's totals between sibling projects). No key: `rt.count` totals stay in memory only, said once. Explicit and separate from `folders:` — a folder tab never decides where counts are written. See "`rt.count(name, **amounts)`". |
 | `default` | The kwargs' defaults / schema — each key becomes a run parameter. **Either inline (a dict) or a file path** — new projects use `default: hmi/default.j2` (see §1); inline stays supported for small projects. The file's top level IS the schema, rendered as Jinja2 then parsed. Both shapes work everywhere (orchestrator form, `bt.replay`). |
 | `actions` | Protocol module — `actions.py`, or a **package** `actions/` (one module per phase; bt-framework-guide §2 and §13 "The package layout"). `bt.replay` and `bt.dryrun` import it by the name `actions` either way. |
@@ -393,15 +564,15 @@ What the platform does with it:
 
 | | |
 |---|---|
-| `<results>/<YYYY-mm-dd_HH-MM-SS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
-| `<results>/<YYYY-mm-dd_HH-MM-SS>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
+| `<records>/<YYYY-mm-dd_HH-MM-SS>/records.jsonl` | one line per call, `{"t", "item", "set", "unset"}`, appended as the run goes — the HISTORY; a crash mid-run loses nothing already drained |
+| `<records>/<YYYY-mm-dd_HH-MM-SS>/records.csv` | written when the run ends (IDLE / ERROR / KILLED): `item` first, then every field in first-seen order; nested values as JSON |
 | `GET /records` · `GET /records.csv` | the same, live, at any moment of the run — the download link on the pendant |
 | `record_state` on `/ws` | snapshot then deltas, the `op_state` shape keyed `item → {field: value}`; feeds the pendant's `records` widget (hmi-guide §4) and `api.onRecords` for a project screen (§4b) |
 
-The `results` entry of `folders:` names that folder (default
-`results/`, the old fixed `runs/`); keep it out of the project's git — it is data, one folder per
-run. The GUI's file browser reads it, so an operator can pull a run's
-records without a shell.
+launch.yaml's `records:` names that folder (not declared: records stay
+in memory, nothing is written); keep it out of the project's git — it is
+data, one folder per run. List it in `folders:` too and the GUI's file
+browser shows it, so an operator can pull a run's records without a shell.
 A script without a server (a dev notebook) sets `rt.record_dir` itself
 and calls `rt.record_drain()` once at the end; otherwise records stay in
 memory and `rt.records()` / `rt.record_csv()` still answer.
@@ -481,41 +652,49 @@ added on top — and calls `rt.count_drain(force=True)` at the end.
 
 ### The project's folders, and the file browser
 
-`launch.yaml`'s `folders:` lists every folder the project exposes, and
-that list IS the file browser — one tab per entry, in its order:
+Two separate, explicit things in `launch.yaml`. Where the platform
+WRITES and READS is one key per job — `records:`, `replays:`,
+`uploads:` (and `counts:` for rt.count's file); a key not declared is
+OFF, there is no default folder. What the file browser SHOWS is
+`folders:` — display only, one tab per entry, in its order:
 
 ```yaml
-folders:                          # the project's folders — file-browser tabs, in this order
-  - {key: results,  label: Results,    path: results,     read_only: false}
-  - {key: captures, label: Captures,   path: ../captures, read_only: false}
-  - {key: data,     label: Data,       path: data,        read_only: false}
-  - {key: rec,      label: Recordings, path: rec,         read_only: false}
-  - {key: counts,   label: Counts,     path: counts,      read_only: false}   # a plain tab — counts: says the file
-  - {key: model,    label: Models,     path: ../model,    read_only: true}
+records:      records             # where each run's rt.record files go
+replays:      replays             # where replay recordings go
+uploads:      uploads             # where a file parameter's Open browses
+folders:                          # the file browser's tabs, in this order — display only
+  - {key: records,  label: Records,  path: records,     read_only: false}
+  - {key: captures, label: Captures, path: ../captures, read_only: false}
+  - {key: uploads,  label: Uploads,  path: uploads,     read_only: false}
+  - {key: replays,  label: Replays,  path: replays,     read_only: false}
+  - {key: manuals,  label: Manuals,  path: ../manuals,  read_only: true}
 ```
 
-(bna's `_bna`: three subprojects share `../captures` and the checked-in
-`../model`, the latter read-only so a model cannot be deleted from the
-bench.) `workspace/project_dirs.py` is the one place that reads it
-(`project_folders`); the runtime server writes run records and
-recordings through it, the vision station resolves a preset's
-`client_save_img` paths through it (`client_save_path`), the display and
-the scene builder's Replay panel find recordings through it, and the
-orchestrator's browser lists, guards and serves through it. Nothing else
-may hardcode `runs/`, `rec/` or a captures path again. A malformed list
-fails the launch with the entry and the field that is wrong.
+(Modelled on bna's `_bna`, whose three subprojects share `../captures`.
+`read_only: true` lets the bench browse and download a folder but never
+upload or delete there. `vision/` is never a tab — it holds the key,
+§1 "The `vision/` folder". The captures tab only shows
+the folder — the inspector writes into it because its own
+`client_save_img: "../captures/tube_od/"` says so.)
+`workspace/project_dirs.py` is the one place that reads both
+(`project_paths`, `project_folders`); the runtime server writes records
+and replays through it, the display and the scene builder's Replay panel
+find replays through it, and the orchestrator's browser lists, guards
+and serves through it. Nothing else may hardcode `runs/`, `rec/`,
+`data/` or a captures path again. A malformed `folders:` fails the launch
+with the entry and the field that is wrong.
 
 The operator reaches them from the workspace page:
 
-* **Files** in the top bar — the browser, opened on the FIRST folder
-  listed. A run folder's `records.csv` opens as a table in the panel,
+* **Files** in the top bar — the browser, opened on the FIRST tab of
+  `folders:`. A run folder's `records.csv` opens as a table in the panel,
   an image shows fitted in the same pane, any file downloads and any
   folder downloads as a zip.
 * **Open**, next to **Load** in the Parameters modal — the same panel
-  in *pick* mode over `data`, for choosing a parameter file that is
-  already on the bench.
+  in *pick* mode over the `uploads:` folder (whether or not it is a tab),
+  for choosing a parameter file that is already on the bench.
 * **Open** on any `type: file` parameter — pick that field's file from
-  `data` instead of uploading it again.
+  the `uploads:` folder instead of uploading it again.
 
 Uploading, creating a folder and deleting are available in every folder
 not marked `read_only` (a read-only folder shows a "read-only" tag and
@@ -1116,7 +1295,7 @@ on a dev box with `WORKSPACE_AUTORELOAD=1` in the environment of
 
 The 3D viewer's record button (red while capturing) drives a recorder
 that lives in the WORKSPACE PROCESS, not the page: it writes every
-scene update to `<project>/rec/rec_2026-09-12_15-35-17.jsonl`, the file the
+scene update to `<replays>/rec_2026-09-12_15-35-17.jsonl` (launch.yaml `replays:`), the file the
 scene builder's Replay tab scrubs. Because it is server-side:
 
 * closing or refreshing the page does not stop it — the viewer asks

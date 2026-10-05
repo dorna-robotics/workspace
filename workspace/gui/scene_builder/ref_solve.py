@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 import yaml
-from jinja2 import Template
+from workspace.j2 import render_text
 
 
 def main(project_dir):
@@ -56,7 +56,7 @@ def main(project_dir):
     for p in scene:
         text = open(p).read()
         if p.endswith(".j2") or "{%" in text or "{{" in text:
-            text = Template(text).render()
+            text = render_text(text, os.path.dirname(os.path.abspath(p)))
         cfgs.update(yaml.safe_load(text) or {})
     for name, cfg in cfgs.items():
         if isinstance(cfg, dict):
@@ -80,7 +80,7 @@ def main(project_dir):
         # recipe raises out of it — so instantiate per-recipe instead,
         # reusing its parsing by loading the rendered yaml ourselves.
         text = open(recipes_path).read()
-        rendered = Template(text).render()
+        rendered = render_text(text, os.path.dirname(os.path.abspath(recipes_path)))
         defs = yaml.safe_load(rendered) or {}
         for name, spec in defs.items():
             cls_path = (spec or {}).get("class", "")
