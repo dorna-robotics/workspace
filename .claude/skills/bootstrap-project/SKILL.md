@@ -156,17 +156,31 @@ ready, build the project"). Then the conversation is exactly:
 
 ## Project layout convention
 
-`launch.yaml` is a list of POINTERS, never inline blocks:
+`launch.yaml` is a list of POINTERS and FOLDERS, never inline blocks —
+ONE canonical shape for every project, written out in project-guide §3
+("The canonical `launch.yaml`"); copy it from there or from any
+example, in this order:
 
 ```yaml
-scene:    [scene/core_500.j2, scene/layout.j2]
-recipes:  recipes.j2
-actions:  actions.py
-checks:   checks.py
-default:  hmi/default.j2     # the kwargs' defaults (data)
-setup:    hmi/setup.js       # screen to SET the kwargs, before the run
-pendant:  hmi/pendant.html   # screen shown DURING the run
+project_name / port
+scene:      [scene/core_500.j2, scene/layout.j2]
+recipes:    recipes.j2
+actions:    actions.py           # or actions/ + route: phases.py
+checks:     checks.py
+default:    hmi/default.j2       # the kwargs' defaults (data)
+setup:      hmi/setup.js         # screen to SET the kwargs, before the run (optional)
+pendant:    hmi/pendant.js       # screen shown DURING the run (optional)
+core_dir:   core                 # this station's calibration + caches
+records: / replays: / uploads:   # where the platform writes — absent = OFF
+counts:     counts/counts.json   # rt.count's totals, when the project counts
+folders:    records, uploads, captures, replays, counts   # the file browser's tabs, display only
+plan_window / scheduler
 ```
+
+The data folders (`records/ replays/ uploads/ captures/ counts/`) and
+`core/` are git-ignored; the orchestrator creates the declared ones at
+launch. `captures/` is named by the detections' `display.client_save_*`
+paths in `vision/*.yaml`, not by launch.yaml.
 
 **A phased protocol is a package.** When the protocol has phases
 (bt-framework-guide §13) `actions:` names a folder and the boundary

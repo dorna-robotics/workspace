@@ -6,30 +6,38 @@ How to create and run a workspace project.
 
 ## 1. Project structure
 
+One shape for every project — the examples under `examples/` are the
+gold copies, `main.py` is byte-identical across all of them, and
+`launch.yaml` is a list of pointers to these files (§3 shows the one
+canonical launch file):
+
 ```
 projects/my_project/
-├── main.py              # Entry point — ties everything together
-├── launch.yaml          # Scene paths + run parameters (default/setup/pendant)
-├── protocol.yaml        # States, dependencies, checks, goals
-├── states.py            # State handlers (what the robot does)
-├── checks.py            # Verification checks (pre/post)
-├── recipes.j2           # Component aliases → recipe classes (or recipes.yaml)
-├── hmi/                 # OPERATOR-FACING files (see §3)
-│   ├── default.j2       # The kwargs' defaults (data — Python reads it)
-│   ├── setup.js         # Screen to SET the kwargs (optional; .html or .js)
-│   ├── pendant.html     # Screen shown DURING the run (+ pendant.css)
-│   └── hmi.j2           # …or a platform widget list, if writing no markup
+├── main.py              # canonical entry point — copy verbatim from any example
+├── launch.yaml          # THE pointers: scene, recipes, actions, checks, hmi, where the platform writes (§3)
+├── actions.py           # the protocol: predicates, Start → per-item actions → Park, the ROUTE
+│                        #   (a phased protocol: actions/ package + phases.py, bt-framework-guide §13)
+├── checks.py            # vision / sensor checks referenced by name from the actions
+├── recipes.j2           # component aliases → recipe classes, with their solved parameters
+├── hmi/                 # OPERATOR-FACING files (§3)
+│   ├── default.j2       # the kwargs' defaults — data, read headlessly
+│   ├── setup.js         # screen to SET the kwargs before the run (optional)
+│   └── pendant.js       # screen shown DURING the run (optional; or hmi.j2 widgets)
 ├── scene/
-│   ├── base.j2          # Hardware layout (Jinja2)
-│   ├── layout.j2        # Spatial arrangement
-│   ├── bench.j2         # THIS unit's values — IPs, ports, sim flags, rail offset (git-ignored, §2)
+│   ├── core_500.j2      # the chassis (core_500 / core_1000 / core_2000, from scenes/core/)
+│   ├── layout.j2        # the bench: racks, stations, tools, cameras, meters
+│   ├── stock.j2         # hand-maintained consumables, listed after layout.j2 (optional)
+│   ├── bench.j2         # THIS unit's values — IPs, ports, serials, sim flags, rail offset (git-ignored, §2)
 │   └── bench.example.j2 # the committed template for bench.j2
-├── vision/              # the detections: configs, the models beside them, a vlm key (*.key, git-ignored)
-├── uploads/             # operator INPUT files (launch.yaml uploads:) (git-ignored)
-├── records/             # one folder per run — records.jsonl / .csv (launch.yaml records:) (git-ignored)
-├── replays/             # replay recordings (launch.yaml replays:) (git-ignored)
-├── captures/            # IMAGES the detections keep — one per run (git-ignored)
-└── counts/              # rt.count's file (launch.yaml counts:) — totals across every run (git-ignored)
+├── vision/              # the detections: a config per model, the model beside it, a vlm key (*.key, git-ignored)
+├── components/          # the project's own component classes (@register) and their CAD/ (optional)
+├── dev/                 # bring-up notebooks (optional)
+├── core/                # THIS station: calibration, caches, motion book, logs (launch.yaml core_dir:; git-ignored)
+├── records/             # one folder per run — records.jsonl / .csv (launch.yaml records:; git-ignored)
+├── replays/             # replay recordings (launch.yaml replays:; git-ignored)
+├── uploads/             # operator INPUT files — a file parameter's Open (launch.yaml uploads:; git-ignored)
+├── captures/            # the detections' pictures — client_save_* in vision/*.yaml (git-ignored)
+└── counts/              # rt.count's totals across every run — counts.json (launch.yaml counts:; git-ignored)
 ```
 
 The last five are DATA folders (§3 "The project's folders"), never
@@ -37,9 +45,9 @@ checked in. Each is there because something names it: launch.yaml's
 `records:` / `replays:` / `uploads:` (where the platform writes and
 reads), `counts:`, or a detection's own save path. Listing a folder in
 `folders:` only SHOWS it. `captures/` holds a run's pictures
-because the detections say so: `display.client_save_img: "captures/tube_od/"`
-writes every run's frame there — on THIS machine, not the vision unit
-(vision-guide §5).
+because the detections say so: `display.client_save_img: "../captures/tube_od/"`
+in `vision/tube_od.yaml` (relative to that file's folder) writes every
+run's frame there — on THIS machine, not the vision unit (vision-guide §5).
 
 **The one path rule: a relative path is relative to the file it is
 written in.** The same rule as a web page's `src`, a stylesheet's
@@ -281,26 +289,65 @@ Top-level keys:
 | `route` | *Optional.* The module holding `ROUTE` — the order an item meets the actions. A flat project keeps `ROUTE` in its actions module and omits this key; a phased project sets `route: phases.py`, whose `Phase` classes each carry their `route` and whose `ROUTE` lists the phases in order — DEPTH, how far an item is carried before the batch regroups, a different limit from `plan_window` (WIDTH) and from capacity facts (HARDWARE). A phase whose items overlap declares the order across them as its `cycle` (`Phase.group`, `Phase.cycle`; bt-framework-guide §13 "The cycle"). See bt-framework-guide.md §13. |
 | `plan_window` | *Optional, default 4.* How many items one schedule holds. A `Phase` may override it for the span it is open (`Phase.plan_window`). See bt-framework-guide.md §13. |
 
+**The canonical `launch.yaml`** — every project carries this shape, in
+this order, with these folder names. A key is a pointer or a folder,
+never an inline block; the `default:` schema lives in `hmi/default.j2`.
+The write folders and the tabs are declared, never assumed: a folder
+key that is absent is OFF, and the orchestrator creates every declared
+folder at launch.
+
 ```yaml
-scene: [scene/base.j2, scene/layout.j2]
+project_name: my_project
+port:         5010
+scene:        [scene/core_500.j2, scene/layout.j2]
+recipes:      recipes.j2
+actions:      actions.py          # or actions/ with route: phases.py (phased protocol)
+checks:       checks.py
+default:      hmi/default.j2      # the kwargs' defaults (data — Python reads it)
+setup:        hmi/setup.js        # run-setup screen (optional)
+pendant:      hmi/pendant.js      # during-run screen (optional)
 
-default:
-  batch_size:
-    type: int
-    default: 4
-    label: Number of tubes
-    hint: How many tubes to include in the schedule
-    min: 1
-    max: 20
+# This station's own folder — calibration, every cache, the motion book, logs.
+core_dir:     core
 
-  horizon:
-    type: int
-    default: null
-    label: Planning horizon
-    hint: Empty = plan all at once
-    placeholder: plan all at once
-    optional: true
-    min: 1
+# Where the platform writes — relative to this folder, or absolute.
+# Not declared = off: run records stay in memory, no replay is saved,
+# a file parameter's Open has no folder, rt.count totals stay in memory.
+records:      records             # each run's rt.record files: <run>/records.jsonl, .csv
+replays:      replays             # replay recordings
+uploads:      uploads             # where a file parameter's Open browses
+counts:       counts/counts.json  # rt.count's totals across every run (only if the project counts)
+
+# The file browser's tabs, in this order — display only: listing a
+# folder never makes anything be saved into it. captures/ is written by
+# the detections themselves (vision/*.yaml display.client_save_*).
+folders:
+  - {key: records,  label: Records,  path: records,  read_only: false}
+  - {key: uploads,  label: Uploads,  path: uploads,  read_only: false}
+  - {key: captures, label: Captures, path: captures, read_only: false}
+  - {key: replays,  label: Replays,  path: replays,  read_only: false}
+  - {key: counts,   label: Counts,   path: counts,   read_only: false}
+
+plan_window:  4
+scheduler:    cpsat
+```
+
+Sibling projects that share one bench (bna's `_bna`, `_tph`,
+`_calibration`) point the shared keys one level up — `scene: [../scene/...]`,
+`recipes: ../recipes.j2`, `core_dir: ../core`, `counts: ../counts/counts.json`,
+a `captures` tab at `../captures` — and keep their own `records`,
+`replays` and `uploads`.
+
+A `default:` entry is either bare (the value is the default) or a spec:
+
+```yaml
+tubes: {"A1": 0.4, "A2": 0.4}     # bare — a map kwarg with its default
+batch_size:
+  type: int
+  default: 4
+  label: Number of tubes
+  min: 1
+  max: 20
 ```
 
 ### Two entry shapes — bare, or a spec
