@@ -1,5 +1,6 @@
 from copy import deepcopy
 from mergedeep import merge
+from dorna2 import pose as dorna_pose
 from workspace.recipes.recipe import Recipe, RecipeError
 
 
@@ -35,6 +36,22 @@ class Hotel(Recipe):
         )
         
     
+    def _shelf_height(self, motion_prm, level, solid_name):
+        """For a hotel that asks for it (``lift_from_shelf``), the rim to
+        clear is this shelf's (``top_{level}``), not the hotel's base
+        ``top``: measured from the base, the lift before the slide-out
+        grows a pitch per level (300 mm on a 4-level hotel's top shelf) and
+        drives the plate into the shelf above. Other hotels: unchanged."""
+        if not getattr(self.component, "lift_from_shelf", False):
+            return
+        solid = self.component.assembly[solid_name]
+        try:
+            top = solid.pose(f"top_{level}")
+        except Exception:
+            return
+        motion_prm["height_container"] = abs(dorna_pose.transform_pose(
+            [0, 0, 0, 0, 0, 0], from_frame=top, to_frame=solid.pose(f"place_{level}"))[2])
+
     def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
         """Pick a plate from the hotel shelf at ``level`` using a lateral slide-in approach.
 
@@ -53,6 +70,7 @@ class Hotel(Recipe):
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
+        self._shelf_height(motion_prm, level, solid_name)
 
         # update approach
         motion_prm["approach"] = [
@@ -88,6 +106,7 @@ class Hotel(Recipe):
             motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
             if not motion_prm:
                 raise RecipeError("place_setting failed — could not compute place parameters")
+            self._shelf_height(motion_prm, level, solid_name)
 
             # update approach
             motion_prm["approach"] = [
