@@ -205,7 +205,7 @@ def replay(project_dir, kwargs, show=False, event=False, launch=None, removes=No
     try:
         n, failures, goal_ok, mk, _state, extra = _replay_loaded(
             A, kwargs, show=show, event=event, launch=launch,
-            project_name=os.path.basename(project_dir), removes=removes)
+            project_name=os.path.basename(project_dir), removes=removes, project_dir=project_dir)
         return (n, failures, goal_ok, mk, *extra)
     finally:
         sys.path.remove(project_dir)
@@ -225,7 +225,7 @@ def state_before(actions_module, launch, kwargs, phase):
 
 
 def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_name="",
-                   until_phase=None, removes=None):
+                   until_phase=None, removes=None, project_dir=None):
     """The walk itself, on an imported actions module — see ``replay``.
     ``until_phase`` stops before planning that phase. ``removes`` is a
     list of ``(item, at)``: the item leaves the run when phase ``at``
@@ -237,6 +237,8 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     from workspace.planner.cpsat_scheduler import schedule_cpsat
     from workspace.planner.plan_scheduler import schedule_greedy
     from workspace.planner.route import RouteError, plan_cycle, plan_route
+    from workspace.planner.dispatch_scheduler import resolve as _resolve_scheduler
+    import workspace.bt.dsl as _dsl
 
     spec = A.setup(**kwargs)
     initial = frozenset(spec["initial_facts"])
@@ -250,7 +252,16 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     launch = launch or {}
     protocol = _load_route(launch.get("route"), A, project=project_name)
     meta = protocol.meta()
-    phases = list(protocol.phases)
+    scheduler = str(launch.get("scheduler", "cpsat"))
+    if scheduler.endswith(".py") or scheduler.lower() == "dispatch":
+        # the built-in dispatch (a project scheduler / optimizer file is refused)
+        dispatch, ranking = _resolve_scheduler(launch, project_dir)
+        scheduler = "dispatch"
+    else:
+        scheduler = scheduler.lower()
+    # no phases: --flat, or the dispatch scheduler (it needs none — as the launcher)
+    flat = bool(launch.get("_flat")) or scheduler == "dispatch"
+    phases = [] if flat else list(protocol.phases)
     item_done = spec.get("item_done")
     slice_dim = launch.get("slice_dim") or (next(iter(objects)) if len(objects) == 1 else None)
     if slice_dim is not None and slice_dim not in objects:
@@ -260,6 +271,8 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             f"single-dimension protocol")
     all_items = list(objects.get(slice_dim, [])) if slice_dim else []
     plan_window = int(launch.get("plan_window", 4))
+    if scheduler == "dispatch":
+        plan_window = max(1, len(all_items))  # no model to keep small: the whole batch at once
     windowed = item_done is not None and slice_dim is not None
     # Remove (bt/remove.py) — the same wrapping as the launcher.
     from workspace.bt import remove as _remove
@@ -342,29 +355,43 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
         ctx.meta["current_phase"] = name
         rid += 1
         t1 = time.perf_counter()
-        templates = protocol.templates(ctx, protocol.candidates(name))
-        try:
-            if cycle:
-                res = plan_cycle(templates, fstate, goal, rounds, cycle, explain=protocol.explainer(ctx))
-            else:
-                res = plan_route(templates, fstate, goal, list(window), explain=protocol.explainer(ctx))
-        except RouteError as ex:
-            failures.append(f"{name or 'tail'} window {list(window)}: {ex}")
-            break
-        t2 = time.perf_counter()
-        if not res:
-            failures.append(f"{name or 'tail'} window {list(window)}: the goal holds but "
-                            f"the phase is not reached — its fact is not what the route asserts")
-            break
-        preds = build_precedence(res, protocol, initial_state=fstate, ctx=ctx)
-        caps = derive_capacity_spans(res, protocol, initial_state=fstate, ctx=ctx)
-        if cycle:
-            # The cycle's order is the schedule: timed as declared, never reordered.
-            out, swaps = schedule_greedy(res, meta, predecessors=preds, initial_tool=tool_now)
+        templates = protocol.templates(ctx, protocol.candidates(name, all_phases=flat))
+        if scheduler == "dispatch":
+            # the chooser plans and times the whole batch at once
+            try:
+                res, out, swaps, tool_after = dispatch(
+                    templates, fstate, goal, list(window), meta, initial_tool=tool_now,
+                    capacity_names=sorted(_dsl._CAPACITY_PREDICATE_NAMES), optimizer=ranking)
+            except RouteError as ex:
+                failures.append(f"{name or 'tail'} window {list(window)}: {ex}")
+                break
+            t2 = t3 = time.perf_counter()
+            if not res:
+                failures.append(f"{name or 'tail'} window {list(window)}: nothing to dispatch")
+                break
         else:
-            out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
-                                        initial_tool=tool_now)
-        t3 = time.perf_counter()
+            try:
+                if cycle:
+                    res = plan_cycle(templates, fstate, goal, rounds, cycle, explain=protocol.explainer(ctx))
+                else:
+                    res = plan_route(templates, fstate, goal, list(window), explain=protocol.explainer(ctx))
+            except RouteError as ex:
+                failures.append(f"{name or 'tail'} window {list(window)}: {ex}")
+                break
+            t2 = time.perf_counter()
+            if not res:
+                failures.append(f"{name or 'tail'} window {list(window)}: the goal holds but "
+                                f"the phase is not reached — its fact is not what the route asserts")
+                break
+            preds = build_precedence(res, protocol, initial_state=fstate, ctx=ctx)
+            caps = derive_capacity_spans(res, protocol, initial_state=fstate, ctx=ctx)
+            if cycle:
+                # The cycle's order is the schedule: timed as declared, never reordered.
+                out, swaps = schedule_greedy(res, meta, predecessors=preds, initial_tool=tool_now)
+            else:
+                out, swaps = schedule_cpsat(res, meta, predecessors=preds, capacity_spans=caps or None,
+                                            initial_tool=tool_now)
+            t3 = time.perf_counter()
         timing.append({"phase": name or "tail", "window": len(window), "actions": len(res),
                        "plan_s": round(t2 - t1, 3), "sched_s": round(t3 - t2, 3)})
         if os.environ.get("REPLAY_TRACE"):
@@ -489,6 +516,11 @@ def main():
     ap.add_argument("--remove", action="append", default=[], metavar="ITEM@AT",
                     help="remove ITEM when phase AT opens, or right after its step AT "
                          "(repeatable) — the run must still finish every other item")
+    ap.add_argument("--scheduler", choices=["cpsat", "greedy", "dispatch"], default=None,
+                    help="override launch.yaml's scheduler (dispatch: choose the best allowed step "
+                         "at every event — planner/dispatch_scheduler.py)")
+    ap.add_argument("--flat", action="store_true",
+                    help="ignore the phases: every phase's steps are candidates at once, no barriers")
     ap.add_argument("--kwargs-json", default=None,
                     help="a JSON object of kwargs applied over the defaults (before --kw)")
     args = ap.parse_args()
@@ -496,6 +528,10 @@ def main():
     project = os.path.abspath(args.project)
     from workspace.recipes.solve import load_launch
     launch = load_launch(project)
+    if args.scheduler:
+        launch["scheduler"] = args.scheduler
+    if args.flat:
+        launch["_flat"] = True
 
     extra_kw = json.loads(args.kwargs_json) if args.kwargs_json else {}
     removes = []

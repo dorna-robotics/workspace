@@ -432,7 +432,10 @@ def run_protocol(
         route: Path of the module holding ``ROUTE`` (``launch.yaml:
             route:``) — ``phases.py`` for a phased project. ``None``:
             the actions module's ``ROUTE``.
-        scheduler: ``"cpsat"`` (default) uses the CP-SAT solver —
+        scheduler: ``"dispatch"`` picks the best allowed step at every
+            event (planner/dispatch_scheduler.py) over the whole batch and
+            every step of the route — no phases, windows or cycles needed.
+            ``"cpsat"`` (default) uses the CP-SAT solver —
             optimal makespan, clusters same-tool actions automatically,
             packs work into idle robot windows. ``"greedy"`` uses the
             in-house earliest-start scheduler — fast, no dependency,
@@ -524,6 +527,20 @@ def run_protocol(
     #    and the bench build from.
     protocol = _load_route(route, actions_module, project=project_name)
     phases = list(protocol.phases)
+    # The dispatch scheduler (planner/dispatch_scheduler.py) needs no
+    # phases, windows or cycles: it runs the whole batch over every step
+    # of the route and picks the best allowed step at each event. Built in:
+    # a launch.yaml naming a project optimizer or scheduler file is refused.
+    _dispatch = str(scheduler).lower() == "dispatch" or str(scheduler).endswith(".py")
+    if _dispatch:
+        phases = []
+        from workspace.planner.dispatch_scheduler import resolve as _resolve_scheduler
+        _proj = getattr(workspace, "project_dir", None)
+        try:
+            _launch_cfg = yaml.safe_load((Path(_proj) / "launch.yaml").read_text()) or {} if _proj else {}
+        except (OSError, yaml.YAMLError):
+            _launch_cfg = {}
+        _dispatch_fn, _ranking = _resolve_scheduler({**_launch_cfg, "scheduler": scheduler}, _proj)
 
     # 3. Context. Carries the live mutable facts dict + recipes +
     #    object pools (used by Action.param_iter to enumerate
@@ -604,6 +621,8 @@ def run_protocol(
     #   * ``ctx.meta["objects"][slice_dim]`` — current window the
     #     planner thinks about. Re-assigned each rebuild.
     all_items: list = list(objects.get(slice_dim, [])) if slice_dim else []
+    if _dispatch:
+        plan_window = max(1, len(all_items))      # dispatch plans the whole batch at once
 
     # ── Remove (bt/remove.py) ─────────────────────────────────────────────
     # An item that leaves the run is FINISHED for every reader below:
@@ -779,9 +798,23 @@ def run_protocol(
             len(all_items), int(plan_window),
         )
 
+    _dispatched = {"schedule": None}
+
     def _plan(state):
         """The route lookup for this window: the run-level steps plus
-        the open phase's, in ROUTE order, over the window's items."""
+        the open phase's, in ROUTE order, over the window's items.
+        With the dispatch scheduler: the whole route, run by the chooser —
+        its plan comes back here and its timing goes to build_schedule."""
+        if _dispatch:
+            from workspace.bt.dsl import _CAPACITY_PREDICATE_NAMES
+            templates = protocol.templates(ctx, protocol.candidates(None, all_phases=True))
+            items = (ctx.meta["objects"].get(slice_dim, []) if slice_dim else [])
+            plan, sched, swaps, _tool = _dispatch_fn(
+                templates, state, _planning_goal, list(items), meta,
+                initial_tool=ctx.meta.get("current_tool"),
+                capacity_names=sorted(_CAPACITY_PREDICATE_NAMES), optimizer=_ranking)
+            _dispatched["schedule"] = (sched, swaps)
+            return plan
         cur = _frozen_phase["cur"] if slicing_active else None
         classes = protocol.candidates(cur[0].name if cur else None)
         templates = protocol.templates(ctx, classes)
@@ -822,7 +855,9 @@ def run_protocol(
         # A phase with a cycle is timed in its declared order (Phase.cycle).
         declared_order_fn=lambda: bool(ctx.meta.get("declared_order")),
     )
-    log.info("Launcher: scheduler=%s", "cpsat" if use_cpsat else "greedy")
+    if _dispatch:
+        build_schedule = lambda _plan_: _dispatched["schedule"]     # the chooser timed it already
+    log.info("Launcher: scheduler=%s", (scheduler if _dispatch else ("cpsat" if use_cpsat else "greedy")))
 
     # 4. Tree: from_schedule + per-leaf retry + outer replan_on_failure.
     # The resources table groups the entries into from_schedule's branches.
