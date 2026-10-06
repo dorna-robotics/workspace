@@ -1318,10 +1318,14 @@ class Recipe:
             if tool_dict and tool_dict.get("solid") and tool_dict.get("anchor"):
                 _tp = tool_dict["solid"].pose(anchor=tool_dict["anchor"], in_frame=self.core.robot_flange,
                                               offset=tool_dict["offset"])
+            # strict: the constraint is the point (a plate carried level) —
+            # no unconstrained fallback; the hop fails instead
+            strict = bool(motion_plan_kwargs.get("strict"))
+            motion_plan_kwargs = {k: v for k, v in motion_plan_kwargs.items() if k != "strict"}
             points = self.core.motion_plan(
                 joint=J, judge=self._hop_judge(_tp, self.blend, motion_plan_kwargs.get("padding", 10)),
                 **motion_plan_kwargs)
-            if not points and motion_plan_kwargs:
+            if not points and motion_plan_kwargs and not strict:
                 rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
                 points = self.core.motion_plan(joint=J)
             if not points:
@@ -1593,10 +1597,12 @@ class Recipe:
                 # First hop → smove waypoints, planned or not.
                 _t0 = _time.perf_counter()
                 if plan_on:
+                    strict = bool(motion_plan_kwargs.get("strict"))     # no unconstrained fallback
+                    motion_plan_kwargs = {k: v for k, v in motion_plan_kwargs.items() if k != "strict"}
                     points = self.core.motion_plan(
                         joint=J0, judge=self._hop_judge(tool_pose, blend, motion_plan_kwargs.get("padding", 10)),
                         **motion_plan_kwargs)
-                    if not points and motion_plan_kwargs:
+                    if not points and motion_plan_kwargs and not strict:
                         rt.step("motion constraints unsatisfiable for this hop — replanning unconstrained")
                         points = self.core.motion_plan(joint=J0)
                     if not points:
