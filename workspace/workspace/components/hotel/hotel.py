@@ -23,6 +23,10 @@ class Hotel:
 
         # dim
         self.pitch = prm["pitch"]
+        # the Hotel recipe's lift before a slide-out: from this shelf's own
+        # rim (top_<level>) when True; from the hotel's base top (the
+        # original behaviour) when False
+        self.lift_from_shelf = bool(prm.get("lift_from_shelf", False))
         self.size = prm["size"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
