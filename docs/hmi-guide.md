@@ -226,10 +226,26 @@ platform rule.
 ```js
 export default {
   css: `.chart { color: var(--accent); }`,        // optional
+  hero: false,                                     // optional — see below
   mount(root, api) { … },                          // root = the shadow root
   update(values) { … },                            // every rt.op delta
 };
 ```
+
+**The pane is the screen's.** A project screen's host is a blank the
+size of the pane — full width, full height, no column, no gap, no cap,
+no centring (the 680 px column belongs to the fallback widgets only).
+Layout is the project's file: how many columns, where things sit,
+whether it centres, how it adapts to a tablet versus a monitor (apc
+answers a container query on its own wrap). Nothing about a project's
+layout is ever a platform change.
+
+`hero: false` hides the frame's ACTIVE ROUTINE panel (the current step
+and progress bar pinned under the tabs) while this screen's tab is
+up. A screen that already tells the operator where the run is — a
+headline from `rt.op`, a bench that shows the live position — says so
+once here instead of showing the same step twice. Default on; the
+HTML shape has no say and keeps the panel.
 
 `api` is deliberately small: `values` (current snapshot), `theme`
 (`"light"`/`"dark"`), `onTheme(cb)` (fires on toggle — for canvas and

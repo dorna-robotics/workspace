@@ -664,6 +664,23 @@ function disconnectWs() {
 const _opValues = {};
 let _opRev = -1;
 let _hmiSpec = null;
+// Whether the runtime has told us what pendant this project has. Until
+// it has, the frame's ACTIVE ROUTINE panel stays hidden: a project
+// screen may be about to switch it off, and a panel that shows for one
+// frame and then vanishes reads as a glitch.
+let _hmiSpecKnown = false;
+
+// THE rule for the frame's ACTIVE ROUTINE panel — every path that toggles
+// it (status ticks, tab switches, the project screen loading) asks this
+// and nothing else, so no path can show it on a guess and have another
+// take it away a frame later. Wanted only once we KNOW: never before
+// the pendant spec has arrived, and for a project screen never before
+// its module has loaded and not said ``hero: false``.
+function heroWanted() {
+  if (!_hmiSpecKnown) return false;
+  const projectScreen = !!(_hmiSpec && _hmiSpec.kind === "file");
+  return projectScreen ? (!!_hmiHost && _hmiHost.hero === true) : true;
+}
 let _hmiBuilt = false;
 
 const HMI_WIDGETS = {
@@ -760,6 +777,7 @@ let _hmiInstances = [];
 
 function buildHmi(spec) {
   const host = $("pendantHmi");
+  host.classList.remove("project");
   if (!host) return;
   _hmiInstances = [];
   host.innerHTML = "";
@@ -822,9 +840,21 @@ async function mountProjectPendant(spec) {
   if (!el || !spec || !spec.src) return;
   el.innerHTML = "";
   el.style.display = "";
+  // A project screen gets the pane as a blank: the host becomes a plain
+  // block the width of the pane that fills its height and imposes no
+  // layout — no width cap, no column, no gap, no centring. The screen
+  // lays itself out (hmi-guide §4b). The fallback widgets keep the
+  // host's own column layout.
+  el.classList.add("project");
   const shadow = el.shadowRoot || el.attachShadow({ mode: "open" });
   shadow.innerHTML = "";
-  _hmiHost = { shadow, module: null, binds: [] };
+  // ``hero`` — the project screen's say over the frame's ACTIVE ROUTINE
+  // panel (current step + progress bar, pinned under the tabs). A JS
+  // screen that already tells the operator where the run is exports
+  // ``hero: false`` and the panel stays hidden on its tab; default on.
+  // null until the module has loaded: the panel is not shown on a guess
+  // and then taken away.
+  _hmiHost = { shadow, module: null, binds: [], hero: null };
 
   const base = (_devicesUrl || "").replace(/\/$/, "");
   const url = p => (base ? base + p : p);
@@ -840,6 +870,7 @@ async function mountProjectPendant(spec) {
       const mod = await import(/* webpackIgnore: true */ url(spec.src));
       const def = mod.default || mod;
       _hmiHost.module = def;
+      _hmiHost.hero = def.hero !== false;
       if (def.css) {
         const st = document.createElement("style");
         st.textContent = def.css;
@@ -868,9 +899,11 @@ async function mountProjectPendant(spec) {
       _hmiHost.binds = [
         ...shadow.querySelectorAll("[data-bind],[data-bind-map],[data-bind-attr]"),
       ];
+      _hmiHost.hero = true;          // the HTML shape has no say
       applyProjectHmiValues();
     }
   } catch (err) {
+    if (_hmiHost) _hmiHost.hero = true;   // nothing of the project's to defer to
     console.error("project HMI failed to load:", err);
     const note = document.createElement("div");
     note.style.cssText = "padding:16px;color:var(--muted);font:14px system-ui";
@@ -878,6 +911,9 @@ async function mountProjectPendant(spec) {
                      + "The run is unaffected.";
     shadow.appendChild(note);
   }
+  // The screen's say over the frame is known now — apply it at once, not
+  // on the next status tick.
+  updatePendantUI();
 }
 
 function applyProjectHmiValues() {
@@ -1028,6 +1064,7 @@ function _dispatchMuxMessage(env) {
     }
     case "pendant_spec": {
       _hmiSpec = payload;
+      _hmiSpecKnown = true;
       if (payload && payload.kind === "file") mountProjectPendant(payload);
       else buildHmi(payload);
       break;
@@ -2707,7 +2744,7 @@ function _applyPendantTab() {
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
   const hero = $("pendantHero");
-  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d && !isDevices) ? "" : "none";
+  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d && !isDevices && heroWanted()) ? "" : "none";
   // The 3D tab IS the desktop viewer area, chips and all.
   _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);
@@ -2896,7 +2933,7 @@ function updatePendantUI() {
   // ── ACTIVE ROUTINE hero ──
   const hero = $("pendantHero");
   if (hero) {
-    hero.style.display = (launched && _pendantTab === "project") ? "" : "none";
+    hero.style.display = (launched && _pendantTab === "project" && heroWanted()) ? "" : "none";
     if (launched) {
       // Title: the last step line (already operator words).
       const cards = document.querySelectorAll("#stepTimeline .step-card");
