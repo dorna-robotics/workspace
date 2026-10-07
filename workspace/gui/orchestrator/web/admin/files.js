@@ -48,7 +48,8 @@ class FolderSocket {
         let d; try { d = JSON.parse(m.data); } catch { return; }
         if (d.id != null && this.wait.has(d.id)) {
           const { ok, fail } = this.wait.get(d.id); this.wait.delete(d.id);
-          d.ok ? ok(d) : fail(new Error(d.error || "request failed"));
+          if (d.ok) ok(d);
+          else { const err = new Error(d.error || "request failed"); err.data = d; fail(err); }
         } else if (d.ev) this.onEvent(d);
       };
       ws.onclose = () => {
@@ -518,7 +519,19 @@ export function openFileBrowser(opts = {}) {
     if (!ok) return;
     try {
       await sock.request("delete", { root, path: e.path });
-    } catch (err) { toast(err.message, "bad"); }
+    } catch (err) {
+      // A folder with things in it: the server answers with the count
+      // instead of deleting. Ask again, number in front of the operator,
+      // then delete folder and contents together.
+      const n = err.data && err.data.not_empty;
+      if (!n) { toast(err.message, "bad"); return; }
+      const sure = window.confirm(
+        `“${e.name}” holds ${n} item${n === 1 ? "" : "s"}.\n\nDelete the folder and everything in it?\n\nThis cannot be undone.`);
+      if (!sure) return;
+      try {
+        await sock.request("delete", { root, path: e.path, recursive: true });
+      } catch (err2) { toast(err2.message, "bad"); }
+    }
   }
 
   q(".fb-mkdir").onclick = async () => {

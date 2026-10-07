@@ -757,8 +757,9 @@ The operator reaches them from the workspace page:
 Uploading, creating a folder and deleting are available in every folder
 not marked `read_only` (a read-only folder shows a "read-only" tag and
 no Upload, New folder or Delete — and the server refuses them anyway);
-delete takes a confirm, and refuses a folder that still has anything in it, so
-a run's records cannot go in one click. Every path from the browser is
+delete takes a confirm, and a folder with anything in it takes a second
+one that names how many items it holds, so a run's records never go in
+one click — but they do go in two, folder and contents together. Every path from the browser is
 checked against its root by `fslive.safe_join` before it reaches the
 filesystem — a request that climbs out of its folder is refused,
 symlinks included.

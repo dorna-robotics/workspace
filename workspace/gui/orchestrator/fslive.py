@@ -48,6 +48,7 @@ import ctypes.util
 import errno
 import json
 import os
+import shutil
 import struct
 import threading
 import zipfile
@@ -438,6 +439,17 @@ class UploadHandler(tornado.web.RequestHandler):
 
 # ── The folder socket ────────────────────────────────────────────────
 
+class NotEmpty(ValueError):
+    """A delete of a folder with things in it, asked without ``recursive``:
+    the answer carries how many, so the client can ask the operator
+    with the number in front of them."""
+
+    def __init__(self, count: int):
+        super().__init__(f"folder holds {count} item{'s' if count != 1 else ''}")
+        self.count = count
+        self.extra = {"not_empty": count}
+
+
 class FilesSocket(tornado.websocket.WebSocketHandler):
     """One page's view of one folder at a time.
 
@@ -446,6 +458,11 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
         {"id", "op": "open",   "root", "path"}  → {"folder": {abs, path, entries, ...}}
         {"id", "op": "mkdir",  "root", "path"}  → {}
         {"id", "op": "delete", "root", "path"}  → {}   (a file, or an EMPTY folder)
+        {"id", "op": "delete", "root", "path", "recursive": true}
+                                                → {}   (a folder and EVERYTHING in it)
+        A non-empty folder without ``recursive`` is refused with
+        ``{"ok": false, "error", "not_empty": <items inside>}`` — the
+        client shows the count and asks again before sending recursive.
     Server → client, for the folder last opened:
         {"ev": "change", "root", "path", "upsert": [row, ...], "remove": [path, ...]}
         {"ev": "gone",   "root", "path"}        the folder itself was deleted
@@ -504,12 +521,14 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
             return
         mid = msg.get("id")
         try:
-            out = await self._op(msg.get("op"), msg.get("root") or "", msg.get("path") or "")
+            out = await self._op(msg.get("op"), msg.get("root") or "", msg.get("path") or "",
+                                 recursive=bool(msg.get("recursive")))
             self._send({"id": mid, "ok": True, **(out or {})})
         except Exception as ex:
-            self._send({"id": mid, "ok": False, "error": str(ex)})
+            # an error may carry fields the client acts on (NotEmpty.count)
+            self._send({"id": mid, "ok": False, "error": str(ex), **getattr(ex, "extra", {})})
 
-    async def _op(self, op, root, rel):
+    async def _op(self, op, root, rel, recursive=False):
         root = self.canonical(root)
         base = Path(self.resolve(root)).resolve()
         target = safe_join(base, rel)
@@ -538,9 +557,14 @@ class FilesSocket(tornado.websocket.WebSocketHandler):
                 if not target.exists():
                     raise ValueError("no such file")
                 if target.is_dir():
-                    if any(target.iterdir()):
-                        raise ValueError("folder is not empty — empty it first")
-                    target.rmdir()
+                    inside = sum(len(d) + len(f) for _, d, f in os.walk(target))
+                    if inside and not recursive:
+                        # Not a refusal — a second question. The client
+                        # shows the count and asks again before it sends
+                        # ``recursive``; a run's records never go in one
+                        # click, but they do go in two.
+                        raise NotEmpty(inside)
+                    shutil.rmtree(target) if inside else target.rmdir()
                 else:
                     target.unlink()
             await _run(rm)
