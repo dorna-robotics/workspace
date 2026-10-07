@@ -30,7 +30,7 @@ projects/my_project/
 │   ├── bench.j2         # THIS unit's values — IPs, ports, serials, sim flags, rail offset (git-ignored, §2)
 │   └── bench.example.j2 # the committed template for bench.j2
 ├── vision/              # the detections: a config per model, the model beside it, a vlm key (*.key, git-ignored)
-├── components/          # the project's own component classes (@register) and their CAD/ (optional)
+├── components/          # the project's own components — ONE FOLDER per type: class + mesh (+ empty __init__.py)
 ├── dev/                 # bring-up notebooks (optional)
 ├── core/                # THIS station: calibration, caches, motion book, logs (launch.yaml core_dir:; git-ignored)
 ├── records/             # one folder per run — records.jsonl / .csv (launch.yaml records:; git-ignored)

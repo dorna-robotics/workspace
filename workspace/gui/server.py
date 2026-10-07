@@ -295,13 +295,20 @@ class LandingHandler(tornado.web.RequestHandler):
 
 
 class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
-    """Serves static files — checks project CAD/ folder first, then library static/."""
+    """Serves static files — the open project first, then library static/.
+    A ``CAD/<type>.glb`` request resolves to the project component's own
+    folder, ``components/<type>/<type>.glb`` (runtime_server
+    .component_mesh_path — one rule for both servers)."""
     def get_absolute_path(self, root, path):
         from gui.scene_builder.server import _project_path
         if _project_path:
             project_file = os.path.join(_project_path, path)
             if os.path.isfile(project_file):
                 return project_file
+            from workspace.runtime_server import component_mesh_path
+            mesh = component_mesh_path(_project_path, path)
+            if mesh:
+                return mesh
         return super().get_absolute_path(root, path)
 
     def validate_absolute_path(self, root, absolute_path):

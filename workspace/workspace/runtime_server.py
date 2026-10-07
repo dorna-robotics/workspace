@@ -387,8 +387,29 @@ class HmiStaticFileHandler(NoCacheStaticFileHandler):
         self.finish()
 
 
+def component_mesh_path(base: str, path: str):
+    """Where a project keeps a component's mesh: IN THE COMPONENT'S FOLDER.
+
+    The viewer asks for ``CAD/<type>.glb`` (and its ``.glb.bin``). A
+    project component is one folder named after its type under
+    ``components/`` — class, mesh and sidecar together, so sharing a
+    component is copying a folder (component-guide §3). ``CAD/anode.glb``
+    therefore resolves to ``<base>/components/anode/anode.glb``; the
+    folder is the file's stem, the part before the first dot. ``None``
+    when ``path`` is not a CAD request or the file is not there.
+    """
+    head, _, name = path.rpartition("/")
+    if head != "CAD" or not name:
+        return None
+    stem = name.split(".", 1)[0]
+    full = os.path.join(base, "components", stem, name)
+    return full if os.path.isfile(full) else None
+
+
 class FallbackStaticHandler(NoCacheStaticFileHandler):
-    """Serves from multiple directories — first match wins."""
+    """Serves from multiple directories — first match wins. A ``CAD/``
+    request also looks inside the project's component folders
+    (``component_mesh_path``)."""
 
     def initialize(self, paths: list[str]):
         self._paths = [p for p in paths if os.path.isdir(p)]
@@ -399,6 +420,9 @@ class FallbackStaticHandler(NoCacheStaticFileHandler):
             full = os.path.join(d, path)
             if os.path.isfile(full):
                 return full
+            mesh = component_mesh_path(d, path)
+            if mesh:
+                return mesh
         return super().get_absolute_path(root, path)
 
     def validate_absolute_path(self, root, absolute_path):
@@ -1872,10 +1896,13 @@ class RuntimeServer:
             (r"/socket.io/", _nodelay_handler(sio)),
             (r"/record/(start|stop|status)", RecordHandler),
 
-            # static assets (meshes/textures/etc) — project-local first, library fallback
+            # static assets (meshes/textures/etc) — project-local first, library fallback.
+            # The project folder is the one main.py DECLARED (Workspace(project_dir=...)),
+            # never the working directory: a component's mesh lives in its own folder,
+            # <project>/components/<type>/<type>.glb (component_mesh_path).
             (r"/static/(.*)", FallbackStaticHandler, {"paths": [
-                os.getcwd(),        # project-local: my_project/CAD/
-                self.static_dir,    # library: workspace/static/CAD/
+                _project_dir(self.workspace) or os.getcwd(),   # project-local
+                self.static_dir,                                # library: workspace/static/CAD/
             ]}),
 
             # shared vendor assets (Three.js, Socket.IO, etc.)

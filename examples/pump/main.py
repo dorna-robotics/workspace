@@ -39,20 +39,23 @@ with open(_BASE_DIR / LAUNCH_FILE) as f:
 
 
 def _register_project_components():
-    """Import every module in this project's ``components/`` package so
-    their ``@register("...")`` decorators run before the scene boots.
+    """Import every module under this project's ``components/`` so their
+    ``@register("...")`` decorators run before the scene boots.
 
-    Mirrors how the library's ``workspace/components`` package auto-
-    imports itself. Without this, a scene that references a project-
-    local ``type:`` fails with "Unknown component type". Keeps main.py
-    project-agnostic — drop a registered module in ``components/`` and
-    it just works, no edits here."""
+    A component is a FOLDER named after its type — ``components/anode/``
+    holding ``anode.py`` (the class), its mesh ``anode.glb`` (+ ``.bin``)
+    and an empty ``__init__.py`` — so sharing one is copying one folder
+    (component-guide §3). The walk goes INTO those folders; a flat
+    ``components/x.py`` is found the same way. Without this, a scene
+    that references a project-local ``type:`` fails with "Unknown
+    component type". Keeps main.py project-agnostic — drop a folder in
+    ``components/`` and it just works, no edits here."""
     comp_dir = _BASE_DIR / "components"
     if not comp_dir.is_dir():
         return
-    for mod in pkgutil.iter_modules([str(comp_dir)]):
-        if not mod.name.startswith("_"):
-            importlib.import_module(f"components.{mod.name}")
+    for mod in pkgutil.walk_packages([str(comp_dir)], prefix="components."):
+        if not mod.name.rsplit(".", 1)[-1].startswith("_"):
+            importlib.import_module(mod.name)
 
 
 _register_project_components()
