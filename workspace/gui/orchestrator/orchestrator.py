@@ -543,7 +543,7 @@ class Orchestrator:
         return self._runtime_cmd(name, "replan_cancel")
 
     def speed_runtime(self, name: str, speed):
-        """Sim speed (0.25x .. 4x) — scales a simulation run's time from
+        """Sim speed (0.25x .. 16x) — scales a simulation run's time from
         now on; the runtime refuses it when anything is real."""
         return self._runtime_cmd(name, "speed", {"speed": speed})
 

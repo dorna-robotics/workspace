@@ -489,7 +489,7 @@ class CmdHandler(tornado.web.RequestHandler):
                 self.write({"error": str(ex)})
                 return
         elif cmd == "speed":
-            # Sim speed (0.25x .. 4x): scales every wait of a simulation
+            # Sim speed (0.25x .. 16x): scales every wait of a simulation
             # run from now on — motion playback, device timing, dwells.
             # Never the robot's own speed; refused when anything is real.
             ok, why = _speed_available(self.workspace)

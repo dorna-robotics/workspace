@@ -94,10 +94,10 @@ function checkStateTransitions() {
   });
 }
 
-// Sim speed (0.25x .. 4x): how fast a simulation run's time passes —
+// Sim speed (0.25x .. 16x): how fast a simulation run's time passes —
 // motion, device timing, waits. Shown only while everything is in sim
 // (status.speed_ok); the robot's own speed is untouched.
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
 function speedSelect(st) {
   if (!st.speed_ok) return "";
   const cur = Number(st.speed) || 1;

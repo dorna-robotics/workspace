@@ -655,6 +655,7 @@ class Recipe:
         anchor_frame = Pose(pose=target_solid.pose(anchor=target_anchor))
         return corrected_pose_frame.pose(in_frame=anchor_frame)
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def _solve_ik(self, target_solid, target_anchor, offset, tool_dict, j5_override=None):
         """Solve IK for a single offset with optional calibration. Returns joint values."""
         if self.calibration:

@@ -2832,6 +2832,7 @@ class Core:
         except Exception:
             return None
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def blend_points(self, points, radius, tool_pose=[0, 0, 0, 0, 0, 0], from_idx=1, step=5.0, padding=None, rail_weight=0.004):
         """Fillet EVERY sharp corner from ``from_idx`` on, auto-detected
         by TCP direction change — see blend_sharp_corners. When
@@ -2889,6 +2890,7 @@ class Core:
         except Exception:
             return None
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def traj_points(self, points, vel, accel, dt=0.01):
         """Time-parameterize a waypoint path with TOPP-RA under
         per-joint velocity / acceleration caps. Returns tmove samples
@@ -2978,6 +2980,7 @@ class Core:
                 out.append(p)
         return out if len(out) >= 2 else pts
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def smove_certify(self, points, vel, accel, jerk, dt=0.004, joint_caps=None):
         """Certify ONE smove the way chains are certified: play the
         EXACT S-curve profile over the EXACT SplinePath geometry (the
@@ -3140,6 +3143,7 @@ class Core:
     # always a candidate, and the choice is made on certified time,
     # so no motion is ever made slower. Deterministic, journaled.
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def smove_certify_split(self, points, vel, accel, jerk, joint_caps=None,
                             throttle=0.5, min_gain=0.2, max_cuts=2, stop_s=0.1,
                             owner=None, journal=True):
@@ -3199,6 +3203,7 @@ class Core:
                                         max_cuts=max_cuts - 1, stop_s=stop_s, owner=owner, journal=journal)
         return out
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def chain_prm(self, points, vel, accel, jerk, corner_cap, padding=None, rail_weight=0.004, dt=0.01, sample=5.0, label="cjmove"):
         """Chain parameters for cjmove tuned for MAXIMUM smoothness
         under the user's caps — derived from the firmware's actual
@@ -3799,6 +3804,7 @@ class Core:
                 continue
         return out
 
+    @simclock.computing             # computes in real time: the sim speed doesn't stretch it
     def motion_plan(self, joint, seed=1234, padding=10, gravity_vec=None, gravity_thr=5.0, planner="aitstar", time_limit_sec=10.0, rail_weight=0.004, judge=None):
 
         """

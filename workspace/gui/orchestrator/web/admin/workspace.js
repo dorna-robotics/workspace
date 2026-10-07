@@ -1539,10 +1539,10 @@ function escHtml(s) {
 let _replan = null;
 let _replanAvail = { ok: false, why: "" };   // status.replan_ok / replan_why
 // Sim speed (status.speed / speed_ok): how fast a simulation run's time
-// passes — motion, device timing, waits — 0.25x .. 4x, changeable mid-run.
+// passes — motion, device timing, waits — 0.25x .. 16x, changeable mid-run.
 // Shown only while everything is in sim; the robot's own speed is untouched.
 let _speed = { ok: false, v: 1 };
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
 let _replanShownFor = null;     // the offer the dialog already opened for
 const _rpSel = new Set();       // JSON keys of the selected items
 let _rpStep = "";               // the current step's key: the view's, or "choose", or "confirm"

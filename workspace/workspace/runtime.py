@@ -1501,7 +1501,7 @@ class Runtime:
             now = simclock.now()
             if now >= end:
                 return
-            self._sleep(min(step, end - now) / simclock.speed())
+            self._sleep(min(step, end - now) / simclock.rate())
 
     def delay(self, seconds: float = 0.0, **k: Any) -> None:
         if "val" in k and not seconds:

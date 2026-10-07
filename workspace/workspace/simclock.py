@@ -12,6 +12,13 @@ sim run waits reads it from here instead of the wall clock:
     wait(event, s)      the same, cut short by ``event`` (True if set)
     Pacer               a tick loop's deadline (the sim robot's 120 Hz)
     at(wall)            a wall-clock stamp on the sim timeline
+    computing           a decorator: while the robot's software computes (path
+                        planning, IK, certifying a motion) the clock runs at 1x
+
+Computing takes real time on a real robot too, so it does in the sim's time:
+only the waits speed up. A 0.5 s plan stays 0.5 s on the timeline at 16x,
+instead of being recorded as 8 s — recordings, and the run times measured
+from them, stay true at any speed.
 
 A speed change takes effect from that moment — a wait in progress
 speeds up or slows down for what is left of it (waits sleep in slices of
@@ -22,37 +29,70 @@ Real hardware always runs at 1x: the runtime refuses ``set_speed`` when
 anything in the workspace is real, and the core puts the clock back to
 1x when it leaves simulation. One clock per process — one workspace.
 """
+import functools
 import threading
 import time
 from collections import deque
 
-SPEEDS = (0.25, 0.5, 1.0, 2.0, 4.0)
+SPEEDS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 SLICE_S = 0.1          # the longest a wait sleeps before re-reading the speed
 
 _lock = threading.Lock()
-_scale = 1.0
+_speed = 1.0           # the operator's choice
+_scale = 1.0           # what the clock runs at now: 1x while computing, else _speed
+_computing = 0         # computing sections in progress (any thread)
 # speed changes, newest last: (wall, sim, scale) — sim time from that wall
 # instant on is sim + (wall' - wall) * scale. Bounded: at() only looks back
 # as far as a stamp can be old (events are recorded as they happen).
-_marks = deque([(time.time(),) * 2 + (1.0,)], maxlen=256)
+_marks = deque([(time.time(),) * 2 + (1.0,)], maxlen=4096)
 
 
 def speed() -> float:
+    """The speed the operator chose."""
+    return _speed
+
+
+def rate() -> float:
+    """What the clock runs at right now (1x while computing)."""
     return _scale
+
+
+def _apply():                                # under _lock
+    global _scale
+    x = 1.0 if _computing else _speed
+    if x != _scale:
+        wall = time.time()
+        _marks.append((wall, _sim_at(wall), x))
+        _scale = x
 
 
 def set_speed(x) -> float:
     """Run sim time at ``x`` times real time from now on (one of SPEEDS)."""
-    global _scale
+    global _speed
     x = float(x)
     if x not in SPEEDS:
         raise ValueError(f"speed must be one of {', '.join(f'{s:g}' for s in SPEEDS)}")
     with _lock:
-        if x != _scale:
-            wall = time.time()
-            _marks.append((wall, _sim_at(wall), x))
-            _scale = x
-    return _scale
+        _speed = x
+        _apply()
+    return _speed
+
+
+def computing(fn):
+    """Run ``fn`` with the clock at 1x (it computes; nothing waits)."""
+    @functools.wraps(fn)
+    def run(*a, **k):
+        global _computing
+        with _lock:
+            _computing += 1
+            _apply()
+        try:
+            return fn(*a, **k)
+        finally:
+            with _lock:
+                _computing -= 1
+                _apply()
+    return run
 
 
 def reset() -> None:

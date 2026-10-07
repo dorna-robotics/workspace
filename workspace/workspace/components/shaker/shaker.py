@@ -107,7 +107,7 @@ class Shaker:
                 return  # exit mid-toggle cleanly; caller handles going to start
             ratio = (current - start) / self.toggle_period
             self.joint = self.toggle_range[0] + (self.toggle_range[1] - self.toggle_range[0]) * ratio if self._toggle_state == "start" else self.toggle_range[1] - (self.toggle_range[1] - self.toggle_range[0]) * ratio
-            time.sleep(0.03 / simclock.speed())
+            time.sleep(0.03 / simclock.rate())
 
         self.joint = self.toggle_range[1] if self._toggle_state == "start" else self.toggle_range[0]
         self._toggle_state = "end" if self._toggle_state == "start" else "start"
