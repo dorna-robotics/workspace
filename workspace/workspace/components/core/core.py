@@ -13,6 +13,7 @@ import yaml
 from dorna2 import Solid, Dorna
 import dorna2.pose
 from workspace.components.factory import register
+from workspace import simclock
 from path_planning import Planner
 
 log = logging.getLogger(__name__)
@@ -844,6 +845,7 @@ class Core:
             # sim → real: route recipes through the real client
             self._simulation_mode = False
             self.robot_api = self._guard_api(self.dorna)
+            simclock.reset()        # real hardware runs at 1x
             print(f"🟡 {self.name} simulation api disabled")
         else:
             # real → sim: route recipes through SimulationAPI
@@ -5512,6 +5514,7 @@ class SimulationAPI:
         # down, not teleport the pose along the path (the firmware
         # ticks at a fixed rate and can never skip).
         t0 = time.perf_counter()
+        pace = simclock.Pacer()
         step = 0
         while True:
             t_sim = step * dt
@@ -5527,8 +5530,7 @@ class SimulationAPI:
 
             # sleep until next interpolation tick
             step += 1
-            next_tick_time = t0 + step * dt
-            sleep_for = next_tick_time - time.perf_counter()
+            sleep_for = pace.next(dt)   # sim time: the speed control scales it
             self._tick_late("jmove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
@@ -5579,6 +5581,7 @@ class SimulationAPI:
         # Simulated-time stepping — see jmove: stalls slow the sim,
         # they never skip the pose along the path.
         t0 = time.perf_counter()
+        pace = simclock.Pacer()
         step = 0
 
         while True:
@@ -5595,8 +5598,7 @@ class SimulationAPI:
             self.joints = pos
 
             step += 1
-            next_tick = t0 + step * dt
-            sleep_for = next_tick - time.perf_counter()
+            sleep_for = pace.next(dt)   # sim time: the speed control scales it
             self._tick_late("smove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
@@ -5686,6 +5688,7 @@ class SimulationAPI:
         # --- Interpolation timing
         dt = 1.0 / float(self.INTERP_FREQ)
         t0 = time.perf_counter()
+        pace = simclock.Pacer()
         step = 0
 
 
@@ -5713,8 +5716,7 @@ class SimulationAPI:
 
             # sleep until next interpolation tick
             step += 1
-            next_tick_time = t0 + step * dt
-            sleep_for = next_tick_time - time.perf_counter()
+            sleep_for = pace.next(dt)   # sim time: the speed control scales it
             self._tick_late("lmove", sleep_for, step)
             if sleep_for > 0:
                 time.sleep(sleep_for)
@@ -5800,7 +5802,7 @@ class SimulationAPI:
             return 2
 
         dt = 1.0 / float(self.INTERP_FREQ)
-        t0 = time.perf_counter()
+        pace = simclock.Pacer()
         step = 0
         while True:
             t_sim = step * dt   # simulated time — stalls slow, never skip
@@ -5817,7 +5819,7 @@ class SimulationAPI:
             else:
                 self.joints = pt
             step += 1
-            sleep_for = t0 + step * dt - time.perf_counter()
+            sleep_for = pace.next(dt)   # sim time: the speed control scales it
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
@@ -5827,7 +5829,7 @@ class SimulationAPI:
 
     # sleep
     def sleep(self, val=0):
-        time.sleep(val)
+        simclock.sleep(val)
         return 2
 
     # output — records pin states and honours the sequencing sleeps,
@@ -5858,7 +5860,7 @@ class SimulationAPI:
         if len(samples) == 1:
             self.joints = [float(v) for v in samples[0][1:]]
             return 2
-        t0 = time.perf_counter()
+        pace = simclock.Pacer()
         dt = 1.0 / float(self.INTERP_FREQ)
         T = float(samples[-1][0])
         k, step = 0, 0
@@ -5874,7 +5876,7 @@ class SimulationAPI:
             f = 0.0 if span <= 0 else (el - float(a[0])) / span
             self.joints = [pa + (pb - pa) * f for pa, pb in zip(a[1:], b[1:])]
             step += 1
-            sleep_for = t0 + step * dt - time.perf_counter()
+            sleep_for = pace.next(dt)   # sim time: the speed control scales it
             if sleep_for > 0:
                 time.sleep(sleep_for)
         self.joints = [float(v) for v in samples[-1][1:]]
@@ -5968,7 +5970,7 @@ class SimulationAPI:
             prof = self._fw_profile_cont(jerk, accel, vel, d_total, v_tick, a_tick,
                                          to_stop=not has_next)
             duration = sum(prof["ticks"]) / float(self.FREQ)
-            t0 = time.perf_counter()
+            pace = simclock.Pacer()
             step = 0
             while True:
                 t_sim = step * dt   # simulated time — stalls slow, never skip
@@ -5985,7 +5987,7 @@ class SimulationAPI:
                 if final:
                     break
                 step += 1
-                sleep_for = t0 + step * dt - time.perf_counter()
+                sleep_for = pace.next(dt)   # sim time: the speed control scales it
                 if sleep_for > 0:
                     time.sleep(sleep_for)
             v_tick, a_tick = prof["vFinal"], 0.0

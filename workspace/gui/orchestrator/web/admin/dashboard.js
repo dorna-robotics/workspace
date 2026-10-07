@@ -94,6 +94,17 @@ function checkStateTransitions() {
   });
 }
 
+// Sim speed (0.25x .. 4x): how fast a simulation run's time passes —
+// motion, device timing, waits. Shown only while everything is in sim
+// (status.speed_ok); the robot's own speed is untouched.
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function speedSelect(st) {
+  if (!st.speed_ok) return "";
+  const cur = Number(st.speed) || 1;
+  return `<select class="btn btn-sm speed-sel" title="Simulation speed — how fast the run's time passes (not the robot's speed)" aria-label="Simulation speed">
+    ${SPEEDS.map(v => `<option value="${v}"${v === cur ? " selected" : ""}>${v}×</option>`).join("")}</select>`;
+}
+
 async function sendCmd(name, cmd, kwargs) {
   const payload = { cmd };
   if (kwargs) payload.kwargs = kwargs;
@@ -396,6 +407,7 @@ function render() {
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
                <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
                <button class="btn btn-sm action-btn"             data-cmd="replan" data-replan="${rp || ""}" title="${esc(rp ? "Open the Replan dialog" : st.replan_ok ? "Remove items from the run, then replan" : `Replan: ${st.replan_why || "not available"}`)}" ${rpOff ? "disabled" : ""}>${rpLbl}</button>
+               ${speedSelect(st)}
                <div class="spacer"></div>
                <button class="btn btn-sm btn-danger action-btn"  data-cmd="kill">Kill</button>`;
               })()
@@ -450,6 +462,19 @@ function render() {
         await refreshStatuses();
         render();
       });
+    });
+
+    const spd = el.querySelector(".speed-sel");
+    if (spd) spd.addEventListener("change", async () => {
+      try {
+        await apiFetch(`/workspace/${encodeURIComponent(ws.name)}/cmd`, {
+          method: "POST", body: JSON.stringify({ cmd: "speed", speed: Number(spd.value) }),
+        });
+      } catch (e) {
+        toast(`Speed: ${e.message || e}`, "bad");
+      }
+      await refreshStatuses();
+      render();
     });
 
     // Remove button

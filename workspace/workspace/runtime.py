@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional, TypeVar
 
+from workspace import simclock
+
 T = TypeVar("T")
 
 
@@ -1486,18 +1488,20 @@ class Runtime:
         if seconds <= 0:
             return
         if not checkpoint:
-            self._sleep(seconds)
+            simclock.sleep(seconds)
             return
         # A dwell is work: waiting AT a pose means the robot must be at
         # the pose the model says — a held exit executes first.
         self.settle("sleep")
-        end = time.time() + seconds
+        # on the sim clock: the speed control scales a dwell (always 1x
+        # on real hardware)
+        end = simclock.now() + seconds
         while True:
             self.checkpoint()
-            now = time.time()
+            now = simclock.now()
             if now >= end:
                 return
-            self._sleep(min(step, end - now))
+            self._sleep(min(step, end - now) / simclock.speed())
 
     def delay(self, seconds: float = 0.0, **k: Any) -> None:
         if "val" in k and not seconds:

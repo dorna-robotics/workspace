@@ -34,6 +34,8 @@ import threading
 import time
 from typing import Callable, Optional
 
+from workspace import simclock
+
 from workspace.components.pump.psd4_driver import (
     PSD4,
     PSD4Error,
@@ -378,7 +380,7 @@ class PumpStation:
         self._stop_event.clear()
         if seconds <= 0:
             return True
-        return not self._stop_event.wait(seconds)
+        return not simclock.wait(self._stop_event, seconds)   # the speed control scales it
 
     # ── Drive facts ────────────────────────────────────────────────────
 
@@ -499,11 +501,11 @@ class PumpStation:
             start = self._sim_steps
             secs = (abs(steps - start) / self.backend.max_steps
                     * self.backend.stroke_seconds(self._speed))
-            t0 = time.monotonic()
+            t0 = simclock.now()
             if not self._sim_wait(secs):
                 # Terminated mid-stroke: position is untrustworthy, the
                 # same contract as the real ``T`` — re-initialize.
-                frac = min(1.0, (time.monotonic() - t0) / secs) if secs > 0 else 1.0
+                frac = min(1.0, (simclock.now() - t0) / secs) if secs > 0 else 1.0
                 self._sim_steps = int(round(start + (steps - start) * frac))
                 self._sim_initialized = False
                 self.last_error = (-1, "move terminated mid-stroke — re-initialize")

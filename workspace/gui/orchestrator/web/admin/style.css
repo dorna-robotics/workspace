@@ -1218,3 +1218,7 @@
 
 /* The file kwarg's two buttons sit together (kwargs.js) */
 .kw-file-wrap .kw-browse { flex-shrink: 0; }
+
+/* Sim speed (0.25x .. 4x) beside the run controls: a select that reads as a button */
+select.speed-sel { width: auto; min-width: 0; cursor: pointer; font-variant-numeric: tabular-nums;
+  appearance: auto; padding-right: 6px; }

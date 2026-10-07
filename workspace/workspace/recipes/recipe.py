@@ -10,6 +10,7 @@ import time as _time
 from mergedeep import merge
 from dorna2 import pose as dorna_pose
 from workspace.recipes.gated import gated
+from workspace import simclock
 from dorna2 import Pose
 from workspace.components.probe_calibration import ProbeCalibration
 from workspace.components.core.core import _xyzj_to_joints
@@ -483,7 +484,7 @@ class Recipe:
         for pin, val, delay in seq:
             rt.output(config=[[pin, val, 0]])
             if delay > 0:
-                _time.sleep(delay)
+                simclock.sleep(delay)
 
     # ── Overlapped approach IO ──────────────────────────────────────────
     # The approach-side IO chain (e.g. opening the gripper: pins with
@@ -564,7 +565,7 @@ class Recipe:
                 for pin, val, delay in seq:
                     api.raw_output(pin, val)
                     if delay > 0:
-                        _time.sleep(delay)
+                        simclock.sleep(delay)
                 for set_call in setters:
                     set_call[0](*set_call[1])
             except Exception as ex:  # surfaced at the join barrier

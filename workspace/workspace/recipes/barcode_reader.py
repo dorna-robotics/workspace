@@ -3,6 +3,7 @@ import time as _time
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
+from workspace import simclock
 from workspace.components.barcode_reader.ds457_driver import ALL_SYMBOLOGIES
 
 
@@ -123,10 +124,10 @@ class BarcodeReader(Recipe):
             # timeout=0); the read loop below owns the clock.
             rt.jmove(joint=tgt, vel=sweep_vaj[0], accel=sweep_vaj[1],
                      jerk=sweep_vaj[2], timeout=0)
-            deadline = _time.time() + abs(sweep) / max(sweep_vaj[0], 1) + 3.0
+            deadline = simclock.now() + abs(sweep) / max(sweep_vaj[0], 1) + 3.0
             code = None
             try:
-                while _time.time() < deadline:
+                while simclock.now() < deadline:
                     code = self.code(allowed=allowed,
                                      timeout=trigger_timeout,
                                      sim_return=sim_return)

@@ -3,6 +3,7 @@ from mergedeep import merge
 from dorna2 import Solid
 import time
 from workspace.components.work import pure
+from workspace import simclock
 
 class Shaker:
     DEFAULTS = dict(
@@ -97,16 +98,16 @@ class Shaker:
         # tracks the head while the actuator travels.
         self.workspace.rt.output(
             config=self.output_end if self._toggle_state == "start" else self.output_start)
-        start = time.time()
+        start = simclock.now()          # sim clock: the speed control scales the swing (1x on hardware)
         while True:
-            current = time.time()
+            current = simclock.now()
             if current - start >= self.toggle_period:
                 break
             if stop_event is not None and stop_event.is_set():
                 return  # exit mid-toggle cleanly; caller handles going to start
             ratio = (current - start) / self.toggle_period
             self.joint = self.toggle_range[0] + (self.toggle_range[1] - self.toggle_range[0]) * ratio if self._toggle_state == "start" else self.toggle_range[1] - (self.toggle_range[1] - self.toggle_range[0]) * ratio
-            time.sleep(0.03)
+            time.sleep(0.03 / simclock.speed())
 
         self.joint = self.toggle_range[1] if self._toggle_state == "start" else self.toggle_range[0]
         self._toggle_state = "end" if self._toggle_state == "start" else "start"

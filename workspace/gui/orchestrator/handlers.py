@@ -292,6 +292,8 @@ class WorkspaceCmdHandler(AuthedHandler):
                                                  data.get("items") or [], data.get("reason") or "")
             elif cmd == "replan_cancel":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.replan_cancel_runtime, name)
+            elif cmd == "speed":
+                out = await loop.run_in_executor(_cmd_pool, self.orch.speed_runtime, name, data.get("speed", 1))
             elif cmd == "kill":
                 out = await loop.run_in_executor(_cmd_pool, self.orch.stop_workspace, name)
                 out = out or {"status": "ok", "killed": True}

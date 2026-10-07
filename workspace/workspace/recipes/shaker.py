@@ -1,6 +1,7 @@
 from copy import deepcopy
 from mergedeep import merge
 from workspace.recipes.recipe import Recipe
+from workspace import simclock
 import time
 import threading
 
@@ -70,9 +71,9 @@ class Shaker(Recipe):
             if shaken >= duration and self.component.toggle_state() == "start":
                 break
             self.rt.checkpoint()
-            t0 = time.time()
+            t0 = simclock.now()
             self.component.toggle(stop_event=self._stop_event)
-            shaken += time.time() - t0
+            shaken += simclock.now() - t0
         self._go_to_start()
         self.component.open()
 

@@ -552,6 +552,7 @@ function updateStatusUI(st) {
   renderStep(st?.step, running);
   updateProgress(st?.step?.progress, launched);
   _replanAvail = { ok: !!st?.replan_ok, why: st?.replan_why || "" };
+  _speed = { ok: !!st?.speed_ok, v: Number(st?.speed) || 1 };
   setReplan(st?.replan || null);
   renderControls(state, launched, running);
   updateIframe(state, launched);
@@ -1537,6 +1538,11 @@ function escHtml(s) {
 // dialog opens on "choose"; the button (always "Replan") reopens it.
 let _replan = null;
 let _replanAvail = { ok: false, why: "" };   // status.replan_ok / replan_why
+// Sim speed (status.speed / speed_ok): how fast a simulation run's time
+// passes — motion, device timing, waits — 0.25x .. 4x, changeable mid-run.
+// Shown only while everything is in sim; the robot's own speed is untouched.
+let _speed = { ok: false, v: 1 };
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
 let _replanShownFor = null;     // the offer the dialog already opened for
 const _rpSel = new Set();       // JSON keys of the selected items
 let _rpStep = "";               // the current step's key: the view's, or "choose", or "confirm"
@@ -2222,7 +2228,7 @@ function renderControls(state, launched, running) {
   // changed, neither has the button set — short-circuit before
   // tearing down the DOM and reattaching listeners.
   const s = (state || "").toUpperCase();
-  const key = `${s}|${_replan?.phase || ""}|${_replanAvail.ok}`;
+  const key = `${s}|${_replan?.phase || ""}|${_replanAvail.ok}|${_speed.ok}|${_speed.v}`;
   if (key === _lastControlsState) return;
   _lastControlsState = key;
   controls.innerHTML = "";
@@ -2288,6 +2294,19 @@ function renderControls(state, launched, running) {
     addBtn("Park",     "park",  { warn: true, disabled: !active || parking });
     const rb = replanControl();
     addBtn(rb.label, "replan", { disabled: rb.disabled, title: rb.title });
+    if (_speed.ok) {
+      const sel = document.createElement("select");
+      sel.className = "btn btn-sm speed-sel";
+      sel.title = "Simulation speed — how fast the run's time passes (not the robot's speed)";
+      sel.setAttribute("aria-label", "Simulation speed");
+      sel.innerHTML = SPEEDS.map(v => `<option value="${v}"${v === _speed.v ? " selected" : ""}>${v}×</option>`).join("");
+      sel.addEventListener("change", async () => {
+        try { await sendCmd("speed", undefined, { speed: Number(sel.value) }); }
+        catch (e) { toast(`Speed: ${e.message || e}`, "bad"); }
+        await refreshStatus();
+      });
+      controls.appendChild(sel);
+    }
   }
 
   // Gear button for parameters — only before launch

@@ -1,6 +1,7 @@
 from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
+from workspace import simclock
 import time
 
 from workspace.components.factory import register
@@ -124,9 +125,9 @@ class RotatingCylinderMKB1630:
         to settle)."""
         r0, e0 = self.rotation, self.extension
         r1, e1 = target_rotation, target_extension
-        start = time.time()
+        start = simclock.now()          # sim clock: the speed control scales the move (1x on hardware)
         while True:
-            current = time.time()
+            current = simclock.now()
             if current - start >= self.toggle_period:
                 break
             if stop_event is not None and stop_event.is_set():

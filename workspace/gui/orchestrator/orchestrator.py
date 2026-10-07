@@ -542,6 +542,11 @@ class Orchestrator:
         """Close an open Replan without changing anything."""
         return self._runtime_cmd(name, "replan_cancel")
 
+    def speed_runtime(self, name: str, speed):
+        """Sim speed (0.25x .. 4x) — scales a simulation run's time from
+        now on; the runtime refuses it when anything is real."""
+        return self._runtime_cmd(name, "speed", {"speed": speed})
+
     def _runtime_cmd(self, name: str, cmd: str, extra: Optional[Dict] = None):
         ws = self.workspaces[name]
         if ws.is_remote():

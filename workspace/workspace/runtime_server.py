@@ -17,6 +17,7 @@ from tornado import autoreload
 import socketio
 
 from workspace.runtime import Runtime
+from workspace import simclock
 from workspace.devices import component_device_ids
 from workspace.devices.component_contract import component_device_claim
 
@@ -175,7 +176,7 @@ async def upstream_update(sid, payload):
     if _recorder["fp"] is not None:
         delta = _compact_delta(payload, world_state)
         if delta:
-            _record_line({"t": round(time.time() - _recorder["t0"], 4), "u": delta})
+            _record_line({"t": round(simclock.now() - _recorder["t0"], 4), "u": delta})
     merge_into_state(world_state, payload)
     await sio.emit("scene_update", payload, skip_sid=sid)   # every viewer, not the sender
     return "ok"
@@ -240,7 +241,7 @@ def _record_event(event: dict) -> None:
     if _recorder["fp"] is None:
         return
     wall = event.get("wall_ts")
-    t = (wall - _recorder["t0"]) if isinstance(wall, (int, float)) else (time.time() - _recorder["t0"])
+    t = (simclock.at(wall) if isinstance(wall, (int, float)) else simclock.now()) - _recorder["t0"]
     _record_line({"t": round(t, 4), "ev": event})
 
 
@@ -256,7 +257,9 @@ def _record_start():
         fp = open(path, "w")
     except Exception as e:
         return {"ok": False, "error": f"cannot open {path}: {e}"}
-    _recorder.update(fp=fp, path=path, t0=time.time(), frames=0)
+    # t0 on the sim clock — the speed control scales sim time, and a
+    # recording keeps its true durations (measured run times read them)
+    _recorder.update(fp=fp, path=path, t0=simclock.now(), frames=0)
     _record_line({"meta": {"started": time.strftime("%Y-%m-%dT%H:%M:%S"),
                            "rec_dir": _record_dir}})
     _record_line({"t": 0.0, "snap": world_state})
@@ -281,7 +284,7 @@ def _record_stop():
         fp.close()
     except Exception:
         pass
-    secs = round(time.time() - t0, 1) if t0 else 0
+    secs = round(simclock.now() - t0, 1) if t0 else 0
     print(f"[record] stopped: {path} ({n} lines, {secs}s)")
     _recorder_broadcast()
     return {"ok": True, "path": path, "frames": n, "seconds": secs}
@@ -290,7 +293,7 @@ def _record_stop():
 def _record_status():
     on = _recorder["fp"] is not None
     return {"ok": True, "recording": on, "path": _recorder["path"],
-            "seconds": round(time.time() - _recorder["t0"], 1) if on else 0,
+            "seconds": round(simclock.now() - _recorder["t0"], 1) if on else 0,
             "frames": _recorder["frames"], "rec_dir": _record_dir}
 
 
@@ -485,6 +488,22 @@ class CmdHandler(tornado.web.RequestHandler):
                 self.set_status(409)
                 self.write({"error": str(ex)})
                 return
+        elif cmd == "speed":
+            # Sim speed (0.25x .. 4x): scales every wait of a simulation
+            # run from now on — motion playback, device timing, dwells.
+            # Never the robot's own speed; refused when anything is real.
+            ok, why = _speed_available(self.workspace)
+            try:
+                if not ok:
+                    raise ValueError(why)
+                simclock.set_speed(data.get("speed", 1))
+            except (TypeError, ValueError) as ex:
+                self.set_status(409)
+                self.write({"error": str(ex)})
+                return
+            cb = getattr(self.rt, "on_status", None)
+            if cb:
+                cb()
         elif cmd == "kill":
             self.rt.kill()
         else:
@@ -1165,6 +1184,20 @@ def _state_value(rt) -> str:
     return s.value if hasattr(s, "value") else str(s)
 
 
+def _speed_available(workspace):
+    """The sim speed control works only when nothing is real: every
+    component that has a sim / real switch is in simulation."""
+    comps = getattr(workspace, "components", None) or {}
+    for name, comp in list(comps.items()):
+        for attr in ("_simulation_mode", "simulation"):
+            v = getattr(comp, attr, None)
+            if isinstance(v, bool):
+                if not v:
+                    return False, f"{name} is running for real — the speed control is for simulation"
+                break
+    return True, ""
+
+
 def _status_payload(rt, workspace) -> dict:
     """Single source of truth for the workspace's status snapshot.
 
@@ -1218,6 +1251,12 @@ def _status_payload(rt, workspace) -> dict:
     ok, why = getattr(rt, "replan_available", (False, ""))
     out["replan_ok"] = bool(ok)
     out["replan_why"] = why
+    # the sim speed control: the current speed, and whether it may change
+    out["speed"] = simclock.speed()
+    out["speed_ok"], out["speed_why"] = _speed_available(workspace)
+    if not out["speed_ok"] and out["speed"] != 1.0:
+        simclock.reset()                # something went real: hardware runs at 1x
+        out["speed"] = 1.0
     summary = _compute_devices_summary(workspace)
     if summary is not None:
         out["devices_summary"] = summary
