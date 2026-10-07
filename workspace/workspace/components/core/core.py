@@ -3946,6 +3946,8 @@ class Core:
         # dorna2's play() does ``_msg[key] == None`` on the command dict,
         # which is an ambiguous elementwise comparison on an array (and
         # the command must be JSON-serializable anyway).
+        if res is not None and not len(res):
+            res = []        # no path: a plain empty list (numpy 2 refuses an empty array's truth value)
         if res is not None and len(res):
             res = [[float(v) for v in p] for p in res]
             # Sparse execution: decimate to the essential corners so the
