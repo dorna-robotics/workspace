@@ -746,7 +746,9 @@ The operator reaches them from the workspace page:
 
 * **Files** in the top bar — the browser, opened on the FIRST tab of
   `folders:`. A run folder's `records.csv` opens as a table in the panel,
-  an image shows fitted in the same pane, any file downloads and any
+  an image shows fitted in the same pane, a markdown file renders in it
+  and a PDF opens in it as the browser draws it (a project's `docs/`
+  tab), any file downloads and any
   folder downloads as a zip.
 * **Open**, next to **Load** in the Parameters modal — the same panel
   in *pick* mode over the `uploads:` folder (whether or not it is a tab),

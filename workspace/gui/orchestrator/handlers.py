@@ -598,6 +598,20 @@ class ProjectFilesHandler(AuthedHandler):
             text = text[:text.rfind("\n") + 1] or text      # no half last line
         suffix = target.suffix.lower()
 
+        if suffix in (".md", ".markdown"):
+            # A project's docs/ sheet, rendered. Raw HTML in the source is
+            # escaped (mistune escape=True) — a doc is text, never markup
+            # the browser runs. Without mistune it reads as plain text.
+            try:
+                import mistune
+            except ImportError:
+                return {"kind": "text", "text": text[:MAX_TEXT],
+                        "truncated": clipped or len(text) > MAX_TEXT}
+            render = mistune.create_markdown(escape=True,
+                                             plugins=["table", "strikethrough", "task_lists"])
+            return {"kind": "markdown", "html": render(text),
+                    "truncated": clipped, "note": "first 2 MB read" if clipped else ""}
+
         if suffix in (".csv", ".tsv"):
             rows = list(csv.reader(io.StringIO(text),
                                    delimiter="\t" if suffix == ".tsv" else ","))

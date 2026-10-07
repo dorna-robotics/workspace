@@ -22,6 +22,7 @@
 // opens — nothing about which folders exist is hardcoded here.
 
 const IMG_EXT = /\.(jpe?g|png|bmp|gif|webp|tiff?)$/i;
+const PDF_EXT = /\.pdf$/i;
 
 const api = (ws, root, tail = "") =>
   `/orchestrator/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(root)}${tail}`;
@@ -477,6 +478,18 @@ export function openFileBrowser(opts = {}) {
       };
       return;
     }
+    if (PDF_EXT.test(e.name)) {
+      // A PDF is the browser's to draw: the same inline, typed download
+      // the image uses, in a frame that fills the pane (a project's
+      // docs/ — the bench sheets an operator reads at the machine).
+      const esc = (v) => String(v).replace(/[<&"]/g, (c) => ({ "<": "&lt;", "&": "&amp;", '"': "&quot;" }[c]));
+      preview.innerHTML =
+        `<div class="fb-pv-head"><span class="fb-pv-name">${esc(e.name)}</span>` +
+        `<span class="fb-pv-meta">${fmtSize(e.size)} · ${fmtWhen(e.mtime)}</span></div>` +
+        `<iframe class="fb-pv-pdf" title="${esc(e.name)}" src="${api(wsName, root,
+          `?path=${encodeURIComponent(e.path)}&raw=1&t=${e.mtime}`)}"></iframe>`;
+      return;
+    }
     preview.innerHTML = `<div class="fb-loading"><div class="fb-skel"></div></div>`;
     try {
       const resp = await fetch(api(wsName, root, `?path=${encodeURIComponent(e.path)}&preview=1`));
@@ -495,6 +508,13 @@ export function openFileBrowser(opts = {}) {
           `${d.truncated ? ` · showing first ${d.rows.length}` : ""}` +
           `${d.note ? ` · ${d.note}` : ""}</span></div>` +
           `<div class="fb-pv-scroll"><table class="fb-table">${head}${body}</table></div>`;
+      } else if (d.kind === "markdown") {
+        // Rendered by the server (mistune, raw HTML escaped there) — a
+        // project's docs/ sheet read at the machine.
+        preview.innerHTML =
+          `<div class="fb-pv-head"><span class="fb-pv-name">${e.name}</span>` +
+          `${d.note ? `<span class="fb-pv-meta">${d.note}</span>` : ""}</div>` +
+          `<div class="fb-pv-scroll"><article class="fb-md">${d.html}</article></div>`;
       } else if (d.kind === "text") {
         preview.innerHTML =
           `<div class="fb-pv-head"><span class="fb-pv-name">${e.name}</span></div>` +
