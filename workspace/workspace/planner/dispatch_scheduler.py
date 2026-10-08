@@ -21,22 +21,28 @@ up), asks the ROUTE what each item may do next and picks one:
                  they compete for nothing the robot needs.
     the robot    among its candidates, the RANKING picks — a key over a
                  Candidate (below), lowest first (``time``):
-                   1. feeds the bottleneck — the item's next route step is
+                   1. works at the bottleneck — the step holds a station
+                      besides the robot (resource ("scale", "robot")), and
+                      that station has at least as much work left as the
+                      robot (so it mustn't sit idle)
+                   2. feeds the bottleneck — the item's next route step is
                       a device step, and that device has at least as much
-                      work left as the robot (so it mustn't starve)
-                   2. switch tax — no tool swap needed, no liquid change
-                   3. feeds a device — the item's next route step is a
+                      work left as the robot
+                   3. setup — the tool swap seconds it needs first (0: none)
+                   4. feeds a device — the item's next route step is a
                       device step (the load before a shake)
-                   4. serves a device / frees a seat — the item's previous
-                      route step was a device step (the unload after it),
-                      or the step asserts a capacity fact that is now false
-                   5. the same step as the robot's last one
-                   6. furthest along the route
-                   7. shorter first
-                   8. item order, then route order (deterministic)
-                 Feeding any device ahead of a tool swap (the ranking up to
-                 2026-10) lost most where devices are few and short: a
-                 device only jumps the swap tax when it is the bottleneck.
+                   5. furthest along the route
+                   6. item order, then route order (deterministic)
+                 "Work left" on a resource is the summed durations of the
+                 route steps every unit still has ahead on it. Feeding any
+                 device ahead of a tool swap (the ranking up to 2026-10)
+                 lost most where devices are few and short: a device only
+                 jumps the swap when it is the bottleneck. Measured against
+                 the exact optimum (CP-SAT) on 425 random instances: a
+                 station step first ALWAYS (not only at the bottleneck) lost
+                 3% on average, and so did making the robot wait for one;
+                 a liquid-change flag, "serves a device", "same step as last"
+                 and "shorter first" changed nothing or lost.
 
 The scheduler and its ranking are one built-in thing, the platform's like
 motion planning: no project replaces either (launch.yaml names no
@@ -54,7 +60,6 @@ against the real pre()/eff() exactly like a CP-SAT window.
 from __future__ import annotations
 
 import heapq
-import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -79,17 +84,15 @@ class Candidate:
     swap_s: float              # tool swap seconds it needs first (0: none)
     finish: float              # when it would end if started now
     feeds_device: bool         # the item's next step is a device's (load before a shake)
-    serves_device: bool        # its previous step was a device's, or it frees a capacity
-    liquid_change: bool        # same tool, a different kind of step (a needle's prime)
-    same_as_last: bool         # the robot's last step was this one
     feeds_bottleneck: bool = False   # feeds a device with at least the robot's work left
+    at_bottleneck: bool = False      # holds a station (besides the robot) with at least the robot's work left
 
 
 def time(c: Candidate):
-    """The ranking: keep the bottleneck busy, avoid switching, keep devices
-    fed, finish items."""
-    return (not c.feeds_bottleneck, c.swap_s > 0, c.liquid_change, not c.feeds_device, not c.serves_device,
-            not c.same_as_last, -c.index, c.duration, c.item_pos, c.index)
+    """The ranking: keep the bottleneck busy (work at it, then load it), then
+    the least setup, keep devices fed, finish items."""
+    return (not c.at_bottleneck, not c.feeds_bottleneck, c.swap_s, not c.feeds_device, -c.index,
+            c.item_pos, c.index)
 
 
 def resolve(launch: Dict[str, Any], project_dir=None):
@@ -200,11 +203,6 @@ def dispatch(
     inflight: List[Tuple[float, int, Step]] = []   # heap of (end, seq, step)
     taken: set = set()
     tool = initial_tool
-    last_robot: Optional[str] = None
-    last_kind: Dict[Any, str] = {}          # tool -> kind of the last step it did (name minus pass digits)
-
-    def kind(name):
-        return re.sub(r"\d+$", "", name)
     now = 0.0
     seq = 0
 
@@ -235,7 +233,7 @@ def dispatch(
         return step
 
     def start(step, unit):
-        nonlocal proj, tool, last_robot, seq
+        nonlocal proj, tool, seq
         m = meta[step.name]
         t = now
         rs = _resources(m.resource)
@@ -248,9 +246,6 @@ def dispatch(
             res_free[r] = end
         if tool_resource in rs or m.tool_required:
             res_free[tool_resource] = max(res_free.get(tool_resource, 0.0), end)
-            last_robot = step.name
-            if m.tool_required:
-                last_kind[m.tool] = kind(step.name)
         unit_free[unit] = end
         unit_pos[unit] = index.get(step.name, 0) + 1
         nxt = step.eff(proj)
@@ -301,31 +296,20 @@ def dispatch(
             sim = s2 if isinstance(s2, frozenset) else frozenset(s2)
         return True
 
-    def frees_capacity(step):
-        if not caps:
-            return False
-        try:
-            after = step.eff(proj)
-        except Exception:
-            return False
-        return any(f[0] in caps and f not in proj for f in after)
-
     def candidate(item_pos, unit, step, left):
         i = index.get(step.name, 0)
         m = meta[step.name]
         nxt = templates[i + 1].name if i + 1 < len(templates) else None
         feeds = nxt in device_steps
-        prv = templates[i - 1].name if i > 0 else None
+        robot_left = left.get(tool_resource, 0.0)
         swap_s = float(m.tool_swap_duration) if (m.tool_required and m.tool != tool) else 0.0
         return Candidate(
             step=step, item=unit, item_pos=item_pos, index=i, duration=float(m.duration), swap_s=swap_s,
             finish=now + swap_s + max(1, int(m.duration)),
-            feeds_device=feeds, serves_device=prv in device_steps or frees_capacity(step),
-            feeds_bottleneck=feeds and max((left.get(r, 0.0) for r in _res_of(nxt)), default=0.0)
-            >= left.get(tool_resource, 0.0),
-            # a different kind of step on the same tool: for a needle that's a liquid change (a prime)
-            liquid_change=bool(m.tool_required and last_kind.get(m.tool) not in (None, kind(step.name))),
-            same_as_last=step.name == last_robot)
+            feeds_device=feeds,
+            feeds_bottleneck=feeds and max((left.get(r, 0.0) for r in _res_of(nxt)), default=0.0) >= robot_left,
+            at_bottleneck=max((left.get(r, 0.0) for r in _resources(m.resource) if r != tool_resource),
+                              default=-1.0) >= robot_left)
 
     guard = 0
     while True:
@@ -360,6 +344,11 @@ def dispatch(
                     except Exception:
                         continue
                     if unit_free.get(unit, 0.0) > now + 1e-9 or not safe(st, unit):
+                        continue
+                    # …and its stations: a device step started above may have just taken
+                    # the station this robot step works at (both would hold it at once)
+                    if any(res_free.get(r, 0.0) > now + 1e-9 for r in _resources(meta[st.name].resource)
+                           if r != tool_resource):
                         continue
                     ranked.append(candidate(pos, unit, st, left))
                 if ranked:
