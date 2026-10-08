@@ -483,6 +483,28 @@ class Gripper:
         ]
 ```
 
+A timed op is the same shape — the parameter has a default in the
+signature, so the button needs no input and an action can still say
+more. The venturi suction gripper's blow-off
+(`components/gripper/gripper_suction.py`):
+
+```python
+# scene yaml — bench wiring, written out, never guessed:
+#   output_blow: [[2, 1, 0]]     the blow-off output
+def blow(self, duration=5):
+    rt.output(config=self.output_blow)        # air out of the cup
+    rt.sleep(duration, checkpoint=False)      # ONE atomic op: the air never stays on
+    self.disable()                            # then the off state
+
+ws.components["gripper_suction_1"].blow()     # from an action: 5 s
+ws.components["gripper_suction_1"].blow(2)    # an action that knows better
+```
+
+No recipe is involved — a recipe owns motion, and a blow has none; an
+action reaches the component directly, as apc's cylinder `enable()` /
+`disable()` do. A place never blows: its release is `output_disable`.
+An unset `output_blow` makes `blow()` raise rather than fire a guess.
+
 Each entry is a dict with two string fields:
 
 - **`label`** — display name on the button
