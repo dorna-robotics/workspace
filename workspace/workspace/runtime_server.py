@@ -379,6 +379,13 @@ class HmiStaticFileHandler(NoCacheStaticFileHandler):
     def set_extra_headers(self, path):
         super().set_extra_headers(path)
         self.set_header("Access-Control-Allow-Origin", "*")
+        # A project's screen is never served stale. These files carry no
+        # version in their URL (``/hmi/pendant.js`` is what the admin
+        # imports), so with no Cache-Control the browser kept the OLD
+        # module across a project upgrade and the operator saw last
+        # week's screen (bench, 2026-10-08). no-cache = revalidate every
+        # load; the ETag answers 304 when nothing changed.
+        self.set_header("Cache-Control", "no-cache")
 
     def options(self, *args):
         self.set_header("Access-Control-Allow-Origin", "*")

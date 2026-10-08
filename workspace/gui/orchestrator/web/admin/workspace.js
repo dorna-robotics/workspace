@@ -2193,20 +2193,14 @@ let _lastStepLabel = "";
 let _lastStepLevel = "info";
 
 function _showBanner(msg, level) {
-  // Main banner
+  // Main banner — the text and level; whether it SHOWS is _layoutBanner's
+  // call (one banner per page: the pendant has its own strip).
   const banner = $("alarmBanner");
   const text = $("alarmText");
   if (banner && text) {
     text.textContent = msg;
-    banner.style.display = "";
     banner.setAttribute("data-level", level);
-    // Push page and pendant overlay down so banner doesn't cover them
-    const h = banner.offsetHeight;
-    document.body.style.paddingTop = h + "px";
-    const overlay = $("pendantOverlay");
-    if (overlay) overlay.style.top = h + "px";
-    const exitBtn = $("pendantExit");
-    if (exitBtn) exitBtn.style.top = (h + 16) + "px";
+    banner.setAttribute("data-active", "1");
   }
   // Pendant banner
   const pAlarm = $("pendantAlarm");
@@ -2216,6 +2210,7 @@ function _showBanner(msg, level) {
     pAlarm.style.display = "";
     pAlarm.setAttribute("data-level", level);
   }
+  _layoutBanner();
   // Audio + notification for errors only
   if (level === "error") {
     feedback.alarm();
@@ -2223,16 +2218,32 @@ function _showBanner(msg, level) {
   }
 }
 
+// ONE alarm line per page. The page-top banner is for the desktop
+// pages; in pendant mode the pendant's own strip under its nav carries
+// the same line, and the top banner stays hidden — both were showing,
+// one above the other (bench, 2026-10-08). Called whenever the banner
+// or the mode changes; it also keeps the page and the pendant overlay
+// pushed down by exactly the banner that is visible.
+function _layoutBanner() {
+  const banner = $("alarmBanner");
+  if (!banner) return;
+  const overlay = $("pendantOverlay");
+  const inPendant = !!(overlay && overlay.style.display !== "none");
+  const show = banner.getAttribute("data-active") === "1" && !inPendant;
+  banner.style.display = show ? "" : "none";
+  const h = show ? banner.offsetHeight : 0;
+  document.body.style.paddingTop = h ? h + "px" : "";
+  if (overlay) overlay.style.top = h ? h + "px" : "";
+  const exitBtn = $("pendantExit");
+  if (exitBtn) exitBtn.style.top = h ? (h + 16) + "px" : "";
+}
+
 function _hideBanner() {
   const banner = $("alarmBanner");
-  if (banner) banner.style.display = "none";
-  document.body.style.paddingTop = "";
-  const overlay = $("pendantOverlay");
-  if (overlay) overlay.style.top = "";
-  const exitBtn = $("pendantExit");
-  if (exitBtn) exitBtn.style.top = "";
+  if (banner) banner.setAttribute("data-active", "0");
   const pAlarm = $("pendantAlarm");
   if (pAlarm) pAlarm.style.display = "none";
+  _layoutBanner();
 }
 
 function _alarmNotify(msg) {
@@ -2848,6 +2859,7 @@ function applyPendantRenderState() {
 function togglePendant(on) {
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
+  _layoutBanner();            // the page-top banner shows only outside pendant mode
   _applyPendantTab();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
