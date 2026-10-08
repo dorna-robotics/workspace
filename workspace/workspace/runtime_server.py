@@ -335,17 +335,22 @@ class RecordHandler(tornado.web.RequestHandler):
 # Tornado handlers
 # --------------------------------------------------
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
+    """Every file revalidates on every load. The GUI's scripts, styles
+    and pages are referenced by plain name (``workspace.js``, a
+    project's ``/hmi/pendant.js``), with no version in the URL, so with
+    no Cache-Control the browser keeps them on a heuristic and an
+    upgrade does not reach an open browser: the operator saw the old
+    admin script under the new pendant screen (bench, 2026-10-08), and
+    before that the viewer iframe survived a hard reload of its parent.
+    no-cache costs one conditional request per file — the ETag answers
+    304 when nothing changed."""
+
     def set_extra_headers(self, path):
         if DEV_NOCACHE:
             self.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.set_header("Pragma", "no-cache")
             self.set_header("Expires", "0")
-        elif str(path).endswith(".html"):
-            # A page is never served stale: with no Cache-Control the browser
-            # keeps it on a heuristic (the viewer iframe survived a hard
-            # reload of its parent after an upgrade). Assets carry versioned
-            # URLs (index.html versioned()) and may stay cached; pages
-            # revalidate every time — an ETag answers 304 when unchanged.
+        else:
             self.set_header("Cache-Control", "no-cache")
 
     def compute_etag(self):
@@ -377,15 +382,8 @@ class HmiStaticFileHandler(NoCacheStaticFileHandler):
     """
 
     def set_extra_headers(self, path):
-        super().set_extra_headers(path)
+        super().set_extra_headers(path)          # no-cache: the base class's rule
         self.set_header("Access-Control-Allow-Origin", "*")
-        # A project's screen is never served stale. These files carry no
-        # version in their URL (``/hmi/pendant.js`` is what the admin
-        # imports), so with no Cache-Control the browser kept the OLD
-        # module across a project upgrade and the operator saw last
-        # week's screen (bench, 2026-10-08). no-cache = revalidate every
-        # load; the ETag answers 304 when nothing changed.
-        self.set_header("Cache-Control", "no-cache")
 
     def options(self, *args):
         self.set_header("Access-Control-Allow-Origin", "*")
