@@ -231,7 +231,7 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     list of ``(item, at)``: the item leaves the run when phase ``at``
     opens, or right after its step ``at`` runs (``--remove``). Returns
     ``(plan_len, failures, goal_ok, makespan, state, extra)``."""
-    from workspace.bt.dsl import build_precedence, derive_capacity_spans, WorkspaceContext
+    from workspace.bt.dsl import build_ordering, derive_capacity_spans, WorkspaceContext
     from workspace.bt.launcher import _load_route
     from workspace.bt.phase import PhaseNotReady, current_phase, pick_window
     from workspace.planner.cpsat_scheduler import schedule_cpsat
@@ -356,7 +356,9 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             failures.append(f"{name or 'tail'} window {list(window)}: the goal holds but "
                             f"the phase is not reached — its fact is not what the route asserts")
             break
-        preds = build_precedence(res, protocol, initial_state=fstate, ctx=ctx)
+        # The same partial order the launcher schedules on and the tree
+        # runs on (build_ordering) — replay must schedule as the run does.
+        preds = build_ordering(res, protocol, initial_state=fstate, ctx=ctx)
         caps = derive_capacity_spans(res, protocol, initial_state=fstate, ctx=ctx)
         if cycle:
             # The cycle's order is the schedule: timed as declared, never reordered.

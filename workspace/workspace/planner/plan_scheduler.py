@@ -257,10 +257,12 @@ def make_schedule_builder(
             For each action in the plan, returns the set of earlier
             indices it causally depends on. Used by the scheduler to
             allow independent actions to overlap on different
-            resources. Project's main.py normally supplies
-            ``workspace.bt.dsl.build_precedence`` partialled with the
-            ActionRegistry. If omitted, scheduler falls back to
-            per-item serialisation (correct but suboptimal).
+            resources. The launcher supplies
+            ``workspace.bt.dsl.build_ordering`` — the plan's FULL
+            partial order, the one the tree holds leaves for — so no
+            schedule can contradict an edge the tree enforces. If
+            omitted, scheduler falls back to per-item serialisation
+            (correct but suboptimal).
         capacity_fn: Optional ``(plan) -> Dict[str, List[Tuple[int,int]]]``
             callback — ``workspace.bt.dsl.derive_capacity_spans``
             partialled the same way. Only consulted when

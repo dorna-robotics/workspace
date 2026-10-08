@@ -1741,6 +1741,19 @@ plan says it needs the device — the unload waits for the shake, the
 extract of another bank does not — and a duration guess that is off
 costs a worse order, never an idle wait.
 
+The scheduler orders on that SAME partial order: the launcher hands
+CP-SAT `build_ordering` as its precedence, so any order it is free to
+pick is one the tree can run. It used to get the causal edges alone;
+that let it put a reader of a capacity fact (apc's `ClearAnode` needs
+`hand_empty` and leaves it) after the next item's `Pick`, which the
+tree then held for the reader — a deadlock with no error, the run
+standing still after a drop (bench, 2026-10-08). `from_schedule` now
+also refuses, at build time and naming the two steps, any schedule
+that contradicts an edge: a predecessor later in the leaf's own
+branch, or a cycle across branches. `bt.replay` schedules on the same
+order, so a window that replays clean is scheduled as the run will
+schedule it.
+
 ---
 
 ## 12. Authoring rules (the load-bearing ones)

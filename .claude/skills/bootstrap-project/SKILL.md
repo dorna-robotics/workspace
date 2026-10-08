@@ -131,7 +131,7 @@ name the motion.
 | skeleton (class/component/tool) | AI | operator's one-glance confirm |
 | recipes.j2 parameters | solver (arithmetic + IK sweep) | evidence comments per value |
 | actions.py (pre/eff/flow) | AI, from operator's INTENT in plain words | schedule replay: 0 precondition failures + goal reached, batch 1 AND multi-item |
-| schedule | NOBODY — derived (pre/eff -> build_precedence -> CP-SAT) | correct by construction IF pre/eff/resource/capacity are truthful |
+| schedule | NOBODY — derived (pre/eff -> build_ordering -> CP-SAT; the tree holds leaves for the same order) | correct by construction IF pre/eff/resource/capacity are truthful |
 | motions | — | operator's eyes on the bench |
 
 The author's only scheduling responsibility is telling the truth in

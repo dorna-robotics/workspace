@@ -794,16 +794,22 @@ def build_ordering(
     consumer before the later action that UNDOES what it needed — an
     action that needs X true runs before every later action that
     removes X; one that needs X false runs before every later action
-    that adds it. The scheduler places actions on a clock and replay
-    checks that linearization, so it never needs these edges. The tree
-    runs on real durations: its resource branches drift from the
-    clock, and without these edges a branch that runs ahead could
-    undo a fact another branch has not consumed yet (``from_schedule``).
+    that adds it. The tree runs on real durations: its resource
+    branches drift from the clock, and without these edges a branch
+    that runs ahead could undo a fact another branch has not consumed
+    yet (``from_schedule``).
 
-    Every edge points from an earlier plan index to a later one, and
-    replay verifies each window in ``(start, plan index)`` order — the
-    order the tree keeps inside a branch — so a schedule that replays
-    clean satisfies every edge here: no wait can deadlock.
+    The SCHEDULER runs on this same order (the launcher hands it this
+    function as its precedence), not on :func:`build_precedence`
+    alone: an order the scheduler is free to pick must be one the tree
+    can run. With only the causal edges it placed a reader of a
+    capacity fact (apc's ClearAnode needs ``hand_empty`` and leaves
+    it) after the next item's Pick — nothing causal between them —
+    while the tree held that Pick for the reader: a deadlock, the run
+    standing still after a drop (bench, 2026-10-08). Every edge points
+    forward in plan order, so the plan's own linearization always
+    satisfies them and the scheduler's model is never infeasible;
+    ``from_schedule`` refuses a schedule that contradicts one anyway.
 
     Capacity facts follow :func:`build_precedence` (skipped when the
     scheduler relaxed them — their mutual exclusion is a same-resource
