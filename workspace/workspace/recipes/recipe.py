@@ -1275,13 +1275,8 @@ class Recipe:
             return False, unplanned, "smove"
         return bool(flag), "jmove", "smove"
 
-    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None, j5_override=None, fuse=None):
+    def _execute_motion_planned(self, rt, J, vaj_map, use_planning=False, motion_plan_kwargs={}, tool_dict=None, j5_override=None):
         """Execute a single motion — with optional motion planning for collision avoidance.
-
-        ``fuse`` — may this hop's tail be held for the next motion to
-        merge with? ``None`` is the recipe's ``fuse``; a per-call value
-        wins (the same two-scope rule as the touch verbs). ``False``
-        ends the hop in a stop.
 
         ``use_planning`` accepts the full ``has_motion_plan`` grammar —
         see :meth:`_motion_plan_mode`. When planning is off, the hop
@@ -1296,7 +1291,6 @@ class Recipe:
         unconstrained failure raises: that is a genuine reachability /
         collision problem, not a constraint one.
         """
-        fuse = self.fuse if fuse is None else bool(fuse)
         use_planning, unplanned, planned = self._motion_plan_mode(use_planning)
         # Deferred-tail merge (motion-guide §12): a planned chain hop
         # (park, direct planned moves) fuses a held tail exactly like
@@ -1360,7 +1354,7 @@ class Recipe:
                 merged_io = (fuse_tail["io_start"], fuse_tail["io_join"],
                              fuse_tail.get("io_sync"))
             arm_key = None
-            if (fuse and planned in ("smove", "tmove", "cjmove", "clmove")
+            if (self.fuse and planned in ("smove", "tmove", "cjmove", "clmove")
                     and rt._is_workflow_thread()):
                 # The hop itself can defer: arrival at a travel target
                 # has no settle semantics, so the whole chain rides
@@ -1382,7 +1376,7 @@ class Recipe:
                 self.core.book_arm(arm_key)
         else:
             td = tool_dict if tool_dict is not None else {"solid": None, "anchor": None, "offset": [0, 0, 0, 0, 0, 0]}
-            if (fuse and unplanned == "lmove"
+            if (self.fuse and unplanned == "lmove"
                     and rt._is_workflow_thread()):
                 # A direct lmove hop (retract's lift, hover phases) is a
                 # pure travel endpoint — it defers like the planned hops
@@ -3338,7 +3332,7 @@ class Recipe:
             rt.jmove(joint=J, vel=vel, accel=accel, jerk=jerk)
         return True
 
-    def park(self, joint, has_motion_plan=None, motion_plan_kwargs={}, fuse=None, **kwargs):
+    def park(self, joint, has_motion_plan=None, motion_plan_kwargs={}, **kwargs):
         """Move the robot to a known ``joint`` configuration — typically the
         safe parking pose, invoked from a ``trigger="park"`` Action.
 
@@ -3363,15 +3357,9 @@ class Recipe:
                 ``core.has_motion_plan``.
             motion_plan_kwargs: Forwarded to ``core.motion_plan``
                 (padding, gravity_vec, etc.) when planning is on.
-            fuse: May the hop's tail be held for the next motion to
-                merge with? ``None`` (default) is the recipe's ``fuse``;
-                a per-call value wins. ``fuse=False`` ends the park in a
-                stop — a deliberate corner at the start pose instead of
-                a fillet run through at the fused chain's profile.
 
         Example:
             >>> rcp["robot"].park(joint=[0, 0, 90, 0, 90, 0])     # 6 joints — aux axes unchanged
-            >>> rcp["robot"].park(joint=START_JOINTS, fuse=False)   # ends in a stop
             >>> rcp["robot"].park(joint=PARK_JOINTS, has_motion_plan=True,
             ...                   motion_plan_kwargs={"padding": 30})
         """
@@ -3403,7 +3391,6 @@ class Recipe:
             rt, target, vaj_map,
             use_planning=has_motion_plan,
             motion_plan_kwargs=motion_plan_kwargs,
-            fuse=fuse,
         )
         return True
 

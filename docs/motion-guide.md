@@ -449,10 +449,7 @@ run recorded that the next motion merges there. Design + decision log:
   `fuse=True/False` (per-call wins — the padding two-scope pattern).
   `fuse=True` means "allowed to consult the book"; `fuse=False` keeps
   a station permanently classic (a deliberate stop, a read that needs
-  a clear robot). `park(joint=…, fuse=False)` takes the same per-call
-  value: a park that must END IN A STOP, instead of its tail riding
-  into the next travel and the corner at the park pose being a fillet
-  run through at the fused chain's profile (apc's start hop, bench).
+  a clear robot).
 * **`fuse_in` is the inbound side.** `fuse` says whether a station's
   EXIT may be held; `fuse_in` (recipes.j2, default true) says whether
   anything may flow INTO a station's approach. `fuse_in: false` does
