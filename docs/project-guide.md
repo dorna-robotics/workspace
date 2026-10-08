@@ -1010,6 +1010,15 @@ rt.step("Robot alarm", level="error")                # error — red banner + be
 rt.step(45, level="progress")                        # progress bar (0-100)
 ```
 
+The timeline the dashboard and the pendant show is the run's LAST 1000
+steps (`Runtime.STEP_MAX`); the badge counts every step. A tab gets
+that tail once when it connects and ONE entry per step after — about
+100 bytes and one appended card, whatever the run's length. Until
+2026-10 every step shipped the whole, unbounded timeline to every tab,
+which redrew it: a 2800-disc apc run reached ~33 000 entries and ~3 MB
+per step, and the tab's 3D view froze after a few hours. The log file
+keeps every line regardless.
+
 | Level | Timeline | Banner | Sound | Progress bar |
 |-------|----------|--------|-------|-------------|
 | `info` | Blue dot | — | — | — |

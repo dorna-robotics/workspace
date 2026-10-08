@@ -569,6 +569,11 @@ function updateStatusUI(st) {
 }
 
 let _prevStepCount = 0;
+// The timeline's tail as this tab knows it — Runtime.STEP_MAX entries at
+// most, the same cap the runtime keeps — and the run's step total.
+const STEP_TAIL_MAX = 1000;
+let _stepsTail = [];
+let _stepsTotal = 0;
 let _prevStepRunning = false;
 // Steps start collapsed — auto-expands when the first step arrives.
 // Matches the empty-by-default behaviour for Devices below.
@@ -1043,8 +1048,20 @@ function _dispatchMuxMessage(env) {
   switch (env.type) {
     case "step_state": {
       const running = isRunning(_lastState);
-      if (Array.isArray(payload.steps) && payload.steps.length) {
-        renderStep({ steps: payload.steps }, running);
+      // Two shapes (runtime_server._step_event): a SNAPSHOT — ``steps``,
+      // the last Runtime.STEP_MAX entries, sent once when this tab
+      // connected — and a DELTA — ``append``, the one new entry — on
+      // every step. The tail lives here and is drawn incrementally; a
+      // run of any length costs one card per step.
+      if (Array.isArray(payload.steps)) {
+        _stepsTail = payload.steps.slice(-STEP_TAIL_MAX);
+        _stepsTotal = Number.isFinite(payload.total) ? payload.total : _stepsTail.length;
+        if (_stepsTail.length) renderStep({ steps: _stepsTail, total: _stepsTotal }, running);
+      } else if (payload.append) {
+        _stepsTail.push(payload.append);
+        if (_stepsTail.length > STEP_TAIL_MAX) _stepsTail.shift();
+        _stepsTotal = Number.isFinite(payload.total) ? payload.total : _stepsTotal + 1;
+        appendStep(payload.append, _stepsTotal, running);
       }
       // Apply the progress snapshot whenever the runtime emits one.
       // Same comment as the legacy /ws/steps handler.
@@ -2093,11 +2110,20 @@ function renderStep(step, running) {
     return;
   }
 
-  if (badge) badge.textContent = `${steps.length}`;
+  // ``steps`` is the timeline's TAIL (the runtime keeps its last
+  // Runtime.STEP_MAX); ``total`` counts every step of the run. The badge
+  // and the "did anything change" check follow the total — a full tail
+  // keeps its length while its contents move on.
+  const total = Number.isFinite(step?.total) ? step.total : steps.length;
+  // A snapshot (a connect, a status push) is the page's tail from here on;
+  // the deltas that follow append to it.
+  _stepsTail = steps.slice(-STEP_TAIL_MAX);
+  _stepsTotal = total;
+  if (badge) badge.textContent = `${total}`;
 
-  // Only rebuild if step count or running state changed
-  if (steps.length === _prevStepCount && running === _prevStepRunning) return;
-  _prevStepCount = steps.length;
+  // Only rebuild if the step count or the running state changed
+  if (total === _prevStepCount && running === _prevStepRunning) return;
+  _prevStepCount = total;
   _prevStepRunning = running;
 
   // Auto-expand when first step arrives
@@ -2108,20 +2134,23 @@ function renderStep(step, running) {
     if (chev) chev.classList.add("open");
   }
 
-  el.innerHTML = steps.map((s, i) => {
-    // Support both new {label, level} objects and legacy plain strings
-    const label = typeof s === "string" ? s : (s.label || "");
-    const level = (typeof s === "object" && s.level) ? s.level : "info";
-    const isLast = i === steps.length - 1;
-    const cls = (isLast && running) ? "active" : "done";
-    return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
-  }).join("");
+  el.innerHTML = steps.map((s, i) =>
+    stepCardHtml(s, (i === steps.length - 1 && running) ? "active" : "done")).join("");
 
   // Auto-scroll to latest
   el.scrollTop = el.scrollHeight;
+  noteLastStep(steps[steps.length - 1]);
+}
 
-  // Track last step for pendant display
-  const lastStep = steps[steps.length - 1];
+// One timeline card. Supports both {label, level} objects and legacy plain strings.
+function stepCardHtml(s, cls) {
+  const label = typeof s === "string" ? s : (s.label || "");
+  const level = (typeof s === "object" && s.level) ? s.level : "info";
+  return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
+}
+
+// Track the last step for the pendant and the banners.
+function noteLastStep(lastStep) {
   const lastLevel = (typeof lastStep === "object" && lastStep.level) ? lastStep.level : "info";
   const lastLabel = typeof lastStep === "string" ? lastStep : (lastStep.label || "");
   _lastStepLabel = lastLabel;
@@ -2132,6 +2161,31 @@ function renderStep(step, running) {
   } else if (lastLevel === "info") {
     _hideBanner();
   }
+}
+
+// A step DELTA: one card appended, the previous one settled, the oldest
+// dropped past the tail — never a rebuild. A tab whose list is not drawn
+// yet (first step, or the snapshot never came) draws the tail it holds.
+function appendStep(entry, total, running) {
+  const section = $("stepSection");
+  const el = $("stepTimeline");
+  const badge = $("stepCountBadge");
+  if (!section || !el) return;
+  if (!el.querySelector(".step-card")) {
+    renderStep({ steps: _stepsTail, total }, running);
+    return;
+  }
+  const prev = el.lastElementChild;
+  if (prev && prev.classList.contains("active")) {
+    prev.classList.remove("active"); prev.classList.add("done");
+  }
+  el.insertAdjacentHTML("beforeend", stepCardHtml(entry, running ? "active" : "done"));
+  while (el.querySelectorAll(".step-card").length > STEP_TAIL_MAX) el.firstElementChild.remove();
+  if (badge) badge.textContent = `${total}`;
+  _prevStepCount = total;
+  _prevStepRunning = running;
+  el.scrollTop = el.scrollHeight;
+  noteLastStep(entry);
 }
 
 let _lastBannerMsg = "";
@@ -2892,9 +2946,28 @@ function updatePendantUI() {
     if (timeline && launched) {
       const cards = timeline.querySelectorAll(".step-card");
       const existing = pendantStepsEl.children;
-      if (cards.length !== existing.length) {
-        // Count changed — rebuild from scratch (cheap because
-        // ``cards`` is a finite list, not a per-tick recomputation).
+      const text = (card) => card.querySelector(".step-text")?.textContent || "";
+      const own  = (card) => card.lastElementChild?.textContent || "";
+      const cardHtml = (card) => {
+        const level = card.dataset.level || "info";
+        const cls   = card.classList.contains("active") ? "active" : "done";
+        return `<div class="pendant-step-card ${cls}" data-level="${level}"><span class="pendant-step-dot"></span><span>${text(card)}</span></div>`;
+      };
+      // One step arrived (the dashboard appended a card, and may have
+      // dropped its oldest past the tail): mirror it with one append
+      // and at most one removal — never a rebuild of the rail.
+      const appended = cards.length === existing.length + 1 && existing.length > 0
+        && own(existing[0]) === text(cards[0]);
+      const shifted  = cards.length === existing.length && existing.length > 1
+        && own(existing[1]) === text(cards[0]) && own(existing[0]) !== text(cards[0]);
+      if (appended || shifted) {
+        if (shifted) existing[0].remove();
+        const last = existing[existing.length - 1];
+        if (last && last.classList.contains("active")) { last.classList.remove("active"); last.classList.add("done"); }
+        pendantStepsEl.insertAdjacentHTML("beforeend", cardHtml(cards[cards.length - 1]));
+        pendantStepsEl.scrollTop = pendantStepsEl.scrollHeight;
+      } else if (cards.length !== existing.length) {
+        // Count changed otherwise (a snapshot, a cleared list) — rebuild.
         let html = "";
         cards.forEach(card => {
           const text  = card.querySelector(".step-text")?.textContent || "";

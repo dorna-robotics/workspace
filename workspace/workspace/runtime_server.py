@@ -631,7 +631,7 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
         rt = self._rt
         si = rt.step_info
         try:
-            payload = {"steps": (si["steps"] if si else [])}
+            payload = {"steps": (si["steps"] if si else []), "total": (si or {}).get("total", 0)}
             if si and si.get("progress", -1) >= 0:
                 payload["progress"] = si["progress"]
             self.write_message(json.dumps(payload))
@@ -645,19 +645,37 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
         self._rt = rt
 
 
-def _broadcast_steps(steps: list, progress: int = -1):
+def _step_event(entry: Optional[dict], progress: int, total: Optional[int]) -> dict:
+    """One ``step_state`` DELTA: ``append`` is the one new timeline entry
+    (absent on a progress-only tick), ``total`` every step of the run so
+    far, ``progress`` 0-100 when set. A tab that connects gets the
+    snapshot shape instead — ``steps`` (the last Runtime.STEP_MAX),
+    ``total``, ``progress`` — once, from step_info. The two shapes are
+    told apart by their keys: ``steps`` is a snapshot, ``append`` a delta.
+    """
+    payload: dict = {}
+    if entry is not None:
+        payload["append"] = entry
+    if total is not None:
+        payload["total"] = total
+    if progress is not None and progress >= 0:
+        payload["progress"] = progress
+    return payload
+
+
+def _broadcast_steps(entry: Optional[dict], progress: int = -1, total: Optional[int] = None):
     """Called from rt.on_step (workflow thread) — schedule send on IO loop.
 
-    Includes the current progress (0-100, or -1 for unset) alongside the
-    steps list so the UI's progress bar updates in real time. Without
-    this, progress only reached the UI via the slower HTTP polling and
-    a fast final 100% emission could be missed entirely.
+    Ships the DELTA (_step_event), never the timeline: a step costs every
+    open tab one entry (~100 bytes) and one appended card, whatever the
+    run's length. Progress rides along so the UI's bar updates in real
+    time — polling alone missed a fast final 100 %.
     """
     if _main_ioloop is None:
         return
-    payload = {"steps": steps}
-    if progress is not None and progress >= 0:
-        payload["progress"] = progress
+    payload = _step_event(entry, progress, total)
+    if not payload:
+        return
     _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
@@ -1594,7 +1612,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
         try:
             # Steps + progress.
             si = self._rt.step_info
-            step_payload = {"steps": (si["steps"] if si else [])}
+            step_payload = {"steps": (si["steps"] if si else []), "total": (si or {}).get("total", 0)}
             if si and si.get("progress", -1) >= 0:
                 step_payload["progress"] = si["progress"]
             self._send("step_state", step_payload)
