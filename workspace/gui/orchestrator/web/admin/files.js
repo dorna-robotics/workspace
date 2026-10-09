@@ -601,7 +601,10 @@ export function openFileBrowser(opts = {}) {
     el.classList.remove("show");
     document.removeEventListener("keydown", onKey, true);
     const r = resolveFn; resolveFn = null;
-    if (r) r(entry || null);
+    // The pick carries the folder it was made in: a caller reads the
+    // file back through the same root (the operator may have switched
+    // tabs inside the browser), never through a key it assumes.
+    if (r) r(entry ? { ...entry, root } : null);
   }
   // Escape closes the panel, like every other modal. CAPTURE phase +
   // stopImmediatePropagation because this panel is usually opened from

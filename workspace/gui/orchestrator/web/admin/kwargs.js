@@ -570,7 +570,7 @@ async function deliverFile(container, text, filename) {
 /**
  * Apply one YAML/JSON parameter file's text to the form. Shared by both
  * ways in: a file off the operator's laptop, and a file already on the
- * bench in the project's data/ folder. Returns how many fields filled.
+ * bench in the project's uploads folder. Returns how many fields filled.
  */
 export function applyKwargsText(container, text, filename) {
   let data;
@@ -609,8 +609,9 @@ export function applyKwargsText(container, text, filename) {
 
 /**
  * Load a parameter file that already lives on the bench, picked from
- * the project's uploads folder (launch.yaml uploads:) — the counterpart to loadKwargsFromFile,
- * which reaches for the operator's own machine.
+ * the project's uploads folder (launch.yaml uploads:) or any of its
+ * tabs — the counterpart to loadKwargsFromFile, which reaches for the
+ * operator's own machine.
  */
 export async function loadKwargsFromBench(container, wsName, toastFn) {
   const picked = await openFileBrowser({
@@ -623,8 +624,13 @@ export async function loadKwargsFromBench(container, wsName, toastFn) {
   });
   if (!picked) return false;
   try {
+    // Read it back through the folder it was picked in — the Uploads
+    // alias, or the tab the operator switched to. This used to name a
+    // ``data`` folder key no project has had since folders: tabs got
+    // their own keys: "unknown folder" on every Load (bna, 2026-10-09).
+    const root = picked.root || "@uploads";
     const url = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}` +
-                `/files/data?path=${encodeURIComponent(picked.path)}&download=1`;
+                `/files/${encodeURIComponent(root)}?path=${encodeURIComponent(picked.path)}&download=1`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error("could not read the file");
     const r = await deliverFile(container, await resp.text(), picked.name);
