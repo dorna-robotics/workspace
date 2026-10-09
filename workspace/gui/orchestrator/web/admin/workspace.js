@@ -796,7 +796,7 @@ function buildHmi(spec) {
   _hmiInstances = [];
   host.innerHTML = "";
   const widgets = (spec && spec.widgets) || [];
-  if (!widgets.length) { host.style.display = "none"; return; }
+  if (!widgets.length) { _applyPendantTab(); return; }
   // Stats sit together in a row; everything else stacks in order.
   let statRow = null;
   for (const w of widgets) {
@@ -821,8 +821,9 @@ function buildHmi(spec) {
     else inst.update(inst.platform ? undefined : _opValues[inst.bind],
                      inst.detailBind ? _opValues[inst.detailBind] : undefined);
   }
-  host.style.display = _hmiInstances.length ? "" : "none";
   _hmiBuilt = true;
+  // What the Main pane holds changed; whether it SHOWS is the tab's call.
+  _applyPendantTab();
 }
 
 
@@ -853,7 +854,12 @@ async function mountProjectPendant(spec) {
   const el = $("pendantHmi");
   if (!el || !spec || !spec.src) return;
   el.innerHTML = "";
-  el.style.display = "";
+  // Visibility is NOT set here. _applyPendantTab is the one place that
+  // decides which pane shows, from the active tab and the run state;
+  // revealing the host directly put the Main pane on screen under the
+  // Devices tab the operator had switched to while the run came up
+  // (bench, 2026-10-09). The mount changes what the pane holds and
+  // asks the tab to re-apply below.
   // A project screen gets the pane as a blank: the host becomes a plain
   // block the width of the pane that fills its height and imposes no
   // layout — no width cap, no column, no gap, no centring. The screen
@@ -926,8 +932,10 @@ async function mountProjectPendant(spec) {
     shadow.appendChild(note);
   }
   // The screen's say over the frame is known now — apply it at once, not
-  // on the next status tick.
+  // on the next status tick — and the pane shows only if its tab is the
+  // active one.
   updatePendantUI();
+  _applyPendantTab();
 }
 
 function applyProjectHmiValues() {
@@ -2824,6 +2832,11 @@ function _positionPendant3d() {
   area.style.height = r.height + "px";
 }
 
+// THE ONE PLACE pane visibility is decided: the tab strip and the four
+// panes (run setup, the project's screen, the 3D view, Devices) always
+// agree because nothing else writes their display. Whatever changes
+// what a pane holds — a screen mounting, the fallback widgets, a launch
+// — calls this afterwards instead of showing the pane itself.
 function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
