@@ -281,7 +281,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           }
         });
 
-        // Browse the project's own data/ folder instead of the
+        // Browse the project's own uploads folder instead of the
         // operator's laptop: the file they uploaded last run is
         // already there, which is the whole point of the uploads folder
         // (launch.yaml uploads:).
