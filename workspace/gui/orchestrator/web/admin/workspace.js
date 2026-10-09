@@ -612,6 +612,10 @@ function connectWs(runtimeUrl) {
   _muxWsClosed = false;
   _muxWsRetryMs = 1000;
   _devices.clear();
+  _devicesKnown = false;            // a new runtime: nothing reported yet
+  _opActionsKnown = false;
+  renderDevicesPanel();
+  renderOperatorActionsPanel();
   _tryMuxWs();
   // HTTP seed for the devices map — defensive. The mux WS sends a
   // devices_snapshot envelope on open, but the seed lands faster when
@@ -621,6 +625,7 @@ function connectWs(runtimeUrl) {
     .then(r => r.ok ? r.json() : null)
     .then(payload => {
       if (!payload || !Array.isArray(payload.devices)) return;
+      _devicesKnown = true;
       for (const d of payload.devices) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
       renderDevicesPanel();
     })
@@ -655,6 +660,10 @@ function disconnectWs() {
   _muxWsAlive = false;
   if (_muxWs) { try { _muxWs.close(); } catch {} _muxWs = null; }
   _muxWsUrl = "";
+  _devicesKnown = false;            // no runtime: the lists say so, not "none"
+  _opActionsKnown = false;
+  renderDevicesPanel();
+  renderOperatorActionsPanel();
 }
 
 
@@ -1111,6 +1120,7 @@ function _dispatchMuxMessage(env) {
     }
     case "devices_snapshot": {
       const arr = Array.isArray(payload.devices) ? payload.devices : [];
+      _devicesKnown = true;
       _devices.clear();
       for (const d of arr) {
         if (d && d.id) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
@@ -1120,6 +1130,7 @@ function _dispatchMuxMessage(env) {
     }
     case "operator_actions": {
       _opActions = Array.isArray(payload.actions) ? payload.actions : [];
+      _opActionsKnown = true;
       renderOperatorActionsPanel();
       updateOperatorActionsGate(_lastState);
       break;
@@ -1144,6 +1155,11 @@ function _dispatchMuxMessage(env) {
 // ── Devices panel (project-scoped) ───────────────────────────────────
 let _devicesUrl = "";   // base http URL, used for recover POST
 const _devices = new Map();   // id → snapshot
+// Has the runtime REPORTED its devices yet? false from connect until the
+// first snapshot (WS or HTTP seed): the panel then shows a loading
+// placeholder, not "none" — loading and empty are two states
+// (design-system §8). Same flag for the operator controls below.
+let _devicesKnown = false;
 const _devicesSettled = new Map();   // id → last settled state (api.js downEdge)
 // Devices we just clicked Recover on. Holds id → {note, until} so the
 // row keeps showing "Recovering…" until the device reports a non-recovering
@@ -1171,6 +1187,16 @@ async function _confirmRecover(deviceId) {
 // event when nothing visible actually changed.
 let _devicesListLastHtml = null;
 
+// What a list shows before its runtime has reported: nothing to wait
+// for when no runtime is connected (a sentence), shimmer rows while one
+// is — the file browser's placeholder, the same rhythm as the rows to
+// come. Never an empty card.
+function _pendingListHtml(what) {
+  if (!_muxWsUrl) return `<div class="step-empty">Not running</div>`;
+  return `<div class="skel-rows" role="status" aria-busy="true" aria-label="Loading ${escHtml(what)}">` +
+         `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>`;
+}
+
 function renderDevicesPanel() {
   const el = $("devicesList");
   const badge = $("devicesCountBadge");
@@ -1178,10 +1204,15 @@ function renderDevicesPanel() {
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
   if (!list.length) {
-    const emptyHtml = `<div class="step-empty">No devices declared</div>`;
+    const emptyHtml = _devicesKnown ? `<div class="step-empty">No devices declared</div>`
+                                    : _pendingListHtml("devices");
     if (_devicesListLastHtml !== emptyHtml) {
       el.innerHTML = emptyHtml;
       _devicesListLastHtml = emptyHtml;
+      const pList = $("pendantDevicesList");
+      if (pList) pList.innerHTML = emptyHtml;
+      const pMeta = $("pdDevMeta");
+      if (pMeta) pMeta.textContent = "";
     }
     return;
   }
@@ -1916,6 +1947,7 @@ $("btnReplanClose").addEventListener("click", () => $("replanModalOverlay").clas
 // a single ws.send() with no HTTP handshake, so the round-trip is
 // sub-millisecond on the LAN.
 let _opActions = [];              // [{component, label, method}, ...]
+let _opActionsKnown = false;      // the runtime has sent operator_actions at least once
 let _opActionsExpanded = false;   // sidebar section collapsed by default
 
 function _opActionsHtml(disabled) {
@@ -1955,7 +1987,10 @@ function _opActionsHtml(disabled) {
   const opIcon = (name) => (name && OP_ICONS[name])
     ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`
     : "";
-  if (!groups.size) return `<div class="step-empty">No operator actions declared</div>`;
+  if (!groups.size) {
+    return _opActionsKnown ? `<div class="step-empty">No operator controls declared</div>`
+                           : _pendingListHtml("operator controls");
+  }
   const rows = [];
   for (const [component, actions] of groups) {
     // Partition into rows: consecutive actions sharing a declared
@@ -2007,7 +2042,7 @@ function renderOperatorActionsPanel() {
   const pendantBtn = $("pendantOpActions");
   if (pendantBtn) {
     pendantBtn.disabled = !_opActions.length;
-    pendantBtn.title = _opActions.length ? "" : "No operator actions for this workspace";
+    pendantBtn.title = _opActions.length ? "" : "No operator controls for this workspace";
   }
   const modalBody = $("opActionsModalBody");
   if (modalBody) modalBody.innerHTML = html;

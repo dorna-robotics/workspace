@@ -1172,6 +1172,19 @@
   animation: fb-shimmer 1.2s ease-in-out infinite;
 }
 @keyframes fb-shimmer { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.8; } }
+/* A list whose runtime has not reported yet (Devices, Operator controls
+   while the mux socket is still connecting): the same shimmer, in the
+   rhythm of the rows to come. Loading is not empty (design-system §8):
+   empty is a sentence, loading is this. */
+.skel-rows { display: flex; flex-direction: column; gap: 10px; padding: 2px 0; }
+.skel-row {
+  height: 40px; border-radius: var(--radius-md);
+  background: var(--surface2);
+  animation: fb-shimmer 1.2s ease-in-out infinite;
+}
+.skel-row:nth-child(2) { width: 88%; animation-delay: 0.15s; }
+.skel-row:nth-child(3) { width: 94%; animation-delay: 0.3s; }
+@media (prefers-reduced-motion: reduce) { .skel-row { animation: none; opacity: 0.6; } }
 .fb-spin {
   width: 11px; height: 11px; display: inline-block;
   border: 2px solid var(--muted2); border-top-color: var(--text);
