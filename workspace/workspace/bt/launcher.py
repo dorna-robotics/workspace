@@ -987,8 +987,8 @@ def run_protocol(
 
     def _replan_items() -> list:
         if item_components is None:
-            raise ValueError("this project does not declare which 3D models make up an item "
-                             "(setup()'s item_components), so no item can be taken out of the run")
+            # no item_components: the platform never guesses an item's models
+            raise ValueError("this run has no items to take out")
         state = state_to_frozen(ctx.state)
         return _remove.offer(ctx, state, all_items, item_done, phases, item_label)
 

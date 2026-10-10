@@ -1724,14 +1724,14 @@ async function _mountReplanView() {
 // Cancel is its only button.
 function _rpUnavailable(why) {
   const none = why != null;
-  for (const id of ["rpSteps", "rpNav", "btnReplanGo"]) $(id).hidden = none;
+  for (const id of ["rpBar", "btnReplanGo"]) $(id).hidden = none;
   if (!none) return;
   _rpView = null;
   _rpShowView(false);
   $("rpSearch").hidden = true;
   $("rpStepChoose").hidden = false; $("rpStepChoose").inert = false;
   $("rpStepConfirm").hidden = true;
-  $("rpList").innerHTML = `<div class="rp-none"><b>No replan available</b><span>${escHtml(why)}.</span></div>`;
+  $("rpList").innerHTML = `<div class="rp-none"><b>No replan available</b><span>${escHtml(why.charAt(0).toUpperCase() + why.slice(1))}.</span></div>`;
   $("rpState").textContent = "";
   $("btnReplanCancel").disabled = false;
 }
