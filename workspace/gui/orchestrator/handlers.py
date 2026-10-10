@@ -477,14 +477,25 @@ UPLOADS = "@uploads"     # the root a file parameter's Open asks for — never a
 def _folder(ws, root: str):
     """The folder ``root`` names: a ``folders:`` tab key, "" = the first tab
     (where Files opens), or ``@uploads`` = the folder launch.yaml's
-    ``uploads:`` names (a file parameter's Open; it need not be a tab)."""
+    ``uploads:`` names (a file parameter's Open; it need not be a tab).
+
+    When that folder IS one of the tabs, ``@uploads`` resolves to the tab
+    itself — its key, label and read_only. The browser opened on the
+    alias then reports the tab's key as its root, so the Uploads pill is
+    the selected one (it showed the folder with no pill selected), and
+    an upload into it obeys the tab's own read_only. Only a project whose
+    uploads: folder is not a tab gets the bare alias."""
     from workspace.project_dirs import Folder, project_paths
+    folders = _project_folders(ws)
     if root == UPLOADS:
         p = project_paths(_project_dir(ws), ensure=True)["uploads"]
         if p is None:
             raise ValueError("launch.yaml declares no uploads: folder")
+        here = Path(p).resolve()
+        for f in folders:
+            if Path(f.path).resolve() == here:
+                return f
         return Folder(UPLOADS, "Uploads", p, False)
-    folders = _project_folders(ws)
     if not root:
         if not folders:
             raise ValueError("launch.yaml lists no folders")
