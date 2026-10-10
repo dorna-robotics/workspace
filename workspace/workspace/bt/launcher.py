@@ -986,6 +986,9 @@ def run_protocol(
                         "``def item_components(workspace, item): return [component names]``")
 
     def _replan_items() -> list:
+        if item_components is None:
+            raise ValueError("this project does not declare which 3D models make up an item "
+                             "(setup()'s item_components), so no item can be taken out of the run")
         state = state_to_frozen(ctx.state)
         return _remove.offer(ctx, state, all_items, item_done, phases, item_label)
 
@@ -997,9 +1000,6 @@ def run_protocol(
             for x in [it] + _remove.dependents_of(ctx, it):
                 if x not in gone and not _remove.is_removed(state, x):
                     gone.append(x)
-        if item_components is None:
-            raise ValueError("this project does not declare item_components(workspace, item) "
-                             "in setup(), so Replan cannot clear the removed items' 3D models")
         names = []
         for it in gone:
             try:

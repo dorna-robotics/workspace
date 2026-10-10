@@ -1619,6 +1619,10 @@ function setReplan(rp) {
     _replanShownFor = null;
     return;
   }
+  if (rp.phase === "unavailable") {
+    if (_replanShownFor !== "unavailable") { _replanShownFor = "unavailable"; openReplanModal(true); }
+    return;
+  }
   if (rp.phase === "choose" || rp.phase === "applying") {
     const key = JSON.stringify((rp.items || []).map(it => it.item));
     if (_replanShownFor !== key) { _replanShownFor = key; openReplanModal(true); }
@@ -1715,9 +1719,32 @@ async function _mountReplanView() {
   }
 }
 
+// A run that cannot take items out (the project declares no
+// item_components — bt-framework-guide §8.6): the dialog says why, and
+// Cancel is its only button.
+function _rpUnavailable(why) {
+  const none = why != null;
+  for (const id of ["rpSteps", "rpNav", "btnReplanGo"]) $(id).hidden = none;
+  if (!none) return;
+  _rpView = null;
+  _rpShowView(false);
+  $("rpSearch").hidden = true;
+  $("rpStepChoose").hidden = false; $("rpStepChoose").inert = false;
+  $("rpStepConfirm").hidden = true;
+  $("rpList").innerHTML = `<div class="rp-none"><b>No replan available</b><span>${escHtml(why)}.</span></div>`;
+  $("rpState").textContent = "";
+  $("btnReplanCancel").disabled = false;
+}
+
 async function openReplanModal(fresh) {
+  if (_replan?.phase === "unavailable") {
+    _rpUnavailable(_replan.why || "this run cannot take items out");
+    $("replanModalOverlay").classList.add("show");
+    return;
+  }
   if (!["choose", "applying"].includes(_replan?.phase)) return;
   if (fresh) {
+    _rpUnavailable(null);
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
     $("rpCleared").checked = false;

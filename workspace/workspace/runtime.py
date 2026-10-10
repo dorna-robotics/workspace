@@ -1022,6 +1022,7 @@ class Runtime:
     #
     #   replan()          operator, PAUSED only  -> {"phase": "opening"}
     #   replan_offer()    engine: the items      -> {"phase": "choose", "items"}
+    #                     or why there are none  -> {"phase": "unavailable", "why"}
     #   replan_choose()   operator: the choice   -> {"phase": "applying", ...}
     #   replan_done()     engine: applied        -> None (a step says what was done)
     #   replan_failed()   engine: refused        -> {"phase": "choose", "error"}
@@ -1083,12 +1084,15 @@ class Runtime:
         with self._lock:
             return None if self._replan is None else json.loads(json.dumps(self._replan, default=str))
 
-    def replan_offer(self, items) -> None:
-        """Engine: the items the operator may remove."""
+    def replan_offer(self, items, unavailable: Optional[str] = None) -> None:
+        """Engine: the items the operator may remove — or, when the run
+        cannot take items out at all, why (the dialog says so; Cancel or
+        Resume closes it)."""
         with self._lock:
             if self._replan is None or self._replan.get("phase") != "opening":
                 return
-            self._replan = {"phase": "choose", "items": list(items)}
+            self._replan = ({"phase": "unavailable", "why": str(unavailable)} if unavailable
+                            else {"phase": "choose", "items": list(items)})
             self._push_status()
 
     def replan_choose(self, items, reason: str = "") -> None:
