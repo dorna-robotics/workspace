@@ -247,7 +247,12 @@ class Orchestrator:
         # reach disk until the process exits — making the LOGS panel
         # appear empty even when the process is happily running and
         # printing. ``-u`` flushes per write, matching tty behavior.
-        if platform.system() == "Windows":
+        # ORCH_PYTHON: the interpreter for runtimes, when not the bench's root python3 (an
+        # orchestrator run unprivileged, e.g. to show a setup in simulation)
+        py = os.environ.get("ORCH_PYTHON", "").strip()
+        if py:
+            cmd = [py, "-u", ws.path_to_file, "--port", str(ws.port)]
+        elif platform.system() == "Windows":
             cmd = [sys.executable, "-u", ws.path_to_file, "--port", str(ws.port)]
         else:
             cmd = ["sudo", "python3", "-u", ws.path_to_file, "--port", str(ws.port)]
