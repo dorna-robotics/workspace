@@ -59,7 +59,7 @@ NOT the runtime server, which isn't up before launch. Same-origin.
 - HTML shape: plain inputs with `data-field="key"` — platform seeds
   values and reads them back.
 - JS shape: `export default {css, mount(root, api), value(), validate()}`
-  with `api = {schema, values, frozen, theme, onTheme}`.
+  with `api = {schema, values, frozen, theme, onTheme, save}` — `save(name, text, {overwrite})` writes a file into the project's Uploads (project-guide §3).
 - The platform validates whatever `value()` returns against the schema
   (required / min / max) — a screen is NOT trusted to enforce its own
   contract; `validate()` only ADDS a message.
