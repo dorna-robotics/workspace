@@ -66,6 +66,32 @@ export async function mountScreen(holder, spec, base, api) {
   return null;
 }
 
+// A setup screen's api.save: one text file into the project's Uploads.
+// Resolves {ok, name} on success, {ok: false, exists: true, name} when a
+// file of that name is there and overwrite was not asked for, or
+// {ok: false, error}. Never throws.
+async function saveToUploads(wsName, name, text, { overwrite = false } = {}) {
+  const file = String(name || "").split(/[\\/]/).pop().trim();
+  if (!file || file.startsWith(".")) return { ok: false, error: "a file name is required" };
+  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/files/${encodeURIComponent("@uploads")}`;
+  const tok = (localStorage.getItem("orch_token") || "").trim();
+  const headers = tok ? { "X-Orch-Token": tok } : {};
+  try {
+    if (!overwrite) {
+      const probe = await fetch(`${base}?${new URLSearchParams({ path: file, download: "1" })}`,
+                                { cache: "no-store", headers });
+      if (probe.ok) return { ok: false, exists: true, name: file };
+    }
+    const r = await fetch(`${base}/upload?${new URLSearchParams({ path: "", name: file })}`,
+                          { method: "PUT", body: String(text ?? ""), headers });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) return { ok: false, error: j.error || `save failed (${r.status})` };
+    return { ok: true, name: file };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 async function mountProjectSetup(container, schema, values, frozen, wsName) {
   const spec = schema._setup || {};
   const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/`;
@@ -98,6 +124,13 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
       frozen: !!frozen,
       get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
       onTheme(cb) { (host.themeCbs ||= []).push(cb); },
+      // Save a parameter file into the project's Uploads folder — the
+      // counterpart of Parameters › Open, which reads from there. The
+      // screen owns the file's content and name; the platform owns where
+      // it lands. Refuses to overwrite unless asked: an existing name
+      // resolves to {ok: false, exists: true} so the screen can ask the
+      // operator. Same route and folder as Files › Uploads › Upload.
+      save: (name, text, opts) => saveToUploads(wsName, name, text, opts),
     };
     host.module = await mountScreen(holder, spec, base, api);
     if (spec.kind !== "js") {

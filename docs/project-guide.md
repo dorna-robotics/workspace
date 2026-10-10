@@ -433,7 +433,12 @@ tubes:
 The screen is hosted exactly like the pendant screen (hmi-guide §4b) —
 shadow root, design tokens, `.html` with `data-field="key"` or `.js`
 with `{css, mount(root, api), value(), validate()}`. Its `api` carries
-`{schema, values, frozen, theme, onTheme}`. Two rules make it safe:
+`{schema, values, frozen, theme, onTheme, save}`. `save(name, text,
+{overwrite})` writes one file into the project's Uploads — the folder
+Parameters › Open reads, so a screen can offer "Save this method" and
+the operator opens it again on a later run. It never overwrites unless
+asked: an existing name resolves `{ok: false, exists: true}` for the
+screen to confirm with the operator. Two rules make it safe:
 
 * **The platform validates whatever the screen returns** against the
   schema — required, `min`, `max`. A project screen is not trusted to
