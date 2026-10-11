@@ -280,7 +280,7 @@ Top-level keys:
 
 | Key | Description |
 |-----|-------------|
-| `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
+| `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. A later file overrides a component of an earlier one by name, but **cannot delete one**. To vary a shared file for one project, include it from a small file of that project's that sets a variable first: bna's `scene/stock_ph_buffers.j2` sets `uncapped = ["A1", "A2", "A3"]` and includes `stock.j2`, which leaves those bottles' caps out — one stock, no copy. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
 | `records` | *Optional.* WHERE RUN RECORDS GO — the folder `rt.record` writes one sub-folder per run into (`<run start>/records.jsonl`, `records.csv`). Relative to the project folder, or absolute. Not declared = OFF: records stay in memory (the pendant and `rt.records()` still show them), nothing is written. |
 | `replays` | *Optional.* WHERE REPLAY RECORDINGS GO — the viewer recorder's `rec_<start>.jsonl` files, and the folder the scene builder's Replay panel lists. Not declared = OFF: the record button says so. |
@@ -455,6 +455,19 @@ picked = kwargs.get("tubes") or {}          # {"A1": 0.4, ...}
 tubes = sorted({SLOTS.index(s) for s in picked
                 if s in SLOTS and s != SOURCE_SLOT})
 ```
+
+**The footer is the same for every project**: Reset all, Set, Set &
+Launch (and Cancel in the desktop window), whether the project declares
+parameters or not. With none, Set & Launch is still how the run is
+launched — on the pendant, where the rail's Start waits for a launched
+workspace, it is the only way.
+
+**A setup screen without parameters.** A project with `default: {}`
+may still ship one, to show the bench and have the operator confirm it
+before launch: `value()` returns `{}`, and `validate()` holds Set until
+the checks are ticked. bna's `_ph_calibration/hmi/setup.js` — Bench (the
+buffers and the rinse rack) and Final checks (two ticks), then Set &
+Launch.
 
 `workspace.bt.replay --batch N` slices the first N entries of the
 first collection-typed kwarg's default, so the schedule gate keeps

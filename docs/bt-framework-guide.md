@@ -1567,7 +1567,8 @@ it at Sort, so its `item_components` returns `[disc_n]` when
 `disc_n in workspace.components`, else `[]` (a disc not yet on the
 bench, or already sorted, has nothing to clear). A project without
 `item_components` has no Replan: the button works as always, and the
-dialog it opens says **No replan available** and why, with Cancel only
+dialog it opens says **No replan available** — *This run has no items
+to take out* — with Cancel only
 (no list, no steps) — the platform never guesses which models belong to
 an item. calibration is one: a method is one dilution series, nothing
 in it can be taken off the bench alone. Plus the §8.5 contract (goal beyond the

@@ -214,9 +214,12 @@ function mountParams(host, schema, values, frozen, wsName) {
 
   renderKwargsForm(form, schema, values, frozen, wsName);
 
-  if (frozen || !Object.keys(schema).length) {
+  // The same buttons whether or not the project declares parameters:
+  // with none, Set & Launch is how the run is launched (on the pendant,
+  // the only way).
+  if (frozen) {
     foot.innerHTML = host.cancel === false
-      ? `<div class="kwargs-empty">${frozen ? "The run is using these values." : "This project declares no parameters."}</div>`
+      ? `<div class="kwargs-empty">The run is using these values.</div>`
       : `<button class="btn" id="${host.id}Cancel">Close</button>`;
     if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
     return;
