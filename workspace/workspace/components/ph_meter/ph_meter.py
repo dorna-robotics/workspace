@@ -56,6 +56,7 @@ the geometry is declared::
 from __future__ import annotations
 
 import logging
+import time
 
 from workspace.components.gripper.gripper import Gripper
 from workspace.components.ph_meter.ezo_ph_driver import Reading
@@ -94,6 +95,14 @@ class PhMeter(Gripper):
         settle_n=3,                # consecutive readings that must agree
         settle_tolerance=0.08,     # ...within this many pH units
         settle_max_readings=20,    # give-up budget (~0.9 s per reading)
+        # Calibration settles harder than a reading: calibrate() waits for
+        # cal_settle_n readings within cal_settle_tolerance before it sets
+        # the point, on a budget long enough that a buffer transfer should
+        # never run out (the Apera 753 measured 20–45 s). If it does run
+        # out it calibrates anyway, and last_calibration says so.
+        cal_settle_n=5,              # consecutive readings that must agree
+        cal_settle_tolerance=0.02,   # ...within this many pH units
+        cal_settle_max_readings=120, # give-up budget, ~110 s
         # ``critical`` controls whether a non-sim, unreachable transition
         # pauses the runtime. A probe we can't read mid-run is a real fault
         # worth pausing for; set ``critical: false`` in scene yaml where the
@@ -129,6 +138,11 @@ class PhMeter(Gripper):
         self._settle_n = int(prm["settle_n"])
         self._settle_tolerance = float(prm["settle_tolerance"])
         self._settle_max_readings = int(prm["settle_max_readings"])
+        self._cal_settle_n = int(prm["cal_settle_n"])
+        self._cal_settle_tolerance = float(prm["cal_settle_tolerance"])
+        self._cal_settle_max_readings = int(prm["cal_settle_max_readings"])
+        # what the last calibrate() calibrated on: {value, reading, settled, seconds}
+        self.last_calibration = None
 
         # ── The one sim/real branch — the station handles the unified API;
         #    recipes and operator buttons never think about it. ──
@@ -227,9 +241,25 @@ class PhMeter(Gripper):
     def calibrate(self, value: float, sim_return: bool = True):
         """Calibrate against the buffer the probe is sitting in — the point
         (low/mid/high) is picked from ``value``. Mid (~pH 7) must come
-        first and WIPES the other points; the chip enforces it. Returns
-        True/False, never raises."""
-        return self.probe.calibrate(value, sim_return=sim_return)
+        first and WIPES the other points; the chip enforces it.
+
+        Settles to calibration grade first (``cal_settle_*``), then sets the
+        point on that still reading — and still sets it if the budget runs
+        out. What it calibrated on is ``last_calibration``: {value, reading,
+        settled, seconds}. Returns True/False (False: no reading, or the
+        chip refused), never raises."""
+        t0 = time.monotonic()
+        r = self.read(settle=True, n=self._cal_settle_n, tolerance=self._cal_settle_tolerance,
+                      max_readings=self._cal_settle_max_readings,
+                      sim_return=Reading(status="ok", ph=float(value), raw="sim"))
+        ok = r is not None and r.ok and self.probe.calibrate(value, sim_return=sim_return)
+        self.last_calibration = {"value": value, "reading": r.ph if r is not None and r.ok else None,
+                                 "settled": bool(r is not None and r.ok and r.settled is not False),
+                                 "seconds": round(time.monotonic() - t0, 1)}
+        if r is not None and r.ok and r.settled is False:
+            log.warning("%s: calibrated pH %.2f on a reading that had not settled after %d readings (%.1f)",
+                        self.name, value, self._cal_settle_max_readings, r.ph)
+        return ok
 
     # ── Operator actions (component-guide §8) ─────────────────────────
     # Buttons in the Operator Controls panel — every method here takes no
@@ -244,11 +274,13 @@ class PhMeter(Gripper):
         points are added the first time or overridden later."""
         if not ok:
             return f"{which} calibration FAILED"
+        cal = self.last_calibration or {}
+        how = "" if cal.get("settled", True) else " — the reading had NOT settled, check the probe and the buffer"
         s = self.probe.slope()
         if s is None:
-            return f"{which} calibrated (slopes unavailable)"
+            return f"{which} calibrated (slopes unavailable){how}"
         return (f"{which} calibrated — acid {s.acid_percent:.1f}% / "
-                f"base {s.base_percent:.1f}%, offset {s.offset_mv:+.1f} mV")
+                f"base {s.base_percent:.1f}%, offset {s.offset_mv:+.1f} mV{how}")
 
     def calibrate_4(self):
         """Operator button — recalibrate the LOW point in pH 4.00 buffer."""

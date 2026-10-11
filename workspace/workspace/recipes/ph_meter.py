@@ -68,15 +68,22 @@ class _ProbeOps:
         """Probe health vs an ideal electrode (``Slope`` or None)."""
         return self._probe().slope(sim_return=sim_return)
 
+    def last_calibration(self):
+        """What the last ``calibrate`` calibrated on — {value, reading,
+        settled, seconds}, or None before the first."""
+        return self._probe().last_calibration
+
     def calibrate(self, value: float, sim_return: bool = True):
         """Calibrate against the buffer the probe is sitting in; the point
         (low / mid / high) is picked from ``value``. The chip's rule: mid
         (~pH 7) FIRST — it wipes the other points — then low (~4) and
-        high (~10) in either order. Returns True/False, never raises, so
-        a BT action can ``return False``. Let the reading settle first::
+        high (~10) in either order. It settles first, harder than a
+        reading (the probe's ``cal_settle_*``), and calibrates on that still
+        reading; ``last_calibration()`` says what it was and whether it
+        settled. Returns True/False, never raises, so a BT action can
+        ``return False``::
 
             rcp["buffer_7"].immerse()
-            rcp["buffer_7"].read()
             rcp["buffer_7"].calibrate(7.00)
             rcp["buffer_7"].retract()
         """

@@ -13,6 +13,7 @@ class Reading:
     status: str               # "ok" | "error" | "disconnected"
     ph: Optional[float]       # None when not a numeric reading
     raw: str
+    settled: Optional[bool] = None   # read_stable: True if n readings agreed, False if it gave up; None: one reading
 
     @property
     def connected(self) -> bool:
@@ -257,8 +258,8 @@ class AtlasPH:
                     max_readings: int = 20) -> Reading:
         """Poll until ``n`` consecutive readings agree within ``tolerance``
         pH units (probe has settled), or give up after ``max_readings``.
-        Returns the last reading either way — check ``.ok`` and compare
-        expectations yourself if you need a hard guarantee."""
+        Returns the last reading either way; its ``settled`` says which
+        (True: n agreed, False: gave up)."""
         window: list[float] = []
         last = Reading("disconnected", None, "")
         for _ in range(max_readings):
@@ -270,7 +271,9 @@ class AtlasPH:
             window.append(last.ph)
             window = window[-n:]
             if len(window) == n and max(window) - min(window) <= tolerance:
+                last.settled = True
                 return last
+        last.settled = False
         return last
 
     # ==================================================
