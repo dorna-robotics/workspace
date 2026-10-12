@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -1609,6 +1609,9 @@ function replanControl() {
   // The label never changes; while a Replan is open the button just
   // reopens its dialog.
   if (_replan) return { label: "Replan", disabled: false, title: "Open the Replan dialog" };
+  // Booting: nothing to replan yet — the runtime is not up (api.js
+  // isBooting; the sidebar draws no Replan at all in this state).
+  if (isBooting(_lastState)) return { label: "Replan", disabled: true, title: "Starting…" };
   return { label: "Replan", disabled: !_replanAvail.ok,
            title: _replanAvail.ok ? "Remove items from the run, then replan"
                                   : `Replan: ${_replanAvail.why || "not available"}` };
@@ -2398,7 +2401,7 @@ function renderControls(state, launched, running) {
 
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
-  } else if (s === "LAUNCHED_NOT_READY") {
+  } else if (isBooting(s)) {
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
@@ -2416,7 +2419,7 @@ function renderControls(state, launched, running) {
     // The slot's *meaning* is "begin or continue the run", and
     // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    addBtn(startLabel, "start", { primary: true, disabled: active });
+    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) });
     addBtn("Pause",    "pause", { disabled: !active });
     // Park only makes sense when the workflow is actually in flight.
     // Before Start the runtime is IDLE — clicking Park there would
@@ -2449,7 +2452,7 @@ function renderControls(state, launched, running) {
 
 function updateIframe(state, launched) {
   if (!wsInfo) return;
-  const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
+  const ready = launched && !isBooting(state);
   if (!ready) {
     if (iframeReady) {
       iframeReady = false;
@@ -3188,10 +3191,13 @@ function updatePendantUI() {
   // Start keeps its slot whatever the state — an operator learns where
   // the button IS. Not launched yet simply means disabled, like Pause
   // and Park are when there is nothing to pause or park; the Main tab
-  // is where a run gets launched.
-  $("pendantStart").disabled   = !launched || active;
-  $("pendantStart").title      = launched ? ""
-    : "Set the run parameters on the Main tab, then Set & Launch";
+  // is where a run gets launched. Booting (LAUNCHED_NOT_READY) is
+  // disabled too — api.js canStart, the same rule as the sidebar and
+  // the dashboard card, so the pendant can never offer Start mid-boot.
+  $("pendantStart").disabled   = !canStart(state);
+  $("pendantStart").title      = !launched
+    ? "Set the run parameters on the Main tab, then Set & Launch"
+    : isBooting(state) ? "Starting…" : "";
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;

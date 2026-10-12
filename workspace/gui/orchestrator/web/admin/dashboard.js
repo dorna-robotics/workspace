@@ -1,4 +1,4 @@
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
 
 let workspaces = [];
@@ -368,7 +368,7 @@ function render() {
           ${!launched
             ? `<div class="spacer"></div><button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>
                <button class="btn btn-sm kwargs-toggle-btn">Parameters</button>`
-            : state.toUpperCase() === "LAUNCHED_NOT_READY"
+            : isBooting(state)
             ? `<span class="wc-starting">Starting…</span>
                <div class="spacer"></div>
                <button class="btn btn-sm action-btn" data-cmd="kill">Kill</button>`
@@ -392,7 +392,7 @@ function render() {
                 const rp = st.replan?.phase;
                 const rpLbl = "Replan";
                 const rpOff = !rp && !st.replan_ok;       // the runtime's own rule
-                return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${active ? "disabled" : ""}>${startLbl}</button>
+                return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${canStart(state) ? "" : "disabled"}>${startLbl}</button>
                <button class="btn btn-sm action-btn"             data-cmd="pause" ${!active ? "disabled" : ""}>Pause</button>
                <button class="btn btn-sm btn-warn action-btn"    data-cmd="park"  ${!active || parking ? "disabled" : ""}>Park</button>
                <button class="btn btn-sm action-btn"             data-cmd="replan" data-replan="${rp || ""}" title="${esc(rp ? "Open the Replan dialog" : st.replan_ok ? "Remove items from the run, then replan" : `Replan: ${st.replan_why || "not available"}`)}" ${rpOff ? "disabled" : ""}>${rpLbl}</button>
