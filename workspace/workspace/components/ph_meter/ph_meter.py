@@ -59,7 +59,7 @@ import logging
 import time
 
 from workspace.components.gripper.gripper import Gripper
-from workspace.components.ph_meter.ezo_ph_driver import Reading
+from workspace.components.ph_meter.ezo_ph_driver import Reading, Slope
 from workspace.components.ph_meter.ezo_ph_station import EzoPHStation
 from workspace.devices import AutoRecover, attach_device
 
@@ -201,8 +201,8 @@ class PhMeter(Gripper):
         return "real"
 
     # ── Atomic pH API (component-level — recipes call these) ───────────
-    # This device does two things: it READS and it CALIBRATES. That is the
-    # whole API. Sim-agnostic by construction — the station branches
+    # This device does two things: it READS and it CALIBRATES — plus
+    # ``slope``, the calibration's health. That is the whole API. Sim-agnostic by construction — the station branches
     # internally; returns ``Reading`` / bool on success, ``None``/False when
     # disconnected and not in sim. Never raises on transient failures — the
     # station transitions state to ``down`` so AutoRecover takes over.
@@ -261,6 +261,13 @@ class PhMeter(Gripper):
                         self.name, value, self._cal_settle_max_readings, r.ph)
         return ok
 
+    def slope(self, sim_return=Slope(acid_percent=99.5, base_percent=99.2, offset_mv=0.0, raw="sim")):
+        """Probe health vs an ideal electrode (``Slope`` or None) — the
+        station's ``slope``, on the component like ``read`` and
+        ``calibrate``, so a recipe holding the mounted tool reaches it
+        (recipes/ph_meter.py ``PhMeterSite.slope``)."""
+        return self.probe.slope(sim_return=sim_return)
+
     # ── Operator actions (component-guide §8) ─────────────────────────
     # Buttons in the Operator Controls panel — every method here takes no
     # required args and returns something the runtime can stringify.
@@ -276,7 +283,7 @@ class PhMeter(Gripper):
             return f"{which} calibration FAILED"
         cal = self.last_calibration or {}
         how = "" if cal.get("settled", True) else " — the reading had NOT settled, check the probe and the buffer"
-        s = self.probe.slope()
+        s = self.slope()
         if s is None:
             return f"{which} calibrated (slopes unavailable){how}"
         return (f"{which} calibrated — acid {s.acid_percent:.1f}% / "
