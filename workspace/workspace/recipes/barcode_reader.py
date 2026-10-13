@@ -86,7 +86,8 @@ class BarcodeReader(Recipe):
     def code_rotate(self, angles=4, rotation=90, allowed=ALL_SYMBOLOGIES,
                     timeout: float = 2.5, sim_return=None,
                     continuous=True, sweep=360,
-                    sweep_vaj=[90, 500, 3000], trigger_timeout: float = 0.6):
+                    sweep_vaj=[90, 500, 3000], trigger_timeout: float = 0.6,
+                    stop_j5=[]):
         """Rotate-until-read. Call it with the item already presented
         (``present()``); returns the decoded string, or ``None`` when
         nothing read — the caller decides how loud that is.
@@ -104,7 +105,38 @@ class BarcodeReader(Recipe):
 
         ``continuous=False`` — or a limited wrist, automatically:
         stepped mode — up to ``angles`` presentations, ``rotation``
-        degrees between misses, one ``timeout`` read each."""
+        degrees between misses, one ``timeout`` read each.
+
+        ``stop_j5`` — where j5 rests after the read, read or not, in
+        every mode. ``[]`` (default): where the read stopped it. A list
+        of angles, e.g. ``[-90, 90]``: j5 turns the SHORTER way to the
+        nearest of them (on the infinite wrist compared mod 360, so the
+        travel is at most 180°; the counter's full turns ride along
+        untouched), at ``sweep_vaj``; on a tie the first listed wins.
+        So the wrist always leaves the reader in a known state."""
+        code = self._code_rotate(angles, rotation, allowed, timeout, sim_return,
+                                 continuous, sweep, sweep_vaj, trigger_timeout)
+        self._j5_to_nearest(stop_j5, sweep_vaj)
+        return code
+
+    def _j5_to_nearest(self, stops, vaj):
+        """Turn j5 the shorter way to the nearest of ``stops`` (see
+        ``code_rotate`` ``stop_j5``). No stops: nothing moves."""
+        if not stops:
+            return
+        j5 = float(self.rt.joint()[5])
+        infinite = getattr(self.core, "j5_infinite", False)
+
+        def travel(t):
+            d = float(t) - j5
+            return ((d + 180.0) % 360.0) - 180.0 if infinite else d
+
+        d = min((travel(t) for t in stops), key=abs)    # min keeps the first on a tie
+        if abs(d) > 1e-6:
+            self.rotate(d, vaj=vaj)
+
+    def _code_rotate(self, angles, rotation, allowed, timeout, sim_return,
+                     continuous, sweep, sweep_vaj, trigger_timeout):
         if continuous and getattr(self.core, "j5_infinite", False):
             rt = self.rt
             rt.checkpoint()
