@@ -458,6 +458,18 @@ turn plus the expel. A sim protocol therefore has honest timing for the
 scheduler, and `stop()` cuts a sim move short exactly like the real
 `T`. A plumbed nozzle never sees the flag — the station branches once.
 
+**The barrel is counted in plunger steps, never in µL.** The plunger
+only stands on whole steps, so a draw of ``v`` µL moves it
+``round(v → steps)`` steps and a dispense of the same ``v`` moves it
+back the same count — a draw and a dispense of one volume always
+balance. Every bound (overflow, underflow, a ``move_to_volume`` past
+the barrel) is a step-count check against ``0..max_steps``; ``volume()``
+is the read-back for display only. Comparing µL against that stepped
+read-back refused a 998 µL dispense of a 998 µL draw on the 192,000-step
+PSD/4 (38,323 steps = 997.995 µL; bench, 2026-10-12). Refusals print
+both units: ``dispense 5000.020 µL (192001 steps) but the barrel holds
+5000.000 µL (192000 steps)``.
+
 ---
 
 ## 7. In a protocol
