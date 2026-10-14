@@ -26,7 +26,7 @@ Scene yaml composes components into a kinematic tree via `attach:` (parent ancho
 
 ## Quick rules
 
-1. **Three files**: `model.glb` under `workspace/static/CAD/`, Python class under `workspace/workspace/components/<name>/<name>.py`, and a scene yaml entry that uses `type: "<name>"`. The type string is the glue.
+1. **Three files**: the mesh, the Python class, and a scene yaml entry that uses `type: "<name>"`. The type string is the glue. A LIBRARY component: `workspace/static/CAD/<name>.glb` + `workspace/workspace/components/<name>/<name>.py`. A PROJECT component: ONE folder `components/<name>/` holding `<name>.py`, `<name>.glb` (+ `.glb.bin`) and an empty `__init__.py` — the folder name is the type, the canonical main.py imports it, the servers find the mesh there (component-guide §3). Share a component by copying its folder.
 2. **Anchors are named transform frames**, all relative to the component's `center`. The required one is `center: [0,0,0,0,0,0]`. Add `place` for pick/place targets, `top` for grip points, `hole_0..3` for child mounts, custom names as needed.
 3. **`@register("...")` matches the GLB filename** AND the `type` field in scene yaml. They must agree exactly.
 4. **DEFAULTS merge pattern** — `prm = deepcopy(self.DEFAULTS); merge(prm, cfg); merge(prm, kwargs)`. Same shape as recipes and devices.

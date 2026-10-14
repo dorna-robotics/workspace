@@ -720,22 +720,36 @@ _project_path = None
 _project_component_map = {}
 
 
-def _project_cad_dir():
-    """The active project's CAD/ folder, or None if no project is set."""
-    return os.path.join(_project_path, "CAD") if _project_path else None
+def _project_mesh(name):
+    """The active project's file behind a ``CAD/<name>`` request, or None.
+
+    A project component is one folder named after its type —
+    ``components/<type>/`` with the class and the mesh together — so the
+    mesh is ``components/<stem>/<name>`` (runtime_server.component_mesh_path,
+    the one rule both servers follow; component-guide §3). A project's
+    own ``CAD/<name>`` is looked at first for the layouts that still have
+    one.
+    """
+    if not _project_path:
+        return None
+    cand = os.path.join(_project_path, "CAD", name)
+    if os.path.isfile(cand):
+        return os.path.abspath(cand)
+    from workspace.runtime_server import component_mesh_path
+    mesh = component_mesh_path(_project_path, "CAD/" + name)
+    return os.path.abspath(mesh) if mesh else None
 
 
 def _resolve_cad_glb_url(stype):
-    """URL for a component type's glb, project CAD first then library.
+    """URL for a component type's glb, project first then library.
 
-    Returns ``/static/CAD/<type>.glb`` if the file exists in the project's
-    CAD/ folder or the library static/CAD/, else None. The CAD static
-    handler resolves which folder actually serves it (project-first too),
-    so the URL is the same either way.
+    Returns ``/static/CAD/<type>.glb`` if the file exists in the project
+    (its component's folder, or CAD/) or the library static/CAD/, else
+    None. The CAD static handler resolves which file actually serves it
+    (project-first too), so the URL is the same either way.
     """
     name = f"{stype}.glb"
-    proj = _project_cad_dir()
-    if proj and os.path.exists(os.path.join(proj, name)):
+    if _project_mesh(name):
         return f"/static/CAD/{name}"
     if os.path.exists(os.path.join(CAD_DIR, name)):
         return f"/static/CAD/{name}"
@@ -743,25 +757,25 @@ def _resolve_cad_glb_url(stype):
 
 
 class CADStaticHandler(tornado.web.StaticFileHandler):
-    """Serve ``/static/CAD/*`` from the active project's CAD/ folder first,
-    falling back to the library ``workspace/static/CAD/``. Mirrors the
-    runtime server's project-first asset resolution so project-local
+    """Serve ``/static/CAD/*`` from the active project first — a
+    component's own folder (``components/<type>/``) or the project's
+    CAD/ — falling back to the library ``workspace/static/CAD/``. Mirrors
+    the runtime server's project-first asset resolution so project-local
     meshes (+ their .bin buffers / textures) render in the builder."""
 
     def get_absolute_path(self, root, path):
-        proj = _project_cad_dir()
-        if proj:
-            cand = os.path.abspath(os.path.join(proj, path))
-            if os.path.isfile(cand):
-                return cand
+        mesh = _project_mesh(path)
+        if mesh:
+            return mesh
         return os.path.abspath(os.path.join(root, path))
 
     def validate_absolute_path(self, root, absolute_path):
-        # Allow files under either the library CAD root or the project one.
+        # Allow files under the library CAD root or the project's own
+        # mesh roots: its CAD/ and its components/ folders.
         roots = [os.path.abspath(root)]
-        proj = _project_cad_dir()
-        if proj:
-            roots.append(os.path.abspath(proj))
+        if _project_path:
+            roots.append(os.path.abspath(os.path.join(_project_path, "CAD")))
+            roots.append(os.path.abspath(os.path.join(_project_path, "components")))
         if not any(absolute_path == r or absolute_path.startswith(r + os.sep) for r in roots):
             raise tornado.web.HTTPError(403)
         if not os.path.exists(absolute_path):

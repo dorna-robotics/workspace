@@ -10,18 +10,19 @@ A component is a physical object in the scene — a rack, tool, holder, or any h
 
 | File | Location | Purpose |
 |------|----------|---------|
-| GLB model | `my_project/CAD/{type_name}.glb` | 3D visualization |
-| Python class | `my_project/components/{name}.py` | Anchors, collision boxes, type registration |
+| GLB model | `my_project/components/{type}/{type}.glb` (+ `.glb.bin`) | 3D visualization |
+| Python class | `my_project/components/{type}/{type}.py` | Anchors, collision boxes, type registration |
 | Scene entry | `my_project/scene/base.j2` | Places the component in the workspace |
 
 ---
 
 ## 2. GLB model
 
-Export your CAD as a `.glb` file (binary glTF) and place it in your project:
+Export your CAD as a `.glb` file (binary glTF) and place it in the
+component's own folder, beside its class:
 
 ```
-my_project/CAD/custom_holder.glb
+my_project/components/custom_holder/custom_holder.glb
 ```
 
 The filename must match the registered type name exactly — `@register("custom_holder")` expects `custom_holder.glb`. The system checks your project folder first, then falls back to built-in library models.
@@ -42,8 +43,8 @@ just bigger over the wire.
 
 **Adding a new model:**
 
-1. Drop the `.glb` in `workspace/static/CAD/` (or your project's
-   own `CAD/` folder).
+1. Drop the `.glb` in `workspace/static/CAD/` (a library component)
+   or in the component's folder, `components/<type>/` (a project one).
 2. Run the compression script:
    ```bash
    cd workspace/static/CAD && ./compress.sh
@@ -205,22 +206,32 @@ class CustomHolder:
 
 ### Where to put it
 
-Place component files in `components/` and import in `main.py` before the workspace loads:
+**A project component is ONE FOLDER, named after its `type`**, under
+`components/`: the class, its mesh and the mesh's sidecar together, plus
+an empty `__init__.py`. Sharing a component with another project or
+another bench is copying that folder — nothing to collect from a `CAD/`
+folder, nothing to wire.
 
 ```
 my_project/
 ├── components/
-│   └── custom_holder.py
+│   ├── __init__.py
+│   └── custom_holder/
+│       ├── __init__.py            # empty
+│       ├── custom_holder.py       # @register("custom_holder") — the class
+│       ├── custom_holder.glb      # the mesh
+│       └── custom_holder.glb.bin  # its sidecar, if the export made one
 ├── main.py
 └── ...
 ```
 
-```python
-from components.custom_holder import CustomHolder  # triggers @register
-
-from workspace.workspace import Workspace
-# ... rest of main.py
-```
+The folder name IS the type string: the viewer asks for
+`CAD/custom_holder.glb` and both servers resolve it to
+`components/custom_holder/custom_holder.glb` (the file's stem names the
+folder — `runtime_server.component_mesh_path`). Nothing is imported by
+hand: the canonical `main.py` walks every folder under `components/`
+and imports its modules, so the `@register` runs before the scene
+boots. Library components keep their meshes in `workspace/static/CAD/`.
 
 ---
 
@@ -472,6 +483,28 @@ class Gripper:
         ]
 ```
 
+A timed op is the same shape — the parameter has a default in the
+signature, so the button needs no input and an action can still say
+more. The venturi suction gripper's blow-off
+(`components/gripper/gripper_suction.py`):
+
+```python
+# scene yaml — bench wiring, written out, never guessed:
+#   output_blow: [[2, 1, 0]]     the blow-off output
+def blow(self, duration=5):
+    rt.output(config=self.output_blow)        # air out of the cup
+    rt.sleep(duration, checkpoint=False)      # ONE atomic op: the air never stays on
+    self.disable()                            # then the off state
+
+ws.components["gripper_suction_1"].blow()     # from an action: 5 s
+ws.components["gripper_suction_1"].blow(2)    # an action that knows better
+```
+
+No recipe is involved — a recipe owns motion, and a blow has none; an
+action reaches the component directly, as apc's cylinder `enable()` /
+`disable()` do. A place never blows: its release is `output_disable`.
+An unset `output_blow` makes `blow()` raise rather than fire a guess.
+
 Each entry is a dict with two string fields:
 
 - **`label`** — display name on the button
@@ -641,23 +674,23 @@ documented fully in
 
 ```
 my_project/
-├── main.py
+├── main.py                        # the canonical one — it imports components/ itself
 ├── components/
-│   └── custom_holder.py
-├── CAD/
-│   └── custom_holder.glb
+│   ├── __init__.py
+│   └── custom_holder/
+│       ├── __init__.py
+│       ├── custom_holder.py
+│       └── custom_holder.glb
 └── scene/
     └── base.j2
 ```
 
-**`components/custom_holder.py`** — see section 3 ("From scratch") for the full class.
+**`components/custom_holder/custom_holder.py`** — see section 3 ("From scratch") for the full class.
 
-**`main.py`**:
+**`main.py`** — copied verbatim from any example; nothing to add:
 ```python
-from components.custom_holder import CustomHolder  # triggers @register
-
-from workspace.workspace import Workspace
-# ... rest of main.py
+# the canonical main.py walks components/ and imports every module there
+# before the scene boots — no per-component import line
 ```
 
 **`scene/base.j2`**:

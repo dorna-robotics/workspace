@@ -30,7 +30,7 @@ projects/my_project/
 │   ├── bench.j2         # THIS unit's values — IPs, ports, serials, sim flags, rail offset (git-ignored, §2)
 │   └── bench.example.j2 # the committed template for bench.j2
 ├── vision/              # the detections: a config per model, the model beside it, a vlm key (*.key, git-ignored)
-├── components/          # the project's own component classes (@register) and their CAD/ (optional)
+├── components/          # the project's own components — ONE FOLDER per type: class + mesh (+ empty __init__.py)
 ├── dev/                 # bring-up notebooks (optional)
 ├── core/                # THIS station: calibration, caches, motion book, logs (launch.yaml core_dir:; git-ignored)
 ├── records/             # one folder per run — records.jsonl / .csv (launch.yaml records:; git-ignored)
@@ -280,7 +280,7 @@ Top-level keys:
 
 | Key | Description |
 |-----|-------------|
-| `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. |
+| `scene` | List of scene file paths (relative to project folder). Loaded in order to build the 3D scene and component registry. Typically `base.j2` for hardware, `layout.j2` for consumables. A later file overrides a component of an earlier one by name, but **cannot delete one**. To vary a shared file for one project, include it from a small file of that project's that sets a variable first: bna's `scene/stock_ph_buffers.j2` sets `uncapped = ["A1", "A2", "A3"]` and includes `stock.j2`, which leaves those bottles' caps out — one stock, no copy. |
 | `core_dir` | *Optional, default `core`.* THE STATION'S OWN FOLDER — calibration (`calibrate.json`), every cache (`ik`, `path`, `fold`, `traj`), the motion book and the logs, read and written. Relative to the project folder, or absolute. **Set it explicitly whenever projects share a scene** (`scene: [../scene/...]`): point them at the same folder to share one calibrated bench, or at their own to keep separate caches. The folder is resolved from the project `main.py` declares (`Workspace(project_dir=...)`), never guessed from where the scene happens to live. |
 | `records` | *Optional.* WHERE RUN RECORDS GO — the folder `rt.record` writes one sub-folder per run into (`<run start>/records.jsonl`, `records.csv`). Relative to the project folder, or absolute. Not declared = OFF: records stay in memory (the pendant and `rt.records()` still show them), nothing is written. |
 | `replays` | *Optional.* WHERE REPLAY RECORDINGS GO — the viewer recorder's `rec_<start>.jsonl` files, and the folder the scene builder's Replay panel lists. Not declared = OFF: the record button says so. |
@@ -433,7 +433,12 @@ tubes:
 The screen is hosted exactly like the pendant screen (hmi-guide §4b) —
 shadow root, design tokens, `.html` with `data-field="key"` or `.js`
 with `{css, mount(root, api), value(), validate()}`. Its `api` carries
-`{schema, values, frozen, theme, onTheme}`. Two rules make it safe:
+`{schema, values, frozen, theme, onTheme, save}`. `save(name, text,
+{overwrite})` writes one file into the project's Uploads — the folder
+Parameters › Open reads, so a screen can offer "Save this method" and
+the operator opens it again on a later run. It never overwrites unless
+asked: an existing name resolves `{ok: false, exists: true}` for the
+screen to confirm with the operator. Two rules make it safe:
 
 * **The platform validates whatever the screen returns** against the
   schema — required, `min`, `max`. A project screen is not trusted to
@@ -450,6 +455,19 @@ picked = kwargs.get("tubes") or {}          # {"A1": 0.4, ...}
 tubes = sorted({SLOTS.index(s) for s in picked
                 if s in SLOTS and s != SOURCE_SLOT})
 ```
+
+**The footer is the same for every project**: Reset all, Set, Set &
+Launch (and Cancel in the desktop window), whether the project declares
+parameters or not. With none, Set & Launch is still how the run is
+launched — on the pendant, where the rail's Start waits for a launched
+workspace, it is the only way.
+
+**A setup screen without parameters.** A project with `default: {}`
+may still ship one, to show the bench and have the operator confirm it
+before launch: `value()` returns `{}`, and `validate()` holds Set until
+the checks are ticked. bna's `_ph_calibration/hmi/setup.js` — Bench (the
+buffers and the rinse rack) and Final checks (two ticks), then Set &
+Launch.
 
 `workspace.bt.replay --batch N` slices the first N entries of the
 first collection-typed kwarg's default, so the schedule gate keeps
@@ -746,7 +764,9 @@ The operator reaches them from the workspace page:
 
 * **Files** in the top bar — the browser, opened on the FIRST tab of
   `folders:`. A run folder's `records.csv` opens as a table in the panel,
-  an image shows fitted in the same pane, any file downloads and any
+  an image shows fitted in the same pane, a markdown file renders in it
+  and a PDF opens in it as the browser draws it (a project's `docs/`
+  tab), any file downloads and any
   folder downloads as a zip.
 * **Open**, next to **Load** in the Parameters modal — the same panel
   in *pick* mode over the `uploads:` folder (whether or not it is a tab),
@@ -1007,6 +1027,15 @@ rt.step("Tube misaligned", level="warning")          # warning — amber banner
 rt.step("Robot alarm", level="error")                # error — red banner + beep
 rt.step(45, level="progress")                        # progress bar (0-100)
 ```
+
+The timeline the dashboard and the pendant show is the run's LAST 1000
+steps (`Runtime.STEP_MAX`); the badge counts every step. A tab gets
+that tail once when it connects and ONE entry per step after — about
+100 bytes and one appended card, whatever the run's length. Until
+2026-10 every step shipped the whole, unbounded timeline to every tab,
+which redrew it: a 2800-disc apc run reached ~33 000 entries and ~3 MB
+per step, and the tab's 3D view froze after a few hours. The log file
+keeps every line regardless.
 
 | Level | Timeline | Banner | Sound | Progress bar |
 |-------|----------|--------|-------|-------------|

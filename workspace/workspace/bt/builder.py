@@ -186,8 +186,11 @@ class _AfterPredecessors(py_trees.decorators.Decorator):
     each cut: with real durations the arm then idled for the rest of
     a 300 s shake between two extracts that needed nothing from it.
     Deadlock is impossible: every edge points forward in plan order,
-    branches run in ``(start, plan index)`` order, and replay verifies
-    each window in that same order.
+    the scheduler orders on the same edges (launcher: build_ordering
+    is its precedence), and ``from_schedule`` refuses any schedule
+    that still contradicts one — a predecessor later in the leaf's
+    own branch, or a cycle across branches — at build time, naming
+    the two steps, instead of a run that stands still.
     """
 
     def __init__(self, child, key: str, preds, done: set, name: Optional[str] = None):
@@ -489,6 +492,7 @@ def from_schedule(
         entries.append({
             "branch":    res[0],
             "order":     (float(start), 1, idx),
+            "key":       f"{action_name}(t{item_index})",
             "make_leaf": (lambda an=action_name, ii=item_index:
                           _after_predecessors(_safe_leaf(leaf_factory, an, ii),
                                               f"{an}(t{ii})", predecessors, done)),
@@ -510,10 +514,12 @@ def from_schedule(
     by_branch: Dict[str, List[Dict[str, Any]]] = {}
     for e in entries:
         by_branch.setdefault(e["branch"], []).append(e)
+    for group in by_branch.values():
+        group.sort(key=lambda e: e["order"])
+    _check_runnable(by_branch, predecessors)
 
     branches: List[py_trees.behaviour.Behaviour] = []
     for r, group in by_branch.items():
-        group.sort(key=lambda e: e["order"])
         leaves = [leaf for e in group if (leaf := e["make_leaf"]()) is not None]
         if not leaves:
             continue
@@ -531,6 +537,56 @@ def from_schedule(
         policy=py_trees.common.ParallelPolicy.SuccessOnAll(),
         children=branches,
     )
+
+
+def _check_runnable(by_branch, predecessors) -> None:
+    """Refuse a schedule the tree could not run. Each branch is a
+    Sequence, so an entry can only start after everything before it
+    in its branch; its predecessors must therefore never sit later in
+    the same branch, and the branch orders plus the predecessor edges
+    together must have no cycle. Either is a deadlock: the leaf waits
+    for a step that waits for it, and the run stands still with no
+    error. Raises ValueError naming the steps."""
+    if not predecessors:
+        return
+    pos: Dict[str, Tuple[str, int]] = {}
+    for branch, group in by_branch.items():
+        for i, e in enumerate(group):
+            if e.get("key"):
+                pos[e["key"]] = (branch, i)
+    for key, (branch, i) in pos.items():
+        for p in predecessors.get(key, ()):
+            if p in pos and pos[p][0] == branch and pos[p][1] > i:
+                raise ValueError(
+                    f"from_schedule: {key} waits for {p}, but the {branch} branch "
+                    f"runs {p} after it — the schedule contradicts the plan's order")
+    # Any cycle across branches: Kahn over branch-order + predecessor edges.
+    succ: Dict[str, Set[str]] = {k: set() for k in pos}
+    indeg: Dict[str, int] = {k: 0 for k in pos}
+    def edge(a, b):
+        if b not in succ[a]:
+            succ[a].add(b); indeg[b] += 1
+    for group in by_branch.values():
+        keys = [e["key"] for e in group if e.get("key")]
+        for a, b in zip(keys, keys[1:]):
+            edge(a, b)
+    for key in pos:
+        for p in predecessors.get(key, ()):
+            if p in pos:
+                edge(p, key)
+    ready = [k for k, d in indeg.items() if d == 0]
+    seen = 0
+    while ready:
+        k = ready.pop(); seen += 1
+        for b in succ[k]:
+            indeg[b] -= 1
+            if indeg[b] == 0:
+                ready.append(b)
+    if seen != len(pos):
+        stuck = sorted(k for k, d in indeg.items() if d > 0)
+        raise ValueError(
+            f"from_schedule: the schedule and the plan's order form a cycle across "
+            f"branches — these steps wait on each other: {', '.join(stuck)}")
 
 
 def _after_predecessors(leaf, key, predecessors, done):

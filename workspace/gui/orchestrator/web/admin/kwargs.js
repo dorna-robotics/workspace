@@ -66,6 +66,32 @@ export async function mountScreen(holder, spec, base, api) {
   return null;
 }
 
+// A setup screen's api.save: one text file into the project's Uploads.
+// Resolves {ok, name} on success, {ok: false, exists: true, name} when a
+// file of that name is there and overwrite was not asked for, or
+// {ok: false, error}. Never throws.
+async function saveToUploads(wsName, name, text, { overwrite = false } = {}) {
+  const file = String(name || "").split(/[\\/]/).pop().trim();
+  if (!file || file.startsWith(".")) return { ok: false, error: "a file name is required" };
+  const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/files/${encodeURIComponent("@uploads")}`;
+  const tok = (localStorage.getItem("orch_token") || "").trim();
+  const headers = tok ? { "X-Orch-Token": tok } : {};
+  try {
+    if (!overwrite) {
+      const probe = await fetch(`${base}?${new URLSearchParams({ path: file, download: "1" })}`,
+                                { cache: "no-store", headers });
+      if (probe.ok) return { ok: false, exists: true, name: file };
+    }
+    const r = await fetch(`${base}/upload?${new URLSearchParams({ path: "", name: file })}`,
+                          { method: "PUT", body: String(text ?? ""), headers });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) return { ok: false, error: j.error || `save failed (${r.status})` };
+    return { ok: true, name: file };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 async function mountProjectSetup(container, schema, values, frozen, wsName) {
   const spec = schema._setup || {};
   const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/setup/`;
@@ -98,6 +124,13 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
       frozen: !!frozen,
       get theme() { return document.documentElement.getAttribute("data-theme") || "dark"; },
       onTheme(cb) { (host.themeCbs ||= []).push(cb); },
+      // Save a parameter file into the project's Uploads folder — the
+      // counterpart of Parameters › Open, which reads from there. The
+      // screen owns the file's content and name; the platform owns where
+      // it lands. Refuses to overwrite unless asked: an existing name
+      // resolves to {ok: false, exists: true} so the screen can ask the
+      // operator. Same route and folder as Files › Uploads › Upload.
+      save: (name, text, opts) => saveToUploads(wsName, name, text, opts),
     };
     host.module = await mountScreen(holder, spec, base, api);
     if (spec.kind !== "js") {
@@ -281,7 +314,7 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
           }
         });
 
-        // Browse the project's own data/ folder instead of the
+        // Browse the project's own uploads folder instead of the
         // operator's laptop: the file they uploaded last run is
         // already there, which is the whole point of the uploads folder
         // (launch.yaml uploads:).
@@ -570,7 +603,7 @@ async function deliverFile(container, text, filename) {
 /**
  * Apply one YAML/JSON parameter file's text to the form. Shared by both
  * ways in: a file off the operator's laptop, and a file already on the
- * bench in the project's data/ folder. Returns how many fields filled.
+ * bench in the project's uploads folder. Returns how many fields filled.
  */
 export function applyKwargsText(container, text, filename) {
   let data;
@@ -609,8 +642,9 @@ export function applyKwargsText(container, text, filename) {
 
 /**
  * Load a parameter file that already lives on the bench, picked from
- * the project's uploads folder (launch.yaml uploads:) — the counterpart to loadKwargsFromFile,
- * which reaches for the operator's own machine.
+ * the project's uploads folder (launch.yaml uploads:) or any of its
+ * tabs — the counterpart to loadKwargsFromFile, which reaches for the
+ * operator's own machine.
  */
 export async function loadKwargsFromBench(container, wsName, toastFn) {
   const picked = await openFileBrowser({
@@ -623,8 +657,13 @@ export async function loadKwargsFromBench(container, wsName, toastFn) {
   });
   if (!picked) return false;
   try {
+    // Read it back through the folder it was picked in — the Uploads
+    // alias, or the tab the operator switched to. This used to name a
+    // ``data`` folder key no project has had since folders: tabs got
+    // their own keys: "unknown folder" on every Load (bna, 2026-10-09).
+    const root = picked.root || "@uploads";
     const url = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}` +
-                `/files/data?path=${encodeURIComponent(picked.path)}&download=1`;
+                `/files/${encodeURIComponent(root)}?path=${encodeURIComponent(picked.path)}&download=1`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error("could not read the file");
     const r = await deliverFile(container, await resp.text(), picked.name);

@@ -338,17 +338,22 @@ class RecordHandler(tornado.web.RequestHandler):
 # Tornado handlers
 # --------------------------------------------------
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
+    """Every file revalidates on every load. The GUI's scripts, styles
+    and pages are referenced by plain name (``workspace.js``, a
+    project's ``/hmi/pendant.js``), with no version in the URL, so with
+    no Cache-Control the browser keeps them on a heuristic and an
+    upgrade does not reach an open browser: the operator saw the old
+    admin script under the new pendant screen (bench, 2026-10-08), and
+    before that the viewer iframe survived a hard reload of its parent.
+    no-cache costs one conditional request per file — the ETag answers
+    304 when nothing changed."""
+
     def set_extra_headers(self, path):
         if DEV_NOCACHE:
             self.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.set_header("Pragma", "no-cache")
             self.set_header("Expires", "0")
-        elif str(path).endswith(".html"):
-            # A page is never served stale: with no Cache-Control the browser
-            # keeps it on a heuristic (the viewer iframe survived a hard
-            # reload of its parent after an upgrade). Assets carry versioned
-            # URLs (index.html versioned()) and may stay cached; pages
-            # revalidate every time — an ETag answers 304 when unchanged.
+        else:
             self.set_header("Cache-Control", "no-cache")
 
     def compute_etag(self):
@@ -380,7 +385,7 @@ class HmiStaticFileHandler(NoCacheStaticFileHandler):
     """
 
     def set_extra_headers(self, path):
-        super().set_extra_headers(path)
+        super().set_extra_headers(path)          # no-cache: the base class's rule
         self.set_header("Access-Control-Allow-Origin", "*")
 
     def options(self, *args):
@@ -390,8 +395,29 @@ class HmiStaticFileHandler(NoCacheStaticFileHandler):
         self.finish()
 
 
+def component_mesh_path(base: str, path: str):
+    """Where a project keeps a component's mesh: IN THE COMPONENT'S FOLDER.
+
+    The viewer asks for ``CAD/<type>.glb`` (and its ``.glb.bin``). A
+    project component is one folder named after its type under
+    ``components/`` — class, mesh and sidecar together, so sharing a
+    component is copying a folder (component-guide §3). ``CAD/anode.glb``
+    therefore resolves to ``<base>/components/anode/anode.glb``; the
+    folder is the file's stem, the part before the first dot. ``None``
+    when ``path`` is not a CAD request or the file is not there.
+    """
+    head, _, name = path.rpartition("/")
+    if head != "CAD" or not name:
+        return None
+    stem = name.split(".", 1)[0]
+    full = os.path.join(base, "components", stem, name)
+    return full if os.path.isfile(full) else None
+
+
 class FallbackStaticHandler(NoCacheStaticFileHandler):
-    """Serves from multiple directories — first match wins."""
+    """Serves from multiple directories — first match wins. A ``CAD/``
+    request also looks inside the project's component folders
+    (``component_mesh_path``)."""
 
     def initialize(self, paths: list[str]):
         self._paths = [p for p in paths if os.path.isdir(p)]
@@ -402,6 +428,9 @@ class FallbackStaticHandler(NoCacheStaticFileHandler):
             full = os.path.join(d, path)
             if os.path.isfile(full):
                 return full
+            mesh = component_mesh_path(d, path)
+            if mesh:
+                return mesh
         return super().get_absolute_path(root, path)
 
     def validate_absolute_path(self, root, absolute_path):
@@ -626,7 +655,7 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
         rt = self._rt
         si = rt.step_info
         try:
-            payload = {"steps": (si["steps"] if si else [])}
+            payload = {"steps": (si["steps"] if si else []), "total": (si or {}).get("total", 0)}
             if si and si.get("progress", -1) >= 0:
                 payload["progress"] = si["progress"]
             self.write_message(json.dumps(payload))
@@ -640,19 +669,37 @@ class StepWebSocket(tornado.websocket.WebSocketHandler):
         self._rt = rt
 
 
-def _broadcast_steps(steps: list, progress: int = -1):
+def _step_event(entry: Optional[dict], progress: int, total: Optional[int]) -> dict:
+    """One ``step_state`` DELTA: ``append`` is the one new timeline entry
+    (absent on a progress-only tick), ``total`` every step of the run so
+    far, ``progress`` 0-100 when set. A tab that connects gets the
+    snapshot shape instead — ``steps`` (the last Runtime.STEP_MAX),
+    ``total``, ``progress`` — once, from step_info. The two shapes are
+    told apart by their keys: ``steps`` is a snapshot, ``append`` a delta.
+    """
+    payload: dict = {}
+    if entry is not None:
+        payload["append"] = entry
+    if total is not None:
+        payload["total"] = total
+    if progress is not None and progress >= 0:
+        payload["progress"] = progress
+    return payload
+
+
+def _broadcast_steps(entry: Optional[dict], progress: int = -1, total: Optional[int] = None):
     """Called from rt.on_step (workflow thread) — schedule send on IO loop.
 
-    Includes the current progress (0-100, or -1 for unset) alongside the
-    steps list so the UI's progress bar updates in real time. Without
-    this, progress only reached the UI via the slower HTTP polling and
-    a fast final 100% emission could be missed entirely.
+    Ships the DELTA (_step_event), never the timeline: a step costs every
+    open tab one entry (~100 bytes) and one appended card, whatever the
+    run's length. Progress rides along so the UI's bar updates in real
+    time — polling alone missed a fast final 100 %.
     """
     if _main_ioloop is None:
         return
-    payload = {"steps": steps}
-    if progress is not None and progress >= 0:
-        payload["progress"] = progress
+    payload = _step_event(entry, progress, total)
+    if not payload:
+        return
     _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
@@ -1609,7 +1656,7 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
         try:
             # Steps + progress.
             si = self._rt.step_info
-            step_payload = {"steps": (si["steps"] if si else [])}
+            step_payload = {"steps": (si["steps"] if si else []), "total": (si or {}).get("total", 0)}
             if si and si.get("progress", -1) >= 0:
                 step_payload["progress"] = si["progress"]
             self._send("step_state", step_payload)
@@ -1911,10 +1958,13 @@ class RuntimeServer:
             (r"/socket.io/", _nodelay_handler(sio)),
             (r"/record/(start|stop|status)", RecordHandler),
 
-            # static assets (meshes/textures/etc) — project-local first, library fallback
+            # static assets (meshes/textures/etc) — project-local first, library fallback.
+            # The project folder is the one main.py DECLARED (Workspace(project_dir=...)),
+            # never the working directory: a component's mesh lives in its own folder,
+            # <project>/components/<type>/<type>.glb (component_mesh_path).
             (r"/static/(.*)", FallbackStaticHandler, {"paths": [
-                os.getcwd(),        # project-local: my_project/CAD/
-                self.static_dir,    # library: workspace/static/CAD/
+                _project_dir(self.workspace) or os.getcwd(),   # project-local
+                self.static_dir,                                # library: workspace/static/CAD/
             ]}),
 
             # shared vendor assets (Three.js, Socket.IO, etc.)

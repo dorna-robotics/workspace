@@ -50,7 +50,6 @@ from workspace.bt.builder import (
 from workspace.bt.dsl import (
     RecipeUnavailable,
     build_ordering,
-    build_precedence,
     derive_capacity_spans,
     state_to_frozen,
 )
@@ -826,15 +825,16 @@ def run_protocol(
         return plan_route(templates, state, _planning_goal, list(items),
                           explain=protocol.explainer(ctx))
 
-    # Precedence-aware scheduling — steps whose pre()/eff() are
-    # causally independent overlap on different resources. The observed
-    # state is threaded through so state-aware bodies see the world
-    # they would at runtime when the precedence graph is derived.
-    def _precedence(plan):
-        facts = ctx.state.get("facts", frozenset())
-        initial = facts if isinstance(facts, frozenset) else frozenset(facts)
-        return build_precedence(plan, protocol, initial_state=initial, ctx=ctx)
-
+    # ONE partial order, for the scheduler and the tree alike
+    # (build_ordering: the causal edges plus consumer-before-undoer).
+    # The scheduler may reorder freely within it; the tree holds each
+    # leaf for exactly these predecessors. Giving the scheduler fewer
+    # edges than the tree enforces let it pick an order the tree
+    # could not run: apc's ClearAnode READS hand_empty, CP-SAT placed
+    # it after the next Pick (nothing causal between them), the tree
+    # held that Pick for ClearAnode — the run stood still after the
+    # drop (bench, 2026-10-08). The observed state is threaded through
+    # so state-aware bodies see the world they would at runtime.
     def _ordering(plan):
         facts = ctx.state.get("facts", frozenset())
         initial = facts if isinstance(facts, frozenset) else frozenset(facts)
@@ -847,7 +847,7 @@ def run_protocol(
 
     use_cpsat = (str(scheduler).lower() == "cpsat")
     build_schedule = make_schedule_builder(
-        meta, use_cpsat=use_cpsat, precedence_fn=_precedence, capacity_fn=_capacity,
+        meta, use_cpsat=use_cpsat, precedence_fn=_ordering, capacity_fn=_capacity,
         # The tool on the flange when this window is scheduled — the
         # SwapLeaf keeps ctx.meta["current_tool"] true — so a window
         # never opens with a swap onto the tool it already holds.
@@ -1021,6 +1021,9 @@ def run_protocol(
                         "``def item_components(workspace, item): return [component names]``")
 
     def _replan_items() -> list:
+        if item_components is None:
+            # no item_components: the platform never guesses an item's models
+            raise ValueError("this run has no items to take out")
         state = state_to_frozen(ctx.state)
         return _remove.offer(ctx, state, all_items, item_done, phases, item_label)
 
@@ -1032,9 +1035,6 @@ def run_protocol(
             for x in [it] + _remove.dependents_of(ctx, it):
                 if x not in gone and not _remove.is_removed(state, x):
                     gone.append(x)
-        if item_components is None:
-            raise ValueError("this project does not declare item_components(workspace, item) "
-                             "in setup(), so Replan cannot clear the removed items' 3D models")
         names = []
         for it in gone:
             try:

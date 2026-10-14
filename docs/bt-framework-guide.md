@@ -1368,7 +1368,7 @@ every project (examples/ and bna follow it):
 | `setup()`'s `goal` | what lies beyond the items: `started` and `parked` — the platform adds "every item done or removed" | a loop over the items (a removed one would hold it false forever) |
 | A gate over the whole batch (Park) | `for t in self._ctx_items():` — the items still in the run | `self._ctx_all_objects()[dim]` |
 | The audit status at Park | `self._ctx_removed(t)` first, then the facts | a status that reports a removed item as "stopped before …" |
-| `setup()`'s `item_components(workspace, item)` | every 3D model of one item — what an operator Replan clears (§8.6) | leaving it out (Replan refuses) or naming only the vial (its cap would be orphaned — refused too) |
+| `setup()`'s `item_components(workspace, item)` | every 3D model of one item — what an operator Replan clears (§8.6) | leaving it out (the Replan dialog says *No replan available*) or naming only the vial (its cap would be orphaned — refused too) |
 
 **Proving it** — `bt.replay` removes an item where you say, then checks
 the run still closes and no step is ever planned for an item that left:
@@ -1565,9 +1565,13 @@ cap). A model that exists only part of the run is returned only while
 it is in the scene — apc creates a disc's model at Create and deletes
 it at Sort, so its `item_components` returns `[disc_n]` when
 `disc_n in workspace.components`, else `[]` (a disc not yet on the
-bench, or already sorted, has nothing to clear). A project without `item_components` cannot use Replan: the
-dialog refuses with that reason — the platform never guesses which
-models belong to an item. Plus the §8.5 contract (goal beyond the
+bench, or already sorted, has nothing to clear). A project without
+`item_components` has no Replan: the button works as always, and the
+dialog it opens says **No replan available** — *This run has no items
+to take out* — with Cancel only
+(no list, no steps) — the platform never guesses which models belong to
+an item. calibration is one: a method is one dilution series, nothing
+in it can be taken off the bench alone. Plus the §8.5 contract (goal beyond the
 items, gates over `_ctx_items()`, status from `_ctx_removed()`), which
 `bt.replay --remove` proves.
 
@@ -1740,6 +1744,19 @@ runs. So an arm that gets ahead of the model keeps working until the
 plan says it needs the device — the unload waits for the shake, the
 extract of another bank does not — and a duration guess that is off
 costs a worse order, never an idle wait.
+
+The scheduler orders on that SAME partial order: the launcher hands
+CP-SAT `build_ordering` as its precedence, so any order it is free to
+pick is one the tree can run. It used to get the causal edges alone;
+that let it put a reader of a capacity fact (apc's `ClearAnode` needs
+`hand_empty` and leaves it) after the next item's `Pick`, which the
+tree then held for the reader — a deadlock with no error, the run
+standing still after a drop (bench, 2026-10-08). `from_schedule` now
+also refuses, at build time and naming the two steps, any schedule
+that contradicts an edge: a predecessor later in the leaf's own
+branch, or a cycle across branches. `bt.replay` schedules on the same
+order, so a window that replays clean is scheduled as the run will
+schedule it.
 
 ---
 
@@ -2161,7 +2178,7 @@ The other per-item keys `setup()` may return, all optional:
 | Key | Shape | What reads it |
 |---|---|---|
 | `dependents` | `fn(item) -> [items]` | removal: items of the batch that leave with this one, transitively (§8.5) |
-| `item_components` | `fn(workspace, item) -> [component names]` | operator Replan: every 3D model of the item, cleared from the scene when it is removed — without it Replan refuses (§8.6) |
+| `item_components` | `fn(workspace, item) -> [component names]` | operator Replan: every 3D model of the item, cleared from the scene when it is removed — without it the Replan dialog says *No replan available* (§8.6) |
 | `item_label` | `fn(item) -> str` | operator Replan: the item's name in the dialog (default `str(item)`) |
 
 With no phases and `batch_size <= plan_window`, windowing is a no-op.

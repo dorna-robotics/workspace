@@ -41,6 +41,7 @@ export function stateLabel(state) {
   const s = String(state || "").toUpperCase();
   if (s === "IDLE") return "READY";
   if (s === "PARKING") return "PARKING";
+  if (s === "LAUNCHED_NOT_READY") return "STARTING…";
   return s || "—";
 }
 
@@ -55,6 +56,24 @@ export function isRunning(state) {
 export function isLaunched(state) {
   const s = String(state || "").toUpperCase();
   return !["", "NOT_LAUNCHED", "OFFLINE", "REMOTE_OFFLINE", "UNKNOWN"].includes(s);
+}
+
+// Launched but still booting: the workspace process is up, the runtime
+// behind it is not (scene loading, devices attaching). Launched, yet
+// nothing can be started or replanned — only killed.
+export function isBooting(state) {
+  return String(state || "").toUpperCase() === "LAUNCHED_NOT_READY";
+}
+
+// THE one rule for the Start / Resume button, every surface (sidebar
+// controls, dashboard card, pendant): offered exactly when the
+// workspace is launched, past its boot, and not working — neither
+// running nor parking. IDLE, PAUSED, ERROR, KILLED → yes; booting,
+// RUNNING, PARKING, not launched → no. A surface that gates Start any
+// other way drifts (the pendant once offered Start mid-boot).
+export function canStart(state) {
+  const s = String(state || "").toUpperCase();
+  return isLaunched(s) && !isBooting(s) && !isRunning(s) && !isParking(s);
 }
 
 // True once the workspace has begun a run (RUNNING / PAUSED /

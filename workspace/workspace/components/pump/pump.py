@@ -374,18 +374,30 @@ class Pump:
     def _steps_to_ul(self, steps: float) -> float:
         return float(steps) / self.pump.max_steps() * self._syringe_ul
 
+    def _fmt(self, steps: int) -> str:
+        """A plunger position as the operator reads it: µL (3 decimals —
+        enough to show a fraction of a step) and the steps it is."""
+        return f"{self._steps_to_ul(steps):.3f} µL ({steps} steps)"
+
     # ── the one motion primitive everything else uses ─────────────
 
-    def _stroke(self, op: str, target_ul: float, port: int, speed,
+    def _stroke(self, op: str, target_steps: int, port: int, speed,
                 sim_return: bool = True) -> bool:
-        """Valve to ``port``, optional speed, plunger to ``target_ul``.
-        Refuses overflow/underflow before touching hardware."""
+        """Valve to ``port``, optional speed, plunger to ``target_steps``.
+        Refuses overflow/underflow before touching hardware.
+
+        STEPS ARE THE TRUTH. The plunger only stands on whole steps, so
+        every bound is checked in steps — never in µL against a
+        stepped read-back: a 998 µL draw lands on 38,323 steps
+        (997.995 µL) and a µL check then refused the 998 µL dispense of
+        the very same liquid (bench, 2026-10-12)."""
         t0 = time.monotonic()
         ok = False
+        target_steps = int(target_steps)
         try:
-            if target_ul < -1e-9 or target_ul > self._syringe_ul + 1e-9:
-                self.pump.last_error = (3, f"{op}: target {target_ul:.1f} µL outside "
-                                           f"0-{self._syringe_ul:.0f} µL barrel")
+            if target_steps < 0 or target_steps > self.pump.max_steps():
+                self.pump.last_error = (3, f"{op}: target {self._fmt(target_steps)} outside the "
+                                           f"barrel, 0-{self._fmt(self.pump.max_steps())}")
                 return False
             if not self.pump.initialized and not self.pump.initialize(sim_return=sim_return):
                 return False
@@ -394,11 +406,11 @@ class Pump:
                     return False
             if self.pump.valve_port() != port and not self.pump.valve_to(port, sim_return=sim_return):
                 return False
-            ok = self.pump.move_to_steps(self._ul_to_steps(target_ul), sim_return=sim_return)
+            ok = self.pump.move_to_steps(target_steps, sim_return=sim_return)
             return ok
         finally:
             rec = {"op": op, "port": port, "name": self.name_of(port),
-                   "target_ul": round(target_ul, 3), "seconds": round(time.monotonic() - t0, 3),
+                   "target_ul": round(self._steps_to_ul(target_steps), 3), "seconds": round(time.monotonic() - t0, 3),
                    "ok": ok, "error": None if ok else self.pump.last_error[1]}
             self._last_op = rec
             self._op_log.append(rec)
@@ -446,17 +458,19 @@ class Pump:
     def aspirate(self, volume_ul: float, port: PortRef = None, speed=None,
                  sim_return: bool = True, **_) -> bool:
         """Draw ``volume_ul`` in through ``port`` (default: the single
-        outlet). Refuses if the barrel would overflow."""
+        outlet): the plunger moves ``volume_ul``'s whole steps further.
+        Refuses if the barrel would overflow."""
         p = self._resolve(port)
-        held = self.volume()
+        held = self.pump.position_steps()
         if held is None:
             self.pump.last_error = (-1, "aspirate: pump unreachable")
             return False
-        if held + volume_ul > self._syringe_ul + 1e-6:
-            self.pump.last_error = (3, f"aspirate {volume_ul:.1f} µL would overflow: holding "
-                                       f"{held:.1f} of {self._syringe_ul:.0f} µL")
+        n = self._ul_to_steps(volume_ul)
+        if held + n > self.pump.max_steps():
+            self.pump.last_error = (3, f"aspirate {float(volume_ul):.3f} µL ({n} steps) would overflow: "
+                                       f"holding {self._fmt(held)} of {self._fmt(self.pump.max_steps())}")
             return False
-        if not self._stroke("aspirate", held + float(volume_ul), p, speed, sim_return):
+        if not self._stroke("aspirate", held + n, p, speed, sim_return):
             return False
         if not self._ports[p]["outlet"]:
             self._material_in_barrel = self.name_of(p)
@@ -465,16 +479,21 @@ class Pump:
     def dispense(self, volume_ul: float, port: PortRef = None, speed=None,
                  sim_return: bool = True, **_) -> bool:
         """Push ``volume_ul`` out through ``port`` (default: the single
-        outlet). Refuses if the barrel holds less."""
+        outlet): the plunger moves ``volume_ul``'s whole steps back — the
+        same count a draw of ``volume_ul`` moved it, so a draw and a
+        dispense of one volume always balance. Refuses if the barrel
+        holds less."""
         p = self._resolve(port)
-        held = self.volume()
+        held = self.pump.position_steps()
         if held is None:
             self.pump.last_error = (-1, "dispense: pump unreachable")
             return False
-        if volume_ul > held + 1e-6:
-            self.pump.last_error = (3, f"dispense {volume_ul:.1f} µL but barrel holds {held:.1f}")
+        n = self._ul_to_steps(volume_ul)
+        if n > held:
+            self.pump.last_error = (3, f"dispense {float(volume_ul):.3f} µL ({n} steps) but the barrel "
+                                       f"holds {self._fmt(held)}")
             return False
-        if not self._stroke("dispense", held - float(volume_ul), p, speed, sim_return):
+        if not self._stroke("dispense", held - n, p, speed, sim_return):
             return False
         self._note_outlet(p)
         return True
@@ -486,7 +505,7 @@ class Pump:
         first move of a protocol."""
         p = self._resolve(port)
         before = self.volume()
-        if not self._stroke("move_to_volume", float(volume_ul), p, speed, sim_return):
+        if not self._stroke("move_to_volume", self._ul_to_steps(volume_ul), p, speed, sim_return):
             return False
         if before is not None and volume_ul > before and not self._ports[p]["outlet"]:
             self._material_in_barrel = self.name_of(p)
@@ -498,7 +517,7 @@ class Pump:
         """Plunger to 0 through ``port`` (default: the single outlet).
         Put the needle over waste first — the component can't know."""
         p = self._resolve(port)
-        if not self._stroke("empty", 0.0, p, speed, sim_return):
+        if not self._stroke("empty", 0, p, speed, sim_return):
             return False
         self._note_outlet(p)
         return True

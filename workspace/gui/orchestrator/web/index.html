@@ -1233,7 +1233,17 @@ function makeRenderer(opts, mountEl) {
           const prev = objectsByName.get(name);
           if (prev) {
             if (activeAnchors?.obj === prev) clearAnchors();
-            prev.traverse(o => { if (o.isMesh) pickableMeshes.delete(o); });
+            prev.traverse(o => {
+              if (!o.isMesh) return;
+              pickableMeshes.delete(o);
+              // The edge outline's material is this instance's own (the
+              // geometry is cached and shared — never disposed here). A
+              // project that creates and removes a component per item
+              // (apc: one disc per cycle, thousands per run) would
+              // otherwise keep one dead material per mesh per item.
+              const el = o.userData.__edgeLines;
+              if (el) { o.remove(el); el.material.dispose(); o.userData.__edgeLines = null; }
+            });
             scene.remove(prev);
             objectsByName.delete(name);
           }

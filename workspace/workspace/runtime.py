@@ -1,6 +1,7 @@
 # workspace/runtime.py
 from __future__ import annotations
 
+from collections import deque
 import csv
 import io
 import json
@@ -166,8 +167,16 @@ class Runtime:
         # the final 100% emission landing reliably in the operator UI.
         self.on_step: Optional[Callable[[list, int], None]] = None
 
-        # workflow step tracking
-        self._steps: list = []  # list of step labels (timeline)
+        # workflow step tracking — the timeline is the LAST STEP_MAX
+        # entries, by construction; a tab that connects gets that tail
+        # once (step_info) and ONE ENTRY per step after (on_step), never
+        # the list again. Unbounded and shipped whole on every step, a
+        # 2800-disc apc run reached ~33 000 entries, ~3 MB per step to
+        # each tab every second or two plus a 33 000-card redraw — the
+        # tab's main thread starved and the 3D view "froze" after a few
+        # hours. The total keeps counting past the tail.
+        self._steps: deque = deque(maxlen=self.STEP_MAX)
+        self._steps_total: int = 0
         self._progress: int = -1  # -1 = no progress, 0-100 = percentage
 
         # Per-RUN timing (Unix seconds). ``run_started_at`` is set the
@@ -320,12 +329,11 @@ class Runtime:
             print(f"[STEP][progress] {val}%")
             with self._lock:
                 self._progress = val
-                steps_snapshot = list(self._steps)
-                progress_snapshot = self._progress
+                total_snapshot = self._steps_total
             cb = self.on_step
             if cb is not None:
                 try:
-                    cb(steps_snapshot, progress_snapshot)
+                    cb(None, val, total_snapshot)       # a progress tick: no new entry
                 except Exception:
                     pass
             return
@@ -333,13 +341,18 @@ class Runtime:
         print(f"[STEP][{level}] {label}")
         entry = {"label": str(label), "level": level}
         with self._lock:
-            self._steps.append(entry)
-            steps_snapshot = list(self._steps)
+            self._steps.append(entry)          # the deque drops the oldest past STEP_MAX
+            self._steps_total += 1
             progress_snapshot = self._progress
+            total_snapshot = self._steps_total
+        # on_step(entry, progress, total) — the ONE new entry (None on a
+        # progress tick), the current progress and the running total. The
+        # timeline itself is never handed over here; step_info is the
+        # snapshot a newcomer reads once.
         cb = self.on_step
         if cb is not None:
             try:
-                cb(steps_snapshot, progress_snapshot)
+                cb(dict(entry), progress_snapshot, total_snapshot)
             except Exception:
                 pass
 
@@ -348,10 +361,15 @@ class Runtime:
         with self._lock:
             if not self._steps and self._progress < 0:
                 return None
-            d = {"steps": list(self._steps)}
+            d = {"steps": list(self._steps), "total": self._steps_total}
             if self._progress >= 0:
                 d["progress"] = self._progress
             return d
+
+    # ── Step timeline (rt.step) ─────────────────────────────────────
+    # How many steps the timeline keeps — the tail the dashboard shows;
+    # the count of all steps keeps climbing beside it (step_info "total").
+    STEP_MAX = 1000
 
     # ── Operator values (rt.op) ─────────────────────────────────────
     # Bounded by construction: a runaway project must not be able to
@@ -855,6 +873,7 @@ class Runtime:
 
     def _clear_steps(self) -> None:
         self._steps.clear()
+        self._steps_total = 0
         self._progress = -1
 
     # ---------------------------------------------------------------------
@@ -1005,6 +1024,7 @@ class Runtime:
     #
     #   replan()          operator, PAUSED only  -> {"phase": "opening"}
     #   replan_offer()    engine: the items      -> {"phase": "choose", "items"}
+    #                     or why there are none  -> {"phase": "unavailable", "why"}
     #   replan_choose()   operator: the choice   -> {"phase": "applying", ...}
     #   replan_done()     engine: applied        -> None (a step says what was done)
     #   replan_failed()   engine: refused        -> {"phase": "choose", "error"}
@@ -1066,12 +1086,15 @@ class Runtime:
         with self._lock:
             return None if self._replan is None else json.loads(json.dumps(self._replan, default=str))
 
-    def replan_offer(self, items) -> None:
-        """Engine: the items the operator may remove."""
+    def replan_offer(self, items, unavailable: Optional[str] = None) -> None:
+        """Engine: the items the operator may remove — or, when the run
+        cannot take items out at all, why (the dialog says so; Cancel or
+        Resume closes it)."""
         with self._lock:
             if self._replan is None or self._replan.get("phase") != "opening":
                 return
-            self._replan = {"phase": "choose", "items": list(items)}
+            self._replan = ({"phase": "unavailable", "why": str(unavailable)} if unavailable
+                            else {"phase": "choose", "items": list(items)})
             self._push_status()
 
     def replan_choose(self, items, reason: str = "") -> None:

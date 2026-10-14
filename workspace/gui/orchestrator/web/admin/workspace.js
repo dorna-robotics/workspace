@@ -9,7 +9,7 @@
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
 import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
@@ -214,9 +214,12 @@ function mountParams(host, schema, values, frozen, wsName) {
 
   renderKwargsForm(form, schema, values, frozen, wsName);
 
-  if (frozen || !Object.keys(schema).length) {
+  // The same buttons whether or not the project declares parameters:
+  // with none, Set & Launch is how the run is launched (on the pendant,
+  // the only way).
+  if (frozen) {
     foot.innerHTML = host.cancel === false
-      ? `<div class="kwargs-empty">${frozen ? "The run is using these values." : "This project declares no parameters."}</div>`
+      ? `<div class="kwargs-empty">The run is using these values.</div>`
       : `<button class="btn" id="${host.id}Cancel">Close</button>`;
     if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
     return;
@@ -570,6 +573,11 @@ function updateStatusUI(st) {
 }
 
 let _prevStepCount = 0;
+// The timeline's tail as this tab knows it — Runtime.STEP_MAX entries at
+// most, the same cap the runtime keeps — and the run's step total.
+const STEP_TAIL_MAX = 1000;
+let _stepsTail = [];
+let _stepsTotal = 0;
 let _prevStepRunning = false;
 // Steps start collapsed — auto-expands when the first step arrives.
 // Matches the empty-by-default behaviour for Devices below.
@@ -608,6 +616,10 @@ function connectWs(runtimeUrl) {
   _muxWsClosed = false;
   _muxWsRetryMs = 1000;
   _devices.clear();
+  _devicesKnown = false;            // a new runtime: nothing reported yet
+  _opActionsKnown = false;
+  renderDevicesPanel();
+  renderOperatorActionsPanel();
   _tryMuxWs();
   // HTTP seed for the devices map — defensive. The mux WS sends a
   // devices_snapshot envelope on open, but the seed lands faster when
@@ -617,6 +629,7 @@ function connectWs(runtimeUrl) {
     .then(r => r.ok ? r.json() : null)
     .then(payload => {
       if (!payload || !Array.isArray(payload.devices)) return;
+      _devicesKnown = true;
       for (const d of payload.devices) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
       renderDevicesPanel();
     })
@@ -651,6 +664,10 @@ function disconnectWs() {
   _muxWsAlive = false;
   if (_muxWs) { try { _muxWs.close(); } catch {} _muxWs = null; }
   _muxWsUrl = "";
+  _devicesKnown = false;            // no runtime: the lists say so, not "none"
+  _opActionsKnown = false;
+  renderDevicesPanel();
+  renderOperatorActionsPanel();
 }
 
 
@@ -783,7 +800,7 @@ function buildHmi(spec) {
   _hmiInstances = [];
   host.innerHTML = "";
   const widgets = (spec && spec.widgets) || [];
-  if (!widgets.length) { host.style.display = "none"; return; }
+  if (!widgets.length) { _applyPendantTab(); return; }
   // Stats sit together in a row; everything else stacks in order.
   let statRow = null;
   for (const w of widgets) {
@@ -808,8 +825,9 @@ function buildHmi(spec) {
     else inst.update(inst.platform ? undefined : _opValues[inst.bind],
                      inst.detailBind ? _opValues[inst.detailBind] : undefined);
   }
-  host.style.display = _hmiInstances.length ? "" : "none";
   _hmiBuilt = true;
+  // What the Main pane holds changed; whether it SHOWS is the tab's call.
+  _applyPendantTab();
 }
 
 
@@ -840,7 +858,12 @@ async function mountProjectPendant(spec) {
   const el = $("pendantHmi");
   if (!el || !spec || !spec.src) return;
   el.innerHTML = "";
-  el.style.display = "";
+  // Visibility is NOT set here. _applyPendantTab is the one place that
+  // decides which pane shows, from the active tab and the run state;
+  // revealing the host directly put the Main pane on screen under the
+  // Devices tab the operator had switched to while the run came up
+  // (bench, 2026-10-09). The mount changes what the pane holds and
+  // asks the tab to re-apply below.
   // A project screen gets the pane as a blank: the host becomes a plain
   // block the width of the pane that fills its height and imposes no
   // layout — no width cap, no column, no gap, no centring. The screen
@@ -913,8 +936,10 @@ async function mountProjectPendant(spec) {
     shadow.appendChild(note);
   }
   // The screen's say over the frame is known now — apply it at once, not
-  // on the next status tick.
+  // on the next status tick — and the pane shows only if its tab is the
+  // active one.
   updatePendantUI();
+  _applyPendantTab();
 }
 
 function applyProjectHmiValues() {
@@ -1044,8 +1069,20 @@ function _dispatchMuxMessage(env) {
   switch (env.type) {
     case "step_state": {
       const running = isRunning(_lastState);
-      if (Array.isArray(payload.steps) && payload.steps.length) {
-        renderStep({ steps: payload.steps }, running);
+      // Two shapes (runtime_server._step_event): a SNAPSHOT — ``steps``,
+      // the last Runtime.STEP_MAX entries, sent once when this tab
+      // connected — and a DELTA — ``append``, the one new entry — on
+      // every step. The tail lives here and is drawn incrementally; a
+      // run of any length costs one card per step.
+      if (Array.isArray(payload.steps)) {
+        _stepsTail = payload.steps.slice(-STEP_TAIL_MAX);
+        _stepsTotal = Number.isFinite(payload.total) ? payload.total : _stepsTail.length;
+        if (_stepsTail.length) renderStep({ steps: _stepsTail, total: _stepsTotal }, running);
+      } else if (payload.append) {
+        _stepsTail.push(payload.append);
+        if (_stepsTail.length > STEP_TAIL_MAX) _stepsTail.shift();
+        _stepsTotal = Number.isFinite(payload.total) ? payload.total : _stepsTotal + 1;
+        appendStep(payload.append, _stepsTotal, running);
       }
       // Apply the progress snapshot whenever the runtime emits one.
       // Same comment as the legacy /ws/steps handler.
@@ -1095,6 +1132,7 @@ function _dispatchMuxMessage(env) {
     }
     case "devices_snapshot": {
       const arr = Array.isArray(payload.devices) ? payload.devices : [];
+      _devicesKnown = true;
       _devices.clear();
       for (const d of arr) {
         if (d && d.id) { _devices.set(d.id, d); downEdge(_devicesSettled, d); }
@@ -1104,6 +1142,7 @@ function _dispatchMuxMessage(env) {
     }
     case "operator_actions": {
       _opActions = Array.isArray(payload.actions) ? payload.actions : [];
+      _opActionsKnown = true;
       renderOperatorActionsPanel();
       updateOperatorActionsGate(_lastState);
       break;
@@ -1128,6 +1167,11 @@ function _dispatchMuxMessage(env) {
 // ── Devices panel (project-scoped) ───────────────────────────────────
 let _devicesUrl = "";   // base http URL, used for recover POST
 const _devices = new Map();   // id → snapshot
+// Has the runtime REPORTED its devices yet? false from connect until the
+// first snapshot (WS or HTTP seed): the panel then shows a loading
+// placeholder, not "none" — loading and empty are two states
+// (design-system §8). Same flag for the operator controls below.
+let _devicesKnown = false;
 const _devicesSettled = new Map();   // id → last settled state (api.js downEdge)
 // Devices we just clicked Recover on. Holds id → {note, until} so the
 // row keeps showing "Recovering…" until the device reports a non-recovering
@@ -1155,6 +1199,16 @@ async function _confirmRecover(deviceId) {
 // event when nothing visible actually changed.
 let _devicesListLastHtml = null;
 
+// What a list shows before its runtime has reported: nothing to wait
+// for when no runtime is connected (a sentence), shimmer rows while one
+// is — the file browser's placeholder, the same rhythm as the rows to
+// come. Never an empty card.
+function _pendingListHtml(what) {
+  if (!_muxWsUrl) return `<div class="step-empty">Not running</div>`;
+  return `<div class="skel-rows" role="status" aria-busy="true" aria-label="Loading ${escHtml(what)}">` +
+         `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>`;
+}
+
 function renderDevicesPanel() {
   const el = $("devicesList");
   const badge = $("devicesCountBadge");
@@ -1162,10 +1216,15 @@ function renderDevicesPanel() {
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
   if (!list.length) {
-    const emptyHtml = `<div class="step-empty">No devices declared</div>`;
+    const emptyHtml = _devicesKnown ? `<div class="step-empty">No devices declared</div>`
+                                    : _pendingListHtml("devices");
     if (_devicesListLastHtml !== emptyHtml) {
       el.innerHTML = emptyHtml;
       _devicesListLastHtml = emptyHtml;
+      const pList = $("pendantDevicesList");
+      if (pList) pList.innerHTML = emptyHtml;
+      const pMeta = $("pdDevMeta");
+      if (pMeta) pMeta.textContent = "";
     }
     return;
   }
@@ -1556,6 +1615,9 @@ function replanControl() {
   // The label never changes; while a Replan is open the button just
   // reopens its dialog.
   if (_replan) return { label: "Replan", disabled: false, title: "Open the Replan dialog" };
+  // Booting: nothing to replan yet — the runtime is not up (api.js
+  // isBooting; the sidebar draws no Replan at all in this state).
+  if (isBooting(_lastState)) return { label: "Replan", disabled: true, title: "Starting…" };
   return { label: "Replan", disabled: !_replanAvail.ok,
            title: _replanAvail.ok ? "Remove items from the run, then replan"
                                   : `Replan: ${_replanAvail.why || "not available"}` };
@@ -1567,6 +1629,10 @@ function setReplan(rp) {
   if (!rp) {
     ov.classList.remove("show");
     _replanShownFor = null;
+    return;
+  }
+  if (rp.phase === "unavailable") {
+    if (_replanShownFor !== "unavailable") { _replanShownFor = "unavailable"; openReplanModal(true); }
     return;
   }
   if (rp.phase === "choose" || rp.phase === "applying") {
@@ -1665,9 +1731,32 @@ async function _mountReplanView() {
   }
 }
 
+// A run that cannot take items out (the project declares no
+// item_components — bt-framework-guide §8.6): the dialog says why, and
+// Cancel is its only button.
+function _rpUnavailable(why) {
+  const none = why != null;
+  for (const id of ["rpBar", "btnReplanGo"]) $(id).hidden = none;
+  if (!none) return;
+  _rpView = null;
+  _rpShowView(false);
+  $("rpSearch").hidden = true;
+  $("rpStepChoose").hidden = false; $("rpStepChoose").inert = false;
+  $("rpStepConfirm").hidden = true;
+  $("rpList").innerHTML = `<div class="rp-none"><b>No replan available</b><span>${escHtml(why.charAt(0).toUpperCase() + why.slice(1))}.</span></div>`;
+  $("rpState").textContent = "";
+  $("btnReplanCancel").disabled = false;
+}
+
 async function openReplanModal(fresh) {
+  if (_replan?.phase === "unavailable") {
+    _rpUnavailable(_replan.why || "this run cannot take items out");
+    $("replanModalOverlay").classList.add("show");
+    return;
+  }
   if (!["choose", "applying"].includes(_replan?.phase)) return;
   if (fresh) {
+    _rpUnavailable(null);
     _rpSel.clear(); _rpOpen.clear();
     $("rpSearch").value = ""; $("rpReason").value = "";
     $("rpCleared").checked = false;
@@ -1905,6 +1994,7 @@ $("btnReplanClose").addEventListener("click", () => $("replanModalOverlay").clas
 // a single ws.send() with no HTTP handshake, so the round-trip is
 // sub-millisecond on the LAN.
 let _opActions = [];              // [{component, label, method}, ...]
+let _opActionsKnown = false;      // the runtime has sent operator_actions at least once
 let _opActionsExpanded = false;   // sidebar section collapsed by default
 
 function _opActionsHtml(disabled) {
@@ -1944,7 +2034,10 @@ function _opActionsHtml(disabled) {
   const opIcon = (name) => (name && OP_ICONS[name])
     ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`
     : "";
-  if (!groups.size) return `<div class="step-empty">No operator actions declared</div>`;
+  if (!groups.size) {
+    return _opActionsKnown ? `<div class="step-empty">No operator controls declared</div>`
+                           : _pendingListHtml("operator controls");
+  }
   const rows = [];
   for (const [component, actions] of groups) {
     // Partition into rows: consecutive actions sharing a declared
@@ -1996,7 +2089,7 @@ function renderOperatorActionsPanel() {
   const pendantBtn = $("pendantOpActions");
   if (pendantBtn) {
     pendantBtn.disabled = !_opActions.length;
-    pendantBtn.title = _opActions.length ? "" : "No operator actions for this workspace";
+    pendantBtn.title = _opActions.length ? "" : "No operator controls for this workspace";
   }
   const modalBody = $("opActionsModalBody");
   if (modalBody) modalBody.innerHTML = html;
@@ -2099,11 +2192,20 @@ function renderStep(step, running) {
     return;
   }
 
-  if (badge) badge.textContent = `${steps.length}`;
+  // ``steps`` is the timeline's TAIL (the runtime keeps its last
+  // Runtime.STEP_MAX); ``total`` counts every step of the run. The badge
+  // and the "did anything change" check follow the total — a full tail
+  // keeps its length while its contents move on.
+  const total = Number.isFinite(step?.total) ? step.total : steps.length;
+  // A snapshot (a connect, a status push) is the page's tail from here on;
+  // the deltas that follow append to it.
+  _stepsTail = steps.slice(-STEP_TAIL_MAX);
+  _stepsTotal = total;
+  if (badge) badge.textContent = `${total}`;
 
-  // Only rebuild if step count or running state changed
-  if (steps.length === _prevStepCount && running === _prevStepRunning) return;
-  _prevStepCount = steps.length;
+  // Only rebuild if the step count or the running state changed
+  if (total === _prevStepCount && running === _prevStepRunning) return;
+  _prevStepCount = total;
   _prevStepRunning = running;
 
   // Auto-expand when first step arrives
@@ -2114,20 +2216,23 @@ function renderStep(step, running) {
     if (chev) chev.classList.add("open");
   }
 
-  el.innerHTML = steps.map((s, i) => {
-    // Support both new {label, level} objects and legacy plain strings
-    const label = typeof s === "string" ? s : (s.label || "");
-    const level = (typeof s === "object" && s.level) ? s.level : "info";
-    const isLast = i === steps.length - 1;
-    const cls = (isLast && running) ? "active" : "done";
-    return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
-  }).join("");
+  el.innerHTML = steps.map((s, i) =>
+    stepCardHtml(s, (i === steps.length - 1 && running) ? "active" : "done")).join("");
 
   // Auto-scroll to latest
   el.scrollTop = el.scrollHeight;
+  noteLastStep(steps[steps.length - 1]);
+}
 
-  // Track last step for pendant display
-  const lastStep = steps[steps.length - 1];
+// One timeline card. Supports both {label, level} objects and legacy plain strings.
+function stepCardHtml(s, cls) {
+  const label = typeof s === "string" ? s : (s.label || "");
+  const level = (typeof s === "object" && s.level) ? s.level : "info";
+  return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
+}
+
+// Track the last step for the pendant and the banners.
+function noteLastStep(lastStep) {
   const lastLevel = (typeof lastStep === "object" && lastStep.level) ? lastStep.level : "info";
   const lastLabel = typeof lastStep === "string" ? lastStep : (lastStep.label || "");
   _lastStepLabel = lastLabel;
@@ -2140,25 +2245,44 @@ function renderStep(step, running) {
   }
 }
 
+// A step DELTA: one card appended, the previous one settled, the oldest
+// dropped past the tail — never a rebuild. A tab whose list is not drawn
+// yet (first step, or the snapshot never came) draws the tail it holds.
+function appendStep(entry, total, running) {
+  const section = $("stepSection");
+  const el = $("stepTimeline");
+  const badge = $("stepCountBadge");
+  if (!section || !el) return;
+  if (!el.querySelector(".step-card")) {
+    renderStep({ steps: _stepsTail, total }, running);
+    return;
+  }
+  const prev = el.lastElementChild;
+  if (prev && prev.classList.contains("active")) {
+    prev.classList.remove("active"); prev.classList.add("done");
+  }
+  el.insertAdjacentHTML("beforeend", stepCardHtml(entry, running ? "active" : "done"));
+  while (el.querySelectorAll(".step-card").length > STEP_TAIL_MAX) el.firstElementChild.remove();
+  if (badge) badge.textContent = `${total}`;
+  _prevStepCount = total;
+  _prevStepRunning = running;
+  el.scrollTop = el.scrollHeight;
+  noteLastStep(entry);
+}
+
 let _lastBannerMsg = "";
 let _lastStepLabel = "";
 let _lastStepLevel = "info";
 
 function _showBanner(msg, level) {
-  // Main banner
+  // Main banner — the text and level; whether it SHOWS is _layoutBanner's
+  // call (one banner per page: the pendant has its own strip).
   const banner = $("alarmBanner");
   const text = $("alarmText");
   if (banner && text) {
     text.textContent = msg;
-    banner.style.display = "";
     banner.setAttribute("data-level", level);
-    // Push page and pendant overlay down so banner doesn't cover them
-    const h = banner.offsetHeight;
-    document.body.style.paddingTop = h + "px";
-    const overlay = $("pendantOverlay");
-    if (overlay) overlay.style.top = h + "px";
-    const exitBtn = $("pendantExit");
-    if (exitBtn) exitBtn.style.top = (h + 16) + "px";
+    banner.setAttribute("data-active", "1");
   }
   // Pendant banner
   const pAlarm = $("pendantAlarm");
@@ -2168,6 +2292,7 @@ function _showBanner(msg, level) {
     pAlarm.style.display = "";
     pAlarm.setAttribute("data-level", level);
   }
+  _layoutBanner();
   // Audio + notification for errors only
   if (level === "error") {
     feedback.alarm();
@@ -2175,16 +2300,32 @@ function _showBanner(msg, level) {
   }
 }
 
+// ONE alarm line per page. The page-top banner is for the desktop
+// pages; in pendant mode the pendant's own strip under its nav carries
+// the same line, and the top banner stays hidden — both were showing,
+// one above the other (bench, 2026-10-08). Called whenever the banner
+// or the mode changes; it also keeps the page and the pendant overlay
+// pushed down by exactly the banner that is visible.
+function _layoutBanner() {
+  const banner = $("alarmBanner");
+  if (!banner) return;
+  const overlay = $("pendantOverlay");
+  const inPendant = !!(overlay && overlay.style.display !== "none");
+  const show = banner.getAttribute("data-active") === "1" && !inPendant;
+  banner.style.display = show ? "" : "none";
+  const h = show ? banner.offsetHeight : 0;
+  document.body.style.paddingTop = h ? h + "px" : "";
+  if (overlay) overlay.style.top = h ? h + "px" : "";
+  const exitBtn = $("pendantExit");
+  if (exitBtn) exitBtn.style.top = h ? (h + 16) + "px" : "";
+}
+
 function _hideBanner() {
   const banner = $("alarmBanner");
-  if (banner) banner.style.display = "none";
-  document.body.style.paddingTop = "";
-  const overlay = $("pendantOverlay");
-  if (overlay) overlay.style.top = "";
-  const exitBtn = $("pendantExit");
-  if (exitBtn) exitBtn.style.top = "";
+  if (banner) banner.setAttribute("data-active", "0");
   const pAlarm = $("pendantAlarm");
   if (pAlarm) pAlarm.style.display = "none";
+  _layoutBanner();
 }
 
 function _alarmNotify(msg) {
@@ -2266,7 +2407,7 @@ function renderControls(state, launched, running) {
 
   if (!launched) {
     addBtn("Launch", "launch", { primary: true });
-  } else if (s === "LAUNCHED_NOT_READY") {
+  } else if (isBooting(s)) {
     const lbl = document.createElement("span");
     lbl.className = "ctrl-starting";
     lbl.textContent = "Starting…";
@@ -2284,7 +2425,7 @@ function renderControls(state, launched, running) {
     // The slot's *meaning* is "begin or continue the run", and
     // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    addBtn(startLabel, "start", { primary: true, disabled: active });
+    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) });
     addBtn("Pause",    "pause", { disabled: !active });
     // Park only makes sense when the workflow is actually in flight.
     // Before Start the runtime is IDLE — clicking Park there would
@@ -2330,7 +2471,7 @@ function renderControls(state, launched, running) {
 
 function updateIframe(state, launched) {
   if (!wsInfo) return;
-  const ready = launched && (state || "").toUpperCase() !== "LAUNCHED_NOT_READY";
+  const ready = launched && !isBooting(state);
   if (!ready) {
     if (iframeReady) {
       iframeReady = false;
@@ -2743,6 +2884,11 @@ function _positionPendant3d() {
   area.style.height = r.height + "px";
 }
 
+// THE ONE PLACE pane visibility is decided: the tab strip and the four
+// panes (run setup, the project's screen, the 3D view, Devices) always
+// agree because nothing else writes their display. Whatever changes
+// what a pane holds — a screen mounting, the fallback widgets, a launch
+// — calls this afterwards instead of showing the pane itself.
 function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
@@ -2813,6 +2959,7 @@ function applyPendantRenderState() {
 function togglePendant(on) {
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
+  _layoutBanner();            // the page-top banner shows only outside pendant mode
   _applyPendantTab();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
@@ -2911,9 +3058,28 @@ function updatePendantUI() {
     if (timeline && launched) {
       const cards = timeline.querySelectorAll(".step-card");
       const existing = pendantStepsEl.children;
-      if (cards.length !== existing.length) {
-        // Count changed — rebuild from scratch (cheap because
-        // ``cards`` is a finite list, not a per-tick recomputation).
+      const text = (card) => card.querySelector(".step-text")?.textContent || "";
+      const own  = (card) => card.lastElementChild?.textContent || "";
+      const cardHtml = (card) => {
+        const level = card.dataset.level || "info";
+        const cls   = card.classList.contains("active") ? "active" : "done";
+        return `<div class="pendant-step-card ${cls}" data-level="${level}"><span class="pendant-step-dot"></span><span>${text(card)}</span></div>`;
+      };
+      // One step arrived (the dashboard appended a card, and may have
+      // dropped its oldest past the tail): mirror it with one append
+      // and at most one removal — never a rebuild of the rail.
+      const appended = cards.length === existing.length + 1 && existing.length > 0
+        && own(existing[0]) === text(cards[0]);
+      const shifted  = cards.length === existing.length && existing.length > 1
+        && own(existing[1]) === text(cards[0]) && own(existing[0]) !== text(cards[0]);
+      if (appended || shifted) {
+        if (shifted) existing[0].remove();
+        const last = existing[existing.length - 1];
+        if (last && last.classList.contains("active")) { last.classList.remove("active"); last.classList.add("done"); }
+        pendantStepsEl.insertAdjacentHTML("beforeend", cardHtml(cards[cards.length - 1]));
+        pendantStepsEl.scrollTop = pendantStepsEl.scrollHeight;
+      } else if (cards.length !== existing.length) {
+        // Count changed otherwise (a snapshot, a cleared list) — rebuild.
         let html = "";
         cards.forEach(card => {
           const text  = card.querySelector(".step-text")?.textContent || "";
@@ -3044,10 +3210,13 @@ function updatePendantUI() {
   // Start keeps its slot whatever the state — an operator learns where
   // the button IS. Not launched yet simply means disabled, like Pause
   // and Park are when there is nothing to pause or park; the Main tab
-  // is where a run gets launched.
-  $("pendantStart").disabled   = !launched || active;
-  $("pendantStart").title      = launched ? ""
-    : "Set the run parameters on the Main tab, then Set & Launch";
+  // is where a run gets launched. Booting (LAUNCHED_NOT_READY) is
+  // disabled too — api.js canStart, the same rule as the sidebar and
+  // the dashboard card, so the pendant can never offer Start mid-boot.
+  $("pendantStart").disabled   = !canStart(state);
+  $("pendantStart").title      = !launched
+    ? "Set the run parameters on the Main tab, then Set & Launch"
+    : isBooting(state) ? "Starting…" : "";
   $("pendantPause").disabled   = !active;
   // Park needs an in-flight workflow — see the sidebar comment above.
   $("pendantPark").disabled    = !active || parking;

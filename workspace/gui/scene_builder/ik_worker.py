@@ -45,9 +45,10 @@ def main(project_dir):
     sys.path.insert(0, project_dir)
     comp_dir = os.path.join(project_dir, "components")
     if os.path.isdir(comp_dir):
-        for mod in pkgutil.iter_modules([comp_dir]):
-            if not mod.name.startswith("_"):
-                importlib.import_module(f"components.{mod.name}")
+        # the canonical main.py's walk: into each component's folder
+        for mod in pkgutil.walk_packages([comp_dir], prefix="components."):
+            if not mod.name.rsplit(".", 1)[-1].startswith("_"):
+                importlib.import_module(mod.name)
 
     with open(os.path.join(project_dir, "launch.yaml")) as f:
         launch = yaml.safe_load(f) or {}

@@ -367,7 +367,8 @@ class BTEngine:
         (never ticks). Returns False only when the engine must abort
         (a rebuild failed).
 
-        1. ``opening`` -> offer the items (launcher callback).
+        1. ``opening`` -> offer the items (launcher callback) — or, when
+           it refuses with a ValueError, say why this run has no Replan.
         2. A choice arrived -> it is applied only when EVERY worker in
            flight stands at a checkpoint (Runtime.paused_workers): no
            robot command of any of them is on the wire. Until then the
@@ -389,13 +390,15 @@ class BTEngine:
         if not info:
             return True
         if info.get("phase") == "opening":
-            items = []
+            items, unavailable = [], None
             if self._replan_items is not None:
                 try:
                     items = list(self._replan_items())
+                except ValueError as ex:          # this run has no Replan — why
+                    unavailable = str(ex)
                 except Exception:
                     log.exception("BTEngine: replan_items raised — offering none")
-            self._runtime_call("replan_offer", items)
+            self._runtime_call("replan_offer", items, unavailable)
             return True
         choice = self._runtime_call("replan_take")
         if choice is None:
