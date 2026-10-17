@@ -292,7 +292,7 @@ class Orchestrator:
         ws._log_f = log_f
         ws._log_thread = Thread(
             target=_log_pump,
-            args=(ws.process, log_f),
+            args=(ws.process, log_f, ws.run_log_dir),
             name=f"log-pump-{ws.name}",
             daemon=True,
         )

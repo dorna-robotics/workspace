@@ -23,6 +23,8 @@ Module-level helpers here are intentionally small and stdlib-only:
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -68,9 +70,80 @@ def _truncate_log_if_needed(path: str, max_bytes: int) -> None:
         pass
 
 
-def _log_pump(process: subprocess.Popen, log_f) -> None:
+# ── Per-run logs: log/<run stamp>/workspace.log + steps.log ───────────
+# The runtime announces each run in its console — "[run] start <stamp>"
+# when it begins, "[run] end <stamp> (<state>)" when it ends; the stamp is
+# the run's records folder's name (Runtime.run_stamp). The pump below
+# copies every console line of the run into log/<stamp>/workspace.log and
+# every step line ("[STEP][level] ...", progress ticks left out) into
+# log/<stamp>/steps.log, both timestamped exactly as log/workspace.log.
+# Only the newest RUN_LOGS_KEEP run folders are kept.
+RUN_LOGS_KEEP = 100
+_RUN_START = re.compile(r"^\[run\] start (\S+)\s*$")
+_RUN_END = re.compile(r"^\[run\] end ")
+_RUN_DIR = re.compile(r"^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d(_\d+)?$")
+
+
+class _RunLog:
+    """The open run's two files, or none. Never raises into the pump."""
+
+    def __init__(self, log_dir: Optional[str]):
+        self.log_dir = log_dir
+        self.files = None              # (workspace.log, steps.log) while a run is open
+
+    def line(self, raw: str, stamped: str) -> None:
+        m = _RUN_START.match(raw)
+        if m:
+            self._open(m.group(1))
+        if self.files is not None:
+            self.files[0].write(stamped)
+            if raw.startswith("[STEP][") and not raw.startswith("[STEP][progress]"):
+                self.files[1].write(stamped)
+        if _RUN_END.match(raw):
+            self.close()
+
+    def _open(self, stamp: str) -> None:
+        self.close()
+        if not self.log_dir or not _RUN_DIR.match(stamp):
+            return
+        try:
+            from workspace.project_dirs import hand_back
+            run_dir = os.path.join(self.log_dir, stamp)
+            fresh = not os.path.isdir(run_dir)
+            os.makedirs(run_dir, exist_ok=True)
+            files = tuple(open(os.path.join(run_dir, n), "a", buffering=1, encoding="utf-8")
+                          for n in ("workspace.log", "steps.log"))
+            if fresh:
+                for p in (run_dir, *(f.name for f in files)):
+                    hand_back(p)
+            self.files = files
+            self._prune()
+        except Exception:
+            self.files = None
+
+    def close(self) -> None:
+        for f in self.files or ():
+            try:
+                f.close()
+            except Exception:
+                pass
+        self.files = None
+
+    def _prune(self) -> None:
+        """Keep the newest RUN_LOGS_KEEP run folders — names sort by time."""
+        try:
+            runs = sorted(d for d in os.listdir(self.log_dir)
+                          if _RUN_DIR.match(d) and os.path.isdir(os.path.join(self.log_dir, d)))
+            for d in runs[:-RUN_LOGS_KEEP]:
+                shutil.rmtree(os.path.join(self.log_dir, d), ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _log_pump(process: subprocess.Popen, log_f, log_dir: Optional[str] = None) -> None:
     """Drain a Popen's merged stdout/stderr line-by-line, prepend a
-    wall-clock timestamp, write to ``log_f``.
+    wall-clock timestamp, write to ``log_f`` — and, while a run is open,
+    to that run's own files under ``log_dir`` (``_RunLog``).
 
     Must keep draining the pipe even if a single line raises during
     encode/format — letting the buffer fill (~64 KB on Linux) would
@@ -82,13 +155,16 @@ def _log_pump(process: subprocess.Popen, log_f) -> None:
     has closed its end of the pipe). The outer finally writes a
     sentinel and flushes so the file ends on a complete line.
     """
+    run = _RunLog(log_dir)
     try:
         out = process.stdout
         if out is None:
             return
         for line in out:
             try:
-                log_f.write(f"[{_now_str()}] {line}")
+                stamped = f"[{_now_str()}] {line}"
+                log_f.write(stamped)
+                run.line(line, stamped)
             except Exception:
                 # never let a single bad line kill the pump — the pipe
                 # MUST keep draining or the workspace will block.
@@ -101,6 +177,7 @@ def _log_pump(process: subprocess.Popen, log_f) -> None:
             log_f.flush()
         except Exception:
             pass
+        run.close()            # a run cut by the process ending keeps what it had
 
 
 def _free_port(port: int) -> None:
@@ -242,6 +319,9 @@ class WorkspaceInfo:
         # shared — it was /tmp once, but tmpfs loses the logs on every
         # reboot; machine-local state lives in gui.data_home now).
         self._log_dir: str = self._compute_log_dir(path_to_file)
+        # Per-run folders (log/<stamp>/) only in a PROJECT's own log/ — the
+        # shared fallback holds every bare-name workspace's console.
+        self.run_log_dir: Optional[str] = None if self._log_dir == FALLBACK_LOG_DIR else self._log_dir
         if self._log_dir == FALLBACK_LOG_DIR:
             self.log_path: str = os.path.join(self._log_dir, f"{name}.log")
         else:
