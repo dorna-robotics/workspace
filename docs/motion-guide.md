@@ -334,6 +334,17 @@ diverges). Reading the line:
   matters anyway: the Cartesian path is millimetres, so the firmware's
   per-joint caps on j5 govern the actual unscrew rate.
 
+**The decapper's three screw verbs.** `decap()` unscrews the whole
+`twist` (the cap's own, or the call's) and carries the cap off; its
+first `first_turn` degrees (360) run at `first_turn_scale` (0.5) × the
+lmove velocity — the cap breaks free of its seal slowly, then spins off
+at full speed, two lmoves with the grip held. `cap()` screws it back on.
+`loosen(twist=45)` breaks the seal and leaves the cap ON: grip, unscrew
+`twist` degrees at the slow 300, open the gripper, lift off (decap's
+`soft_approach` and `soft_exit` stages, explicit arguments) —
+the cap stays attached to its tube in the model, the tube stays in the
+jaws for the next step to pick out.
+
 ## 8. The exit
 
 * Standard pick/place: **one single-point group** — a straight lift to

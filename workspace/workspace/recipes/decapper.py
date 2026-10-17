@@ -72,10 +72,12 @@ class Decapper(Recipe):
         soft_exit=True,
         padding=None,
         gap=2,
-        lmove_vaj=[600, 2000, 8000],
+        lmove_vaj=[600, 1000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
         twist=None,
+        first_turn=360,
+        first_turn_scale=0.5,
         **kwargs,
     ):
         """Unscrew the cap off a tube sitting at ``anchor``.
@@ -93,6 +95,11 @@ class Decapper(Recipe):
             max_rotation: Maximum j5 swing per chunk (degrees).
             twist: Total rotation to unscrew (degrees). None (default)
                 uses the cap component's declared ``twist``.
+            first_turn, first_turn_scale: the first ``first_turn`` degrees
+                (360 — one turn) unscrew at ``first_turn_scale`` (0.5) x the
+                lmove velocity: the cap breaks free of its seal slowly, then
+                spins off at full speed. Two lmoves, the grip held through
+                both (``_screw_motion``). ``first_turn=0``: one speed.
         """
         self._wire_verb("decap", anchor)
         rt = self.rt
@@ -162,6 +169,8 @@ class Decapper(Recipe):
             jmove_vaj=jmove_vaj,
             j5_start=j5_start,
             rebite=not one_shot,
+            first_turn=first_turn,
+            first_turn_scale=first_turn_scale,
         )
 
         # exit (gripper stays ON — we're carrying the cap out). The
@@ -249,6 +258,149 @@ class Decapper(Recipe):
 
         return True
 
+    def loosen(
+        self,
+        anchor="place",
+        solid_name="body",
+        approach=True,
+        soft_approach=True,
+        exit=True,
+        soft_exit=True,
+        padding=None,
+        gap=2,
+        twist=45,
+        lmove_vaj=[300, 1000, 8000],
+        jmove_vaj=[500, 1000, 8000],
+        max_rotation=500,
+        **kwargs,
+    ):
+        """Loosen the cap of a tube sitting at ``anchor`` — break its seal,
+        but leave it ON: grip the cap, unscrew it ``twist`` degrees (rising
+        along the thread exactly as ``decap`` would), open the gripper and
+        lift off. The cap and the tube stay one piece, and the model keeps
+        the cap attached to its tube — nothing re-parents. A loosened cap
+        comes off easily later (e.g. after a shake in MeCl).
+
+        Everything but the end is ``decap``'s — the same approach, grip,
+        wrist staging and screw motion; the tube stays seated in the jaws,
+        for the next step to pick it out.
+
+        Args:
+            anchor, solid_name, approach, padding, gap: as ``decap``.
+            soft_approach: the final descent onto the cap as its own
+                straight leg (``pick_setting``'s rule).
+            exit: lift the open gripper ``padding + gap`` above the cap.
+            soft_exit: as ``decap``: the pull-off — up by ``gap`` + the
+                cap's height, the open fingers just clear of the cap — is
+                its own straight lmove before the free-air lift.
+                ``soft_exit=False``: one lift.
+            twist: degrees the cap is unscrewed (a loosening is 30-45;
+                under ``max_rotation``, one stroke of the wrist).
+            lmove_vaj: [vel, accel, jerk] for the twist — slow by default,
+                the same 300 as ``decap``'s first turn: a loosening IS
+                the breaking-free part.
+            jmove_vaj: [vel, accel, jerk] for the limited wrist's unwind.
+            max_rotation: as ``decap`` (the thread advances ``pitch`` mm
+                per ``max_rotation`` degrees).
+        """
+        self._wire_verb("loosen", anchor)
+        rt = self.rt
+        if not 0 < float(twist) < float(max_rotation):
+            raise RecipeError(f"loosen: twist {twist} deg must be above 0 and under max_rotation {max_rotation}")
+
+        motion_prm = self.pick_setting(
+            anchor=anchor,
+            solid_name=solid_name,
+            approach=approach,
+            soft_approach=soft_approach,
+            trigger_io=False,
+            exit=False,
+            attachment=False,
+            padding=padding,
+            gap=gap,
+            **kwargs,
+        )
+        if not motion_prm:
+            raise RecipeError("loosen failed — could not compute pick parameters")
+        if len(motion_prm["load_list"]) != 2:
+            raise RecipeError(f"loosen: no capped tube found in position {anchor}")
+        solid_cap = motion_prm["load_list"][1]
+        component_cap = self.workspace.components[solid_cap.component]
+        if component_cap.cap_type != "screw":
+            raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
+        height_cap = abs(
+            dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=solid_cap.pose("center"),
+                to_frame=solid_cap.pose("top"),
+            )[2]
+        )
+        tool = motion_prm["tool"]
+
+        # Wrist staging — decap's rule: the infinite wrist turns relative
+        # from where the approach leaves it; a limited one pre-rotates.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
+        j5_start = None if one_shot else max_rotation / 2
+        motion_prm["approach_j5"] = "keep" if one_shot else j5_start
+        if not self.touch(**motion_prm):
+            raise RecipeError("loosen failed — touch motion failed")
+
+        # The twist: decap's screw motion, cut short at ``twist`` — one
+        # stroke (twist < max_rotation), the gripper engaged by it.
+        last_J = self._screw_motion(
+            tool=tool,
+            pitch=component_cap.pitch,
+            total_twist=twist,
+            max_rotation=max_rotation,
+            direction=-1,
+            lmove_vaj=lmove_vaj,
+            jmove_vaj=jmove_vaj,
+            j5_start=j5_start,
+            rebite=not one_shot,
+        )
+
+        # Let go: the cap stays on the tube.
+        rt.checkpoint()
+        rt.output(config=tool.output_disable)
+        tool.output_state(0)
+
+        # Exit — decap's two stages, the gripper empty.
+        if exit and last_J is not None:
+            def _up(dz, what):
+                J, C = self.core.IK(
+                    target_solid=tool.assembly[next(iter(tool.assembly))],
+                    target_anchor="tcp",
+                    target_offset=[0, 0, -dz, 0, 0, 0],
+                    tool_solid=tool.assembly[next(iter(tool.assembly))],
+                    tool_anchor="tcp",
+                    tool_offset=[0, 0, 0, 0, 0, 0],
+                    base_distance=self.base_distance,
+                    rail_step=self.rail_step,
+                    rail_span=self.rail_span,
+                    ref_joints=self.ref_joints,
+                    left_approach=self.left_approach,
+                )
+                if C != 2:
+                    raise RecipeError(f"could not find valid joints for the loosen {what}")
+                J[5] = last_J[5]
+                return J
+
+            rt.checkpoint()
+            vaj = self.scaled_vaj(self.lmove_vaj)
+            if soft_exit:
+                # The pull-off: the open fingers straight up and clear of
+                # the cap — a discrete TRUE lmove every run, never fused.
+                J_gap = _up(gap + height_cap, "pull-off")
+                rt.lmove(joint=J_gap, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+            J = _up(self._padding(padding) + gap, "exit")
+            if one_shot and self.fuse:
+                self._tail_deposit_lift(rt, J, vaj, owner="Decapper.loosen lift")
+            else:
+                rt.lmove(joint=J, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
+            if not one_shot:
+                self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
+        return True
+
     def cap(
         self,
         anchor="place",
@@ -257,7 +409,7 @@ class Decapper(Recipe):
         exit=True,
         padding=None,
         gap=2,
-        lmove_vaj=[500, 1000, 8000],
+        lmove_vaj=[600, 1000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
         twist=None,

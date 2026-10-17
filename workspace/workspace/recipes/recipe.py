@@ -2080,7 +2080,8 @@ class Recipe:
         return height_load, height_container, height_tool, pose_offset, tool_body
 
     def _screw_motion(self, tool, pitch, total_twist, max_rotation, direction,
-                      lmove_vaj, jmove_vaj, j5_start=None, rebite=True):
+                      lmove_vaj, jmove_vaj, j5_start=None, rebite=True,
+                      first_turn=0, first_turn_scale=1.0):
         """Chunked screw/unscrew motion around the tool TCP's Z-axis.
 
         ``j5_start=None`` — RELATIVE mode: the screw runs from wherever
@@ -2120,6 +2121,15 @@ class Recipe:
             lmove_vaj: [vel, accel, jerk] for the screw lmoves.
             jmove_vaj: [vel, accel, jerk] for the rewind jmoves.
             j5_start: j5 value the robot rewinds to between chunks.
+            first_turn, first_turn_scale: the first ``first_turn`` degrees
+                run at ``first_turn_scale`` x the lmove velocity (accel
+                and jerk unchanged) — a cap breaking free of its seal
+                wants the slow start. One-shot: the helix is split at
+                ``first_turn`` into two lmoves, the grip held through
+                both, z and j5 continuous. Chunked: every chunk that
+                STARTS inside the first turn runs slow (no chunk is
+                split — a split would add a release and a re-bite).
+                0 (default): one speed throughout.
 
         Returns:
             The final joint vector reached (copy), or None if no chunks ran.
@@ -2158,6 +2168,16 @@ class Recipe:
             # so a single longer one is the same mechanism, not a new
             # assumption.
             chunks = [total_twist]
+            if 0 < int(first_turn) < total_twist:
+                chunks = [int(first_turn), total_twist - int(first_turn)]
+
+        # The velocity of each chunk: slow while it starts inside the first
+        # turn, the lmove velocity after.
+        vels, done_deg = [], 0
+        for chunk in chunks:
+            slow = int(first_turn) > 0 and done_deg < int(first_turn)
+            vels.append(lmove_vaj[0] * (float(first_turn_scale) if slow else 1.0))
+            done_deg += chunk
 
         # pre-solve joint list so any IK failure aborts before motion
         joint_list = []
@@ -2196,7 +2216,7 @@ class Recipe:
                 tool.output_state(1)
 
             rt.checkpoint()
-            rt.lmove(joint=joint_list[i], vel=lmove_vaj[0], accel=lmove_vaj[1], jerk=lmove_vaj[2])
+            rt.lmove(joint=joint_list[i], vel=vels[i], accel=lmove_vaj[1], jerk=lmove_vaj[2])
 
             if rebite and i < len(joint_list) - 1:
                 if tool.output_state() != 0:
