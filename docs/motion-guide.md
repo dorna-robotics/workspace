@@ -339,11 +339,13 @@ diverges). Reading the line:
 first `first_turn` degrees (360) run at `first_turn_scale` (0.5) × the
 lmove velocity — the cap breaks free of its seal slowly, then spins off
 at full speed, two lmoves with the grip held. `cap()` screws it back on.
-`loosen(twist=45)` breaks the seal and leaves the cap ON: grip, unscrew
-`twist` degrees at the slow 300, open the gripper, lift off (decap's
-`soft_approach` and `soft_exit` stages, explicit arguments) —
-the cap stays attached to its tube in the model, the tube stays in the
-jaws for the next step to pick out.
+`loosen(twist=45)` breaks the seal and leaves the cap ON: decap's
+approach and grip, `twist` degrees unscrewed at the slow 300, then
+**cap's own ending** (`_screw_end`, one code for both): `release=False`
+(the default for both) keeps the grip, opens the chuck jaws and carries
+the capped tube out; `release=True` lets go and lifts off empty, the
+tube left in the jaws.
+The cap stays attached to its tube in the model either way.
 
 ## 8. The exit
 

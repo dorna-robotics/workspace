@@ -265,35 +265,39 @@ class Decapper(Recipe):
         approach=True,
         soft_approach=True,
         exit=True,
-        soft_exit=True,
         padding=None,
         gap=2,
         twist=45,
         lmove_vaj=[300, 1000, 8000],
         jmove_vaj=[500, 1000, 8000],
         max_rotation=500,
+        release=False,
+        soft_exit=None,
         **kwargs,
     ):
         """Loosen the cap of a tube sitting at ``anchor`` — break its seal,
         but leave it ON: grip the cap, unscrew it ``twist`` degrees (rising
-        along the thread exactly as ``decap`` would), open the gripper and
-        lift off. The cap and the tube stay one piece, and the model keeps
-        the cap attached to its tube — nothing re-parents. A loosened cap
+        along the thread exactly as ``decap`` would), then END AS ``cap``
+        DOES (``_screw_end``, the same code): let go and lift off empty, or
+        — ``release=False`` — keep the grip, open the chuck jaws and carry
+        the capped tube out. The cap and the tube stay one piece either
+        way; the model keeps the cap attached to its tube. A loosened cap
         comes off easily later (e.g. after a shake in MeCl).
 
-        Everything but the end is ``decap``'s — the same approach, grip,
-        wrist staging and screw motion; the tube stays seated in the jaws,
-        for the next step to pick it out.
+        The approach, grip, wrist staging and screw motion are ``decap``'s.
 
         Args:
             anchor, solid_name, approach, padding, gap: as ``decap``.
             soft_approach: the final descent onto the cap as its own
                 straight leg (``pick_setting``'s rule).
-            exit: lift the open gripper ``padding + gap`` above the cap.
-            soft_exit: as ``decap``: the pull-off — up by ``gap`` + the
-                cap's height, the open fingers just clear of the cap — is
-                its own straight lmove before the free-air lift.
-                ``soft_exit=False``: one lift.
+            exit: the lift out — ``padding + gap``, plus the tube's full
+                height when carrying it (as ``cap``).
+            release: as ``cap``: False (default) — the grip held, the jaws
+                open, the capped tube comes out on the tool; True — the
+                gripper opens, the tube stays in the jaws.
+            soft_exit: as ``cap``: None — a pull-off stage (the tube's
+                bottom clear of the jaws) when carrying, none when leaving
+                empty; True / False force it.
             twist: degrees the cap is unscrewed (a loosening is 30-45;
                 under ``max_rotation``, one stroke of the wrist).
             lmove_vaj: [vel, accel, jerk] for the twist — slow by default,
@@ -324,17 +328,14 @@ class Decapper(Recipe):
             raise RecipeError("loosen failed — could not compute pick parameters")
         if len(motion_prm["load_list"]) != 2:
             raise RecipeError(f"loosen: no capped tube found in position {anchor}")
-        solid_cap = motion_prm["load_list"][1]
+        solid_tube, solid_cap = motion_prm["load_list"][0], motion_prm["load_list"][1]
         component_cap = self.workspace.components[solid_cap.component]
         if component_cap.cap_type != "screw":
             raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
-        height_cap = abs(
-            dorna_pose.transform_pose(
-                [0, 0, 0, 0, 0, 0],
-                from_frame=solid_cap.pose("center"),
-                to_frame=solid_cap.pose("top"),
-            )[2]
-        )
+        def _height(solid):
+            return abs(dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0], from_frame=solid.pose("center"), to_frame=solid.pose("top"))[2])
+        height_total = _height(solid_tube) + _height(solid_cap)
         tool = motion_prm["tool"]
 
         # Wrist staging — decap's rule: the infinite wrist turns relative
@@ -359,179 +360,21 @@ class Decapper(Recipe):
             rebite=not one_shot,
         )
 
-        # Let go: the cap stays on the tube.
-        rt.checkpoint()
-        rt.output(config=tool.output_disable)
-        tool.output_state(0)
-
-        # Exit — decap's two stages, the gripper empty.
-        if exit and last_J is not None:
-            def _up(dz, what):
-                J, C = self.core.IK(
-                    target_solid=tool.assembly[next(iter(tool.assembly))],
-                    target_anchor="tcp",
-                    target_offset=[0, 0, -dz, 0, 0, 0],
-                    tool_solid=tool.assembly[next(iter(tool.assembly))],
-                    tool_anchor="tcp",
-                    tool_offset=[0, 0, 0, 0, 0, 0],
-                    base_distance=self.base_distance,
-                    rail_step=self.rail_step,
-                    rail_span=self.rail_span,
-                    ref_joints=self.ref_joints,
-                    left_approach=self.left_approach,
-                )
-                if C != 2:
-                    raise RecipeError(f"could not find valid joints for the loosen {what}")
-                J[5] = last_J[5]
-                return J
-
-            rt.checkpoint()
-            vaj = self.scaled_vaj(self.lmove_vaj)
-            if soft_exit:
-                # The pull-off: the open fingers straight up and clear of
-                # the cap — a discrete TRUE lmove every run, never fused.
-                J_gap = _up(gap + height_cap, "pull-off")
-                rt.lmove(joint=J_gap, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
-            J = _up(self._padding(padding) + gap, "exit")
-            if one_shot and self.fuse:
-                self._tail_deposit_lift(rt, J, vaj, owner="Decapper.loosen lift")
-            else:
-                rt.lmove(joint=J, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
-            if not one_shot:
-                self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
+        # The end — cap's own: release, or carry the capped tube out.
+        self._screw_end(rt, tool, solid_tube, last_J, anchor, height_total,
+                        release=release, soft_exit=soft_exit, exit=exit, padding=padding,
+                        gap=gap, one_shot=one_shot, jmove_vaj=jmove_vaj, owner="Decapper.loosen lift")
         return True
 
-    def cap(
-        self,
-        anchor="place",
-        solid_name="body",
-        approach=True,
-        exit=True,
-        padding=None,
-        gap=2,
-        lmove_vaj=[600, 1000, 8000],
-        jmove_vaj=[500, 1000, 8000],
-        max_rotation=500,
-        twist=None,
-        release=True,
-        soft_exit=None,
-        **kwargs,
-    ):
-        """Screw the currently-held cap onto the tube at ``anchor``.
-
-        Inverse of ``decap``: lowers while rotating j5 forward in chunks of
-        ``max_rotation`` degrees. Requires the cap to be gripped already and
-        the tube to be present at ``anchor``. Attaches cap → tube on success.
-
-        ``twist``: total rotation to screw on (degrees). None (default)
-        uses the cap component's declared ``twist``.
-
-        ``release=False``: the tighten's end state IS the pick — the
-        gripper never opens. The capped tube is re-rooted on the tool
-        at its CURRENT geometry (the screw's true end pose, no
-        nominal-height re-grab), the chuck jaws open, and the exit
-        lift carries it out (held as a fusable tail like decap's).
-        Use instead of a follow-up ``pick()``: a closed gripper
-        commanding approach/touch motion at the seat drags the sealed
-        tube. """
-        self._wire_verb("cap", anchor)
-        rt = self.rt
-
-        # ref joints
-        if self.ref_joints is None:
-            raise RecipeError("no reference joints defined")
-
-        # tool
-        tool = self.core.current_tool()
-        if tool is None:
-            raise RecipeError("no tool attached to the robot")
-
-        # cap in tool
-        solid_cap = self.solid_attached_to_tool(tool)
-        if solid_cap is None:
-            raise RecipeError("no item in the gripper")
-        component_cap = self.workspace.components[solid_cap.component]
-
-        # cap type
-        if component_cap.cap_type != "screw":
-            raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
-
-        # tube in the anchor
-        solid_tube = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
-        if solid_tube is None:
-            raise RecipeError(f"no item found in position {anchor}")
-        component_tube = self.workspace.components[solid_tube.component]
-
-        # height_cap
-        height_cap = abs(
-            dorna_pose.transform_pose(
-                [0, 0, 0, 0, 0, 0],
-                from_frame=solid_cap.pose("center"),
-                to_frame=solid_cap.pose("top"),
-            )[2]
-        )
-
-        # height tube
-        height_tube = abs(
-            dorna_pose.transform_pose(
-                [0, 0, 0, 0, 0, 0],
-                from_frame=solid_tube.pose("center"),
-                to_frame=solid_tube.pose("top"),
-            )[2]
-        )
-
-        # total height
-        height_total = height_tube + height_cap
-
-        # j5 staging — same rule as decap: explicit -max_rotation/2 only
-        # for the limited wrist; the infinite wrist tightens relative
-        # from wherever the place approach leaves j5.
-        one_shot = bool(getattr(self.core, "j5_infinite", False))
-        j5_start = None if one_shot else -max_rotation / 2
-
-        # place setting
-        place_prm = self.place_setting(
-            anchor="cap_seat",
-            solid_name="body",
-            component=component_tube,
-            offset=[0, 0, 0, 0, 0, 0],
-            approach=approach,
-            exit=False,
-            attachment=False,
-            trigger_io=False,
-            padding=padding,
-            gap=gap,
-            gravity_offset=0,
-            soft_approach=True,
-            **kwargs,
-        )
-        if not place_prm:
-            raise RecipeError("cap failed — could not compute place parameters")
-
-        # adjust j5 in the approach — the staging angle on a limited
-        # wrist, the current angle (no roll at all) on the infinite one
-        place_prm["approach_j5"] = "keep" if one_shot else j5_start
-        if not self.touch(**place_prm):
-            raise RecipeError("cap failed — touch motion failed")
-
-        # tighten (j5 rotates forward while z descends) — one shot on
-        # the infinite wrist, chunk-and-rebite on a limited one.
-        last_J = self._screw_motion(
-            tool=tool,
-            pitch=component_cap.pitch,
-            total_twist=component_cap.twist if twist is None else twist,
-            max_rotation=max_rotation,
-            direction=+1,
-            lmove_vaj=lmove_vaj,
-            jmove_vaj=jmove_vaj,
-            j5_start=j5_start,
-            rebite=not one_shot,
-        )
-
-        # attach cap to body — the screw seated it; the model follows
-        # BEFORE any exit so a carried lift moves the whole stack.
-        solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")
-
+    def _screw_end(self, rt, tool, solid_tube, last_J, anchor, height_total, *,
+                   release, soft_exit, exit, padding, gap, one_shot, jmove_vaj, owner):
+        """How a screw verb that ends ON the tube leaves it — ``cap`` and
+        ``loosen`` alike: let go (``release=True``) and lift off empty, or
+        keep the grip (``release=False``): the capped tube re-rooted on the
+        tool at its CURRENT pose, the chuck jaws opened, and the lift
+        carrying it out. ``soft_exit`` None: a pull-off stage when
+        carrying (the walls-cleared rule), none when leaving empty.
+        ``owner`` names the held lift tail."""
         if release:
             # gripper OFF so the empty exit clears without dragging the cap
             if tool.output_state() != 0:
@@ -640,7 +483,7 @@ class Decapper(Recipe):
             if one_shot and self.fuse:
                 # Same as decap: the post-tighten lift rides into the
                 # next verb's travel as a held tail.
-                self._tail_deposit_lift(rt, J, vaj, owner="Decapper.cap lift")
+                self._tail_deposit_lift(rt, J, vaj, owner=owner)
             else:
                 rt.lmove(joint=J, vel=vaj[0], accel=vaj[1], jerk=vaj[2])
 
@@ -652,4 +495,139 @@ class Decapper(Recipe):
             if not one_shot:
                 self.rotate(rotation=0, joint="j5", limit=[-180, 180], vaj=jmove_vaj)
 
+
+    def cap(
+        self,
+        anchor="place",
+        solid_name="body",
+        approach=True,
+        exit=True,
+        padding=None,
+        gap=2,
+        lmove_vaj=[600, 1000, 8000],
+        jmove_vaj=[500, 1000, 8000],
+        max_rotation=500,
+        twist=None,
+        release=False,
+        soft_exit=None,
+        **kwargs,
+    ):
+        """Screw the currently-held cap onto the tube at ``anchor``.
+
+        Inverse of ``decap``: lowers while rotating j5 forward in chunks of
+        ``max_rotation`` degrees. Requires the cap to be gripped already and
+        the tube to be present at ``anchor``. Attaches cap → tube on success.
+
+        ``twist``: total rotation to screw on (degrees). None (default)
+        uses the cap component's declared ``twist``.
+
+        ``release=False`` (default): the tighten's end state IS the pick — the
+        gripper never opens. The capped tube is re-rooted on the tool
+        at its CURRENT geometry (the screw's true end pose, no
+        nominal-height re-grab), the chuck jaws open, and the exit
+        lift carries it out (held as a fusable tail like decap's).
+        Use instead of a follow-up ``pick()``: a closed gripper
+        commanding approach/touch motion at the seat drags the sealed
+        tube. """
+        self._wire_verb("cap", anchor)
+        rt = self.rt
+
+        # ref joints
+        if self.ref_joints is None:
+            raise RecipeError("no reference joints defined")
+
+        # tool
+        tool = self.core.current_tool()
+        if tool is None:
+            raise RecipeError("no tool attached to the robot")
+
+        # cap in tool
+        solid_cap = self.solid_attached_to_tool(tool)
+        if solid_cap is None:
+            raise RecipeError("no item in the gripper")
+        component_cap = self.workspace.components[solid_cap.component]
+
+        # cap type
+        if component_cap.cap_type != "screw":
+            raise RecipeError(f"unsupported cap type: {component_cap.cap_type}")
+
+        # tube in the anchor
+        solid_tube = self.solid_attached_to_anchor(self.component.assembly[solid_name], anchor)
+        if solid_tube is None:
+            raise RecipeError(f"no item found in position {anchor}")
+        component_tube = self.workspace.components[solid_tube.component]
+
+        # height_cap
+        height_cap = abs(
+            dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=solid_cap.pose("center"),
+                to_frame=solid_cap.pose("top"),
+            )[2]
+        )
+
+        # height tube
+        height_tube = abs(
+            dorna_pose.transform_pose(
+                [0, 0, 0, 0, 0, 0],
+                from_frame=solid_tube.pose("center"),
+                to_frame=solid_tube.pose("top"),
+            )[2]
+        )
+
+        # total height
+        height_total = height_tube + height_cap
+
+        # j5 staging — same rule as decap: explicit -max_rotation/2 only
+        # for the limited wrist; the infinite wrist tightens relative
+        # from wherever the place approach leaves j5.
+        one_shot = bool(getattr(self.core, "j5_infinite", False))
+        j5_start = None if one_shot else -max_rotation / 2
+
+        # place setting
+        place_prm = self.place_setting(
+            anchor="cap_seat",
+            solid_name="body",
+            component=component_tube,
+            offset=[0, 0, 0, 0, 0, 0],
+            approach=approach,
+            exit=False,
+            attachment=False,
+            trigger_io=False,
+            padding=padding,
+            gap=gap,
+            gravity_offset=0,
+            soft_approach=True,
+            **kwargs,
+        )
+        if not place_prm:
+            raise RecipeError("cap failed — could not compute place parameters")
+
+        # adjust j5 in the approach — the staging angle on a limited
+        # wrist, the current angle (no roll at all) on the infinite one
+        place_prm["approach_j5"] = "keep" if one_shot else j5_start
+        if not self.touch(**place_prm):
+            raise RecipeError("cap failed — touch motion failed")
+
+        # tighten (j5 rotates forward while z descends) — one shot on
+        # the infinite wrist, chunk-and-rebite on a limited one.
+        last_J = self._screw_motion(
+            tool=tool,
+            pitch=component_cap.pitch,
+            total_twist=component_cap.twist if twist is None else twist,
+            max_rotation=max_rotation,
+            direction=+1,
+            lmove_vaj=lmove_vaj,
+            jmove_vaj=jmove_vaj,
+            j5_start=j5_start,
+            rebite=not one_shot,
+        )
+
+        # attach cap to body — the screw seated it; the model follows
+        # BEFORE any exit so a carried lift moves the whole stack.
+        solid_cap.attach_to(parent=solid_tube, parent_anchor="place", child_anchor="center")
+
+        self._screw_end(rt, tool, solid_tube, last_J, anchor, height_total,
+                        release=release, soft_exit=soft_exit, exit=exit, padding=padding,
+                        gap=gap, one_shot=one_shot, jmove_vaj=jmove_vaj, owner="Decapper.cap lift")
         return True
