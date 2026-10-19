@@ -25,6 +25,7 @@ dependencies = [
   "dorna2>=2.1.10",     # robot client — a dead link raises ConnectionError on every call; connected()/last_recv() feed the idle heartbeat
   "py_trees>=2.2",      # behaviour-tree primitives — bt/builder.py engine
   "toppra>=0.6",        # PVT time-parameterization — core.traj_points (tmove)
+  "ipykernel>=7.1,<7.2", # notebooks (Bench, dev/*.ipynb): 6.x can hang a print() from a BT action thread forever (thread-id reuse loops parent_header); <7.2 keeps tornado as is
 ]
 
 [tool.setuptools.packages.find]
