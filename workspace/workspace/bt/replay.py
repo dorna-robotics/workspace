@@ -227,7 +227,10 @@ def state_before(actions_module, launch, kwargs, phase):
 def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_name="",
                    until_phase=None, removes=None):
     """The walk itself, on an imported actions module — see ``replay``.
-    ``until_phase`` stops before planning that phase. ``removes`` is a
+    ``until_phase`` stops before planning that phase — or, when that
+    phase has no items in scope (vacuous, skipped by the walk), before the
+    first phase AFTER it that opens, or before the tail if none does: the
+    state the run is in where that phase would have been. ``removes`` is a
     list of ``(item, at)``: the item leaves the run when phase ``at``
     opens, or right after its step ``at`` runs (``--remove``). Returns
     ``(plan_len, failures, goal_ok, makespan, state, extra)``."""
@@ -293,6 +296,14 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
     tool_now = None
     failures, lines = [], []
     res_all, out_all, swaps_all, window_events = [], [], [], []
+    # Where the walk stops for ``until_phase``: its place in the phase
+    # order. A vacuous phase is never the current one (current_phase
+    # skips it), so the stop is "current phase at or past it", never
+    # "current phase is it" — that walked a vacuous target to the end.
+    names = [p.name for p in phases]
+    if until_phase is not None and until_phase not in names:
+        raise ValueError(f"until_phase={until_phase!r} is not a phase: {names}")
+    stop_at = names.index(until_phase) if until_phase is not None else None
     rid = 0
     while True:
         fstate = frozenset(state)
@@ -312,7 +323,7 @@ def _replay_loaded(A, kwargs, *, show=False, event=False, launch=None, project_n
             if show:
                 lines.append(f"── REMOVE {gone} as {cur[0].name} opens ──")
             continue
-        if until_phase is not None and cur is not None and cur[0].name == until_phase:
+        if stop_at is not None and (cur is None or names.index(cur[0].name) >= stop_at):
             break                          # the state this phase starts from
         if cur is None:
             # No phase open: the run's own goal — every item done, then
