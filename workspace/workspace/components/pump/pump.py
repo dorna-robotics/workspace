@@ -38,9 +38,9 @@ Scene yaml (see ``docs/liquid-handling.md`` for every setting)::
       output_right: true
       default_speed: 100                # percent, used when a call gives no speed
 
-      valve_ports:                      # port → name, or port → {name, tube_volume_ul}
+      valve_ports:                      # port → name, or port → {name, tube_volume_ul[, return_port]}
         1: {name: reservoir,  tube_volume_ul: 100}
-        2: {name: needle,     tube_volume_ul: 150}
+        2: {name: needle,     tube_volume_ul: 150, return_port: reservoir}
       outlets: [2]                      # these ports are nozzles; the rest are sources
 
       attach: {…}
@@ -54,6 +54,13 @@ and do NOT feed this number — a needle swap means updating it here
 too. ``prime`` uses it to compute how many barrel cycles actually
 reach the tip (see :meth:`prime`); leave it 0 and prime falls back to
 1 cycle.
+
+``return_port`` (an outlet only, optional) is the SOURCE port that
+``aspirate_line`` / ``dispense_line`` shuttle the barrel through — the
+line's own liquid (the system liquid it is primed with). It lets a draw
+through the outlet exceed the barrel: the drawn liquid is held in the
+outlet's LINE, up to its ``tube_volume_ul``, while the barrel empties
+into the return port between strokes (see :meth:`aspirate_line`).
 
 Valve bodies vs. holes: ``valve_type`` declares the BODY the firmware
 reports (a 6-port ceramic distribution valve is an 8-position type-3
@@ -173,7 +180,9 @@ class Pump:
         default_speed=100.0,
 
         # ── plumbing: valve port → what hangs on it ───────────────
-        # port → name, or port → {name, tube_volume_ul}.
+        # port → name, or port → {name, tube_volume_ul[, return_port]}.
+        # return_port (outlets only): the source port aspirate_line /
+        # dispense_line shuttle the barrel through — see the module doc.
         # tube_volume_ul (µL) = the WHOLE dead volume of that line:
         # reservoir→valve for sources, valve→needle TIP for outlets —
         # so an outlet's number includes the fitted needle's bore, and
@@ -217,6 +226,10 @@ class Pump:
         # bookkeeping the pump cannot do
         self._material_in_barrel: Optional[str] = None
         self._material_at: dict[str, Optional[str]] = {n: None for n in self.outlets()}
+        # Net plunger steps drawn IN through each outlet's tip and not yet
+        # pushed back out — what its line holds beyond the system liquid.
+        # Kept by _stroke for every op through an outlet (line_volume()).
+        self._line_steps: dict[int, int] = {p: 0 for p, v in self._ports.items() if v["outlet"]}
         self._last_op: dict = {}
         self._op_log: list[dict] = []
 
@@ -264,16 +277,21 @@ class Pump:
 
     @staticmethod
     def _parse_ports(raw: dict, outlets) -> dict[int, dict]:
-        """Normalize to {port: {name, tube_volume_ul, outlet}}."""
+        """Normalize to {port: {name, tube_volume_ul, outlet, return_port}}.
+        ``return_port`` (a port number, or None) is checked here: only
+        an outlet carries one, and it names a declared SOURCE port."""
         out: dict[int, dict] = {}
+        returns: dict[int, object] = {}
         for k, v in (raw or {}).items():
             port = int(k)
             if isinstance(v, dict):
                 name = str(v.get("name", port))
                 tube = float(v.get("tube_volume_ul", 0.0))
+                if v.get("return_port") not in (None, ""):
+                    returns[port] = v["return_port"]
             else:
                 name, tube = str(v), 0.0
-            out[port] = {"name": name, "tube_volume_ul": tube, "outlet": False}
+            out[port] = {"name": name, "tube_volume_ul": tube, "outlet": False, "return_port": None}
         marks = set()
         for o in (outlets or []):
             if isinstance(o, str) and not o.isdigit():
@@ -287,6 +305,23 @@ class Pump:
             if p not in out:
                 raise PortError(f"outlets: port {p} is not in valve_ports")
             out[p]["outlet"] = True
+        for p, ref in returns.items():
+            if not out[p]["outlet"]:
+                raise PortError(f"valve_ports {p} ({out[p]['name']}): return_port is for an "
+                                f"outlet only")
+            if isinstance(ref, str) and not ref.isdigit():
+                hit = [q for q, v in out.items() if v["name"] == ref]
+                if not hit:
+                    raise PortError(f"valve_ports {p}: return_port {ref!r} is not a declared port")
+                rp = hit[0]
+            else:
+                rp = int(ref)
+                if rp not in out:
+                    raise PortError(f"valve_ports {p}: return_port {rp} is not in valve_ports")
+            if out[rp]["outlet"]:
+                raise PortError(f"valve_ports {p}: return_port {out[rp]['name']!r} is an outlet — "
+                                f"it must be a source port")
+            out[p]["return_port"] = rp
         return out
 
     # ── DeviceComponent contract ──────────────────────────────────
@@ -394,6 +429,7 @@ class Pump:
         t0 = time.monotonic()
         ok = False
         target_steps = int(target_steps)
+        held = self.pump.position_steps()
         try:
             if target_steps < 0 or target_steps > self.pump.max_steps():
                 self.pump.last_error = (3, f"{op}: target {self._fmt(target_steps)} outside the "
@@ -407,6 +443,11 @@ class Pump:
             if self.pump.valve_port() != port and not self.pump.valve_to(port, sim_return=sim_return):
                 return False
             ok = self.pump.move_to_steps(target_steps, sim_return=sim_return)
+            # The line count: a stroke through an outlet moves its
+            # liquid column by exactly the steps the plunger moved —
+            # in on a draw, out on a push; never below the line empty.
+            if ok and held is not None and port in self._line_steps:
+                self._line_steps[port] = max(0, self._line_steps[port] + target_steps - int(held))
             return ok
         finally:
             rec = {"op": op, "port": port, "name": self.name_of(port),
@@ -558,6 +599,121 @@ class Pump:
                 return False
         return True
 
+    # ── the line: a draw larger than the barrel ───────────────────
+
+    def _return_port(self, outlet: int, return_port: PortRef) -> int:
+        """The source port the barrel shuttles through for ``outlet``:
+        ``return_port`` when given, else the outlet's own (scene),
+        else refused — never guessed, and never the outlet itself."""
+        if return_port is not None:
+            rp = self._resolve(return_port)
+        else:
+            rp = self._ports[outlet]["return_port"]
+            if rp is None:
+                raise PortError(f"{self.name}: {self.name_of(outlet)} has no return_port — set it "
+                                f"in the scene (valve_ports) or pass return_port=")
+        if self._ports[rp]["outlet"]:
+            raise PortError(f"{self.name}: return_port {self.name_of(rp)!r} is an outlet — it must "
+                            f"be a source port")
+        return rp
+
+    def aspirate_line(self, volume_ul: float, port: PortRef = None, speed=None,
+                      return_port: PortRef = None, sim_return: bool = True, **_) -> bool:
+        """Draw ``volume_ul`` in through ``port`` (default: the single
+        outlet) — MORE than the barrel holds when needed. The drawn
+        liquid is held in the outlet's LINE, not the barrel: whenever
+        the barrel is full, the valve turns to ``return_port`` and the
+        barrel empties there (the line's own system liquid going back
+        where it came from), then turns back and draws on. ``speed``
+        runs every stroke, the draws and the empties.
+
+        ``return_port``: the call's, else the outlet's from the scene,
+        else refused. The line must be primed with that port's liquid.
+
+        Refuses before anything moves when the line would hold more than
+        ``max(tube_volume_ul, syringe_volume)`` — counted with whatever
+        the line already holds (:meth:`line_volume`: an air gap drawn
+        just before counts). Up to a barrel the draw needs no shuttle, so
+        the barrel is enough; past it every shuttle must return only the
+        line's own liquid, so the drawn liquid must stay in the line."""
+        out = self._resolve(port)
+        if not self._ports[out]["outlet"]:
+            raise PortError(f"{self.name}: aspirate_line draws through an outlet — "
+                            f"{self.name_of(out)} is a source")
+        rp = self._return_port(out, return_port)
+        n = self._ul_to_steps(volume_ul)
+        line_max = max(self._ul_to_steps(self._ports[out]["tube_volume_ul"]), self.pump.max_steps())
+        if self._line_steps[out] + n > line_max:
+            self.pump.last_error = (3, f"aspirate_line {float(volume_ul):.3f} µL: the "
+                                       f"{self.name_of(out)} line would hold "
+                                       f"{self._fmt(self._line_steps[out] + n)}, over "
+                                       f"max(tube_volume_ul, barrel) {self._fmt(line_max)}")
+            return False
+        left = n
+        while left > 0:
+            held = self.pump.position_steps()
+            if held is None:
+                self.pump.last_error = (-1, "aspirate_line: pump unreachable")
+                return False
+            room = self.pump.max_steps() - held
+            if room <= 0:
+                # Barrel full: its liquid back to the return port.
+                if not self._stroke("aspirate_line: return", 0, rp, speed, sim_return):
+                    return False
+                continue
+            step = min(left, room)
+            if not self._stroke("aspirate_line", held + step, out, speed, sim_return):
+                return False
+            left -= step
+        return True
+
+    def dispense_line(self, volume_ul: float, port: PortRef = None, speed=None,
+                      return_port: PortRef = None, sim_return: bool = True, **_) -> bool:
+        """Push ``volume_ul`` out of ``port`` (default: the single
+        outlet) — the mirror of :meth:`aspirate_line`: whatever the
+        barrel holds goes out first, then the barrel refills from
+        ``return_port`` and pushes again, until ``volume_ul`` has left
+        the tip. ``speed`` runs every stroke.
+
+        Refuses before anything moves when the line holds less than
+        ``volume_ul`` (:meth:`line_volume`)."""
+        out = self._resolve(port)
+        if not self._ports[out]["outlet"]:
+            raise PortError(f"{self.name}: dispense_line pushes through an outlet — "
+                            f"{self.name_of(out)} is a source")
+        rp = self._return_port(out, return_port)
+        n = self._ul_to_steps(volume_ul)
+        if n > self._line_steps[out]:
+            self.pump.last_error = (3, f"dispense_line {float(volume_ul):.3f} µL but the "
+                                       f"{self.name_of(out)} line holds "
+                                       f"{self._fmt(self._line_steps[out])}")
+            return False
+        left = n
+        while left > 0:
+            held = self.pump.position_steps()
+            if held is None:
+                self.pump.last_error = (-1, "dispense_line: pump unreachable")
+                return False
+            if held <= 0:
+                # Barrel empty: refill from the return port.
+                fill = min(left, self.pump.max_steps())
+                if not self._stroke("dispense_line: refill", fill, rp, speed, sim_return):
+                    return False
+                self._material_in_barrel = self.name_of(rp)
+                continue
+            step = min(left, held)
+            if not self._stroke("dispense_line", held - step, out, speed, sim_return):
+                return False
+            left -= step
+        self._note_outlet(out)
+        return True
+
+    def line_volume(self, port: PortRef = None) -> float:
+        """µL drawn in through ``port``'s tip (default: the single
+        outlet) and not yet pushed back out — what its line holds."""
+        out = self._resolve(port)
+        return round(self._steps_to_ul(self._line_steps.get(out, 0)), 3)
+
     def _note_outlet(self, port: int) -> None:
         if self._ports[port]["outlet"]:
             self._material_at[self.name_of(port)] = self._material_in_barrel
@@ -606,6 +762,7 @@ class Pump:
             "initialized": self.pump.initialized, "barrel_ul": self.volume(),
             "syringe_ul": self._syringe_ul, "material_in_barrel": self._material_in_barrel,
             "material_at": dict(self._material_at), "open_port": self.open_port_name(),
+            "line_ul": {self.name_of(p): round(self._steps_to_ul(s), 3) for p, s in self._line_steps.items()},
             "speed": self.speed(), "valve_type": self.pump.valve_type(),
             "ports": self.ports(), "status": self.status(), "last_op": self.last_op(),
         }
