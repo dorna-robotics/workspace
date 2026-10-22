@@ -309,6 +309,47 @@ detection_preset: {config: vision/tube_od.yaml, detection: {conf: 0.6}}   # only
 - A `config` that cannot be added (a missing file, a bad key) fails the
   LAUNCH; a detection without one keeps its old behaviour.
 
+### A ring's two circles — concentric, and whole
+
+A part with a coloured ring (a disc with a yellow band) is checked with
+the classic pieces, no model: `color` keeps only the coloured pixels,
+`elp` fits the band's outer and inner circle, and `sector_deg` scores
+how whole each one is.
+
+```yaml
+# <project>/vision/ring_elp.yaml
+detection:
+  cmd: elp
+  nfa_validation: false        # "False alarm validation" — it rejects big, clean circles at full size
+  sector_deg: 10               # conf = the worst 10° sector's share of the outline the image shows
+color:
+  low_hsv: [0, 70, 0]          # saturation ≥ 70: the band; the grey disc and the background drop out
+  high_hsv: [255, 255, 255]
+```
+
+- **Why the colour step.** Both ellipse methods work on grey, where a
+  yellow band barely differs from a grey disc and is darker or lighter
+  than the background by side. In saturation it stands alone (band ~114,
+  disc and background ≤ 44 on the apc disc).
+- **`conf`.** `sector_deg` unset: every ellipse's conf is 1. Set: each
+  outline is sampled about every pixel; a sample counts when an image
+  edge lies within `sector_tol` px of it (default 3 — a real edge wanders
+  2–3 px from a perfect circle); conf is the lowest sector's counted
+  share. A chip pulls its sector down however perfect the rest is; one
+  score for the whole outline would hide it (a chip is ~2% of a ring).
+  Measured on the apc disc, 10° sectors: good 0.94 / 1.00 (outer /
+  inner), chipped 0.33 / 1.00 — the chip was on the outer edge only, so
+  check both circles.
+- **Concentric** = the two results' `center`s close. They are whole
+  pixels, so a tolerance under ~2 px is noise.
+- **Fail safe.** Not exactly two circles, a circle of the wrong size, or
+  either conf under the threshold is a fail, never a pass. Set the
+  threshold from a batch of known-good and known-bad parts, between the
+  lowest good and the highest bad; if they overlap, fix the lighting
+  (even and diffuse, a plain background) before the numbers.
+- `elp_fit` cannot do a ring: it assumes a dark object on a light
+  background and keeps outer outlines only.
+
 ## 6. Failure semantics — what survives what
 
 - **A camera dies (USB)**: the vision server's per-camera AutoRecover
