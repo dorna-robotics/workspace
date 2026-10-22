@@ -561,6 +561,25 @@ class RecordsHandler(tornado.web.RequestHandler):
                     "columns": snap["columns"], "records": snap["set"]})
 
 
+class AssetHandler(tornado.web.RequestHandler):
+    """GET /op/asset/<key> — an ``rt.asset`` the runtime holds in memory
+    (a picture an operator screen shows; rt.op carries its path). 404 once
+    it is gone (a new run, or removed). Never cached: the path's ``?v=``
+    changes on every write, and the bytes live only in memory."""
+
+    def initialize(self, rt: Runtime):
+        self.rt = rt
+
+    def get(self, key):
+        a = self.rt.asset_get(key)
+        if a is None:
+            raise tornado.web.HTTPError(404)
+        mime, data = a
+        self.set_header("Content-Type", mime)
+        self.set_header("Cache-Control", "no-store")
+        self.write(data)
+
+
 # --------------------------------------------------
 # Step WebSocket — push step updates to dashboard
 # --------------------------------------------------
@@ -1940,6 +1959,7 @@ class RuntimeServer:
             )),
             (r"/status", StatusHandler, dict(rt=self.rt, workspace=self.workspace)),
             (r"/records(\.csv)?", RecordsHandler, dict(rt=self.rt)),
+            (r"/op/asset/([A-Za-z0-9_.-]+)", AssetHandler, dict(rt=self.rt)),
             (r"/ws/steps", StepWebSocket, dict(rt=self.rt)),
             (r"/ws/status", StatusWebSocket, dict(rt=self.rt, workspace=self.workspace)),
             (r"/ws/op", OpWebSocket, dict(rt=self.rt)),

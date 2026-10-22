@@ -318,7 +318,7 @@ class VisionStation:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
 
     def get_img(self, name: str, kind: str = "img", quality: int = 85,
-                max_side: Optional[int] = None) -> Optional[bytes]:
+                max_side: Optional[int] = None, meta: bool = False):
         """The named detection's LAST image as JPEG bytes — ``"img"`` is the
         full frame as the server drew it (boxes and labels when
         ``display.label`` is on), ``"img_roi"`` the crop the model saw.
@@ -326,16 +326,20 @@ class VisionStation:
         with the project instead of on the vision unit's disk. ``None``
         in simulation, and on any failure (logged once per call) — an
         image is observability and never fails a run. ``max_side`` has
-        the server downscale before encoding (fewer bytes on the wire)."""
+        the server downscale before encoding (fewer bytes on the wire).
+        ``meta=True`` returns ``(bytes, meta)`` — the server's ``meta`` says
+        the image's ``shape`` and the full frame's ``source_shape`` [h, w],
+        so a downscaled picture still maps back to frame pixels; ``(None,
+        None)`` where it would return None."""
         if self.simulation or self._client is None:
-            return None
+            return (None, None) if meta else None
         try:
-            data, _meta = self._call(lambda: self._client.detection_get_img(
+            data, info = self._call(lambda: self._client.detection_get_img(
                 name, type=kind, quality=int(quality), max_side=max_side))
-            return data
+            return (data, info) if meta else data
         except Exception as ex:
             print(f"[{self.label}] get_img({name}, {kind}) failed: {ex}")
-            return None
+            return (None, None) if meta else None
 
     def detect(
         self,

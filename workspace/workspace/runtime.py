@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import os
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -81,6 +82,11 @@ class Runtime:
         self._op_dirty: set = set()
         self._op_unset: set = set()
         self._op_dropped: set = set()   # keys already warned about
+        # Assets rt.op passes BY REFERENCE (rt.asset): key -> (n, mime,
+        # bytes), served by the runtime server at /op/asset/<key>. Same
+        # lifetime as the values: memory only, cleared at run start.
+        self._assets: dict = {}
+        self._asset_n = 0
 
         # ── per-item records (rt.record) ────────────────────────────
         # One record per ITEM the run works on (a sample, a vial, a
@@ -502,8 +508,59 @@ class Runtime:
         with self._lock:
             return {"rev": self._op_rev, "set": dict(self._op), "snapshot": True}
 
+    # ── Assets (rt.asset) ────────────────────────────────────────────
+    # What rt.op passes BY REFERENCE — a picture an operator screen shows,
+    # held in memory (never the SD card) and served by the runtime server.
+    # Bounded like the values: a handful of keys, each a few MB at most.
+    ASSET_MAX_KEYS = 16
+    ASSET_MAX_BYTES = 4 * 1024 * 1024
+    _ASSET_KEY = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+    def asset(self, key: str, data: Optional[bytes], mime: str = "image/jpeg") -> Optional[str]:
+        """Hold ``data`` (bytes — a JPEG, a PNG) in memory as ``key`` and
+        return the path the runtime server serves it at —
+        ``/op/asset/<key>?v=<n>``, ``n`` new on every write so a screen
+        never shows a stale copy. Put the path in rt.op; the screen loads
+        it over HTTP (``api.url(path)`` on a project pendant), so the
+        socket carries only the reference.
+
+            rt.op(inspection={..., "img": rt.asset("inspection", jpeg)})
+
+        Replace semantics; ``None`` removes. Memory only, cleared at run
+        start. Observability never blocks (project-guide §8): never
+        raises — a bad key, a non-bytes value or one over the caps is
+        DROPPED with one log line per reason, and returns None."""
+        k = str(key)
+        if not self._ASSET_KEY.match(k):
+            self._op_warn(k, "asset key must be 1-64 of A-Z a-z 0-9 _ . -")
+            return None
+        with self._lock:
+            if data is None:
+                self._assets.pop(k, None)
+                return None
+            if not isinstance(data, (bytes, bytearray)):
+                self._op_warn(k, f"asset is {type(data).__name__}, not bytes")
+                return None
+            if len(data) > self.ASSET_MAX_BYTES:
+                self._op_warn(k, f"asset is {len(data)}B > {self.ASSET_MAX_BYTES}B")
+                return None
+            if k not in self._assets and len(self._assets) >= self.ASSET_MAX_KEYS:
+                self._op_warn(k, f"already holding {self.ASSET_MAX_KEYS} assets")
+                return None
+            self._asset_n += 1
+            self._assets[k] = (self._asset_n, str(mime), bytes(data))
+            return f"/op/asset/{k}?v={self._asset_n}"
+
+    def asset_get(self, key: str):
+        """``(mime, bytes)`` of an rt.asset, or None — the runtime
+        server's read."""
+        with self._lock:
+            a = self._assets.get(str(key))
+            return None if a is None else (a[1], a[2])
+
     def _clear_ops(self) -> None:
         self._op.clear()
+        self._assets.clear()
         self._op_sizes.clear()
         self._op_dirty.clear()
         self._op_unset.clear()

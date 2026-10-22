@@ -140,7 +140,9 @@ const _openFiles = () =>
                     title: `Files — ${wsName}` });
 $("btnFiles").addEventListener("click", _openFiles);
 $("pendantFiles").addEventListener("click", _openFiles);
-paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
+// The parameters panel closes on its ✕ / Cancel only — never on the
+// backdrop or Escape (design-system "Files", the same rule): parameters
+// half-set are not lost to a click or a key that missed.
 
 // Device detail modal — close on X button or backdrop click.
 const _deviceModal = $("deviceModalOverlay");
@@ -156,7 +158,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   const _MODAL_IDS = [
     "deviceModalOverlay",
-    "paramsModalOverlay",
     "opActionsModalOverlay",
     "scheduleModalOverlay",
   ];
@@ -910,6 +911,9 @@ async function mountProjectPendant(spec) {
         // The same operator-action path the platform buttons use — a
         // project screen can trigger declared actions, nothing more.
         invoke(component, method) { return runOperatorAction(component, method); },
+        // A runtime path (an rt.asset's /op/asset/... from rt.op) as a URL
+        // the screen can load — the runtime server's, not this page's.
+        url(path) { return url(path); },
       };
       if (typeof def.mount === "function") await def.mount(shadow, api);
       if (typeof def.update === "function") def.update({ ..._opValues });

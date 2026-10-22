@@ -129,15 +129,19 @@ class Inspector(Recipe):
         simulation."""
         return self._vision_owner.frame(quality=quality)
 
-    def get_img(self, kind="img", quality=85, max_side=None):
+    def get_img(self, kind="img", quality=85, max_side=None, meta=False):
         """This inspector's last image as JPEG bytes — ``"img"`` the frame
         as the server drew it (boxes and labels when the preset's
         ``display.label`` is on), ``"img_roi"`` the crop the model saw.
         ``None`` in simulation or on failure: a project that keeps its
         captures with the project (``<project>/captures/``) writes what
-        it gets and never fails a run over a missing picture."""
+        it gets and never fails a run over a missing picture. ``"color_img"``
+        is the camera's frame as captured, nothing drawn. ``meta=True``
+        returns ``(bytes, meta)``: ``meta["source_shape"]`` is the full
+        frame's [h, w], so a ``max_side``-downscaled picture still maps to
+        frame pixels."""
         return self._vision_owner.get_img(self.detection_name, kind=kind, quality=quality,
-                                          max_side=max_side)
+                                          max_side=max_side, meta=meta)
 
     def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. By default, captures a fresh

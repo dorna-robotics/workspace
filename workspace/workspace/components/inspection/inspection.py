@@ -133,11 +133,12 @@ class Inspection:
         (VisionStation.frame); ``None`` in simulation."""
         return self.vision.frame(quality=quality)
 
-    def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None):
+    def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None, meta=False):
         """The named detection's last image as JPEG bytes (``"img"`` the
         drawn frame, ``"img_roi"`` the crop); ``None`` in simulation or
-        on failure. See VisionStation.get_img."""
-        return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side)
+        on failure; ``meta=True`` adds the server's meta (the full frame's
+        ``source_shape``). See VisionStation.get_img."""
+        return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side, meta=meta)
 
     def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, camera_in_world=None, **kwargs):
         """Run the named detection. By default, captures a fresh frame

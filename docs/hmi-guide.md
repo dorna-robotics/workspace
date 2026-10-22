@@ -154,9 +154,18 @@ Three sources; two exist, one is a small addition:
      log line per distinct reason** (deduping on the key alone would
      still flood when the cap rejects a different key each call).
    * **Assets by reference** — small JSON values inline; images and
-     other large data as a URL the widget loads over HTTP
-     (`rt.op(last_image="/captures/apc/d_0142.jpg")`). The socket stays
-     small and reconnects stay cheap.
+     other large data as a URL the widget loads over HTTP. A picture the
+     run makes is held IN MEMORY by `rt.asset(key, jpeg_bytes)`, which
+     returns its path — `/op/asset/<key>?v=<n>`, served by the runtime
+     server, `?v` new on every write — to put in `rt.op`:
+     `rt.op(inspection={..., "img": rt.asset("inspection", jpeg)})`. A
+     project pendant loads it through `api.url(path)` (§4b). Same lifetime
+     as the values: memory only, cleared at run start, never on the SD
+     card; bounded (16 keys, 4 MB each — over is dropped with one log
+     line, never raised). The socket stays small and reconnects stay
+     cheap. apc's inspection card is the example: the frame from the
+     vision unit (`Inspector.get_img(kind="color_img", max_side=1280,
+     meta=True)`), every mark drawn over it by the pendant.
    * **Lifetime** — memory only, cleared at run start, nothing written
      to the SD card. `rev` keeps climbing across runs so a reconnecting
      client never sees it go backwards.
@@ -249,7 +258,9 @@ HTML shape has no say and keeps the panel.
 
 `api` is deliberately small: `values` (current snapshot), `theme`
 (`"light"`/`"dark"`), `onTheme(cb)` (fires on toggle — for canvas and
-anything else that must repaint), and `invoke(component, method)`,
+anything else that must repaint), `url(path)` (a runtime path — an
+`rt.asset`'s `/op/asset/…` — as a URL the screen can load: the runtime
+server's, not the admin page's), and `invoke(component, method)`,
 which routes to the **same declared `operator_action` path** the
 platform's own buttons use. A screen can trigger what a component
 already declares, and nothing more — it gets no runtime handle, no

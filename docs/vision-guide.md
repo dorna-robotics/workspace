@@ -231,6 +231,16 @@ unannotated crop — the one for training), `img_thr`, `color_img`,
 instead. Reference: the client README and
 `example/jupyters/api_call.ipynb` in the vision repo.
 
+**From a project — `Inspector.get_img(kind, quality, max_side, meta)`.**
+The recipe's way to the same image: the detection's last one as JPEG
+bytes, `None` in sim or on failure (an image never fails a run).
+`max_side` has the vision unit downscale before sending; `meta=True`
+returns `(bytes, meta)`, `meta["source_shape"]` the full frame's
+`[h, w]`, so marks in frame pixels still land on a downscaled picture.
+apc's inspection card: `get_img(kind="color_img", max_side=1280,
+meta=True)` → `rt.asset` → the pendant draws over it (hmi-guide
+"Assets by reference").
+
 **ROI from a 3D box.** Two forms. The static one: `roi.corners`, a
 pixel polygon `[[u, v], ...]` — `detection_box_corners(name, box)`
 generates it once (fixed camera / fixed look pose; omit K/D — the
@@ -339,7 +349,9 @@ color:
   score for the whole outline would hide it (a chip is ~2% of a ring).
   Measured on the apc disc, 10° sectors: good 0.94 / 1.00 (outer /
   inner), chipped 0.33 / 1.00 — the chip was on the outer edge only, so
-  check both circles.
+  check both circles. Each result also carries `sectors`: every sector's
+  share, sector 0 at +x and turning towards +y — what a view draws (apc's
+  inspection card colours the 36 of them).
 - **Concentric** = the two results' `center`s close. They are whole
   pixels, so a tolerance under ~2 px is noise.
 - **Fail safe.** Not exactly two circles, a circle of the wrong size, or

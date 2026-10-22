@@ -599,38 +599,21 @@ export function openFileBrowser(opts = {}) {
   function done(entry) {
     sock.close();                        // the server stops watching
     el.classList.remove("show");
-    document.removeEventListener("keydown", onKey, true);
     const r = resolveFn; resolveFn = null;
     // The pick carries the folder it was made in: a caller reads the
     // file back through the same root (the operator may have switched
     // tabs inside the browser), never through a key it assumes.
     if (r) r(entry ? { ...entry, root } : null);
   }
-  // Escape closes the panel, like every other modal. CAPTURE phase +
-  // stopImmediatePropagation because this panel is usually opened from
-  // INSIDE the parameters modal: the page's own global ESC handler is a
-  // bubble-phase listener on document, so without taking the key first
-  // one press would close the browser AND the modal underneath it.
-  function onKey(ev) {
-    if (ev.key !== "Escape" || !el.classList.contains("show")) return;
-    ev.stopImmediatePropagation();
-    ev.preventDefault();
-    done(null);
-  }
+  // It closes on its ✕, Cancel or a pick — never on the backdrop or
+  // Escape (design-system "Files"): a panel the operator is mid-task in
+  // must not be dismissed by a click or a key that missed.
   q(".fb-close").onclick = () => done(null);
   q(".fb-cancel").onclick = () => done(null);
   useBtn.onclick = () => done(selected);
-  // Backdrop click closes, same as the params and device modals. The
-  // press must START on the backdrop too: this panel has a drag-to-
-  // resize splitter, and releasing a drag outside the modal delivers a
-  // click whose target is the overlay — a pick would be lost to it.
-  let downOnBackdrop = false;
-  el.onpointerdown = (ev) => { downOnBackdrop = (ev.target === el); };
-  el.onclick = (ev) => { if (ev.target === el && downOnBackdrop) done(null); };
 
   select(null);
   load();
   el.classList.add("show");
-  document.addEventListener("keydown", onKey, true);
   return new Promise((res) => { resolveFn = res; });
 }
