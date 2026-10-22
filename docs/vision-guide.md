@@ -333,8 +333,8 @@ color:
   disc and background ≤ 44 on the apc disc).
 - **`conf`.** `sector_deg` unset: every ellipse's conf is 1. Set: each
   outline is sampled about every pixel; a sample counts when an image
-  edge lies within `sector_tol` px of it (default 3 — a real edge wanders
-  2–3 px from a perfect circle); conf is the lowest sector's counted
+  edge lies within 3 px of it (fixed — a real edge wanders 2–3 px from a
+  perfect circle); conf is the lowest sector's counted
   share. A chip pulls its sector down however perfect the rest is; one
   score for the whole outline would hide it (a chip is ~2% of a ring).
   Measured on the apc disc, 10° sectors: good 0.94 / 1.00 (outer /
