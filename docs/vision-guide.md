@@ -379,6 +379,46 @@ color:
 - `elp_fit` cannot do a ring: it assumes a dark object on a light
   background and keeps outer outlines only.
 
+### A thin, faint band — `ring`
+
+When the band is too thin or too faint for a colour mask to leave
+`elp` anything to fit (the apc disc's top: a ~9 px olive band between a
+bright face and a machined holder — the mask left scattered pixels, `elp`
+found the band on 0 of 89), `ring` measures its two edges along rays and
+fits a circle to each:
+
+```yaml
+# <project>/vision/ring_top.yaml
+detection:
+  cmd: ring
+  inner: l      # the inner edge's channel — bright face against the band: Lab lightness
+  outer: b      # the outer edge's channel — yellowish band against a grey holder: Lab b
+  width: 40     # px past the inner edge the outer edge is looked for
+```
+
+- **The ROI is the part, roughly centred** (a detector's box plus a
+  margin). First pass: every 0.5° a ray from the ROI's centre finds the
+  inner channel's steepest step — the strongest edge there — and a circle
+  is fit to those. Second pass, from that circle, in 2° bins: the inner
+  edge where the channel crosses half-way between its levels 15 px each
+  side; the outer edge where the outer channel, past the band's extreme,
+  crosses half-way to the outside's level. The band is sought on the
+  side of the outside it lies on in most bins, so a machining streak of
+  the other colour is never taken for it.
+- **Fits** drop points over 3 MAD (at least 1 px) off the circle; a fit
+  whose points sit over 4 px off it on average is left out — no circle the
+  image shows (a shadow across the part). Each result: `edge`
+  (`inner` / `outer`), `center`, `corners`, `rms` (px), `conf` (the share
+  of bins the fit kept).
+- Read on the image BEFORE the colour mask, as `dent` is; no colour step
+  needed.
+- **Measured** on the apc disc's top (89 images, 2026-10-23): both circles
+  on 87, fits 0.2–2.1 px; the two left out were a half-shadowed disc and
+  one with no band. Fitting each circle from alternate halves of its bins
+  moves its centre 0.05 px (inner) and 0.2 px (outer) — a centre offset
+  is good to a fraction of a px. Offsets measured 0.1–7.7 px.
+- No `dent` option: `ring` is for centres. Chips are `elp`'s `dent`.
+
 ## 6. Failure semantics — what survives what
 
 - **A camera dies (USB)**: the vision server's per-camera AutoRecover
