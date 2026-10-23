@@ -323,15 +323,15 @@ detection_preset: {config: vision/tube_od.yaml, detection: {conf: 0.6}}   # only
 
 A part with a coloured ring (a disc with a yellow band) is checked with
 the classic pieces, no model: `color` keeps only the coloured pixels,
-`elp` fits the band's outer and inner circle, and `sector_deg` scores
-how whole each one is.
+`elp` fits the band's outer and inner circle, and `dent` measures how
+deep the worst notch in each one's edge is.
 
 ```yaml
 # <project>/vision/ring_elp.yaml
 detection:
   cmd: elp
   nfa_validation: false        # "False alarm validation" — it rejects big, clean circles at full size
-  sector_deg: 10               # conf = the worst 10° sector's share of the outline the image shows
+  dent: s                      # each circle's deepest dent (px) and where (°), on saturation
 color:
   low_hsv: [0, 70, 0]          # saturation ≥ 70: the band; the grey disc and the background drop out
   high_hsv: [255, 255, 255]
@@ -341,21 +341,38 @@ color:
   yellow band barely differs from a grey disc and is darker or lighter
   than the background by side. In saturation it stands alone (band ~114,
   disc and background ≤ 44 on the apc disc).
-- **`conf`.** `sector_deg` unset: every ellipse's conf is 1. Set: each
+- **Chips — `dent`.** Set to a channel (`gray`, `h`, `s`, `v`): every
+  0.5° a ray crosses the outline, sampling 15 px each side; the edge on
+  that ray is where the channel crosses half-way between its level inside
+  (the band's own peak — a band is a ridge, not a step) and outside. So
+  the edge follows the image's own contrast, whatever the background —
+  read on the image BEFORE the colour mask (the mask's cut is a hard edge
+  of its own: a shadow sitting at the cut speckles into dents). The dent
+  is the edge's distance from its running median over ±15° (a tilt, the
+  lens: not a dent), held over 1.5° (one noisy ray: not a dent); a ray
+  with no edge near the outline (a bite that took the band) is a full
+  15 px. Each result gets `dent` (px) and `dent_at` (°, 0 at +x turning
+  towards +y). Fixed constants (`DENT_*` in `find.py`), no knobs.
+  Measured on apc's disc set (90 bottom-camera crops, 2026-10-22): chips
+  3.6–15 px, good discs 1.1–3.1 px — every chip above every good disc
+  but one (which shows a notch: likely mislabelled). The margin is thin
+  (~0.4 px): choose the threshold from a fresh batch.
+- **`conf` — `sector_deg`.** Unset: every ellipse's conf is 1. Set: each
   outline is sampled about every pixel; a sample counts when an image
   edge lies within 3 px of it (fixed — a real edge wanders 2–3 px from a
   perfect circle); conf is the lowest sector's counted
   share. A chip pulls its sector down however perfect the rest is; one
   score for the whole outline would hide it (a chip is ~2% of a ring).
-  Measured on the apc disc, 10° sectors: good 0.94 / 1.00 (outer /
-  inner), chipped 0.33 / 1.00 — the chip was on the outer edge only, so
-  check both circles. Each result also carries `sectors`: every sector's
-  share, sector 0 at +x and turning towards +y — what a view draws (apc's
-  inspection card colours the 36 of them).
+  It catches a missing stretch of edge, not a notch: on apc's disc set
+  (10° sectors) it caught 46 of 57 chips and flagged 3 of 33 good discs
+  — a notch a few px deep barely moves a sector's share, and glare or a
+  dim band against the mask's cut drops a good one. Use `dent` for
+  chips. Each result also carries `sectors`: every sector's share,
+  sector 0 at +x and turning towards +y — what a view draws.
 - **Concentric** = the two results' `center`s close. They are whole
   pixels, so a tolerance under ~2 px is noise.
 - **Fail safe.** Not exactly two circles, a circle of the wrong size, or
-  either conf under the threshold is a fail, never a pass. Set the
+  a dent over the threshold is a fail, never a pass. Set the
   threshold from a batch of known-good and known-bad parts, between the
   lowest good and the highest bad; if they overlap, fix the lighting
   (even and diffuse, a plain background) before the numbers.
