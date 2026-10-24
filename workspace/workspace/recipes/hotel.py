@@ -84,9 +84,11 @@ class Hotel(Recipe):
                             ]
                         ]
 
-        # update exit
-        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0],
-                    [0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
+        # update exit: the lift off the shelf as its OWN group, then up and out —
+        # pick_setting's soft exit rule: packed into one group, a fused run curved
+        # the extraction leg into the shelf (the plate dipped below its seat)
+        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
+                    [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
                     [self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]]
 
         # run touch
