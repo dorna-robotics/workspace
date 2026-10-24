@@ -19,6 +19,9 @@ class HotelSBS76h4lvl(Hotel):
         # the Hotel recipe lifts a plate just clear of THIS shelf's rim
         # (top_<level>) before sliding it out — see recipes/hotel.py
         lift_from_shelf=True,
+        # four plates: on the base (the first shelf) and the three shelves above;
+        # the top slab at 304 mm is the roof
+        first_level=0,
     )
 
     def __init__(self, name: str, cfg: dict, workspace,**kwargs):

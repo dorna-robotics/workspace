@@ -30,17 +30,19 @@ class Hotel:
         self.size = prm["size"]
         # anchors
         p = Pose(anchors=prm["anchors"][next(iter(prm["anchors"]))])
-        # levels
+        # levels: level i stands (first_level + i) pitches above the base anchors.
+        # 1 (the original) skips the base; 0 for a hotel whose base is its first shelf.
         self.level = prm["level"]
+        first = int(prm.get("first_level", 1))
         for i in range(self.level):
             # center
-            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"center_{i}"] = p.pose("center", offset=[0, 0, (i+first)*self.pitch[2], 0, 0, 0])
             # top
-            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"top_{i}"] = p.pose("top", offset=[0, 0, (i+first)*self.pitch[2], 0, 0, 0])
             #place
-            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+1)*self.pitch[2], 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"place_{i}"] = p.pose("place", offset=[0, 0, (i+first)*self.pitch[2], 0, 0, 0])
             # clb
-            prm["anchors"][next(iter(prm["anchors"]))][f"clb_{i}"] = p.pose("clb", offset=[0, -(i+1)*self.pitch[2], 0, 0, 0, 0])
+            prm["anchors"][next(iter(prm["anchors"]))][f"clb_{i}"] = p.pose("clb", offset=[0, -(i+first)*self.pitch[2], 0, 0, 0, 0])
 
         # assembly
         self.assembly = {
