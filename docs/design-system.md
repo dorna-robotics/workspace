@@ -603,7 +603,8 @@ The grammar, for the next surface that needs a list of things on disk:
   non-empty folder.
 - **It closes on the X, not on the backdrop or Escape.** A panel the
   operator is mid-task in (picking a manifest) must not be dismissed by
-  a click that missed.
+  a click that missed. The Parameters panel follows the same rule — its
+  ✕ / Cancel only: parameters half-set are never lost to a stray click.
 
 **Button size is positional, not a judgement call** — this is the rule
 the whole admin already followed, written down after the file browser

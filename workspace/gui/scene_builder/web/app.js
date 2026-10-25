@@ -2680,13 +2680,28 @@ function ensureBuilderBar() {
     try { document.dispatchEvent(new Event("sb-new-scene")); } catch(e) {}
     try { localStorage.setItem("sb_tab", "scene"); } catch(e) {}
 
-    // Set project path (can be empty for no project)
+    // Set project path (can be empty for no project). The answer is READ:
+    // a refused path is said and the page stays — it used to reload
+    // silently into an empty builder, which read as "the scene won't load".
+    let res = null;
     try {
-      await fetch(SB_API + "/set_project", {
+      res = await fetch(SB_API + "/set_project", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: path }),
-      });
+      }).then(r => r.json());
+    } catch(e) {
+      showToast("Could not reach the builder to set the project path", "bad");
+      return;
+    }
+    if (!res || !res.ok) {
+      showToast((res && res.error) || "The project path was refused", "bad");
+      return;
+    }
+    // A note (no launch.yaml there) is shown after the reload.
+    try {
+      if (res.note) sessionStorage.setItem("sb_project_note", res.note);
+      else sessionStorage.removeItem("sb_project_note");
     } catch(e) {}
 
     setTimeout(() => window.location.reload(), 200);
@@ -7726,11 +7741,22 @@ ensureBuilderBar();
     finally { window.__importBusy = false; }
   }
   async function __loadProjectBundleInner() {
+    // The note New Scene left for after its reload (set_project's answer).
+    try {
+      const note = sessionStorage.getItem("sb_project_note");
+      if (note) { sessionStorage.removeItem("sb_project_note"); showToast(note, "bad"); }
+    } catch (_) {}
     let j = null;
     try {
       j = await fetch(SB_API + "/project_bundle").then(r => r.json());
-    } catch (e) { return; }
+    } catch (e) { showToast("Could not load the project from the builder", "bad"); return; }
     if (!j || !j.ok || !j.project) return;
+    // Everything that kept a scene from loading is said, not swallowed.
+    if (j.launch_error) showToast("launch.yaml: " + j.launch_error, "bad");
+    for (const s of (j.scenes || [])) {
+      if (s.cfg_error) showToast(`${s.name}: could not render it (${s.cfg_error}) — loading it as plain text`, "bad");
+    }
+    if (j.recipes_error) showToast("recipes: " + j.recipes_error, "bad");
     window.__projectBundle = j;
     // Header identity: which project this builder session is editing.
     try {

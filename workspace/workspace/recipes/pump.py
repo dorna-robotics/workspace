@@ -114,7 +114,30 @@ class Pump(Recipe):
                                     dispensing_speed=dispensing_speed,
                                     sim_return=sim_return)
 
+    def aspirate_line(self, volume_ul: float, port=None, speed=None, return_port=None,
+                      sim_return: bool = True):
+        """Draw ``volume_ul`` in through the outlet ``port`` — more than
+        the barrel when needed: the drawn liquid is held in the outlet's
+        line, the barrel emptying into ``return_port`` (the call's, else
+        the scene's) between strokes. Refuses (False) past the line's
+        ``tube_volume_ul``."""
+        return self.component.aspirate_line(volume_ul, port=port, speed=speed,
+                                            return_port=return_port, sim_return=sim_return)
+
+    def dispense_line(self, volume_ul: float, port=None, speed=None, return_port=None,
+                      sim_return: bool = True):
+        """Push ``volume_ul`` out of the outlet ``port`` — the mirror of
+        :meth:`aspirate_line`, refilling from ``return_port``. Refuses
+        (False) past what the line holds."""
+        return self.component.dispense_line(volume_ul, port=port, speed=speed,
+                                            return_port=return_port, sim_return=sim_return)
+
     # ── Reads ──
+
+    def line_volume(self, port=None):
+        """µL drawn in through the outlet ``port`` and not yet pushed
+        back out — what its line holds."""
+        return self.component.line_volume(port)
 
     def volume(self):
         """µL currently held (float, or None when unreachable)."""

@@ -1122,11 +1122,27 @@ class SetProjectHandler(tornado.web.RequestHandler):
             self.finish({"ok": False, "error": "Invalid JSON"})
             return
 
-        path = (data.get("path") or "").strip()
+        # The path as an operator types it: "~/..." expanded, and a
+        # launch.yaml accepted as its own folder. Anything that is still
+        # not a folder is refused — and the page shows the refusal.
+        path = os.path.expanduser((data.get("path") or "").strip())
+        if path and os.path.basename(path) == "launch.yaml" and os.path.isfile(path):
+            path = os.path.dirname(path)
+        if path:
+            path = os.path.abspath(path)
         if path and not os.path.isdir(path):
             self.set_status(400)
             self.finish({"ok": False, "error": f"Directory not found: {path}"})
             return
+        # A folder with no launch.yaml is accepted (its components/ and
+        # CAD/ still load) but has no scene to import — say so, and name
+        # the projects inside it (a bench folder holding _bna, _tph, ...).
+        note = None
+        if path and not os.path.isfile(os.path.join(path, "launch.yaml")):
+            inside = sorted(d for d in os.listdir(path)
+                            if os.path.isfile(os.path.join(path, d, "launch.yaml")))
+            note = (f"{path} has no launch.yaml — its components load, but there is no scene to import."
+                    + (f" Projects inside it: {', '.join(inside)}." if inside else ""))
 
         _project_path = path or None
         _project_component_map = scan_project_components(path) if path else {}
@@ -1139,6 +1155,7 @@ class SetProjectHandler(tornado.web.RequestHandler):
             "ok": True,
             "path": _project_path,
             "components": sorted(_project_component_map.keys()),
+            "note": note,
         })
 
 class ProjectBundleHandler(tornado.web.RequestHandler):

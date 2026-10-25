@@ -145,7 +145,10 @@ class Cap(Action):
         rcp["tube_rack"].pick(slot)
         rcp["decapper"].place()
         rcp["cap_holder"].pick(slot)
-        rcp["decapper"].cap(exit=False)
+        # release=True: let go after the tighten, then pick the tube back
+        # up — this example's two-step ending (cap(release=False), the
+        # default, would carry it out in one).
+        rcp["decapper"].cap(exit=False, release=True)
         rcp["decapper"].pick(approach=False, tool_tcp_z_offset=-2)
         rcp["tube_rack"].place(slot, gravity_offset=4, soft_approach=True)
 

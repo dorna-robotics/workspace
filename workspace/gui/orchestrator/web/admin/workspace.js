@@ -140,7 +140,9 @@ const _openFiles = () =>
                     title: `Files — ${wsName}` });
 $("btnFiles").addEventListener("click", _openFiles);
 $("pendantFiles").addEventListener("click", _openFiles);
-paramsModal.addEventListener("click", (e) => { if (e.target === paramsModal) paramsModal.classList.remove("show"); });
+// The parameters panel closes on its ✕ / Cancel only — never on the
+// backdrop or Escape (design-system "Files", the same rule): parameters
+// half-set are not lost to a click or a key that missed.
 
 // Device detail modal — close on X button or backdrop click.
 const _deviceModal = $("deviceModalOverlay");
@@ -156,7 +158,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   const _MODAL_IDS = [
     "deviceModalOverlay",
-    "paramsModalOverlay",
     "opActionsModalOverlay",
     "scheduleModalOverlay",
   ];
@@ -911,6 +912,9 @@ async function mountProjectPendant(spec) {
         // The same operator-action path the platform buttons use — a
         // project screen can trigger declared actions, nothing more.
         invoke(component, method) { return runOperatorAction(component, method); },
+        // A runtime path (an rt.asset's /op/asset/... from rt.op) as a URL
+        // the screen can load — the runtime server's, not this page's.
+        url(path) { return url(path); },
       };
       if (typeof def.mount === "function") await def.mount(shadow, api);
       if (typeof def.update === "function") def.update({ ..._opValues });
@@ -2390,13 +2394,10 @@ function renderControls(state, launched, running) {
       // the dashboard card: fetch fresh status, prompt with the list
       // of blocking device ids if any, abort if operator cancels. See
       // deviceFaultGate in api.js.
-      const isFreshStart = (cmd === "start" && s !== "PAUSED");
       if (cmd === "start") {
         const action = (s === "PAUSED") ? "Resume" : "Start";
         if (!await deviceFaultGate(wsName, action)) return false;
       }
-      // Fresh run → fresh logs (skip on Resume; keep them mid-run).
-      if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
       const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
       await sendCmd(cmd, kwargs);
       await refreshStatus();
@@ -2803,8 +2804,9 @@ $("btnToggleLogs").addEventListener("click", () => {
 // Clear logs — stop propagation so it doesn't also toggle collapse.
 // No confirm modal: clearing logs is cheap and reversible enough
 // (buffered output stays in memory), so just do it on click.
-// Clear both the server-side log buffer and the panel. Shared by the
-// Clear-logs button and the Start command (fresh run → fresh logs).
+// Clear both the server-side log buffer and the panel — the Clear-logs
+// button only. A Start no longer clears: each run keeps its own console
+// and steps in log/<run stamp>/ (the orchestrator's log pump).
 async function clearLogs() {
   await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
   lastLogs = "";
@@ -3246,14 +3248,11 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
     if (cmd === "replan" && _replan) { openReplanModal(); return false; }
     // Device-fault gate also covers the pendant Start/Resume — same
     // contract as the sidebar button.
-    const isFreshStart = (cmd === "start" && (_lastState || "").toUpperCase() !== "PAUSED");
     if (cmd === "start") {
       const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
       if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
     }
     try {
-      // Fresh run → fresh logs (skip on Resume; keep them mid-run).
-      if (isFreshStart) { try { await clearLogs(); } catch (_) {} }
       const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
       await sendCmd(cmd, kwargs);
       await refreshStatus();

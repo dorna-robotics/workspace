@@ -109,7 +109,7 @@ What each setting means and how to get it right:
 | `output_right` | which side "output" means at homing | matches the plumbing: `True` = output on the right (viewed from the front). Homing expels the barrel through that side |
 | `default_speed` | plunger speed used when a call gives no `speed=` | 0-100 percent; 100 is the fastest preset |
 | `simulation` | sim intent | sim tracks the plunger, refuses overflows, and **takes the time the real move would take** (§6), so protocols test for real; the connection dot keeps showing hardware truth either way (`device-guide.md` §16) |
-| `valve_ports` | valve port → what hangs on it | the live holes only — an undeclared port is refused. `tube_volume_ul` is that line's WHOLE dead volume: reservoir→valve for a source; valve→needle **tip** for an outlet, so it includes the fitted needle's internal bore, not just the tubing. `prime` sizes its cycle count from it — and from nothing else (§3) |
+| `valve_ports` | valve port → what hangs on it | the live holes only — an undeclared port is refused. `tube_volume_ul` is that line's WHOLE dead volume: reservoir→valve for a source; valve→needle **tip** for an outlet, so it includes the fitted needle's internal bore, not just the tubing. `prime` sizes its cycle count from it — and from nothing else (§3). An outlet may add `return_port` (a source port): what `aspirate_line` / `dispense_line` shuttle through; a line draw holds at most `max(tube_volume_ul, syringe_volume)` (§5) |
 | `outlets` | which ports are nozzles | numbers or names; every other listed port is a source. Materials are tracked per outlet (§5) |
 
 **Valve bodies vs. holes.** `valve_type` declares the BODY (what
@@ -348,6 +348,44 @@ motion.
   ceil(dead volume / barrel) + 1 margin cycle, so a 25 µL barrel
   behind 150 µL of tubing gets 7 cycles, not 1. With no tube volumes
   declared it falls back to 1 cycle.
+
+### A draw larger than the barrel — the line
+
+An outlet's line (valve → tip, `tube_volume_ul`) can hold more than the
+barrel. `aspirate_line` uses it: the drawn liquid stays in the LINE while
+the barrel shuttles the line's own system liquid through the outlet's
+`return_port` — whenever the barrel is full, the valve turns there, the
+barrel empties, the valve turns back and the draw goes on.
+`dispense_line` is the mirror: the barrel pushes out what it holds, then
+refills from `return_port` and pushes again.
+
+```yaml
+valve_ports:
+  2: {name: needle_LV, tube_volume_ul: 1000, return_port: MeCl}   # an outlet
+  3: {name: MeCl}                                                 # the system liquid
+```
+
+```python
+pump.aspirate_line(60, speed=70)            # 25 + return + 25 + return + 10, through needle_LV
+pump.line_volume()                          # 60.0 — what the line holds
+pump.dispense_line(60, speed=80)            # the barrel's 10 out, refill 25 + out, refill 25 + out
+pump.aspirate_line(30, return_port="Water") # the call's return_port wins over the scene's
+```
+
+- `return_port`: the call's, else the outlet's from the scene, else
+  refused — never guessed, and never the outlet itself (a source port
+  only, checked when the scene loads). The line must be primed with
+  that port's liquid.
+- The line count (`line_volume()`) is every stroke through the outlet:
+  a draw adds, a push subtracts, never below 0 — so an air gap drawn
+  with plain `aspirate` just before counts too.
+- Refused before anything moves: an `aspirate_line` that would make the
+  line hold more than `max(tube_volume_ul, syringe_volume)` — up to a
+  barrel needs no shuttle; past it every shuttle must return only the
+  line's own liquid, so the drawn liquid must stay in the line — and a
+  `dispense_line` of more than the line holds.
+- Component and recipe (`Pump`) level; plain `aspirate` / `dispense`
+  are unchanged and never switch to this on their own.
 
 ### What's where — material tracking
 

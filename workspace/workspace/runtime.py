@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import os
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -83,6 +84,11 @@ class Runtime:
         self._op_dirty: set = set()
         self._op_unset: set = set()
         self._op_dropped: set = set()   # keys already warned about
+        # Assets rt.op passes BY REFERENCE (rt.asset): key -> (n, mime,
+        # bytes), served by the runtime server at /op/asset/<key>. Same
+        # lifetime as the values: memory only, cleared at run start.
+        self._assets: dict = {}
+        self._asset_n = 0
 
         # ── per-item records (rt.record) ────────────────────────────
         # One record per ITEM the run works on (a sample, a vial, a
@@ -102,6 +108,10 @@ class Runtime:
         self._rec_carry: list = []        # (run_dir, lines, csv) from a cleared run
         self._rec_finalize = False        # write records.csv on next drain
         self._rec_run_dir: Optional[str] = None
+        # The run's name, "2026-10-17_14-05-33": its records folder
+        # (results/<stamp>) and its log folder (log/<stamp>, written by the
+        # orchestrator from the "[run] start/end" console lines) share it.
+        self.run_stamp: Optional[str] = None
         self._rec_dropped: set = set()
         # Where runs land: ``<project>/runs``. Set by RuntimeServer from
         # the project dir; a script sets it itself. None = memory only.
@@ -244,6 +254,12 @@ class Runtime:
             else:
                 self.run_started_at = time.time()
                 self.run_finished_at = None
+                self.run_stamp = self._new_run_stamp(self.run_started_at)
+                if self.record_dir:
+                    self._rec_run_dir = os.path.join(self.record_dir, self.run_stamp)
+                # The run's boundary, IN THE CONSOLE: the orchestrator's log
+                # pump opens log/<stamp>/ on this line (workspace_info.py).
+                print(f"[run] start {self.run_stamp}", flush=True)
                 self._fire(self.on_run_start)
         elif (
             new_state in (RTState.IDLE, RTState.ERROR, RTState.KILLED)
@@ -256,6 +272,7 @@ class Runtime:
                 self.count("run.time", n=1, s=round(self.run_finished_at - self.run_started_at, 3))
             self._rec_finalize = True
             self._count_saved_at = 0.0        # the run's counts are written on the next drain
+            print(f"[run] end {self.run_stamp} ({new_state.value})", flush=True)
             self._fire(self.on_run_end, new_state.value)
 
         self._cv.notify_all()
@@ -276,6 +293,17 @@ class Runtime:
                 })
             except Exception:
                 pass
+
+    def _new_run_stamp(self, started: float) -> str:
+        """Human-readable, sorts by time, no spaces: 2026-09-12_15-35-17;
+        two runs in one second get _2, _3 — unique against the records
+        folder, which shares the name."""
+        stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(started))
+        cand, n = stamp, 1
+        while self.record_dir and os.path.exists(os.path.join(self.record_dir, cand)):
+            n += 1
+            cand = f"{stamp}_{n}"
+        return cand
 
     @staticmethod
     def _fire(cb, *args) -> None:
@@ -482,8 +510,59 @@ class Runtime:
         with self._lock:
             return {"rev": self._op_rev, "set": dict(self._op), "snapshot": True}
 
+    # ── Assets (rt.asset) ────────────────────────────────────────────
+    # What rt.op passes BY REFERENCE — a picture an operator screen shows,
+    # held in memory (never the SD card) and served by the runtime server.
+    # Bounded like the values: a handful of keys, each a few MB at most.
+    ASSET_MAX_KEYS = 16
+    ASSET_MAX_BYTES = 4 * 1024 * 1024
+    _ASSET_KEY = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+    def asset(self, key: str, data: Optional[bytes], mime: str = "image/jpeg") -> Optional[str]:
+        """Hold ``data`` (bytes — a JPEG, a PNG) in memory as ``key`` and
+        return the path the runtime server serves it at —
+        ``/op/asset/<key>?v=<n>``, ``n`` new on every write so a screen
+        never shows a stale copy. Put the path in rt.op; the screen loads
+        it over HTTP (``api.url(path)`` on a project pendant), so the
+        socket carries only the reference.
+
+            rt.op(inspection={..., "img": rt.asset("inspection", jpeg)})
+
+        Replace semantics; ``None`` removes. Memory only, cleared at run
+        start. Observability never blocks (project-guide §8): never
+        raises — a bad key, a non-bytes value or one over the caps is
+        DROPPED with one log line per reason, and returns None."""
+        k = str(key)
+        if not self._ASSET_KEY.match(k):
+            self._op_warn(k, "asset key must be 1-64 of A-Z a-z 0-9 _ . -")
+            return None
+        with self._lock:
+            if data is None:
+                self._assets.pop(k, None)
+                return None
+            if not isinstance(data, (bytes, bytearray)):
+                self._op_warn(k, f"asset is {type(data).__name__}, not bytes")
+                return None
+            if len(data) > self.ASSET_MAX_BYTES:
+                self._op_warn(k, f"asset is {len(data)}B > {self.ASSET_MAX_BYTES}B")
+                return None
+            if k not in self._assets and len(self._assets) >= self.ASSET_MAX_KEYS:
+                self._op_warn(k, f"already holding {self.ASSET_MAX_KEYS} assets")
+                return None
+            self._asset_n += 1
+            self._assets[k] = (self._asset_n, str(mime), bytes(data))
+            return f"/op/asset/{k}?v={self._asset_n}"
+
+    def asset_get(self, key: str):
+        """``(mime, bytes)`` of an rt.asset, or None — the runtime
+        server's read."""
+        with self._lock:
+            a = self._assets.get(str(key))
+            return None if a is None else (a[1], a[2])
+
     def _clear_ops(self) -> None:
         self._op.clear()
+        self._assets.clear()
         self._op_sizes.clear()
         self._op_dirty.clear()
         self._op_unset.clear()
@@ -647,13 +726,9 @@ class Runtime:
             self._record_persist(run_dir, c_lines, c_csv)
         if lines or csv_text:
             if self._rec_run_dir is None and self.record_dir:
-                # Human-readable, sorts by time, no spaces: 2026-09-12_15-35-17.
-                stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(started or time.time()))
-                cand, n = os.path.join(self.record_dir, stamp), 1
-                while os.path.exists(cand):          # two runs in one second
-                    n += 1
-                    cand = os.path.join(self.record_dir, f"{stamp}_{n}")
-                self._rec_run_dir = cand
+                # Recorded outside a run (a script): name it as a run would be.
+                self._rec_run_dir = os.path.join(
+                    self.record_dir, self._new_run_stamp(started or time.time()))
             self._record_persist(self._rec_run_dir, lines, csv_text)
         return delta
 

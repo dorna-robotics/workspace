@@ -38,7 +38,7 @@ projects/my_project/
 ├── uploads/             # operator INPUT files — a file parameter's Open (launch.yaml uploads:; git-ignored)
 ├── captures/            # the detections' pictures — client_save_* in vision/*.yaml (git-ignored)
 ├── counts/              # rt.count's totals across every run — counts.json (launch.yaml counts:; git-ignored)
-└── log/                 # the project's console — log/workspace.log, written by the orchestrator (git-ignored)
+└── log/                 # the project's console — log/workspace.log, and log/<run>/ per run, written by the orchestrator (git-ignored)
 ```
 
 The last six are DATA folders (§3 "The project's folders"), never
@@ -339,6 +339,26 @@ scheduler:    cpsat
 `log/` is the one folder no launch key names: the orchestrator writes
 `log/workspace.log` there for every project it launches, so the tab is
 read-only — browse and download, never upload or delete.
+
+**One folder per run.** Each run also gets its own folder under `log/`,
+named like its records folder — `log/2026-10-17_14-05-33/` beside
+`results/2026-10-17_14-05-33/` (`Runtime.run_stamp`, shared by both):
+
+| | |
+|---|---|
+| `log/<run>/workspace.log` | every console line of that run — the same timestamped lines as `log/workspace.log`, from the run's start to its end (or to the process ending mid-run) |
+| `log/<run>/steps.log` | that run's `rt.step` lines only — `[STEP][level] text`, timestamped; progress ticks left out |
+
+The runtime marks the run in its console — `[run] start <stamp>` and
+`[run] end <stamp> (<state>)` — and the orchestrator's log pump
+(`gui/orchestrator/workspace_info.py`, `_RunLog`) opens and closes the
+two files on those lines, so the files hold exactly what the process
+printed, `logging` output included. The newest `RUN_LOGS_KEEP` (100)
+run folders are kept; older ones are deleted when a run starts.
+`log/workspace.log` stays the live console of the whole process —
+Start no longer empties it (the Clear button still does); a run's
+history lives in its folder. A workspace with no project folder (the
+shared `~/.workspace/log/` fallback) gets no run folders.
 
 Sibling projects that share one bench (bna's `_bna`, `_tph`,
 `_calibration`) point the shared keys one level up — `scene: [../scene/...]`,
