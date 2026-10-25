@@ -19,6 +19,13 @@ class Hotel(Recipe):
         rail_span=5, # 5    
         # calibration
         calibrate_abc = True, # True
+        # a shelf leaves millimetres to the posts and the shelf above: the
+        # slide in and out runs straight, never folded into the travel
+        # (fuse_in) or held and fused into the next one (fuse) — both curve
+        # it (setup_11, 100 mm hotel: the plate drifted 9.8 mm sideways
+        # sliding in and turned 0.9° lifting off the shelf)
+        fuse=False,
+        fuse_in=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -84,11 +91,10 @@ class Hotel(Recipe):
                             ]
                         ]
 
-        # update exit: the lift off the shelf as its OWN group, then up and out —
-        # pick_setting's soft exit rule: packed into one group, a fused run curved
-        # the extraction leg into the shelf (the plate dipped below its seat)
-        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
-                    [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
+        # update exit: lift off the shelf, up, out — ONE group, so it runs as one
+        # straight-line chain (fuse=False: never held and fused into the next travel)
+        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0],
+                    [0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
                     [self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]]
 
         # run touch
