@@ -1,9 +1,7 @@
 from copy import deepcopy
 
-import numpy as np
 from mergedeep import merge
 
-import dorna2.pose as dorna_pose
 from workspace.components.factory import register
 from workspace.components.probe.probe import Probe
 
@@ -13,13 +11,13 @@ class ProbeHorizontal(Probe):
     # tcp abc = 120 deg about [1,1,1] (tool +X -> pocket +Z): the sideways rod
     # meets a pocket that opens horizontally. Orientation lives in the anchor.
     # The rod runs along -X to its tip 72 mm out (the rod on the bench; the mesh
-    # still draws the earlier 70.7 mm one). Like probe_vertical / probe_rod, the
-    # DEFAULTS "tcp" is only the BASE for the tcp_<deg> family: __init__ builds
-    # tcp_0..tcp_180 from it (each = the base spun <deg> about its Z, the rod's
-    # own axis) and then drops the plain "tcp". tcp_0 (same orientation) is the
-    # canonical anchor; pick a spin at calibration time with
-    # recipe.calibrate(tool_anchor="tcp_90").
-    TCP_YAWS = [0, 45, 90, 135, 180, -45, -90, -135]
+    # still draws the earlier 70.7 mm one). One anchor, tcp_0 — named like
+    # probe_vertical's so calibrate(tool_anchor="tcp_0") reads the same — and no
+    # tcp_<deg> family: theirs spin about the probing axis, which for a vertical
+    # rod is the flange axis (a wrist angle). Here the probing axis is the level
+    # rod, so a spin would tilt the flange off vertical (tcp_180 hangs the robot
+    # upside down), and a wrist turn would swing the rod off the pocket. tcp_0
+    # hangs the tool flange-down, as the gripper is when it slides into a hotel.
 
     DEFAULTS = dict(
         anchors={"body": {"center": [0, 0, 0, 0, 0, 0], "tcp": [-72, 0, 3, 69.28203230275508, 69.28203230275508, 69.28203230275508], "tip": [-72, 0, 3, 69.28203230275508, 69.28203230275508, 69.28203230275508]}},
@@ -39,17 +37,11 @@ class ProbeHorizontal(Probe):
         merge(prm, cfg)  # cfg
         merge(prm, kwargs)  # kwargs
 
-        # Build the tcp_<deg> family from the base "tcp", then drop "tcp":
-        # tcp_0 (same orientation) is the canonical anchor that replaces it.
-        # Shallow-copy the body dict first so we never mutate the class DEFAULTS.
+        # "tcp" becomes tcp_0. Shallow-copy the body dict first so we never
+        # mutate the class DEFAULTS.
         body = dict(prm["anchors"]["body"])
         prm["anchors"]["body"] = body
-        tcp_xyz, tcp_abc = list(body["tcp"][:3]), list(body["tcp"][3:6])
-        base_R = np.array(dorna_pose.abc_to_rmat(tcp_abc))
-        for deg in self.TCP_YAWS:
-            R = base_R @ np.array(dorna_pose.abc_to_rmat([0, 0, deg]))
-            body[f"tcp_{deg}"] = tcp_xyz + [round(float(a), 6) for a in dorna_pose.rmat_to_abc(R)]
-        del body["tcp"]
+        body["tcp_0"] = body.pop("tcp")
 
         # update type
         prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))

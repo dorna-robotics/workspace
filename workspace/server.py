@@ -177,6 +177,17 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
 # Project-local CAD dirs announced by connected Displays — searched
 # BEFORE the library for /static/CAD/ requests (runtime-server parity).
 _project_static: list = []
+# The connected projects' folders: a component shipped in the project keeps
+# its mesh IN ITS FOLDER, components/<type>/<type>.glb (component-guide §3,
+# runtime_server.component_mesh_path) — searched first, like the runtime does.
+_project_roots: list = []
+
+
+def component_mesh_path(base, name):
+    """``<base>/components/<stem>/<name>`` for a CAD file name, the folder being
+    the name's stem (the part before the first dot); None when it isn't there."""
+    full = os.path.join(base, "components", name.split(".", 1)[0], name)
+    return full if os.path.isfile(full) else None
 
 
 class FallbackStaticHandler(NoCacheStaticFileHandler):
@@ -187,6 +198,10 @@ class FallbackStaticHandler(NoCacheStaticFileHandler):
     def get_absolute_path(self, root, path):
         if path.startswith("CAD/"):
             name = path[len("CAD/"):]
+            for base in _project_roots:
+                full = component_mesh_path(base, name)
+                if full:
+                    return full
             for d in _project_static:
                 full = os.path.join(d, name)
                 if os.path.isfile(full):
@@ -251,6 +266,9 @@ async def connect(sid, environ, auth):
         # served the library only and project meshes rendered as
         # nothing in dev notebooks.
         proj = os.path.dirname(core_dir)
+        if proj not in _project_roots:
+            _project_roots.insert(0, proj)
+            print(f"[static] project components mounted: {os.path.join(proj, 'components')}")
         cad = os.path.join(proj, "CAD")
         if os.path.isdir(cad) and cad not in _project_static:
             _project_static.insert(0, cad)
