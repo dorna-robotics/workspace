@@ -160,14 +160,14 @@ const _verOverlay = $("versionModalOverlay");
 const _verApi = () => `/workspace/${encodeURIComponent(wsName)}/version`;
 let _ver = null;
 
-function _verPill(v) {
-  const el = $("versionModalPill");
+// The Status row's pill — how this bench compares with GitHub.
+function _verStatus(v) {
   let cls = "ok", txt = "Up to date";
   if (!v || !v.git) { cls = "bad"; txt = "No git"; }
-  else if (v.reachable === false) { cls = "off"; txt = "Unknown"; }
-  else if (v.behind) { cls = "warn"; txt = `${v.behind} behind`; }
+  else if (v.reachable === false) { cls = "off"; txt = "Unknown — no access"; }
+  else if (v.behind) { cls = "warn"; txt = `${v.behind} behind GitHub`; }
   else if (v.ahead || (v.changes || []).length) { cls = "warn"; txt = "Local changes"; }
-  el.className = `pill ${cls}`; el.textContent = txt;
+  return `<span class="pill ${cls}">${esc(txt)}</span>`;
 }
 const _verCommit = (c) => c
   ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
@@ -177,7 +177,7 @@ function _verFoot(btns) {
   const foot = $("versionModalFoot"); foot.innerHTML = "";
   for (const [label, cls, fn] of btns) {
     const b = document.createElement("button");
-    b.className = `btn btn-sm ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
+    b.className = `btn ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
     foot.appendChild(b);
   }
 }
@@ -193,7 +193,7 @@ function _verLocal(v) {
 }
 
 function _verState(v) {
-  _ver = v; _verPill(v);
+  _ver = v;
   $("versionModalTitle").textContent = `Version — ${wsName}`;
   const body = $("versionModalBody");
   if (!v.git) {
@@ -202,6 +202,7 @@ function _verState(v) {
     return;
   }
   let html = `<dl class="ver-rows">
+      <dt>Status</dt><dd>${_verStatus(v)}</dd>
       <dt>Repository</dt><dd>${esc(v.url || "— no origin remote")}</dd>
       <dt>Branch</dt><dd>${esc(v.detached ? "— detached HEAD" : v.branch)}</dd>
       <dt>Running</dt><dd>${_verCommit(v.head)}</dd>
@@ -254,7 +255,6 @@ async function _verRun(v) {
 }
 
 function _verDone(r) {
-  _verPill(r.version);
   $("versionModalTitle").textContent = `Version — ${wsName}`;
   let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated `
     + `<span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span>`
@@ -265,6 +265,7 @@ function _verDone(r) {
       + (r.stash ? `<li>git stash list   # ${esc(r.stash)}</li>` : "")
       + (r.backup ? `<li>git log ${esc(r.backup)}</li>` : "") + `</ul>`;
   }
+  html += `<dl class="ver-rows"><dt>Status</dt><dd>${_verStatus(r.version)}</dd></dl>`;
   html += `<div class="ver-label">Ran</div><ul class="ver-cmds sh">${(r.ran || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
   $("versionModalBody").innerHTML = html;
   _ver = r.version;
