@@ -18,19 +18,23 @@ class Measurement:
     function: str
     frequency: str
     raw: str
+    # which second reading ``secondary`` is — D, Q, THETA or ESR, as the
+    # meter reported it selected; "" when the read did not ask
+    secondary_function: str = ""
 
     def __str__(self) -> str:
         """Readable one-liner for the operator panel / log, e.g.
         ``C @ 1khz: 1.5e-09 F``. (Without this, str() would dump the whole
         dataclass repr.)"""
         val = f"{self.primary:g} {self.primary_unit}".strip()
-        sec = f" / {self.secondary:g} {self.secondary_unit}".rstrip() if self.secondary_unit else ""
+        sec = f" / {self.secondary_function} {self.secondary:g} {self.secondary_unit}".rstrip() if self.secondary_function else ""
         return f"{self.function} @ {self.frequency}: {val}{sec}"
 
 
 _FREQ_MAP = {100: "100hz", 120: "120hz", 1000: "1khz", 10000: "10khz"}
 _FREQ_DISPLAY = {"100hz": "100 Hz", "120hz": "120 Hz", "1khz": "1 kHz", "10khz": "10 kHz"}
 _UNITS = {"L": "H", "C": "F", "R": "\u03a9", "Z": "\u03a9"}
+_SECONDARY_UNITS = {"D": "", "Q": "", "THETA": "\u00b0", "ESR": "\u03a9"}
 _USB_VIDS = {0x0403, 0x10C4}
 _ERROR_RE = re.compile(r"^E(1[012])\b")
 
@@ -55,6 +59,7 @@ class BK879B:
         self._function: Optional[str] = None
         self._equivalent: Optional[str] = None
         self._frequency: Optional[str] = None
+        self._secondary: Optional[str] = None   # what the meter said is selected
 
     # ==================================================
     # Connection lifecycle
@@ -148,6 +153,16 @@ class BK879B:
         except Exception:
             return False, None
 
+    def go_local(self) -> None:
+        """Hand the front panel back (*GTL): in remote mode every button
+        but USB is disabled, so a front-panel-only procedure — the open /
+        short calibration — needs this first. The next command takes
+        remote control back by itself. The cached settings are dropped:
+        the operator may change them on the panel, so the next read sends
+        every setting again."""
+        self._send("*GTL")
+        self._function = self._equivalent = self._frequency = self._secondary = None
+
     def initialize(self, lockout: bool = False) -> str:
         resp = self.idn()
         if not resp:
@@ -174,7 +189,18 @@ class BK879B:
         return self._query("FUNCtion:impa?")
 
     def set_secondary(self, func: str) -> None:
-        self._send(f"FUNCtion:impb {func.upper()}")
+        """Select the second reading (D | Q | THETA | ESR). ASKS the meter
+        first and sends only on a difference — unlike the cached setters,
+        the second reading is one button away on the front panel, so a
+        cache could be stale; asking is silent, a change beeps."""
+        func = func.upper()
+        if func not in _SECONDARY_UNITS:
+            raise ValueError(f"secondary must be one of {list(_SECONDARY_UNITS)}, got {func}")
+        if self.get_secondary().strip().upper() != func:
+            self._send(f"FUNCtion:impb {func}")
+            if self.get_secondary().strip().upper() != func:
+                raise RuntimeError(f"meter did not select secondary {func}")
+        self._secondary = func
 
     def get_secondary(self) -> str:
         return self._query("FUNCtion:impb?")
@@ -285,14 +311,19 @@ class BK879B:
             primary=primary,
             primary_unit=unit,
             secondary=secondary,
-            secondary_unit="",
+            secondary_unit=_SECONDARY_UNITS.get(self._secondary or "", ""),
             function=self._function,
             frequency=self._frequency,
             raw=raw,
+            secondary_function=self._secondary or "",
         )
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Measurement:
+        """C and its dissipation factor D, from one reading — both selected
+        on the meter every read, so neither depends on the front panel.
+        ``primary`` is C, ``secondary`` is D."""
         self.set_function("C")
+        self.set_secondary("D")
         self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PARallel")
         self.set_frequency(frequency)
         time.sleep(0.3)

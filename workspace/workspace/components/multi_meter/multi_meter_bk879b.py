@@ -186,8 +186,14 @@ class MultiMeterBk879b:
     # return a ``Measurement``, so sim_return is one too). Pass your own
     # to inject a different sim reading. Real mode ignores it.
 
+    def go_local(self) -> bool:
+        """Front panel back to the operator (RMT off) — for the open /
+        short calibration, which has no remote command. The next read
+        takes remote control back."""
+        return self.meter.go_local()
+
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")):  # 1.5 nF
+                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")):  # 1.5 nF
         return self.meter.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,

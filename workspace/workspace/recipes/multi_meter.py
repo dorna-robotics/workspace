@@ -57,8 +57,16 @@ class MultiMeter(Recipe):
     def is_connected(self):
         return self.component.is_connected()
 
+    def go_local(self) -> bool:
+        """Front panel back to the operator (RMT off) — for the meter's
+        open / short calibration, done by hand; the next read takes
+        remote control back. False when the meter is not reachable."""
+        return self.component.go_local()
+
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")):  # 1.5 nF
+                         sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")):  # 1.5 nF
+        """C and its dissipation factor D, from one reading: ``m.primary``
+        is C (F), ``m.secondary`` is D."""
         return self.component.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,

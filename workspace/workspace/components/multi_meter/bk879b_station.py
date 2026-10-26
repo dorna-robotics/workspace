@@ -232,8 +232,23 @@ class BK879BStation:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
 
+    def go_local(self) -> bool:
+        """Hand the meter's front panel back to the operator (driver
+        ``go_local``). True when done — in sim there is nothing to hand
+        back; False when the meter is not reachable."""
+        if self.simulation:
+            return True
+        if self._driver is None or not self._driver.is_connected():
+            return False
+        try:
+            self._driver.go_local()
+            return True
+        except Exception as ex:
+            self._set_state("down", f"go_local failed: {type(ex).__name__}: {ex}")
+            return False
+
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:  # 1.5 nF
+                         sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")) -> Optional[Measurement]:  # 1.5 nF
         return self._safe_read("read_capacitance", frequency, sim_return, mode=mode)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
