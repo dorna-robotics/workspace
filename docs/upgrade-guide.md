@@ -32,6 +32,30 @@ sudo python3 gui/server.py
 
 ---
 
+## A project's latest — the admin page's Version panel
+
+A PROJECT (bna, apc, …) updates from its own page: the **ⓘ Version** icon
+at the top right shows the branch, the commit the bench runs, how it
+compares with GitHub, and what is local. **Get latest…** lists every risk
+as a warning — a run in flight, uncommitted changes, local commits, no
+access to GitHub, other projects in the same repository — and the exact
+git commands it will run, then waits for the confirm:
+
+```bash
+git fetch origin
+git stash push -u -m "before update <stamp>"   # only with uncommitted changes
+git branch backup/<stamp>                       # only with local commits
+git reset --hard origin/<branch>
+```
+
+Nothing is lost: changes are in `git stash list` (back with `git stash pop`),
+local commits on `backup/<stamp>`. Git-ignored data — records, uploads,
+calibration, `scene/bench.j2` — is never touched, and nothing is pushed.
+Git runs as the repository's owner, so the bench needs that user's read
+key for the repo. Relaunch the project afterwards to run the new code.
+A project inside the platform's own repository (`examples/*`) is the
+platform: update it with the steps above instead.
+
 ## Troubleshooting
 
 | Issue | Solution |

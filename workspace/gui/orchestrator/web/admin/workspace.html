@@ -559,6 +559,7 @@
        content view first, then mode switches, then display tweak,
        then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnVersion" title="Version — this project on GitHub"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnFiles" title="Files — data, results, recordings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
@@ -889,6 +890,23 @@
       <div class="kwargs-form" id="paramsForm"></div>
     </div>
     <div class="modal-foot" id="paramsModalFoot"></div>
+  </div>
+</div>
+
+<!-- Version panel: what this project runs vs its GitHub remote, and Get
+     latest (workspace.js "Version panel", project_git.py). Three views in
+     one modal — state, confirm, done — filled from JS. -->
+<div class="modal-overlay" id="versionModalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="versionModalTitle">Version</h3>
+      <span class="pill off" id="versionModalPill">—</span>
+      <button class="btn btn-ghost btn-sm btn-icon" id="btnVersionModalClose" title="Close">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="versionModalBody"></div>
+    <div class="modal-foot" id="versionModalFoot"></div>
   </div>
 </div>
 

@@ -1254,3 +1254,27 @@
 
 /* The file kwarg's two buttons sit together (kwargs.js) */
 .kw-file-wrap .kw-browse { flex-shrink: 0; }
+
+/* ── Version panel (workspace.html #versionModalOverlay) ───────────────── */
+.ver-rows { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-3) var(--space-5);
+  font-size: var(--text-md); align-items: baseline; margin: 0; }
+.ver-rows dt { color: var(--muted); font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+.ver-rows dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ver-hash { font-family: var(--mono); font-size: var(--text-sm); }
+.ver-sub { color: var(--muted); font-size: var(--text-sm); }
+.ver-warn { display: flex; gap: var(--space-3); align-items: flex-start; font-size: var(--text-md); line-height: 1.45; }
+.ver-warn .bang { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--amber);
+  color: var(--amber); font-size: var(--text-xs); font-weight: 700; display: flex; align-items: center;
+  justify-content: center; margin-top: 1px; }
+.ver-warn.bad .bang { border-color: var(--red); color: var(--red); }
+.ver-cmds { list-style: none; margin: 0; padding: var(--space-3) var(--space-4); background: var(--surface2);
+  border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--text-sm); }
+.ver-cmds li { padding: 2px 0; overflow-wrap: anywhere; }
+.ver-cmds.sh li::before { content: "$ "; color: var(--muted); }
+.ver-label { font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.ver-err { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); background: var(--surface2);
+  border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ver-ok { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-md); }
+.ver-ok .tick { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--green); color: var(--bg);
+  font-size: var(--text-xs); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.ver-busy { color: var(--muted); font-size: var(--text-md); }

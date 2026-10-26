@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -527,6 +528,70 @@ def _node_ws_url(ws, name: str) -> str:
     path = u.path[:-len("/api")] if u.path.endswith("/api") else u.path
     return urlunsplit(("wss" if u.scheme == "https" else "ws", u.netloc,
                        f"{path}/ws/files/{quote(name)}", "", ""))
+
+
+class ProjectVersionHandler(AuthedHandler):
+    """The admin page's Version panel (project_git.py).
+
+    ``GET  …/version``  → what the bench runs vs the remote (one ``git
+    fetch``), the exact Get latest plan, and whether a run is in flight
+    — every risk a warning for the page, nothing refused here.
+    ``POST …/version``  ``{"confirmed": [cmd, …], "stamp": "…"}`` → runs
+    the plan, only if it is still the one the operator confirmed."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    def _ws(self, name):
+        if name not in self.orch.workspaces:
+            raise ValueError(f"Unknown workspace: {name}")
+        ws = self.orch.workspaces[name]
+        if ws.is_remote():
+            raise ValueError("a remote workspace — open the page on its own node to update it")
+        return ws
+
+    def _run_state(self, name) -> dict:
+        st = self.orch.get_status(name)
+        launched = bool((st.get("_orch") or {}).get("launched"))
+        active = launched and bool(st.get("run_started_at")) and not st.get("run_finished_at")
+        return {"launched": launched, "run_active": active, "state": st.get("state")}
+
+    async def get(self, name):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import project_git
+            ws = self._ws(name)
+            fetch = self.get_argument("fetch", "1") != "0"
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(None, project_git.version, _project_dir(ws), fetch)
+            stamp = time.strftime("%Y-%m-%d-%H%M")
+            try:
+                info["plan"], info["plan_error"] = project_git.plan(info, stamp), ""
+            except project_git.GitError as e:
+                info["plan"], info["plan_error"] = [], str(e)
+            info["stamp"] = stamp
+            info.update(await loop.run_in_executor(_status_pool, self._run_state, name))
+            self.write(info)
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+    async def post(self, name):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import project_git
+            ws = self._ws(name)
+            data = json.loads(self.request.body.decode() or "{}")
+            loop = asyncio.get_running_loop()
+            out = await loop.run_in_executor(None, project_git.update, _project_dir(ws),
+                                             list(data.get("confirmed") or []), str(data.get("stamp") or ""))
+            out.update(await loop.run_in_executor(_status_pool, self._run_state, name))
+            self.write(out)
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
 
 
 class ProjectFilesHandler(AuthedHandler):

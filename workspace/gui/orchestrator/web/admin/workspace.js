@@ -149,6 +149,142 @@ const _deviceModal = $("deviceModalOverlay");
 $("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
 _deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
 
+// ── Version panel — this project vs its GitHub remote (project_git.py) ──
+// Three views in one modal: the STATE (what the bench runs, how it
+// compares, what is local), the CONFIRM (every risk as a warning, the
+// exact git commands it will run) and DONE (what moved, what was set
+// aside). Nothing is ever disabled for the bench's state — a run in
+// flight, local changes, no access are warnings the operator confirms
+// past; the server refuses only a plan that changed since it was shown.
+const _verOverlay = $("versionModalOverlay");
+const _verApi = () => `/workspace/${encodeURIComponent(wsName)}/version`;
+let _ver = null;
+
+function _verPill(v) {
+  const el = $("versionModalPill");
+  let cls = "ok", txt = "Up to date";
+  if (!v || !v.git) { cls = "bad"; txt = "No git"; }
+  else if (v.reachable === false) { cls = "off"; txt = "Unknown"; }
+  else if (v.behind) { cls = "warn"; txt = `${v.behind} behind`; }
+  else if (v.ahead || (v.changes || []).length) { cls = "warn"; txt = "Local changes"; }
+  el.className = `pill ${cls}`; el.textContent = txt;
+}
+const _verCommit = (c) => c
+  ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
+const _verWarn = (html, bad = false) =>
+  `<div class="ver-warn${bad ? " bad" : ""}"><span class="bang">!</span><div>${html}</div></div>`;
+function _verFoot(btns) {
+  const foot = $("versionModalFoot"); foot.innerHTML = "";
+  for (const [label, cls, fn] of btns) {
+    const b = document.createElement("button");
+    b.className = `btn btn-sm ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
+    foot.appendChild(b);
+  }
+}
+function _verBusy(text) {
+  $("versionModalBody").innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
+  $("versionModalFoot").querySelectorAll("button").forEach(b => { b.disabled = true; });
+}
+function _verLocal(v) {
+  const n = (v.changes || []).length, a = v.ahead || 0;
+  if (!n && !a) return "no local changes";
+  return [n && `${n} uncommitted change${n === 1 ? "" : "s"}`, a && `${a} local commit${a === 1 ? "" : "s"} not on GitHub`]
+    .filter(Boolean).join(" · ");
+}
+
+function _verState(v) {
+  _ver = v; _verPill(v);
+  $("versionModalTitle").textContent = `Version — ${wsName}`;
+  const body = $("versionModalBody");
+  if (!v.git) {
+    body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
+    _verFoot([["Close", "", closeVersion]]);
+    return;
+  }
+  let html = `<dl class="ver-rows">
+      <dt>Repository</dt><dd>${esc(v.url || "— no origin remote")}</dd>
+      <dt>Branch</dt><dd>${esc(v.detached ? "— detached HEAD" : v.branch)}</dd>
+      <dt>Running</dt><dd>${_verCommit(v.head)}</dd>
+      <dt>GitHub</dt><dd>${v.remote ? _verCommit(v.remote) + (v.behind ? `<div class="ver-sub">${v.behind} newer commit${v.behind === 1 ? "" : "s"}</div>` : "") : "—"}</dd>
+      <dt>This bench</dt><dd>${esc(_verLocal(v))}</dd>
+      ${v.platform ? `<dt>Same repo</dt><dd>the workspace platform itself<div class="ver-sub">this project lives in the platform's repository</div></dd>` : ""}
+      ${(v.shared_with || []).length ? `<dt>Same repo</dt><dd>${esc(v.shared_with.join(", "))}<div class="ver-sub">updates with this project</div></dd>` : ""}
+    </dl>`;
+  if (v.reachable === false) {
+    html += _verWarn("This bench cannot reach the GitHub repository — no read key, or no network. Get latest will fail until it can.", true);
+    html += `<div class="ver-err">${esc(v.fetch_error)}</div>`;
+  }
+  body.innerHTML = html;
+  _verFoot([["Check again", "", () => loadVersion(true)], ["Get latest…", "btn-primary", () => _verConfirm(_ver)]]);
+}
+
+function _verConfirm(v) {
+  $("versionModalTitle").textContent = "Get latest from GitHub";
+  let html = `<div class="ver-sub">${esc(wsName)}, branch <b>${esc(v.branch)}</b>: `
+    + `<span class="ver-hash">${esc(v.head && v.head.hash)}</span> → <span class="ver-hash">${esc(v.remote ? v.remote.hash : "?")}</span></div>`;
+  if (v.platform) html += _verWarn("This project lives inside the WORKSPACE PLATFORM's own repository — Get latest resets the whole platform to GitHub's, not just this project. Platform updates also need the upgrade step (pip install -e .) and a restart of the orchestrator.", true);
+  if (v.run_active) html += _verWarn("A run is active — updating the code under it can crash the run.", true);
+  else if (v.launched) html += _verWarn("The project is launched — it keeps running the old code until you relaunch it.");
+  if (v.reachable === false) html += _verWarn(`GitHub cannot be reached — this will fail: ${esc(v.fetch_error)}`, true);
+  const n = (v.changes || []).length;
+  if (n) html += _verWarn(`${n} uncommitted change${n === 1 ? "" : "s"} — set aside with <code>git stash</code>.`
+    + `<div class="ver-sub">${esc(v.changes.slice(0, 6).join(", "))}${n > 6 ? ` … +${n - 6}` : ""} · bring back with <code>git stash pop</code></div>`);
+  if (v.ahead) html += _verWarn(`${v.ahead} local commit${v.ahead === 1 ? "" : "s"} not on GitHub — kept on branch <code>backup/${esc(v.stamp)}</code>.`
+    + `<div class="ver-sub">${(v.local_commits || []).slice(0, 4).map(c => esc(`${c.hash} ${c.subject}`)).join("<br>")}</div>`);
+  if ((v.shared_with || []).length) html += _verWarn(`The same repository holds ${esc(v.shared_with.join(", "))} — they update too.`);
+  if (v.plan_error) html += _verWarn(`Cannot update: ${esc(v.plan_error)}`, true);
+  else html += `<div class="ver-label">Will run, in this order</div>
+    <ul class="ver-cmds sh">${v.plan.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  html += `<div class="ver-sub">Git-ignored data is not touched: records, uploads, calibration, scene/bench.j2.</div>`;
+  $("versionModalBody").innerHTML = html;
+  const risky = v.platform || v.run_active || v.launched || n || v.ahead || v.reachable === false || v.plan_error;
+  _verFoot([["Cancel", "", () => _verState(_ver)], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(v)]]);
+}
+
+async function _verRun(v) {
+  _verBusy("Getting the latest from GitHub…");
+  try {
+    const r = await apiFetch(_verApi(), { method: "POST", body: JSON.stringify({ confirmed: v.plan, stamp: v.stamp }) });
+    _verDone(r);
+  } catch (e) {
+    $("versionModalBody").innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
+      + `<div class="ver-err">${esc(String(e))}</div>`;
+    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+  }
+}
+
+function _verDone(r) {
+  _verPill(r.version);
+  $("versionModalTitle").textContent = `Version — ${wsName}`;
+  let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated `
+    + `<span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span>`
+    + ` <span class="ver-sub">${esc(r.to ? r.to.subject : "")}</span></div></div>`;
+  if (r.launched) html += _verWarn("Relaunch the project to use the new code — the running project still has the old code loaded.");
+  if (r.stash || r.backup) {
+    html += `<div class="ver-label">Set aside</div><ul class="ver-cmds">`
+      + (r.stash ? `<li>git stash list   # ${esc(r.stash)}</li>` : "")
+      + (r.backup ? `<li>git log ${esc(r.backup)}</li>` : "") + `</ul>`;
+  }
+  html += `<div class="ver-label">Ran</div><ul class="ver-cmds sh">${(r.ran || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  $("versionModalBody").innerHTML = html;
+  _ver = r.version;
+  _verFoot([["Close", "btn-primary", closeVersion]]);
+}
+
+async function loadVersion(fetchRemote = true) {
+  _verBusy(fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
+  try {
+    _verState(await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
+  } catch (e) {
+    $("versionModalBody").innerHTML = _verWarn(esc(String(e)), true);
+    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+  }
+}
+function closeVersion() { _verOverlay.classList.remove("show"); }
+$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(true); });
+$("btnVersionModalClose").addEventListener("click", closeVersion);
+_verOverlay.addEventListener("click", (e) => { if (e.target === _verOverlay) closeVersion(); });
+
 // One global ESC handler closes whichever modal is currently open.
 // Cheaper and more consistent than per-modal keydown handlers (which
 // previously only existed for the device modal — params + opActions
@@ -160,6 +296,7 @@ document.addEventListener("keydown", (e) => {
     "deviceModalOverlay",
     "opActionsModalOverlay",
     "scheduleModalOverlay",
+    "versionModalOverlay",
   ];
   for (const id of _MODAL_IDS) {
     const m = document.getElementById(id);
