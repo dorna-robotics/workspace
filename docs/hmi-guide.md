@@ -170,6 +170,19 @@ Three sources; two exist, one is a small addition:
      to the SD card. `rev` keeps climbing across runs so a reconnecting
      client never sees it go backwards.
 
+   ### The operator notice (`rt.notice`)
+
+   A request to the operator is not a project value: `rt.notice(title,
+   text, level=, img=, caption=)` publishes the platform's `notice` key
+   (rt.op refuses it from a project) and the FRAME draws it — one modal
+   for every project, over the pendant body (tabs and pane, the 3D view
+   included), with Resume (the bar's command, device-fault gate and
+   all) and Dismiss. The nav, the step rail and the control bar stay
+   uncovered: Park and Kill are never behind it. The runtime owns its
+   lifetime — published with a pause, unset when the run leaves it
+   (Resume, Park, Kill); the frame draws whatever is set. Spec and rules: project-guide "`rt.notice`";
+   code: `Runtime.notice`, workspace.js `renderPendantNotice`.
+
 4. **`rt.record(item, **fields)` — the per-item record channel. BUILT.**
    Sibling of `rt.op` for the AUDIT: one row per sample / vial / plate,
    keyed by the project's identity for it (an L-number), persisted as

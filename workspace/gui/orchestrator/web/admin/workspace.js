@@ -1146,6 +1146,80 @@ function applyOpState(payload) {
     }
   }
   applyProjectHmiValues();
+  if (payload.snapshot || "notice" in (payload.set || {}) || (payload.unset || []).includes("notice")) {
+    renderPendantNotice();
+  }
+}
+
+// ── The operator notice (rt.notice) ─────────────────────────────────
+// ``notice`` is the platform's rt.op key: {level, title, text, img,
+// caption}. The FRAME draws it, the same for every project — a modal
+// over the body (tabs and pane), the bench dimmed behind it. The
+// RUNTIME owns its lifetime: set during a pause, unset when the run
+// leaves it — so this draws exactly what the key says, and runs only
+// when the key changes (applyOpState), never on a status tick. The
+// nav, the step rail and the control bar stay uncovered and live —
+// Park and Kill are never behind it. Resume in the modal is the bar's
+// own command (runPendantCmd, the device-fault gate included); Dismiss
+// hides this notice until a different one arrives. The backdrop has no
+// handler on purpose — a stray tap on the bench must not take it away.
+//
+// The host is FIXED and outside the overlay, synced to the body's box
+// like the 3D view: the 3D view floats above the overlay (z 10001), and
+// a notice must cover it too. The box is read when the notice appears
+// and when the body resizes — nothing else touches layout.
+const NOTICE_LEVELS = { warning: "Operator needed", error: "Run stopped", info: "Notice" };
+const _noticeKey = n => JSON.stringify([n.level, n.title, n.text, n.img, n.caption]);
+let _noticeAck = null;       // the notice the operator dismissed (its key)
+
+function _positionPendantNotice() {
+  const el = $("pendantNotice");
+  const body = document.querySelector(".pendant-body");
+  if (!el || !body || el.style.display === "none") return;
+  const r = body.getBoundingClientRect();
+  el.style.top = r.top + "px";
+  el.style.left = r.left + "px";
+  el.style.width = r.width + "px";
+  el.style.height = r.height + "px";
+}
+
+function renderPendantNotice() {
+  const el = $("pendantNotice");
+  if (!el) return;
+  const n = _opValues.notice;              // Runtime.notice's dict, or absent
+  if (!n) _noticeAck = null;
+  const key = n ? _noticeKey(n) : "";
+  const want = (_pendantMode && n && key !== _noticeAck) ? key : "";
+  if (el.dataset.key === want) return;                 // nothing changed
+  el.dataset.key = want;
+  if (!want) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  const base = (_devicesUrl || "").replace(/\/$/, "");
+  el.innerHTML = `<div class="pn-card" data-level="${n.level}" role="alertdialog" aria-live="assertive">
+    <div class="pn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg></div>
+    <span class="pn-level">${NOTICE_LEVELS[n.level]}</span>
+    <h2>${esc(n.title)}</h2>
+    ${n.text ? `<p>${esc(n.text)}</p>` : ""}
+    ${n.img ? `<figure class="pn-img"><img src="${esc(base + n.img)}" alt="">
+      ${n.caption ? `<span class="pn-cap">${esc(n.caption)}</span>` : ""}</figure>` : ""}
+    <div class="pn-actions">
+      <button type="button" class="btn btn-primary pn-resume">Resume</button>
+      <button type="button" class="btn pn-dismiss">Dismiss</button>
+    </div>
+  </div>`;
+  wireCommand(el.querySelector(".pn-resume"), "start", () => runPendantCmd("start"));
+  el.querySelector(".pn-dismiss").addEventListener("click", () => {
+    _noticeAck = key;
+    renderPendantNotice();
+  });
+  el.style.display = "";
+  _positionPendantNotice();
 }
 
 // ── Per-item records (rt.record) ────────────────────────────────────
@@ -3082,6 +3156,7 @@ function togglePendant(on) {
   pendantOverlay.style.display = _pendantMode ? "" : "none";
   _layoutBanner();            // the page-top banner shows only outside pendant mode
   _applyPendantTab();
+  renderPendantNotice();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
   // history entries added, back button untouched) so kiosk tablets can
@@ -3361,24 +3436,27 @@ function updatePendantUI() {
 // dashboard cards: the tap answers at once (sound, vibration, pressed),
 // Park and Kill are hold-to-activate (the tile fills and ticks for two
 // seconds under the finger, releasing early cancels).
+// One run command from the pendant — the bar's tiles and the notice's
+// Resume press exactly this.
+async function runPendantCmd(cmd) {
+  if (cmd === "replan" && _replan) { openReplanModal(); return false; }
+  // Device-fault gate also covers the pendant Start/Resume — same
+  // contract as the sidebar button.
+  if (cmd === "start") {
+    const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
+    if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
+  }
+  try {
+    const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
+    await sendCmd(cmd, kwargs);
+    await refreshStatus();
+  } finally {
+    updatePendantUI();
+  }
+}
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   const cmd = btn.dataset.cmd;
-  wireCommand(btn, cmd, async () => {
-    if (cmd === "replan" && _replan) { openReplanModal(); return false; }
-    // Device-fault gate also covers the pendant Start/Resume — same
-    // contract as the sidebar button.
-    if (cmd === "start") {
-      const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
-      if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
-    }
-    try {
-      const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
-      await sendCmd(cmd, kwargs);
-      await refreshStatus();
-    } finally {
-      updatePendantUI();
-    }
-  });
+  wireCommand(btn, cmd, () => runPendantCmd(cmd));
 });
 
 
@@ -3418,6 +3496,10 @@ if (window.ResizeObserver) {
   });
   const _p3d = $("pendant3dPane");
   if (_p3d) _paneRO.observe(_p3d);
+  // The notice covers the body (tabs + pane) — it follows the body's box
+  // as the window resizes and the step rail collapses.
+  const _body = document.querySelector(".pendant-body");
+  if (_body) new ResizeObserver(() => _positionPendantNotice()).observe(_body);
 }
 
 // Enter pendant directly from the URL (kiosk mode):

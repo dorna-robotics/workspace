@@ -751,6 +751,57 @@
 .pendant-park:hover:not(:disabled) { background: #ff6a2a; }
 [data-theme="light"] .pendant-park { background: #d8651e; }
 [data-theme="light"] .pendant-park:hover:not(:disabled) { background: #c4541a; }
+/* ── The operator notice (rt.notice, workspace.js renderPendantNotice) ──
+   A modal over the pendant BODY — tabs and pane, the bench dimmed
+   behind it — in the frame's warning voice. Fixed and synced to the
+   body's box (it must cover the 3D view, z 10001); the nav, the step
+   rail and the control bar stay uncovered and live. */
+.pendant-notice {
+  position: fixed; z-index: 10002; display: flex;     /* the card centres by margin: auto */
+  padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
+}
+.pn-card {
+  width: min(620px, 100%); margin: auto;
+  background: var(--surface); border-radius: var(--radius-lg);
+  box-shadow: 0 12px 48px rgba(0,0,0,.4); padding: var(--space-6) 32px 28px;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+  text-align: center; border-top: 5px solid var(--amber);
+  animation: notice-in var(--motion-med) var(--ease) both;
+}
+@keyframes notice-in { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pn-card { animation: none; } }
+.pn-ico {
+  width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; background: rgba(255,159,10,.15); color: var(--amber);
+  margin-bottom: var(--space-2);
+}
+.pn-ico svg { width: 34px; height: 34px; }
+.pn-level {
+  font-size: var(--text-sm); letter-spacing: .14em; text-transform: uppercase;
+  font-weight: 700; color: var(--amber);
+}
+.pn-card h2 { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; }
+.pn-card p { margin: var(--space-2) 0 0; font-size: var(--text-lg); line-height: 1.45; opacity: .9; }
+/* the picture: up to 240 px tall (less on a short screen) — a small
+   crop (a 45 px ROI) is scaled up to read across a room */
+.pn-img { position: relative; margin: var(--space-4) 0 0; border-radius: var(--radius-md);
+  overflow: hidden; background: #000; }
+.pn-img img { display: block; height: min(240px, 30vh); max-width: 100%; object-fit: contain; }
+.pn-cap {
+  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12.5px; font-weight: 600; line-height: 1; padding: 6px 10px;
+  border-radius: 999px; background: rgba(0,0,0,.62); color: #fff;
+}
+.pn-actions { margin-top: var(--space-5); display: flex; gap: var(--space-4); }
+.pn-actions .btn { min-height: 48px; padding: 0 28px; font-size: var(--text-lg); font-weight: 700; }
+.pn-card[data-level="error"] { border-top-color: var(--red); }
+.pn-card[data-level="error"] .pn-ico { background: rgba(255,69,58,.15); color: var(--red); }
+.pn-card[data-level="error"] .pn-level { color: var(--red); }
+.pn-card[data-level="info"] { border-top-color: var(--accent); }
+.pn-card[data-level="info"] .pn-ico { background: rgba(10,132,255,.15); color: var(--accent); }
+.pn-card[data-level="info"] .pn-level { color: var(--accent); }
+
 /* ── Hold-to-activate (Park, Kill — api.js holdToActivate) ─────────
    The button fills from the left while held; the fill IS the timer,
    so its 2 s linear sweep is a documented exception to the motion

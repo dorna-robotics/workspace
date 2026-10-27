@@ -616,6 +616,42 @@ but is not a value. Values are memory-only and
 cleared at run start. Delivery is a coalesced WS push — see
 `docs/hmi-guide.md` §3 for the channel spec.
 
+### `rt.notice(title, text, ...)` — ask the operator, then pause
+
+When the run needs the operator — clear a blocked anode, seat a cap,
+press a button on a meter — say what to do in a modal, and pause:
+
+```python
+rt.step("A1: cap still on — presence 0.93", level="warning")   # the timeline
+rt.notice("Cap still on the tube in A1",
+          "Make sure the cap sits on the tube, not tight. On Resume the robot decaps it again.",
+          img=jpeg, caption="presence 0.93")                  # the modal
+rt.pause()
+rt.checkpoint()                                                # blocks until Resume
+return False                                                   # or a branch
+```
+
+The pendant FRAME draws it, the same for every project — a modal over
+the project's screen (the 3D and Devices tabs too), the bench dimmed
+behind it, with **Resume** (the bar's own command, device-fault gate
+included) and **Dismiss**. The nav, the step rail and the control bar
+stay uncovered and live: Park, Replan and Kill are never behind it.
+
+* **A notice is the pause's question.** Publish it with `rt.pause()`;
+  the runtime takes it down when the run leaves the pause — Resume,
+  Park or Kill. Never clear it yourself; a second notice in the same
+  pause replaces the first. The frame draws whatever is set.
+* `level` — `warning` (default, "Operator needed") | `error` ("Run
+  stopped") | `info` ("Notice").
+* `img` — a picture's bytes (a JPEG), held as the `notice` rt.asset;
+  `caption` is drawn on it. A small crop (a vision ROI) is scaled up.
+* Dismiss hides that notice until a different one arrives; the
+  backdrop does nothing, so a stray tap never takes it away.
+* `notice` is the platform's rt.op key — `rt.op(notice=…)` is refused
+  with one log line.
+* Never blocks, never raises (§8); `rt.pause()` + `rt.checkpoint()` are
+  what stop the run.
+
 ### `rt.record(item, **fields)` — the per-item audit record
 
 `rt.op` is what the operator sees now. `rt.record` is what the client

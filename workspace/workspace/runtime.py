@@ -16,6 +16,10 @@ from typing import Any, Callable, Optional, TypeVar
 
 T = TypeVar("T")
 
+# The rt.op key (and rt.asset key) rt.notice publishes under — the
+# pendant frame draws it; rt.op refuses it from a project.
+NOTICE_KEY = "notice"
+
 
 class RTState(str, Enum):
     IDLE = "IDLE"
@@ -238,6 +242,10 @@ class Runtime:
         self._status.state = new_state
         if err is not None:
             self._status.last_error = err
+        # A notice is the pause's question (rt.notice) — it closes with
+        # the pause, whichever way the run leaves it: Resume, Park, Kill.
+        if old == RTState.PAUSED and new_state != RTState.PAUSED:
+            self.notice(None)
 
         # Per-run timing — single source of truth. Set when the run
         # actually begins, frozen when it ends. Pause/resume preserve
@@ -423,6 +431,14 @@ class Runtime:
         over the caps is DROPPED with one log line — never a crash,
         never unbounded memory.
         """
+        if NOTICE_KEY in values:
+            values = {k: v for k, v in values.items() if k != NOTICE_KEY}
+            self._op_warn(NOTICE_KEY, f"{NOTICE_KEY!r} is the platform's key — publish it with rt.notice()")
+        self._op_write(values)
+
+    def _op_write(self, values: dict) -> None:
+        """Store ``values`` under rt.op's rules — the one writer, for
+        rt.op and rt.notice alike."""
         if not values:
             return
         with self._lock:
@@ -508,6 +524,44 @@ class Runtime:
         """Full current state — what a connecting client gets."""
         with self._lock:
             return {"rev": self._op_rev, "set": dict(self._op), "snapshot": True}
+
+    # ── The operator notice (rt.notice) ─────────────────────────────
+    NOTICE_LEVELS = ("warning", "error", "info")
+
+    def notice(self, title: Optional[str], text: str = "", *, level: str = "warning",
+               img: Optional[bytes] = None, caption: str = "") -> None:
+        """Ask the operator for something, on the pendant — a modal the
+        FRAME draws over the project's screen, with Resume (the bar's
+        own command) and Dismiss.
+
+            rt.notice("Cap still on the tube in A1",
+                      "Make sure the cap sits on the tube, not tight.",
+                      img=jpeg, caption="presence 0.93")
+            rt.pause()
+            rt.checkpoint()          # blocks until Resume
+
+        A notice is the PAUSE's question: publish it with rt.pause() as
+        above; the runtime takes it down when the run leaves the pause —
+        Resume, Park or Kill — so never clear it yourself. The frame
+        draws whatever is set. A second notice in the same
+        pause replaces the first; ``None`` takes it down early.
+        ``level``: warning ("Operator needed") | error ("Run stopped") |
+        info ("Notice"). ``img`` is a picture's bytes (a JPEG), held as
+        the ``notice`` rt.asset; ``caption`` is drawn on it.
+
+        Observability never blocks (project-guide §8): never pauses,
+        never raises — an unknown level is drawn as a warning, with a
+        log line."""
+        if title is None:
+            self.asset(NOTICE_KEY, None)
+            self._op_write({NOTICE_KEY: None})
+            return
+        if level not in self.NOTICE_LEVELS:
+            print(f"[notice] level {level!r} is not one of {self.NOTICE_LEVELS} — drawn as a warning")
+            level = "warning"
+        path = self.asset(NOTICE_KEY, img)          # None removes a previous picture
+        self._op_write({NOTICE_KEY: dict(level=level, title=str(title), text=str(text or ""),
+                                         img=path, caption=str(caption or ""))})
 
     # ── Assets (rt.asset) ────────────────────────────────────────────
     # What rt.op passes BY REFERENCE — a picture an operator screen shows,

@@ -696,6 +696,10 @@
 </div>
 
 <!-- Pendant mode overlay -->
+<!-- The operator notice (rt.notice) — FIXED over the pendant body, outside
+     the overlay so it also covers the 3D view (workspace.js
+     renderPendantNotice). -->
+<div class="pendant-notice" id="pendantNotice" style="display:none"></div>
 <div class="pendant-overlay" id="pendantOverlay" style="display:none">
   <!-- Top nav: EXIT + project identity left, the state block (state +
        run timer + time left) as the loudest cue right, then fullscreen
