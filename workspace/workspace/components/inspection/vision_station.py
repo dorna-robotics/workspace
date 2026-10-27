@@ -23,6 +23,8 @@ Failure model — authored intent is honoured, faults are surfaced loud:
   * ``simulation=False`` + missing client lib → raise on construct.
     A missing import is a config error, not a runtime fault.
   * ``simulation=False`` + server unreachable → raise on construct.
+  * ``simulation=False`` + camera not open within ``COLD_OPEN_TIMEOUT``
+    (a cold PoE camera takes ~20 s) → raise, naming the camera.
     The vision server's own bus adapter will surface the camera as
     red; the workspace must not pretend it's running in sim.
 
@@ -60,6 +62,21 @@ class VisionClientImportError(RuntimeError):
     """
 
 
+# How long the vision server may take to OPEN a camera or LOAD a model.
+# The first open of a Hikrobot PoE camera after power-up takes ~20-22 s
+# (field, 2026-10-26) and a cold model load (a ~7 MB .pkl plus
+# torch/openvino) can pass 10 s too — the client's DEFAULT_TIMEOUT of
+# 10 s gave up while the server kept opening, and the launch failed.
+# The client's own camera_recover waits the same 60 s. A scene's
+# camera_cfg ``timeout`` (or a detection preset's) overrides it.
+COLD_OPEN_TIMEOUT = 60
+
+
+class VisionCameraOpenTimeoutError(RuntimeError):
+    """Raised when the vision server was reached but did not open the
+    camera in time — a slow (cold) camera, not an unreachable server."""
+
+
 class VisionServerUnreachableError(RuntimeError):
     """Raised when the vision server can't be reached in real mode.
 
@@ -89,8 +106,11 @@ class VisionStation:
         VisionClientImportError: ``simulation=False`` but the
             ``dorna_vision_client`` package is not importable.
         VisionServerUnreachableError: ``simulation=False`` but the
-            vision server's ip/port refuses connections or the camera
-            can't be registered.
+            vision server's ip/port refuses connections, or the server
+            refused to register the camera.
+        VisionCameraOpenTimeoutError: the server answered but did not
+            open the camera within ``COLD_OPEN_TIMEOUT`` (or the
+            camera_cfg ``timeout``) — a cold camera, not a dead server.
     """
 
     def __init__(
@@ -103,8 +123,6 @@ class VisionStation:
         simulation: bool = True,
         label: str = "vision",
     ):
-        # Per detection: extra add arguments, re-sent on reconnect.
-        self._add_args: dict = {}
         self.ip = ip
         self.port = int(port)
         # str() at the boundary: an unquoted serial in scene yaml
@@ -119,8 +137,12 @@ class VisionStation:
         # forwards to camera_add.
         for k in ("ip", "port", "serial_number", "mount"):
             self.camera_cfg.pop(k, None)
+        # The open's timeout is camera_add's own keyword, not a connect
+        # parameter — popped so ** never passes it twice.
+        self.open_timeout = float(self.camera_cfg.pop("timeout", COLD_OPEN_TIMEOUT))
         self.label = label
-        # Detections this station authored — replayed on reconnect: a
+        # Detections this station has REGISTERED on the server — written
+        # only once the server accepted one, replayed on reconnect: a
         # vision-server restart kills the SESSION, and detections are
         # per-session state on the server.
         self._detections: dict = {}
@@ -155,18 +177,11 @@ class VisionStation:
                 f"/path/to/vision/dorna_vision-client"
             ) from ex
 
+        # Two failures, two messages: the SERVER not answering, and the
+        # server answering but the CAMERA not opening in time.
         try:
             self._client = VisionClient()
             self._client.connect(host=self.ip, port=self.port)
-            self._client.camera_add(
-                serial_number=self.serial_number,
-                **self.camera_cfg,
-            )
-            print(
-                f"✅ {self.label} connected @ {self.ip}:{self.port} "
-                f"(camera {self.serial_number})"
-            )
-            self._bus_connect()
         except Exception as ex:
             self._safe_close()
             self._client = None
@@ -175,6 +190,32 @@ class VisionStation:
                 f"{self.ip}:{self.port}: {type(ex).__name__}: {ex}. "
                 f"The camera will appear red on the device bus when the "
                 f"server is running."
+            ) from ex
+        try:
+            self._client.camera_add(
+                serial_number=self.serial_number,
+                timeout=self.open_timeout,
+                **self.camera_cfg,
+            )
+            print(
+                f"✅ {self.label} connected @ {self.ip}:{self.port} "
+                f"(camera {self.serial_number})"
+            )
+            self._bus_connect()
+        except TimeoutError as ex:
+            self._safe_close()
+            self._client = None
+            raise VisionCameraOpenTimeoutError(
+                f"{self.label}: camera {self.serial_number} did not open within "
+                f"{self.open_timeout:g} s on the vision server @ {self.ip}:{self.port} "
+                f"(cold start?) — retry. {ex}"
+            ) from ex
+        except Exception as ex:
+            self._safe_close()
+            self._client = None
+            raise VisionServerUnreachableError(
+                f"{self.label}: vision server @ {self.ip}:{self.port} failed to "
+                f"add camera {self.serial_number}: {type(ex).__name__}: {ex}"
             ) from ex
 
     # ── Detection lifecycle ────────────────────────────────────────────
@@ -188,13 +229,23 @@ class VisionStation:
         self._safe_close()
         self._client = VisionClient()
         self._client.connect(host=self.ip, port=self.port)
-        self._client.camera_add(serial_number=self.serial_number, **self.camera_cfg)
+        # A server restart is a cold open too — the same timeouts.
+        self._client.camera_add(serial_number=self.serial_number, timeout=self.open_timeout,
+                                **self.camera_cfg)
         for name, preset in self._detections.items():
             self._client.detection_add(
                 name=name, camera_serial_number=self.serial_number,
-                **preset, **self._add_args.get(name, {}))
+                **self._detection_kwargs(preset))
         self._bus_connect()
         print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
+
+    @staticmethod
+    def _detection_kwargs(preset: dict) -> dict:
+        """detection_add's keywords: the preset, with the cold-load
+        timeout unless the preset names its own."""
+        kw = dict(preset)
+        kw.setdefault("timeout", COLD_OPEN_TIMEOUT)
+        return kw
 
     def _bus_connect(self) -> None:
         """Site-bus handshake (device-guide §8): tell the unit to
@@ -255,14 +306,18 @@ class VisionStation:
             if not p.is_file():
                 raise RuntimeError(f"[{self.label}] detection {name!r}: config "
                                    f"{detection_preset['config']!r} not found ({p.resolve()})")
-        self._add_args[name] = {}
-        self._detections[name] = dict(detection_preset)
         try:
+            # Recorded only AFTER the server accepted it: _call may first
+            # re-establish a dead session, which replays the registered
+            # detections — this one is not among them yet, so it is added
+            # exactly once, here; and one the server refuses is never
+            # replayed as if it were registered.
             self._call(lambda: self._client.detection_add(
                 name=name,
                 camera_serial_number=self.serial_number,
-                **detection_preset, **self._add_args[name],
+                **self._detection_kwargs(detection_preset),
             ))
+            self._detections[name] = dict(detection_preset)
             return True
         except Exception as ex:
             if "config" in detection_preset or (detection_preset.get("detection") or {}).get("cmd") == "vlm":
