@@ -220,14 +220,14 @@ class BK879BStation:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def _safe_read(self, fn_name: str, frequency: int,
+    def _safe_read(self, fn_name: str, frequency: int, settle_s: float,
                    sim_return: Measurement, **kw) -> Optional[Measurement]:
         if self.simulation:
             return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
-            return getattr(self._driver, fn_name)(frequency=frequency, **kw)
+            return getattr(self._driver, fn_name)(frequency=frequency, settle_s=settle_s, **kw)
         except Exception as ex:
             self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
             return None
@@ -248,20 +248,24 @@ class BK879BStation:
             return False
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         settle_s: float = 0.3,
                          sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")) -> Optional[Measurement]:  # 1.5 nF
-        return self._safe_read("read_capacitance", frequency, sim_return, mode=mode)
+        return self._safe_read("read_capacitance", frequency, settle_s, sim_return, mode=mode)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return: Measurement = Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")) -> Optional[Measurement]:  # 1 mH
-        return self._safe_read("read_inductance", frequency, sim_return, mode=mode)
+        return self._safe_read("read_inductance", frequency, settle_s, sim_return, mode=mode)
 
     def read_resistance(self, frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
-        return self._safe_read("read_resistance", frequency, sim_return)
+        return self._safe_read("read_resistance", frequency, settle_s, sim_return)
 
     def read_impedance(self, frequency: int = 1000,
+                       settle_s: float = 0.3,
                        sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
-        return self._safe_read("read_impedance", frequency, sim_return)
+        return self._safe_read("read_impedance", frequency, settle_s, sim_return)
 
     def read(self, sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:
         """Re-read at the current function + frequency. Convenience for

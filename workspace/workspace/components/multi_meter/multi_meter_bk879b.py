@@ -193,20 +193,24 @@ class MultiMeterBk879b:
         return self.meter.go_local()
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         settle_s: float = 0.3,
                          sim_return=Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")):  # 1.5 nF
-        return self.meter.read_capacitance(mode=mode, frequency=frequency, sim_return=sim_return)
+        return self.meter.read_capacitance(mode=mode, frequency=frequency, settle_s=settle_s, sim_return=sim_return)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return=Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")):  # 1 mH
-        return self.meter.read_inductance(mode=mode, frequency=frequency, sim_return=sim_return)
+        return self.meter.read_inductance(mode=mode, frequency=frequency, settle_s=settle_s, sim_return=sim_return)
 
     def read_resistance(self, frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
-        return self.meter.read_resistance(frequency=frequency, sim_return=sim_return)
+        return self.meter.read_resistance(frequency=frequency, settle_s=settle_s, sim_return=sim_return)
 
     def read_impedance(self, frequency: int = 1000,
+                       settle_s: float = 0.3,
                        sim_return=Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")):  # 1 kΩ
-        return self.meter.read_impedance(frequency=frequency, sim_return=sim_return)
+        return self.meter.read_impedance(frequency=frequency, settle_s=settle_s, sim_return=sim_return)
 
     # ── Operator-action contract (component-guide §8) ─────────────────
     # Operator-facing buttons in the Operator Controls panel. Wired

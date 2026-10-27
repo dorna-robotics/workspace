@@ -318,34 +318,42 @@ class BK879B:
             secondary_function=self._secondary or "",
         )
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Measurement:
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         settle_s: float = 0.3) -> Measurement:
         """C and its dissipation factor D, from one reading — both selected
         on the meter every read, so neither depends on the front panel.
-        ``primary`` is C, ``secondary`` is D."""
+        ``primary`` is C, ``secondary`` is D.
+
+        ``settle_s`` (every ``read_*``): seconds the meter keeps measuring
+        after it is set up, before its reading is fetched. The meter
+        free-runs and ``FETCh?`` returns its LAST finished reading — there
+        is no "settled" signal — so this wait is what lets a fresh contact
+        settle into the value read."""
         self.set_function("C")
         self.set_secondary("D")
         self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PARallel")
         self.set_frequency(frequency)
-        time.sleep(0.3)
+        time.sleep(settle_s)
         return self.read()
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000) -> Measurement:
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        settle_s: float = 0.3) -> Measurement:
         self.set_function("L")
         self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PARallel")
         self.set_frequency(frequency)
-        time.sleep(0.3)
+        time.sleep(settle_s)
         return self.read()
 
-    def read_resistance(self, frequency: int = 1000) -> Measurement:
+    def read_resistance(self, frequency: int = 1000, settle_s: float = 0.3) -> Measurement:
         self.set_function("R")
         self.set_frequency(frequency)
-        time.sleep(0.3)
+        time.sleep(settle_s)
         return self.read()
 
-    def read_impedance(self, frequency: int = 1000) -> Measurement:
+    def read_impedance(self, frequency: int = 1000, settle_s: float = 0.3) -> Measurement:
         self.set_function("Z")
         self.set_frequency(frequency)
-        time.sleep(0.3)
+        time.sleep(settle_s)
         return self.read()
 
 
