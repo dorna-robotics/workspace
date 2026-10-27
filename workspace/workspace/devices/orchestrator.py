@@ -365,9 +365,14 @@ class MQTTOrchestrator:
             and (is_initial_down or is_transition_to_down)
         ):
             try:
-                print(f"[devices] auto-pause: critical device {device_id} is down "
-                      f"(claim={claim!r}, bus sim={sim}, initial={is_initial_down})")
-                self.runtime.pause()
+                if self.runtime.killed:
+                    # Nothing to pause: the run is over. Said, not skipped.
+                    print(f"[devices] critical device {device_id} is down — the run is already "
+                          f"killed ({self.runtime.kill_reason}), no pause")
+                else:
+                    print(f"[devices] auto-pause: critical device {device_id} is down "
+                          f"(claim={claim!r}, bus sim={sim}, initial={is_initial_down})")
+                    self.runtime.pause()
             except Exception:
                 log.exception("MQTTOrchestrator: runtime.pause() failed for %s",
                               device_id)

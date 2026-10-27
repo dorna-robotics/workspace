@@ -475,20 +475,29 @@ def execute(self):
     if core.has_rail:
         rt.step("homing rail")
         if not rcp["robot"].set_axis_with_stop(core.rail_cfg):
-            rt.step("homing failed")
+            # the cause and the way on, as an error — the operator's only clue
+            rt.step(f"Homing the rail failed — robot {core.dorna.state}: {core.dorna.msg or 'no message'}. "
+                    "Release the E-stop and clear the robot (Disable alarm), then Kill and Launch.",
+                    level="error")
             return "killed"      # fatal: abort the run, zero motion
     ...
 ```
 
 Semantics — identical to the operator pressing **Kill**:
 
-* the runtime is killed on the spot (`rt.kill()` under the hood, a
-  `BT leaf KILL` line in the log);
+* the runtime is killed on the spot (`rt.kill(reason)` under the hood,
+  a `BT leaf KILL` line in the log). The reason — the action's name —
+  goes on the timeline as an error ("Run killed: … Kill and Launch to
+  run again.") and into the dashboard's Last error;
 * the engine exits before its next tick — **no replan, no retry, no
   further action, no motion**;
 * the run ends `Status.INVALID` with `RTState.KILLED`; the server,
   viewer and device bus stay up;
-* the operator must **Reset / re-Launch** to run again.
+* the operator must **Kill and Launch** to run again: a killed run
+  refuses every command but Kill — Start / Resume are disabled on every
+  screen, and one that reaches the server anyway is answered with
+  "Start refused: the run was killed (…)" on the timeline and a toast,
+  never a silent no-op.
 
 Rules:
 
@@ -498,6 +507,9 @@ Rules:
   unreachable.
 * Use it only for conditions where *continuing at all* is unsafe
   (unhomed axis, safety interlock, unrecoverable hardware state).
+* **Say why first.** The platform names the action, not the cause:
+  `rt.step(..., level="error")` the cause and what the operator does
+  next, then return `"killed"`.
   For a recoverable failure, `return False` — the planner replans
   and the run stays alive.
 

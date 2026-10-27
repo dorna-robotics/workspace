@@ -310,11 +310,26 @@ bus judges a down edge against the device's last *settled* state
 does the same for its alarm (`api.js downEdge`): one pause and one alarm
 per outage, however many retries it takes.
 
-**What nudges the retries.** AutoRecover runs on a trigger; for a
-device that went down without one (an initial connect that failed, a
-`recover()` that refused) the trigger is the attachment's heartbeat,
-which nudges it every `HEARTBEAT_INTERVAL_S` while the state is `down`
-— and the heartbeat runs only for a device with `ping()`. A device that
+**What nudges the retries.** AutoRecover is a reconnect, so only a
+lost link starts it — and which events say "lost link" is declared,
+per device, by `attach_device(reports_link_loss=...)`:
+
+* **`reports_link_loss=True`** (the robot): the device fires
+  `on_connection_lost` on every lost link, and the attachment wires
+  that — once, to whichever AutoRecover is current — plus a failed
+  `ping()`. Nothing else starts the loop. Any other `down` (a robot
+  alarm) is not a link fault: it stays `down`, steady, until the
+  operator clears it (Disable Alarm). The robot's `recover()` returns
+  True once the controller answers — alarm or not — so the loop ends
+  there instead of flapping the panel between `recovering` and the
+  alarm.
+* **`reports_link_loss=False`** (the default — a device that cannot
+  tell a lost link from any other failed operation): for a device
+  that went down without a trigger (an initial connect that failed, a
+  `recover()` that refused, a failed read) the trigger is the
+  attachment's heartbeat, which nudges it every `HEARTBEAT_INTERVAL_S`
+  while the state is `down` — and the heartbeat runs only for a device
+  with `ping()`. A device that
 must not be probed on its link can still opt in with a `ping()` that
 does no I/O (link flag only): the OHAUS SPX222 does, so a balance found
 in standby (it answers `I2`, weighs only underload until On/Zero) is

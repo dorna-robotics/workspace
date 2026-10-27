@@ -130,8 +130,9 @@ class Runtime:
         self._start_token = 0
         self._seen_start_token = 0
 
-        # kill flag (kills thread loops)
+        # kill flag (kills thread loops) and why — kill(reason); "" while alive
         self._killed = False
+        self._kill_reason = ""
 
         # stop flag (graceful stop — finish current action then stop)
         self._parking = False
@@ -1269,19 +1270,33 @@ class Runtime:
     def killed(self) -> bool:
         return self._killed
 
-    def kill(self) -> None:
-        """Kill runtime and join workflow thread."""
+    @property
+    def kill_reason(self) -> str:
+        """Why the run was killed — the ``reason`` given to ``kill``;
+        "" while it is not."""
+        return self._kill_reason
+
+    def kill(self, reason: str) -> None:
+        """Kill runtime and join workflow thread.
+
+        ``reason`` — who ended the run and why, in the operator's words
+        (required: a killed run always says why). It goes on the timeline
+        and the console as an error, and into ``status.last_error`` (the
+        dashboard's Last error). A killed runtime refuses every later
+        command but Kill; the operator Kills and Launches to run again."""
         with self._lock:
             if self._killed:
                 return
             self._killed = True
+            self._kill_reason = str(reason)
             self._replan = None
             self._replan_choice = None
             self._replan_hold = False
             self._status.kills += 1
-            self._set_state(RTState.KILLED)
+            self._set_state(RTState.KILLED, err=f"Run killed: {reason}")
             self._start_token += 1
             self._cv.notify_all()
+        self.step(f"Run killed: {reason}. Kill and Launch to run again.", level="error")
 
         # join internal workflow thread outside lock
         if self._workflow_thread:
@@ -1292,6 +1307,7 @@ class Runtime:
         """Reset runtime after kill() or stop()."""
         with self._lock:
             self._killed = False
+            self._kill_reason = ""
             self._parking = False
             self._in_cleanup = False
             self._replan = None

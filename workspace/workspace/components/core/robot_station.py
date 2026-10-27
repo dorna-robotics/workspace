@@ -13,15 +13,16 @@ device bus:
   * **Connection lost.** A wrapped Dorna call raises ``ConnectionError``
     or ``OSError`` (TCP drop, host unreachable). The exception still
     propagates to the caller; the bus state goes red so the operator
-    notices. Also fires ``on_connection_lost`` so the service layer
-    (Core wires this to ``AutoRecover.trigger``) retries reconnection.
+    notices. Also fires ``on_connection_lost``, which the device
+    attachment wires to ``AutoRecover.trigger``
+    (``attach_device(reports_link_loss=True)``) to retry reconnection.
 
   * **Robot alarm.** A motion command returns a negative numeric value
     (e.g. ``-44``, ``-600``) — robot reports a fault (limit hit, IK
     failure, E-stop, etc.). State goes ``down`` with
     ``msg="alarm code N (method)"``. ``on_connection_lost`` is **NOT**
     fired because reconnecting won't clear an alarm — the operator
-    must clear it physically on the robot.
+    clears it (Disable Alarm, Operator Controls).
 
 State auto-clears back to ``"ok"`` only on a **successful numeric
 return ≥ 0** — i.e. a motion command (jmove/lmove/cmove) that the
@@ -209,9 +210,9 @@ class RobotStation:
                     self._set_state("ok", "")
 
     def recover(self) -> bool:
-        """Attempt to bring the robot back to a usable state. Called by
-        AutoRecover (auto, on connection-lost only) and by the operator
-        clicking Recover (manual).
+        """Re-establish the LINK to the controller. Called by AutoRecover
+        (auto, on connection-lost only) and by the operator clicking
+        Recover (manual).
 
         ALWAYS performs the real reconnect regardless of sim
         (device-guide §16: bus state reflects hardware reachability).
@@ -220,13 +221,19 @@ class RobotStation:
         — the operator can poke the real link from sim to see if it'd
         be reachable.
 
-        Strategy: close (best-effort), reconnect, then **check the
-        robot's alarm state via** ``get_alarm()``. Two-way comms +
-        ``alarm == 0`` is the only valid path to ``state="ok"``. If
-        ``alarm != 0`` the robot is still in a fault state — keep the
-        device down with the alarm code so the panel reflects reality
-        and the operator knows physical action is needed. Returns True
-        only on full recovery (connection AND no alarm).
+        Strategy: close (best-effort), reconnect, then **ask the
+        controller for its alarm state** (``get_alarm()``) — the answer
+        proves two-way comms and settles the state:
+
+          * answered, no alarm → ``state="ok"``;
+          * answered, alarm N  → ``state="down"``, "robot alarm (code N)…"
+            — the link is back; the alarm is the operator's to clear
+            (Disable Alarm). A reconnect cannot clear it, so retrying
+            would only flap the panel between "recovering" and the alarm.
+
+        Returns True when the link is back (either answer) — AutoRecover's
+        loop ends there. False only when the controller is still
+        unreachable or silent: the loop retries.
         """
         self._set_state("recovering", "reconnecting")
         try:
@@ -241,19 +248,16 @@ class RobotStation:
             # Verify alarm state (not just connectivity) before declaring
             # ok. ``get_alarm()`` returns the current alarm code; non-zero
             # = robot is still faulted; reconnecting won't clear it.
-            get_alarm = getattr(self._client, "get_alarm", None)
-            if callable(get_alarm):
-                try:
-                    alarm_code = get_alarm()
-                except Exception as ex:
-                    self._set_state("down", f"verify after reconnect failed: {ex}")
-                    return False
-                if alarm_code:
-                    self._set_state(
-                        "down",
-                        f"robot alarm (code {alarm_code}) — fix the cause, then Disable Alarm (Operator Controls)",
-                    )
-                    return False
+            alarm_code = self._read_alarm_state()
+            if alarm_code is None:
+                self._set_state("down", "no answer after reconnect")
+                return False
+            if alarm_code:
+                self._set_state(
+                    "down",
+                    f"robot alarm (code {alarm_code}) — fix the cause, then Disable Alarm (Operator Controls)",
+                )
+                return True
             self._set_state("ok", "")
             return True
         except Exception as ex:

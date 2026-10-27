@@ -32,7 +32,7 @@ export function stateVariant(state) {
   // ``isWaiting``) is what differentiates "your move" from "I'm
   // working" — colour stays green throughout.
   if (["RUNNING", "ACTIVE", "IDLE", "READY"].includes(s))            return "ok";
-  if (["ERROR", "FAILED", "OFFLINE", "REMOTE_OFFLINE"].includes(s))  return "bad";
+  if (["ERROR", "FAILED", "KILLED", "OFFLINE", "REMOTE_OFFLINE"].includes(s)) return "bad";
   if (["NOT_LAUNCHED", "", "UNKNOWN"].includes(s))                    return "off";
   return "warn"; // PAUSED, LAUNCHED_NOT_READY, PARKING
 }
@@ -67,13 +67,15 @@ export function isBooting(state) {
 
 // THE one rule for the Start / Resume button, every surface (sidebar
 // controls, dashboard card, pendant): offered exactly when the
-// workspace is launched, past its boot, and not working — neither
-// running nor parking. IDLE, PAUSED, ERROR, KILLED → yes; booting,
-// RUNNING, PARKING, not launched → no. A surface that gates Start any
-// other way drifts (the pendant once offered Start mid-boot).
+// workspace is launched, past its boot, not working — neither running
+// nor parking — and not killed. IDLE, PAUSED, ERROR → yes; booting,
+// RUNNING, PARKING, KILLED, not launched → no. A killed run is over:
+// the runtime refuses Start and Resume (its Last error says why), the
+// way on is Kill and Launch. A surface that gates Start any other way
+// drifts (the pendant once offered Start mid-boot).
 export function canStart(state) {
   const s = String(state || "").toUpperCase();
-  return isLaunched(s) && !isBooting(s) && !isRunning(s) && !isParking(s);
+  return isLaunched(s) && !isBooting(s) && !isRunning(s) && !isParking(s) && s !== "KILLED";
 }
 
 // True once the workspace has begun a run (RUNNING / PAUSED /

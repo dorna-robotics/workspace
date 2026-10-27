@@ -1594,7 +1594,7 @@ class _DSLActionLeaf(RecipeAction):
             # instead of replanning into the identical plan until the
             # no-progress cap.
             log.error("BT leaf FATAL: %s — %s", self.name, ex)
-            self._kill_runtime()
+            self._kill_runtime(f"{self.name}: {ex}")
             self._settle_motion_tail()
             return False
         except Exception as ex:
@@ -1699,7 +1699,7 @@ class _DSLActionLeaf(RecipeAction):
             return False
         if rv == "killed":
             log.warning('BT leaf KILL : %s (execute returned "killed")', self.name)
-            self._kill_runtime()
+            self._kill_runtime(f"{self.name} ended the run (its execute returned \"killed\")")
             self._settle_motion_tail()
             return False
         if not isinstance(rv, str):
@@ -1722,12 +1722,13 @@ class _DSLActionLeaf(RecipeAction):
         log.info("BT leaf DONE : %s (branch=%s)", self.name, rv)
         return True
 
-    def _kill_runtime(self) -> None:
-        """Fatal, no-motion abort — the run ends INVALID / KILLED."""
+    def _kill_runtime(self, reason: str) -> None:
+        """Fatal, no-motion abort — the run ends INVALID / KILLED, saying
+        ``reason`` (Runtime.kill)."""
         rt = getattr(self.ctx, "runtime", None)
         kill = getattr(rt, "kill", None)
         if callable(kill):
-            kill()
+            kill(reason)
 
     def _settle_motion_tail(self) -> None:
         """Continuous-motion window, phase 2 (motion-guide §12): a

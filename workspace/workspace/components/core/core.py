@@ -266,21 +266,11 @@ class Core:
         # AutoRecover retries, runtime auto-pauses.
         if self.robot_ip:
             def _make_recover() -> AutoRecover:
-                rec = AutoRecover(
+                return AutoRecover(
                     recover_fn=self.dorna.recover,
                     set_status=self.dorna._set_state,
                     log_label=f"dorna:{self.robot_ip}",
                 )
-                # Trigger AutoRecover ONLY on connection-lost events
-                # (TCP drop / host unreachable). Alarms ALSO fire
-                # state→down, but AutoRecover can't fix alarms — they
-                # need physical operator clearance. Wiring the generic
-                # state-down edge here would auto-"recover" alarms by
-                # reconnecting (which works, since TCP is fine), then
-                # incorrectly flip the dot back to green ms after it
-                # turned red. Use the connection-specific event instead.
-                self.dorna.on_connection_lost(rec.trigger)
-                return rec
 
             try:
                 self._robot_attachment = attach_device(
@@ -291,6 +281,11 @@ class Core:
                     meta={"ip": self.robot_ip, "model": prm.get("model", "dorna_ta"),
                           "j5_infinite": self.j5_infinite},
                     recover_factory=_make_recover,
+                    # AutoRecover ONLY on the robot's own link-lost
+                    # events (TCP drop / host unreachable): an alarm is
+                    # also down, but a reconnect cannot clear it — it
+                    # stays down until the operator's Disable Alarm.
+                    reports_link_loss=True,
                 )
             except Exception:
                 # Adapter / recovery wiring must NOT take down Core —

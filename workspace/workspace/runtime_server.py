@@ -467,6 +467,18 @@ class CmdHandler(tornado.web.RequestHandler):
             self.write({"error": "Invalid JSON"})
             return
 
+        # A killed run is over: every command but Kill is refused, out
+        # loud — the reason it was killed, and the way on. Never a silent
+        # no-op (a Start that did nothing, with no word, once read as a
+        # robot that would not move).
+        if self.rt.killed and cmd != "kill":
+            msg = (f"{cmd.capitalize()} refused: the run was killed ({self.rt.kill_reason}). "
+                   "Kill and Launch to run again.")
+            self.rt.step(msg, level="warning")
+            self.set_status(409)
+            self.write({"error": msg})
+            return
+
         # Start and Resume are the operator's "the robot may move now":
         # its motors come on first, then the drives settle (Runtime.
         # motors_on — off the IOLoop, it waits on the robot and 0.5 s).
@@ -493,7 +505,7 @@ class CmdHandler(tornado.web.RequestHandler):
             # If no workflow thread is running, end has nobody to catch it — kill instead
             th = self._workflow_thread_holder.get("thread")
             if th is None or not th.is_alive():
-                self.rt.kill()
+                self.rt.kill("Park with no run in progress")
         elif cmd == "pause":
             self.rt.pause()
         elif cmd == "resume":
@@ -515,7 +527,7 @@ class CmdHandler(tornado.web.RequestHandler):
                 self.write({"error": str(ex)})
                 return
         elif cmd == "kill":
-            self.rt.kill()
+            self.rt.kill("the operator pressed Kill")
         else:
             self.set_status(400)
             self.write({"error": "Unknown cmd"})
