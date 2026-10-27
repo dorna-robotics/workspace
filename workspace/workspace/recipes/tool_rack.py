@@ -200,13 +200,20 @@ class ToolRack(Recipe):
             "target_solid": self.component.assembly[solid_name],
             "target_anchor": anchor, 
             "approach_tool": {"solid": tool, "anchor": "tool_changer_connection", "offset":[0, 0, 0, 0, 0, 0]},
-            # Groups: entry corridor as one motion; seating the tool
-            # into the rack slot is the contact group after the stop.
+            # Groups: one point each, so the entry corridor stops at every
+            # corner and runs at lmove_vaj (a chain changes speed per
+            # segment); seating the tool into the rack slot is the last.
             "approach": [
                             [
                                 [-3*padding,0,-4*padding-height_offset,0,0,0],
+                            ],
+                            [
                                 [-padding,0,-2*padding-height_offset,0,0,0],
+                            ],
+                            [
                                 [-padding,0,-gap-height_offset,0,0,0],
+                            ],
+                            [
                                 [0, 0, -gap-height_offset, 0, 0, 0],
                             ],
                             [
@@ -223,6 +230,8 @@ class ToolRack(Recipe):
                         ],
                         [
                             [0, 0, -padding-height_offset, 0, 0, 0],
+                        ],
+                        [
                             [-3*padding, 0, -2*padding-height_offset, 0, 0, 0],
                         ]],
             "output_exit": output_exit,

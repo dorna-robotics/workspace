@@ -12,6 +12,8 @@ class Hotel(Recipe):
         # motion
         jmove_vaj=[150, 750, 4500],
         lmove_vaj=[300, 700, 3000],
+        fuse=False, # the slide out stops, never curves into the next travel
+        fuse_in=False, # the travel stops before the slide in
         # IK
         left_approach=True,
         base_distance=150,
@@ -19,13 +21,6 @@ class Hotel(Recipe):
         rail_span=5, # 5    
         # calibration
         calibrate_abc = True, # True
-        # a shelf leaves millimetres to the posts and the shelf above: the
-        # slide in and out runs straight, never folded into the travel
-        # (fuse_in) or held and fused into the next one (fuse) — both curve
-        # it (setup_11, 100 mm hotel: the plate drifted 9.8 mm sideways
-        # sliding in and turned 0.9° lifting off the shelf)
-        fuse=False,
-        fuse_in=False,
     )
 
     def __init__(self, workspace, core, component, **kwargs):
@@ -43,22 +38,6 @@ class Hotel(Recipe):
         )
         
     
-    def _shelf_height(self, motion_prm, level, solid_name):
-        """For a hotel that asks for it (``lift_from_shelf``), the rim to
-        clear is this shelf's (``top_{level}``), not the hotel's base
-        ``top``: measured from the base, the lift before the slide-out
-        grows a pitch per level (300 mm on a 4-level hotel's top shelf) and
-        drives the plate into the shelf above. Other hotels: unchanged."""
-        if not getattr(self.component, "lift_from_shelf", False):
-            return
-        solid = self.component.assembly[solid_name]
-        try:
-            top = solid.pose(f"top_{level}")
-        except Exception:
-            return
-        motion_prm["height_container"] = abs(dorna_pose.transform_pose(
-            [0, 0, 0, 0, 0, 0], from_frame=top, to_frame=solid.pose(f"place_{level}"))[2])
-
     def pick(self, level=0, solid_name="body", approach=True, exit=True, attachment=True, trigger_io=True, padding=15, gap=2, motion_plan_kwargs={"gravity_vec":[0, 0, 1], "gravity_thr": 5}, **kwargs):
         """Pick a plate from the hotel shelf at ``level`` using a lateral slide-in approach.
 
@@ -77,13 +56,20 @@ class Hotel(Recipe):
         motion_prm = self.pick_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, **kwargs)
         if not motion_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
-        self._shelf_height(motion_prm, level, solid_name)
 
-        # update approach
+        # update height container: this shelf's top, not the hotel's base top
+        if getattr(self.component, "lift_from_shelf", False):
+            motion_prm["height_container"] = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], from_frame=self.component.assembly[solid_name].pose(f"top_{level}"), to_frame=self.component.assembly[solid_name].pose(anchor))[2])
+
+        # update approach: one point per group, so every move stops and runs at lmove_vaj
         motion_prm["approach"] = [
                             [
-                                [self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0],
-                                [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
+                                [self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0]
+                            ],
+                            [
+                                [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0]
+                            ],
+                            [
                                 [padding, 0, motion_prm["height_load"], 0, 0, 0]
                             ],
                             [
@@ -91,11 +77,10 @@ class Hotel(Recipe):
                             ]
                         ]
 
-        # update exit: lift off the shelf, up, out — ONE group, so it runs as one
-        # straight-line chain (fuse=False: never held and fused into the next travel)
-        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0],
-                    [0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
-                    [self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]]
+        # update exit
+        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
+                    [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+                    [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]]
 
         # run touch
         return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
@@ -114,18 +99,21 @@ class Hotel(Recipe):
             motion_prm = self.place_setting(anchor=anchor, solid_name=solid_name, approach=approach, exit=exit, attachment=attachment, trigger_io=trigger_io, padding=padding, gap=gap, load_anchor=load_anchor, **kwargs)
             if not motion_prm:
                 raise RecipeError("place_setting failed — could not compute place parameters")
-            self._shelf_height(motion_prm, level, solid_name)
 
-            # update approach
+            # update height container: this shelf's top, not the hotel's base top
+            if getattr(self.component, "lift_from_shelf", False):
+                motion_prm["height_container"] = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], from_frame=self.component.assembly[solid_name].pose(f"top_{level}"), to_frame=self.component.assembly[solid_name].pose(anchor))[2])
+
+            # update approach: one point per group, so every move stops and runs at lmove_vaj
             motion_prm["approach"] = [
-                            [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0],
-                             [0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
-                             [0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
+                            [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+                            [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+                            [[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
                             [motion_prm["contact"]]]
 
             # update exit
-            motion_prm["exit"] = [[[padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0],
-                        [self.component.size[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]]
+            motion_prm["exit"] = [[[padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]],
+                        [[self.component.size[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]]
 
             # run touch
             return self.touch(**motion_prm, motion_plan_kwargs=motion_plan_kwargs)
