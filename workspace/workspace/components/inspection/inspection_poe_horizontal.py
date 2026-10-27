@@ -20,7 +20,7 @@ class InspectionPoeHorizontal(Inspection):
         ]},
         # This station carries a Hikrobot GigE (PoE) camera — the driver
         # type is the component's fact, not the scene's: the scene
-        # authors only serial_number / ip / port. The base defaults are
+        # authors only server / serial_number. The base defaults are
         # D405-shaped and wrong for this device: it is color-only
         # (mode "bgr", not "bgrd"), and a stream dict would be taken as
         # a sensor ROI — None keeps the native full frame.

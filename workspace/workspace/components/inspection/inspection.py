@@ -2,41 +2,37 @@ from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
 
+from workspace.components.inspection.vision_server import VisionServer
 from workspace.components.inspection.vision_station import VisionStation
 
 
 class Inspection:
-    """Vision-station component: holds a connection to a remote dorna_vision
-    server and proxies camera / detection lifecycle through it via the
-    shared :class:`VisionStation` helper.
+    """Camera component: one camera on a vision server, its session and
+    detections through :class:`VisionStation`.
 
-    The actual ``Camera`` object and ``Detection`` runtime live on the vision
-    server (typically a different Pi where the USB camera is plugged in).
-    This component is a thin client — it registers the camera + detections
-    on the server, and exposes ``detect(name)`` which round-trips an RPC.
-
-    Health monitoring is orthogonal: the vision server publishes camera
-    health to the device bus via its adapter; the orchestrator consumes
-    those events independently of this component. See ``docs/device-guide.md``.
+    The ``Camera`` object and ``Detection`` runtime live on the vision
+    server (typically a different Pi where the camera is plugged in). The
+    server is its own component and device (``vision_server``); this
+    camera names it in ``camera_cfg.server`` — declared above it in the
+    scene. Two cards: ``camera:<sn>`` is the camera hardware (the vision
+    server process publishes it), the server's card is every capture and
+    detection (a failure puts it down; Recover there).
 
     Simulation:
-        ``simulation=True`` → no VisionClient is opened, ``detect()`` returns
-        the supplied ``sim_return`` (default ``[]``). Use during dev / on a
-        machine that can't reach the vision server. Robot motions in the
-        recipes are NOT gated on simulation — only the detection call is.
+        ``simulation=True`` (or no server / no serial) → no session,
+        ``detect()`` returns the caller's ``sim_return``. Robot motions in
+        the recipes are NOT gated on simulation — only the vision calls.
     """
 
     DEFAULTS = dict(
         anchors={"body":{"center":[0, 0, 0, 0, 0, 0], "lens": [0, 0, 0, 0, 0, 0], "place": [0, 0, 0, 0, 0, 0],
                 "hole_0":[25, 25, 0, 0, 0, 0], "hole_1": [-25, 25, 0, 0, 0, 0], "hole_2": [-25, -25, 0, 0, 0, 0], "hole_3": [25, -25, 0, 0, 0, 0],}},
-        # All camera-related config under one dict (mirrors core.py).
-        # ``serial_number`` / ``ip`` / ``port`` identify the vision
-        # server and the camera it should manage; the rest is forwarded
-        # to ``camera_add`` on the server.
+        # All camera-related config under one dict. ``server`` names the
+        # vision_server component, ``serial_number`` the camera it should
+        # manage; the rest is forwarded to ``camera_add`` on the server.
         camera_cfg={
+            "server": "",
             "serial_number": "",
-            "ip": "127.0.0.1",
-            "port": 80,
             # Camera driver on the vision server: "d405" (RealSense,
             # depth+color) or "ueye_xs" (IDS uEye XS, color + autofocus).
             "type": "d405",
@@ -69,14 +65,21 @@ class Inspection:
            "body": ["place"]
         }
 
-        # Vision server connection (shared helper). VisionStation handles
-        # the simulation gate, connect-or-fall-back-to-sim, camera_add on
-        # connect, and the add_detection / detect / close surface.
+        # The camera's session on its server (VisionStation): the
+        # simulation gate, camera_add on connect, the add_detection /
+        # detect / close surface. Components build in scene order, so
+        # the server is declared above the camera.
         cam_cfg = prm["camera_cfg"]
+        server = None
+        if cam_cfg["server"]:
+            comp = workspace.components.get(cam_cfg["server"])
+            if not isinstance(comp, VisionServer):
+                raise ValueError(f"{name}: camera_cfg.server {cam_cfg['server']!r} is not a "
+                                 f"vision_server declared above it in the scene")
+            server = comp.server
         self.vision = VisionStation(
-            ip=cam_cfg.get("ip", "127.0.0.1"),
-            port=int(cam_cfg.get("port", 80)),
-            serial_number=cam_cfg.get("serial_number", ""),
+            server=server,
+            serial_number=cam_cfg["serial_number"],
             camera_cfg=cam_cfg,
             simulation=prm["simulation"],
             label=self.name,
@@ -141,10 +144,11 @@ class Inspection:
         return self.vision.get_img(name, kind=kind, quality=quality, max_side=max_side, meta=meta)
 
     def detect(self, name: str, sim_return=[], use_last: bool = False, data=None, camera_in_world=None, **kwargs):
-        """Run the named detection. By default, captures a fresh frame
-        first and runs on it (raises ``CameraUnavailableError`` on
-        capture failure). Pass ``use_last=True`` to skip capture and
-        run on the previously cached frame. See VisionStation.detect.
+        """Run the named detection: the result list, ``[]`` when nothing
+        is found, None when the read failed (the server is then down). By
+        default captures a fresh frame first and runs on it; pass
+        ``use_last=True`` to run on the previously cached frame. See
+        VisionStation.detect.
 
         ``sim_return`` (device-guide §17) — the detection result returned
         in sim (default ``[]``); pass detections to inject them.
@@ -158,8 +162,8 @@ class Inspection:
         """No-arg ``detect`` for the Operator Actions UI — runs the
         default detection (the last one registered, or "default"). In
         sim this returns the canned ``sim_return``; against a real vision
-        server it returns the detection result. Inherited by every
-        inspection component (module, horizontal, …)."""
+        server the detection result, or None when it failed. Inherited by
+        every inspection component (module, horizontal, …)."""
         return self.detect(self._default_detection)
 
     def operator_actions(self) -> list[dict]:

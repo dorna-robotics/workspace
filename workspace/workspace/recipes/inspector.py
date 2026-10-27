@@ -146,8 +146,9 @@ class Inspector(Recipe):
     def detect(self, sim_return=True, **kwargs):
         """Run the inspector's detection. By default, captures a fresh
         frame first (stamped with the lens's current world pose) and
-        runs on it; raises ``CameraUnavailableError`` on capture
-        failure. Returns ``sim_return`` (default True) in simulation —
+        runs on it. Returns the result list, or None when the read
+        failed (the vision server's card is then down — vision-guide
+        §6). Returns ``sim_return`` (default True) in simulation —
         device-guide §17. ``use_last=True`` skips capture; ``data=...``
         bypasses the live camera for replay/testing; ``data=[f1, f2, ...]``
         (vlm) judges those frames as the views of one part, as given.

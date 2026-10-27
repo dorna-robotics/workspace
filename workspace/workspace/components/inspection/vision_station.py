@@ -1,55 +1,40 @@
-"""VisionStation — shared helper that wraps a dorna_vision client.
+"""VisionStation — one camera's session on its vision server.
 
-Used by any component that owns a remote camera + detections on a vision
-server: today the ``Inspection`` component (fixed camera) and ``Core`` (robot-
-mounted camera). Tomorrow any new station that follows the same pattern.
+Used by the ``Inspection`` component (every camera, fixed or
+robot-mounted). The SERVER is its own component and device
+(``vision_server.py``); the camera names it in ``camera_cfg.server``.
 
 Responsibilities:
-  * hold a single ``VisionClient`` connection (or none, in simulation),
+  * hold this camera's ``VisionClient`` session (none in simulation),
   * register the camera on the server during construction,
-  * expose ``add_detection``, ``capture``, and ``detect``,
-  * make the **capture → run-on-captured-frame** pattern the default for
-    ``detect()`` so recipes never accidentally run on stale or junk data.
+  * expose ``add_detection``, ``capture``, ``detect``, ``frame``,
+    ``get_img``,
+  * make **capture → run-on-captured-frame** the default for ``detect()``
+    so a detection never runs on a stale or junk frame.
 
-Failure model — authored intent is honoured, faults are surfaced loud:
-  * ``simulation=True`` → no server contact. ``detect()`` returns canned
-    values. **Does not publish anything to the device bus.** The camera
-    is owned by the vision server daemon (which holds the USB handle);
-    publishing a competing entry would race with the daemon's truth
-    on retained MQTT topics. Workspace's sim intent for the camera is
-    surfaced as a project-level claim mode (see
-    ``DeviceComponent.device_claim``) so the panel can render a SIM
-    pill on top of the daemon's bus state without overwriting it.
-  * ``simulation=False`` + missing client lib → raise on construct.
-    A missing import is a config error, not a runtime fault.
-  * ``simulation=False`` + server unreachable → raise on construct.
-  * ``simulation=False`` + camera not open within ``COLD_OPEN_TIMEOUT``
-    (a cold PoE camera takes ~20 s) → raise, naming the camera.
-    The vision server's own bus adapter will surface the camera as
-    red; the workspace must not pretend it's running in sim.
+Failure model — one rule for every call the workflow depends on:
+  * ``simulation=True`` → no server contact; ``detect()`` returns the
+    caller's ``sim_return``. Never in real mode.
+  * Real mode, a capture / detection run / frame fails (a crashed model,
+    a bad preset, a lost socket, the camera not grabbing) → the SERVER
+    device goes down with what failed (VisionServerStation.fault) — the
+    run pauses when it is critical — and the call returns None: a failed
+    read (project-guide §8). Nothing is retried here; the operator's
+    Recover on the server card re-establishes the session (reconnect).
+  * ``get_img`` is observability: a failure logs and returns None, and
+    never puts the server down.
+  * At launch: missing client lib, unreachable server, a camera that
+    does not open in time → raise (a launch that cannot work fails).
 
-Health monitoring: the vision server is the **sole publisher** for
-``camera:<sn>``. This helper never writes to that topic. See
-``docs/device-guide.md`` §8 (one-publisher-per-id rule).
+The camera's own bus entry ``camera:<sn>`` is the vision server
+process's (one publisher per id, device-guide §8); this helper never
+writes it.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional
-
-
-class CameraUnavailableError(RuntimeError):
-    """Raised when the server-side capture step fails (camera USB gone,
-    librealsense error, etc.). Carries the device id and the server's
-    error message so orchestrator-side handlers can surface it cleanly
-    or wait for the device bus to report ``state=ok`` before retrying.
-    """
-
-    def __init__(self, name: str, msg: str):
-        super().__init__(f"capture failed for {name!r}: {msg}")
-        self.detection_name = name
-        self.msg = msg
 
 
 class VisionClientImportError(RuntimeError):
@@ -78,36 +63,33 @@ class VisionCameraOpenTimeoutError(RuntimeError):
 
 
 class VisionServerUnreachableError(RuntimeError):
-    """Raised when the vision server can't be reached in real mode.
-
-    The vision server's own MQTT adapter will publish the camera as
-    ``state=down`` on the bus — the panel surfaces the fault there.
-    This exception just stops the workspace from continuing as if
-    everything were fine.
-    """
+    """Raised at launch when the vision server can't be reached, or
+    refused to register the camera, in real mode — the launch cannot
+    work."""
 
 
 class VisionStation:
-    """Tiny VisionClient wrapper. Authored sim stays sim; faults raise.
+    """One camera's session on its vision server. Authored sim stays
+    sim; failures put the server down and return None.
 
     Args:
-        host: Vision server hostname or IP.
-        port: Vision server port.
-        serial_number: USB serial of the camera the server should manage.
-        camera_cfg: Dict forwarded to ``camera_add`` (stream, K, D, mode, ...).
-        simulation: Authored simulation intent. When True (or when ip/
-            serial are empty so there's nothing real to talk to), no
-            client is opened, ``detect()`` returns canned values, and
-            the camera is stubbed onto the device bus with a SIM badge.
-            Failures in real mode never flip this — they raise.
-        label: Free-form name for log lines (e.g. component name).
+        server: The camera's ``VisionServerStation`` (the vision_server
+            component's ``server``), or None — no server, simulation.
+        serial_number: Serial of the camera the server should manage.
+        camera_cfg: Dict forwarded to ``camera_add`` (type, stream, K,
+            D, mode, ...).
+        simulation: Authored simulation intent. True (or no server, or
+            no serial: nothing real to talk to) → no client is opened and
+            ``detect()`` returns ``sim_return``. Never flipped by a
+            failure.
+        label: The camera component's name, for log lines and faults.
 
     Raises:
-        VisionClientImportError: ``simulation=False`` but the
-            ``dorna_vision_client`` package is not importable.
-        VisionServerUnreachableError: ``simulation=False`` but the
-            vision server's ip/port refuses connections, or the server
-            refused to register the camera.
+        ValueError: a real camera on a server authored as simulation.
+        VisionClientImportError: real mode, ``dorna_vision_client`` not
+            importable.
+        VisionServerUnreachableError: real mode, the server refuses the
+            connection or the camera.
         VisionCameraOpenTimeoutError: the server answered but did not
             open the camera within ``COLD_OPEN_TIMEOUT`` (or the
             camera_cfg ``timeout``) — a cold camera, not a dead server.
@@ -116,58 +98,63 @@ class VisionStation:
     def __init__(
         self,
         *,
-        ip: str,
-        port: int,
+        server,
         serial_number: str,
         camera_cfg: Optional[dict] = None,
         simulation: bool = True,
         label: str = "vision",
     ):
-        self.ip = ip
-        self.port = int(port)
+        self.server = server
         # str() at the boundary: an unquoted serial in scene yaml
         # arrives as an int, and the server pool keys by STRING — the
         # mismatch reads as a 10 s connect timeout, not a type error.
         self.serial_number = str(serial_number) if serial_number else ""
         self.camera_cfg = dict(camera_cfg or {})
-        # ip / port / serial_number identify the server and camera;
-        # mount is WORKSPACE-side kinematics (the lens-on-flange
-        # transform Core.lens_pose composes for camera_in_world) —
-        # none of them are Camera.connect parameters. Everything else
-        # forwards to camera_add.
-        for k in ("ip", "port", "serial_number", "mount"):
+        # server / serial_number identify the server and camera; mount
+        # is WORKSPACE-side kinematics (the lens-on-flange transform
+        # Core.lens_pose composes for camera_in_world) — none of them are
+        # Camera.connect parameters. Everything else forwards to
+        # camera_add.
+        for k in ("server", "serial_number", "mount"):
             self.camera_cfg.pop(k, None)
         # The open's timeout is camera_add's own keyword, not a connect
         # parameter — popped so ** never passes it twice.
         self.open_timeout = float(self.camera_cfg.pop("timeout", COLD_OPEN_TIMEOUT))
         self.label = label
         # Detections this station has REGISTERED on the server — written
-        # only once the server accepted one, replayed on reconnect: a
-        # vision-server restart kills the SESSION, and detections are
-        # per-session state on the server.
+        # only once the server accepted one, re-registered by reconnect():
+        # detections are per-session state on the server.
         self._detections: dict = {}
-        # Set on any failed client call; the next call re-establishes
-        # the session before running. NOT the sim gate — a dead session
-        # in real mode keeps failing loudly, never demotes to sim.
-        self._dead = False
 
-        # Simulation gate. True when explicitly authored OR when there's
-        # nothing to connect to (no ip/serial). Real-mode failures must
-        # NOT flip this to True — that's the silent-demote bug we removed.
-        self.simulation = bool(simulation) or not ip or not serial_number
+        # Simulation gate. True when authored OR when there is nothing to
+        # connect to (no server / no serial). A failure never flips it.
+        self.simulation = bool(simulation) or server is None or not self.serial_number
         self._client = None
 
         if self.simulation:
-            # Workspace does NOT publish for the camera — the vision
-            # server owns that bus entry. Workspace sim intent surfaces
-            # via DeviceComponent.device_claim, which the panel reads
-            # alongside the bus snapshot.
+            # The camera's bus entry is the vision server's; sim intent
+            # surfaces via the component's device_claim.
             return
+        if server.simulation:
+            raise ValueError(f"{self.label}: a real camera on vision server "
+                             f"{server.label!r}, which is in simulation")
 
-        # Real mode. Import errors are deployment problems; raise rather
-        # than pretend to run in sim. The orchestrator surfaces the
-        # exception at workspace launch so the operator sees a clear,
-        # actionable failure.
+        self._open()
+        server.add_camera(self)
+
+    @property
+    def ip(self) -> str:
+        return self.server.ip
+
+    @property
+    def port(self) -> int:
+        return self.server.port
+
+    def _open(self) -> None:
+        """Connect and add the camera — at launch. A missing client lib is
+        a deployment problem; then two failures, two messages: the SERVER
+        not answering, and the server answering but the CAMERA not
+        opening in time."""
         try:
             from dorna_vision_client import VisionClient
         except ImportError as ex:
@@ -176,9 +163,6 @@ class VisionStation:
                 f"Install with: sudo pip3 install -e "
                 f"/path/to/vision/dorna_vision-client"
             ) from ex
-
-        # Two failures, two messages: the SERVER not answering, and the
-        # server answering but the CAMERA not opening in time.
         try:
             self._client = VisionClient()
             self._client.connect(host=self.ip, port=self.port)
@@ -187,9 +171,7 @@ class VisionStation:
             self._client = None
             raise VisionServerUnreachableError(
                 f"{self.label}: vision server unreachable @ "
-                f"{self.ip}:{self.port}: {type(ex).__name__}: {ex}. "
-                f"The camera will appear red on the device bus when the "
-                f"server is running."
+                f"{self.ip}:{self.port}: {type(ex).__name__}: {ex}"
             ) from ex
         try:
             self._client.camera_add(
@@ -220,11 +202,13 @@ class VisionStation:
 
     # ── Detection lifecycle ────────────────────────────────────────────
 
-    def _reconnect(self) -> None:
-        """One reconnect attempt after a dead socket. The restart that
-        killed the socket also killed the server-side session, so this
-        re-adds the camera (idempotent on the pool) and re-registers
-        every detection this station authored."""
+    def reconnect(self) -> None:
+        """A fresh session — the server's Recover (VisionServerStation.
+        recover). A server restart killed the session and its detections;
+        a crashed detection may hold a broken model: connect again, re-add
+        the camera (idempotent on the pool), re-register every detection
+        this station authored. Raises on failure — the server stays
+        down."""
         from dorna_vision_client import VisionClient
         self._safe_close()
         self._client = VisionClient()
@@ -237,7 +221,7 @@ class VisionStation:
                 name=name, camera_serial_number=self.serial_number,
                 **self._detection_kwargs(preset))
         self._bus_connect()
-        print(f"🔁 {self.label}: vision server reconnected @ {self.ip}:{self.port}")
+        print(f"🔁 {self.label}: session re-established @ {self.ip}:{self.port}")
 
     @staticmethod
     def _detection_kwargs(preset: dict) -> dict:
@@ -263,77 +247,60 @@ class VisionStation:
             print(f"[{self.label}] bus handshake unavailable ({type(ex).__name__}) — "
                   f"unit keeps its own DEVICE_MQTT_HOST; set it manually for bus health")
 
-    def _call(self, thunk):
-        """Client calls fail HONESTLY — the operation is never retried
-        behind the action's back. A failure marks the session dead and
-        surfaces (capture -> ok False -> CameraUnavailableError -> the
-        workflow pauses per the device's critical flag, same as any
-        other device). The NEXT call — the action re-running after the
-        operator fixed the server and hit Resume — re-establishes the
-        session first and runs once. Session re-establishment is
-        transport-level plumbing (MQTT's own reconnect is the same
-        class); RECOVERY stays explicit: pause, operator, Resume."""
-        if self._dead:
-            self._reconnect()
-            self._dead = False
+    def _call(self, what: str, thunk):
+        """Every call the workflow depends on goes through here: a
+        failure puts the SERVER down with what failed, then raises for
+        the caller to turn into its own result. Never retried — Recover
+        on the server card is the one way back."""
         try:
             return thunk()
         except Exception as ex:
-            # An error the SERVER sent back (VisionServerError: a bad
-            # preset, a failed model call, a detection that raised)
-            # proves the socket is alive — the session stays. Only a
-            # transport failure marks it dead for the next call to
-            # re-establish.
-            if type(ex).__name__ != "VisionServerError":
-                self._dead = True
+            self.server.fault(f"{self.label} ({self.serial_number}): {what}: "
+                              f"{type(ex).__name__}: {ex}")
             raise
 
     def add_detection(self, name: str, **detection_preset: Any) -> bool:
-        """Register a detection on the server. Returns False in simulation.
+        """Register a detection on the server. Returns False in
+        simulation, True once the server accepted it.
 
         ``config:`` (a detection config file, vision-guide §5) comes
         absolute from a recipes file (the loader resolved it against that
         file); written in Python it is relative to the working folder, as
-        any path in that code. A config that cannot be added — or a vlm
-        detection — RAISES (fails the launch: misconfiguration); any other
-        detection logs and returns False, as before. A vlm detection that
-        RUNS is like any other: no usable answer is an empty result
-        (vision-guide §9)."""
-        if self.simulation or self._client is None:
+        any path in that code. A detection that cannot be registered
+        RAISES — a missing config, a preset the server refuses, a server
+        that does not answer: every later read on it would fail — and
+        the server is down with why. A vlm detection that RUNS is like
+        any other: no usable answer is an empty result (vision-guide §9)."""
+        if self.simulation:
             return False
         if isinstance(detection_preset.get("config"), str):
             p = Path(detection_preset["config"]).expanduser()
             if not p.is_file():
                 raise RuntimeError(f"[{self.label}] detection {name!r}: config "
                                    f"{detection_preset['config']!r} not found ({p.resolve()})")
-        try:
-            # Recorded only AFTER the server accepted it: _call may first
-            # re-establish a dead session, which replays the registered
-            # detections — this one is not among them yet, so it is added
-            # exactly once, here; and one the server refuses is never
-            # replayed as if it were registered.
-            self._call(lambda: self._client.detection_add(
-                name=name,
-                camera_serial_number=self.serial_number,
-                **self._detection_kwargs(detection_preset),
-            ))
-            self._detections[name] = dict(detection_preset)
-            return True
-        except Exception as ex:
-            if "config" in detection_preset or (detection_preset.get("detection") or {}).get("cmd") == "vlm":
-                raise           # a config or vlm detection that cannot be added fails the launch
-            print(f"[{self.label}] detection_add({name}) failed: {ex}")
-            return False
+        self._call(f"detection_add {name}", lambda: self._client.detection_add(
+            name=name,
+            camera_serial_number=self.serial_number,
+            **self._detection_kwargs(detection_preset),
+        ))
+        # Recorded only AFTER the server accepted it: one the server
+        # refuses is never re-registered by reconnect() as if it were.
+        self._detections[name] = dict(detection_preset)
+        return True
 
     def frame(self, quality: int = 100):
         """One frame from this station's camera as JPEG bytes — no
         detection runs. Collect one per pose, then
         ``detect(name, data=[frame_1, frame_2, ...])`` judges them as the
-        views of one part (vlm). ``None`` in simulation."""
-        if self.simulation or self._client is None:
+        views of one part (vlm). ``None`` in simulation, and when the
+        grab failed (the server is then down)."""
+        if self.simulation:
             return None
-        return self._call(lambda: self._client.camera_get_img(
-            self.serial_number, type="color_img", quality=quality))[0]
+        try:
+            return self._call("frame", lambda: self._client.camera_get_img(
+                self.serial_number, type="color_img", quality=quality))[0]
+        except Exception:
+            return None
 
     def capture(self, name: str, data: Any = None, camera_in_world: Any = None,
                 focus: Any = None) -> dict:
@@ -345,9 +312,7 @@ class VisionStation:
             reply = vision.capture("cap_check")
             if reply["ok"]:
                 result = vision.detect("cap_check", use_last=True)
-            else:
-                # snap["msg"] explains why; orchestrator-side retry/pause
-                ...
+            # not ok: the server is down with reply["msg"]
 
         ``data`` passes through to ``Detection.get_camera_data``:
           * ``None``  — live camera (default).
@@ -361,16 +326,21 @@ class VisionStation:
 
         In simulation, returns ``{"ok": True, "ts": None, "has_joint": False,
         "sim": True}`` so callers can skip the capture/run split branch.
-        Server errors are surfaced as ``{"ok": False, "msg": ...}``; we
-        never raise here, so callers can write linear control flow.
+        A failed capture — the call raised, or the server answered
+        ``ok: False`` (the camera did not grab) — puts the server down
+        and returns ``{"ok": False, "msg": ...}``; never raises.
         """
-        if self.simulation or self._client is None:
+        if self.simulation:
             return {"name": name, "ok": True, "ts": None, "has_joint": False, "sim": True}
         try:
-            return self._call(lambda: self._client.detection_capture(
+            snap = self._call(f"capture {name}", lambda: self._client.detection_capture(
                 name, data=data, camera_in_world=camera_in_world, focus=focus))
         except Exception as ex:
             return {"name": name, "ok": False, "msg": f"{type(ex).__name__}: {ex}"}
+        if not snap.get("ok"):
+            self.server.fault(f"{self.label} ({self.serial_number}): capture {name}: "
+                              f"{snap.get('msg', 'capture failed')}")
+        return snap
 
     def get_img(self, name: str, kind: str = "img", quality: int = 85,
                 max_side: Optional[int] = None, meta: bool = False):
@@ -386,11 +356,11 @@ class VisionStation:
         the image's ``shape`` and the full frame's ``source_shape`` [h, w],
         so a downscaled picture still maps back to frame pixels; ``(None,
         None)`` where it would return None."""
-        if self.simulation or self._client is None:
+        if self.simulation:
             return (None, None) if meta else None
         try:
-            data, info = self._call(lambda: self._client.detection_get_img(
-                name, type=kind, quality=int(quality), max_side=max_side))
+            data, info = self._client.detection_get_img(
+                name, type=kind, quality=int(quality), max_side=max_side)
             return (data, info) if meta else data
         except Exception as ex:
             print(f"[{self.label}] get_img({name}, {kind}) failed: {ex}")
@@ -406,60 +376,49 @@ class VisionStation:
         focus: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Run the named detection. Returns ``sim_return`` in simulation.
+        """Run the named detection: its result list, ``[]`` when it found
+        nothing, or **None when the read failed** — the server is then
+        down with what failed (project-guide §8: the read action returns
+        False; after Recover and Resume the planner selects it again).
 
-        ``sim_return`` (device-guide §17) — explicit sim injection, shaped
-        exactly like a real detection result (a list). Its default ``[]``
-        is the canned sim value; pass detections to inject them. Real mode
-        ignores it for the sim path, but still falls back to it if the
-        detection call itself errors (so non-camera failures keep the
-        recipe contract).
+        ``sim_return`` (device-guide §17) — what simulation returns,
+        shaped exactly like a real result (a list). Real mode never
+        returns it.
 
         **Default behavior (capture → run-on-captured-frame).** When
-        ``use_last`` is False, the call first issues a capture for
-        ``name`` and only proceeds to detection if the capture
-        succeeded. On capture failure, raises
-        :class:`CameraUnavailableError` carrying the server's reason —
-        the recipe never runs detection on stale or junk data.
-
-        Pass ``use_last=True`` to skip the capture step (e.g. when you
-        already called ``capture()`` yourself, or you want to run a
-        second detection on the same cached frame). The server uses
-        whatever ``det.camera_data`` already holds.
-
-        ``data`` is forwarded to the capture step (see ``capture`` for
-        accepted shapes). Ignored when ``use_last=True``.
+        ``use_last`` is False, the call first captures a fresh frame for
+        ``name`` and runs only if the capture succeeded — never on a
+        stale or junk frame. ``use_last=True`` skips the capture (you
+        called ``capture()`` yourself, or a second detection runs on the
+        same cached frame). ``data`` is forwarded to the capture (see
+        ``capture``); a list of images (vlm) is judged as given, no
+        capture.
         """
-        if self.simulation or self._client is None:
+        if self.simulation:
             return sim_return
 
         if isinstance(data, (list, tuple)):
             # several images of ONE part (vlm) — judged as given, no capture,
             # no camera pose: the caller collected them (frame())
             try:
-                return self._call(lambda: self._client.detection_run(name, data=list(data), **kwargs))
-            except Exception as ex:
-                print(f"[{self.label}] detect({name}) failed: {ex}")
-                return sim_return
+                return self._call(f"detect {name}", lambda: self._client.detection_run(
+                    name, data=list(data), **kwargs))
+            except Exception:
+                return None
 
         if not use_last:
-            # capture → run pattern. Capture errors raise; detection
-            # errors fall through the legacy log-and-return-sim_return
-            # path so non-camera failures (bad model, missing key) keep
-            # the existing recipe contract. ``focus`` rides the capture
-            # (it must land BEFORE the grab; on use_last the frame
-            # already exists, so it is ignored there).
-            snap = self.capture(name, data=data, camera_in_world=camera_in_world,
-                                focus=focus)
+            # ``focus`` rides the capture (it must land BEFORE the grab; on
+            # use_last the frame already exists, so it is ignored there).
+            snap = self.capture(name, data=data, camera_in_world=camera_in_world, focus=focus)
             if not snap.get("ok"):
-                raise CameraUnavailableError(name, snap.get("msg", "capture failed"))
+                return None
             use_last = True   # run on the just-captured frame
 
         try:
-            return self._call(lambda: self._client.detection_run(name, use_last=use_last, **kwargs))
-        except Exception as ex:
-            print(f"[{self.label}] detect({name}) failed: {ex}")
-            return sim_return
+            return self._call(f"detect {name}", lambda: self._client.detection_run(
+                name, use_last=use_last, **kwargs))
+        except Exception:
+            return None
 
     # ── Lifecycle ──────────────────────────────────────────────────────
 

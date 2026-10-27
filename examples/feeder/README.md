@@ -69,9 +69,11 @@ in `scene/core_500.j2`). No hardware needed — works on any machine.
 
 5. **Real vision**: the robot camera is `inspection_d405_robot_1` in
    `scene/layout.j2` — a component bolted to `robot_A5`, in sim here.
-   Give it the unit's `camera_cfg` (serial, ip, port), `simulation:
-   false`, and a `detection_preset` on the `inspector` recipe; the
-   actions already present each cap to it (`present_cap`).
+   Declare the unit's `vision_server` above it (ip, port, `simulation:
+   false`), give the camera `camera_cfg.server` (that component) and
+   `serial_number`, `simulation: false`, and a `detection_preset` on
+   the `inspector` recipe; the actions already present each cap to it
+   (`present_cap`).
 
 ## What's NOT in this example (kept simple on purpose)
 

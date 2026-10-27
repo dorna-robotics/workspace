@@ -48,8 +48,9 @@ and would be rejected as `DevicePublisherConflict`.
 
 - **Camera** (`workspace/workspace/components/inspection/`):
   - `inspection.py` — the component, gates `device_ids` on serial number, implements `device_claim`
-  - `vision_station.py` — connection helper, RPC façade
-  - Daemon publisher lives in the separate vision server repo
+  - `vision_station.py` — the camera's session on its server, RPC façade; a failed read returns None and faults the server
+  - `vision_server.py` — the SERVER as a workspace-owned device (shape A): one card per server, down on any failed capture / detection, Recover re-establishes every camera session on it. Cameras name it in `camera_cfg.server` (vision-guide §2)
+  - Daemon publisher (the camera card) lives in the separate vision server repo
 
 ## Common pitfalls
 

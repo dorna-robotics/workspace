@@ -25,7 +25,7 @@ class InspectionHorizontalIDS5MP(Inspection):
                 {"pose":[0, 24.375, 26.65/2, 0, 0, 0], "scale":[23.0, 76.75, 26.65], "padding_enabled": True}]},
         # This holder carries the IDS uEye XS — the driver type is the
         # component's fact, not the scene's: the scene authors only
-        # serial_number / ip / port (and optionally focus).
+        # server / serial_number (and optionally focus).
         camera_cfg={"type": "ueye_xs"},
     )
 
