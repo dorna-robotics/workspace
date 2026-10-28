@@ -7,6 +7,12 @@ let firstPoll  = true;
 let pollTimer  = null;
 
 // ---- Avatar color hash (deterministic per workspace name) ----
+// Where a card leads. The pendant is the default — the card, its name,
+// an open Replan; the card's monitor icon is the one way to the desktop
+// view.
+const pendantUrl = name => `workspace.html?name=${encodeURIComponent(name)}&pendant=1`;
+const desktopUrl = name => `workspace.html?name=${encodeURIComponent(name)}`;
+
 const AVATAR_PALETTE = ["#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#ef4444","#22c55e","#6366f1"];
 function wsColor(name) {
   let h = 0;
@@ -322,7 +328,7 @@ function render() {
 
     const newHtml = `
       <div class="wc-head">
-        <a class="wc-head-link" href="workspace.html?name=${encodeURIComponent(ws.name)}" title="Open ${esc(ws.name)}">
+        <a class="wc-head-link" href="${pendantUrl(ws.name)}" title="Open ${esc(ws.name)}">
           <div class="wc-avatar" style="background:${wsColor(ws.name)}">${esc((ws.name[0]||'?').toUpperCase())}</div>
           <div class="wc-info">
             <div class="wc-name">
@@ -336,8 +342,8 @@ function render() {
           <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
           ${esc(stateLabel(state))}
         </span>
-        <a class="btn btn-sm btn-ghost btn-icon pendant-link" title="Open the pendant for ${esc(ws.name)}"
-           href="workspace.html?name=${encodeURIComponent(ws.name)}&pendant=1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></a>
+        <a class="btn btn-sm btn-ghost btn-icon desktop-link" title="Open the desktop view of ${esc(ws.name)}"
+           href="${desktopUrl(ws.name)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></a>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">
@@ -388,7 +394,7 @@ function render() {
                 const startLbl = isStarted(state) ? "Resume" : "Start";
                 // Replan (bt-framework-guide §8.6): enabled only while
                 // the run is paused; while one is open the same button
-                // opens the workspace page, where the dialog lives.
+                // opens the workspace pendant, where the dialog lives.
                 const rp = st.replan?.phase;
                 const rpLbl = "Replan";
                 const rpOff = !rp && !st.replan_ok;       // the runtime's own rule
@@ -430,7 +436,7 @@ function render() {
       const cmd = btn.dataset.cmd;
       wireCommand(btn, cmd, async () => {
         if (cmd === "replan" && btn.dataset.replan) {
-          window.location.href = `workspace.html?name=${encodeURIComponent(ws.name)}`;
+          window.location.href = pendantUrl(ws.name);
           return false;
         }
         // Device-fault gate for Start / Resume. Fetches fresh status
