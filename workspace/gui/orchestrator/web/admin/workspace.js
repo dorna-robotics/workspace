@@ -3462,7 +3462,9 @@ document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
 
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
-$("pendantExit").addEventListener("click", () => togglePendant(false));
+// Back (the chevron) is a link to the orchestrator; the monitor is the
+// one way to this workspace's desktop view.
+$("pendantDesktop").addEventListener("click", () => togglePendant(false));
 document.querySelectorAll(".viewer-tab").forEach(t => {
   t.addEventListener("click", () => {
     _viewerTab = t.dataset.vtab;
