@@ -12,8 +12,8 @@ class Hotel(Recipe):
         # motion
         jmove_vaj=[150, 750, 4500],
         lmove_vaj=[300, 700, 3000],
-        fuse=False, # the slide out stops, never curves into the next travel
-        fuse_in=False, # the travel stops before the slide in
+        fuse=False, # stop in front of the shelf, in and out
+        fuse_in=False,
         # IK
         left_approach=True,
         base_distance=150,
@@ -57,19 +57,20 @@ class Hotel(Recipe):
         if not motion_prm:
             raise RecipeError("pick_setting failed — could not compute pick parameters")
 
-        # update height container: this shelf's top, not the hotel's base top
+        # height container: from this shelf's top, not the hotel's base
         if getattr(self.component, "lift_from_shelf", False):
             motion_prm["height_container"] = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], from_frame=self.component.assembly[solid_name].pose(f"top_{level}"), to_frame=self.component.assembly[solid_name].pose(anchor))[2])
 
-        # update approach: one point per group, so every move stops and runs at lmove_vaj
+        # update approach: in front of the shelf, stop before the standoffs, then the rest of the way in
         motion_prm["approach"] = [
                             [
                                 [self.component.size[0] + padding, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0]
                             ],
                             [
-                                [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0]
+                                [self.component.size[0] / 2, 0, motion_prm["height_load"] + motion_prm["height_tool"]+ gap, 0, 0, 0]
                             ],
                             [
+                                [padding, 0, motion_prm["height_load"] + motion_prm["height_tool"] + gap, 0, 0, 0],
                                 [padding, 0, motion_prm["height_load"], 0, 0, 0]
                             ],
                             [
@@ -77,9 +78,10 @@ class Hotel(Recipe):
                             ]
                         ]
 
-        # update exit
-        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
-                    [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+        # update exit: out past the standoffs, stop, then out of the shelf
+        motion_prm["exit"] = [[[0, 0, motion_prm["height_container"] + gap, 0, 0, 0],
+                    [0, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+                    [[self.component.size[0] / 2, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
                     [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]]]
 
         # run touch
@@ -100,19 +102,21 @@ class Hotel(Recipe):
             if not motion_prm:
                 raise RecipeError("place_setting failed — could not compute place parameters")
 
-            # update height container: this shelf's top, not the hotel's base top
+            # height container: from this shelf's top, not the hotel's base
             if getattr(self.component, "lift_from_shelf", False):
                 motion_prm["height_container"] = abs(dorna_pose.transform_pose([0, 0, 0, 0, 0, 0], from_frame=self.component.assembly[solid_name].pose(f"top_{level}"), to_frame=self.component.assembly[solid_name].pose(anchor))[2])
 
-            # update approach: one point per group, so every move stops and runs at lmove_vaj
+            # update approach: in front of the shelf, stop before the standoffs, then the rest of the way in
             motion_prm["approach"] = [
                             [[self.component.size[0] + padding, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
-                            [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
-                            [[0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
+                            [[self.component.size[0] / 2, 0, motion_prm["height_container"] + padding, 0, 0, 0]],
+                            [[0, 0, motion_prm["height_container"] + padding, 0, 0, 0],
+                             [0, 0, motion_prm["height_container"] + gap, 0, 0, 0]],
                             [motion_prm["contact"]]]
 
-            # update exit
+            # update exit: out past the standoffs, stop, then out of the shelf
             motion_prm["exit"] = [[[padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]],
+                        [[self.component.size[0] / 2, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]],
                         [[self.component.size[0] + padding, 0, max(motion_prm["height_load"], motion_prm["height_container"]) + motion_prm["height_tool"] + gap, 0, 0, 0]]]
 
             # run touch
