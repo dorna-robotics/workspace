@@ -23,6 +23,7 @@ from workspace.devices import AutoRecover, attach_device
 
 import threading
 import time
+from contextlib import nullcontext
 
 
 class SplinePath:
@@ -794,6 +795,88 @@ class Core:
             raise RuntimeError(f"Tool '{getattr(tool, 'name', tool)}' has no disable() method")
         return fn()
 
+    # ── Axis homing against a hard stop (the rail) ─────────────────────
+
+    def home_axis_with_stop(self, axis_cfg, dir=-1, force=False):
+        """Init an axis and home it against its hard stop (rail-style) — the
+        robot's own atomic op: Start runs it through
+        Recipe.set_axis_with_stop, the operator through Home Rail
+        (:meth:`home_rail`). ``axis_cfg`` is ``rail_cfg``'s shape: axis,
+        offset, usem, usee, pprm, tprm, ppre, tpre, p, i, d, duration,
+        threshold.
+
+        Returns True iff the axis reports homed afterwards — a caller that
+        moves on a homed axis gates on it. Already homed returns True at
+        once, unless ``force``.
+
+        THE PID. The SDK homes on a soft PID (home_with_stop: the rail
+        stalls on the stop rather than pushing through what it hits) and
+        puts back the PID it read before — but not when it raises (a dead
+        link) or when the controller refuses the restore (still in alarm).
+        So whatever happens, ``axis_cfg``'s PID is set again afterwards and
+        read back: a rail left on the homing PID RAISES, it never moves on
+        silently.
+
+        The homing runs inside the station's ``expect_alarms`` window:
+        hard-stop homing stalls the motor into the stop, so the alarm (and
+        any comms hiccup while the controller is in the fault) is part of
+        the procedure; without the window the device layer flags the robot
+        down and AutoRecover reconnects mid-homing. The 1 s settles are
+        ``rt.delay`` — pause-aware on the workflow, straight through for an
+        operator call."""
+        api = self.robot_api
+        rt = self.workspace.rt
+        index = axis_cfg["axis"]
+        if not force and rt.is_homed(index=index):
+            return True
+        guard = getattr(api, "expect_alarms", None)
+        window = guard("rail homing (stall)") if callable(guard) else nullcontext()
+        try:
+            with window:
+                rt.delay(1)
+                api.set_axis(
+                    index=index,
+                    usem=axis_cfg["usem"], usee=axis_cfg["usee"],
+                    pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
+                    ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
+                )
+                rt.delay(1)
+                self._set_axis_pid(axis_cfg)
+                rt.delay(1)
+                api.home_with_stop(index=index, val=axis_cfg["offset"], dir=dir)
+        finally:
+            self._restore_axis_pid(axis_cfg)
+        # Success = the controller reports the axis homed — ask the
+        # hardware, not the command status.
+        return bool(rt.is_homed(index=index))
+
+    def _set_axis_pid(self, axis_cfg):
+        self.robot_api.set_pid(
+            index=axis_cfg["axis"],
+            p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
+            duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
+        )
+
+    def _restore_axis_pid(self, axis_cfg):
+        """``axis_cfg``'s PID on the controller after a homing — set, then
+        read back; a mismatch raises (the controller refused it, or the
+        link is gone)."""
+        want = [float(axis_cfg[k]) for k in ("p", "i", "d", "threshold", "duration")]
+        self._set_axis_pid(axis_cfg)
+        got = self.robot_api.get_pid(index=axis_cfg["axis"])
+        if (not isinstance(got, (list, tuple)) or len(got) < 5
+                or any(abs(float(g) - w) > 1e-6 for g, w in zip(got, want))):
+            raise RuntimeError(
+                f"axis {axis_cfg['axis']}: PID not restored after homing — the controller "
+                f"reports {got}, axis_cfg is {want} (p, i, d, threshold, duration). "
+                f"Clear the robot's alarm, then home again")
+
+    def home_rail(self):
+        """Home Rail (operator controls): re-home the rail now, homed or not
+        — the button for a rail that slipped or was knocked. True iff it
+        reports homed after."""
+        return self.home_axis_with_stop(self.rail_cfg, force=True)
+
     def operator_actions(self) -> list[dict]:
         actions = [
             {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "motors"},
@@ -808,6 +891,8 @@ class Core:
                 {"label": "Attach Tool", "method": "tool_attach", "icon": "link",     "group": "tool_changer"},
                 {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "tool_changer"},
             ]
+        if self.has_rail:
+            actions += [{"label": "Home Rail", "method": "home_rail", "icon": "backward"}]
         return actions
 
     def _guard_api(self, api):
@@ -5184,6 +5269,7 @@ class J5WindingGuard:
 
 class SimulationAPI:
     def __init__(self, joints=[0,0,0,0,0,0,0,0]):
+        self._pid = {}            # axis index -> [p, i, d, threshold, duration], as set_pid set it
         self.joints = joints
         self.FREQ = 100000
         self.INTERP_FREQ=120
@@ -6007,13 +6093,22 @@ class SimulationAPI:
     # ── Axis / homing stubs ────────────────────────────────────────────
     # SDK methods that touch the motor controller. No hardware in sim,
     # so they all return 2 (the SDK's success sentinel) and let
-    # higher-level helpers (Recipe.set_axis_with_stop / _encoder, the
-    # project startup notebooks, etc.) call them unconditionally.
+    # higher-level helpers (Core.home_axis_with_stop / Recipe
+    # set_axis_with_encoder, the project startup notebooks, etc.) call
+    # them unconditionally. set_pid is remembered so get_pid reads it
+    # back, as the controller does.
     def set_axis(self, **kwargs):
         return 2
 
-    def set_pid(self, **kwargs):
+    def set_pid(self, index=None, p=None, i=None, d=None, threshold=None, duration=None, **kwargs):
+        pid = self._pid.setdefault(index, [0, 0, 0, 0, 0])
+        for n, v in enumerate((p, i, d, threshold, duration)):
+            if v is not None:
+                pid[n] = v
         return 2
+
+    def get_pid(self, index=None, **kwargs):
+        return list(self._pid.get(index, [0, 0, 0, 0, 0]))
 
     def home_with_stop(self, **kwargs):
         return True

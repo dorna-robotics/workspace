@@ -1,6 +1,5 @@
 # workspace/recipes/recipe.py
 
-from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
 import json
@@ -314,50 +313,15 @@ class Recipe:
     # immediately, so these helpers work transparently in sim mode
     # too — no special-casing needed here.
     def set_axis_with_stop(self, axis_cfg, dir=-1):
-        """Init an axis and home it against a hard stop (rail-style).
-
-        Returns True iff the axis reports homed afterwards — the caller
-        must gate any motion that assumes a homed axis on this (return
-        False from the action so the planner retries/replans instead of
-        moving on an unhomed rail). Already-homed axes short-circuit to
-        True, so calling this every Start is cheap.
-
-        The whole sequence runs inside the station's ``expect_alarms``
-        window: hard-stop homing works by stalling the motor into the
-        stop, so the resulting alarm (and any comms hiccup while the
-        controller is in the fault) is part of the procedure. Without
-        the window the device layer flags the robot down and AutoRecover
-        reconnects mid-homing, killing it. SimulationAPI has no window
-        (no fault interception) — nullcontext keeps sim transparent.
-        """
-        api = self.core.robot_api
-        rt = self.rt
-        guard = getattr(api, "expect_alarms", None)
-        window = guard("rail homing (stall)") if callable(guard) else nullcontext()
-        with window:
-            if rt.is_homed(index=axis_cfg["axis"]):
-                return True
-            rt.delay(1)
-            api.set_axis(
-                index=axis_cfg["axis"],
-                usem=axis_cfg["usem"], usee=axis_cfg["usee"],
-                pprm=axis_cfg["pprm"], tprm=axis_cfg["tprm"],
-                ppre=axis_cfg["ppre"], tpre=axis_cfg["tpre"],
-            )
-            rt.delay(1)
-            api.set_pid(
-                index=axis_cfg["axis"],
-                p=axis_cfg["p"], i=axis_cfg["i"], d=axis_cfg["d"],
-                duration=axis_cfg["duration"], threshold=axis_cfg["threshold"],
-            )
-
-            rt.delay(1)
-            api.home_with_stop(
-                index=axis_cfg["axis"], val=axis_cfg["offset"], dir=dir,
-            )
-            # Success = the controller actually reports the axis homed —
-            # ask the hardware, don't trust the command status.
-            return bool(rt.is_homed(index=axis_cfg["axis"]))
+        """Init an axis and home it against a hard stop (rail-style) — the
+        robot's own op, Core.home_axis_with_stop (the operator's Home Rail
+        runs it too). Returns True iff the axis reports homed afterwards —
+        the caller must gate any motion that assumes a homed axis on this
+        (return False from the action so the planner retries/replans
+        instead of moving on an unhomed rail). Already-homed axes
+        short-circuit to True, so calling this every Start is cheap.
+        Raises when the axis's PID could not be restored after the homing."""
+        return self.core.home_axis_with_stop(axis_cfg, dir=dir)
 
     def set_axis_with_encoder(self, axis_cfg, dir=-1):
         """Init an axis and home it against an encoder index (feeder-style)."""
