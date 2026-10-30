@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Callable, Optional
 
 from workspace.components.multi_meter.bk879b_driver import (
@@ -162,10 +163,12 @@ class BK879BStation:
                 self._driver = None
             self._driver = BK879BDriver(port=self.port)
             if not self._driver.connect():
+                log.warning("BK879BStation[%s]: connect failed on %s", self.label, self.port)
                 self._set_state("down", "connect failed")
                 return False
             ok, _ = self._driver.check_connection()
             if not ok:
+                log.warning("BK879BStation[%s]: no IDN response on %s", self.label, self.port)
                 self._set_state("down", "no IDN response")
                 return False
             self._driver.initialize()
@@ -173,7 +176,7 @@ class BK879BStation:
             self._set_state("ok", "")
             return True
         except Exception as ex:
-            self._set_state("down", f"connect failed: {type(ex).__name__}: {ex}")
+            self._fail("connect", ex)
             return False
 
     def release(self) -> None:
@@ -220,6 +223,14 @@ class BK879BStation:
             return True
         return self._driver is not None and self._driver.is_connected()
 
+    def _fail(self, what: str, ex: Exception) -> None:
+        """A failed exchange: the meter goes down — and the log says the
+        exact error and which thread made the call, so a reply out of step
+        or a second caller on the port is on record, not only on the bus."""
+        log.warning("BK879BStation[%s]: %s failed in thread %r: %s: %s",
+                    self.label, what, threading.current_thread().name, type(ex).__name__, ex)
+        self._set_state("down", f"{what} failed: {type(ex).__name__}: {ex}")
+
     def _safe_read(self, fn_name: str, frequency: int, settle_s: float,
                    sim_return: Measurement, **kw) -> Optional[Measurement]:
         if self.simulation:
@@ -229,7 +240,7 @@ class BK879BStation:
         try:
             return getattr(self._driver, fn_name)(frequency=frequency, settle_s=settle_s, **kw)
         except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+            self._fail(fn_name, ex)
             return None
 
     def go_local(self) -> bool:
@@ -244,7 +255,7 @@ class BK879BStation:
             self._driver.go_local()
             return True
         except Exception as ex:
-            self._set_state("down", f"go_local failed: {type(ex).__name__}: {ex}")
+            self._fail("go_local", ex)
             return False
 
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
@@ -278,5 +289,5 @@ class BK879BStation:
         try:
             return self._driver.read()
         except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+            self._fail("read", ex)
             return None
