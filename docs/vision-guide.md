@@ -461,6 +461,14 @@ the workspace makes on the server (the workspace publishes it).
 
 ## 7. Operational notes
 
+- **A picture is of the world the model describes.** The Inspector
+  reaches its camera through the recipe gate (`recipes/gated.py`), like
+  every device a recipe drives: a capture, a frame or a detection first
+  runs the robot's held motion — a fused exit lift, say a decap's lift
+  with the cap — to its stop, so neither a fixed camera nor one riding
+  the arm reads a scene the robot has not reached yet. `get_img` and the
+  lens pose are `@pure` (the cached image, the model's pose) and leave a
+  held motion alone.
 - Viewer/GUI socket blips during a Capture are benign: the JPEG encode
   burst can delay a keepalive; the client auto-reconnects within a
   second and the run never pauses (observability never blocks).
