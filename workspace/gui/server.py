@@ -72,6 +72,7 @@ from gui.orchestrator.server import (
     _ws_poll_loop,
     WorkspaceDevicesHandler,
     WorkspaceDeviceCmdHandler,
+    ProjectVersionHandler,
 )
 
 # ---------------------------------------------------------------------------
@@ -355,6 +356,8 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/files/([^/]+)", ProjectFilesHandler, dict(orch=orch)),
         (r"/orchestrator/ws/files/([^/]+)", ProjectFilesSocket, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices", WorkspaceDevicesHandler, dict(orch=orch)),
+        # The Version panel: git state vs the remote, and Get latest (project_git.py).
+        (r"/orchestrator/api/workspace/([^/]+)/version", ProjectVersionHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices/([^/]+)/(recover|release)", WorkspaceDeviceCmdHandler, dict(orch=orch)),
 
         # ---- Orchestrator WebSocket + GUI (catch-all last) ----

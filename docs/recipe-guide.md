@@ -236,7 +236,7 @@ Summary view of what's on the instance after `__init__`:
 | **Settings builders** | `pick_setting`, `place_setting` (compute the param dict `touch` consumes) |
 | **Calibration** | `calibrate`, `calibrate_anchor` |
 | **Utility queries** | `solid_attached_to_tool`, `solid_attached_to_anchor`, `solid_hierarchy` |
-| **Axis init** | `set_axis_with_stop`, `set_axis_with_encoder` (rail / feeder homing) |
+| **Axis init** | `set_axis_with_stop` (rail homing — runs Core's `home_axis_with_stop`, the robot's own op, also the operator's **Home Rail** button), `set_axis_with_encoder` (feeder homing) |
 
 For exact signatures, required state, corner cases, and per-param
 meanings, read the docstrings in

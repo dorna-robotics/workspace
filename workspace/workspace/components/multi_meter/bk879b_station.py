@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Callable, Optional
 
 from workspace.components.multi_meter.bk879b_driver import (
@@ -162,10 +163,12 @@ class BK879BStation:
                 self._driver = None
             self._driver = BK879BDriver(port=self.port)
             if not self._driver.connect():
+                log.warning("BK879BStation[%s]: connect failed on %s", self.label, self.port)
                 self._set_state("down", "connect failed")
                 return False
             ok, _ = self._driver.check_connection()
             if not ok:
+                log.warning("BK879BStation[%s]: no IDN response on %s", self.label, self.port)
                 self._set_state("down", "no IDN response")
                 return False
             self._driver.initialize()
@@ -173,7 +176,7 @@ class BK879BStation:
             self._set_state("ok", "")
             return True
         except Exception as ex:
-            self._set_state("down", f"connect failed: {type(ex).__name__}: {ex}")
+            self._fail("connect", ex)
             return False
 
     def release(self) -> None:
@@ -220,33 +223,60 @@ class BK879BStation:
             return True
         return self._driver is not None and self._driver.is_connected()
 
-    def _safe_read(self, fn_name: str, frequency: int,
+    def _fail(self, what: str, ex: Exception) -> None:
+        """A failed exchange: the meter goes down — and the log says the
+        exact error and which thread made the call, so a reply out of step
+        or a second caller on the port is on record, not only on the bus."""
+        log.warning("BK879BStation[%s]: %s failed in thread %r: %s: %s",
+                    self.label, what, threading.current_thread().name, type(ex).__name__, ex)
+        self._set_state("down", f"{what} failed: {type(ex).__name__}: {ex}")
+
+    def _safe_read(self, fn_name: str, frequency: int, settle_s: float,
                    sim_return: Measurement, **kw) -> Optional[Measurement]:
         if self.simulation:
             return sim_return
         if self._driver is None or not self._driver.is_connected():
             return None
         try:
-            return getattr(self._driver, fn_name)(frequency=frequency, **kw)
+            return getattr(self._driver, fn_name)(frequency=frequency, settle_s=settle_s, **kw)
         except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+            self._fail(fn_name, ex)
             return None
 
+    def go_local(self) -> bool:
+        """Hand the meter's front panel back to the operator (driver
+        ``go_local``). True when done — in sim there is nothing to hand
+        back; False when the meter is not reachable."""
+        if self.simulation:
+            return True
+        if self._driver is None or not self._driver.is_connected():
+            return False
+        try:
+            self._driver.go_local()
+            return True
+        except Exception as ex:
+            self._fail("go_local", ex)
+            return False
+
     def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
-                         sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:  # 1.5 nF
-        return self._safe_read("read_capacitance", frequency, sim_return, mode=mode)
+                         settle_s: float = 0.3,
+                         sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001", secondary_function="D")) -> Optional[Measurement]:  # 1.5 nF
+        return self._safe_read("read_capacitance", frequency, settle_s, sim_return, mode=mode)
 
     def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return: Measurement = Measurement(primary=1.0e-3, primary_unit="H", secondary=0.001, secondary_unit="", function="L", frequency="1000", raw="sim,1e-3,0.001")) -> Optional[Measurement]:  # 1 mH
-        return self._safe_read("read_inductance", frequency, sim_return, mode=mode)
+        return self._safe_read("read_inductance", frequency, settle_s, sim_return, mode=mode)
 
     def read_resistance(self, frequency: int = 1000,
+                        settle_s: float = 0.3,
                         sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="R", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
-        return self._safe_read("read_resistance", frequency, sim_return)
+        return self._safe_read("read_resistance", frequency, settle_s, sim_return)
 
     def read_impedance(self, frequency: int = 1000,
+                       settle_s: float = 0.3,
                        sim_return: Measurement = Measurement(primary=1.0e3, primary_unit="Ω", secondary=0.0, secondary_unit="", function="Z", frequency="1000", raw="sim,1e3,0.0")) -> Optional[Measurement]:  # 1 kΩ
-        return self._safe_read("read_impedance", frequency, sim_return)
+        return self._safe_read("read_impedance", frequency, settle_s, sim_return)
 
     def read(self, sim_return: Measurement = Measurement(primary=1.5e-9, primary_unit="F", secondary=0.001, secondary_unit="", function="C", frequency="1000", raw="sim,1.5e-9,0.001")) -> Optional[Measurement]:
         """Re-read at the current function + frequency. Convenience for
@@ -259,5 +289,5 @@ class BK879BStation:
         try:
             return self._driver.read()
         except Exception as ex:
-            self._set_state("down", f"read failed: {type(ex).__name__}: {ex}")
+            self._fail("read", ex)
             return None

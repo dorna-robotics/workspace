@@ -174,6 +174,19 @@ class DeviceAttachment:
     flipping a real device into sim suspends AutoRecover + heartbeat and
     republishes info with ``sim=true``; flipping back re-arms both.
 
+    **What starts AutoRecover** — a reconnect, so only a lost link:
+
+      * a failed heartbeat ``ping()`` (the device reached for its link
+        and heard nothing);
+      * ``reports_link_loss=True``: the device's own link-lost events
+        (``on_connection_lost``), wired here once to whichever
+        AutoRecover is current. Every other ``down`` — a robot alarm —
+        is NOT a link fault: it stays down, steady, until the operator
+        clears it;
+      * ``reports_link_loss=False``: the device cannot tell a lost link
+        from any other failed operation, so the heartbeat restarts the
+        loop while it sits ``down``.
+
     **The heartbeat** exists because a request/response device (serial
     meter, TCP balance, pH circuit) is only *touched* when an action
     reads it: unplug one between reads and the panel keeps showing the
@@ -208,11 +221,20 @@ class DeviceAttachment:
         recover_factory: Optional[Callable[[], AutoRecover]] = None,
         device: Any = None,
         heartbeat_interval: float = HEARTBEAT_INTERVAL_S,
+        reports_link_loss: bool = False,
     ):
         self.adapter = adapter
         self.recover = recover
         self._recover_factory = recover_factory
         self._device = device
+        self._reports_link_loss = bool(reports_link_loss)
+        if self._reports_link_loss:
+            # ONE listener for the attachment's life, calling whichever
+            # AutoRecover is current — set_sim replaces the loop, never
+            # the listener (a listener per loop would leave stopped loops
+            # that a later link loss restarts). attach_device checked the
+            # device has on_connection_lost before publishing anything.
+            device.on_connection_lost(self._on_link_lost)
         self.closed = False
         self.device_id: Optional[str] = None     # set by attach_device's claim
         self._hb_interval = float(heartbeat_interval)
@@ -257,6 +279,13 @@ class DeviceAttachment:
         self._hb_stop.set()
         self._hb_thread = None
 
+    def _on_link_lost(self) -> None:
+        """The device reported its link lost: reconnect (no loop in sim
+        or after close)."""
+        rec = self.recover
+        if rec is not None and not self.closed:
+            rec.trigger()
+
     def _heartbeat_loop(self) -> None:
         dev = self._device
         while not self._hb_stop.wait(self._hb_interval):
@@ -270,10 +299,12 @@ class DeviceAttachment:
                     # device's own state to down on the way out.
                     if dev.ping() is False and self.recover is not None:
                         self.recover.trigger()
-                elif state == "down" and self.recover is not None:
-                    # Missed trigger (e.g. the failure came from an op
-                    # that had no recovery hook) — nudge the loop; it
-                    # no-ops when already running.
+                elif state == "down" and self.recover is not None and not self._reports_link_loss:
+                    # This device cannot say its link is lost: any failed
+                    # operation left it down with no recovery hook —
+                    # nudge the loop. A device that reports its link
+                    # losses already started the loop for each one; any
+                    # other down (an alarm) is the operator's.
                     self.recover.trigger()
             except Exception:
                 log.exception("DeviceAttachment[%s]: heartbeat raised", self._label())
@@ -343,6 +374,7 @@ def attach_device(
     broker_port: Optional[int] = None,
     detect_conflict: bool = True,
     conflict_timeout_s: float = 0.75,
+    reports_link_loss: bool = False,
 ) -> DeviceAttachment:
     """Canonical wiring entry point for a workspace-side device.
 
@@ -388,6 +420,13 @@ def attach_device(
         conflict_timeout_s: How long to wait for retained payloads
             during the conflict check. 0.75s is empirically sufficient
             for a local broker and bounds the worst-case startup hit.
+        reports_link_loss: True when the device fires
+            ``on_connection_lost`` on every lost link (the robot): the
+            attachment wires it to AutoRecover, and a ``down`` by itself
+            (an alarm) never restarts the loop. False (a device that
+            cannot tell a lost link from a failed operation): the
+            heartbeat restarts the loop while the device is down.
+            See :class:`DeviceAttachment` "What starts AutoRecover".
 
     Returns:
         A :class:`DeviceAttachment` owning the adapter and (when
@@ -406,6 +445,9 @@ def attach_device(
     device_id = str(device_id)
     if ":" not in device_id:
         device_id = f"{kind}:{device_id}"
+    if reports_link_loss and not callable(getattr(device, "on_connection_lost", None)):
+        raise TypeError(f"attach_device({device_id}): reports_link_loss=True needs "
+                        "the device's on_connection_lost(callback)")
     our_publisher_id = make_publisher_id(device_id)
 
     env_disable = os.environ.get("DEVICE_BUS_DETECT_CONFLICT", "1").strip().lower() in {
@@ -443,6 +485,7 @@ def attach_device(
         recover=recover,
         recover_factory=recover_factory,
         device=device,
+        reports_link_loss=reports_link_loss,
     )
     _claim_device_id(device_id, kind, attachment)
     return attachment

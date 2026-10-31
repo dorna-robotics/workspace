@@ -22,7 +22,7 @@ The runtime pauses for **five distinct reasons** (project-guide.md §9):
 | 1 | **Operator click "Pause"** | Click "Resume" |
 | 2 | **Critical device down on the bus** | Recover the device → state clears to ok → click Resume |
 | 3 | **Robot motion returns alarm code** | Clear alarm on the robot → click Resume |
-| 4 | **Code calls `rt.pause()`** (custom checks, action policy) | Project-specific — usually Resume after handling the situation |
+| 4 | **Code calls `rt.pause()`** (custom checks, action policy) | Project-specific — usually Resume after handling the situation; `rt.notice(...)` before the pause tells the operator what to do (a modal with Resume on the pendant) |
 | 5 | **An action raises** — an exception escapes `pre()`, the tool swap, a check or `execute()` (a dead robot link, a device that refused, a bug) | Read the error on the timeline (red banner) → fix the cause (Recover the device) → click Resume: the engine replans from observed state; or Park / Kill |
 
 All four set the same `paused` flag. The next pause-aware call (`rt.sleep`, `rt.delay`, `rt.<robot>`, `rt.checkpoint`) blocks until Resume.

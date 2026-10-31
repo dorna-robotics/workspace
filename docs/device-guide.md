@@ -310,11 +310,26 @@ bus judges a down edge against the device's last *settled* state
 does the same for its alarm (`api.js downEdge`): one pause and one alarm
 per outage, however many retries it takes.
 
-**What nudges the retries.** AutoRecover runs on a trigger; for a
-device that went down without one (an initial connect that failed, a
-`recover()` that refused) the trigger is the attachment's heartbeat,
-which nudges it every `HEARTBEAT_INTERVAL_S` while the state is `down`
-— and the heartbeat runs only for a device with `ping()`. A device that
+**What nudges the retries.** AutoRecover is a reconnect, so only a
+lost link starts it — and which events say "lost link" is declared,
+per device, by `attach_device(reports_link_loss=...)`:
+
+* **`reports_link_loss=True`** (the robot): the device fires
+  `on_connection_lost` on every lost link, and the attachment wires
+  that — once, to whichever AutoRecover is current — plus a failed
+  `ping()`. Nothing else starts the loop. Any other `down` (a robot
+  alarm) is not a link fault: it stays `down`, steady, until the
+  operator clears it (Disable Alarm). The robot's `recover()` returns
+  True once the controller answers — alarm or not — so the loop ends
+  there instead of flapping the panel between `recovering` and the
+  alarm.
+* **`reports_link_loss=False`** (the default — a device that cannot
+  tell a lost link from any other failed operation): for a device
+  that went down without a trigger (an initial connect that failed, a
+  `recover()` that refused, a failed read) the trigger is the
+  attachment's heartbeat, which nudges it every `HEARTBEAT_INTERVAL_S`
+  while the state is `down` — and the heartbeat runs only for a device
+  with `ping()`. A device that
 must not be probed on its link can still opt in with a `ping()` that
 does no I/O (link flag only): the OHAUS SPX222 does, so a balance found
 in standby (it answers `I2`, weighs only underload until On/Zero) is
@@ -445,8 +460,9 @@ detection_run(name, use_last=True)   → run on the just-captured frame
 ```
 
 The orchestrator-side wrapper makes this transparent: ``inspection.detect()``
-auto-captures first by default, raises ``CameraUnavailableError`` on
-capture failure, and only runs detection on a confirmed-fresh frame.
+auto-captures first by default, returns None on a failed capture (the
+vision server's card goes down with why — §15), and only runs detection
+on a confirmed-fresh frame.
 Recipe code stays clean (``inspection.detect("name")``); the
 bulletproof guarantee lives in the component layer.
 
@@ -725,9 +741,8 @@ the same kind of identifier. Same visibility rule, one gate.
 class CameraComponent:
     DEFAULTS = dict(
         camera_cfg={
+            "server": "",              # the vision_server component
             "serial_number": "",       # the explicit identifier
-            "ip": "127.0.0.1",
-            "port": 80,
             # ... stream / K / D / etc.
         },
         simulation=True,
@@ -738,10 +753,14 @@ class CameraComponent:
         cam = prm["camera_cfg"]
         # The data-path helper. Constructs unconditionally — the helper
         # handles "no identifier" internally (forces sim, no client
-        # opened). The workspace never calls attach_device; the vision
-        # server owns the publisher on the camera's Pi.
+        # opened). The workspace never calls attach_device for the
+        # camera; the vision server owns that publisher on the camera's
+        # Pi. The SERVER is a workspace-owned device of its own (shape A,
+        # components/inspection/vision_server.py) — the camera's
+        # failures go to its card.
+        server = workspace.components[cam["server"]].server if cam["server"] else None
         self.vision = VisionStation(
-            ip=cam["ip"], port=cam["port"],
+            server=server,
             serial_number=cam["serial_number"],
             simulation=prm["simulation"],
             label=self.name,
@@ -964,8 +983,8 @@ class DualInspection:
     """Inspection station with both a top-down and side camera."""
 
     def __init__(self, ...):
-        self.top  = VisionStation(ip=..., serial_number="cam:top",  label="top")
-        self.side = VisionStation(ip=..., serial_number="cam:side", label="side")
+        self.top  = VisionStation(server=..., serial_number="cam:top",  label="top")
+        self.side = VisionStation(server=..., serial_number="cam:side", label="side")
 
     @property
     def device_ids(self):
@@ -1335,8 +1354,9 @@ detection_run(name, use_last=True)   →  detection result, computed on the capt
 ```
 
 The orchestrator-side wrapper in `VisionStation.detect()` makes this
-transparent: by default it captures first, raises `CameraUnavailableError`
-on capture failure, then runs detection on the just-captured frame.
+transparent: by default it captures first, then runs detection on the
+just-captured frame. A failed capture or run returns None and puts the
+vision server's card down (next section).
 Recipe code is just `inspection.detect("name")`; the bulletproof
 guarantee lives in the component layer. For efficiency, `capture()` is
 also exposed so callers can grab one frame and run multiple detections
@@ -1345,6 +1365,29 @@ on it (`detect(..., use_last=True)`).
 That's the entire pattern. The next read-only device — scale, encoder,
 ADC, lidar — follows exactly the same shape, just with different
 hardware internals.
+
+### The vision server's own card
+
+The camera card is hardware. Everything the workspace asks the SERVER
+to do — the session, each capture, each detection run — has a card of
+its own: `vision_server:<ip>@<port>`, a workspace-owned device (§10 A,
+`components/inspection/vision_server.py`), one per server, declared in
+the scene and named by every camera on it (`camera_cfg.server`,
+vision-guide §2).
+
+- A failed capture, detection run or frame (a crashed model, a bad
+  preset, a lost socket) → `fault()`: the card goes `down` with the
+  camera, the detection and the server's error. Critical → the run
+  pauses (layer 1, project-guide §8). The call returns None — the read
+  action returns False (layer 2).
+- **Recover** → `VisionServerStation.recover()`: connect, then every
+  camera session on the server again — `camera_add`, every detection
+  re-registered (each model loads again). Resume → the planner selects
+  the read again.
+- No AutoRecover: a crashed detection is not a lost link. Nothing
+  retries behind the operator's back.
+- `get_img` is observability: a failure logs and returns None; the card
+  is untouched.
 
 ### And the robot — same bus, different wrapping
 

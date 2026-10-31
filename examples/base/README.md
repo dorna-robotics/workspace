@@ -7,7 +7,7 @@ canonical bookend actions only:
 - **Start** — motor on, home the rail (`set_axis_with_stop`; already-homed
   and sim short-circuit to True), move to `START_JOINTS`. A homing
   failure returns the reserved `"killed"` outcome: the run aborts with
-  zero motion and the operator must Reset / re-Launch.
+  zero motion and the operator must Kill and Launch.
 - **Park / OperatorPark** — move to `PARK_JOINTS`; the same motion serves
   the planned end-of-run park and the operator's Park button
   (`trigger = "park"`).

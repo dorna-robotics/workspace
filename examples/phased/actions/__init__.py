@@ -92,7 +92,9 @@ class Start(Action):
         if core.has_rail:
             rt.step("homing rail")
             if not rcp["robot"].set_axis_with_stop(core.rail_cfg):
-                rt.step("homing failed")
+                rt.step(f"Homing the rail failed — robot {core.dorna.state}: {core.dorna.msg or 'no message'}. "
+                        "Release the E-stop and clear the robot (Disable alarm), then Kill and Launch.",
+                        level="error")
                 return "killed"
         rcp["robot"].park(joint=self.START_JOINTS)
         return "started"

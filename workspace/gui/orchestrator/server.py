@@ -52,6 +52,7 @@ from gui.orchestrator.handlers import (  # noqa: F401
     ProjectFilesHandler,
     ProjectFilesSocket,
     ProjectUploadHandler,
+    ProjectVersionHandler,
     LaunchConfigHandler,
     ProjectScreenFileHandler,
     RemoveWorkspaceHandler,
@@ -132,6 +133,7 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/files/([^/]+)/upload", ProjectUploadHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/files/([^/]+)", ProjectFilesHandler, dict(orch=self.orch)),
             (r"/ws/files/([^/]+)", ProjectFilesSocket, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/version", ProjectVersionHandler, dict(orch=self.orch)),
 
             # ---- WebSocket live status ----
             (r"/ws/status", StatusWebSocket, dict(orch=self.orch)),

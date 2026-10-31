@@ -149,6 +149,143 @@ const _deviceModal = $("deviceModalOverlay");
 $("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
 _deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
 
+// ── Version panel — this project vs its GitHub remote (project_git.py) ──
+// Three views in one modal: the STATE (what the bench runs, how it
+// compares, what is local), the CONFIRM (every risk as a warning, the
+// exact git commands it will run) and DONE (what moved, what was set
+// aside). Nothing is ever disabled for the bench's state — a run in
+// flight, local changes, no access are warnings the operator confirms
+// past; the server refuses only a plan that changed since it was shown.
+const _verOverlay = $("versionModalOverlay");
+const _verApi = () => `/workspace/${encodeURIComponent(wsName)}/version`;
+let _ver = null;
+
+// The Status row's pill — how this bench compares with GitHub.
+function _verStatus(v) {
+  let cls = "ok", txt = "Up to date";
+  if (!v || !v.git) { cls = "bad"; txt = "No git"; }
+  else if (v.reachable === false) { cls = "off"; txt = "Unknown — no access"; }
+  else if (v.behind) { cls = "warn"; txt = `${v.behind} behind GitHub`; }
+  else if (v.ahead || (v.changes || []).length) { cls = "warn"; txt = "Local changes"; }
+  return `<span class="pill ${cls}">${esc(txt)}</span>`;
+}
+const _verCommit = (c) => c
+  ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
+const _verWarn = (html, bad = false) =>
+  `<div class="ver-warn${bad ? " bad" : ""}"><span class="bang">!</span><div>${html}</div></div>`;
+function _verFoot(btns) {
+  const foot = $("versionModalFoot"); foot.innerHTML = "";
+  for (const [label, cls, fn] of btns) {
+    const b = document.createElement("button");
+    b.className = `btn ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
+    foot.appendChild(b);
+  }
+}
+function _verBusy(text) {
+  $("versionModalBody").innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
+  $("versionModalFoot").querySelectorAll("button").forEach(b => { b.disabled = true; });
+}
+function _verLocal(v) {
+  const n = (v.changes || []).length, a = v.ahead || 0;
+  if (!n && !a) return "no local changes";
+  return [n && `${n} uncommitted change${n === 1 ? "" : "s"}`, a && `${a} local commit${a === 1 ? "" : "s"} not on GitHub`]
+    .filter(Boolean).join(" · ");
+}
+
+function _verState(v) {
+  _ver = v;
+  $("versionModalTitle").textContent = `Version — ${wsName}`;
+  const body = $("versionModalBody");
+  if (!v.git) {
+    body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
+    _verFoot([["Close", "", closeVersion]]);
+    return;
+  }
+  let html = `<dl class="ver-rows">
+      <dt>Status</dt><dd>${_verStatus(v)}</dd>
+      <dt>Repository</dt><dd>${esc(v.url || "— no origin remote")}</dd>
+      <dt>Branch</dt><dd>${esc(v.detached ? "— detached HEAD" : v.branch)}</dd>
+      <dt>Running</dt><dd>${_verCommit(v.head)}</dd>
+      <dt>GitHub</dt><dd>${v.remote ? _verCommit(v.remote) + (v.behind ? `<div class="ver-sub">${v.behind} newer commit${v.behind === 1 ? "" : "s"}</div>` : "") : "—"}</dd>
+      <dt>This bench</dt><dd>${esc(_verLocal(v))}</dd>
+      ${v.platform ? `<dt>Same repo</dt><dd>the workspace platform itself<div class="ver-sub">this project lives in the platform's repository</div></dd>` : ""}
+      ${(v.shared_with || []).length ? `<dt>Same repo</dt><dd>${esc(v.shared_with.join(", "))}<div class="ver-sub">updates with this project</div></dd>` : ""}
+    </dl>`;
+  if (v.reachable === false) {
+    html += _verWarn("This bench cannot reach the GitHub repository — no read key, or no network. Get latest will fail until it can.", true);
+    html += `<div class="ver-err">${esc(v.fetch_error)}</div>`;
+  }
+  body.innerHTML = html;
+  _verFoot([["Check again", "", () => loadVersion(true)], ["Get latest…", "btn-primary", () => _verConfirm(_ver)]]);
+}
+
+function _verConfirm(v) {
+  $("versionModalTitle").textContent = "Get latest from GitHub";
+  let html = `<div class="ver-sub">${esc(wsName)}, branch <b>${esc(v.branch)}</b>: `
+    + `<span class="ver-hash">${esc(v.head && v.head.hash)}</span> → <span class="ver-hash">${esc(v.remote ? v.remote.hash : "?")}</span></div>`;
+  if (v.platform) html += _verWarn("This project lives inside the WORKSPACE PLATFORM's own repository — Get latest resets the whole platform to GitHub's, not just this project. Platform updates also need the upgrade step (pip install -e .) and a restart of the orchestrator.", true);
+  if (v.run_active) html += _verWarn("A run is active — updating the code under it can crash the run.", true);
+  else if (v.launched) html += _verWarn("The project is launched — it keeps running the old code until you relaunch it.");
+  if (v.reachable === false) html += _verWarn(`GitHub cannot be reached — this will fail: ${esc(v.fetch_error)}`, true);
+  const n = (v.changes || []).length;
+  if (n) html += _verWarn(`${n} uncommitted change${n === 1 ? "" : "s"} — set aside with <code>git stash</code>.`
+    + `<div class="ver-sub">${esc(v.changes.slice(0, 6).join(", "))}${n > 6 ? ` … +${n - 6}` : ""} · bring back with <code>git stash pop</code></div>`);
+  if (v.ahead) html += _verWarn(`${v.ahead} local commit${v.ahead === 1 ? "" : "s"} not on GitHub — kept on branch <code>backup/${esc(v.stamp)}</code>.`
+    + `<div class="ver-sub">${(v.local_commits || []).slice(0, 4).map(c => esc(`${c.hash} ${c.subject}`)).join("<br>")}</div>`);
+  if ((v.shared_with || []).length) html += _verWarn(`The same repository holds ${esc(v.shared_with.join(", "))} — they update too.`);
+  if (v.plan_error) html += _verWarn(`Cannot update: ${esc(v.plan_error)}`, true);
+  else html += `<div class="ver-label">Will run, in this order</div>
+    <ul class="ver-cmds sh">${v.plan.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  html += `<div class="ver-sub">Git-ignored data is not touched: records, uploads, calibration, scene/bench.j2.</div>`;
+  $("versionModalBody").innerHTML = html;
+  const risky = v.platform || v.run_active || v.launched || n || v.ahead || v.reachable === false || v.plan_error;
+  _verFoot([["Cancel", "", () => _verState(_ver)], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(v)]]);
+}
+
+async function _verRun(v) {
+  _verBusy("Getting the latest from GitHub…");
+  try {
+    const r = await apiFetch(_verApi(), { method: "POST", body: JSON.stringify({ confirmed: v.plan, stamp: v.stamp }) });
+    _verDone(r);
+  } catch (e) {
+    $("versionModalBody").innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
+      + `<div class="ver-err">${esc(String(e))}</div>`;
+    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+  }
+}
+
+function _verDone(r) {
+  $("versionModalTitle").textContent = `Version — ${wsName}`;
+  let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated `
+    + `<span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span>`
+    + ` <span class="ver-sub">${esc(r.to ? r.to.subject : "")}</span></div></div>`;
+  if (r.launched) html += _verWarn("Relaunch the project to use the new code — the running project still has the old code loaded.");
+  if (r.stash || r.backup) {
+    html += `<div class="ver-label">Set aside</div><ul class="ver-cmds">`
+      + (r.stash ? `<li>git stash list   # ${esc(r.stash)}</li>` : "")
+      + (r.backup ? `<li>git log ${esc(r.backup)}</li>` : "") + `</ul>`;
+  }
+  html += `<dl class="ver-rows"><dt>Status</dt><dd>${_verStatus(r.version)}</dd></dl>`;
+  html += `<div class="ver-label">Ran</div><ul class="ver-cmds sh">${(r.ran || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  $("versionModalBody").innerHTML = html;
+  _ver = r.version;
+  _verFoot([["Close", "btn-primary", closeVersion]]);
+}
+
+async function loadVersion(fetchRemote = true) {
+  _verBusy(fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
+  try {
+    _verState(await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
+  } catch (e) {
+    $("versionModalBody").innerHTML = _verWarn(esc(String(e)), true);
+    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+  }
+}
+function closeVersion() { _verOverlay.classList.remove("show"); }
+$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(true); });
+$("btnVersionModalClose").addEventListener("click", closeVersion);
+_verOverlay.addEventListener("click", (e) => { if (e.target === _verOverlay) closeVersion(); });
+
 // One global ESC handler closes whichever modal is currently open.
 // Cheaper and more consistent than per-modal keydown handlers (which
 // previously only existed for the device modal — params + opActions
@@ -160,6 +297,7 @@ document.addEventListener("keydown", (e) => {
     "deviceModalOverlay",
     "opActionsModalOverlay",
     "scheduleModalOverlay",
+    "versionModalOverlay",
   ];
   for (const id of _MODAL_IDS) {
     const m = document.getElementById(id);
@@ -1009,6 +1147,80 @@ function applyOpState(payload) {
     }
   }
   applyProjectHmiValues();
+  if (payload.snapshot || "notice" in (payload.set || {}) || (payload.unset || []).includes("notice")) {
+    renderPendantNotice();
+  }
+}
+
+// ── The operator notice (rt.notice) ─────────────────────────────────
+// ``notice`` is the platform's rt.op key: {level, title, text, img,
+// caption}. The FRAME draws it, the same for every project — a modal
+// over the body (tabs and pane), the bench dimmed behind it. The
+// RUNTIME owns its lifetime: set during a pause, unset when the run
+// leaves it — so this draws exactly what the key says, and runs only
+// when the key changes (applyOpState), never on a status tick. The
+// nav, the step rail and the control bar stay uncovered and live —
+// Park and Kill are never behind it. Resume in the modal is the bar's
+// own command (runPendantCmd, the device-fault gate included); Dismiss
+// hides this notice until a different one arrives. The backdrop has no
+// handler on purpose — a stray tap on the bench must not take it away.
+//
+// The host is FIXED and outside the overlay, synced to the body's box
+// like the 3D view: the 3D view floats above the overlay (z 10001), and
+// a notice must cover it too. The box is read when the notice appears
+// and when the body resizes — nothing else touches layout.
+const NOTICE_LEVELS = { warning: "Operator needed", error: "Run stopped", info: "Notice" };
+const _noticeKey = n => JSON.stringify([n.level, n.title, n.text, n.img, n.caption]);
+let _noticeAck = null;       // the notice the operator dismissed (its key)
+
+function _positionPendantNotice() {
+  const el = $("pendantNotice");
+  const body = document.querySelector(".pendant-body");
+  if (!el || !body || el.style.display === "none") return;
+  const r = body.getBoundingClientRect();
+  el.style.top = r.top + "px";
+  el.style.left = r.left + "px";
+  el.style.width = r.width + "px";
+  el.style.height = r.height + "px";
+}
+
+function renderPendantNotice() {
+  const el = $("pendantNotice");
+  if (!el) return;
+  const n = _opValues.notice;              // Runtime.notice's dict, or absent
+  if (!n) _noticeAck = null;
+  const key = n ? _noticeKey(n) : "";
+  const want = (_pendantMode && n && key !== _noticeAck) ? key : "";
+  if (el.dataset.key === want) return;                 // nothing changed
+  el.dataset.key = want;
+  if (!want) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  const base = (_devicesUrl || "").replace(/\/$/, "");
+  el.innerHTML = `<div class="pn-card" data-level="${n.level}" role="alertdialog" aria-live="assertive">
+    <div class="pn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg></div>
+    <span class="pn-level">${NOTICE_LEVELS[n.level]}</span>
+    <h2>${esc(n.title)}</h2>
+    ${n.text ? `<p>${esc(n.text)}</p>` : ""}
+    ${n.img ? `<figure class="pn-img"><img src="${esc(base + n.img)}" alt="">
+      ${n.caption ? `<span class="pn-cap">${esc(n.caption)}</span>` : ""}</figure>` : ""}
+    <div class="pn-actions">
+      <button type="button" class="btn btn-primary pn-resume">Resume</button>
+      <button type="button" class="btn pn-dismiss">Dismiss</button>
+    </div>
+  </div>`;
+  wireCommand(el.querySelector(".pn-resume"), "start", () => runPendantCmd("start"));
+  el.querySelector(".pn-dismiss").addEventListener("click", () => {
+    _noticeAck = key;
+    renderPendantNotice();
+  });
+  el.style.display = "";
+  _positionPendantNotice();
 }
 
 // ── Per-item records (rt.record) ────────────────────────────────────
@@ -2963,6 +3175,7 @@ function togglePendant(on) {
   pendantOverlay.style.display = _pendantMode ? "" : "none";
   _layoutBanner();            // the page-top banner shows only outside pendant mode
   _applyPendantTab();
+  renderPendantNotice();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
   // history entries added, back button untouched) so kiosk tablets can
@@ -3242,30 +3455,35 @@ function updatePendantUI() {
 // dashboard cards: the tap answers at once (sound, vibration, pressed),
 // Park and Kill are hold-to-activate (the tile fills and ticks for two
 // seconds under the finger, releasing early cancels).
+// One run command from the pendant — the bar's tiles and the notice's
+// Resume press exactly this.
+async function runPendantCmd(cmd) {
+  if (cmd === "replan" && _replan) { openReplanModal(); return false; }
+  // Device-fault gate also covers the pendant Start/Resume — same
+  // contract as the sidebar button.
+  if (cmd === "start") {
+    const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
+    if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
+  }
+  try {
+    const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
+    await sendCmd(cmd, kwargs);
+    await refreshStatus();
+  } finally {
+    updatePendantUI();
+  }
+}
 document.querySelectorAll(".pendant-btn[data-cmd]").forEach(btn => {
   const cmd = btn.dataset.cmd;
-  wireCommand(btn, cmd, async () => {
-    if (cmd === "replan" && _replan) { openReplanModal(); return false; }
-    // Device-fault gate also covers the pendant Start/Resume — same
-    // contract as the sidebar button.
-    if (cmd === "start") {
-      const action = ((_lastState || "").toUpperCase() === "PAUSED") ? "Resume" : "Start";
-      if (!await deviceFaultGate(wsName, action)) { updatePendantUI(); return false; }
-    }
-    try {
-      const kwargs = (cmd === "start" && Object.keys(_wsKwargsValues).length) ? _wsKwargsValues : undefined;
-      await sendCmd(cmd, kwargs);
-      await refreshStatus();
-    } finally {
-      updatePendantUI();
-    }
-  });
+  wireCommand(btn, cmd, () => runPendantCmd(cmd));
 });
 
 
 
 $("btnPendant").addEventListener("click", () => togglePendant(true));
-$("pendantExit").addEventListener("click", () => togglePendant(false));
+// Back (the chevron) is a link to the orchestrator; the monitor is the
+// one way to this workspace's desktop view.
+$("pendantDesktop").addEventListener("click", () => togglePendant(false));
 document.querySelectorAll(".viewer-tab").forEach(t => {
   t.addEventListener("click", () => {
     _viewerTab = t.dataset.vtab;
@@ -3299,6 +3517,10 @@ if (window.ResizeObserver) {
   });
   const _p3d = $("pendant3dPane");
   if (_p3d) _paneRO.observe(_p3d);
+  // The notice covers the body (tabs + pane) — it follows the body's box
+  // as the window resizes and the step rail collapses.
+  const _body = document.querySelector(".pendant-body");
+  if (_body) new ResizeObserver(() => _positionPendantNotice()).observe(_body);
 }
 
 // Enter pendant directly from the URL (kiosk mode):

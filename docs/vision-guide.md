@@ -35,6 +35,20 @@ camera is free.
 
 ## 2. Scene wiring
 
+**The vision server is a component of its own** — and a device: its
+card on the Devices panel is everything the workspace asks the server to
+do (§6). Its address is written once, here; every camera on it names it.
+Declare it ABOVE the cameras (components build in scene order):
+
+```yaml
+vision_server_1:
+  type: "vision_server"
+  ip: "10.0.0.20"
+  port: 4001
+  simulation: false              # defaults to true
+  critical: true                 # a failed detection pauses the run
+```
+
 Two ways a workspace uses a camera:
 
 - **A fixed inspection station** — an `inspection_*` component:
@@ -44,9 +58,8 @@ Two ways a workspace uses a camera:
     type: "inspection_horizontal"
     simulation: false            # defaults to true — without this the
     camera_cfg:                  # server is never contacted
+      server: "vision_server_1"
       serial_number: "315122271350"
-      ip: "10.0.0.20"
-      port: 4001
   ```
 
 - **The robot-mounted camera** — a component like any other, bolted to
@@ -57,9 +70,8 @@ Two ways a workspace uses a camera:
     type: "inspection_d405_robot"
     simulation: false
     camera_cfg:
+      server: "vision_server_1"
       serial_number: "218622272001"
-      ip: "10.0.0.20"
-      port: 4001
     attach:
       parent_name: "core"
       parent_solid: "robot_A5"     # the camholder link
@@ -80,16 +92,17 @@ Rules (each one is a bug we actually hit):
   keys by string, and the mismatch surfaces as a 10 s `camera_add`
   timeout, not a type error. (The platform now str()-coerces at the
   boundary, but explicit strings are the convention.)
-- `serial_number` / `ip` / `port` identify the server + camera; every
-  OTHER key in `camera_cfg` (`type`, `stream`, `K`, `D`, `native_res`,
-  `mode`, `exposure`, `filter`, `focus`) is forwarded to the server's
-  `camera_add`.
+- `server` (the vision_server component) and `serial_number` identify
+  the server + camera; every OTHER key in `camera_cfg` (`type`,
+  `stream`, `K`, `D`, `native_res`, `mode`, `exposure`, `filter`,
+  `focus`) is forwarded to the server's `camera_add`.
 - **`type` picks the driver** on the vision server: `"d405"` (RealSense,
   depth + color — the default) or `"ueye_xs"` (IDS uEye XS, color +
   autofocus — §8). Write it explicitly.
-- Sim is authored intent: `simulation: true` (or an empty ip/serial)
-  stubs the camera; real-mode failures raise at launch — they never
-  silently demote to sim.
+- Sim is authored intent: `simulation: true` (or an empty server /
+  serial) stubs the camera; real-mode failures raise at launch — they
+  never silently demote to sim. A real camera on a server authored as
+  simulation is refused at launch.
 
 ## 3. Intrinsics (K, D) — the contract
 
@@ -421,28 +434,30 @@ detection:
 
 ## 6. Failure semantics — what survives what
 
+Two cards, two truths: `camera:<sn>` is the camera HARDWARE (the vision
+server process publishes it); `vision_server:<ip>@<port>` is every call
+the workspace makes on the server (the workspace publishes it).
+
+- **A read fails** — a capture that does not grab, a detection run that
+  raises (a crashed model, a bad preset), a frame, a lost socket: the
+  vision server's card goes **down** with the camera, the detection and
+  the server's error; it is critical, so the run pauses. `detect()`
+  returns **None** — never the sim answer — and the read action returns
+  False without asserting its fact (project-guide §8). The operator
+  presses **Recover** on the vision server's card: every camera session
+  on it is re-established (connect, `camera_add` — the pool is
+  idempotent — and re-registration of every detection, which loads each
+  model again). **Resume**: the planner selects the read again and it
+  runs on a fresh frame. Nothing retries behind the operator's back;
+  no workspace relaunch.
 - **A camera dies (USB)**: the vision server's per-camera AutoRecover
-  reconnects it when it reappears; health flows to the device bus, the
-  card goes red in the GUI. Detections fail while it's down — capture
-  returns ``ok: False`` → ``detect()`` raises ``CameraUnavailableError``
-  → the BT leaf fails → the workflow PAUSES for the operator. Resume
-  retries the action.
-- **The vision server dies**: the workspace does NOT crash and the
-  failure is never absorbed — the failing call marks the session dead
-  and surfaces, the workflow pauses per the device's critical flag,
-  exactly like any other device. On the operator's Resume, the re-run
-  action re-establishes the session first (re-dial, camera_add — the
-  pool is idempotent — and re-registration of every detection this
-  station authored, since detections are per-session server state) and
-  runs ONCE. Honest failures, explicit recovery, no workspace relaunch.
-  Session re-establishment is transport plumbing (same class as the
-  device bus's own MQTT reconnect); it is not an operation retry.
+  reconnects it when it reappears; its own card goes red meanwhile. A
+  read on it fails as above, so the run pauses on the server card too.
+- **`get_img` fails**: an image is observability — logged, None, the
+  server card untouched, the run goes on.
 - **Launch-time**: an unreachable server (or a bad serial) fails the
-  LAUNCH loudly — real mode never silently demotes to sim.
-- **A server-reported error is not a dead link**: an error the server
-  sent back (a bad preset, a failed vlm call, a detection that raised)
-  proves the socket is alive, so the session stays; only a transport
-  failure marks it for re-establishment on the next call.
+  LAUNCH loudly — real mode never silently demotes to sim. A detection
+  that cannot be registered fails it too.
 
 ## 7. Operational notes
 
@@ -478,9 +493,8 @@ inspection_horizontal_1:
   type: "inspection_horizontal"
   simulation: false
   camera_cfg:
+    server: "vision_server_1"
     serial_number: "4103698214"
-    ip: "10.0.1.40"
-    port: 80
     type: "ueye_xs"
 ```
 

@@ -69,8 +69,13 @@ chassis with one `probe_rail_calibration` stand mounted at
    ```
 
 From then on, every startup homing (`set_axis_with_stop(core.rail_cfg)`
-in a project's Start action) passes this offset to `home_with_stop`, so
-the carriage's zero matches the physical bench.
+in a project's Start action) and every **Home Rail** from the robot's
+operator controls (`Core.home_rail`, re-homes even a homed rail) passes
+this offset to `home_with_stop`, so the carriage's zero matches the
+physical bench. Either way, the rail's own PID (`rail_cfg` p, i, d,
+threshold, duration) is set again after the homing's soft one and read
+back — a homing that leaves the rail on the soft PID raises instead of
+carrying on.
 
 ---
 

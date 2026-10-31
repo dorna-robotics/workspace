@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -18,21 +20,27 @@ class Measurement:
     function: str
     frequency: str
     raw: str
+    # which second reading ``secondary`` is — D, Q, THETA or ESR, as the
+    # meter reported it selected; "" when the read did not ask
+    secondary_function: str = ""
 
     def __str__(self) -> str:
         """Readable one-liner for the operator panel / log, e.g.
         ``C @ 1khz: 1.5e-09 F``. (Without this, str() would dump the whole
         dataclass repr.)"""
         val = f"{self.primary:g} {self.primary_unit}".strip()
-        sec = f" / {self.secondary:g} {self.secondary_unit}".rstrip() if self.secondary_unit else ""
+        sec = f" / {self.secondary_function} {self.secondary:g} {self.secondary_unit}".rstrip() if self.secondary_function else ""
         return f"{self.function} @ {self.frequency}: {val}{sec}"
 
 
 _FREQ_MAP = {100: "100hz", 120: "120hz", 1000: "1khz", 10000: "10khz"}
 _FREQ_DISPLAY = {"100hz": "100 Hz", "120hz": "120 Hz", "1khz": "1 kHz", "10khz": "10 kHz"}
 _UNITS = {"L": "H", "C": "F", "R": "\u03a9", "Z": "\u03a9"}
+_SECONDARY_UNITS = {"D": "", "Q": "", "THETA": "\u00b0", "ESR": "\u03a9"}
 _USB_VIDS = {0x0403, 0x10C4}
 _ERROR_RE = re.compile(r"^E(1[012])\b")
+
+log = logging.getLogger(__name__)
 
 
 class BK879B:
@@ -55,6 +63,15 @@ class BK879B:
         self._function: Optional[str] = None
         self._equivalent: Optional[str] = None
         self._frequency: Optional[str] = None
+        self._secondary: Optional[str] = None   # what the meter said is selected
+        # ONE conversation on the port at a time. The driver is reached from
+        # more than one thread — the workflow's reads, the operator panel's
+        # read_* / reconnect / go_local, AutoRecover — and the meter answers
+        # in order: two callers interleaving would each read the other's
+        # reply. Held for every exchange (_send / _query) and for a whole
+        # read_* (its setters, the settle, the fetch). Re-entrant: a read_*
+        # holds it across the exchanges it makes.
+        self._lock = threading.RLock()
 
     # ==================================================
     # Connection lifecycle
@@ -87,15 +104,19 @@ class BK879B:
         return False
 
     def close(self) -> None:
-        if self.ser:
-            try:
-                self._send("*GTL")
-            except Exception:
-                pass
-            try:
-                self.ser.close()
-            finally:
-                self.ser = None
+        # Under the lock: Recover / Release close the port from another
+        # thread, and must wait for a read in progress to finish, not cut
+        # its conversation off halfway.
+        with self._lock:
+            if self.ser:
+                try:
+                    self._send("*GTL")
+                except Exception:
+                    pass
+                try:
+                    self.ser.close()
+                finally:
+                    self.ser = None
 
     def _open(self, port: str) -> bool:
         try:
@@ -114,23 +135,39 @@ class BK879B:
     # ==================================================
 
     def _send(self, cmd: str) -> None:
-        if not self.is_connected():
-            return
-        self.ser.write((cmd + "\r\n").encode("ascii"))
-        time.sleep(0.05)
+        with self._lock:
+            if not self.is_connected():
+                return
+            self.ser.write((cmd + "\r\n").encode("ascii"))
+            time.sleep(0.05)
+
+    def _drain(self, before: str) -> None:
+        """Discard whatever is already waiting on the port, so the reply read
+        next is the one to the command about to be sent — and LOG it: bytes
+        here mean an earlier reply arrived late, which is the out-of-step
+        this guards against. Reads ``in_waiting`` bytes rather than
+        ``reset_input_buffer()``: on this CP2102 that purge request times
+        out (cp210x: failed set request 0x12 status: -110)."""
+        waiting = self.ser.in_waiting
+        if waiting:
+            stale = self.ser.read(waiting)
+            log.warning("BK879B %s: discarded %d stale byte(s) before %s: %r",
+                        self.port, len(stale), before, stale)
 
     def _query(self, cmd: str) -> str:
-        if not self.is_connected():
-            return ""
-        self._send(cmd)
-        raw = self.ser.readline()
+        with self._lock:
+            if not self.is_connected():
+                return ""
+            self._drain(cmd)
+            self._send(cmd)
+            raw = self.ser.readline()
         if not raw:
             return ""
         text = raw.decode("ascii", errors="replace").strip()
         m = _ERROR_RE.match(text)
         if m:
             codes = {"10": "Unknown command", "11": "Parameter error", "12": "Syntax error"}
-            raise RuntimeError(f"Meter error E{m.group(1)}: {codes.get(m.group(1), '?')}")
+            raise RuntimeError(f"Meter error E{m.group(1)}: {codes.get(m.group(1), '?')} (to {cmd})")
         return text
 
     # ==================================================
@@ -138,15 +175,26 @@ class BK879B:
     # ==================================================
 
     def idn(self) -> str:
-        self.ser.reset_input_buffer()
-        return self._query("*IDN?")
+        return self._query("*IDN?")       # _query drains the port first
 
     def check_connection(self) -> Tuple[bool, Optional[str]]:
         try:
             resp = self.idn()
             return (True, resp) if resp else (False, None)
-        except Exception:
+        except Exception as ex:
+            log.warning("BK879B %s: *IDN? failed: %s: %s", self.port, type(ex).__name__, ex)
             return False, None
+
+    def go_local(self) -> None:
+        """Hand the front panel back (*GTL): in remote mode every button
+        but USB is disabled, so a front-panel-only procedure — the open /
+        short calibration — needs this first. The next command takes
+        remote control back by itself. The cached settings are dropped:
+        the operator may change them on the panel, so the next read sends
+        every setting again."""
+        with self._lock:
+            self._send("*GTL")
+            self._function = self._equivalent = self._frequency = self._secondary = None
 
     def initialize(self, lockout: bool = False) -> str:
         resp = self.idn()
@@ -174,7 +222,22 @@ class BK879B:
         return self._query("FUNCtion:impa?")
 
     def set_secondary(self, func: str) -> None:
-        self._send(f"FUNCtion:impb {func.upper()}")
+        """Select the second reading (D | Q | THETA | ESR). ASKS the meter
+        first and sends only on a difference — unlike the cached setters,
+        the second reading is one button away on the front panel, so a
+        cache could be stale; asking is silent, a change beeps."""
+        func = func.upper()
+        if func not in _SECONDARY_UNITS:
+            raise ValueError(f"secondary must be one of {list(_SECONDARY_UNITS)}, got {func}")
+        with self._lock:
+            first = self.get_secondary()
+            if first.strip().upper() != func:
+                self._send(f"FUNCtion:impb {func}")
+                second = self.get_secondary()
+                if second.strip().upper() != func:
+                    raise RuntimeError(f"meter did not select secondary {func} "
+                                       f"(asked: {first!r}, after setting: {second!r})")
+            self._secondary = func
 
     def get_secondary(self) -> str:
         return self._query("FUNCtion:impb?")
@@ -269,7 +332,7 @@ class BK879B:
         return self._query("FETCh?")
 
     def read(self) -> Measurement:
-        raw = self.fetch()
+        raw = self.fetch()                  # one exchange: _query holds the lock
         if not raw:
             raise RuntimeError("Empty response from FETCh?")
 
@@ -285,37 +348,54 @@ class BK879B:
             primary=primary,
             primary_unit=unit,
             secondary=secondary,
-            secondary_unit="",
+            secondary_unit=_SECONDARY_UNITS.get(self._secondary or "", ""),
             function=self._function,
             frequency=self._frequency,
             raw=raw,
+            secondary_function=self._secondary or "",
         )
 
-    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000) -> Measurement:
-        self.set_function("C")
-        self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PARallel")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
+    def read_capacitance(self, mode: str = "Cp", frequency: int = 1000,
+                         settle_s: float = 0.3) -> Measurement:
+        """C and its dissipation factor D, from one reading — both selected
+        on the meter every read, so neither depends on the front panel.
+        ``primary`` is C, ``secondary`` is D.
 
-    def read_inductance(self, mode: str = "Ls", frequency: int = 1000) -> Measurement:
-        self.set_function("L")
-        self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PARallel")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
+        ``settle_s`` (every ``read_*``): seconds the meter keeps measuring
+        after it is set up, before its reading is fetched. The meter
+        free-runs and ``FETCh?`` returns its LAST finished reading — there
+        is no "settled" signal — so this wait is what lets a fresh contact
+        settle into the value read."""
+        with self._lock:
+            self.set_function("C")
+            self.set_secondary("D")
+            self.set_equivalent("SERies" if mode.lower() in ("cs", "series") else "PARallel")
+            self.set_frequency(frequency)
+            time.sleep(settle_s)
+            return self.read()
 
-    def read_resistance(self, frequency: int = 1000) -> Measurement:
-        self.set_function("R")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
+    def read_inductance(self, mode: str = "Ls", frequency: int = 1000,
+                        settle_s: float = 0.3) -> Measurement:
+        with self._lock:
+            self.set_function("L")
+            self.set_equivalent("SERies" if mode.lower() in ("ls", "series") else "PARallel")
+            self.set_frequency(frequency)
+            time.sleep(settle_s)
+            return self.read()
 
-    def read_impedance(self, frequency: int = 1000) -> Measurement:
-        self.set_function("Z")
-        self.set_frequency(frequency)
-        time.sleep(0.3)
-        return self.read()
+    def read_resistance(self, frequency: int = 1000, settle_s: float = 0.3) -> Measurement:
+        with self._lock:
+            self.set_function("R")
+            self.set_frequency(frequency)
+            time.sleep(settle_s)
+            return self.read()
+
+    def read_impedance(self, frequency: int = 1000, settle_s: float = 0.3) -> Measurement:
+        with self._lock:
+            self.set_function("Z")
+            self.set_frequency(frequency)
+            time.sleep(settle_s)
+            return self.read()
 
 
 # ---------------------------------------------------------------------------
