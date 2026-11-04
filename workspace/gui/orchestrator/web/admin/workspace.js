@@ -1339,7 +1339,7 @@ function _lcHtml(kind) {
       <div class="pn-ico">${ico}</div>
       <span class="pn-level">${label}</span>
       <h2>${title}</h2>
-      <p>${text}</p>`;
+      ${text ? `<p>${text}</p>` : ""}`;
   const now = `<div class="lc-now"><span class="lc-now-text"></span><span class="lc-now-age"></span></div>`;
   const log = `<pre class="lc-log"></pre>`;
   const waitActions = `<div class="pn-actions">
@@ -1347,12 +1347,12 @@ function _lcHtml(kind) {
       <button type="button" class="btn btn-danger lc-kill">Kill</button>
     </div></div>`;
   if (kind === "boot") {
-    return head("info", _LC_SPIN, `Starting · <span class="lc-clock">0:00</span>`, `Starting ${name}`,
-      "Connecting the bench. The robot does not move.") + now + log + waitActions;
+    return head("info", _LC_SPIN, `Starting · <span class="lc-clock">0:00</span>`, `Starting ${name}`)
+      + now + log + waitActions;
   }
   if (kind === "run") {
-    return head("info", _LC_SPIN, `Starting the run · <span class="lc-clock">0:00</span>`, "Preparing the run",
-      "Planning and loading. The robot moves when the first step begins.") + now + log + waitActions;
+    return head("info", _LC_SPIN, `Starting the run · <span class="lc-clock">0:00</span>`, "Preparing the run")
+      + now + log + waitActions;
   }
   if (kind === "failed") {
     const code = _boot?.exit_code;
