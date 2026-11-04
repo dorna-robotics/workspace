@@ -360,6 +360,21 @@ Start no longer empties it (the Clear button still does); a run's
 history lives in its folder. A workspace with no project folder (the
 shared `~/.workspace/log/` fallback) gets no run folders.
 
+**The live console.** `log/workspace.log` has one writer, the pump's
+`LogStream`, and every line goes in the same moment to the pages
+reading it over `ws://<orchestrator>/orchestrator/ws/logs/<name>` — no
+polling. A reader picks where it starts: `?since=tail` (the Logs
+panel), `?since=boot` (this launch's `--- LAUNCH` line on) or
+`?since=run` (the open run's `[run] start` line on); the launch card
+reads the last two (hmi-guide "The launch card").
+
+**The run's preparation.** From `[run] start` until the robot's first
+motion — recipes, checks, the plan, the schedule, the motion book —
+the runtime reports `preparing: true` on `/status`, and the pages show
+the run's card over that console. The workflow ends it with
+`rt.prepared()` at that boundary; the BT launcher calls it as its
+engine starts, so a project calls nothing. A run that ends clears it.
+
 Sibling projects that share one bench (bna's `_bna`, `_tph`,
 `_calibration`) point the shared keys one level up — `scene: [../scene/...]`,
 `recipes: ../recipes.j2`, `core_dir: ../core`, `counts: ../counts/counts.json`,

@@ -420,8 +420,10 @@ def main():
             loop.default_exception_handler(context)
     asyncio.get_event_loop().set_exception_handler(_ws_exception_handler)
 
+    # The orchestrator's handle on this IOLoop (Orchestrator.loop)
+    orch.loop = tornado.ioloop.IOLoop.current()
     # Start orchestrator WS broadcast loop
-    tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, orch)
+    orch.loop.add_callback(_ws_poll_loop, orch)
 
     print(f"Dorna Workspace server running on {host}:{port}")
     print(f"  Orchestrator:  http://{host}:{port}/orchestrator/")

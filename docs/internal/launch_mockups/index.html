@@ -1,0 +1,162 @@
+<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Launch progress</title>
+<!-- the REAL stylesheets: .btn, .btn-primary, .btn-danger, .pn-card, .pn-ico,
+     .pn-level, .pn-actions are the platform's own, not mock copies -->
+<link rel="stylesheet" href="../../../workspace/gui/vendor/base.css"/>
+<link rel="stylesheet" href="../../../workspace/gui/orchestrator/web/admin/style.css"/>
+<style>
+/* mock page only */
+body { background: #d9d9de; padding: 28px; font-family: var(--font); overflow: visible; height: auto; }
+h1 { font-size: 20px; font-weight: 750; margin-bottom: 4px; }
+.sub { color: var(--muted); font-size: var(--text-md); margin-bottom: 22px; max-width: 1240px; line-height: 1.5; }
+.grid { display: grid; grid-template-columns: 640px 640px; gap: 26px; align-items: start; }
+.cap { font-size: var(--text-sm); font-weight: 700; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .06em; margin: 0 0 8px 2px; }
+.cap b { color: var(--text); }
+.frame { position: relative; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 30px rgba(0,0,0,.18);
+  background: rgba(0,0,0,.5); padding: var(--space-6); display: flex; }
+.frame .pn-card { animation: none; }
+
+/* ── proposed additions to style.css (the launch card) ───────── */
+.pn-card[data-level="ok"] { border-top-color: var(--green); }
+.pn-card[data-level="ok"] .pn-ico { background: rgba(52,199,89,.15); color: var(--green); }
+.pn-card[data-level="ok"] .pn-level { color: var(--green); }
+.lp-spin { width: 34px; height: 34px; border-radius: 50%; border: 4px solid rgba(10,132,255,.25); border-top-color: var(--accent); }
+.lp-clock { font-family: var(--mono); font-size: var(--text-lg); font-weight: 700; color: var(--muted); }
+.lp-now { align-self: stretch; display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3);
+  background: var(--accent-dim); border-radius: var(--radius-md); padding: var(--space-4); font-size: var(--text-lg);
+  font-weight: 650; text-align: left; }
+.lp-now span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-now small { color: var(--muted); font-size: var(--text-sm); font-weight: 600; white-space: nowrap; }
+.lp-log { align-self: stretch; margin: var(--space-2) 0 0; height: 230px; overflow-y: auto; text-align: left;
+  background: var(--surface2); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+  font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.lp-log .err { color: var(--red); }
+.lp-log .last { color: var(--accent); font-weight: 700; }
+
+/* ── proposed: the Start hint (a ring that radiates from Start) ── */
+.attn { position: relative; overflow: visible; }
+.attn::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  animation: attn-ring 2s var(--ease) infinite; }
+@keyframes attn-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(10,132,255,.45); }
+  70%  { box-shadow: 0 0 0 14px rgba(10,132,255,0); }
+  100% { box-shadow: 0 0 0 14px rgba(10,132,255,0); } }
+@media (prefers-reduced-motion: reduce) { .attn::after { animation: none; box-shadow: 0 0 0 4px rgba(10,132,255,.35); } }
+/* mock only: freeze the ring at a moment so the PNG shows it */
+.f0::after { animation-play-state: paused; animation-delay: -0.2s; }
+.f1::after { animation-play-state: paused; animation-delay: -0.6s; }
+.f2::after { animation-play-state: paused; animation-delay: -1.3s; }
+.wide { grid-column: 1 / -1; }
+.bench { background: var(--bg); border-radius: 14px; box-shadow: 0 6px 30px rgba(0,0,0,.18); padding: 22px 26px 26px; }
+.bench .pendant-bar { position: static; }
+.ready-line { display: flex; align-items: center; gap: 10px; font-size: var(--text-lg); font-weight: 650; margin-bottom: 16px; }
+.ready-line .pill { font-size: var(--text-sm); }
+.strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 18px; }
+.strip > div { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); font-size: var(--text-sm); font-weight: 600; }
+.strip .pendant-btn { width: 220px; flex: none; }
+.side-demo { display: flex; gap: 8px; align-items: center; }
+</style></head><body>
+
+<h1>Launch progress — mockup v3</h1>
+<div class="sub">One card, the pendant notice's own grammar (<code>.pn-card</code>: icon, level, title, text, <code>.pn-actions</code> with platform <code>.btn</code>s). It is shown on the desktop page and on the pendant alike, and it covers <b>both</b> waits: from Launch until the bench is ready (A–C), and from Start until the robot's first step (D). The log is every line since this launch (or since this Start), in a scrolling box that follows the bottom. The lines are from the bench logs.</div>
+
+<div class="grid">
+  <div>
+    <div class="cap"><b>A · Launching</b> — Set &amp; Launch pressed, 0:21 in</div>
+    <div class="frame">
+      <div class="pn-card" data-level="info">
+        <div class="pn-ico"><div class="lp-spin"></div></div>
+        <span class="pn-level">Starting · <span class="lp-clock">0:21</span></span>
+        <h2>Starting bna</h2>
+        <p>Connecting the bench. The robot does not move.</p>
+        <div class="lp-now"><span>Psd4Backend: pump was in standard resolution, setting high</span><small>2 s ago</small></div>
+<pre class="lp-log">--- LAUNCH sudo python3 -u _bna/main.py --port 5010
+09:20:56  ✅ core connected @ 10.0.3.10
+09:20:57  🟡 core simulation api disabled
+09:21:06  ✅ inspection_vertical_144mm_1 connected @ 10.0.3.40:80 (camera 130322274110)
+09:21:07  [bus] inspection_vertical_144mm_1: unit publishes device state to this host
+<span class="last">09:21:19  Psd4Backend[/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0]: pump was in standard resolution, setting high</span></pre>
+        <div class="pn-actions">
+          <button class="btn">Hide</button>
+          <button class="btn btn-danger">Hold to Kill</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:22px"><b>C · Did not start</b> — the process exited before it was ready</div>
+    <div class="frame">
+      <div class="pn-card" data-level="error">
+        <div class="pn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+        <span class="pn-level">Did not start · 0:14</span>
+        <h2>bna stopped while starting</h2>
+        <p>The process exited. Its log is below; the reason is at the bottom.</p>
+<pre class="lp-log" style="height:200px">--- LAUNCH sudo python3 -u _bna/main.py --port 5010
+09:20:56  ✅ core connected @ 10.0.3.10
+09:21:06  ✅ inspection_vertical_144mm_1 connected @ 10.0.3.40:80
+<span class="err">09:21:07  Traceback (most recent call last):
+09:21:07    File "_bna/main.py", line 42, in &lt;module&gt;
+09:21:07  serial.SerialException: could not open port /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+--- process exited with code 1</span></pre>
+        <div class="pn-actions">
+          <button class="btn btn-primary">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cap"><b>B · Ready</b> — shown for 2 s, then the card closes itself</div>
+    <div class="frame">
+      <div class="pn-card" data-level="ok">
+        <div class="pn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="pn-level">Ready · 0:37</span>
+        <h2>bna is ready</h2>
+        <p>Press Start when the bench is loaded.</p>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:22px"><b>D · Starting the run</b> — Start pressed, until the first step</div>
+    <div class="frame">
+      <div class="pn-card" data-level="info">
+        <div class="pn-ico"><div class="lp-spin"></div></div>
+        <span class="pn-level">Starting the run · <span class="lp-clock">0:05</span></span>
+        <h2>Preparing the run</h2>
+        <p>Planning and loading the motion caches. The robot moves when the first step begins.</p>
+        <div class="lp-now"><span>[cache] ik.json discarded — scene changed since it was built</span><small>4 s ago</small></div>
+<pre class="lp-log">[run] start 2026-10-20_10-49-34
+<span class="last">10:49:35  [cache] ik.json discarded — scene changed since it was built</span></pre>
+        <div class="pn-actions">
+          <button class="btn">Hide</button>
+          <button class="btn btn-danger">Hold to Kill</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wide">
+    <div class="cap" style="margin-top:6px"><b>E · Ready — press Start</b> — after card B closes, until Start is pressed</div>
+    <div class="bench">
+      <div class="ready-line">bna <span class="pill ok">Ready</span><span style="color:var(--muted);font-weight:600;font-size:var(--text-md)">Start is the next step</span></div>
+      <div class="pendant-bar">
+        <button class="pendant-btn pendant-start attn f0"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Start</span></button>
+        <button class="pendant-btn pendant-pause" disabled><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>Pause</span></button>
+        <div class="pendant-bar-div"></div>
+        <button class="pendant-btn pendant-park" disabled><span>Park</span></button>
+        <button class="pendant-btn pendant-replan" disabled><span>Replan</span></button>
+        <button class="pendant-btn pendant-kill"><span>Kill</span></button>
+      </div>
+      <div class="strip">
+        <div><button class="pendant-btn pendant-start attn f0"><span>Start</span></button>0.2 s — the ring leaves the tile</div>
+        <div><button class="pendant-btn pendant-start attn f1"><span>Start</span></button>0.6 s — it spreads and fades</div>
+        <div><button class="pendant-btn pendant-start attn f2"><span>Start</span></button>1.3 – 2.0 s — gone, then again</div>
+      </div>
+      <div style="margin-top:22px" class="side-demo">
+        <span style="color:var(--muted);font-size:var(--text-sm);font-weight:700;width:150px">DESKTOP SIDEBAR</span>
+        <button class="btn btn-primary attn f0">Start</button><button class="btn" disabled>Pause</button><button class="btn btn-warn" disabled>Park</button><button class="btn btn-danger">Kill</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

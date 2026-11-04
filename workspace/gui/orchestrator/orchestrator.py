@@ -41,12 +41,10 @@ from typing import Dict, List, Optional
 import requests
 
 from gui.orchestrator.workspace_info import (
-    MAX_LOG_BYTES,
     WorkspaceInfo,
     _log_pump,
     _now_str,
     _free_port,
-    _truncate_log_if_needed,
 )
 
 
@@ -87,6 +85,11 @@ class Orchestrator:
     def __init__(self, port: int = 5000):
         self.workspaces: Dict[str, WorkspaceInfo] = {}
         self._orch_port = port
+        # The server's IOLoop, set by the server before it starts. Work
+        # that begins on another thread (a command in _cmd_pool, a log
+        # pump) reaches the IOLoop through it: asyncio's own lookup
+        # answers only on the loop's thread.
+        self.loop = None
 
     # ---------------- Persistence ----------------
 
@@ -265,12 +268,12 @@ class Orchestrator:
         # Make sure <project_dir>/log/ exists before opening the log.
         ws.ensure_log_dir()
 
-        # log cap + append marker
-        _truncate_log_if_needed(ws.log_path, MAX_LOG_BYTES)
-
-        log_f = open(ws.log_path, "a", buffering=1, encoding="utf-8")
-        log_f.write(f"\n[{_now_str()}] --- LAUNCH cmd={cmd} port={ws.port} ---\n")
-        log_f.flush()
+        # log cap + the launch's marker line — the "boot" mark the
+        # launch card reads from (LogStream).
+        ws.log.open()
+        ws.log.write("\n")
+        ws.log.write(f"[{_now_str()}] --- LAUNCH cmd={cmd} port={ws.port} ---\n", mark="boot")
+        ws.boot = {"started_at": time.time(), "phase": "starting", "exit_code": None}
 
         # PIPE + daemon thread so we can prepend a wall-clock timestamp
         # to every line. Direct ``stdout=log_f`` is faster (kernel pipes
@@ -289,10 +292,10 @@ class Orchestrator:
             bufsize=1,           # line-buffered text mode
             errors="replace",    # malformed UTF-8 won't kill the pump
         )
-        ws._log_f = log_f
         ws._log_thread = Thread(
             target=_log_pump,
-            args=(ws.process, log_f, ws.run_log_dir),
+            args=(ws.process, ws.log, ws.run_log_dir,
+                  lambda code: self._on_process_exit(name, code)),
             name=f"log-pump-{ws.name}",
             daemon=True,
         )
@@ -370,6 +373,10 @@ class Orchestrator:
     # ---------------- Public Commands ----------------
 
     def launch_workspace(self, name: str):
+        """Start the project's process and return — the launch is under
+        way, not over. Its progress travels on the status WebSocket
+        (``_orch.boot``: starting → ready, or failed with the exit code)
+        and its lines on the log WebSocket; the launch card shows both."""
         ws = self.workspaces[name]
 
         if ws.is_remote():
@@ -378,34 +385,22 @@ class Orchestrator:
             return out
 
         if self.is_launched(name):
-            ready = self.wait_until_ready(name, timeout=1.0)
-            return {
-                "status": "ok",
-                "launched": True,
-                "ready": bool(ready),
-                "port": ws.port,
-                "log": ws.log_path,
-                "note": "already running",
-                "started_at": ws.started_at,
-                "uptime_s": (time.time() - ws.started_at) if ws.started_at else None,
-            }
+            return {"status": "ok", "launched": True, "note": "already running",
+                    "port": ws.port, "log": ws.log_path}
 
         self.start_workspace_process(name)
+        return {"status": "ok", "launched": True, "port": ws.port, "log": ws.log_path}
 
-        ready = self.wait_until_ready(name, timeout=30.0)
-        if not ready:
-            ws.last_error = f"Workspace {name} launched but not ready. Check logs: {ws.log_path}"
-            raise RuntimeError(ws.last_error)
-
-        return {
-            "status": "ok",
-            "launched": True,
-            "ready": True,
-            "port": ws.port,
-            "log": ws.log_path,
-            "started_at": ws.started_at,
-            "uptime_s": (time.time() - ws.started_at) if ws.started_at else None,
-        }
+    def _on_process_exit(self, name: str, code: int) -> None:
+        """The log pump saw the process end (its thread). Ending while
+        still starting fails the launch; whichever, the pages hear it now."""
+        ws = self.workspaces.get(name)
+        boot = ws.boot if ws is not None else None
+        if boot is not None and boot["phase"] == "starting":
+            boot["phase"] = "failed"
+            boot["exit_code"] = code
+        from gui.orchestrator.websockets import broadcast_status
+        self.loop.add_callback(broadcast_status, self)
 
     def stop_workspace(self, name: str):
         ws = self.workspaces[name]
@@ -413,7 +408,9 @@ class Orchestrator:
         # Cancel the WS status subscriber FIRST so it doesn't keep
         # retrying against a process we're about to kill.
         from gui.orchestrator.websockets import _stop_status_subscriber
-        _stop_status_subscriber(name)
+        _stop_status_subscriber(self, name)
+        # The operator ended it: a launch still starting has not failed.
+        ws.boot = None
 
         if ws.is_remote():
             return self._proxy_cmd_to_node(ws, "kill")
@@ -576,7 +573,7 @@ class Orchestrator:
                 "log": ws.log_path,
                 "started_at": ws.started_at,
                 "uptime_s": frozen_uptime,
-                "_orch": {"launched": False, "port": ws.port, "log": ws.log_path, "mode": "local"},
+                "_orch": self._local_orch(ws, False),
             }
 
         # Fallback uptime, computed from the orchestrator-side cache —
@@ -620,7 +617,10 @@ class Orchestrator:
             else:
                 out["uptime_s"] = None
             out["started_at"] = run_started
-            out["_orch"] = {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"}
+            # The runtime answers: this launch is over.
+            if ws.boot is not None and ws.boot["phase"] == "starting":
+                ws.boot["phase"] = "ready"
+            out["_orch"] = self._local_orch(ws, True)
             ws.last_error = out.get("last_error") or None
             out["last_error"] = ws.last_error
             return out
@@ -633,7 +633,7 @@ class Orchestrator:
                 "log": ws.log_path,
                 "started_at": ws.started_at,
                 "uptime_s": fallback_uptime,
-                "_orch": {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"},
+                "_orch": self._local_orch(ws, True),
             }
         except Exception as e:
             ws.last_error = f"Failed to get status: {e}"
@@ -644,8 +644,14 @@ class Orchestrator:
                 "log": ws.log_path,
                 "started_at": ws.started_at,
                 "uptime_s": fallback_uptime,
-                "_orch": {"launched": True, "port": ws.port, "log": ws.log_path, "mode": "local"},
+                "_orch": self._local_orch(ws, True),
             }
+
+    @staticmethod
+    def _local_orch(ws: WorkspaceInfo, launched: bool) -> Dict:
+        """The orchestrator's own part of a local workspace's status."""
+        return {"launched": launched, "port": ws.port, "log": ws.log_path, "mode": "local",
+                "boot": dict(ws.boot) if ws.boot is not None else None}
 
     def get_logs(self, name: str, tail: int = 200) -> Dict:
         ws = self.workspaces[name]

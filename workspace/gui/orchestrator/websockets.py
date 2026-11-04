@@ -2,9 +2,9 @@
 
 Three roles:
 
-  * **WorkspaceLogsWebSocket** — live tail of one workspace's log file.
-    Polls the file at 250 ms cadence (cheap on Pi; doesn't depend on
-    inotify) and pushes each appended chunk as a JSON message.
+  * **WorkspaceLogsWebSocket** — one workspace's console, live: a
+    reader of its ``LogStream`` (workspace_info.py), each line pushed
+    the moment the log pump writes it.
 
   * **StatusWebSocket** — orchestrator-level broadcast of all workspace
     statuses. Dashboard subscribes here for sub-100 ms updates instead
@@ -29,10 +29,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import time
-from typing import Optional
 
+import tornado.ioloop
 import tornado.web
 import tornado.websocket
 
@@ -58,109 +56,51 @@ _workspace_status_subscribers: dict = {}
 # ── Per-workspace log tail ───────────────────────────────────────────
 
 class WorkspaceLogsWebSocket(tornado.websocket.WebSocketHandler):
-    """WS /orchestrator/ws/logs/<name> — live tail of a workspace's log.
-
-    Pushes an initial snapshot of the last ~16 KB on connect, then
-    streams every appended chunk as the workspace process writes to
-    stdout. Replaces the HTTP /logs?tail polling so the LOGS panel
-    updates instantly rather than every 1.5 s.
+    """WS /orchestrator/ws/logs/<name>?since=tail|boot|run — a workspace's
+    console, live: a reader of its LogStream from that mark (the Logs
+    panel reads the tail, the launch card this launch or this run).
 
     Messages:
-      ``{"type":"snapshot","text":"<initial tail>"}``  on open
-      ``{"type":"append","text":"<new chunk>"}``       per write
+      ``{"type":"snapshot","text":..., "since_s":..., "last_s":...}``  on open
+      ``{"type":"append","text":"<line>"}``   each line as it is written
+      ``{"type":"reset","text":"<line>"}``    the section started over (the
+          next launch / run, or Clear): drop what you have, start from text
+    ``since_s`` / ``last_s``: seconds since the mark's line and since the
+    newest line, on the orchestrator's clock (None when there is none).
     """
-
-    # Polling cadence for file size changes. The orchestrator can't
-    # rely on inotify in every deployment, and this is cheap (one
-    # os.stat + small read per tick). 250 ms is the sweet spot
-    # between perceived latency and CPU.
-    POLL_INTERVAL = 0.25
-
-    # How much of the existing log to send on connect. Larger lets
-    # operators see context immediately; smaller keeps initial render
-    # snappy. 16 KB ≈ 200 lines of typical log output.
-    INITIAL_TAIL_BYTES = 16 * 1024
 
     def check_origin(self, origin):
         return True
 
     def initialize(self, orch: Orchestrator):
         self.orch = orch
-        self._tail_task: Optional[asyncio.Task] = None
-        self._name: Optional[str] = None
+        self._stream = None
 
     def open(self, name):
-        if name not in self.orch.workspaces:
+        ws_info = self.orch.workspaces.get(name)
+        since = self.get_argument("since", "tail")
+        if ws_info is None or since not in ws_info.log.MARKS:
             self.close()
             return
-        self._name = name
-        self._tail_task = asyncio.ensure_future(self._tail_loop())
+        loop = tornado.ioloop.IOLoop.current()
+        # Called on the pump's thread: only hand the line to the IOLoop.
+        self._reader = lambda kind, text: loop.add_callback(self._send, kind, text)
+        self._stream = ws_info.log
+        snap = self._stream.subscribe(self._reader, since)
+        self._send("snapshot", **snap)
+
+    def _send(self, kind, text, **extra):
+        if self.ws_connection is None:
+            return
+        self.write_message(json.dumps({"type": kind, "text": text, **extra}))
 
     def on_close(self):
-        if self._tail_task is not None and not self._tail_task.done():
-            self._tail_task.cancel()
-        self._tail_task = None
-
-    async def _tail_loop(self):
-        """Send initial snapshot, then poll the log file for appended
-        bytes and push each chunk as a JSON message."""
-        ws_info = self.orch.workspaces.get(self._name)
-        if ws_info is None:
-            return
-        path = ws_info.log_path
-
-        pos = 0
-        # Initial snapshot: last INITIAL_TAIL_BYTES so the operator
-        # immediately sees recent context, not an empty panel.
-        if os.path.isfile(path):
-            try:
-                size = os.path.getsize(path)
-                start = max(0, size - self.INITIAL_TAIL_BYTES)
-                with open(path, "r", errors="replace") as f:
-                    f.seek(start)
-                    initial = f.read()
-                pos = size
-                try:
-                    self.write_message(json.dumps({
-                        "type": "snapshot", "text": initial,
-                    }))
-                except Exception:
-                    return
-            except Exception:
-                pos = 0
-
-        # Live tail: poll for new bytes.
-        while True:
-            try:
-                if not self.ws_connection:
-                    return
-                if os.path.isfile(path):
-                    size = os.path.getsize(path)
-                    if size < pos:
-                        # File rotated / truncated — restart from start.
-                        pos = 0
-                    if size > pos:
-                        with open(path, "r", errors="replace") as f:
-                            f.seek(pos)
-                            chunk = f.read()
-                            pos = f.tell()
-                        if chunk:
-                            try:
-                                self.write_message(json.dumps({
-                                    "type": "append", "text": chunk,
-                                }))
-                            except Exception:
-                                return
-                await asyncio.sleep(self.POLL_INTERVAL)
-            except asyncio.CancelledError:
-                return
-            except Exception:
-                # Best-effort: a transient read error shouldn't kill
-                # the tail. Fall through to the sleep + retry path.
-                await asyncio.sleep(self.POLL_INTERVAL)
+        if self._stream is not None:
+            self._stream.unsubscribe(self._reader)
+            self._stream = None
 
 
-# ── Per-workspace status subscriber ──────────────────────────────────
+# ── Per-workspace runtime status subscriber ──────────────────────────
 
 async def _subscribe_workspace_status(orch: Orchestrator, name: str):
     """Long-lived task: subscribe to ws://localhost:<port>/ws/status of
@@ -216,24 +156,26 @@ async def _subscribe_workspace_status(orch: Orchestrator, name: str):
 
 
 def _start_status_subscriber(orch: Orchestrator, name: str) -> None:
-    """Schedule a per-workspace status subscriber on the IO loop. Idempotent
-    — replaces any existing task for the name."""
-    existing = _workspace_status_subscribers.pop(name, None)
-    if existing is not None and not existing.done():
-        existing.cancel()
-    try:
-        loop = asyncio.get_event_loop()
-    except Exception:
-        return
-    task = loop.create_task(_subscribe_workspace_status(orch, name))
-    _workspace_status_subscribers[name] = task
+    """Start a per-workspace status subscriber on the orchestrator's
+    IOLoop — callable from any thread (a Launch runs in _cmd_pool).
+    Idempotent — replaces any existing task for the name."""
+    def start():
+        existing = _workspace_status_subscribers.pop(name, None)
+        if existing is not None and not existing.done():
+            existing.cancel()
+        _workspace_status_subscribers[name] = asyncio.ensure_future(
+            _subscribe_workspace_status(orch, name))
+    orch.loop.add_callback(start)
 
 
-def _stop_status_subscriber(name: str) -> None:
-    """Cancel and remove a workspace's status subscriber task."""
-    task = _workspace_status_subscribers.pop(name, None)
-    if task is not None and not task.done():
-        task.cancel()
+def _stop_status_subscriber(orch: Orchestrator, name: str) -> None:
+    """Cancel and remove a workspace's status subscriber task — on the
+    orchestrator's IOLoop, from any thread."""
+    def stop():
+        task = _workspace_status_subscribers.pop(name, None)
+        if task is not None and not task.done():
+            task.cancel()
+    orch.loop.add_callback(stop)
 
 
 # ── Orchestrator-level status WS ─────────────────────────────────────

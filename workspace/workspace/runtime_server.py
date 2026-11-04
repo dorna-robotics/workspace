@@ -1283,6 +1283,8 @@ def _status_payload(rt, workspace) -> dict:
         "run_started_at": run_started,
         "run_finished_at": run_finished,
         "uptime_s": uptime_s,
+        # A fresh run before its first motion (Runtime.prepared).
+        "preparing": rt.preparing,
     }
     si = getattr(rt, "step_info", None)
     if si:

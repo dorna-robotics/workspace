@@ -13,7 +13,8 @@ Status: **fully implemented.**
   viewer still use `/ws/status`, and any external monitoring tools
   keep working unchanged.
 - Admin page now opens 2 sockets total: `/ws` (mux) and `/ws/logs`
-  (high-volume stream, orchestrator-owned, kept separate).
+  (high-volume stream, orchestrator-owned, kept separate) — plus a
+  second `/ws/logs?since=boot|run` while the launch card shows.
 
 The plan below is preserved as the design record.
 

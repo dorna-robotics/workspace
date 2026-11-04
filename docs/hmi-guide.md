@@ -183,6 +183,21 @@ Three sources; two exist, one is a small addition:
    (Resume, Park, Kill); the frame draws whatever is set. Spec and rules: project-guide "`rt.notice`";
    code: `Runtime.notice`, workspace.js `renderPendantNotice`.
 
+   ### The launch card and the Start hint (platform, no project input)
+
+   The two waits an operator otherwise watches in silence get the
+   notice's card, on the pendant and the desktop page alike: **Launch
+   until ready** (the orchestrator's `_orch.boot`: starting → ready, or
+   failed with the exit code and the log's last lines) and **Start until
+   the first motion** (the runtime's `preparing`, project-guide "The
+   run's preparation"). Under it, that wait's console, every line as
+   written (the log WebSocket `?since=boot` / `?since=run`). Hide puts
+   it away — the state pill / state block brings it back; a launch this
+   page watched ends green for 2 s. Then, launched and idle with no run
+   yet in the process, a ring leaves Start every 2 s (`.start-hint`).
+   Mockup: `docs/internal/launch_mockups/`; code: workspace.js
+   `renderLaunchCard`.
+
 4. **`rt.record(item, **fields)` — the per-item record channel. BUILT.**
    Sibling of `rt.op` for the AUDIT: one row per sample / vial / plate,
    keyed by the project's identity for it (an L-number), persisted as

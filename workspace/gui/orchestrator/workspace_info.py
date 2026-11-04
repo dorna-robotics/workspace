@@ -15,6 +15,7 @@ Module-level helpers here are intentionally small and stdlib-only:
   * ``_now_str`` — single source of timestamp formatting.
   * ``_truncate_log_if_needed`` — prevents logs from growing without
     bound; runs once per launch.
+  * ``LogStream`` — the log file's one writer, and its live readers.
   * ``_log_pump`` — daemon thread body that pulls Popen lines and
     timestamps them. Hardened to keep draining the pipe even if a
     single line raises.
@@ -26,9 +27,10 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import yaml
 
@@ -68,6 +70,107 @@ def _truncate_log_if_needed(path: str, max_bytes: int) -> None:
             f.write(tail)
     except Exception:
         pass
+
+
+# ── The console log: one writer, live readers ─────────────────────────
+# log/workspace.log has ONE writer, this stream, and every line it writes
+# goes in the same moment to the readers subscribed to it: the page's
+# Logs panel and the launch card, over the orchestrator's log WebSocket.
+# Nothing polls the file. A reader subscribes FROM a mark:
+#
+#   "tail"  the last TAIL_BYTES                      the Logs panel
+#   "boot"  this launch's "--- LAUNCH" line on       the launch card
+#   "run"   the open run's "[run] start" line on     the run's card
+#
+# The snapshot is read and the reader registered under the lock the
+# writer holds, so every line is in the snapshot or comes after it —
+# never both, never neither. A new mark (the next launch, the next run)
+# RESETS the readers subscribed from it; Clear resets every reader.
+class LogStream:
+    TAIL_BYTES = 16 * 1024
+    MARKS = ("tail", "boot", "run")
+
+    def __init__(self, path: str):
+        self.path = path
+        self._lock = threading.Lock()
+        self._f = None                  # the binary append handle, while a process runs
+        self._marks: Dict[str, tuple] = {}   # "boot" / "run" -> (byte offset, epoch) of its line
+        self._last_t: Optional[float] = None  # epoch of the newest line
+        self._readers: Dict[Callable, str] = {}   # reader(kind, text) -> its mark
+
+    def open(self) -> None:
+        """Open for a launch: cap the file, then append to its end."""
+        with self._lock:
+            self._close()
+            _truncate_log_if_needed(self.path, MAX_LOG_BYTES)
+            self._f = open(self.path, "ab", buffering=0)
+            self._marks.clear()
+
+    def write(self, text: str, mark: Optional[str] = None) -> None:
+        """Append ``text`` and hand it to every reader. ``mark`` names the
+        section this line opens ("boot", "run"): its readers start over
+        from it, every other reader gets it as one more line."""
+        with self._lock:
+            if self._f is None:
+                return
+            now = time.time()
+            if mark:
+                self._marks[mark] = (self._f.tell(), now)
+            self._f.write(text.encode("utf-8", errors="replace"))
+            self._last_t = now
+            for reader, since in self._readers.items():
+                reader("reset" if since == mark else "append", text)
+
+    def subscribe(self, reader: Callable[[str, str], None], since: str) -> Dict:
+        """Register ``reader`` and return its snapshot: the text from the
+        mark, the seconds since the mark's line (None for "tail" or a mark
+        not written yet) and since the newest line. ``reader(kind, text)``
+        is called on the writer's thread, under its lock: it must only
+        hand the line on (the WebSocket schedules it on its IOLoop)."""
+        with self._lock:
+            now = time.time()
+            size = os.path.getsize(self.path) if os.path.isfile(self.path) else 0
+            if since == "tail":
+                start, t0 = max(0, size - self.TAIL_BYTES), None
+            else:
+                start, t0 = self._marks.get(since, (size, None))
+            text = ""
+            if size > start:
+                with open(self.path, "rb") as f:
+                    f.seek(start)
+                    text = f.read().decode("utf-8", errors="replace")
+                if since == "tail" and start > 0:
+                    text = text[text.find("\n") + 1:]      # no half line at the top
+            self._readers[reader] = since
+            return {
+                "text": text,
+                "since_s": None if t0 is None else now - t0,
+                "last_s": None if self._last_t is None else now - self._last_t,
+            }
+
+    def unsubscribe(self, reader: Callable) -> None:
+        with self._lock:
+            self._readers.pop(reader, None)
+
+    def clear(self) -> None:
+        """Empty the file (the Logs panel's Clear); every reader starts over."""
+        with self._lock:
+            if self._f is not None:
+                self._f.truncate(0)     # O_APPEND: the next line lands at the new end
+            elif os.path.isfile(self.path):
+                open(self.path, "wb").close()
+            self._marks.clear()
+            for reader in self._readers:
+                reader("reset", "")
+
+    def close(self) -> None:
+        with self._lock:
+            self._close()
+
+    def _close(self) -> None:
+        if self._f is not None:
+            self._f.close()
+            self._f = None
 
 
 # ── Per-run logs: log/<run stamp>/workspace.log + steps.log ───────────
@@ -140,10 +243,12 @@ class _RunLog:
             pass
 
 
-def _log_pump(process: subprocess.Popen, log_f, log_dir: Optional[str] = None) -> None:
+def _log_pump(process: subprocess.Popen, stream: LogStream, log_dir: Optional[str],
+              on_exit: Callable[[int], None]) -> None:
     """Drain a Popen's merged stdout/stderr line-by-line, prepend a
-    wall-clock timestamp, write to ``log_f`` — and, while a run is open,
-    to that run's own files under ``log_dir`` (``_RunLog``).
+    wall-clock timestamp, write it to ``stream`` — and, while a run is
+    open, to that run's own files under ``log_dir`` (``_RunLog``). A
+    "[run] start" line opens the stream's "run" mark.
 
     Must keep draining the pipe even if a single line raises during
     encode/format — letting the buffer fill (~64 KB on Linux) would
@@ -151,19 +256,16 @@ def _log_pump(process: subprocess.Popen, log_f, log_dir: Optional[str] = None) -
     workflow silently. Hence the inner try/except around the per-line
     work.
 
-    Exits cleanly when ``process.stdout`` returns "" (EOF — process
-    has closed its end of the pipe). The outer finally writes a
-    sentinel and flushes so the file ends on a complete line.
+    The pipe's EOF is the process ending: the pump waits for its exit
+    code, writes the closing line and reports the code to ``on_exit`` —
+    the one place the orchestrator learns a process is gone.
     """
     run = _RunLog(log_dir)
     try:
-        out = process.stdout
-        if out is None:
-            return
-        for line in out:
+        for line in process.stdout:
             try:
                 stamped = f"[{_now_str()}] {line}"
-                log_f.write(stamped)
+                stream.write(stamped, mark="run" if _RUN_START.match(line) else None)
                 run.line(line, stamped)
             except Exception:
                 # never let a single bad line kill the pump — the pipe
@@ -172,12 +274,10 @@ def _log_pump(process: subprocess.Popen, log_f, log_dir: Optional[str] = None) -
     except Exception:
         pass
     finally:
-        try:
-            log_f.write(f"--- EOF {_now_str()} ---\n")
-            log_f.flush()
-        except Exception:
-            pass
+        code = process.wait()
+        stream.write(f"--- EOF {_now_str()} (exit code {code}) ---\n")
         run.close()            # a run cut by the process ending keeps what it had
+        on_exit(code)
 
 
 def _free_port(port: int) -> None:
@@ -327,6 +427,15 @@ class WorkspaceInfo:
         else:
             self.log_path: str = os.path.join(self._log_dir, "workspace.log")
 
+        # The log file's one writer (LogStream above).
+        self.log = LogStream(self.log_path)
+        # This launch, from Launch until the runtime answers — the launch
+        # card's source (Orchestrator.get_status: _orch.boot):
+        #   {"started_at": epoch, "phase": "starting" | "ready" | "failed",
+        #    "exit_code": the code when the process ended while starting}
+        # None when nothing was launched, or the operator killed it.
+        self.boot: Optional[Dict] = None
+
         # Orchestrator-level timing / error
         self.started_at: Optional[float] = None  # unix seconds; starts at LAUNCH for local
         self.finished_at: Optional[float] = None  # unix seconds; set when process stops
@@ -474,13 +583,12 @@ class WorkspaceInfo:
     def close_log(self) -> None:
         """Stop the log pump (if running) then close the file.
 
-        Order matters: the daemon pump thread holds the only writer
-        handle to ``log_f`` and writes one timestamped line at a
-        time. We join it (briefly) before closing so the last
-        partial buffer can flush; the timeout guards against a
-        wedged readline (e.g. a stuck child whose stdout never
-        closed). After timeout we close anyway — daemon=True
-        ensures the thread can't keep the orchestrator alive.
+        Order matters: the daemon pump thread writes the stream one
+        timestamped line at a time, its exit line last. We join it
+        (briefly) before closing so that line lands; the timeout guards
+        against a wedged readline (e.g. a stuck child whose stdout never
+        closed). After timeout we close anyway — daemon=True ensures the
+        thread can't keep the orchestrator alive.
         """
         t = getattr(self, "_log_thread", None)
         if t is not None and t.is_alive():
@@ -489,12 +597,7 @@ class WorkspaceInfo:
             except Exception:
                 pass
         self._log_thread = None
-        if hasattr(self, "_log_f") and self._log_f:
-            try:
-                self._log_f.close()
-            except Exception:
-                pass
-            self._log_f = None
+        self.log.close()
 
     def clear_uploads(self) -> None:
         """Remove the _uploads folder and clear file kwargs from kwargs_values."""

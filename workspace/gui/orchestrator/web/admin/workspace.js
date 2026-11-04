@@ -1,10 +1,12 @@
-// Note: this page opens 2 WebSocket connections:
+// Note: this page opens these WebSocket connections:
 //   1. /ws       — multiplexed (steps + status + devices + ops + schedule).
 //                  Supports a client→server subscribe envelope for
 //                  future thin clients that want only a subset of
 //                  event types.
 //   2. /ws/logs  — logs streaming on the orchestrator (high-volume,
-//                  different owner, kept separate)
+//                  different owner, kept separate); the Logs panel
+//                  reads its tail, and while the launch card shows, a
+//                  second one reads that wait (?since=boot / run).
 // Legacy endpoints (/ws/steps, /ws/status, /ws/devices,
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
@@ -469,6 +471,7 @@ async function refreshStatus() {
   try {
     const st = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/status`);
     _lastHttpStatus = st || {};
+    setBoot(st);
     updateStatusUI(st);
     return st;
   } catch (e) {
@@ -509,9 +512,9 @@ async function refreshLogs() {
 //    would grow it into the megabytes and tank rendering.
 //
 // 2. DOM updates are coalesced via requestAnimationFrame. A burst of
-//    appends within one frame reflows the log panel ONCE, not per
-//    message. Without this the 250 ms file-poll cadence × MB of
-//    innerHTML can freeze the tab.
+//    appends within one frame (the stream pushes every line as it is
+//    written) reflows the log panel ONCE, not per message. Without
+//    this a burst × MB of innerHTML can freeze the tab.
 //
 // 3. innerHTML rewrites only run on actual content change AND skip
 //    when the operator has text selected — clobbering a selection
@@ -579,7 +582,9 @@ function _tryLogsWS(url) {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === "snapshot") {
+      // "reset": the file was cleared (Clear, here or in another tab) —
+      // the panel starts over from the text, like a snapshot.
+      if (msg.type === "snapshot" || msg.type === "reset") {
         lastLogs = msg.text || "";
         // Apply same buffer cap to a snapshot (in case a long-running
         // workspace produced more than 256 KB before we connected).
@@ -699,6 +704,7 @@ function updateStatusUI(st) {
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
+  renderLaunchCard();
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
   if (prevUpper !== curUpper) {
@@ -804,6 +810,7 @@ function disconnectWs() {
   _muxWsUrl = "";
   _devicesKnown = false;            // no runtime: the lists say so, not "none"
   _opActionsKnown = false;
+  setRunStatus(null);
   renderDevicesPanel();
   renderOperatorActionsPanel();
 }
@@ -1172,15 +1179,23 @@ const NOTICE_LEVELS = { warning: "Operator needed", error: "Run stopped", info: 
 const _noticeKey = n => JSON.stringify([n.level, n.title, n.text, n.img, n.caption]);
 let _noticeAck = null;       // the notice the operator dismissed (its key)
 
-function _positionPendantNotice() {
-  const el = $("pendantNotice");
+// The notice and the launch card cover the pendant BODY in pendant mode;
+// on the desktop the launch card covers the page (.lc-page), unpositioned.
+function _positionPendantCovers() {
   const body = document.querySelector(".pendant-body");
-  if (!el || !body || el.style.display === "none") return;
-  const r = body.getBoundingClientRect();
-  el.style.top = r.top + "px";
-  el.style.left = r.left + "px";
-  el.style.width = r.width + "px";
-  el.style.height = r.height + "px";
+  for (const id of ["pendantNotice", "launchCard"]) {
+    const el = $(id);
+    if (!el || el.style.display === "none") continue;
+    if (!_pendantMode || !body) {
+      el.style.top = el.style.left = el.style.width = el.style.height = "";
+      continue;
+    }
+    const r = body.getBoundingClientRect();
+    el.style.top = r.top + "px";
+    el.style.left = r.left + "px";
+    el.style.width = r.width + "px";
+    el.style.height = r.height + "px";
+  }
 }
 
 function renderPendantNotice() {
@@ -1219,7 +1234,255 @@ function renderPendantNotice() {
     renderPendantNotice();
   });
   el.style.display = "";
-  _positionPendantNotice();
+  _positionPendantCovers();
+}
+
+// ── The launch card ─────────────────────────────────────────────────
+// One card — the notice's own (.pn-card) — for the two waits an operator
+// otherwise watches in silence (docs/internal/launch_mockups/):
+//   boot    Launch until the runtime answers      _orch.boot.phase "starting"
+//   failed  the process ended while starting      _orch.boot.phase "failed"
+//   run     Start until the robot's first motion  status.preparing (Runtime.prepared)
+//   ready   the 2 s it stays green, after a boot THIS page watched end
+// Each comes from the server's state, never a guess here, and each from ONE
+// source: _boot from orchestrator statuses (setBoot — a runtime push carries
+// no _orch); the run's fields from the runtime's own stream (setRunStatus —
+// the orchestrator's relay of them can land late, and two sources would
+// flip the card). Under the card, that wait's console from its own log
+// WebSocket (?since=boot / run, LogStream): every line as written.
+const LC_READY_MS = 2000;
+const LC_TEXT_MAX = 256 * 1024;      // the console kept — LOGS_BUFFER_BYTES' rule
+let _boot = null;                    // _orch.boot of the newest orchestrator status
+let _runState = "";                  // the runtime's own state, preparing and run start
+let _preparing = false;
+let _runStartedAt = null;            // the run card's key
+const _lc = {
+  key: "", kind: "",                 // what the card shows now
+  hidden: "",                        // the key the operator hid (Hide / Close)
+  readyKey: "", readyTimer: null,    // the green "ready" moment
+  since: "", ws: null,               // the console's WebSocket
+  text: "", t0: 0, lastAt: 0,        // the console, its clock, its newest line
+  tick: null, renderQueued: false,
+  follow: true,                      // the console sticks to its newest line
+  readyAt: null,                     // seconds the watched boot took
+};
+// The Start hint (style.css .start-hint) — set by updateStatusUI.
+let _startHint = false;
+
+// Called with every ORCHESTRATOR status (WS or HTTP) — the only source of _boot.
+function setBoot(st) {
+  _boot = st?._orch?.boot || null;
+}
+
+// Called with every RUNTIME status on its own stream (the mux's
+// runtime_status), null when that stream is gone — the only source of the
+// run card's fields and the Start hint (launched, idle, nothing run yet).
+function setRunStatus(p) {
+  _runState = (p?.state || "").toUpperCase();
+  _preparing = !!p?.preparing;
+  _runStartedAt = p?.run_started_at ?? null;
+  _startHint = _runState === "IDLE" && p?.run_started_at == null;
+}
+
+function _lcPhase() {
+  if (_boot?.phase === "starting") return { kind: "boot", key: `b${_boot.started_at}`, since: "boot" };
+  if (_boot?.phase === "failed") return { kind: "failed", key: `b${_boot.started_at}`, since: "boot" };
+  if (_preparing && _runState === "RUNNING") {
+    return { kind: "run", key: `r${_runStartedAt}`, since: "run" };
+  }
+  if (_boot && _lc.readyKey === `b${_boot.started_at}`) return { kind: "ready", key: _lc.readyKey, since: "" };
+  return null;
+}
+
+function renderLaunchCard() {
+  const el = $("launchCard");
+  if (!el) return;
+  // A boot this page watched has just ended well: green, for LC_READY_MS.
+  if (_lc.kind === "boot" && _boot?.phase === "ready" && _lc.key === `b${_boot.started_at}`
+      && _lc.hidden !== _lc.key) {
+    _lc.readyKey = _lc.key;
+    clearTimeout(_lc.readyTimer);
+    _lc.readyTimer = setTimeout(() => { _lc.readyKey = ""; renderLaunchCard(); }, LC_READY_MS);
+  }
+  const p = _lcPhase();
+  const show = p && p.key !== _lc.hidden;
+  _lcReopenable(!!p && !show);
+  if (!show) {
+    _lcConnect("");
+    _lcStopTick();
+    if (_lc.kind) { el.style.display = "none"; el.innerHTML = ""; _lc.kind = ""; _lc.key = ""; }
+    return;
+  }
+  if (p.kind === "ready" && _lc.kind === "boot") _lc.readyAt = (performance.now() - _lc.t0) / 1000;
+  if (p.key !== _lc.key || p.kind !== _lc.kind) {
+    _lc.key = p.key;
+    _lc.kind = p.kind;
+    el.innerHTML = _lcHtml(p.kind);
+    _lcWire(el, p.kind);
+    el.style.display = "";
+  }
+  el.classList.toggle("lc-page", !_pendantMode);
+  _positionPendantCovers();
+  _lcConnect(p.since);
+  if (p.kind === "boot" || p.kind === "run") _lcStartTick(); else _lcStopTick();
+  _lcRenderText();
+}
+
+const _LC_SPIN = `<div class="lc-spin" aria-hidden="true"></div>`;
+const _LC_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
+const _LC_ALERT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+function _lcHtml(kind) {
+  const name = esc(wsName);
+  const head = (level, ico, label, title, text) => `
+    <div class="pn-card" data-level="${level}" role="dialog" aria-live="polite">
+      <div class="pn-ico">${ico}</div>
+      <span class="pn-level">${label}</span>
+      <h2>${title}</h2>
+      <p>${text}</p>`;
+  const now = `<div class="lc-now"><span class="lc-now-text"></span><span class="lc-now-age"></span></div>`;
+  const log = `<pre class="lc-log"></pre>`;
+  const waitActions = `<div class="pn-actions">
+      <button type="button" class="btn lc-hide">Hide</button>
+      <button type="button" class="btn btn-danger lc-kill">Kill</button>
+    </div></div>`;
+  if (kind === "boot") {
+    return head("info", _LC_SPIN, `Starting · <span class="lc-clock">0:00</span>`, `Starting ${name}`,
+      "Connecting the bench. The robot does not move.") + now + log + waitActions;
+  }
+  if (kind === "run") {
+    return head("info", _LC_SPIN, `Starting the run · <span class="lc-clock">0:00</span>`, "Preparing the run",
+      "Planning and loading. The robot moves when the first step begins.") + now + log + waitActions;
+  }
+  if (kind === "failed") {
+    const code = _boot?.exit_code;
+    return head("error", _LC_ALERT, "Did not start", `${name} stopped while starting`,
+      `The process exited${code != null ? ` with code ${esc(String(code))}` : ""}. The reason is at the bottom of its log.`)
+      + log + `<div class="pn-actions"><button type="button" class="btn btn-primary lc-close">Close</button></div></div>`;
+  }
+  const took = _lc.readyAt != null ? ` · ${fmtUptime(_lc.readyAt)}` : "";
+  return head("ok", _LC_CHECK, `Ready${took}`, `${name} is ready`, "Press Start when the bench is loaded.") + "</div>";
+}
+
+function _lcWire(el, kind) {
+  const hide = () => { _lc.hidden = _lc.key; renderLaunchCard(); };
+  el.querySelector(".lc-hide")?.addEventListener("click", hide);
+  el.querySelector(".lc-close")?.addEventListener("click", hide);
+  const kill = el.querySelector(".lc-kill");
+  if (kill) wireCommand(kill, "kill", async () => { await sendCmd("kill"); await refreshStatus(); });
+  const log = el.querySelector(".lc-log");
+  if (log) log.addEventListener("scroll", () => {
+    _lc.follow = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+  });
+  _lc.follow = true;
+}
+
+// Hidden with Hide: the state pill (desktop) and the state block
+// (pendant) bring the card back while its wait lasts.
+function _lcReopenable(on) {
+  for (const id of ["statePill", "pendantStateBlock"]) {
+    const t = $(id);
+    if (!t) continue;
+    t.classList.toggle("lc-reopen", on);
+    t.title = on ? "Show the progress" : "";
+  }
+}
+for (const id of ["statePill", "pendantStateBlock"]) {
+  $(id)?.addEventListener("click", () => {
+    if (!$(id).classList.contains("lc-reopen")) return;
+    _lc.hidden = "";
+    renderLaunchCard();
+  });
+}
+
+// The console: one WebSocket per section (since=boot / run), opened while
+// the card shows it. A snapshot first, then each line; "reset" when the
+// section starts over (a new launch / run, or Clear).
+function _lcConnect(since) {
+  if (since === _lc.since) return;
+  _lc.since = since;
+  if (_lc.ws) { const old = _lc.ws; _lc.ws = null; old.close(); }
+  _lc.text = "";
+  if (!since) return;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${window.location.host}/orchestrator/ws/logs/`
+    + `${encodeURIComponent(wsName)}?since=${since}`);
+  _lc.ws = ws;
+  ws.onmessage = (e) => {
+    if (_lc.ws !== ws) return;
+    const m = JSON.parse(e.data);
+    const now = performance.now();
+    if (m.type === "snapshot") {
+      _lc.text = m.text || "";
+      _lc.t0 = now - (m.since_s ?? 0) * 1000;
+      _lc.lastAt = m.last_s != null ? now - m.last_s * 1000 : now;
+    } else if (m.type === "reset") {
+      _lc.text = m.text || "";
+      _lc.t0 = now;
+      _lc.lastAt = now;
+    } else if (m.type === "append") {
+      _lc.text += m.text;
+      _lc.lastAt = now;
+    } else {
+      return;
+    }
+    if (_lc.text.length > LC_TEXT_MAX) {
+      const cut = _lc.text.indexOf("\n", _lc.text.length - LC_TEXT_MAX);
+      _lc.text = _lc.text.slice(cut + 1);
+    }
+    _lcRenderText();
+  };
+  // The orchestrator restarted, or the network blinked: the same section
+  // again, a fresh snapshot — while the card still wants it.
+  ws.onclose = () => {
+    if (_lc.ws !== ws) return;
+    _lc.ws = null;
+    setTimeout(() => {
+      if (_lc.since !== since || _lc.ws) return;
+      _lc.since = "";
+      _lcConnect(since);
+    }, 1000);
+  };
+}
+
+// "[2026-11-02 09:20:56] text" → "09:20:56  text" (workspace_info._now_str)
+const _lcLine = (line) => line.replace(/^\[\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d)\] /, "$1  ");
+
+function _lcRenderText() {
+  if (_lc.renderQueued) return;
+  _lc.renderQueued = true;
+  requestAnimationFrame(() => {
+    _lc.renderQueued = false;
+    const el = $("launchCard");
+    const log = el?.querySelector(".lc-log");
+    if (log) {
+      log.innerHTML = colorizeLogs(_lc.text.split("\n").map(_lcLine).join("\n"));
+      if (_lc.follow) log.scrollTop = log.scrollHeight;
+    }
+    const nowText = el?.querySelector(".lc-now-text");
+    if (nowText) {
+      const lines = _lc.text.trimEnd().split("\n");
+      nowText.textContent = (lines[lines.length - 1] || "").replace(/^\[[^\]]*\] /, "");
+    }
+    _lcRenderClock();
+  });
+}
+
+function _lcRenderClock() {
+  const el = $("launchCard");
+  const clock = el?.querySelector(".lc-clock");
+  if (clock && _lc.ws) clock.textContent = fmtUptime((performance.now() - _lc.t0) / 1000) || "0:00";
+  const age = el?.querySelector(".lc-now-age");
+  if (age && _lc.text) age.textContent = `${Math.max(0, Math.round((performance.now() - _lc.lastAt) / 1000))} s ago`;
+}
+
+function _lcStartTick() {
+  if (!_lc.tick) _lc.tick = setInterval(_lcRenderClock, 1000);
+}
+
+function _lcStopTick() {
+  clearInterval(_lc.tick);
+  _lc.tick = null;
 }
 
 // ── Per-item records (rt.record) ────────────────────────────────────
@@ -1323,6 +1586,7 @@ function _dispatchMuxMessage(env) {
       break;
     }
     case "runtime_status": {
+      setRunStatus(payload);
       // Merge cached HTTP fields under the fresh WS snapshot — same
       // pattern as the legacy /ws/status handler.
       updateStatusUI({ ..._lastHttpStatus, ...payload });
@@ -2610,6 +2874,7 @@ function renderControls(state, launched, running) {
       if (cmd === "launch") loadRunParams();
     });
     controls.appendChild(b);
+    return b;
   };
 
   if (!launched) {
@@ -2632,7 +2897,8 @@ function renderControls(state, launched, running) {
     // The slot's *meaning* is "begin or continue the run", and
     // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) });
+    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) })
+      .classList.toggle("start-hint", _startHint);
     addBtn("Pause",    "pause", { disabled: !active });
     // Park only makes sense when the workflow is actually in flight.
     // Before Start the runtime is IDLE — clicking Park there would
@@ -2769,7 +3035,7 @@ try {
   connectStatusWS((statuses) => {
     _wsConnected = true;
     const st = statuses[wsName];
-    if (st) updateStatusUI(st);
+    if (st) { setBoot(st); updateStatusUI(st); }
   });
 } catch (_) { /* WS unavailable — polling handles it */ }
 
@@ -3000,10 +3266,9 @@ $("btnToggleLogs").addEventListener("click", () => {
 // Clear both the server-side log buffer and the panel — the Clear-logs
 // button only. A Start no longer clears: each run keeps its own console
 // and steps in log/<run stamp>/ (the orchestrator's log pump).
+// The panel empties when the log stream says so ("reset"), in every tab.
 async function clearLogs() {
   await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
-  lastLogs = "";
-  logPre.innerHTML = "";
 }
 
 $("btnClearLogs").addEventListener("click", async (e) => {
@@ -3157,6 +3422,7 @@ function togglePendant(on) {
   _layoutBanner();            // the page-top banner shows only outside pendant mode
   _applyPendantTab();
   renderPendantNotice();
+  renderLaunchCard();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
   // history entries added, back button untouched) so kiosk tablets can
@@ -3410,6 +3676,7 @@ function updatePendantUI() {
   // disabled too — api.js canStart, the same rule as the sidebar and
   // the dashboard card, so the pendant can never offer Start mid-boot.
   $("pendantStart").disabled   = !canStart(state);
+  $("pendantStart").classList.toggle("start-hint", _startHint);
   $("pendantStart").title      = !launched
     ? "Set the run parameters on the Main tab, then Set & Launch"
     : isBooting(state) ? "Starting…" : "";
@@ -3501,7 +3768,7 @@ if (window.ResizeObserver) {
   // The notice covers the body (tabs + pane) — it follows the body's box
   // as the window resizes and the step rail collapses.
   const _body = document.querySelector(".pendant-body");
-  if (_body) new ResizeObserver(() => _positionPendantNotice()).observe(_body);
+  if (_body) new ResizeObserver(() => _positionPendantCovers()).observe(_body);
 }
 
 // Enter pendant directly from the URL (kiosk mode):

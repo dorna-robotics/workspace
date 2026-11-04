@@ -802,6 +802,67 @@
 .pn-card[data-level="info"] .pn-ico { background: rgba(10,132,255,.15); color: var(--accent); }
 .pn-card[data-level="info"] .pn-level { color: var(--accent); }
 
+.pn-card[data-level="ok"] { border-top-color: var(--green); }
+.pn-card[data-level="ok"] .pn-ico { background: rgba(52,199,89,.15); color: var(--green); }
+.pn-card[data-level="ok"] .pn-level { color: var(--green); }
+
+/* ── The launch card (workspace.js renderLaunchCard) ──────────────
+   The notice's own card (.pn-card), for the two waits: Launch until
+   ready, Start until the first motion. Over the whole page on the
+   desktop; over the pendant body in pendant mode (positioned like the
+   notice). Under it, the console of that wait, live. */
+.launch-card {
+  position: fixed; z-index: 10002; display: flex;
+  padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
+}
+.launch-card.lc-page { inset: 0; }
+/* The card fits its cover: the console gives way (down to a few lines)
+   before the buttons leave the screen. */
+.launch-card .pn-card { max-height: 100%; }
+.launch-card .pn-card > :not(.lc-log) { flex-shrink: 0; }
+.lc-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 4px solid rgba(10,132,255,.25); border-top-color: var(--accent);
+  animation: lc-spin 0.9s linear infinite;
+}
+@keyframes lc-spin { to { transform: rotate(360deg); } }
+.lc-clock { font-family: var(--mono); color: var(--muted); }
+.lc-now {
+  align-self: stretch; display: flex; align-items: center; gap: var(--space-3);
+  margin-top: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md);
+  background: var(--accent-dim); font-size: var(--text-lg); font-weight: 600; text-align: left;
+}
+.lc-now-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-now-age { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+.lc-log {
+  align-self: stretch; margin: var(--space-2) 0 0; flex: 0 1 260px; min-height: 84px; overflow-y: auto;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface2);
+  font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; text-align: left;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Hidden with Hide: the state pill (desktop) / state block (pendant)
+   brings it back. */
+.lc-reopen { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .lc-spin { animation-duration: 2.4s; } }
+
+/* ── The Start hint ──────────────────────────────────────────────
+   Launched, idle, and no run yet in this process: a ring leaves the
+   Start button every 2 s and fades — the next step, without a flash
+   or a colour change. Still, not pulsing, under reduced motion. */
+.start-hint { position: relative; overflow: visible; }
+.start-hint::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  animation: start-hint 2s var(--ease) infinite;
+}
+@keyframes start-hint {
+  0%   { box-shadow: 0 0 0 0 rgba(10,132,255,.45); }
+  70%  { box-shadow: 0 0 0 14px rgba(10,132,255,0); }
+  100% { box-shadow: 0 0 0 14px rgba(10,132,255,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-hint::after { animation: none; box-shadow: 0 0 0 4px rgba(10,132,255,.35); }
+}
+
 /* ── Hold-to-activate (Park, Kill — api.js holdToActivate) ─────────
    The button fills from the left while held; the fill IS the timer,
    so its 2 s linear sweep is a documented exception to the motion

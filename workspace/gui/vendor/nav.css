@@ -140,22 +140,27 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
 .app-nav.expanded ~ * { margin-left: 200px; }
 .app-nav.expanded ~ .app-nav-overlay { margin-left: 0; }
 
-/* Full-viewport overlays (modal + confirm dialog) must NOT inherit the
-   sibling-shift above, otherwise the navbar peeks through the 48/200 px
-   gap on the left while the modal is open. They're position:fixed with
-   inset:0 and a high z-index, so leaving margin-left at 0 lets them
-   cover the entire viewport including the nav. */
+/* Fixed overlays must NOT inherit the sibling-shift above: they place
+   themselves (inset:0 over the viewport, or a box set from JS — the
+   pendant notice and the launch card cover the pendant body), and a
+   48/200 px margin would shift them off it, the navbar peeking through. */
 .app-nav ~ .modal-overlay,
 .app-nav ~ .confirm-overlay,
 .app-nav ~ .pendant-overlay,
+.app-nav ~ .pendant-notice,
+.app-nav ~ .launch-card,
 .app-nav.expanded ~ .modal-overlay,
 .app-nav.expanded ~ .confirm-overlay,
-.app-nav.expanded ~ .pendant-overlay {
+.app-nav.expanded ~ .pendant-overlay,
+.app-nav.expanded ~ .pendant-notice,
+.app-nav.expanded ~ .launch-card {
   margin-left: 0;
 }
 html.nav-expanded .app-nav ~ .modal-overlay,
 html.nav-expanded .app-nav ~ .confirm-overlay,
-html.nav-expanded .app-nav ~ .pendant-overlay {
+html.nav-expanded .app-nav ~ .pendant-overlay,
+html.nav-expanded .app-nav ~ .pendant-notice,
+html.nav-expanded .app-nav ~ .launch-card {
   margin-left: 0;
 }
 

@@ -158,8 +158,10 @@ class OrchestratorHTTPServer:
                 loop.default_exception_handler(context)
         asyncio.get_event_loop().set_exception_handler(_ws_exception_handler)
 
+        # The orchestrator's handle on this IOLoop (Orchestrator.loop)
+        self.orch.loop = tornado.ioloop.IOLoop.current()
         # Start WS broadcast loop
-        tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, self.orch)
+        self.orch.loop.add_callback(_ws_poll_loop, self.orch)
         print(f"Orchestrator server running on {self.host}:{self.port}")
         print(f"GUI: http://{self.host}:{self.port}/web/orchestrator.html")
         if ORCH_TOKEN:

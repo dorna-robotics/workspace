@@ -1065,6 +1065,8 @@ def run_protocol(
         log.info("%s: %s", project_name, line)
     except Exception:
         log.warning("%s: motion-book reload failed", project_name, exc_info=True)
+    # Planned, scheduled, the book loaded: the robot moves from here.
+    ctx.runtime.prepared()
     try:
         status = engine.run()
     finally:

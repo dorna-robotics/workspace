@@ -201,6 +201,12 @@ class Runtime:
         # race with the orchestrator's polling loop.
         self.run_started_at: Optional[float] = None
         self.run_finished_at: Optional[float] = None
+        # A fresh run's PREPARATION: True from the moment it begins (the
+        # [run] start line, below) until the workflow says the robot is
+        # about to move (``prepared()`` — the BT launcher calls it as the
+        # engine starts), or the run ends. /status carries it as
+        # ``preparing``; the pages show the run's card while it holds.
+        self._preparing: bool = False
         # Run lifecycle hooks, fired at the SAME moment the stamps above
         # are set — the one authoritative "a run began" / "the run is
         # over" in the platform. ``on_run_end(state)`` receives the
@@ -267,6 +273,7 @@ class Runtime:
                 # The run's boundary, IN THE CONSOLE: the orchestrator's log
                 # pump opens log/<stamp>/ on this line (workspace_info.py).
                 print(f"[run] start {self.run_stamp}", flush=True)
+                self._preparing = True
                 self._fire(self.on_run_start)
         elif (
             new_state in (RTState.IDLE, RTState.ERROR, RTState.KILLED)
@@ -279,27 +286,50 @@ class Runtime:
                 self.count("run.time", n=1, s=round(self.run_finished_at - self.run_started_at, 3))
             self._rec_finalize = True
             self._count_saved_at = 0.0        # the run's counts are written on the next drain
+            self._preparing = False
             print(f"[run] end {self.run_stamp} ({new_state.value})", flush=True)
             self._fire(self.on_run_end, new_state.value)
 
         self._cv.notify_all()
-        # Push the new status snapshot to any wired listener (e.g. the
-        # runtime_server's /ws/status broadcaster). The listener is
-        # expected to schedule its work asynchronously, so calling it
-        # under the runtime lock is safe.
+        self._push_status()
+
+    def _push_status(self) -> None:
+        """Push the status snapshot to any wired listener (e.g. the
+        runtime_server's /ws/status broadcaster). The listener is
+        expected to schedule its work asynchronously, so calling it
+        under the runtime lock is safe."""
         cb = self.on_status
         if cb is not None:
             try:
                 cb({
-                    "state": str(new_state),
+                    "state": str(self._status.state),
                     "last_error": self._status.last_error,
                     "job_runs": self._status.job_runs,
                     "job_pauses": self._status.job_pauses,
                     "job_resumes": self._status.job_resumes,
                     "kills": self._status.kills,
+                    "preparing": self._preparing,
                 })
             except Exception:
                 pass
+
+    @property
+    def preparing(self) -> bool:
+        """True while a fresh run prepares — see ``prepared``."""
+        with self._lock:
+            return self._preparing
+
+    def prepared(self) -> None:
+        """The run's preparation is over: the robot moves from here. The
+        workflow calls it once, at that boundary — the BT launcher as its
+        engine starts. Until then (planning, recipes, caches) the pages
+        show the run's card over the console, so a wait before the first
+        motion never reads as a frozen bench."""
+        with self._lock:
+            if not self._preparing:
+                return
+            self._preparing = False
+            self._push_status()
 
     def _new_run_stamp(self, started: float) -> str:
         """Human-readable, sorts by time, no spaces: 2026-09-12_15-35-17;
