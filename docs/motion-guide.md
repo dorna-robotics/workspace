@@ -429,6 +429,19 @@ defaults (`DIP_ANCHOR`, `DIP_PADDING`, `DIP_IN`, `DIP_OUT`) and, over a
 holder, resolves `_dip_target`. Nothing about the motion is written
 per site.
 
+**Off the axis — `dip_offset`.** A dip site may put the tip a fixed
+distance off the vessel's centre: recipe kwarg `dip_offset: [dx, dy]`
+(mm, in the target anchor's frame; default `[0, 0]`), per call
+`above / immerse / retract(..., dip_offset=...)`. The hover, the dive
+and the lift all target the offset axis — one vertical line, so the
+dive and the lift stay straight and the axis contract (`axis_tol`)
+measures against it. One rule: `pick_setting`'s `axis_offset` shifts
+the grab frame's x / y in the anchor frame; `[0, 0]` builds exactly the
+on-axis poses. The offset is the recipe's alone — a pick/place recipe
+over the same component, and the component's calibration, never see
+it (bna: `in_doser` dives 7 mm off the 40 mL axis, `in_rack` picks on
+it).
+
 **Soft approach** (`soft_approach=True`, corridor only): the contact
 point becomes its own final group → full stop at the gap point
 (`gap` mm, default 2), IO verified, then a slow lmove-class press to

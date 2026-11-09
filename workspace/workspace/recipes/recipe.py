@@ -2456,6 +2456,7 @@ class Recipe:
         soft_approach=True,
         soft_exit=True,
         compliant=True,
+        axis_offset=None,
         **kwargs,
     ):
         """Compute the motion-parameter dict that ``pick`` (and friends) feed to ``touch``.
@@ -2508,6 +2509,12 @@ class Recipe:
                     attach offset (``height_load + tool_tcp_z_offset``).
                 ``tool_tcp_z_offset`` drives the motion identically either
                 way; this flag only changes where the item ends up attached.
+            axis_offset: ``[dx, dy]`` mm — the target's vertical axis moved
+                sideways, in the ANCHOR's frame: every pose built here
+                (contact, approach, exit) shifts by it, so they stay on one
+                vertical line. None / ``[0, 0]`` builds exactly the on-axis
+                poses. Set only by the dip verbs, from a dip site's
+                ``dip_offset`` (``recipes/dip.py``).
             **kwargs: Absorbed. Per-call overrides (``has_motion_plan``,
                 ``motion_plan_kwargs``, …) act for that call only — the
                 calling verb forwards them to ``touch``; nothing here
@@ -2540,6 +2547,16 @@ class Recipe:
             component, solid_name, anchor, tool, load_list,
             tool_tcp_z_offset=tool_tcp_z_offset, tool_tip_z_offset=tool_tip_z_offset,
         )
+
+        # The axis moved sideways (a dip site's dip_offset): the grab
+        # frame's position shifts in the ANCHOR's frame — its x / y —
+        # with its orientation untouched, so every pose below rides the
+        # offset axis. Zero builds nothing new: the on-axis poses exactly.
+        if axis_offset is not None:
+            dx, dy = (float(v) for v in axis_offset)
+            if dx or dy:
+                v = pose_offset.pose(offset=[0, 0, 0, 0, 0, 0])
+                pose_offset = dorna_pose.Pose(pose=[v[0] + dx, v[1] + dy] + list(v[2:]))
 
         # target offset
         contact = pose_offset.pose(offset=[0, 0, height_load, 0, 0, 0])
