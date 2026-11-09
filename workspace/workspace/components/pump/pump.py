@@ -421,24 +421,47 @@ class Pump:
         """Valve to ``port``, optional speed, plunger to ``target_steps``.
         Refuses overflow/underflow before touching hardware.
 
+        ``speed`` — the one rule every op's ``speed`` goes through: a
+        number (0-100) runs this stroke at it; a pair ``[fill, empty]``
+        runs it at ``fill`` when the plunger draws (the barrel fills,
+        whatever the port) and at ``empty`` when it pushes. So an op
+        that strokes both ways — ``aspirate_line`` emptying into its
+        return port, ``dispense_line`` refilling from it, ``prime`` —
+        gives each direction its own speed. ``None`` leaves the register
+        as it stands.
+
         STEPS ARE THE TRUTH. The plunger only stands on whole steps, so
         every bound is checked in steps — never in µL against a
         stepped read-back: a 998 µL draw lands on 38,323 steps
         (997.995 µL) and a µL check then refused the 998 µL dispense of
         the very same liquid (bench, 2026-10-12)."""
+        if isinstance(speed, (list, tuple)) and len(speed) != 2:
+            raise ValueError(f"{self.name}: {op}: speed is a number or [fill, empty], got {speed!r}")
         t0 = time.monotonic()
         ok = False
         target_steps = int(target_steps)
         held = self.pump.position_steps()
+        stroke_speed = None
         try:
             if target_steps < 0 or target_steps > self.pump.max_steps():
                 self.pump.last_error = (3, f"{op}: target {self._fmt(target_steps)} outside the "
                                            f"barrel, 0-{self._fmt(self.pump.max_steps())}")
                 return False
-            if not self.pump.initialized and not self.pump.initialize(sim_return=sim_return):
-                return False
-            if speed is not None and float(speed) != self.pump.speed():
-                if not self.pump.set_speed(float(speed), sim_return=sim_return):
+            start = held
+            if not self.pump.initialized:
+                if not self.pump.initialize(sim_return=sim_return):
+                    return False
+                start = self.pump.position_steps()      # homed
+            if isinstance(speed, (list, tuple)):
+                if start is None:
+                    self.pump.last_error = (-1, f"{op}: plunger position unknown — a [fill, empty] "
+                                                f"speed needs the stroke's direction")
+                    return False
+                stroke_speed = speed[0] if target_steps > start else speed[1]
+            else:
+                stroke_speed = speed
+            if stroke_speed is not None and float(stroke_speed) != self.pump.speed():
+                if not self.pump.set_speed(float(stroke_speed), sim_return=sim_return):
                     return False
             if self.pump.valve_port() != port and not self.pump.valve_to(port, sim_return=sim_return):
                 return False
@@ -451,7 +474,9 @@ class Pump:
             return ok
         finally:
             rec = {"op": op, "port": port, "name": self.name_of(port),
-                   "target_ul": round(self._steps_to_ul(target_steps), 3), "seconds": round(time.monotonic() - t0, 3),
+                   "target_ul": round(self._steps_to_ul(target_steps), 3),
+                   "speed": None if stroke_speed is None else float(stroke_speed),
+                   "seconds": round(time.monotonic() - t0, 3),
                    "ok": ok, "error": None if ok else self.pump.last_error[1]}
             self._last_op = rec
             self._op_log.append(rec)
@@ -624,8 +649,10 @@ class Pump:
         liquid is held in the outlet's LINE, not the barrel: whenever
         the barrel is full, the valve turns to ``return_port`` and the
         barrel empties there (the line's own system liquid going back
-        where it came from), then turns back and draws on. ``speed``
-        runs every stroke, the draws and the empties.
+        where it came from), then turns back and draws on. ``speed``: a
+        number runs every stroke, the draws and the empties; a pair
+        ``[fill, empty]`` draws at ``fill`` and empties into the return
+        port at ``empty`` (:meth:`_stroke`).
 
         ``return_port``: the call's, else the outlet's from the scene,
         else refused. The line must be primed with that port's liquid.
@@ -673,7 +700,9 @@ class Pump:
         outlet) — the mirror of :meth:`aspirate_line`: whatever the
         barrel holds goes out first, then the barrel refills from
         ``return_port`` and pushes again, until ``volume_ul`` has left
-        the tip. ``speed`` runs every stroke.
+        the tip. ``speed``: a number runs every stroke; a pair ``[fill,
+        empty]`` refills from the return port at ``fill`` and pushes
+        out of the tip at ``empty`` (:meth:`_stroke`).
 
         Refuses before anything moves when the line holds less than
         ``volume_ul`` (:meth:`line_volume`)."""

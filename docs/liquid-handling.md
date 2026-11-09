@@ -369,6 +369,8 @@ valve_ports:
 pump.aspirate_line(60, speed=70)            # 25 + return + 25 + return + 10, through needle_LV
 pump.line_volume()                          # 60.0 — what the line holds
 pump.dispense_line(60, speed=80)            # the barrel's 10 out, refill 25 + out, refill 25 + out
+pump.aspirate_line(60, speed=[62, 100])     # draws at 62, the returns (pushes) at 100 — Speed below
+pump.dispense_line(60, speed=[70, 80])      # refills (draws) at 70, pushes out of the tip at 80
 pump.aspirate_line(30, return_port="Water") # the call's return_port wins over the scene's
 ```
 
@@ -439,6 +441,22 @@ pump.aspirate(200, speed=25)     # or per move — same register, same units
 "draw viscous liquid slowly, push it back fast" pair. The drive has ONE
 speed register, so a per-move value **stays in effect** afterwards —
 "for this move" is as close as the hardware gets.
+
+**A number or `[fill, empty]`.** Every op's `speed` is one number (every
+stroke at it — as it always was) or a pair: `fill` for a stroke that
+draws (the barrel fills, whatever the port), `empty` for one that
+pushes. It matters for the ops that stroke both ways —
+`aspirate_line`'s empties into the return port, `dispense_line`'s
+refills from it, `prime`:
+
+```python
+pump.aspirate_line(60, speed=[62, 100])   # the draws at 62, the empties into the return port at 100
+pump.dispense_line(60, speed=[70, 80])    # the refills at 70, the pushes out of the tip at 80
+```
+
+A draw pulls a vacuum (bubbles); a push does not — so the two seldom
+want the same speed. The speed each stroke ran at is in its op record
+(`last_op()["speed"]`). One rule, in the component's `_stroke`.
 
 Through a plumbed nozzle the parameter is called **`pump_speed`**:
 
