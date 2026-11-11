@@ -74,10 +74,18 @@
       background: var(--surface3);
       transition: background var(--motion-med) var(--ease);
     }
+    /* The whole card opens the pendant (dashboard.js _openCardPendant)
+       — the lift and the name's accent say so wherever the pointer is.
+       The footer is the run controls' strip and is not part of it. */
+    .ws-card { cursor: pointer; }
+    .ws-card .wc-footer { cursor: default; }
     .ws-card:hover {
       box-shadow: var(--shadow);
       transform: translateY(-1px);
     }
+    .ws-card:hover .wc-name { color: var(--accent); }
+    .ws-card:has(.wc-head-link:focus-visible) { box-shadow: var(--glow); }
+    .wc-head-link:focus-visible { outline: none; }
     .ws-card:focus-visible {
       outline: none;
       box-shadow: var(--glow);
@@ -104,7 +112,6 @@
       color: inherit;
       cursor: pointer;
     }
-    .wc-head-link:hover .wc-name { color: var(--accent); }
     .wc-info { flex: 1; min-width: 0; }
     .wc-name {
       font-size: var(--text-lg);

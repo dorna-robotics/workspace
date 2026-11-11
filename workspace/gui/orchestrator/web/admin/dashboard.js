@@ -13,6 +13,21 @@ let pollTimer  = null;
 const pendantUrl = name => `workspace.html?name=${encodeURIComponent(name)}&pendant=1`;
 const desktopUrl = name => `workspace.html?name=${encodeURIComponent(name)}`;
 
+// The card is ONE target: a click anywhere on it opens the pendant — the
+// avatar, the name, the path, the URL, the step line, the progress bar.
+// Not its own controls (links and buttons keep their job), not the
+// footer (the run controls' strip — a near-miss on Kill must not
+// navigate away), and not a text selection (copying the path or URL).
+// Ctrl/Cmd-click opens a new tab, as a link would. The head link stays
+// the keyboard's way in.
+function _openCardPendant(e, name) {
+  if (e.defaultPrevented || e.button !== 0) return;
+  if (e.target.closest("a, button, input, select, textarea, label, .wc-footer")) return;
+  if (String(window.getSelection ? window.getSelection() : "")) return;
+  if (e.ctrlKey || e.metaKey) window.open(pendantUrl(name), "_blank");
+  else window.location.href = pendantUrl(name);
+}
+
 const AVATAR_PALETTE = ["#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#ef4444","#22c55e","#6366f1"];
 function wsColor(name) {
   let h = 0;
@@ -315,6 +330,7 @@ function render() {
     if (isNew) {
       el = document.createElement("div");
       el.setAttribute("data-name", ws.name);
+      el.addEventListener("click", e => _openCardPendant(e, ws.name));
     }
 
     const newCls = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
