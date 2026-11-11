@@ -152,15 +152,31 @@ $("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
 _deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
 
 // ── Version panel — this project vs its GitHub remote (project_git.py) ──
-// Three views in one modal: the STATE (what the bench runs, how it
-// compares, what is local), the CONFIRM (every risk as a warning, the
-// exact git commands it will run) and DONE (what moved, what was set
-// aside). Nothing is ever disabled for the bench's state — a run in
-// flight, local changes, no access are warnings the operator confirms
-// past; the server refuses only a plan that changed since it was shown.
+// Three views: the STATE (what the bench runs, how it compares, what is
+// local), the CONFIRM (every risk as a warning, the exact git commands it
+// will run) and DONE (what moved, what was set aside). Nothing is ever
+// disabled for the bench's state — a run in flight, local changes, no
+// access are warnings the operator confirms past; the server refuses
+// only a plan that changed since it was shown.
+//
+// TWO HOSTS, ONE PANEL: the desktop's dialog and the pendant's Version
+// page. A host is {title, body, foot, heading(view), close}; every view
+// draws into the host it was called for, so the two can never drift.
+// ``close`` is null on the page — nothing to close to, so no Close.
 const _verOverlay = $("versionModalOverlay");
 const _verApi = () => `/workspace/${encodeURIComponent(wsName)}/version`;
-let _ver = null;
+function closeVersion() { _verOverlay.classList.remove("show"); }
+const VER_MODAL = {
+  title: $("versionModalTitle"), body: $("versionModalBody"), foot: $("versionModalFoot"),
+  heading: view => view === "confirm" ? "Get latest from GitHub" : `Version — ${wsName}`,
+  close: closeVersion,
+};
+const VER_PAGE = {
+  title: $("pvTitle"), body: $("pvBody"), foot: $("pvFoot"),
+  heading: view => view === "confirm" ? "Get latest from GitHub" : "Version",
+  close: null,
+};
+const _ver = new Map();      // host → the last state it showed
 
 // The Status row's pill — how this bench compares with GitHub.
 function _verStatus(v) {
@@ -175,17 +191,21 @@ const _verCommit = (c) => c
   ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
 const _verWarn = (html, bad = false) =>
   `<div class="ver-warn${bad ? " bad" : ""}"><span class="bang">!</span><div>${html}</div></div>`;
-function _verFoot(btns) {
-  const foot = $("versionModalFoot"); foot.innerHTML = "";
+// The foot's buttons. A "close" entry is the host's own Close — dropped
+// where the host has nothing to close to (the page).
+function _verFoot(h, btns) {
+  h.foot.innerHTML = "";
   for (const [label, cls, fn] of btns) {
+    if (fn === "close" && !h.close) continue;
     const b = document.createElement("button");
-    b.className = `btn ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
-    foot.appendChild(b);
+    b.className = `btn ${cls}`.trim(); b.textContent = label;
+    b.addEventListener("click", fn === "close" ? h.close : fn);
+    h.foot.appendChild(b);
   }
 }
-function _verBusy(text) {
-  $("versionModalBody").innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
-  $("versionModalFoot").querySelectorAll("button").forEach(b => { b.disabled = true; });
+function _verBusy(h, text) {
+  h.body.innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
+  h.foot.querySelectorAll("button").forEach(b => { b.disabled = true; });
 }
 function _verLocal(v) {
   const n = (v.changes || []).length, a = v.ahead || 0;
@@ -194,13 +214,12 @@ function _verLocal(v) {
     .filter(Boolean).join(" · ");
 }
 
-function _verState(v) {
-  _ver = v;
-  $("versionModalTitle").textContent = `Version — ${wsName}`;
-  const body = $("versionModalBody");
+function _verState(h, v) {
+  _ver.set(h, v);
+  h.title.textContent = h.heading("state");
   if (!v.git) {
-    body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
-    _verFoot([["Close", "", closeVersion]]);
+    h.body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
+    _verFoot(h, [["Close", "", "close"]]);
     return;
   }
   let html = `<dl class="ver-rows">
@@ -217,12 +236,12 @@ function _verState(v) {
     html += _verWarn("This bench cannot reach the GitHub repository — no read key, or no network. Get latest will fail until it can.", true);
     html += `<div class="ver-err">${esc(v.fetch_error)}</div>`;
   }
-  body.innerHTML = html;
-  _verFoot([["Check again", "", () => loadVersion(true)], ["Get latest…", "btn-primary", () => _verConfirm(_ver)]]);
+  h.body.innerHTML = html;
+  _verFoot(h, [["Check again", "", () => loadVersion(h, true)], ["Get latest…", "btn-primary", () => _verConfirm(h, _ver.get(h))]]);
 }
 
-function _verConfirm(v) {
-  $("versionModalTitle").textContent = "Get latest from GitHub";
+function _verConfirm(h, v) {
+  h.title.textContent = h.heading("confirm");
   let html = `<div class="ver-sub">${esc(wsName)}, branch <b>${esc(v.branch)}</b>: `
     + `<span class="ver-hash">${esc(v.head && v.head.hash)}</span> → <span class="ver-hash">${esc(v.remote ? v.remote.hash : "?")}</span></div>`;
   if (v.platform) html += _verWarn("This project lives inside the WORKSPACE PLATFORM's own repository — Get latest resets the whole platform to GitHub's, not just this project. Platform updates also need the upgrade step (pip install -e .) and a restart of the orchestrator.", true);
@@ -239,25 +258,25 @@ function _verConfirm(v) {
   else html += `<div class="ver-label">Will run, in this order</div>
     <ul class="ver-cmds sh">${v.plan.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
   html += `<div class="ver-sub">Git-ignored data is not touched: records, uploads, calibration, scene/bench.j2.</div>`;
-  $("versionModalBody").innerHTML = html;
+  h.body.innerHTML = html;
   const risky = v.platform || v.run_active || v.launched || n || v.ahead || v.reachable === false || v.plan_error;
-  _verFoot([["Cancel", "", () => _verState(_ver)], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(v)]]);
+  _verFoot(h, [["Cancel", "", () => _verState(h, _ver.get(h))], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(h, v)]]);
 }
 
-async function _verRun(v) {
-  _verBusy("Getting the latest from GitHub…");
+async function _verRun(h, v) {
+  _verBusy(h, "Getting the latest from GitHub…");
   try {
     const r = await apiFetch(_verApi(), { method: "POST", body: JSON.stringify({ confirmed: v.plan, stamp: v.stamp }) });
-    _verDone(r);
+    _verDone(h, r);
   } catch (e) {
-    $("versionModalBody").innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
+    h.body.innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
       + `<div class="ver-err">${esc(String(e))}</div>`;
-    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+    _verFoot(h, [["Close", "", "close"], ["Check again", "btn-primary", () => loadVersion(h, true)]]);
   }
 }
 
-function _verDone(r) {
-  $("versionModalTitle").textContent = `Version — ${wsName}`;
+function _verDone(h, r) {
+  h.title.textContent = h.heading("done");
   let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated `
     + `<span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span>`
     + ` <span class="ver-sub">${esc(r.to ? r.to.subject : "")}</span></div></div>`;
@@ -269,22 +288,24 @@ function _verDone(r) {
   }
   html += `<dl class="ver-rows"><dt>Status</dt><dd>${_verStatus(r.version)}</dd></dl>`;
   html += `<div class="ver-label">Ran</div><ul class="ver-cmds sh">${(r.ran || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
-  $("versionModalBody").innerHTML = html;
-  _ver = r.version;
-  _verFoot([["Close", "btn-primary", closeVersion]]);
+  h.body.innerHTML = html;
+  _ver.set(h, r.version);
+  // The dialog closes; the page has nothing to close, so it offers the
+  // fresh state instead.
+  _verFoot(h, h.close ? [["Close", "btn-primary", "close"]]
+                      : [["Check again", "btn-primary", () => loadVersion(h, true)]]);
 }
 
-async function loadVersion(fetchRemote = true) {
-  _verBusy(fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
+async function loadVersion(h, fetchRemote = true) {
+  _verBusy(h, fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
   try {
-    _verState(await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
+    _verState(h, await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
   } catch (e) {
-    $("versionModalBody").innerHTML = _verWarn(esc(String(e)), true);
-    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+    h.body.innerHTML = _verWarn(esc(String(e)), true);
+    _verFoot(h, [["Close", "", "close"], ["Check again", "btn-primary", () => loadVersion(h, true)]]);
   }
 }
-function closeVersion() { _verOverlay.classList.remove("show"); }
-$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(true); });
+$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(VER_MODAL, true); });
 $("btnVersionModalClose").addEventListener("click", closeVersion);
 _verOverlay.addEventListener("click", (e) => { if (e.target === _verOverlay) closeVersion(); });
 
@@ -1166,10 +1187,54 @@ function applyOpState(payload) {
   }
 }
 
+// The section rail's Devices badge: how many of the Devices tab's dots
+// are red (down), else amber (recovering) — the list's own states,
+// counted where the list is drawn, so the two can never disagree.
+let _devAttention = "";
+function _setDevicesAttention(down, recovering) {
+  const el = $("pendantDevBadge");
+  const n = down || recovering;
+  const key = n ? `${down ? "bad" : "warn"}:${n}` : "";
+  if (!el || key === _devAttention) return;
+  _devAttention = key;
+  el.hidden = !n;
+  el.textContent = n ? String(n) : "";
+  el.classList.toggle("warn", !down && !!recovering);
+  const tab = el.closest(".pendant-tab");
+  if (tab) {
+    const name = !n ? "Devices"
+      : down ? `Devices — ${down} down` : `Devices — ${recovering} recovering`;
+    tab.title = name;
+    tab.setAttribute("aria-label", name);
+  }
+}
+
+// The rail's Steps badge: the panel foot's own counts — faults (red),
+// else warnings (amber) — so it says what the closed panel would.
+let _stepsAttention = "";
+function _setStepsAttention(warns, faults) {
+  const el = $("pendantStepsBadge");
+  const n = faults || warns;
+  const key = n ? `${faults ? "bad" : "warn"}:${n}` : "";
+  if (!el || key === _stepsAttention) return;
+  _stepsAttention = key;
+  el.hidden = !n;
+  el.textContent = n ? String(n) : "";
+  el.classList.toggle("warn", !faults && !!warns);
+  const btn = el.closest(".pr-panel");
+  if (btn) {
+    const name = !n ? "Steps"
+      : faults ? `Steps — ${faults} fault${faults === 1 ? "" : "s"}`
+               : `Steps — ${warns} warning${warns === 1 ? "" : "s"}`;
+    btn.title = name;
+    btn.setAttribute("aria-label", name);
+  }
+}
+
 // ── The operator notice (rt.notice) ─────────────────────────────────
 // ``notice`` is the platform's rt.op key: {level, title, text, img,
 // caption}. The FRAME draws it, the same for every project — a modal
-// over the body (tabs and pane), the bench dimmed behind it. The
+// over the section rail and body, the bench dimmed behind it. The
 // RUNTIME owns its lifetime: set during a pause, unset when the run
 // leaves it — so this draws exactly what the key says, and runs only
 // when the key changes (applyOpState), never on a status tick. The
@@ -1187,10 +1252,13 @@ const NOTICE_LEVELS = { warning: "Operator needed", error: "Run stopped", info: 
 const _noticeKey = n => JSON.stringify([n.level, n.title, n.text, n.img, n.caption]);
 let _noticeAck = null;       // the notice the operator dismissed (its key)
 
-// The notice and the launch card cover the pendant BODY in pendant mode;
-// on the desktop the launch card covers the page (.lc-page), unpositioned.
+// The notice and the launch card cover the pendant's section rail and
+// BODY in pendant mode — the sections are not for switching while a
+// notice waits; the Steps rail and the bar stay live. On the desktop the
+// launch card covers the page (.lc-page), unpositioned.
 function _positionPendantCovers() {
   const body = document.querySelector(".pendant-body");
+  const rail = $("pendantRail");
   for (const id of ["pendantNotice", "launchCard"]) {
     const el = $(id);
     if (!el || el.style.display === "none") continue;
@@ -1199,9 +1267,10 @@ function _positionPendantCovers() {
       continue;
     }
     const r = body.getBoundingClientRect();
+    const left = rail ? rail.getBoundingClientRect().left : r.left;
     el.style.top = r.top + "px";
-    el.style.left = r.left + "px";
-    el.style.width = r.width + "px";
+    el.style.left = left + "px";
+    el.style.width = (r.right - left) + "px";
     el.style.height = r.height + "px";
   }
 }
@@ -1702,6 +1771,7 @@ function renderDevicesPanel() {
   if (!el) return;
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
+  if (!list.length) _setDevicesAttention(0, 0);
   if (!list.length) {
     const emptyHtml = _devicesKnown ? `<div class="step-empty">No devices declared</div>`
                                     : _pendingListHtml("devices");
@@ -1724,6 +1794,7 @@ function renderDevicesPanel() {
     if (chev) chev.classList.add("open");
   }
   const now = Date.now();
+  let nDown = 0, nRecovering = 0;
   const newHtml = list.map(d => {
     const state = d.state || "down";
     const online = d.online !== false;  // default true for back-compat
@@ -1735,6 +1806,8 @@ function renderDevicesPanel() {
     // confirms or the safety deadline elapses. Offline devices render
     // distinctly and hide the recover button.
     const visualState = isPending ? "recovering" : state;
+    if (visualState === "recovering") nRecovering++;
+    else if (visualState !== "ok") nDown++;
     const dotClass = visualState === "ok"
       ? "ok pulse"
       : visualState === "recovering"
@@ -1806,6 +1879,7 @@ function renderDevicesPanel() {
         ${modePill}
       </div>`;
   }).join("");
+  _setDevicesAttention(nDown, nRecovering);
   // Skip the DOM write when nothing visible changed. WS events stream
   // often during a run — this catches silent state events (e.g. only
   // ``ts`` or ``last_update`` changed) and avoids the layout + paint.
@@ -3352,11 +3426,12 @@ function _positionPendant3d() {
   area.style.height = r.height + "px";
 }
 
-// THE ONE PLACE pane visibility is decided: the tab strip and the four
+// THE ONE PLACE pane visibility is decided: the section rail and the four
 // panes (run setup, the project's screen, the 3D view, Devices) always
 // agree because nothing else writes their display. Whatever changes
 // what a pane holds — a screen mounting, the fallback widgets, a launch
 // — calls this afterwards instead of showing the pane itself.
+let _versionShown = false;     // the Version section is up (load once per opening)
 function _applyPendantTab() {
   const launched = isLaunched(_lastState);
   // Parameters is a tab only while launched; before that the setup IS
@@ -3367,24 +3442,35 @@ function _applyPendantTab() {
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
   const isParams = _pendantTab === "params";
-  document.querySelectorAll(".pendant-tab").forEach(t =>
-    t.classList.toggle("active", t.dataset.ptab === _pendantTab));
+  const isVersion = _pendantTab === "version";
+  document.querySelectorAll(".pendant-tab").forEach(t => {
+    const on = t.dataset.ptab === _pendantTab;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
   const dev = $("pendantDevicesPane");
   const pp  = $("pendantParamsPane");
+  const ver = $("pendantVersionPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
   // Before the run is up, the Main tab IS the run setup — the operator
   // sets the parameters and launches from here. After that the
   // project's own screen owns Main, and the same pane, frozen, is the
   // Parameters tab.
-  const isMain = !is3d && !isDevices && !isParams;
+  const isMain = !is3d && !isDevices && !isParams && !isVersion;
   const showParams = launched ? isParams : isMain;
   if (pp) pp.style.display = showParams ? "" : "none";
   if (hmi) hmi.style.display = (!isMain || !hasScreen || showParams) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
+  if (ver) ver.style.display = isVersion ? "" : "none";
+  // Version checks GitHub each time the section is OPENED (as the
+  // desktop's dialog does on open) — not on every call of this.
+  const versionUp = isVersion && _pendantMode;
+  if (versionUp && !_versionShown) loadVersion(VER_PAGE, true);
+  _versionShown = versionUp;
   const hero = $("pendantHero");
   if (hero) hero.style.display = (launched && isMain && heroWanted()) ? "" : "none";
   // The 3D tab IS the desktop viewer area, chips and all.
@@ -3434,6 +3520,9 @@ function applyPendantRenderState() {
 }
 
 function togglePendant(on) {
+  // From here on the overlay is this function's: the head script's
+  // first-paint class (?pendant=1) has done its job.
+  document.documentElement.classList.remove("pendant-boot");
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
   _layoutBanner();            // the page-top banner shows only outside pendant mode
@@ -3684,6 +3773,7 @@ function updatePendantUI() {
     }
     peFoot.textContent = (rail && rail.children.length)
       ? `${warns} warning${warns === 1 ? "" : "s"} · ${faults} fault${faults === 1 ? "" : "s"}` : "";
+    _setStepsAttention(warns, faults);
   }
   const peDot = $("peDot");
   if (peDot) peDot.className = "dot " + variant + (running ? " pulse" : "");
@@ -3776,12 +3866,36 @@ document.querySelectorAll(".pendant-tab").forEach(t => {
     }
   });
 });
-$("peCollapse")?.addEventListener("click", () => {
-  const rail = $("pendantEvents");
-  const collapsed = rail.classList.toggle("collapsed");
-  $("peCollapse").title = collapsed ? "Expand event log" : "Collapse event log";
-  if (_pendantTab === "3d") requestAnimationFrame(_positionPendant3d);
+// The section rail: collapsed by default, the toggle expands it, and
+// this screen remembers which (a kiosk tablet keeps its choice).
+function _setRailExpanded(on) {
+  const rail = $("pendantRail"), btn = $("pendantRailToggle");
+  if (!rail || !btn) return;
+  rail.classList.toggle("expanded", on);
+  btn.setAttribute("aria-expanded", on ? "true" : "false");
+  btn.title = on ? "Collapse" : "Expand";
+}
+try { _setRailExpanded(localStorage.getItem("pendant_rail_expanded") === "1"); } catch (_) {}
+$("pendantRailToggle")?.addEventListener("click", () => {
+  const on = !$("pendantRail").classList.contains("expanded");
+  _setRailExpanded(on);
+  try { localStorage.setItem("pendant_rail_expanded", on ? "1" : "0"); } catch (_) {}
 });
+// The Steps panel: opened beside any section from the rail's Steps
+// toggle, closed from there or its own chevron. Closed by default; this
+// screen remembers the operator's choice. The 3D view and the covers
+// follow the pane's box through their ResizeObservers.
+function _setStepsOpen(on) {
+  const panel = $("pendantEvents"), btn = $("pendantStepsToggle");
+  if (!panel || !btn) return;
+  panel.classList.toggle("collapsed", !on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  try { localStorage.setItem("pendant_steps_open", on ? "1" : "0"); } catch (_) {}
+}
+try { _setStepsOpen(localStorage.getItem("pendant_steps_open") === "1"); } catch (_) {}
+$("pendantStepsToggle")?.addEventListener("click", () =>
+  _setStepsOpen($("pendantEvents").classList.contains("collapsed")));
+$("peCollapse")?.addEventListener("click", () => _setStepsOpen(false));
 window.addEventListener("resize", () => { if (_pendantMode) _positionPendant3d(); });
 // The iframe + chip strip are FIXED (they must outrank the overlay),
 // but the pane they cover lives in a scrolling, reflowing column —
@@ -3796,8 +3910,8 @@ if (window.ResizeObserver) {
   });
   const _p3d = $("pendant3dPane");
   if (_p3d) _paneRO.observe(_p3d);
-  // The notice covers the body (tabs + pane) — it follows the body's box
-  // as the window resizes and the step rail collapses.
+  // The notice covers the section rail + body — it follows the body's
+  // box as the window resizes and either rail collapses or expands.
   const _body = document.querySelector(".pendant-body");
   if (_body) new ResizeObserver(() => _positionPendantCovers()).observe(_body);
 }

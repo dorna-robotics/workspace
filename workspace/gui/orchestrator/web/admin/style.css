@@ -461,6 +461,10 @@
    tabbed main section with the pinned ACTIVE ROUTINE hero, a
    collapsible event rail on the right, and the four run controls in a
    bottom bar. */
+/* ?pendant=1 — the overlay is up from the FIRST paint (the head script
+   sets the class), not after workspace.js has run, so the desktop never
+   flashes on the way in. togglePendant() takes over and drops it. */
+html.pendant-boot .pendant-overlay { display: flex !important; }
 .pendant-overlay {
   position: fixed; inset: 0; z-index: 10000;
   display: flex; flex-direction: column;
@@ -512,22 +516,90 @@
 .pendant-region { flex: 1; display: flex; min-height: 0; }
 .pendant-body {
   flex: 1; min-width: 0; display: flex; flex-direction: column;
-  overflow-y: auto; padding: 0 24px 24px;
+  overflow-y: auto; padding: 20px 24px 24px;
 }
 
-/* Tabs */
-.pendant-tabs { display: flex; gap: 26px; flex: none; padding-top: 2px; margin-bottom: 14px; }
-.pendant-tab {
-  font: inherit; font-size: var(--text-sm); font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); background: none; border: none; cursor: pointer;
-  padding: 15px 2px 13px; position: relative;
+/* ── Section rail: the left counterpart of the Steps rail ──
+   The admin nav's grammar (vendor/nav.css): icons only when collapsed,
+   icon + label when expanded, muted items, a surface2 hover, the accent
+   tint for the active one, a ringed count badge, the same sidebar
+   toggle. Sized for operator glass: 52 px targets. One row layout in
+   both states — the label fades to zero width — so the toggle and the
+   icons never move: their centre is the collapsed rail's, 32 px. The
+   toggle works at every width; expanding pushes the content (an overlay
+   would sit under the floating 3D view). The foot holds the Steps
+   panel's toggle — that panel has no strip of its own when closed. */
+.pendant-rail {
+  flex: none; width: 64px;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transition: width var(--motion-med) var(--ease);
+  overflow: hidden;
 }
-.pendant-tab.active { color: var(--accent); }
-.pendant-tab.active::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 0;
-  height: 3px; background: var(--accent);
+.pendant-rail.expanded { width: 216px; }
+/* the head is the Steps rail head's height: the two hairlines meet */
+.pr-head {
+  flex: none; height: 56px;
+  display: flex; align-items: center; padding-left: 10px;
+  border-bottom: 1px solid var(--border);
 }
+.pr-toggle {
+  display: grid; place-items: center; flex: none;
+  width: 44px; height: 44px; border-radius: var(--radius-sm);
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.pr-toggle:hover { background: var(--surface2); color: var(--text); }
+.pr-toggle:focus-visible { outline: none; box-shadow: var(--glow); }
+.pr-items { display: flex; flex-direction: column; gap: 4px; padding: 10px 6px; }
+:is(.pendant-tab, .pr-panel) {
+  position: relative;
+  display: flex; align-items: center; gap: 14px;
+  height: 52px; padding: 0 0 0 14px;
+  border: none; border-radius: var(--radius-md);
+  background: none; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: var(--text-md); font-weight: 600;
+  white-space: nowrap; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease),
+              transform var(--motion-fast) var(--ease);
+}
+:is(.pendant-tab, .pr-panel) svg { width: 24px; height: 24px; flex: none; }
+:is(.pendant-tab, .pr-panel) .pr-label {
+  overflow: hidden; opacity: 0; width: 0;
+  transition: opacity var(--motion-med) var(--ease);
+}
+.pendant-rail.expanded .pr-label { opacity: 1; width: auto; }
+:is(.pendant-tab, .pr-panel):hover { background: var(--surface2); color: var(--text); }
+:is(.pendant-tab, .pr-panel):active { transform: scale(0.97); }
+:is(.pendant-tab, .pr-panel):focus-visible { outline: none; box-shadow: var(--glow); }
+.pendant-tab.active { background: var(--accent-dim); color: var(--accent); }
+/* The foot: panel toggles, not sections — below a hairline, at the
+   rail's bottom. A section is SELECTED (the accent tint, one at a
+   time); a panel is OPEN beside whichever section is up (accent icon on
+   a surface2 fill), so the two never read the same. */
+.pr-foot {
+  margin-top: auto; flex: none;
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+  border-top: 1px solid var(--border);
+}
+.pr-panel[aria-pressed="true"] { background: var(--surface2); color: var(--accent); }
+/* attention — a count, never colour alone; ringed like the admin's.
+   Collapsed it sits on the icon's corner, expanded at the row's end. */
+.pr-badge {
+  position: absolute; top: 5px; right: 4px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+  color: #fff; background: var(--red);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.pr-badge.warn { background: var(--amber); }
+.pr-badge[hidden] { display: none; }
+.pendant-rail.expanded .pr-badge { top: 50%; right: 14px; transform: translateY(-50%); }
 
 /* ACTIVE ROUTINE hero */
 .pendant-hero {
@@ -598,11 +670,13 @@
 }
 .pendant-3d-pane { flex: 1; min-height: 320px; border-radius: var(--radius-lg); position: relative; }
 
-/* ── Pendant Main tab, before launch: the run parameters ──
-   The form scrolls, the buttons stay put. Same builder as the desktop
-   modal (mountParams), so Set and Set & Launch behave identically —
-   this is the same surface, in the place the operator is standing. */
-.pendant-params {
+/* ── A pendant PAGE: a card with a heading, a scrolling body and a
+   button foot — the run parameters (Main before launch, the Parameters
+   section after) and the Version section. The body scrolls, the buttons
+   stay put. Each is the desktop's modal content in the place the
+   operator is standing: the same builder fills both (mountParams, the
+   Version panel's host). */
+.pendant-page {
   flex: 1 1 auto; min-height: 0; width: 100%;
   display: flex; flex-direction: column;
   /* A SURFACE, not bare background — and the SAME card as the Devices
@@ -615,7 +689,7 @@
 }
 /* The panel heading in the tabs' one heading style (.pd-head, .pe-head):
    tracked caps, muted, hairline under. */
-.pendant-params .pp-head {
+.pendant-page .pp-head {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);
   padding: 14px 18px;
@@ -623,22 +697,25 @@
   text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
-.pendant-params .pp-head .btn { text-transform: none; letter-spacing: 0; }
-.pendant-params .pp-scroll {
+.pendant-page .pp-head .btn { text-transform: none; letter-spacing: 0; }
+.pendant-page .pp-scroll {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--space-5);
 }
-.pendant-params .pp-foot:empty { display: none; }
-.pendant-params .pp-foot {
+.pendant-page .pp-foot:empty { display: none; }
+.pendant-page .pp-foot {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border2);
 }
 /* Operator glass: the run-setup buttons are hit with gloves. */
-.pendant-params .pp-foot .btn { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); }
-.pendant-params .kwargs-empty { color: var(--muted); font-size: var(--text-md); }
+.pendant-page .pp-foot .btn { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); }
+.pendant-page .kwargs-empty { color: var(--muted); font-size: var(--text-md); }
+/* the Version page: the modal body's rhythm, its buttons at the right */
+.pv-body { display: flex; flex-direction: column; gap: 14px; }
+.pendant-page .pv-foot { justify-content: flex-end; }
 
 /* ── Pendant Devices tab: devices | operator controls ── */
 .pendant-devices-pane {
@@ -682,18 +759,21 @@
 }
 .pe-head {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px; flex: none;
+  height: 56px; padding: 0 6px 0 16px; flex: none; box-sizing: border-box;
   font-size: var(--text-xs); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
+/* the close control: the rail toggle's size and grammar */
 .pe-collapse {
   margin-left: auto;
   display: grid; place-items: center;
-  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  width: 44px; height: 44px; border-radius: var(--radius-sm);
   background: none; border: none; color: var(--muted); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 .pe-collapse:hover { background: var(--surface2); color: var(--text); }
+.pe-collapse:focus-visible { outline: none; box-shadow: var(--glow); }
 .pendant-events .pendant-steps {
   flex: 1; overflow-y: auto; padding: 4px 0;
 }
@@ -703,15 +783,8 @@
   display: flex; justify-content: space-between;
 }
 .pe-foot:empty { display: none; }
-/* Collapsed: a slim reopen strip */
-.pendant-events.collapsed { width: 44px; }
-.pendant-events.collapsed .pendant-steps,
-.pendant-events.collapsed .pe-foot,
-.pendant-events.collapsed .pe-head .pe-title,
-.pendant-events.collapsed .pe-head .dot { display: none; }
-.pendant-events.collapsed .pe-head { border-bottom: none; padding: 14px 8px; justify-content: center; }
-.pendant-events.collapsed .pe-collapse { margin: 0; }
-.pendant-events.collapsed .pe-collapse svg { transform: rotate(180deg); }
+/* Closed: gone — the section rail's Steps toggle reopens it */
+.pendant-events.collapsed { display: none; }
 
 /* Step rows — the shared :is(.step-card, .pendant-step-card)
    primitive in base.css drives the look (opacity ladder, active

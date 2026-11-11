@@ -175,8 +175,8 @@ Three sources; two exist, one is a small addition:
    A request to the operator is not a project value: `rt.notice(title,
    text, level=, img=, caption=)` publishes the platform's `notice` key
    (rt.op refuses it from a project) and the FRAME draws it — one modal
-   for every project, over the pendant body (tabs and pane, the 3D view
-   included), with Resume (the bar's command, device-fault gate and
+   for every project, over the pendant's section rail and body (the 3D
+   view included), with Resume (the bar's command, device-fault gate and
    all) and Dismiss. The nav, the step rail and the control bar stay
    uncovered: Park and Kill are never behind it. The runtime owns its
    lifetime — published with a pause, unset when the run leaves it

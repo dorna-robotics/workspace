@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Dorna Workspace</title>
-  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); })();</script>
+  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); if(/[?&]pendant=(1|true)(&|$)/i.test(location.search))document.documentElement.classList.add("pendant-boot"); })();</script>
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
@@ -734,18 +734,33 @@
   </div>
 
   <div class="pendant-region">
-    <div class="pendant-body">
-      <!-- Main-section tabs: the project screen is the first tab, the
-           live 3D view the second. -->
-      <div class="pendant-tabs" id="pendantTabs">
-        <button class="pendant-tab active" data-ptab="project" id="pendantTabProject">Main</button>
-        <button class="pendant-tab" data-ptab="3d">View</button>
-        <button class="pendant-tab" data-ptab="devices">Devices</button>
+    <!-- Section rail: the pendant's sections, left — the counterpart of
+         the Steps rail on the right. Collapsed (default): icons only, the
+         name in each button's title and aria-label; the toggle expands it
+         to icon + name (remembered per screen, workspace.js). -->
+    <nav class="pendant-rail" id="pendantRail" aria-label="Pendant sections">
+      <div class="pr-head">
+        <button class="pr-toggle" id="pendantRailToggle" title="Expand" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+      </div>
+      <div class="pr-items" id="pendantTabs" role="tablist" aria-orientation="vertical">
+        <button class="pendant-tab active" role="tab" aria-selected="true" data-ptab="project" id="pendantTabProject" title="Main" aria-label="Main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="pr-label">Main</span></button>
+        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="3d" title="View" aria-label="View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg><span class="pr-label">View</span></button>
+        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="devices" title="Devices" aria-label="Devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg><span class="pr-label">Devices</span><span class="pr-badge" id="pendantDevBadge" hidden></span></button>
         <!-- What the run was started with, read-only. Only while launched:
              before that, Main IS the run setup. -->
-        <button class="pendant-tab" data-ptab="params" id="pendantTabParams" style="display:none">Parameters</button>
+        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="params" id="pendantTabParams" title="Parameters" aria-label="Parameters" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg><span class="pr-label">Parameters</span></button>
+        <!-- This project's code vs GitHub — the desktop's Version dialog
+             as a page. Any time: it is about the code, not the run. -->
+        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="version" title="Version" aria-label="Version"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="pr-label">Version</span></button>
       </div>
-      <!-- ACTIVE ROUTINE — pinned under the tab strip. Current step,
+      <!-- Panel toggles: the Steps panel opens BESIDE whichever section
+           is up (not a section itself); closed it leaves no strip. -->
+      <div class="pr-foot">
+        <button class="pr-panel" id="pendantStepsToggle" aria-pressed="false" aria-controls="pendantEvents" title="Steps" aria-label="Steps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="1.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="4.5" cy="18" r="1.5"/></svg><span class="pr-label">Steps</span><span class="pr-badge" id="pendantStepsBadge" hidden></span></button>
+      </div>
+    </nav>
+    <div class="pendant-body">
+      <!-- ACTIVE ROUTINE — pinned at the top of Main. Current step,
            step counter, per-step progress segments, and NEXT. -->
       <div class="pendant-hero" id="pendantHero" style="display:none">
         <div class="ph-head">
@@ -774,7 +789,7 @@
              the project's own screen takes Main, and this pane moves to
              the Parameters tab — read-only, what the run was started
              with. -->
-        <div class="pendant-params" id="pendantParamsPane" style="display:none">
+        <div class="pendant-page" id="pendantParamsPane" style="display:none">
           <div class="pp-head">
             <span>Parameters</span>
             <div class="spacer"></div>
@@ -784,6 +799,13 @@
           </div>
           <div class="pp-scroll"><div class="kwargs-form" id="pendantParamsForm"></div></div>
           <div class="pp-foot" id="pendantParamsFoot"></div>
+        </div>
+        <!-- The Version section: the desktop's Version dialog as a page —
+             the same panel code draws both (workspace.js "Version panel"). -->
+        <div class="pendant-page" id="pendantVersionPane" style="display:none">
+          <div class="pp-head"><span id="pvTitle">Version</span></div>
+          <div class="pp-scroll"><div class="pv-body" id="pvBody"></div></div>
+          <div class="pp-foot pv-foot" id="pvFoot"></div>
         </div>
         <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
         <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
@@ -802,13 +824,14 @@
         </div>
       </div>
     </div>
-    <!-- Steps / event rail — collapsible via the chevron; starts
-         collapsed, so the pane has the width until the operator asks. -->
+    <!-- Steps / event rail — opened and closed from the section rail's
+         Steps toggle (and closed by its own chevron); starts closed, so
+         the pane has the width until the operator asks. -->
     <aside class="pendant-events collapsed" id="pendantEvents">
       <div class="pe-head">
         <span class="pe-title">Steps</span>
         <span class="dot ok" id="peDot"></span>
-        <button class="pe-collapse" id="peCollapse" title="Expand event log"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+        <button class="pe-collapse" id="peCollapse" title="Hide steps" aria-label="Hide steps"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
       </div>
       <div class="pendant-steps" id="pendantSteps"></div>
       <div class="pe-foot" id="peFoot"></div>
@@ -820,26 +843,28 @@
        rather than being swapped out for a Launch button that appears
        and vanishes. Launching is the Main tab's job (Set & Launch).
        Kill stands apart on the right; a hairline divider separates the
-       run pair from the ending pair. -->
+       run pair from the ending pair. All five start disabled in the
+       markup: until workspace.js knows the state (updatePendantUI sets
+       each one), nothing on the first paint looks pressable. -->
   <div class="pendant-bar">
-    <button class="pendant-btn pendant-start" id="pendantStart" data-cmd="start">
+    <button class="pendant-btn pendant-start" id="pendantStart" data-cmd="start" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       <span>Start</span>
     </button>
-    <button class="pendant-btn pendant-pause" id="pendantPause" data-cmd="pause">
+    <button class="pendant-btn pendant-pause" id="pendantPause" data-cmd="pause" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
       <span>Pause</span>
     </button>
     <div class="pendant-bar-div"></div>
-    <button class="pendant-btn pendant-park" id="pendantPark" data-cmd="park">
+    <button class="pendant-btn pendant-park" id="pendantPark" data-cmd="park" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/></svg>
       <span>Park</span>
     </button>
-    <button class="pendant-btn pendant-replan" id="pendantReplan" data-cmd="replan">
+    <button class="pendant-btn pendant-replan" id="pendantReplan" data-cmd="replan" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
       <span>Replan</span>
     </button>
-    <button class="pendant-btn pendant-kill" id="pendantKill" data-cmd="kill">
+    <button class="pendant-btn pendant-kill" id="pendantKill" data-cmd="kill" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       <span>Kill</span>
     </button>
