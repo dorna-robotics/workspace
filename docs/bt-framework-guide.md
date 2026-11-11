@@ -1519,6 +1519,7 @@ export default {
 // api.items    the offer — {item, label, phase, in_phase, done, with, holds}
 //              (an item not in it was removed earlier: draw it, don't offer it)
 // api.values   the run's parameters (what Start sent); api.schema
+// api.scene    the declared scene, read-only (hmi-guide §4b)
 // api.invoke(component, method)  a declared operator action — nothing more
 // api.theme / api.onTheme(cb)
 // api.changed()  the platform re-reads value() and ready(), redraws the stepper

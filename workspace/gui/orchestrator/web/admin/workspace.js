@@ -12,7 +12,7 @@
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen, frozenValues, recordChip } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen, frozenValues, recordChip, loadScene } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
 
@@ -1074,7 +1074,9 @@ async function mountProjectPendant(spec) {
         st.textContent = def.css;
         shadow.appendChild(st);
       }
+      const scene = await loadScene(wsName);
       const api = {
+        scene,                  // the declared scene, read-only (kwargs.js loadScene)
         get values() { return { ..._opValues }; },
         // rt.record — the per-item audit rows. Read once at mount, then
         // subscribe: every delta hands the whole current table back.
@@ -2247,7 +2249,9 @@ async function _mountReplanView() {
   if (!spec) { _rpShowView(false); return; }
   const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/replan/`;
   const offered = new Set((_replan?.items || []).map(_rpKey));
+  const scene = await loadScene(wsName);
   const api = {
+    scene,                      // the declared scene, read-only (kwargs.js loadScene)
     items: (_replan?.items || []).map(it => ({ ...it })),
     get schema() {
       const s = {};

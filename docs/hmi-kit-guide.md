@@ -162,6 +162,10 @@ These are as much "the style" as the colors:
 - **Numbers the robot uses and numbers the screen shows come from the
   same formulas.** Mirror the actions.py math helper-for-helper and
   say so in comments on both sides.
+- **Scene facts come from the scene, never a typed copy.** A pump's
+  stroke, a barrel, a rack's size: read them from `api.scene` (the
+  declared scene, read-only — hmi-guide §4b), so the screen follows the
+  day the scene changes. `null` = unreadable: say the fact is unknown.
 
 ## 5. The module contract
 
@@ -178,7 +182,8 @@ export default {
 };
 ```
 
-`api` provides `schema`, `values`, `frozen`, `theme` and `onTheme(cb)`.
+`api` provides `schema`, `values`, `frozen`, `scene` (the declared
+scene, read-only — hmi-guide §4b), `theme`, `onTheme(cb)` and `save`.
 The platform owns the modal chrome and the Set/Start buttons; the
 screen only fills the body.
 

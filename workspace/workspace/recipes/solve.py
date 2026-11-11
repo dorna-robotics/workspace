@@ -305,9 +305,8 @@ def merged_sim_scene(project_dir, launch=None):
     fail to grab) real hardware — a missing joint source poisons every
     IK. Returns the temp file path."""
     launch = launch or load_launch(project_dir)
-    merged = {}
-    for rel in launch["scene"]:
-        merged.update(_load_yaml_j2(os.path.join(project_dir, rel)))
+    from workspace.scene import load_scene, scene_paths
+    merged = load_scene(scene_paths(project_dir, launch))
     for cfg in merged.values():
         if isinstance(cfg, dict) and cfg.get("simulation") is False:
             cfg["simulation"] = True

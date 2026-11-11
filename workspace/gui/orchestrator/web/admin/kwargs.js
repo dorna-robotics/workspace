@@ -26,6 +26,34 @@ export function recordChip(launchConfig) {
   return `<span class="pill kw-record">${_lockSvg}<span>Read-only · ${when}</span></span>`;
 }
 
+// ── the scene, read-only, for every project screen ───────────────────
+// ``api.scene`` on all three hosts (setup, Replan view, pendant screen):
+// the project's DECLARED scene — launch.yaml's scene files rendered and
+// merged by workspace/scene.py, the reader the run builds from — so a
+// screen reads scene facts (a pump's stroke, a rack's size) instead of
+// typing a copy that can drift. Frozen: a screen reads it, never edits
+// it. ``null`` when the scene cannot be read (the run could not build
+// either); the reason goes to the console, and a screen that needs a
+// fact says it is unavailable rather than guessing.
+function _deepFreeze(o) {
+  if (o && typeof o === "object" && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o)) _deepFreeze(v);
+  }
+  return o;
+}
+export async function loadScene(wsName) {
+  try {
+    const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/scene`);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return _deepFreeze(j.scene || {});
+  } catch (err) {
+    console.error(`api.scene: ${wsName}'s scene could not be read —`, err);
+    return null;
+  }
+}
+
 // ── the project's own run-setup screen (``setup:``) ──────────────────
 //
 // Same hosting contract as the pendant screen (hmi-guide §4b) with one
@@ -34,7 +62,7 @@ export function recordChip(launchConfig) {
 //
 //   HTML shape  — data-field="key" on an input/select/checkbox
 //   JS shape    — export default {css, mount(root, api), value(), validate()}
-//   api         — {schema, values, frozen, theme, onTheme}
+//   api         — {schema, values, frozen, scene, theme, onTheme, save}
 //
 // Served by the ORCHESTRATOR (same-origin), because Parameters is used
 // before launch, when the runtime server is not up yet.
@@ -133,7 +161,9 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
   container._setupHost = host;
 
   try {
+    const scene = await loadScene(wsName);
     const api = {
+      scene,
       get schema() {
         const s = {};
         for (const [k, v] of Object.entries(schema || {})) {

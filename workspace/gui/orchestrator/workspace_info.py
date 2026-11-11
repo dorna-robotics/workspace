@@ -492,6 +492,20 @@ class WorkspaceInfo:
         except Exception:
             return False
 
+    def scene(self) -> Dict:
+        """The project's scene as its run reads it — launch.yaml's
+        ``scene:`` files rendered and merged by ``workspace/scene.py``,
+        the one reader the workspace itself builds from. The DECLARED
+        scene (the files), not the live tree. Raises when it cannot be
+        read; a remote workspace's scene lives on its node."""
+        from workspace.scene import load_scene, scene_paths
+        if self.is_remote():
+            raise ValueError(f"{self.name} is remote — its scene is read on its own node")
+        launch_path = Path(self.path_to_file).parent / "launch.yaml"
+        with open(launch_path) as f:
+            launch = yaml.safe_load(f) or {}
+        return load_scene(scene_paths(launch_path.parent, launch))
+
     def launch_config(self) -> Optional[Dict]:
         """Read launch.yaml from the workspace directory and return the
         kwargs schema.

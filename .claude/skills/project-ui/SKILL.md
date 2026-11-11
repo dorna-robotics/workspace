@@ -59,7 +59,10 @@ NOT the runtime server, which isn't up before launch. Same-origin.
 - HTML shape: plain inputs with `data-field="key"` — platform seeds
   values and reads them back.
 - JS shape: `export default {css, mount(root, api), value(), validate()}`
-  with `api = {schema, values, frozen, theme, onTheme, save}` — `save(name, text, {overwrite})` writes a file into the project's Uploads (project-guide §3).
+  with `api = {schema, values, frozen, scene, theme, onTheme, save}` — `save(name, text, {overwrite})` writes a file into the project's Uploads (project-guide §3).
+- `api.scene` (every project screen) is the declared scene, read-only:
+  read scene facts there (a pump's stroke, a rack's size), never a typed
+  copy; `null` = unreadable, say so (hmi-guide §4b).
 - The platform validates whatever `value()` returns against the schema
   (required / min / max) — a screen is NOT trusted to enforce its own
   contract; `validate()` only ADDS a message.
@@ -82,7 +85,7 @@ the body and nothing mounts).
   `data-bind-map="key"` + `data-slot="A1"` → sets `data-state` (style
   it in the project's own CSS), `data-bind-attr` + `data-attr`.
 - JS shape: `export default {css, mount(root, api), update(values)}`
-  with `api = {values, theme, onTheme, invoke}` — `invoke` reaches
+  with `api = {values, scene, theme, onTheme, invoke, url}` — `invoke` reaches
   ONLY declared `operator_action`s; no runtime/device/motion handle.
 - A request to the operator ("clear the anode, then Resume") is NOT a
   screen's job: `rt.notice(title, text, img=…)` + `rt.pause()` — the

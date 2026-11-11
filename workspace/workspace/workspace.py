@@ -1,8 +1,7 @@
 # workspace/workspace.py
 import threading
-from workspace.j2 import render_text
+from workspace.scene import load_scene
 from pathlib import Path
-import yaml
 import numpy as np
 
 from workspace.display import Display
@@ -43,17 +42,9 @@ class Workspace:
         # old guess.
         self.project_dir = str(Path(project_dir)) if project_dir else None
 
-        comp_cfgs = {}
-
-        # --- load + merge configs in order ---
-        for path in paths:
-            text = Path(path).read_text()
-
-            if str(path).endswith(".j2") or "{%" in text or "{{" in text:
-                text = render_text(text, Path(path).parent)
-
-            cfg = yaml.safe_load(text) or {}
-            comp_cfgs.update(cfg)  # later files override earlier ones
+        # --- load + merge configs in order (workspace/scene.py: the one
+        # reader — later files override earlier ones) ---
+        comp_cfgs = load_scene(paths)
 
         # Scene fingerprint — stamps the IK/path caches so a geometry
         # change invalidates them automatically instead of relying on

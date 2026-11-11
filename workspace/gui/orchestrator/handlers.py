@@ -145,6 +145,23 @@ class ProjectScreenFileHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
+class SceneHandler(tornado.web.RequestHandler):
+    """The project's declared scene, read-only — what a project screen
+    gets as ``api.scene`` (kwargs.js). Rendered on each request: the
+    files, not the live tree, so an edit shows on the next mount."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name):
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            self.write({"scene": self.orch.workspaces[name].scene()})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": f"{type(e).__name__}: {e}"})
+
+
 class LaunchConfigHandler(tornado.web.RequestHandler):
     """Returns the kwargs schema from the workspace's launch.yaml."""
     def initialize(self, orch: Orchestrator):

@@ -284,7 +284,8 @@ headline from `rt.op`, a bench that shows the live position — says so
 once here instead of showing the same step twice. Default on; the
 HTML shape has no say and keeps the panel.
 
-`api` is deliberately small: `values` (current snapshot), `theme`
+`api` is deliberately small: `values` (current snapshot), `scene`
+(the declared scene, read-only — below), `theme`
 (`"light"`/`"dark"`), `onTheme(cb)` (fires on toggle — for canvas and
 anything else that must repaint), `url(path)` (a runtime path — an
 `rt.asset`'s `/op/asset/…` — as a URL the screen can load: the runtime
@@ -293,6 +294,25 @@ which routes to the **same declared `operator_action` path** the
 platform's own buttons use. A screen can trigger what a component
 already declares, and nothing more — it gets no runtime handle, no
 device handle, no way to command the robot.
+
+**`api.scene` — every project screen's (pendant, setup, Replan view).**
+The project's DECLARED scene, read-only: launch.yaml's `scene:` files
+rendered and merged by `workspace/scene.py` — the one reader the run
+itself builds from — as `{component_name: config}`. A screen reads a
+scene fact (a pump's stroke, a rack's rows) here instead of typing a
+copy that drifts the day the scene changes:
+
+```js
+const lv = api.scene.syringe_pump_1;
+const stroke = lv.max_stroke_ul ?? lv.syringe_volume_ul;   // the pump's stroke_volume()
+```
+
+The files, not the live tree (runtime `add_component` is not in it),
+read when the screen mounts. Frozen — a screen reads it, never edits
+it. `null` when the scene cannot be read (the reason is on the
+console): a screen that needs a fact then says it is unknown, never
+guesses one. Served by the orchestrator, `GET
+/orchestrator/api/workspace/<name>/scene`.
 
 Use JS when the screen computes (charts, canvas, animation, derived
 values); use HTML for everything else. A `.js` screen can import its
