@@ -60,6 +60,11 @@ vision client — then services checked, then a reboot). The admin's
   come from the `==> <part>` lines the upgrade prints, through the
   orchestrator's restart and the reboot, to the result — each part's
   commit before and now, or why it stopped.
+- **The nav's System item shows a badge** with the number of parts to
+  update (`system.needs_update` — missing, behind, or on another
+  branch; one rule for the badge and the page's status). It is checked
+  in the background at most hourly (`CHECK_EVERY_S`), and at once when
+  the System page checks.
 - If a service does not come back, the upgrade stops without rebooting;
   if that service is the orchestrator, the page cannot reconnect — SSH
   in and read `journalctl -u dorna-upgrade`.

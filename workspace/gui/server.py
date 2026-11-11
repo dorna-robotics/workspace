@@ -76,6 +76,7 @@ from gui.orchestrator.server import (
     ProjectVersionHandler,
     SystemHandler,
     SystemLogHandler,
+    SystemSummaryHandler,
 )
 
 # ---------------------------------------------------------------------------
@@ -212,6 +213,7 @@ LANDING_HTML = """<!DOCTYPE html>
       <a href="/orchestrator/system.html" class="app-nav-link" title="System">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>
         <span>System</span>
+        <span class="app-nav-badge" id="navSystemBadge" hidden></span>
       </a>
     </div>
   </nav>
@@ -368,6 +370,7 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/version", ProjectVersionHandler, dict(orch=orch)),
         (r"/orchestrator/api/system", SystemHandler, dict(orch=orch)),
         (r"/orchestrator/api/system/log", SystemLogHandler, dict(orch=orch)),
+        (r"/orchestrator/api/system/summary", SystemSummaryHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices/([^/]+)/(recover|release)", WorkspaceDeviceCmdHandler, dict(orch=orch)),
 
         # ---- Orchestrator WebSocket + GUI (catch-all last) ----

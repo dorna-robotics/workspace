@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -32,6 +33,14 @@ from gui.orchestrator import project_git
 RECORD = "/var/lib/dorna/upgrade.json"
 HELPER = "/usr/local/bin/upgrade"
 UNIT = "dorna-upgrade"
+# How stale the nav's "parts to update" may get before it is checked again
+# (one git fetch per part, in the background). The System page's own
+# check refreshes it at once.
+CHECK_EVERY_S = 3600
+
+_cache = {"to_update": None, "checked_at": None}
+_lock = threading.Lock()
+_checking = False
 
 
 def _record() -> Optional[dict]:
@@ -58,6 +67,22 @@ def _uptime_s() -> Optional[float]:
         return None
 
 
+def needs_update(part: dict) -> bool:
+    """THE rule for "this part is not up to date": its folder is missing
+    (a new install), behind what the upgrade installs, or on another
+    branch. Unknown (no folder to compare, the remote not reachable) is
+    not counted. The System page's status and the nav's badge both read
+    it from here."""
+    if not part.get("dir"):
+        return False
+    n = part.get("now") or {}
+    if not n.get("exists", True):
+        return True
+    if not n.get("git") or n.get("reachable") is False:
+        return False
+    return bool(n.get("behind") or n.get("switches"))
+
+
 def state(fetch: bool = True) -> dict:
     """The unit, the last upgrade's record, and for each part the record
     lists, how its folder compares with what the upgrade installs
@@ -76,7 +101,12 @@ def state(fetch: bool = True) -> dict:
 
     with ThreadPoolExecutor(max_workers=max(1, len(parts))) as pool:
         parts = list(pool.map(one, parts))
+    to_update = [p["name"] for p in parts if needs_update(p)]
+    if fetch:
+        with _lock:
+            _cache.update(to_update=to_update, checked_at=time.time())
     return {
+        "to_update": to_update,
         "uptime_s": _uptime_s(),
         "helper": os.path.isfile(HELPER) and os.access(HELPER, os.X_OK),
         "helper_path": HELPER,
@@ -86,6 +116,35 @@ def state(fetch: bool = True) -> dict:
         "unit": UNIT,
         "now": time.time(),
     }
+
+
+def summary() -> dict:
+    """The nav's glance: the parts to update as of the last check, and
+    whether an upgrade is running. A check older than ``CHECK_EVERY_S``
+    starts a fresh one in the background and answers with what is known
+    (``to_update`` is None until the first check is in)."""
+    global _checking
+    with _lock:
+        stale = _cache["checked_at"] is None or time.time() - _cache["checked_at"] > CHECK_EVERY_S
+        start_check = stale and not _checking
+        if start_check:
+            _checking = True
+        out = dict(_cache)
+
+    def check():
+        global _checking
+        try:
+            state(fetch=True)
+        except Exception:
+            pass
+        finally:
+            with _lock:
+                _checking = False
+
+    if start_check:
+        threading.Thread(target=check, daemon=True, name="system-check").start()
+    out["running"] = running()
+    return out
 
 
 def start() -> dict:

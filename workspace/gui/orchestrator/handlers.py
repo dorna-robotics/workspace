@@ -616,6 +616,25 @@ class SystemHandler(AuthedHandler):
             self.write({"error": str(e)})
 
 
+class SystemSummaryHandler(AuthedHandler):
+    """``GET /orchestrator/api/system/summary`` — the nav's glance (the
+    System item's badge): parts to update as of the last check, cheap."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import system
+            loop = asyncio.get_running_loop()
+            self.write(await loop.run_in_executor(None, system.summary))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
 class SystemLogHandler(AuthedHandler):
     """``GET /orchestrator/api/system/log?since=<epoch>&cursor=<c>`` — the
     upgrade's journal lines since it started (or after ``cursor``)."""

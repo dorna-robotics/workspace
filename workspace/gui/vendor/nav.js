@@ -44,6 +44,36 @@
     if (e.key === "Escape") mobileClose();
   });
 
+  // ── System: parts to update ─────────────────────────────────────────
+  // The System item's badge — how many parts of the bench's upgrade are
+  // not up to date (gui/orchestrator/system.py: needs_update, cached, a
+  // fresh check at most hourly). Hidden when none, or when it is not
+  // known yet (the first check runs in the background: asked again in
+  // 20 s), or when the orchestrator does not answer. The System page
+  // calls window.__navSystemRefresh after its own check.
+  var sysBadge = document.getElementById("navSystemBadge");
+  if (sysBadge) {
+    var sysLink = sysBadge.closest ? sysBadge.closest("a") : null;
+    var sysCheck = function(again) {
+      var tok = "";
+      try { tok = (localStorage.getItem("orch_token") || "").trim(); } catch (_) {}
+      fetch("/orchestrator/api/system/summary", { headers: tok ? { "X-Orch-Token": tok } : {} })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(j) {
+          if (!j) return;
+          if (j.to_update == null) { if (again) setTimeout(function() { sysCheck(false); }, 20000); return; }
+          var n = j.to_update.length;
+          sysBadge.hidden = !n;
+          sysBadge.textContent = n ? String(n) : "";
+          if (sysLink) sysLink.title = n ? "System — " + n + " part" + (n === 1 ? "" : "s") + " to update" : "System";
+        })
+        .catch(function() {});
+    };
+    window.__navSystemRefresh = function() { sysCheck(false); };
+    sysCheck(true);
+    setInterval(function() { sysCheck(false); }, 10 * 60 * 1000);
+  }
+
   // ── Orchestrator running-workspace count badge ─────────────────────
   // Shows the number of workspaces in a strictly-running state
   // (RUNNING / ACTIVE) — matches the dashboard's "running" stat-item

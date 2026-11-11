@@ -101,10 +101,10 @@ function statusPill(s) {
   if (!s.helper) return `<span class="pill bad">upgrade not installed</span>`;
   if (s.running) return `<span class="pill warn">upgrading</span>`;
   if (!s.record) return `<span class="pill off">not upgraded from here yet</span>`;
-  const parts = s.parts.filter(p => p.dir);
-  if (parts.some(p => p.now && p.now.reachable === false)) return `<span class="pill off">can't check for updates</span>`;
-  const behind = parts.filter(p => p.now && (!p.now.exists || p.now.behind || p.now.switches)).length;
-  if (behind) return `<span class="pill warn">${plural(behind, "part")} to update</span>`;
+  // s.to_update: the server's rule (system.py needs_update) — the nav's
+  // badge counts the same list.
+  if (s.to_update.length) return `<span class="pill warn">${plural(s.to_update.length, "part")} to update</span>`;
+  if (s.parts.some(p => p.dir && p.now && p.now.reachable === false)) return `<span class="pill off">can't check for updates</span>`;
   return `<span class="pill ok">up to date</span>`;
 }
 
@@ -315,6 +315,8 @@ async function refresh(fetchRemote) {
   card("Installed", "", `<div class="ver-busy">${fetchRemote ? "Checking for updates…" : "Loading…"}</div>`);
   try {
     S = await apiFetch(`/system?fetch=${fetchRemote ? 1 : 0}`);
+    // A fresh check is the nav badge's news too (vendor/nav.js).
+    if (fetchRemote && window.__navSystemRefresh) window.__navSystemRefresh();
   } catch (e) {
     card("Installed", "", warn(esc(String(e.message || e)), true),
       `<div class="spacer"></div><button class="btn btn-primary" id="btnSysCheck">Check again</button>`);
