@@ -741,6 +741,9 @@
         <button class="pendant-tab active" data-ptab="project" id="pendantTabProject">Main</button>
         <button class="pendant-tab" data-ptab="3d">View</button>
         <button class="pendant-tab" data-ptab="devices">Devices</button>
+        <!-- What the run was started with, read-only. Only while launched:
+             before that, Main IS the run setup. -->
+        <button class="pendant-tab" data-ptab="params" id="pendantTabParams" style="display:none">Parameters</button>
       </div>
       <!-- ACTIVE ROUTINE — pinned under the tab strip. Current step,
            step counter, per-step progress segments, and NEXT. -->
@@ -766,13 +769,16 @@
       <div class="pendant-panes">
         <!-- Run parameters, IN the pendant. A kiosk tablet is often the
              only screen at the bench: before launch this is where the
-             operator sets up the run and starts it, so the Main tab is
-             never a dead end waiting on a desktop. Replaced by the
-             project's own screen once the run is up. -->
+             operator sets up the run and starts it (the Main tab), so it
+             is never a dead end waiting on a desktop. Once the run is up
+             the project's own screen takes Main, and this pane moves to
+             the Parameters tab — read-only, what the run was started
+             with. -->
         <div class="pendant-params" id="pendantParamsPane" style="display:none">
           <div class="pp-head">
-            <span class="pp-title">Run parameters</span>
+            <span>Parameters</span>
             <div class="spacer"></div>
+            <span id="ppRecord"></span>
             <button class="btn btn-sm" id="ppUpload" title="Upload a parameter file from this computer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload</button>
             <button class="btn btn-sm" id="ppOpen" title="Open a parameter file already on the bench"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg> Open</button>
           </div>
@@ -891,6 +897,7 @@
     <div class="modal-head">
       <h3 id="paramsModalTitle">Parameters</h3>
       <div class="spacer"></div>
+      <span id="paramsRecord"></span>
       <button class="btn btn-ghost btn-sm" id="btnParamsLoad" title="Upload a parameter file from this computer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Upload</button>
       <button class="btn btn-ghost btn-sm" id="btnParamsBrowse" title="Open a parameter file already on the bench"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg> Open</button>
       <button class="btn btn-ghost btn-sm btn-icon" id="btnParamsClose" title="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>

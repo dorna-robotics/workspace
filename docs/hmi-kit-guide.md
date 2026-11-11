@@ -139,8 +139,18 @@ These are as much "the style" as the colors:
   `bt.replay --batch N` gets. An empty selection with samples loaded is
   a **blocking** error; a partial one is an info note ("Running 3 of 7
   loaded: 2, 5, 6").
-- **Freeze during a run.** The platform passes `frozen`; the screen
-  stays visible but read-only (`data-frozen="1"`).
+- **Freeze during a run.** Once launched, the platform mounts the
+  screen with `frozen` and the values the run was started with — the
+  pendant's Parameters tab, the Parameters dialog. Frozen is a
+  filled-in **record**, not greyed-out controls: fields lose their box
+  and keep their value at full contrast (the kit's `[data-frozen="1"]`
+  rule), nothing is dimmed, step navigation still works, and a
+  confirmation tick the run could not have been Set without shows
+  ticked. The surface's header says "Read-only · as started …"; the
+  screen draws no banner of its own.
+- **A step opens at its top.** A multi-step screen scrolls its
+  scroller — the platform's pane or modal body, outside the shadow
+  root — to the top when the step changes.
 - **Derive, don't re-enter.** If a position or volume can be computed
   from what the operator already typed, show it read-only. Two places
   to type the same fact is one place to get it wrong.

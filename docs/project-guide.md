@@ -468,7 +468,11 @@ tubes:
 The screen is hosted exactly like the pendant screen (hmi-guide §4b) —
 shadow root, design tokens, `.html` with `data-field="key"` or `.js`
 with `{css, mount(root, api), value(), validate()}`. Its `api` carries
-`{schema, values, frozen, theme, onTheme, save}`. `save(name, text,
+`{schema, values, frozen, theme, onTheme, save}`. `frozen` is true once
+the workspace is launched: the screen is then the run's record, shown
+read-only on the pendant's Parameters tab and in the Parameters dialog
+with what the last Start sent (the orchestrator's `run_kwargs`), and
+the orchestrator refuses parameter changes until Kill. `save(name, text,
 {overwrite})` writes one file into the project's Uploads — the folder
 Parameters › Open reads, so a screen can offer "Save this method" and
 the operator opens it again on a later run. It never overwrites unless

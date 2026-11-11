@@ -406,6 +406,11 @@ class WorkspaceInfo:
 
         # Current kwargs values (in-memory, set via modal, sent on start)
         self.kwargs_values: Dict = {}
+        # What the run was STARTED with — the exact kwargs the last Start
+        # sent (defaults filled in) and when. The Parameters tab shows this
+        # record; cleared by the next Launch.
+        self.run_kwargs: Optional[Dict] = None
+        self.run_started: Optional[float] = None
 
         # Local process handle (only for local workspaces)
         self.process: Optional[subprocess.Popen] = None

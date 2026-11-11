@@ -243,6 +243,8 @@ class Orchestrator:
 
         # Fresh start — clear any stale uploads from a previous run
         ws.clear_uploads()
+        ws.run_kwargs = None
+        ws.run_started = None
 
         # ``-u`` forces unbuffered stdout/stderr in the spawned Python.
         # Without it, prints from the workspace process are block-buffered
@@ -501,7 +503,16 @@ class Orchestrator:
             merged.update(kwargs)
             ws.kwargs_values = dict(merged)
 
-        return self._send_runtime_cmd_local(ws, "start", kwargs=merged or None)
+        # The record is written BEFORE the command goes out: this runs on a
+        # worker thread, and the state push that tells the page "running"
+        # must already find it. A refused Start puts the previous one back.
+        prev = (ws.run_kwargs, ws.run_started)
+        ws.run_kwargs, ws.run_started = dict(merged), time.time()
+        try:
+            return self._send_runtime_cmd_local(ws, "start", kwargs=merged or None)
+        except Exception:
+            ws.run_kwargs, ws.run_started = prev
+            raise
 
     def pause_runtime(self, name: str):
         ws = self.workspaces[name]

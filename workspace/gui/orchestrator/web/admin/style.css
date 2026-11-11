@@ -221,16 +221,20 @@
 /* A Parameters form whose values are being sent (Set / Set & Launch in
    flight): inert, and visibly so — dimmed, the cursor says wait. */
 .kw-busy { opacity: 0.55; cursor: progress; transition: opacity var(--motion-fast) var(--ease); }
-.kwargs-banner {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 500; color: var(--muted);
-  font-style: italic;
-  border-left: 3px solid var(--border2);
-  padding: 8px 14px; margin-bottom: 6px;
+/* A launched run's Parameters — a filled-in record, not greyed-out
+   controls: the field's box goes, its value stays at full contrast. The
+   header's .kw-record pill says read-only; nothing here is dimmed. */
+.kwargs-form.kw-frozen .input {
+  pointer-events: none;
+  background: transparent; border-color: transparent; box-shadow: none;
+  padding-left: 0; font-weight: 600; color: var(--text);
+  appearance: none; -moz-appearance: textfield;
 }
-.kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
-.kwargs-banner.frozen { color: var(--amber); border-left-color: var(--amber); }
-.kwargs-banner.frozen svg { opacity: 0.7; }
+.kwargs-form.kw-frozen .input::-webkit-inner-spin-button,
+.kwargs-form.kw-frozen .input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.kwargs-form.kw-frozen .kw-switch-wrap { cursor: default; }
+.kwargs-form.kw-frozen .kw-switch:disabled + .kw-switch-track { opacity: 1; cursor: default; }
+.kw-record b { color: var(--text); font-weight: 700; }
 .kwargs-form .input-error { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(255,69,58,0.15) !important; }
 .kwargs-form .kw-error { font-size: 11px; color: var(--red); font-weight: 600; }
 
@@ -250,7 +254,6 @@
   .modal-foot .btn { font-size: 12px; padding: 6px 12px; }
   .kwargs-form .kw-label { font-size: 12px; }
   .kwargs-form .kw-hint { font-size: 11px; }
-  .kwargs-banner { font-size: 11px; padding: 6px 10px; }
 }
 
 /* Confirm dialog CSS in /vendor/base.css */
@@ -602,28 +605,31 @@
 .pendant-params {
   flex: 1 1 auto; min-height: 0; width: 100%;
   display: flex; flex-direction: column;
-  /* A SURFACE, not bare background. The form sat directly on the
-     pendant's ground, so it read as loose parts on grey instead of one
-     panel — the same card the rest of the app puts content on. */
+  /* A SURFACE, not bare background — and the SAME card as the Devices
+     tab's columns (.pd-col), so every tab's panel reads alike. */
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
+/* The panel heading in the tabs' one heading style (.pd-head, .pe-head):
+   tracked caps, muted, hairline under. */
 .pendant-params .pp-head {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border2);
+  padding: 14px 18px;
+  font-size: var(--text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
 }
-.pendant-params .pp-title {
-  font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.1px;
-}
+.pendant-params .pp-head .btn { text-transform: none; letter-spacing: 0; }
 .pendant-params .pp-scroll {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--space-5);
 }
+.pendant-params .pp-foot:empty { display: none; }
 .pendant-params .pp-foot {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);

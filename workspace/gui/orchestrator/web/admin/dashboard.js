@@ -1,5 +1,5 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, frozenValues, recordChip } from "./kwargs.js";
 
 let workspaces = [];
 let prevStates = {};   // name → last known state string (for transition toasts)
@@ -124,16 +124,18 @@ async function openParamsModal(name, frozen) {
   if (!ws) return;
 
   // Fetch data first, then show the modal fully built
-  let schema = {}, values = {}, fetchError = false;
+  let schema = {}, values = {}, record = "", fetchError = false;
   try {
     const j = await apiFetch(`/workspace/${encodeURIComponent(name)}/launch_config`);
     schema = j.kwargs_schema || {};
-    values = j.kwargs_values || {};
+    values = frozen ? frozenValues(j) : (j.kwargs_values || {});
+    record = frozen ? recordChip(j) : "";
   } catch {
     fetchError = true;
   }
 
   paramsTitle.textContent = `Parameters — ${name}`;
+  document.getElementById("paramsRecord").innerHTML = record;
   document.getElementById("btnParamsLoad").style.display = frozen ? "none" : "";
 
   if (fetchError) {
@@ -144,7 +146,7 @@ async function openParamsModal(name, frozen) {
     renderKwargsForm(paramsForm, schema, values, frozen, name);
 
     if (frozen) {
-      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
+      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Close</button>`;
       paramsFoot.querySelector("#btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));
     } else if (Object.keys(schema).length) {
       paramsFoot.innerHTML = `

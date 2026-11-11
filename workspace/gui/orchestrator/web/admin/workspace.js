@@ -12,7 +12,7 @@
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen, frozenValues, recordChip } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
 
@@ -358,9 +358,11 @@ function mountParams(host, schema, values, frozen, wsName) {
   // The same buttons whether or not the project declares parameters:
   // with none, Set & Launch is how the run is launched (on the pendant,
   // the only way).
+  // Frozen: nothing to set. The header's record pill says what this is;
+  // the pendant pane has nowhere to close to, so its foot stays empty.
   if (frozen) {
     foot.innerHTML = host.cancel === false
-      ? `<div class="kwargs-empty">The run is using these values.</div>`
+      ? ""
       : `<button class="btn" id="${host.id}Cancel">Close</button>`;
     if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
     return;
@@ -424,18 +426,21 @@ function mountParams(host, schema, values, frozen, wsName) {
 }
 
 async function openParamsModal(frozen) {
-  let schema = {}, values = {}, fetchError = false;
+  let schema = {}, values = {}, record = "", fetchError = false;
   try {
     const j = await _getLaunchConfig();
     schema = j.kwargs_schema || {};
-    values = j.kwargs_values || {};
-    _wsKwargsValues = values;
+    _wsKwargsValues = j.kwargs_values || {};
+    values = frozen ? frozenValues(j) : _wsKwargsValues;
+    record = frozen ? recordChip(j) : "";
   } catch {
     fetchError = true;
   }
 
   paramsTitle.textContent = `Parameters — ${wsName}`;
+  $("paramsRecord").innerHTML = record;
   $("btnParamsLoad").style.display = frozen ? "none" : "";
+  $("btnParamsBrowse").style.display = frozen ? "none" : "";
 
   if (fetchError) {
     paramsForm.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
@@ -713,6 +718,9 @@ function updateStatusUI(st) {
     // from the prior session.
     _invalidateLaunchConfig();
     loadRunParams();
+    // A Start writes a new record (run_kwargs / run_started): the
+    // Parameters tab picks it up; same record, no rebuild.
+    if (_pendantMode && isLaunched(state)) renderPendantParams();
   }
 }
 
@@ -3350,8 +3358,15 @@ function _positionPendant3d() {
 // what a pane holds — a screen mounting, the fallback widgets, a launch
 // — calls this afterwards instead of showing the pane itself.
 function _applyPendantTab() {
+  const launched = isLaunched(_lastState);
+  // Parameters is a tab only while launched; before that the setup IS
+  // the Main tab, so a remembered Parameters tab lands on Main.
+  const paramsTab = $("pendantTabParams");
+  if (paramsTab) paramsTab.style.display = launched ? "" : "none";
+  if (_pendantTab === "params" && !launched) _pendantTab = "project";
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
+  const isParams = _pendantTab === "params";
   document.querySelectorAll(".pendant-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.ptab === _pendantTab));
   const hmi = $("pendantHmi");
@@ -3362,14 +3377,16 @@ function _applyPendantTab() {
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
   // Before the run is up, the Main tab IS the run setup — the operator
   // sets the parameters and launches from here. After that the
-  // project's own screen owns the tab.
-  const showParams = !is3d && !isDevices && !isLaunched(_lastState);
+  // project's own screen owns Main, and the same pane, frozen, is the
+  // Parameters tab.
+  const isMain = !is3d && !isDevices && !isParams;
+  const showParams = launched ? isParams : isMain;
   if (pp) pp.style.display = showParams ? "" : "none";
-  if (hmi) hmi.style.display = (is3d || isDevices || !hasScreen || showParams) ? "none" : "";
+  if (hmi) hmi.style.display = (!isMain || !hasScreen || showParams) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
   const hero = $("pendantHero");
-  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d && !isDevices && heroWanted()) ? "" : "none";
+  if (hero) hero.style.display = (launched && isMain && heroWanted()) ? "" : "none";
   // The 3D tab IS the desktop viewer area, chips and all.
   _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);
@@ -3444,26 +3461,34 @@ function togglePendant(on) {
 // screen at the bench, so entering the pendant before launch must not
 // be a dead end — Start refuses without parameters, and until now
 // nothing on the pendant could set them.
-let _pendantParamsFor = null;          // the state we last built for
+// Launched, the pane is the run's record: what the last Start sent, and
+// when — rebuilt when a new Start writes a new record, not per tick.
+let _pendantParamsFor = null;          // the setup / record we last built
 async function renderPendantParams(force) {
   const pane = $("pendantParamsPane");
   if (!pane) return;
   const launched = isLaunched(_lastState);
-  const key = launched ? "launched" : "setup";
-  if (!force && _pendantParamsFor === key) return;
-  _pendantParamsFor = key;
   const form = $("pendantParamsForm");
   const foot = $("pendantParamsFoot");
+  let j;
   try {
-    const j = await _getLaunchConfig();
-    mountParams(
-      { form, foot, id: "pp", cancel: false },          // nowhere to close TO
-      j.kwargs_schema || {}, j.kwargs_values || {}, launched, wsName);
+    j = await _getLaunchConfig();
   } catch (_) {
     form.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
     foot.innerHTML = "";
     _pendantParamsFor = null;                            // try again next time
+    return;
   }
+  const key = launched ? `run:${j.run_started}` : "setup";
+  if (!force && _pendantParamsFor === key) return;
+  _pendantParamsFor = key;
+  $("ppRecord").innerHTML = launched ? recordChip(j) : "";
+  $("ppUpload").style.display = launched ? "none" : "";
+  $("ppOpen").style.display = launched ? "none" : "";
+  mountParams(
+    { form, foot, id: "pp", cancel: false },            // nowhere to close TO
+    j.kwargs_schema || {}, launched ? frozenValues(j) : (j.kwargs_values || {}),
+    launched, wsName);
 }
 
 function updatePendantUI() {
@@ -3740,9 +3765,15 @@ document.querySelectorAll(".viewer-tab").forEach(t => {
 });
 document.querySelectorAll(".pendant-tab").forEach(t => {
   t.addEventListener("click", () => {
+    const changed = _pendantTab !== t.dataset.ptab;
     _pendantTab = t.dataset.ptab;
     try { localStorage.setItem("pendant_tab", _pendantTab); } catch (_) {}
     _applyPendantTab();
+    // A tab opens at its top, not wherever the last visit scrolled to.
+    if (changed) {
+      document.querySelectorAll(".pendant-body, .pp-scroll, .pd-col .devices-list, .pd-col .pd-op-list")
+        .forEach(el => { el.scrollTop = 0; });
+    }
   });
 });
 $("peCollapse")?.addEventListener("click", () => {

@@ -5,6 +5,27 @@ import { openFileBrowser } from "./files.js";
 const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
+// ── a launched run's parameters: the record ──────────────────────────
+// Once launched, Parameters shows what the run was STARTED with — the
+// orchestrator's run_kwargs, taken at Start — and says so in the header
+// of whatever surface shows it. Before the first Start the run has no
+// record yet; the values set for this launch are what it will get.
+export function frozenValues(launchConfig) {
+  return launchConfig?.run_kwargs || launchConfig?.kwargs_values || {};
+}
+
+export function recordChip(launchConfig) {
+  const t = launchConfig?.run_started;
+  let when = "not started yet";
+  if (t) {
+    const d = new Date(t * 1000);
+    const day = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const hm = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    when = `as started <b>${day}, ${hm}</b>`;
+  }
+  return `<span class="pill kw-record">${_lockSvg}<span>Read-only · ${when}</span></span>`;
+}
+
 // ── the project's own run-setup screen (``setup:``) ──────────────────
 //
 // Same hosting contract as the pendant screen (hmi-guide §4b) with one
@@ -184,13 +205,10 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Launch buttons and schema validation. The generic form below is
   // for everyone else.
   container._setupHost = null;
-  // The banner is the modal's, not the form's, and only when it says
-  // something the operator must know: the parameters are locked. Every
-  // project's Parameters reads the same from the top down.
-  if (frozen) {
-    container.insertAdjacentHTML("beforeend",
-      `<div class="kwargs-banner frozen">${_lockSvg} Parameters are locked while the workspace is running</div>`);
-  }
+  // Frozen reads as a filled-in record, not greyed-out controls
+  // (style.css .kw-frozen); the surface's header says "Read-only"
+  // (recordChip), so the form carries no banner of its own.
+  container.classList.toggle("kw-frozen", !!frozen);
   if (schema && schema._setup) {
     mountProjectSetup(container, schema, values, frozen, wsName);
     return;

@@ -160,6 +160,8 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
             self.write({
                 "kwargs_schema": schema or {},
                 "kwargs_values": ws.kwargs_values or {},
+                "run_kwargs": ws.run_kwargs,
+                "run_started": ws.run_started,
                 "has_park": has_park,
             })
         except Exception as e:
@@ -178,6 +180,7 @@ class FileUploadHandler(AuthedHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
+            _refuse_while_launched(self.orch, name)
             ws = self.orch.workspaces[name]
 
             if not self.request.files or "file" not in self.request.files:
@@ -234,6 +237,15 @@ class FileUploadHandler(AuthedHandler):
             self.write({"error": str(e)})
 
 
+def _refuse_while_launched(orch: Orchestrator, name: str) -> None:
+    """A launched run's parameters are fixed: what it was started with is
+    what it runs, and what the Parameters tab shows. Changing them takes a
+    Kill and a fresh Launch."""
+    if orch.is_launched(name):
+        raise ValueError("Parameters are locked while the workspace is launched "
+                         "— Kill it to change them.")
+
+
 class UpdateKwargsHandler(AuthedHandler):
     """Update stored kwargs_values for a workspace."""
     def initialize(self, orch: Orchestrator):
@@ -245,6 +257,7 @@ class UpdateKwargsHandler(AuthedHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
+            _refuse_while_launched(self.orch, name)
             data = json.loads(self.request.body.decode())
             ws = self.orch.workspaces[name]
             ws.kwargs_values = data.get("kwargs_values", {})
