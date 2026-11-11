@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -78,7 +77,6 @@ def state(fetch: bool = True) -> dict:
     with ThreadPoolExecutor(max_workers=max(1, len(parts))) as pool:
         parts = list(pool.map(one, parts))
     return {
-        "host": socket.gethostname(),
         "uptime_s": _uptime_s(),
         "helper": os.path.isfile(HELPER) and os.access(HELPER, os.X_OK),
         "helper_path": HELPER,
