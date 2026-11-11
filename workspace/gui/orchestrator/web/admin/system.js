@@ -193,7 +193,7 @@ function steps() {
   const names = (S && S.parts || []).map(p => p.name);
   for (const m of run.marks) if (!names.includes(m.name) && !["services", "reboot"].includes(m.name)) names.push(m.name);
   names.push("services", "reboot");
-  const label = n => n === "services" ? "Services" : n === "reboot" ? "Reboot"
+  const label = n => n === "services" ? "Restart services" : n === "reboot" ? "Reboot"
     : ((S && S.parts || []).find(p => p.name === n) || {}).label || n;
   const at = Object.fromEntries(run.marks.map((m, i) => [m.name, i]));
   const cur = run.marks.length ? run.marks[run.marks.length - 1].name : null;
@@ -212,13 +212,17 @@ function viewProgress() {
   const meta = `started ${new Date(run.started_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${fmtDur(el)}`;
   const last = run.marks.length ? run.marks[run.marks.length - 1].name : "";
   if (run.down) {
-    const rebooting = last === "reboot";
+    // Why the page lost the unit — said only when the step explains it.
     const off = fmtDur((Date.now() - run.down) / 1000);
+    const [k, h, sub] = last === "reboot"
+      ? ["Rebooting", "The unit is restarting", "Everything is installed."]
+      : last === "services"
+      ? ["Reconnecting", "Restarting the services", "The orchestrator is one of them — it restarts to load the new version."]
+      : ["Reconnecting", "Connection lost", "The upgrade keeps running on the unit."];
     card("Upgrading", meta, `<div class="sys-big"><div class="ring"></div>
-        <div class="sys-k">${rebooting ? "Rebooting" : "Reconnecting"} · ${off}</div>
-        <h2>${rebooting ? "The unit is restarting" : "The orchestrator is restarting"}</h2>
-        <div class="ver-sub">${rebooting ? "Everything is installed."
-          : "It restarts to load the new version."} This page reconnects on its own.</div></div>${steps()}`);
+        <div class="sys-k">${k} · ${off}</div>
+        <h2>${h}</h2>
+        <div class="ver-sub">${sub} This page reconnects on its own.</div></div>${steps()}`);
     return;
   }
   const keep = host.querySelector(".sys-log");
