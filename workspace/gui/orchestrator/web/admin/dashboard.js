@@ -13,6 +13,16 @@ let pollTimer  = null;
 const pendantUrl = name => `workspace.html?name=${encodeURIComponent(name)}&pendant=1`;
 const desktopUrl = name => `workspace.html?name=${encodeURIComponent(name)}`;
 
+// A project as its FOLDER's end — "…/bna/_bna": the folders that tell
+// projects apart. The start (/home/dorna/Downloads/…) is the same on every
+// card and was all an ellipsis left of it; the file is main.py on every
+// project. The full path is the element's title.
+function _pathTail(path, keep = 2) {
+  const parts = String(path || "").split("/").filter(Boolean);
+  if (parts.length && /\.py$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.length > keep ? `…/${parts.slice(-keep).join("/")}` : `/${parts.join("/")}`;
+}
+
 // The card is ONE target: a click anywhere on it opens the pendant — the
 // avatar, the name, the path, the URL, the step line, the progress bar.
 // Not its own controls (links and buttons keep their job), not the
@@ -353,18 +363,18 @@ function render() {
               ${esc(ws.name)}
               ${ws.label ? `<span class="wc-label">${esc(ws.label)}</span>` : ""}
             </div>
-            <div class="wc-path mono">${esc(ws.path_to_file)}</div>
+            <div class="wc-path mono" title="${esc(ws.path_to_file)}">${esc(_pathTail(ws.path_to_file))}</div>
           </div>
         </a>
-        <span class="pill ${variant}">
-          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
-          ${esc(stateLabel(state))}
-        </span>
         <a class="btn btn-sm btn-ghost btn-icon desktop-link" title="Open the desktop view of ${esc(ws.name)}"
            href="${desktopUrl(ws.name)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></a>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">
+        <span class="pill ${variant}">
+          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
+          ${esc(stateLabel(state))}
+        </span>
         <span class="wc-meta-item" title="${esc(wsViewerUrl(ws))}">
           <span>URL</span>
           <strong>${esc(wsViewerUrl(ws).replace(/^https?:\/\//, ""))}</strong>
