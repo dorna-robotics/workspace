@@ -802,12 +802,13 @@
         </div>
       </div>
     </div>
-    <!-- Steps / event rail — collapsible via the chevron. -->
-    <aside class="pendant-events" id="pendantEvents">
+    <!-- Steps / event rail — collapsible via the chevron; starts
+         collapsed, so the pane has the width until the operator asks. -->
+    <aside class="pendant-events collapsed" id="pendantEvents">
       <div class="pe-head">
         <span class="pe-title">Steps</span>
         <span class="dot ok" id="peDot"></span>
-        <button class="pe-collapse" id="peCollapse" title="Collapse event log"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+        <button class="pe-collapse" id="peCollapse" title="Expand event log"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
       </div>
       <div class="pendant-steps" id="pendantSteps"></div>
       <div class="pe-foot" id="peFoot"></div>
