@@ -117,6 +117,54 @@ def version(project_dir: str, fetch: bool = True) -> dict:
     return out
 
 
+def part_state(path: str, branch: str, fetch: bool = True) -> dict:
+    """One part of the bench's ``upgrade`` (the admin's System page): how
+    the folder ``path`` compares with ``origin/<branch>`` — what the part's
+    script makes it: ``git fetch``, ``checkout -B <branch> origin/<branch>``,
+    ``reset --hard``, ``clean -fd``. So it reports what that would cost:
+
+    * ``changes`` — uncommitted edits to tracked files: DISCARDED
+    * ``untracked`` — new files git does not ignore: DELETED (ignored
+      files — records, uploads, calibration, bench.j2 — are kept)
+    * ``switches`` — the folder is on another branch: the upgrade runs
+      ``branch`` from then on (the other branch and its commits stay)
+    * ``lost_commits`` — on ``branch`` already, with commits the remote
+      does not have: ``checkout -B`` moves the branch off them
+
+    ``behind`` counts the remote's commits this folder does not have.
+    ``fetch`` asks the remote first; a failure is ``reachable: False``."""
+    if not os.path.isdir(path):
+        return {"exists": False}
+    rc, repo, err = _git(path, "rev-parse", "--show-toplevel", check=False)
+    if rc != 0:
+        return {"exists": True, "git": False, "error": err or "not a git repository"}
+    _, current, _ = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    out = {"exists": True, "git": True, "branch": current, "head": _commit(repo, "HEAD"),
+           "target_branch": branch, "reachable": None, "fetch_error": ""}
+    if fetch and branch:
+        rc, _, err = _git(repo, "fetch", "origin", branch, timeout=FETCH_TIMEOUT_S, check=False)
+        out["reachable"] = rc == 0
+        out["fetch_error"] = "" if rc == 0 else err
+    target = f"origin/{branch}"
+    rc, _, _ = _git(repo, "rev-parse", "--verify", "--quiet", target, check=False)
+    out["target"] = _commit(repo, target) if (rc == 0 and branch) else None
+    ahead = behind = 0
+    lost: List[dict] = []
+    if out["target"]:
+        _, counts, _ = _git(repo, "rev-list", "--left-right", "--count", f"HEAD...{target}")
+        ahead, behind = (int(x) for x in counts.split())
+        if ahead and current == branch:
+            _, log, _ = _git(repo, "log", "--format=%h%x1f%s", f"{target}..HEAD")
+            lost = [dict(zip(("hash", "subject"), l.split("\x1f"))) for l in log.splitlines() if l]
+    _, st, _ = _git(repo, "status", "--porcelain", "--untracked-files=all")
+    lines = [l for l in st.splitlines() if l.strip()]
+    out.update(behind=behind, ahead=ahead, switches=bool(branch) and current != branch,
+               lost_commits=lost,
+               changes=[l[3:] for l in lines if not l.startswith("??")],
+               untracked=[l[3:] for l in lines if l.startswith("??")])
+    return out
+
+
 def plan(info: dict, stamp: str) -> List[str]:
     """The exact commands Get latest runs for this state, in order."""
     if not info.get("git"):

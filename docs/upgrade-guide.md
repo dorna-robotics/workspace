@@ -32,6 +32,41 @@ sudo python3 gui/server.py
 
 ---
 
+## The bench's upgrade — the admin's System page
+
+A bench unit is upgraded by the `upgrade` repo (`sudo upgrade`: OS
+settings, the robot library, devices, workspace, path planning, the
+vision client — then services checked, then a reboot). The admin's
+**System** page (left nav) runs it from the browser:
+
+- **This unit** — whether `upgrade` is installed, the last upgrade and
+  how it ended, and one row per part: the folder, what this unit runs,
+  what the upgrade installs ("2 newer", "same", "switches branch", "new
+  install"). **The page names no part.** Every upgrade writes a record —
+  `/var/lib/dorna/upgrade.json` — and each part writes its own entry from
+  its own variables (the upgrade repo's `lib/record.sh`). A part added to
+  the upgrade appears after the next upgrade; before the first recorded
+  one the page says the parts appear then.
+- **Upgrade…** — every risk is a warning, nothing is greyed out: launched
+  projects and runs end; the unit reboots; and per part, what its
+  `git fetch` / `checkout -B` / `reset --hard` / `clean -fd` would cost —
+  a branch switched, uncommitted changes DISCARDED, untracked files
+  DELETED, local commits left behind. Ignored files (records, uploads,
+  calibration, `scene/bench.j2`) are kept.
+- **Upgrade and reboot** starts it as its own system job —
+  `systemd-run --unit=dorna-upgrade --collect /usr/local/bin/upgrade` —
+  so it outlives the orchestrator's restart; one at a time. The page
+  follows it from the journal (`journalctl -u dorna-upgrade`): the steps
+  come from the `==> <part>` lines the upgrade prints, through the
+  orchestrator's restart and the reboot, to the result — each part's
+  commit before and now, or why it stopped.
+- If a service does not come back, the upgrade stops without rebooting;
+  if that service is the orchestrator, the page cannot reconnect — SSH
+  in and read `journalctl -u dorna-upgrade`.
+
+Code: `gui/orchestrator/system.py` (state, start, log),
+`project_git.part_state` (a part's git cost), `web/admin/system.js`.
+
 ## A project's latest — the admin page's Version panel
 
 A PROJECT (bna, apc, …) updates from its own page: the **ⓘ Version** icon
