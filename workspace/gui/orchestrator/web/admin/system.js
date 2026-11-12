@@ -217,7 +217,7 @@ function viewProgress() {
     const [k, h, sub] = last === "reboot"
       ? ["Rebooting", "The unit is restarting", "Everything is installed."]
       : last === "services"
-      ? ["Reconnecting", "Restarting the services", "The orchestrator is one of them — it restarts to load the new version."]
+      ? ["Reconnecting", "Restarting the services", "The connection drops while the new version starts."]
       : ["Reconnecting", "Connection lost", "The upgrade keeps running on the unit."];
     card("Upgrading", meta, `<div class="sys-big"><div class="ring"></div>
         <div class="sys-k">${k} · ${off}</div>
