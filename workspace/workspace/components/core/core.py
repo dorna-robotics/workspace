@@ -901,7 +901,7 @@ class Core:
                 {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "Tool changer"},
             ]
         if self.has_rail:
-            actions += [{"label": "Home Rail", "method": "home_rail", "icon": "backward"}]
+            actions += [{"label": "Home Rail", "method": "home_rail", "icon": "backward", "group": "Rail"}]
         return actions
 
     def _guard_api(self, api):

@@ -171,7 +171,7 @@ class Inspection:
         return self.detect(self._default_detection)
 
     def operator_actions(self) -> list[dict]:
-        return [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]
+        return [{"label": "Detect", "method": "operator_detect", "icon": "eye", "group": "Inspect"}]
 
     def close(self):
         self.vision.close()
