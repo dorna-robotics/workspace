@@ -6,8 +6,9 @@
    (.msg-line — a page puts an empty one in each of its bars) and ONE
    stack of cards under it (#msgStack, made here).
 
-   The line shows the newest message (mark, level word, its first
-   words; a count when there are more) and is empty — hidden — when
+   The line shows the most serious message — a question, then an
+   error, a warning, the rest; the newest of those (mark, level word,
+   its first words; a count when there are more) and is empty — hidden — when
    there are none. The stack shows them all, newest on top: it opens
    for an error, a warning (folding after 5 s) and a question; a tap on
    the line opens it again, a tap elsewhere or Escape folds it — never
@@ -16,11 +17,13 @@
 
    An item: {id?, level, label?, title?, text?, img?, caption?, ttl?,
    ask?, actions?}. level: ok ✓ · info i · warn ! · bad !. ``id``: an
-   OWNED message (one per source: "step", "notice") — a new one with
+   OWNED message (one per source: "step", "notice", "dev:<device id>") — a new one with
    the id replaces it, and only its owner (unnotify) or its × takes it
    away; past MSG_MAX the oldest UNOWNED message goes. ``ttl`` (ms): it
    goes on its own. ``actions``: [{label, primary?, wire(btn)}] — the
-   caller wires each button. Pages call notifyHost() when their bar
+   caller wires each button. ``onDismiss``: called when the operator
+   drops it with its × (the owner then knows not to post it again).
+   Pages call notifyHost() when their bar
    changes (the pendant); otherwise the cards hang under the first line. */
 const MSG_WORD = { ok: "Done", info: "Notice", warn: "Warning", bad: "Error" };
 const MSG_MARK = { ok: "✓", info: "i", warn: "!", bad: "!" };
@@ -37,7 +40,10 @@ function _msgStack() {
   document.body.appendChild(el);
   el.addEventListener("click", (e) => {
     const x = e.target.closest(".msg-x");
-    if (x) unnotify(x.dataset.id);
+    if (!x) return;
+    const it = _msg.items.find(m => m.id === x.dataset.id);
+    unnotify(x.dataset.id);
+    it?.onDismiss?.();
   });
   document.addEventListener("pointerdown", (e) => {
     if (!_msg.open || el.contains(e.target) || e.target.closest(".msg-line")) return;
@@ -153,8 +159,10 @@ function _msgRender() {
   _msgPlace();
 }
 
+const MSG_RANK = m => m.ask ? 3 : m.level === "bad" ? 2 : m.level === "warn" ? 1 : 0;
 function _msgRenderLines() {
-  const top = _msg.items[_msg.items.length - 1];
+  // the most serious, newest first among equals (items are oldest → newest)
+  const top = _msg.items.reduce((a, m) => (!a || MSG_RANK(m) >= MSG_RANK(a) ? m : a), null);
   const n = _msg.items.length;
   for (const line of document.querySelectorAll(".msg-line")) {
     line.hidden = !top;

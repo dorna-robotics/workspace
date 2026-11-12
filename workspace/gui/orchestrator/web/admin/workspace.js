@@ -797,6 +797,7 @@ function connectWs(runtimeUrl) {
   _muxWsClosed = false;
   _muxWsRetryMs = 1000;
   _devices.clear();
+  _devicesSettled.clear();          // its outages are its own, not the last runtime's
   _devicesKnown = false;            // a new runtime: nothing reported yet
   _opActionsKnown = false;
   renderDevicesPanel();
@@ -1690,6 +1691,7 @@ function _dispatchMuxMessage(env) {
     }
     case "operator_components": {
       _opComponents = Array.isArray(payload.components) ? payload.components : [];
+      _syncDeviceMessages();                  // a device message names the component
       dvRender();
       break;
     }
@@ -1774,6 +1776,22 @@ function _deviceVisual(d) {
   return (p && p.until > Date.now()) ? "recovering" : (d.state || "down");
 }
 const _deviceIsSim = d => d.sim === true || d.claim === "sim";
+// An OUTAGE: the bus last SETTLED this device as down (downEdge keeps it;
+// "recovering" never settles), so AutoRecover's retries do not end it —
+// only an ok does. One rule for the Devices tab's Recover bar and the
+// device message (_syncDeviceMessages). ``why`` and ``online`` are what
+// both say: the reason, and whether Recover can reach the publisher.
+function _deviceOutage(d) {
+  if (_devicesSettled.get(d.id) !== "down") return null;
+  return { why: (d.msg || "").trim() || "not answering", online: d.online !== false };
+}
+const _outageAdvice = o => o.online ? "Check it, then Recover." : "Its publisher is offline — Recover cannot reach it.";
+const _recoverPending = id => { const p = _devicesPending.get(id); return !!p && p.until > Date.now(); };
+// The name an operator knows a device by: its component's.
+function _deviceName(id) {
+  const c = _opComponents.find(x => (x.devices || []).includes(id));
+  return c ? _dvName(c) : _dvAddr(id);
+}
 // The part of a device id worth a glance: what follows "kind:", shortened.
 function _dvAddr(id) {
   const rest = String(id || "").split(":").slice(1).join(":") || String(id || "");
@@ -1876,15 +1894,20 @@ function _dvHeadHtml(c) {
     <div class="meta">${pills}<span class="id">${escHtml(ids ? `${ids} · ${c.name}` : c.name)}</span></div></div>`;
 }
 
+// The Recover bar: shown for the whole outage (_deviceOutage) — through
+// AutoRecover's retries too — or while a declared device has not
+// reported at all.
 function _dvAlertHtml(c) {
-  const st = _dvState(c);
-  if (st.cls !== "bad") return "";
-  const d = st.devs.find(x => _deviceVisual(x) !== "ok") || null;
-  const id = d ? d.id : (c.devices || [])[0];
-  const why = d ? (d.msg || "not answering") : "has not reported on the device bus";
-  const online = !d || d.online !== false;
-  return `<div class="dv-alert"><div class="t"><b>${escHtml(_dvAddr(id))}</b> — ${escHtml(why)}.${online ? " Check it, then Recover." : " Its publisher is offline — Recover cannot reach it."}</div>`
-    + (online ? `<button class="btn btn-primary" data-dv-recover="${escAttr(id)}">Recover</button>` : "") + `</div>`;
+  const ids = c.devices || [];
+  if (!ids.length) return "";
+  const out = ids.map(id => _devices.get(id)).filter(Boolean).map(d => [d, _deviceOutage(d)]).find(([, o]) => o);
+  const silent = !out && ids.find(id => !_devices.has(id));
+  if (!out && !silent) return "";
+  const id = out ? out[0].id : silent;
+  const o = out ? out[1] : { why: "has not reported on the device bus", online: true };
+  const busy = _recoverPending(id);
+  return `<div class="dv-alert"><div class="t"><b>${escHtml(_dvAddr(id))}</b> — ${escHtml(o.why)}. ${_outageAdvice(o)}</div>`
+    + (o.online ? `<button class="btn btn-primary" data-dv-recover="${escAttr(id)}"${busy ? " disabled" : ""}>${busy ? "Recovering…" : "Recover"}</button>` : "") + `</div>`;
 }
 
 function _dvFactsHtml(c) {
@@ -2134,10 +2157,10 @@ function _wireDevicesTab() {
 // shape Park / Kill already use.
 async function _confirmRecover(deviceId) {
   return await confirmDialog({
-    title: "Recover Device?",
-    body: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
-    confirmLabel: "Recover",
-    confirmVariant: "primary",
+    title: `Recover ${_deviceName(deviceId)}?`,
+    message: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
+    confirm: "Recover",
+    variant: "default",
   });
 }
 
@@ -2158,7 +2181,76 @@ function _pendingListHtml(what) {
          `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>`;
 }
 
+// ── Device outages in the message place ──
+// Every outage (_deviceOutage) of a device in use — not simulated: its
+// hardware is not driving anything — is ONE owned message, "dev:<id>":
+// "<name> is down", why it went down, and Recover. An error for a
+// critical device (it pauses the run), a warning otherwise. Posted on
+// the edge into the outage and kept through AutoRecover's retries (the
+// card is never rebuilt for a retry); re-posted only when what it says
+// changes (name, critical, online). When the device is ok again the
+// same message becomes "<name> is back" for a moment — in place, so a
+// flapping device never stacks up messages; it says so for every outage
+// it announced (× or not) while the device is in use. No runtime → gone.
+// Its × dismisses that outage: nothing re-posts it until the next one.
+const _devMsg = new Map();          // device id → {sig, why, announced, dismissed, btn}
+function _syncDeviceMessages() {
+  const want = new Map();
+  if (_devicesKnown) {
+    for (const d of _devices.values()) {
+      const o = _deviceOutage(d);
+      if (o && !_deviceIsSim(d)) want.set(d.id, { d, o, name: _deviceName(d.id) });
+    }
+  }
+  // An entry lives as long as its OUTAGE, not its message: a device
+  // switched to sim mid-outage loses the message, keeps the entry (its
+  // × included), and gets the message back if it returns to real still
+  // down.
+  for (const [id, m] of [..._devMsg]) {
+    if (want.has(id)) continue;
+    const d = _devicesKnown ? _devices.get(id) : null;
+    if (d && _deviceOutage(d)) {                 // still out — simulated now
+      if (m.sig) { unnotify(`dev:${id}`); m.sig = null; m.btn = null; }
+      continue;
+    }
+    _devMsg.delete(id);
+    // back, told: the operator heard of this outage (× or not) and the device is in use
+    if (d && _devicesSettled.get(id) === "ok" && m.announced && !_deviceIsSim(d)) {
+      notify({ id: `dev:${id}`, level: "ok", text: `${_deviceName(id)} is back`, ttl: 2500 });
+    } else {
+      unnotify(`dev:${id}`);
+    }
+  }
+  for (const [id, { d, o, name }] of want) {
+    const m = _devMsg.get(id) || { why: o.why, dismissed: false };   // why it WENT down: the outage's cause
+    _devMsg.set(id, m);
+    const sig = JSON.stringify([name, d.critical !== false, o.online]);
+    if (m.sig !== sig && !m.dismissed) {
+      m.sig = sig;
+      m.announced = true;
+      m.btn = null;
+      notify({
+        id: `dev:${id}`, level: d.critical !== false ? "bad" : "warn",
+        title: `${name} is down`, text: `Went down: ${m.why}. ${_outageAdvice(o)}`,
+        actions: o.online ? [{ label: "Recover", primary: true, wire: b => {
+          m.btn = b;
+          b.addEventListener("click", async () => {
+            if (!_recoverPending(id) && await _confirmRecover(id)) recoverDevice(id);
+          });
+        } }] : [],
+        onDismiss: () => { m.dismissed = true; m.btn = null; },
+      });
+    }
+    if (m.btn) {                    // the card's Recover says what the bar's says
+      const busy = _recoverPending(id);
+      m.btn.disabled = busy;
+      m.btn.textContent = busy ? "Recovering…" : "Recover";
+    }
+  }
+}
+
 function renderDevicesPanel() {
+  _syncDeviceMessages();
   const el = $("devicesList");
   const badge = $("devicesCountBadge");
   if (!el) return;

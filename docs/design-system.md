@@ -237,18 +237,22 @@ look, `base.css .msg-*`. What arrives there:
 | A click's result or a hint | `toast(text, kind)` | ✓ done · i hint · ! warn · ! error | done / hint 2.5 s, warn 5 s, error until its × |
 | A run's error or warning | `rt.step(level=…)` (id `step`) | ! error · ! warn | until the next plain step |
 | The pause's question | `rt.notice` (id `notice`, `ask`) | ! / i, its own word | until Resume / Dismiss / the pause ends |
+| A device outage | the device bus (id `dev:<device id>`), with **Recover** | ! error (critical) · ! warn | until the device is ok again — then "… is back" in its place for 2.5 s; its × drops it for that outage |
 
 **The line** (`.msg-line`, an empty one in each bar's free middle,
-shrinking before anything else there): the newest message — its round
-mark, its level word, its first words — and a count when there are
-more. Empty, it is hidden; the bar looks as it always does.
+shrinking before anything else there): the most serious message — a
+question, then an error, a warning, the rest; the newest among equals —
+its round mark, its level word, its first words, and a count when there
+are more. Empty, it is hidden; the bar looks as it always does.
 **The cards** (`#msgStack`, one per page, fixed, outside the pendant
 overlay so they cover the floating 3D view): every message, newest
 on top, hanging under the line. They open for an error, a warning
 (folding after 5 s) and a question; a tap on the line opens them again,
 a tap elsewhere or Escape folds them — never while a question waits.
 A card's × drops that message; a question has its own buttons instead
-(Resume, Dismiss) and nothing else closes it. Pendant mode draws them
+(Resume, Dismiss) and nothing else closes it. The confirm dialog is the
+one layer above the cards: a card's button (Recover) opens it, and a
+message arriving while it is up opens under it. Pendant mode draws them
 larger (`.msg-stack.big`, 44–48 px buttons).
 
 A message is **marked, never painted** (§9): the mark, the level word

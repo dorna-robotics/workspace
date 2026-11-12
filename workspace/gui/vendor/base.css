@@ -475,9 +475,10 @@ a:hover { color: var(--accent-h); }
 
 /* The stack scrolls when it is long, so it pads round the cards — room
    for their shadows, which a scroller clips (messages.js reads the
-   padding to line the cards up with the line). Above every page layer,
-   modals and the confirm dialog included: a message from inside a
-   modal (the file browser's "could not open") must be seen. */
+   padding to line the cards up with the line). Above every page layer
+   and modal: a message from inside a modal (the file browser's "could
+   not open") must be seen. Only the confirm dialog is higher — the
+   decision the operator just asked for. */
 .msg-stack {
   position: fixed; z-index: 99999;
   width: 480px; max-width: min(720px, 100vw); max-height: calc(100vh - 70px);
@@ -589,7 +590,10 @@ a:hover { color: var(--accent-h); }
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.45);
   display: none; align-items: center; justify-content: center;
-  z-index: 60000;
+  /* above everything, the message cards (99999) too: it is the decision
+     the operator just asked for — a message arriving meanwhile opens
+     under it, never over it */
+  z-index: 100000;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   transition: opacity var(--motion-med) var(--ease);
 }
