@@ -265,7 +265,10 @@
 .kwargs-form.kw-frozen .kw-switch:disabled + .kw-switch-track { opacity: 1; cursor: default; }
 .kw-record b { color: var(--text); font-weight: 700; }
 .kwargs-form .input-error { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(255,69,58,0.15) !important; }
-.kwargs-form .kw-error { font-size: 11px; color: var(--red); font-weight: 600; }
+/* a field's error: the shared mark (base.css .msg-mark) + plain words */
+.kwargs-form .kw-error { display: flex; align-items: flex-start; gap: var(--space-2);
+  font-size: var(--text-sm); color: var(--text); font-weight: 500; line-height: 1.4; }
+.kw-error .msg-mark, .rp-state .msg-mark { margin-top: 1px; }
 
 /* ---- Modal mobile ---- */
 @media (max-width: 600px) {
@@ -399,77 +402,13 @@
 .sidebar-progress > span { font-size: 11px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* ── Log colors ─────────────────────────────────────────────────────────── */
-.log-err  { color: var(--red); }
-.log-warn { color: var(--amber); }
+/* A problem line is marked by a coloured edge, its words in the plain
+   text colour — never red or amber words (design-system §9). */
+.log-err, .log-warn { display: inline-block; width: 100%; color: var(--text);
+  padding-left: var(--space-3); box-shadow: inset 3px 0 0 var(--red); }
+.log-warn { box-shadow: inset 3px 0 0 var(--amber); }
 .log-dim  { color: var(--muted2); }
 .log-ts   { color: var(--muted2); }
-
-/* ── Alarm Banner ─────────────────────────────────────────────────────── */
-.alarm-banner {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100000;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
-  background: rgba(255, 69, 58, 0.15);
-  border-bottom: 1px solid rgba(255, 69, 58, 0.3);
-  color: var(--red);
-  font-size: var(--text-md);
-  font-weight: 500;
-  animation: alarm-pulse 1.5s ease-in-out infinite;
-  backdrop-filter: blur(12px);
-}
-.alarm-banner svg { flex-shrink: 0; }
-.alarm-banner #alarmText { flex: 1; }
-.alarm-dismiss {
-  background: none;
-  border: none;
-  color: var(--red);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-xs);
-  opacity: 0.6;
-}
-.alarm-dismiss:hover { opacity: 1; background: rgba(255, 69, 58, 0.15); }
-@keyframes alarm-pulse {
-  0%, 100% { background: rgba(255, 69, 58, 0.12); }
-  50% { background: rgba(255, 69, 58, 0.22); }
-}
-/* Warning level — amber */
-.alarm-banner[data-level="warning"] {
-  background: rgba(255, 159, 10, 0.12);
-  border-bottom-color: rgba(255, 159, 10, 0.3);
-  color: var(--amber);
-  animation: alarm-pulse-warn 1.5s ease-in-out infinite;
-}
-.alarm-banner[data-level="warning"] .alarm-dismiss { color: var(--amber); }
-.alarm-banner[data-level="warning"] .alarm-dismiss:hover { background: rgba(255, 159, 10, 0.15); }
-@keyframes alarm-pulse-warn {
-  0%, 100% { background: rgba(255, 159, 10, 0.12); }
-  50% { background: rgba(255, 159, 10, 0.22); }
-}
-
-/* Pendant alarm — warning level */
-.pendant-alarm[data-level="warning"] {
-  background: rgba(255, 159, 10, 0.15);
-  border-color: rgba(255, 159, 10, 0.4);
-  color: var(--amber);
-  animation: alarm-pulse-warn 1.5s ease-in-out infinite;
-}
-
-[data-theme="light"] .alarm-banner {
-  background: rgba(215, 0, 21, 0.06);
-  border-bottom-color: rgba(215, 0, 21, 0.2);
-}
-[data-theme="light"] .alarm-banner[data-level="warning"] {
-  background: rgba(199, 124, 10, 0.06);
-  border-bottom-color: rgba(199, 124, 10, 0.2);
-}
-
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
@@ -708,15 +647,15 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .pendant-page {
   flex: 1 1 auto; min-height: 0; width: 100%;
   display: flex; flex-direction: column;
-  /* A SURFACE, not bare background — and the SAME card as the Devices
-     tab's columns (.pd-col), so every tab's panel reads alike. */
+  /* A SURFACE, not bare background — one card for every pendant page
+     (Parameters, Version, Devices), so every tab's panel reads alike. */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-/* The panel heading in the tabs' one heading style (.pd-head, .pe-head):
+/* The panel heading in the tabs' one heading style (with .pe-head):
    tracked caps, muted, hairline under. */
 .pendant-page .pp-head {
   flex: 0 0 auto;
@@ -739,44 +678,107 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border2);
 }
-/* Operator glass: the run-setup buttons are hit with gloves. */
-.pendant-page .pp-foot .btn { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); }
+/* Operator glass: every main button on a pendant page — Parameters, Version,
+   Devices (Run, Recover) — is one size, hit with gloves. The small header
+   buttons (Upload, Open: .btn-sm) keep their size. */
+.pendant-page .btn:not(.btn-sm) { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); justify-content: center; }
+.pendant-page .pp-meta { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: var(--text-sm); }
 .pendant-page .kwargs-empty { color: var(--muted); font-size: var(--text-md); }
 /* the Version page: the modal body's rhythm, its buttons at the right */
 .pv-body { display: flex; flex-direction: column; gap: 14px; }
 .pendant-page .pv-foot { justify-content: flex-end; }
 
-/* ── Pendant Devices tab: devices | operator controls ── */
-.pendant-devices-pane {
-  flex: 1; min-height: 0; min-width: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px;
-  align-items: start;
-}
-.pd-col {
-  min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  display: flex; flex-direction: column;
-  max-height: 100%; min-height: 0;
-}
-.pd-head {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 14px 18px; flex: none;
-  font-size: var(--text-xs); font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-.pd-head .mono { font-size: 11.5px; text-transform: none; letter-spacing: 0; }
-.pd-col .devices-list, .pd-col .pd-op-list {
-  flex: 1; overflow-y: auto; padding: 14px 18px;
-  overflow-wrap: anywhere;
-}
-.pd-col .devices-list { max-height: none; }
-.pd-op-list { display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 900px) {
-  .pendant-devices-pane { grid-template-columns: 1fr; }
+/* ── Pendant Devices tab — one page: the list | the selected one ────────
+   The tabs' own shell (.pendant-page, .pp-head) and grammar (tracked-caps
+   labels, the shared .btn / .pill / .input / .device-pill). Inside, space
+   and tone separate — no line: the list is a tinted panel, the facts one
+   band, action rows borderless; the open action is the only box. */
+.dv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
+.dv-list { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.dv-lh { padding: var(--space-4) var(--space-4) var(--space-2); display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
+.dv-search { position: relative; }
+.dv-search .input { padding-left: 36px; background: var(--surface); }
+.dv-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.dv-chips { display: flex; gap: var(--space-2); }
+.dv-chip { min-height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: none; font: inherit;
+  font-size: var(--text-sm); font-weight: 600; background: transparent; color: var(--muted); cursor: pointer; }
+.dv-chip b { font-weight: 600; opacity: .75; }
+.dv-chip:hover { color: var(--text); }
+.dv-chip.on { background: var(--accent-dim); color: var(--accent); }
+.dv-chip.att { color: var(--red); }
+.dv-items { overflow-y: auto; padding: 0 var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: 2px; -webkit-overflow-scrolling: touch; }
+.dv-sec { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+  padding: var(--space-4) var(--space-3) var(--space-2); }
+.dv-sec.att { color: var(--red); }
+.dv-empty { color: var(--muted); font-size: var(--text-md); padding: var(--space-5) var(--space-3); }
+.dv-item { display: grid; grid-template-columns: 10px 1fr; align-items: center; gap: var(--space-3);
+  min-height: 52px; padding: 6px var(--space-3); border-radius: var(--radius-md); cursor: pointer; }
+.dv-item:hover { background: var(--surface2); }
+.dv-item:focus-visible { outline: none; box-shadow: var(--glow); }
+.dv-item.sel { background: var(--surface); box-shadow: var(--shadow-sm); }
+.dv-it { min-width: 0; }
+.dv-item .nm { font-weight: 600; font-size: var(--text-md); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .sb { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .sb .mode { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--text-xs); }
+.dv-item .sb .mode.live { color: var(--live); }
+.dv-item .sb .mode.sim { color: var(--sim); }
+.dv-item .hit { font-size: var(--text-sm); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .dot.none { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border2); }
+
+.dv-detail { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6); gap: var(--space-5); -webkit-overflow-scrolling: touch; }
+.dv-detail > div:empty { display: none; }
+.dv-top { display: flex; gap: var(--space-4); align-items: center; }
+.dv-top .ic { width: 48px; height: 48px; border-radius: var(--radius-md); display: grid; place-items: center; flex: none; background: var(--bg); color: var(--text); }
+.dv-hd { min-width: 0; }
+.dv-top h2 { margin: 0; font-size: var(--text-xl); font-weight: 700; }
+.dv-top .meta { display: flex; gap: var(--space-2); align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.dv-top .id { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+.dv-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-3) 0;
+  border-radius: var(--radius-md); background: var(--bg); padding: var(--space-4) var(--space-2); }
+.dv-facts > div { padding: 0 var(--space-4); min-width: 0; }
+.dv-facts .k { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dv-facts .v { margin-top: 4px; font-size: var(--text-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-alert { border-radius: var(--radius-md); background: var(--bg); box-shadow: inset 4px 0 0 var(--red);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  display: flex; gap: var(--space-4); align-items: center; }
+.dv-alert .t { flex: 1; font-size: var(--text-md); line-height: 1.45; }
+.dv-alert b { font-weight: 700; }
+.dv-gate { border-radius: var(--radius-md); background: var(--bg); padding: var(--space-3) var(--space-4); font-size: var(--text-md); color: var(--muted); }
+.dv-acts { display: flex; flex-direction: column; gap: var(--space-5); }
+.dv-g { display: flex; flex-direction: column; gap: 2px; }
+.dv-gh { display: flex; align-items: center; gap: var(--space-2); font: inherit; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--muted); padding: 4px var(--space-3) var(--space-2); background: none; border: none; cursor: pointer; text-align: left; }
+.dv-gh .n { font-weight: 600; opacity: .7; }
+.dv-gh svg { margin-left: auto; }
+.dv-a { border-radius: var(--radius-md); }
+.dv-a:hover, .dv-a.open { background: var(--bg); }
+.dv-ar { display: grid; grid-template-columns: 32px 1fr auto; gap: var(--space-3); align-items: center; min-height: 60px;
+  padding: 6px var(--space-2) 6px var(--space-3); cursor: pointer; }
+.dv-ar .ai { width: 32px; display: grid; place-items: center; color: var(--muted); }
+.dv-ar .ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); }
+.dv-a.open .ai, .dv-a:hover .ai { color: var(--text); }
+.dv-at { min-width: 0; }
+.dv-ar .al { font-weight: 600; font-size: var(--text-md); }
+.dv-ar .ad { font-size: var(--text-sm); color: var(--muted); margin-top: 1px; }
+.dv-ar .rt { display: flex; gap: var(--space-3); align-items: center; }
+.dv-ar .btn { min-width: 88px; }
+.dv-last { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+.dv-last .ok { color: var(--green); font-weight: 700; } .dv-last .bad { color: var(--red); font-weight: 700; }
+.dv-ab { padding: 2px var(--space-4) var(--space-4) 56px; display: flex; flex-direction: column; gap: var(--space-3); }
+.dv-params { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end; }
+.dv-f label { display: block; font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.dv-f .input { width: 150px; background: var(--surface); }
+.dv-bool { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; font-size: var(--text-md); }
+.dv-out { border-radius: var(--radius-sm); background: var(--surface); padding: var(--space-3) var(--space-4); }
+.dv-out .h { font-size: var(--text-sm); color: var(--muted); margin-bottom: 6px; }
+.dv-out .h .ok { color: var(--green); font-weight: 700; } .dv-out .h .bad { color: var(--red); font-weight: 700; }
+.dv-out pre { margin: 0; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  max-height: 320px; overflow: auto; }
+.dv-out .none { font-size: var(--text-sm); color: var(--muted); }
+@media (max-width: 1100px) {
+  .dv-body { grid-template-columns: 250px minmax(0, 1fr); }
+  .dv-detail { padding: var(--space-4); }
 }
 
 /* ── Event rail ── */
@@ -821,6 +823,8 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
    here, matching design-system §3.4. */
 .pendant-step-card { padding: 8px 16px; font-size: var(--text-md); }
 .pendant-step-dot { width: 8px; height: 8px; margin-top: 7px; }
+.pendant-step-card:is([data-level="warning"], [data-level="error"]) .pendant-step-dot { width: 16px; height: 16px; margin-top: 3px; }
+.pendant-step-card:is([data-level="warning"], [data-level="error"]) .pendant-step-dot::before { font-size: 10px; }
 
 /* ── Bottom bar: the four run controls ── */
 .pendant-bar {
@@ -859,15 +863,8 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .pendant-park:hover:not(:disabled) { background: #ff6a2a; }
 [data-theme="light"] .pendant-park { background: #d8651e; }
 [data-theme="light"] .pendant-park:hover:not(:disabled) { background: #c4541a; }
-/* ── The operator notice (rt.notice, workspace.js renderPendantNotice) ──
-   A modal over the pendant BODY — tabs and pane, the bench dimmed
-   behind it — in the frame's warning voice. Fixed and synced to the
-   body's box (it must cover the 3D view, z 10001); the nav, the step
-   rail and the control bar stay uncovered and live. */
-.pendant-notice {
-  position: fixed; z-index: 10002; display: flex;     /* the card centres by margin: auto */
-  padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
-}
+/* ── The wait card (.pn-card) — the launch card's (below). Messages,
+   the pause's question included, are not here: base.css .msg-*. */
 .pn-card {
   width: min(620px, 100%); margin: auto;
   background: var(--surface); border-radius: var(--radius-lg);
@@ -890,17 +887,6 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 }
 .pn-card h2 { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; }
 .pn-card p { margin: var(--space-2) 0 0; font-size: var(--text-lg); line-height: 1.45; opacity: .9; }
-/* the picture: up to 240 px tall (less on a short screen) — a small
-   crop (a 45 px ROI) is scaled up to read across a room */
-.pn-img { position: relative; margin: var(--space-4) 0 0; border-radius: var(--radius-md);
-  overflow: hidden; background: #000; }
-.pn-img img { display: block; height: min(240px, 30vh); max-width: 100%; object-fit: contain; }
-.pn-cap {
-  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: 12.5px; font-weight: 600; line-height: 1; padding: 6px 10px;
-  border-radius: 999px; background: rgba(0,0,0,.62); color: #fff;
-}
 .pn-actions { margin-top: var(--space-5); display: flex; gap: var(--space-4); }
 .pn-actions .btn { min-height: 48px; padding: 0 28px; font-size: var(--text-lg); font-weight: 700; }
 .pn-card[data-level="error"] { border-top-color: var(--red); }
@@ -915,10 +901,10 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .pn-card[data-level="ok"] .pn-level { color: var(--green); }
 
 /* ── The launch card (workspace.js renderLaunchCard) ──────────────
-   The notice's own card (.pn-card), for the two waits: Launch until
+   The wait card (.pn-card, above), for the two waits: Launch until
    ready, Start until the first motion. Over the whole page on the
-   desktop; over the pendant body in pendant mode (positioned like the
-   notice). Under it, the console of that wait, live. */
+   desktop; over the pendant body in pendant mode. Under it, the
+   console of that wait, live. */
 .launch-card {
   position: fixed; z-index: 10002; display: flex;
   padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
@@ -1124,7 +1110,7 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .rp-state { font-size: var(--text-sm); font-weight: 600; }
 .rp-state:empty { display: none; }
 .rp-state.busy { color: var(--accent); }
-.rp-state.err { color: var(--red); }
+.rp-state.err { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text); font-weight: 500; }
 
 /* Kill — red tint, as .btn-danger */
 .pendant-kill { background: rgba(255,69,58,0.12); border-color: transparent; color: var(--red); }
@@ -1134,20 +1120,19 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .cmd-pressed { animation: pendant-flash 0.4s ease; }
 @keyframes pendant-flash { 0% { box-shadow: 0 0 0 3px var(--accent-dim); } 100% { box-shadow: none; } }
 
-/* ── Alarm (the one banner the pendant carries) ── */
-.pendant-alarm {
-  display: flex; align-items: center; gap: 10px;
-  margin: 12px 24px 0;
-  padding: 12px 18px;
-  background: rgba(255, 69, 58, 0.12);
-  border-radius: var(--radius-lg);
-  color: var(--red);
-  font-size: var(--text-xl); font-weight: 600;
-  animation: alarm-pulse 1.5s ease-in-out infinite;
-  box-shadow: var(--shadow-sm);
-  flex: none;
-}
-.pendant-alarm svg { flex-shrink: 0; }
+/* ── Messages at pendant size (base.css .msg-*; .big while the stack
+   hangs under the pendant nav) — read across a room, 44 px buttons
+   like the other pendant buttons. */
+.pendant-nav .msg-line { margin-left: var(--space-3); }
+.pendant-nav .msg-chip { height: 40px; font-size: var(--text-lg); }
+.pendant-nav .msg-mark { width: 26px; height: 26px; font-size: 15px; }
+.pendant-nav .msg-word, .msg-stack.big .msg-word { font-size: var(--text-sm); }
+.msg-stack.big { width: 560px; }
+.msg-stack.big .msg-mark { width: 30px; height: 30px; font-size: 17px; }
+.msg-stack.big .msg-title { font-size: 24px; }
+.msg-stack.big .msg-text { font-size: var(--text-xl); }
+.msg-stack.big .msg-acts .btn { min-height: 48px; padding: 0 28px; font-size: var(--text-lg); font-weight: 700; }
+.msg-stack.big .msg-x { width: 44px; height: 44px; font-size: 24px; }
 
 /* Project-screen widget classes (hmi.j2 fallback widgets) */
 .hmi-state {
@@ -1388,7 +1373,8 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   text-align: center;
 }
 .fb-empty b { color: var(--text); font-weight: 600; }
-.fb-error { color: var(--red); display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+.fb-error { color: var(--text); display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+.fb-error svg { color: var(--red); }
 .fb-loading { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
 .fb-skel {
   height: 34px; border-radius: var(--radius-md);
@@ -1527,6 +1513,7 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .sys-t tr:last-child td { border-bottom: none; }
 .sys-t .what { font-weight: 600; }
 .sys-t .sub { color: var(--muted); font-size: var(--text-sm); font-weight: 400; }
+.sys-t .sub.bad { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .sys-t .h { font-family: var(--mono); font-size: var(--text-sm); }
 .sys-steps { list-style: none; margin: 0; padding: 0; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; }

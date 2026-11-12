@@ -852,7 +852,24 @@ class Pump:
             "ports": self.ports(), "status": self.status(), "last_op": self.last_op(),
         }
 
-    # ── operator actions (component-guide §8) ─────────────────────
+    # ── operator facts + actions (component-guide §8) ─────────────
+
+    def operator_facts(self) -> list[dict]:
+        """The Devices tab's glance — BOOKKEEPING ONLY, no serial query:
+        it is asked every few seconds while on screen, run or not, and a
+        query must never interleave with a move on the line."""
+        op = self._last_op or {}
+        last = "—" if not op else (f"{op['op']} → {op['target_ul']:g} µL · "
+                                   f"{'ok' if op['ok'] else 'failed'} · {op['seconds']:g} s")
+        lines = " · ".join(f"{self.name_of(p)} {self._steps_to_ul(s):.1f} µL"
+                           for p, s in self._line_steps.items()) or "—"
+        return [
+            {"label": "Last op", "value": last},
+            {"label": "In barrel", "value": self._material_in_barrel or "—"},
+            {"label": "Line", "value": lines},
+            {"label": "Stroke", "value": f"{self.stroke_volume():g} of {self._syringe_ul:g} µL"},
+        ]
+
 
     def initialize_pump(self):
         return self.initialize()

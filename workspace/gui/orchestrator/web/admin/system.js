@@ -127,7 +127,7 @@ function viewUnit() {
         const x = partNow(p);
         const failed = p.exit != null && p.exit !== 0;
         return `<tr><td class="what">${esc(p.label || p.name)}`
-          + `${failed ? `<div class="sub" style="color:var(--red)">failed last time (exit ${esc(p.exit)})</div>` : ""}</td>`
+          + `${failed ? `<div class="sub bad"><span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>failed last time (exit ${esc(p.exit)})</div>` : ""}</td>`
           + `<td class="h">${p.dir ? esc(p.dir.split("/").pop()) : `<span class="sub">—</span>`}</td>`
           + `<td class="h">${esc(x.runs)}</td>`
           + `<td>${p.dir ? `<span class="h">${esc(x.installs)}</span> · ` : ""}${x.pill || esc(x.installs)}</td></tr>`;
@@ -279,7 +279,7 @@ function viewResult() {
       const now = p.commit ? `${p.branch} ${short(p.commit)}` : "—";
       // git's %h may be shorter than 7 or longer: same = one is the other's prefix
       const same = b && p.commit && b.branch === p.branch && p.commit.startsWith(b.hash);
-      return `<tr><td class="what">${esc(p.label || p.name)}${p.exit ? `<div class="sub" style="color:var(--red)">failed (exit ${esc(p.exit)})</div>` : ""}</td>`
+      return `<tr><td class="what">${esc(p.label || p.name)}${p.exit ? `<div class="sub bad"><span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>failed (exit ${esc(p.exit)})</div>` : ""}</td>`
         + `<td class="h">${b ? esc(`${b.branch} ${short(b.hash)}`) : `<span class="sub">not installed</span>`}</td>`
         + `<td class="h">${esc(now)}${same ? ` <span class="sub">same</span>` : ""}</td></tr>`;
     }).join("");

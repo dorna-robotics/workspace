@@ -89,7 +89,7 @@ the body and nothing mounts).
   ONLY declared `operator_action`s; no runtime/device/motion handle.
 - A request to the operator ("clear the anode, then Resume") is NOT a
   screen's job: `rt.notice(title, text, img=…)` + `rt.pause()` — the
-  frame draws the modal with Resume, the same in every project
+  frame draws the question card with Resume, the same in every project
   (project-guide "`rt.notice`"). Never a home-made modal.
 - Fallback: `pendant: hmi/hmi.j2` widget list (`state` `stat`
   `progress`) for a project that writes no markup — never where

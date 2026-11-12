@@ -602,7 +602,8 @@ export function validateKwargsForm(container, schema) {
       if (field) {
         const errEl = document.createElement("div");
         errEl.className = "kw-error";
-        errEl.textContent = err;
+        errEl.innerHTML = `<span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>`;
+        errEl.append(err);
         field.appendChild(errEl);
       }
     }

@@ -54,7 +54,12 @@ class GripperSuction(Gripper):
             **prm
         )
 
-    def blow(self, duration=5):
+    # Blow's length: the default, and the most the operator may ask for —
+    # the wait cannot be paused (below), so a mistyped 600 s is refused.
+    BLOW_S = 5
+    BLOW_MAX_S = 30
+
+    def blow(self, duration=BLOW_S):
         """Blow-off for ``duration`` seconds, then the off state — ONE
         atomic op: the air never stays on, so the wait is a plain
         sleep, not a checkpoint (a pause takes effect after it, like
@@ -73,5 +78,8 @@ class GripperSuction(Gripper):
         return [
             {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "io"},
             {"label": "Disable", "method": "disable", "icon": "power-off", "group": "io"},
-            {"label": "Blow",    "method": "blow",    "icon": "zap"},
+            {"label": "Blow",    "method": "blow",    "icon": "zap",
+             "hint": "Air out of the cup for a set time, then off",
+             "params": [{"name": "duration", "type": "float", "default": self.BLOW_S,
+                         "unit": "s", "min": 0, "max": self.BLOW_MAX_S}]},
         ]

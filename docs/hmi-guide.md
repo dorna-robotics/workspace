@@ -174,19 +174,22 @@ Three sources; two exist, one is a small addition:
 
    A request to the operator is not a project value: `rt.notice(title,
    text, level=, img=, caption=)` publishes the platform's `notice` key
-   (rt.op refuses it from a project) and the FRAME draws it — one modal
-   for every project, over the pendant's section rail and body (the 3D
-   view included), with Resume (the bar's command, device-fault gate and
-   all) and Dismiss. The nav, the step rail and the control bar stay
-   uncovered: Park and Kill are never behind it. The runtime owns its
-   lifetime — published with a pause, unset when the run leaves it
-   (Resume, Park, Kill); the frame draws whatever is set. Spec and rules: project-guide "`rt.notice`";
-   code: `Runtime.notice`, workspace.js `renderPendantNotice`.
+   (rt.op refuses it from a project) and the FRAME draws it — the same
+   for every project, desktop and pendant alike — as a message
+   (design-system §3.3b): the top bar's line and a card under it, over
+   the page (the 3D view included), with the picture, Resume (the bar's
+   command, device-fault gate and all) and Dismiss; nothing else closes
+   it. The rail, the step list and the control bar stay uncovered:
+   Park and Kill are never behind it. The runtime owns its lifetime —
+   published with a pause, unset when the run leaves it (Resume, Park,
+   Kill); the frame draws whatever is set. Spec and rules: project-guide
+   "`rt.notice`"; code: `Runtime.notice`, workspace.js `renderNotice`,
+   `vendor/messages.js`.
 
    ### The launch card and the Start hint (platform, no project input)
 
-   The two waits an operator otherwise watches in silence get the
-   notice's card, on the pendant and the desktop page alike: **Launch
+   The two waits an operator otherwise watches in silence get a wait
+   card (`.pn-card`), on the pendant and the desktop page alike: **Launch
    until ready** (the orchestrator's `_orch.boot`: starting → ready, or
    failed with the exit code and the log's last lines) and **Start until
    the first motion** (the runtime's `preparing`, project-guide "The

@@ -13,7 +13,7 @@ chrome's sake.
 
 | File | What's in it |
 |---|---|
-| [workspace/gui/vendor/base.css](../workspace/gui/vendor/base.css) | All tokens. Buttons, pills, inputs, toasts, modal chrome, confirm dialog, scrollbar, reduced-motion, shared step-list primitive. |
+| [workspace/gui/vendor/base.css](../workspace/gui/vendor/base.css) | All tokens. Buttons, pills, inputs, messages (§3.3b), modal chrome, confirm dialog, scrollbar, reduced-motion, shared step-list primitive. |
 | [workspace/gui/vendor/nav.css](../workspace/gui/vendor/nav.css) | App-wide left nav. Uses the same tokens; no extra CSS variables. |
 | [workspace/gui/vendor/anchor_gizmos.js](../workspace/gui/vendor/anchor_gizmos.js) | How an anchor looks in a 3D viewer — axes, label, dot, hover glow, cursor-nearest picking. The orchestrator viewer and the scene builder both import it; neither draws an anchor itself. |
 | [workspace/gui/orchestrator/web/admin/style.css](../workspace/gui/orchestrator/web/admin/style.css) | Workspace + pendant specifics that don't fit in the shared primitives. |
@@ -211,23 +211,48 @@ pendant has sound from its first touch. Vibration is what the browser
 offers (Android Chrome; iOS and desktops ignore it). No surface makes
 its own sounds.
 
-### 3.3b Toasts
+### 3.3b Messages — one place, one look
+
+Every message an operator gets lands in ONE place on every page (admin
+dashboard, workspace desktop and pendant, System, scene builder): the
+**top bar**. One implementation, `vendor/messages.js` (`toast`,
+`notify`, `unnotify`, `notifyHost`; `api.js` re-exports them), one
+look, `base.css .msg-*`. What arrives there:
+
+| Kind | From | Level | Stays |
+|---|---|---|---|
+| A click's result or a hint | `toast(text, kind)` | ✓ done · i hint · ! warn · ! error | done / hint 2.5 s, warn 5 s, error until its × |
+| A run's error or warning | `rt.step(level=…)` (id `step`) | ! error · ! warn | until the next plain step |
+| The pause's question | `rt.notice` (id `notice`, `ask`) | ! / i, its own word | until Resume / Dismiss / the pause ends |
+
+**The line** (`.msg-line`, an empty one in each bar's free middle,
+shrinking before anything else there): the newest message — its round
+mark, its level word, its first words — and a count when there are
+more. Empty, it is hidden; the bar looks as it always does.
+**The cards** (`#msgStack`, one per page, fixed, outside the pendant
+overlay so they cover the floating 3D view): every message, newest
+on top, hanging under the line. They open for an error, a warning
+(folding after 5 s) and a question; a tap on the line opens them again,
+a tap elsewhere or Escape folds them — never while a question waits.
+A card's × drops that message; a question has its own buttons instead
+(Resume, Dismiss) and nothing else closes it. Pendant mode draws them
+larger (`.msg-stack.big`, 44–48 px buttons).
+
+A message is **marked, never painted** (§9): the mark, the level word
+and the card's 4 px left edge carry the colour; the words are plain
+text. No tinted fill, no pulsing background — only an urgent line's
+mark breathes (off under reduced motion). The page never moves for a
+message.
 
 A toast is for something the operator **cannot already see**: an
-error, or a result that shows nowhere else (fields loaded from a file,
-an operator action's outcome). Never an echo of a click whose effect
-the page already shows — "pause sent", "Parameters set", "Removed X",
-"Uploaded Y" are gone for that reason: the state pill, the list or the
-closed modal already say it.
+error, or a result that shows nowhere else. Never an echo of a click
+whose effect the page already shows — "pause sent", "Parameters set",
+"Removed X" are gone for that reason.
 
-Look (`base.css .toast`): a plain card on the page's own surface with
-a hairline and a soft shadow, normal text; the meaning is a small
-round mark at the left — ✓ green done, ! amber check, ! red failed —
-never a tinted box (§6, §9). Timing: success 2.5 s, warning 5 s, a
-failure stays until clicked (its × says so). At most three on screen,
-the oldest goes first. One implementation for the admin pages
-(`api.js toast`); the scene builder's `showToast` builds the same
-DOM with the same rules; its untyped hints get the card without a mark.
+NOT messages, and not here: the Launch/Start **wait card** (a progress
+with a live console), a **field's own error** under that field (it
+points at what to fix), and a **confirm dialog** (a question the
+operator asked by clicking).
 
 ### 3.4 Step lists
 
@@ -473,10 +498,11 @@ Things that look like they'd work but break the system:
 - **Mixing `px` and `rem`.** The whole system is `px`. Don't switch
   half-way.
 - **Adding a new colour.** Use the existing palette — `--green`,
-  `--amber`, `--red`, `--accent`. The single exception is the SIM
-  cyan in `.device-pill--sim`, which is deliberately *not* a state
-  colour. If you need a new informational hue, add it to `base.css`
-  with a comment explaining what it means.
+  `--amber`, `--red`, `--accent`. The exceptions are a device's
+  MODE, `--sim` (cyan) and `--live` (violet) — deliberately *not*
+  state colours (device-guide §16). If you need a new informational
+  hue, add it to `base.css` as a token with a comment explaining what
+  it means.
 
 ## 7. Adding a new component
 
@@ -524,6 +550,13 @@ Two universal rules:
 - `--accent` means *interactive or live* — never decoration.
 - Red = needs a human. Amber = degraded / check. Green = confirmed
   good, not "merely present".
+- **Red marks, it never paints words.** A problem's colour goes on a
+  mark — the round **!** (a message, a step dot, a form error, a
+  dashboard card), a left edge (log line, device alert) or a one-word
+  label (*Error*, *Failed*, *Attention*). The message beside it is
+  plain `--text`. Saturated red or amber sentences, and red text on a
+  red tint, are hard to read and tiring on a bench screen — removed
+  2026-11 for that reason.
 - **Never color alone.** A state carried by color also carries a
   shape: ✓ badge on done, ! on attention, hollow vs filled for
   occupancy, slash on hidden. Color-blind operators exist.

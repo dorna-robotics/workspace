@@ -722,7 +722,7 @@ select.input { cursor: pointer; }
 
 /* ── Ruler ─────────────────────────────────────────────────────────────
    Shift-click two anchors in the 3D view. Bottom-left so it never
-   collides with the toasts (top-right) or the right-hand panels, and
+   collides with the messages (under the header's line) or the right-hand panels, and
    pointer-events:none so it can't intercept a click meant for the
    scene underneath it. */
 .sb-ruler-hud {

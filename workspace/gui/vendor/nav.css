@@ -142,24 +142,25 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
 
 /* Fixed overlays must NOT inherit the sibling-shift above: they place
    themselves (inset:0 over the viewport, or a box set from JS — the
-   pendant notice and the launch card cover the pendant body), and a
+   launch card covers the pendant body, the message cards hang under
+   the top bar's line), and a
    48/200 px margin would shift them off it, the navbar peeking through. */
 .app-nav ~ .modal-overlay,
 .app-nav ~ .confirm-overlay,
 .app-nav ~ .pendant-overlay,
-.app-nav ~ .pendant-notice,
+.app-nav ~ .msg-stack,
 .app-nav ~ .launch-card,
 .app-nav.expanded ~ .modal-overlay,
 .app-nav.expanded ~ .confirm-overlay,
 .app-nav.expanded ~ .pendant-overlay,
-.app-nav.expanded ~ .pendant-notice,
+.app-nav.expanded ~ .msg-stack,
 .app-nav.expanded ~ .launch-card {
   margin-left: 0;
 }
 html.nav-expanded .app-nav ~ .modal-overlay,
 html.nav-expanded .app-nav ~ .confirm-overlay,
 html.nav-expanded .app-nav ~ .pendant-overlay,
-html.nav-expanded .app-nav ~ .pendant-notice,
+html.nav-expanded .app-nav ~ .msg-stack,
 html.nav-expanded .app-nav ~ .launch-card {
   margin-left: 0;
 }

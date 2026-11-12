@@ -877,6 +877,15 @@ class Core:
         reports homed after."""
         return self.home_axis_with_stop(self.rail_cfg, force=True)
 
+    def operator_facts(self) -> list[dict]:
+        """The Devices tab's glance — what the platform knows without a
+        robot round-trip (it is asked every few seconds while on screen)."""
+        tool = self.current_tool()
+        return [
+            {"label": "Tool", "value": getattr(tool, "name", None) or "none"},
+            {"label": "Address", "value": self.robot_ip or "—"},
+        ]
+
     def operator_actions(self) -> list[dict]:
         actions = [
             {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "motors"},

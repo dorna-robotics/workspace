@@ -1576,7 +1576,7 @@ class _DSLActionLeaf(RecipeAction):
         (2026-09-24) that was 8-14 replans a second, as fast as the plan
         could be rebuilt, until the no-progress cap ended the run
         INVALID, with nothing on the operator's screen. So the run PAUSES with the error on the timeline
-        (``rt.step(level="error")``: red banner, beep) and nothing is
+        (``rt.step(level="error")``: an error message, beep) and nothing is
         retried. Resume: the leaf's failure is seen on the next tick and
         the engine replans from observed state — the action runs again
         on a world the operator has fixed. Or Park / Kill.

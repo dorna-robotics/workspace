@@ -446,20 +446,29 @@ A component can declare methods that the **operator** should be able to
 trigger from the UI — gripper enable/disable, decapper open, printer
 cancel-job, fixture release-clamp, etc. The orchestrator scans every
 component for an optional `operator_actions()` method and renders the
-union as buttons in two surfaces, both labelled **"Operator Controls"**:
+union in two surfaces:
 
-- **Sidebar "Operator Controls" section** — always visible; shows an
-  empty-state message ("No operator actions declared") when no
-  component contributes anything. Collapsible, grouped by component.
-- **Pendant "Controls" button** in the secondary row → modal with the
-  same component-grouped layout. Hidden when no component declares
-  any actions (pendant row is too constrained to spend a tile on an
-  empty surface).
+- **The pendant's Devices tab** — one page: every component an operator
+  works with on the left (a status dot, its name, its address and mode;
+  anything down pinned under *Needs attention*; search finds actions
+  too), the selected one on the right — its state, its **facts**
+  (`operator_facts()`, below) and its actions under their `group`
+  headings. An action is a row: its `hint` under the label, **Run**, and
+  — opened — its declared **fields** and its **output**: whatever the
+  method returns, as plain text (a dict prints as a dict).
+- **The desktop sidebar's "Operator Controls" section** — the same
+  actions as buttons, grouped by component.
 
-Both surfaces gate the buttons by workflow state: **disabled while
-RUNNING** (out-of-band ops mid-run would race the workflow), enabled
-in IDLE / PAUSED / ERROR / NOT_LAUNCHED. The component never has to
-enforce that — the orchestrator does.
+Both gate the actions by workflow state: **paused while RUNNING**
+(out-of-band ops mid-run would race the workflow — the Devices tab says
+so), enabled in IDLE / PAUSED / ERROR / NOT_LAUNCHED. The component
+never has to enforce that — the runtime does
+(`runtime_server._invoke_operator_action`, the one way an action runs).
+
+**A component's name on screen** is the scene's `label:` when its entry
+declares one (`label: "Pump 1 · LV"` — a platform key: the component
+never sees it), else its name made readable (`syringe_pump_1` →
+"Syringe pump 1").
 
 This is a **component-level** concern, intentionally separate from the
 device contract in [`device-guide.md`](device-guide.md). A fixture
@@ -505,15 +514,41 @@ action reaches the component directly, as apc's cylinder `enable()` /
 `disable()` do. A place never blows: its release is `output_disable`.
 An unset `output_blow` makes `blow()` raise rather than fire a guess.
 
-Each entry is a dict with two string fields:
+Each entry is a dict:
 
-- **`label`** — display name on the button
-- **`method`** — name of a no-arg callable on the component
-  (`getattr(component, method)()` must work)
+- **`label`** — display name
+- **`method`** — the callable on the component
+- **`icon`** — optional, a name from the UI's icon set
+- **`group`** — optional, the actions that belong together (Motors,
+  Fluid): the Devices tab's section heading
+- **`hint`** — optional, one line under the label: what it does
+- **`params`** — optional, the fields the operator fills in before Run,
+  DECLARED, never guessed from the signature. Each `{name, type,
+  default?, unit?, label?, options?, min?, max?}`, `type` one of `int`
+  `float` `str` `bool` `choice` (`options` for a choice). Run calls
+  `method(**values)` with every value converted to its type and checked
+  against `options` / `min` / `max` (`coerce_args`) — a bad value is
+  refused before the method runs, the field named. No `params` → called
+  with none, exactly as before.
+
+```python
+{"label": "Blow", "method": "blow", "icon": "zap",
+ "hint": "Air out of the cup for a set time, then off",
+ "params": [{"name": "duration", "type": "float", "default": 5, "unit": "s", "min": 0}]}
+```
 
 The orchestrator silently drops entries whose `label` / `method` is
 missing or whose `method` doesn't resolve to a callable — a malformed
-entry can't crash the panel.
+entry can't crash the panel; a malformed field is dropped the same way.
+
+**`operator_facts()`** — optional, any component: a few things worth
+seeing at a glance, `[{"label": "Last op", "value": "…"}, …]`, shown
+above the actions and asked again every 2 s while on screen — run or
+not. So **bookkeeping only, never a hardware query**: a serial or
+network read there would interleave with the moves on the same line.
+The pump reports its last op, what is in the barrel, its line volumes
+and its stroke; the robot its mounted tool and address. A live reading
+belongs in an action (the pump's Report).
 
 ### Same code path as recipes use
 
@@ -542,10 +577,12 @@ project-level extension when a concrete use case lands.)
 
 ### Wire (for reference)
 
-The runtime exposes the actions over a single WebSocket
-(`/ws/operator_actions`) — both the list (server → client on
-connect) and the invocation messages (client → server, with the
-result pushed back). One pre-opened socket per workspace session, so
+The runtime exposes the actions over the multiplexed WebSocket (`/ws`;
+the legacy `/ws/operator_actions` stays) — the list
+(`operator_actions`), the components behind them (`operator_components`:
+label, type, device ids, facts), the invocation (`invoke`, with `args`
+for declared fields; the reply carries `text`, the output) and `facts`
+(a component's `operator_facts()`, on request). One pre-opened socket per workspace session, so
 every button click is a single `ws.send()` with no HTTP handshake on
 the hot path. See
 [`workspace.components.operator_actions`](../workspace/workspace/components/operator_actions.py)

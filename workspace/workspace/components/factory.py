@@ -36,4 +36,8 @@ def create_component(name: str, cfg: dict, workspace):
     if cls is None:
         raise ValueError(f"Unknown component type '{type_name}' for '{name}'")
 
+    # ``label`` is the PLATFORM's (the name a screen shows — the pendant's
+    # Devices tab; Workspace.component_labels keeps it): a component never
+    # sees it, so one that passes its config on cannot trip over it.
+    cfg = {k: v for k, v in cfg.items() if k != "label"}
     return cls(name, cfg, workspace)

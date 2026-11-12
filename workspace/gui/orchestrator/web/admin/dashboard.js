@@ -381,7 +381,7 @@ function render() {
         </span>
         ${uptime ? `<span class="wc-meta-item"><span>Up</span> <strong>${esc(uptime)}</strong></span>` : ""}
         ${devicesPill}
-        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ ${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
+        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}"><span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
       </div>
       ${(() => {
         const steps = st.step?.steps;

@@ -1,5 +1,7 @@
 # workspace/runtime_server.py
 import os
+import functools
+import pprint
 import time
 import atexit
 import json
@@ -715,6 +717,11 @@ def _broadcast_steps(entry: Optional[dict], progress: int = -1, total: Optional[
     _broadcast_dual(_step_ws_clients, json.dumps(payload), "step_state", payload)
 
 
+def _no_result(result) -> bool:
+    """An operator action's "nothing to show": None, "" or []."""
+    return result is None or result == "" or result == []
+
+
 def _presentable_result(result):
     """Coerce ANY operator-action return into something the UI can show —
     centrally, so components return their native object (a ``Scan``, a
@@ -726,7 +733,7 @@ def _presentable_result(result):
     * Anything else (a dataclass, an object) → its ``str()``.
 
     Returns ``None`` when there's nothing meaningful to present."""
-    if result is None or result == "" or result == []:
+    if _no_result(result):
         return None
     if isinstance(result, (str, int, float, bool, list, dict)):
         return result
@@ -1454,12 +1461,104 @@ def _operator_actions_snapshot(workspace) -> list[dict]:
                 "label":     action["label"],
                 "method":    action["method"],
             }
-            if action.get("icon"):
-                entry["icon"] = action["icon"]
-            if action.get("group"):
-                entry["group"] = action["group"]
+            for k in ("icon", "group", "hint", "params"):
+                if action.get(k):
+                    entry[k] = action[k]
             out.append(entry)
     return out
+
+
+def _operator_components_snapshot(workspace) -> list[dict]:
+    """Every component an operator works with — it has a device, operator
+    actions or operator facts — in stable name order: ``{name, label,
+    type, devices, facts}``. ``label`` is the scene's (``label:``) or
+    None; ``devices`` its device ids, whose state the device snapshot
+    carries; ``facts`` whether it answers a ``facts`` request. The
+    pendant's Devices tab lists exactly these."""
+    from workspace.components.operator_actions import component_operator_actions
+    from workspace.devices import component_device_ids
+    labels = getattr(workspace, "component_labels", {}) or {}
+    out: list[dict] = []
+    components = getattr(workspace, "components", {}) or {}
+    for name in sorted(components):
+        comp = components[name]
+        devices = list(component_device_ids(comp))
+        facts = callable(getattr(comp, "operator_facts", None))
+        if not (devices or facts or component_operator_actions(comp)):
+            continue
+        out.append({"name": name, "label": labels.get(name), "type": getattr(comp, "type", None),
+                    "devices": devices, "facts": facts})
+    return out
+
+
+def _result_text(result) -> Optional[str]:
+    """An action's return value as the operator reads it: text as it is,
+    anything else as Python prints it (a dict stays a dict) — None when
+    there is nothing to show (_no_result)."""
+    if _no_result(result):
+        return None
+    if isinstance(result, str):
+        return result
+    return pprint.pformat(result, sort_dicts=False, width=96)
+
+
+# The mux's unicast replies to a client's own request (invoke, facts):
+# not subscriptions — always sent to the asking client.
+_MUX_REPLIES = ("invoke_result", "facts")
+
+
+async def _invoke_operator_action(workspace, component_name: str, method_name: str, args=None) -> dict:
+    """THE way an operator action runs, for every channel (/ws and the
+    legacy /ws/operator_actions). Gates: the component exists, the method
+    is one it DECLARES, the values fit its declared fields (coerce_args),
+    no run is in flight, the same action is not already running. Runs on
+    a worker thread under ``rt.operator_call``. Returns ``{component,
+    method, ok, msg?, text?, seconds}`` — ``text`` is what the operator
+    sees (_result_text)."""
+    from workspace.components.operator_actions import component_operator_actions, coerce_args
+    out = {"component": component_name, "method": method_name, "ok": False}
+    comp = (getattr(workspace, "components", {}) or {}).get(component_name)
+    if comp is None:
+        return {**out, "msg": f"unknown component: {component_name}"}
+    action = next((a for a in component_operator_actions(comp) if a["method"] == method_name), None)
+    if action is None:
+        return {**out, "msg": f"{component_name}.{method_name} is not an operator action"}
+    if args is not None and not isinstance(args, dict):
+        return {**out, "msg": "args must be an object of field values"}
+    try:
+        kwargs = coerce_args(action, args)
+    except ValueError as ex:
+        return {**out, "msg": str(ex)}
+    rt = getattr(workspace, "rt", None)
+    state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
+    if state in ("RUNNING", "ACTIVE"):
+        return {**out, "msg": "cannot run operator actions while workflow is running"}
+    # A blocking action (animation, sleep, motion) runs off the IOLoop;
+    # the check-and-add runs on the IOLoop before the await — race-free.
+    key = f"{component_name}.{method_name}"
+    if key in _op_actions_inflight:
+        return {**out, "msg": f"{key} is already running"}
+    _op_actions_inflight.add(key)
+    t0 = time.monotonic()
+    try:
+        loop = tornado.ioloop.IOLoop.current()
+        fn = functools.partial(getattr(comp, method_name), **kwargs)
+        result = await loop.run_in_executor(None, _run_operator_action, rt, fn)
+    except Exception as ex:
+        return {**out, "msg": f"{type(ex).__name__}: {ex}", "seconds": round(time.monotonic() - t0, 3)}
+    finally:
+        _op_actions_inflight.discard(key)
+    _log_operator_result(rt, component_name, method_name, result)
+    done = {**out, "ok": True, "seconds": round(time.monotonic() - t0, 3)}
+    try:
+        text = _result_text(result)
+    except Exception as ex:
+        # The action RAN; only its value cannot be printed — say so, in
+        # its row, rather than leave the row waiting for a reply.
+        text = f"(the result could not be shown — {type(ex).__name__}: {ex})"
+    if text is not None:
+        done["text"] = text
+    return done
 
 
 class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
@@ -1475,7 +1574,7 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
               2. runtime must not be RUNNING (out-of-band ops mid-run
                  would race the workflow).
           Reply: ``{"type": "invoke_result", "component", "method",
-                    "ok": bool, "msg"?, "result"?}``
+                    "ok": bool, "msg"?, "text"?, "seconds"}``
 
     Server → client messages (also sent on connect):
       ``{"type": "actions", "actions": [...]}``  — current snapshot
@@ -1509,64 +1608,14 @@ class OperatorActionsWebSocket(tornado.websocket.WebSocketHandler):
             return
         component_name = str(msg.get("component", "") or "")
         method_name    = str(msg.get("method", "") or "")
-        await self._invoke(component_name, method_name)
+        await self._invoke(component_name, method_name, msg.get("args"))
 
-    async def _invoke(self, component_name: str, method_name: str):
-        from workspace.components.operator_actions import component_operator_actions
-
-        def reply(ok: bool, msg: str = "", result=None):
-            payload = {
-                "type":      "invoke_result",
-                "component": component_name,
-                "method":    method_name,
-                "ok":        ok,
-            }
-            if msg:    payload["msg"] = msg
-            if ok and isinstance(result, (str, int, float, bool, list, dict, type(None))):
-                payload["result"] = result
-            try:
-                self.write_message(json.dumps(payload))
-            except Exception:
-                pass
-
-        components = getattr(self.workspace, "components", {}) or {}
-        comp = components.get(component_name)
-        if comp is None:
-            reply(False, f"unknown component: {component_name}")
-            return
-
-        declared = {a["method"] for a in component_operator_actions(comp)}
-        if method_name not in declared:
-            reply(False, f"{component_name}.{method_name} is not an operator action")
-            return
-
-        rt = getattr(self.workspace, "rt", None)
-        state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
-        if state in ("RUNNING", "ACTIVE"):
-            reply(False, "cannot run operator actions while workflow is running")
-            return
-
-        # An operator action may block (animation, sleep, a motion). Run it
-        # on a worker thread so the IOLoop stays responsive — otherwise the
-        # whole server (WS + HTTP + 3D viewer) freezes for the action's
-        # duration. The check-and-add below runs on the IOLoop before the
-        # await, so it's race-free.
-        key = f"{component_name}.{method_name}"
-        if key in _op_actions_inflight:
-            reply(False, f"{key} is already running")
-            return
-        _op_actions_inflight.add(key)
+    async def _invoke(self, component_name: str, method_name: str, args=None):
+        payload = await _invoke_operator_action(self.workspace, component_name, method_name, args)
         try:
-            loop = tornado.ioloop.IOLoop.current()
-            result = await loop.run_in_executor(None, _run_operator_action, rt, getattr(comp, method_name))
-        except Exception as ex:
-            reply(False, f"{type(ex).__name__}: {ex}")
-            return
-        finally:
-            _op_actions_inflight.discard(key)
-
-        reply(True, result=result)
-        _log_operator_result(rt, component_name, method_name, result)
+            self.write_message(json.dumps({"type": "invoke_result", **payload}))
+        except Exception:
+            pass
 
 
 class DeviceWebSocket(tornado.websocket.WebSocketHandler):
@@ -1614,12 +1663,16 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
       ``device_state``       — single device update.
       ``devices_snapshot``   — full devices snapshot (on connect + scene change).
       ``operator_actions``   — full op-actions snapshot (on connect + scene change).
+      ``operator_components``— the components behind them: label, type,
+                               device ids, facts (on connect + scene change).
       ``invoke_result``      — reply to a client-side ``invoke``.
+      ``facts``              — reply to a client-side ``facts``.
 
     Client → server envelope types:
-      ``invoke``             — ``{type, payload: {component, method}}``.
-                               Same safety gates as
-                               :class:`OperatorActionsWebSocket._invoke`.
+      ``invoke``             — ``{type, payload: {component, method, args?}}``
+                               (_invoke_operator_action: the one way).
+      ``facts``              — ``{type, payload: {component}}`` — its
+                               operator_facts(), now.
 
     A client wanting to ignore a category just doesn't dispatch on its
     type — there's no required subscribe step. (Server-side
@@ -1674,9 +1727,12 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
                 "devices": _project_devices_snapshot(self.workspace),
             })
 
-            # Operator actions.
+            # Operator actions, and the components they belong to.
             self._send("operator_actions", {
                 "actions": _operator_actions_snapshot(self.workspace),
+            })
+            self._send("operator_components", {
+                "components": _operator_components_snapshot(self.workspace),
             })
 
             # Schedule history — replay every schedule + action/swap
@@ -1704,7 +1760,10 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
             await self._invoke(
                 str(payload.get("component", "") or ""),
                 str(payload.get("method", "") or ""),
+                payload.get("args"),
             )
+        elif etype == "facts":
+            await self._facts(str(payload.get("component", "") or ""))
         elif etype == "subscribe":
             # ``{"type":"subscribe", "payload":{"types":["step_state",
             # "runtime_status"]}}`` — opt into specific event types
@@ -1724,86 +1783,48 @@ class AllWebSocket(tornado.websocket.WebSocketHandler):
                 return
             if self._subs is None:
                 # Currently "all" — materialize the implicit set so we
-                # can remove from it. Keep ``invoke_result`` always on
-                # since it's the reply path for client→server invokes.
+                # can remove from it. Replies (_MUX_REPLIES) are not
+                # subscriptions: always sent, never in the set.
                 self._subs = {
                     "step_state", "runtime_status", "device_state",
-                    "devices_snapshot", "operator_actions",
-                    "schedule_event", "invoke_result",
+                    "devices_snapshot", "operator_actions", "operator_components",
+                    "schedule_event",
                 }
             for t in types:
-                if isinstance(t, str) and t != "invoke_result":
+                if isinstance(t, str):
                     self._subs.discard(t)
 
     def _send(self, etype: str, payload: dict) -> None:
         # Respect the per-client subscription filter for initial-
-        # snapshot sends too. ``invoke_result`` is always allowed —
-        # filtering away the reply to a client's own invoke would be
-        # confusing.
-        if etype != "invoke_result" and not self.wants(etype):
+        # snapshot sends too. A reply to this client's own request
+        # (_MUX_REPLIES) is always sent.
+        if etype not in _MUX_REPLIES and not self.wants(etype):
             return
         try:
             self.write_message(json.dumps({"type": etype, "payload": payload}))
         except Exception:
             pass
 
-    async def _invoke(self, component_name: str, method_name: str) -> None:
-        """Same gates + dispatch as OperatorActionsWebSocket._invoke.
-        Reply is a unicast ``invoke_result`` envelope to this client.
-        The method runs on a worker thread so a blocking action (the
-        cylinder animation, a sleep, a motion) never freezes the IOLoop
-        — this is the channel the project page actually uses."""
-        from workspace.components.operator_actions import component_operator_actions
+    async def _invoke(self, component_name: str, method_name: str, args=None) -> None:
+        """An operator action (``_invoke_operator_action`` — the one way);
+        the reply is a unicast ``invoke_result`` to this client."""
+        self._send("invoke_result", await _invoke_operator_action(self.workspace, component_name, method_name, args))
 
-        def reply(ok: bool, msg: str = "", result=None) -> None:
-            p = {
-                "component": component_name,
-                "method":    method_name,
-                "ok":        ok,
-            }
-            if msg:
-                p["msg"] = msg
-            if ok:
-                shown = _presentable_result(result)
-                if shown is not None:
-                    p["result"] = shown
-            self._send("invoke_result", p)
-
-        components = getattr(self.workspace, "components", {}) or {}
-        comp = components.get(component_name)
+    async def _facts(self, component_name: str) -> None:
+        """A component's ``operator_facts()`` (the Devices tab asks while
+        it is on screen) — unicast ``facts`` reply, off the IOLoop."""
+        from workspace.components.operator_actions import component_operator_facts
+        comp = (getattr(self.workspace, "components", {}) or {}).get(component_name)
+        p = {"component": component_name}
         if comp is None:
-            reply(False, f"unknown component: {component_name}")
-            return
-
-        declared = {a["method"] for a in component_operator_actions(comp)}
-        if method_name not in declared:
-            reply(False, f"{component_name}.{method_name} is not an operator action")
-            return
-
-        rt = getattr(self.workspace, "rt", None)
-        state = (getattr(rt, "state", "") or "").upper() if rt is not None else ""
-        if state in ("RUNNING", "ACTIVE"):
-            reply(False, "cannot run operator actions while workflow is running")
-            return
-
-        # Off the IOLoop, with an in-flight guard against pile-up — see
-        # OperatorActionsWebSocket._invoke for the full rationale.
-        key = f"{component_name}.{method_name}"
-        if key in _op_actions_inflight:
-            reply(False, f"{key} is already running")
-            return
-        _op_actions_inflight.add(key)
-        try:
-            loop = tornado.ioloop.IOLoop.current()
-            result = await loop.run_in_executor(None, _run_operator_action, rt, getattr(comp, method_name))
-        except Exception as ex:
-            reply(False, f"{type(ex).__name__}: {ex}")
-            return
-        finally:
-            _op_actions_inflight.discard(key)
-
-        reply(True, result=result)
-        _log_operator_result(rt, component_name, method_name, result)
+            p["error"] = f"unknown component: {component_name}"
+        else:
+            try:
+                loop = tornado.ioloop.IOLoop.current()
+                p["facts"] = await loop.run_in_executor(None, component_operator_facts, comp) or []
+            except Exception as ex:
+                p["error"] = f"{type(ex).__name__}: {ex}"
+        self._send("facts", p)
 
 
 def _broadcast_scene_changed(workspace):
@@ -1843,6 +1864,11 @@ def _broadcast_scene_changed(workspace):
         json.dumps({"type": "operator_actions", "payload": {"actions": actions_snap}})
         if _all_ws_clients and actions_snap is not None else None
     )
+    comp_mux = (
+        json.dumps({"type": "operator_components",
+                    "payload": {"components": _operator_components_snapshot(workspace)}})
+        if _all_ws_clients else None
+    )
 
     def _send():
         if device_legacy is not None:
@@ -1864,6 +1890,8 @@ def _broadcast_scene_changed(workspace):
                         c.write_message(device_mux)
                     if op_mux is not None and c.wants("operator_actions"):
                         c.write_message(op_mux)
+                    if comp_mux is not None and c.wants("operator_components"):
+                        c.write_message(comp_mux)
                 except Exception:
                     _all_ws_clients.discard(c)
 
