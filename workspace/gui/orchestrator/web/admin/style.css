@@ -292,8 +292,6 @@
 
 /* ── Utility classes (orchestrator-specific) ───────────────────────────── */
 .label-optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
-.section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
-.section-chevron.open { transform: rotate(90deg); }
 
 /* ── Kwargs form element classes ───────────────────────────────────────── */
 .kw-file-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
@@ -729,7 +727,6 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   padding: var(--space-5) var(--space-6) var(--space-6); gap: var(--space-5); -webkit-overflow-scrolling: touch; }
 .dv-detail > div:empty { display: none; }
 .dv-top { display: flex; gap: var(--space-4); align-items: center; }
-.dv-top .ic { width: 48px; height: 48px; border-radius: var(--radius-md); display: grid; place-items: center; flex: none; background: var(--bg); color: var(--text); }
 .dv-hd { min-width: 0; }
 .dv-top h2 { margin: 0; font-size: var(--text-xl); font-weight: 700; }
 .dv-top .meta { display: flex; gap: var(--space-2); align-items: center; margin-top: 6px; flex-wrap: wrap; }
@@ -745,32 +742,35 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .dv-alert .t { flex: 1; font-size: var(--text-md); line-height: 1.45; }
 .dv-alert b { font-weight: 700; }
 .dv-gate { border-radius: var(--radius-md); background: var(--bg); padding: var(--space-3) var(--space-4); font-size: var(--text-md); color: var(--muted); }
-.dv-acts { display: flex; flex-direction: column; gap: var(--space-5); }
-.dv-g { display: flex; flex-direction: column; gap: 2px; }
-.dv-gh { display: flex; align-items: center; gap: var(--space-2); font: inherit; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
-  letter-spacing: .1em; color: var(--muted); padding: 4px var(--space-3) var(--space-2); background: none; border: none; cursor: pointer; text-align: left; }
-.dv-gh .n { font-weight: 600; opacity: .7; }
-.dv-gh svg { margin-left: auto; }
-.dv-a { border-radius: var(--radius-md); }
-.dv-a:hover, .dv-a.open { background: var(--bg); }
-.dv-ar { display: grid; grid-template-columns: 32px 1fr auto; gap: var(--space-3); align-items: center; min-height: 60px;
-  padding: 6px var(--space-2) 6px var(--space-3); cursor: pointer; }
-.dv-ar .ai { width: 32px; display: grid; place-items: center; color: var(--muted); }
+/* One card per group: its title bar folds it (.fold, base.css), hairlines
+   part its actions — a group never runs into the next one. */
+.dv-acts { display: flex; flex-direction: column; gap: var(--space-4); }
+.dv-g { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.dv-gh { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 52px; padding: 0 var(--space-4);
+  font: inherit; font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text);
+  background: var(--bg); border: none; cursor: pointer; text-align: left; }
+.dv-gh:focus-visible { outline: none; box-shadow: inset var(--glow); }
+.dv-gh .section-chevron { opacity: 1; color: var(--muted); }
+.dv-gh .n { font-weight: 600; color: var(--muted); }
+.dv-a { border-top: 1px solid var(--border); }
+.dv-ar { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--space-3); align-items: center; min-height: 64px;
+  padding: 8px var(--space-3) 8px var(--space-4); }
+.dv-ar[data-dv-toggle] { cursor: pointer; }
+.dv-ar .ai { width: 28px; display: grid; place-items: center; color: var(--muted); }
 .dv-ar .ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); }
-.dv-a.open .ai, .dv-a:hover .ai { color: var(--text); }
 .dv-at { min-width: 0; }
-.dv-ar .al { font-weight: 600; font-size: var(--text-md); }
+.dv-ar .al { font-weight: 600; font-size: var(--text-lg); }
 .dv-ar .ad { font-size: var(--text-sm); color: var(--muted); margin-top: 1px; }
 .dv-ar .rt { display: flex; gap: var(--space-3); align-items: center; }
 .dv-ar .btn { min-width: 88px; }
 .dv-last { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
 .dv-last .ok { color: var(--green); font-weight: 700; } .dv-last .bad { color: var(--red); font-weight: 700; }
-.dv-ab { padding: 2px var(--space-4) var(--space-4) 56px; display: flex; flex-direction: column; gap: var(--space-3); }
+.dv-ab { padding: 0 var(--space-4) var(--space-4) 60px; display: flex; flex-direction: column; gap: var(--space-3); }
 .dv-params { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end; }
 .dv-f label { display: block; font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
 .dv-f .input { width: 150px; background: var(--surface); }
 .dv-bool { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; font-size: var(--text-md); }
-.dv-out { border-radius: var(--radius-sm); background: var(--surface); padding: var(--space-3) var(--space-4); }
+.dv-out { border-radius: var(--radius-sm); background: var(--bg); padding: var(--space-3) var(--space-4); }
 .dv-out .h { font-size: var(--text-sm); color: var(--muted); margin-bottom: 6px; }
 .dv-out .h .ok { color: var(--green); font-weight: 700; } .dv-out .h .bad { color: var(--red); font-weight: 700; }
 .dv-out pre { margin: 0; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word;
@@ -781,13 +781,20 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   .dv-detail { padding: var(--space-4); }
 }
 
-/* ── Event rail ── */
+/* ── Event rail ──
+   Opens and closes with the section rail's motion: the width eases
+   (--motion-med, --ease), the content keeps its width so nothing
+   reflows on the way, and closed it turns hidden once the motion ends. */
 .pendant-events {
-  width: 340px; flex: none;
+  --pe-w: 340px;
+  width: var(--pe-w); flex: none;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);
+  overflow: hidden;
+  transition: width var(--motion-med) var(--ease);
 }
+.pendant-events > * { min-width: calc(var(--pe-w) - 1px); }   /* inside the border */
 .pe-head {
   display: flex; align-items: center; gap: 10px;
   height: 56px; padding: 0 6px 0 16px; flex: none; box-sizing: border-box;
@@ -814,8 +821,11 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   display: flex; justify-content: space-between;
 }
 .pe-foot:empty { display: none; }
-/* Closed: gone — the section rail's Steps toggle reopens it */
-.pendant-events.collapsed { display: none; }
+/* Closed: no width — the section rail's Steps toggle reopens it */
+.pendant-events.collapsed {
+  width: 0; border-left-width: 0; visibility: hidden;
+  transition: width var(--motion-med) var(--ease), visibility 0s var(--motion-med);
+}
 
 /* Step rows — the shared :is(.step-card, .pendant-step-card)
    primitive in base.css drives the look (opacity ladder, active

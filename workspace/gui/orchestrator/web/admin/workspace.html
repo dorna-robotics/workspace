@@ -595,7 +595,7 @@
           <span class="step-count-badge" id="stepCountBadge"></span>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopySteps" title="Copy steps"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         </div>
-        <div id="stepTimeline" class="step-timeline" style="display:none"><div class="step-empty">No steps yet</div></div>
+        <div class="fold shut" id="stepFold"><div class="fold-in"><div id="stepTimeline" class="step-timeline"><div class="step-empty">No steps yet</div></div></div></div>
       </div>
 
       <div id="devicesSection">
@@ -605,7 +605,7 @@
           <div class="spacer"></div>
           <span class="step-count-badge" id="devicesCountBadge"></span>
         </div>
-        <div id="devicesList" class="devices-list" style="display:none"><div class="step-empty">Not running</div></div>
+        <div class="fold shut" id="devicesFold"><div class="fold-in"><div id="devicesList" class="devices-list"><div class="step-empty">Not running</div></div></div></div>
       </div>
 
       <div id="progressSection" style="display:none">
@@ -625,7 +625,7 @@
           <div class="spacer"></div>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnCopyParams" title="Copy parameters"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         </div>
-        <pre id="paramsPre" style="display:none" class="params-pre">(no parameters)</pre>
+        <div class="fold shut" id="paramsFold"><div class="fold-in"><pre id="paramsPre" class="params-pre">(no parameters)</pre></div></div>
       </div>
 
       <!-- Operator Controls — buttons exposed by each component via the
@@ -637,7 +637,7 @@
           <div class="section-label">Operator Controls</div>
           <svg id="opActionsChevron" class="section-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
-        <div id="opActionsList" class="op-actions-list" style="display:none"><div class="step-empty">Not running</div></div>
+        <div class="fold shut" id="opActionsFold"><div class="fold-in"><div id="opActionsList" class="op-actions-list"><div class="step-empty">Not running</div></div></div></div>
       </div>
 
 
@@ -651,7 +651,7 @@
           <button class="btn btn-ghost btn-sm btn-icon" id="btnRefreshLogs" title="Refresh logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
           <button class="btn btn-ghost btn-sm btn-icon" id="btnClearLogs" title="Clear logs"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
-        <pre id="logPre" style="display:none">(loading...)</pre>
+        <div class="fold shut" id="logFold"><div class="fold-in"><pre id="logPre">(loading...)</pre></div></div>
       </div>
 
     </div>

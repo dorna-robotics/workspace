@@ -36,7 +36,7 @@ class DosingSite(DipSite):
         delegates to ``pick`` with ``soft_approach=True`` and no IO
         trigger. Tip presence is NOT sensor-verified for now — the
         tip-register query is unknown for the current pump firmware
-        (see keyto_driver.has_tip); the operator "Tip?" button remains
+        (see keyto_driver.has_tip); the operator "Check tip" button remains
         for manual checks.
 
         ``gap`` is 4 mm (the base ``pick`` uses 2): the soft-approach

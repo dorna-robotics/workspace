@@ -96,6 +96,19 @@ Every transition in the app uses these. Two documented exceptions:
 If you need a *new* exception, document it in a comment next to
 the declaration so the next person doesn't "fix" it.
 
+**Open / close never snaps.** Anything that opens and closes eases with
+`--motion-med` / `--ease`, never `display: none`:
+
+- a body that folds — a sidebar section, a Devices group card, an action
+  row's fields — is `.fold > .fold-in > content` (`base.css`); `.shut`
+  closes it, and JS goes through `setFold(fold, open, chevron)`. Its
+  header's `.section-chevron` turns with it.
+- a side panel — the pendant's section rail, the Steps column — eases its
+  width; its content keeps its own width so nothing reflows on the way.
+
+Closed, both turn `visibility: hidden` once the motion ends, so focus
+and screen readers skip what can't be seen.
+
 ### 2.5 Glow + shadow
 
 | Token | Use for |

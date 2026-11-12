@@ -694,6 +694,23 @@ a:hover { color: var(--accent-h); }
 :is(.step-card, .pendant-step-card)[data-level="warning"] :is(.step-dot, .pendant-step-dot) { background: var(--amber); }
 :is(.step-card, .pendant-step-card)[data-level="error"]   :is(.step-dot, .pendant-step-dot) { background: var(--red); }
 
+/* ── Fold — one open / close motion for every collapsible body ─────────
+   A section, a card, a row: the body eases its height with the rails'
+   timing (--motion-med, --ease) instead of snapping. Markup is
+   .fold > .fold-in > content; .shut closes it. Closed, the body turns
+   hidden once the motion ends, so focus and screen readers skip it.
+   The header's .section-chevron turns with it (.open). */
+.fold {
+  display: grid; grid-template-rows: 1fr;
+  flex-shrink: 0;            /* open, it is its content's height — a squeezed column scrolls, never crushes it */
+  transition: grid-template-rows var(--motion-med) var(--ease);
+}
+.fold.shut { grid-template-rows: 0fr; }
+.fold-in { min-height: 0; overflow: hidden; }
+.fold.shut > .fold-in { visibility: hidden; transition: visibility 0s var(--motion-med); }
+.section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
+.section-chevron.open { transform: rotate(90deg); }
+
 /* ── Reduced motion ───────────────────────────────────────────────────
    Respect the OS-level "reduce motion" preference: kill the ambient
    breathe / pulse / blink loops and shorten every transition to near-

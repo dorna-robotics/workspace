@@ -100,6 +100,6 @@ class NeedleDispenseArm(PumpedTool, Arm):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Down", "method": "down", "icon": "arrow-down", "group": "arm"},
-            {"label": "Up",   "method": "up",   "icon": "arrow-up",   "group": "arm"},
+            {"label": "Down", "method": "down", "icon": "arrow-down", "group": "Arm"},
+            {"label": "Up",   "method": "up",   "icon": "arrow-up",   "group": "Arm"},
         ]

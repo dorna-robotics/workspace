@@ -913,12 +913,12 @@ class Pump:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Initialize", "method": "initialize_pump", "icon": "power",     "group": "run"},
-            {"label": "Stop",       "method": "stop_pump",       "icon": "power-off", "group": "run"},
-            {"label": "Empty",      "method": "empty_pump",      "icon": "forward",   "group": "fluid"},
-            {"label": "Report",     "method": "report",          "icon": "eye",       "group": "fluid"},
-            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",    "group": "conn"},
-            {"label": "Release",    "method": "release_pump",    "icon": "link-off",  "group": "conn"},
+            {"label": "Initialize", "method": "initialize_pump", "icon": "power",     "group": "Pump"},
+            {"label": "Stop",       "method": "stop_pump",       "icon": "power-off", "group": "Pump"},
+            {"label": "Empty",      "method": "empty_pump",      "icon": "forward",   "group": "Pump"},
+            {"label": "Report",     "method": "report",          "icon": "eye",       "group": "Status"},
+            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",    "group": "Connection"},
+            {"label": "Release",    "method": "release_pump",    "icon": "link-off",  "group": "Connection"},
         ]
 
     # ── teardown ──────────────────────────────────────────────────

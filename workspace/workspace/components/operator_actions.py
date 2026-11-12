@@ -10,7 +10,9 @@ The contract is intentionally lightweight:
 
 * Method returns ``list[dict]``, two required string fields per entry
   and the rest optional:
-    ``label``   — display name for the button
+    ``label``   — the button's words, shown as written; must read on
+                  its own (the sidebar shows it without its group):
+                  "Calibrate pH 4", never "Cal 4"
     ``method``  — name of a callable on the component, called with no
                   arguments, or with its declared ``params``
     ``icon``    — OPTIONAL name from the UI's named icon set
@@ -18,10 +20,11 @@ The contract is intentionally lightweight:
                   eye, forward, backward, rotate, activity). Unknown
                   or missing names render the button text-only —
                   icons are progressive enhancement, never required.
-    ``group``   — OPTIONAL: the actions that belong together
-                  (Motors, Fluid, Connection). The pendant's Devices
-                  tab heads a section with it; the sidebar puts a
-                  group's buttons on one row. No behavior attached.
+    ``group``   — OPTIONAL: the actions that belong together, as
+                  the heading shown word for word (Motors, Calibrate,
+                  Connection — never a code like "conn"). The pendant's
+                  Devices tab gives each group a card; the sidebar puts
+                  a group's buttons on one row. No behavior attached.
     ``hint``    — OPTIONAL one line under the label: what it does.
     ``params``  — OPTIONAL list: the fields the operator fills in
                   before Run, DECLARED — never guessed from the

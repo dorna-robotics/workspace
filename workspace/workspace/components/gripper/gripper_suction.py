@@ -76,9 +76,9 @@ class GripperSuction(Gripper):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "io"},
-            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "io"},
-            {"label": "Blow",    "method": "blow",    "icon": "zap",
+            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "Suction"},
+            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "Suction"},
+            {"label": "Blow",    "method": "blow",    "icon": "zap",     "group": "Suction",
              "hint": "Air out of the cup for a set time, then off",
              "params": [{"name": "duration", "type": "float", "default": self.BLOW_S,
                          "unit": "s", "min": 0, "max": self.BLOW_MAX_S}]},

@@ -233,8 +233,8 @@ class ScaleSpx222:
         return [
             {"label": "Weigh",     "method": "weigh_once",     "icon": "activity"},
             {"label": "Zero",      "method": "zero"},
-            {"label": "Reconnect", "method": "reconnect",      "icon": "rotate",   "group": "conn"},
-            {"label": "Release",   "method": "release_scale",  "icon": "link-off", "group": "conn"},
+            {"label": "Reconnect", "method": "reconnect",      "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",   "method": "release_scale",  "icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

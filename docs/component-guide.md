@@ -452,8 +452,10 @@ union in two surfaces:
   works with on the left (a status dot, its name, its address and mode;
   anything down pinned under *Needs attention*; search finds actions
   too), the selected one on the right — its state, its **facts**
-  (`operator_facts()`, below) and its actions under their `group`
-  headings. An action is a row: its `hint` under the label, **Run**, and
+  (`operator_facts()`, below) and its actions, one card per `group`
+  (the card's title bar folds it). The device has no picture: its name
+  says what it is, so a new device type needs nothing added to the
+  screen. An action is a row: its `hint` under the label, **Run**, and
   — opened — its declared **fields** and its **output**: whatever the
   method returns, as plain text (a dict prints as a dict).
 - **The desktop sidebar's "Operator Controls" section** — the same
@@ -516,11 +518,17 @@ An unset `output_blow` makes `blow()` raise rather than fire a guess.
 
 Each entry is a dict:
 
-- **`label`** — display name
+- **`label`** — the button's words, shown as written. It must read on
+  its own — the sidebar and a search hit show it without its group:
+  "Calibrate pH 4", "Read resistance", "Check tip", never "Cal 4",
+  "Read R", "Tip?"
 - **`method`** — the callable on the component
 - **`icon`** — optional, a name from the UI's icon set
-- **`group`** — optional, the actions that belong together (Motors,
-  Fluid): the Devices tab's section heading
+- **`group`** — optional, the actions that belong together, written as
+  the heading the Devices tab shows (each group is one card), word for
+  word: "Motors", "Calibrate", "Connection" — never a code like "conn"
+  or "io". A device's reconnect / release pair is always "Connection".
+  An action without one lands in "Actions"
 - **`hint`** — optional, one line under the label: what it does
 - **`params`** — optional, the fields the operator fills in before Run,
   DECLARED, never guessed from the signature. Each `{name, type,

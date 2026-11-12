@@ -113,10 +113,10 @@ class Shaker:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Close",  "method": "close",    "icon": "link",     "group": "clamp"},
-            {"label": "Open",   "method": "open",     "icon": "link-off", "group": "clamp"},
-            {"label": "Toggle", "method": "toggle",   "icon": "rotate",   "group": "motor"},
-            {"label": "Home",   "method": "go_start", "icon": "backward", "group": "motor"},
+            {"label": "Close",  "method": "close",    "icon": "link",     "group": "Clamp"},
+            {"label": "Open",   "method": "open",     "icon": "link-off", "group": "Clamp"},
+            {"label": "Toggle", "method": "toggle",   "icon": "rotate",   "group": "Motor"},
+            {"label": "Home",   "method": "go_start", "icon": "backward", "group": "Motor"},
         ]
 
 

@@ -251,8 +251,8 @@ class PrinterAxon1(Printer):
         return [
             {"label": "Test label", "method": "print_test",      "icon": "activity"},
             {"label": "Feed",       "method": "spin_once",       "icon": "rotate"},
-            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",   "group": "conn"},
-            {"label": "Release",    "method": "release_printer", "icon": "link-off", "group": "conn"},
+            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",    "method": "release_printer", "icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

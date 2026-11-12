@@ -756,6 +756,14 @@ let _prevStepRunning = false;
 // Matches the empty-by-default behaviour for Devices below.
 let _stepsExpanded = false;
 
+// Open or close a .fold body (base.css): its height eases, the header's
+// chevron turns with it. Every collapsible section and card goes
+// through here — none snaps with display:none.
+function setFold(fold, open, chev) {
+  if (fold) fold.classList.toggle("shut", !open);
+  if (chev) chev.classList.toggle("open", open);
+}
+
 // ── Multiplexed runtime WS ──────────────────────────────────────────
 //
 // Single connection to ``/ws`` on the workspace process that carries
@@ -1784,24 +1792,8 @@ function _dvState(c) {
   return { cls: "ok", devs: ds };
 }
 
-const _DV_TYPE_ICON = [
-  ["core", '<rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 13V9a4 4 0 0 1 8 0v4"/><circle cx="12" cy="6" r="2"/>'],
-  ["pump", '<rect x="7" y="2" width="10" height="14" rx="2"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="7" y1="7" x2="17" y2="7"/>'],
-  ["camera", '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'],
-  ["vision", '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'],
-  ["scale", '<path d="M5 20h14l-2-9H7z"/><path d="M12 11V4"/><path d="M8 4h8"/>'],
-  ["barcode", '<path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/>'],
-  ["ph", '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>'],
-  ["decap", '<rect x="6" y="9" width="12" height="12" rx="2"/><path d="M8 9V5h8v4"/><path d="M12 5V2"/>'],
-  ["gripper", '<path d="M7 3v7l-3 4v7M17 3v7l3 4v7"/><line x1="7" y1="10" x2="17" y2="10"/>'],
-];
-const _DV_CHIP = '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>';
-function _dvIcon(c) {
-  const t = `${c.type || ""} ${c.name}`.toLowerCase();
-  const hit = _DV_TYPE_ICON.find(([k]) => t.includes(k));
-  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${hit ? hit[1] : _DV_CHIP}</svg>`;
-}
-const _dvChev = open => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${open ? '<polyline points="6 9 12 15 18 9"/>' : '<polyline points="9 18 15 12 9 6"/>'}</svg>`;
+// The fold chevron: one right-pointing glyph, .section-chevron turns it (base.css).
+const _dvChev = open => `<svg class="section-chevron${open ? " open" : ""}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
 const _dvActions = name => _opActions.filter(a => a.component === name);
 
 // ── the list ──
@@ -1880,7 +1872,7 @@ function _dvHeadHtml(c) {
       + `<span class="device-pill device-pill--${d && _deviceIsSim(d) ? "sim" : "live"}">${d && _deviceIsSim(d) ? "SIM" : "LIVE"}</span>`;
   }
   const ids = (c.devices || []).join(" · ");
-  return `<div class="ic">${_dvIcon(c)}</div><div class="dv-hd"><h2>${escHtml(_dvName(c))}</h2>
+  return `<div class="dv-hd"><h2>${escHtml(_dvName(c))}</h2>
     <div class="meta">${pills}<span class="id">${escHtml(ids ? `${ids} · ${c.name}` : c.name)}</span></div></div>`;
 }
 
@@ -1957,12 +1949,12 @@ function _dvActionHtml(a) {
     const body = r.ok ? (r.text != null ? `<pre>${escHtml(r.text)}</pre>` : `<div class="none">no output</div>`) : `<pre>${escHtml(r.msg || "failed")}</pre>`;
     out = `<div class="dv-out">${head}${body}</div>`;
   }
-  const primary = open && (a.params || []).length;
-  return `<div class="dv-a${open ? " open" : ""}" data-dv-act="${escAttr(key)}">
-    <div class="dv-ar" data-dv-toggle="${escAttr(key)}"><div class="ai">${opIcon(a.icon, 18) || `<span class="ai-dot"></span>`}</div>
+  const body = fields || out ? `<div class="dv-ab">${fields}${out}</div>` : "";
+  return `<div class="dv-a" data-dv-act="${escAttr(key)}">
+    <div class="dv-ar"${body ? ` data-dv-toggle="${escAttr(key)}" aria-expanded="${open}"` : ""}><div class="ai">${opIcon(a.icon, 18) || `<span class="ai-dot"></span>`}</div>
       <div class="dv-at"><div class="al">${escHtml(a.label)}</div>${a.hint ? `<div class="ad">${escHtml(a.hint)}</div>` : ""}</div>
-      <div class="rt">${last}<button class="btn${primary ? " btn-primary" : ""}" data-dv-run="${escAttr(key)}"${running || gated ? " disabled" : ""}>${running ? "Running…" : "Run"}</button></div></div>
-    ${open ? `<div class="dv-ab">${fields}${out}</div>` : ""}</div>`;
+      <div class="rt">${last}<button class="btn" data-dv-run="${escAttr(key)}"${running || gated ? " disabled" : ""}>${running ? "Running…" : "Run"}</button></div></div>
+    ${body ? `<div class="fold${open ? "" : " shut"}"><div class="fold-in">${body}</div></div>` : ""}</div>`;
 }
 
 function _dvActionsHtml(c) {
@@ -1978,8 +1970,8 @@ function _dvActionsHtml(c) {
     ? `<div class="dv-gate">A run is in progress — actions are paused until it pauses or ends, so they cannot collide with it.</div>` : "";
   return gate + [...groups].map(([g, list]) => {
     const fk = `${c.name}|${g}`, folded = _dvFolded.has(fk);
-    return `<div class="dv-g"><button class="dv-gh" data-dv-fold="${escAttr(fk)}" aria-expanded="${!folded}">${escHtml(g ? _dvHuman(g) : "Actions")}<span class="n">${list.length}</span>${_dvChev(!folded)}</button>`
-      + (folded ? "" : list.map(_dvActionHtml).join("")) + `</div>`;
+    return `<section class="dv-g"><button class="dv-gh" data-dv-fold="${escAttr(fk)}" aria-expanded="${!folded}">${_dvChev(!folded)}<span>${escHtml(g || "Actions")}</span><span class="n">${list.length}</span></button>`
+      + `<div class="fold${folded ? " shut" : ""}"><div class="fold-in">${list.map(_dvActionHtml).join("")}</div></div></section>`;
   }).join("");
 }
 
@@ -2077,6 +2069,19 @@ function _dvRun(key) {
   dvRender();
 }
 
+// Open / close a group card or an action row IN PLACE: the fold beside
+// the header eases (setFold), and the actions part is marked drawn in
+// the new state so no redraw replaces it mid-motion. ``set`` holds the
+// folded groups (``inverted``) or the open rows.
+function _dvFlip(head, set, key, inverted) {
+  set.has(key) ? set.delete(key) : set.add(key);
+  const open = inverted ? !set.has(key) : set.has(key);
+  head.setAttribute("aria-expanded", String(open));
+  setFold(head.nextElementSibling, open, head.querySelector(".section-chevron"));
+  const c = _dvSelected();
+  if (c) _dvSig.acts = _dvActionsHtml(c);
+}
+
 function _wireDevicesTab() {
   const pane = $("pendantDevicesPane");
   $("dvSearch")?.addEventListener("input", e => { _dvQuery = e.target.value; _dvRenderList(); });
@@ -2095,10 +2100,10 @@ function _wireDevicesTab() {
     const run = e.target.closest("[data-dv-run]");
     if (run) { e.stopPropagation(); if (!run.disabled) _dvRun(run.dataset.dvRun); return; }
     const fold = e.target.closest("[data-dv-fold]");
-    if (fold) { const k = fold.dataset.dvFold; _dvFolded.has(k) ? _dvFolded.delete(k) : _dvFolded.add(k); _dvRenderDetail(); return; }
+    if (fold) { _dvFlip(fold, _dvFolded, fold.dataset.dvFold, true); return; }
     if (e.target.closest(".dv-ab")) return;            // inside the open body: fields, output
     const tog = e.target.closest("[data-dv-toggle]");
-    if (tog) { const k = tog.dataset.dvToggle; _dvOpen.has(k) ? _dvOpen.delete(k) : _dvOpen.add(k); _dvRenderDetail(); }
+    if (tog) _dvFlip(tog, _dvOpen, tog.dataset.dvToggle, false);
   });
   pane.addEventListener("keydown", e => {
     if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-dv-comp]")) { e.preventDefault(); e.target.click(); }
@@ -2174,9 +2179,7 @@ function renderDevicesPanel() {
   // (collapsed) shouldn't hide real content from the operator.
   if (!_devicesExpanded) {
     _devicesExpanded = true;
-    el.style.display = "";
-    const chev = $("devicesChevron");
-    if (chev) chev.classList.add("open");
+    setFold($("devicesFold"), true, $("devicesChevron"));
   }
   const now = Date.now();
   let nDown = 0, nRecovering = 0;
@@ -3061,13 +3064,10 @@ function runOperatorAction(component, method, args) {
 // devices / steps sections).
 function _wireOpActionsSection() {
   const header = $("btnToggleOpActions");
-  const list = $("opActionsList");
-  const chev = $("opActionsChevron");
-  if (!header || !list) return;
+  if (!header) return;
   header.addEventListener("click", () => {
     _opActionsExpanded = !_opActionsExpanded;
-    list.style.display = _opActionsExpanded ? "" : "none";
-    if (chev) chev.classList.toggle("open", _opActionsExpanded);
+    setFold($("opActionsFold"), _opActionsExpanded, $("opActionsChevron"));
   });
 }
 
@@ -3144,9 +3144,7 @@ function renderStep(step, running) {
   // Auto-expand when first step arrives
   if (steps.length === 1 && !_stepsExpanded) {
     _stepsExpanded = true;
-    el.style.display = "";
-    const chev = $("stepChevron");
-    if (chev) chev.classList.add("open");
+    setFold($("stepFold"), true, $("stepChevron"));
   }
 
   el.innerHTML = steps.map((s, i) =>
@@ -3579,10 +3577,7 @@ async function init() {
 // Collapse / expand steps
 $("btnToggleSteps")?.addEventListener("click", () => {
   _stepsExpanded = !_stepsExpanded;
-  const el = $("stepTimeline");
-  if (el) el.style.display = _stepsExpanded ? "" : "none";
-  const chevron = $("stepChevron");
-  if (chevron) chevron.classList.toggle("open", _stepsExpanded);
+  setFold($("stepFold"), _stepsExpanded, $("stepChevron"));
 });
 
 // Collapse / expand devices
@@ -3590,10 +3585,7 @@ $("btnToggleSteps")?.addEventListener("click", () => {
 let _devicesExpanded = false;
 $("btnToggleDevices")?.addEventListener("click", () => {
   _devicesExpanded = !_devicesExpanded;
-  const el = $("devicesList");
-  if (el) el.style.display = _devicesExpanded ? "" : "none";
-  const chevron = $("devicesChevron");
-  if (chevron) chevron.classList.toggle("open", _devicesExpanded);
+  setFold($("devicesFold"), _devicesExpanded, $("devicesChevron"));
 });
 
 // ---- Run Parameters section ----
@@ -3602,9 +3594,7 @@ const paramsPre = $("paramsPre");
 
 $("btnToggleParams")?.addEventListener("click", () => {
   _paramsExpanded = !_paramsExpanded;
-  paramsPre.style.display = _paramsExpanded ? "" : "none";
-  const chevron = $("paramsChevron");
-  if (chevron) chevron.classList.toggle("open", _paramsExpanded);
+  setFold($("paramsFold"), _paramsExpanded, $("paramsChevron"));
 });
 
 $("btnCopyParams")?.addEventListener("click", (e) => {
@@ -3668,9 +3658,7 @@ $("btnFollowLogs")?.addEventListener("click", (e) => {
 let _logsExpanded = false;
 $("btnToggleLogs").addEventListener("click", () => {
   _logsExpanded = !_logsExpanded;
-  logPre.style.display = _logsExpanded ? "" : "none";
-  const chevron = document.getElementById("logChevron");
-  if (chevron) chevron.classList.toggle("open", _logsExpanded);
+  setFold($("logFold"), _logsExpanded, $("logChevron"));
   if (_logsExpanded) refreshLogs();
 });
 

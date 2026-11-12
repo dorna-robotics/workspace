@@ -70,6 +70,6 @@ class Decapper:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "power"},
-            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "power"},
+            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "Power"},
+            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "Power"},
         ]

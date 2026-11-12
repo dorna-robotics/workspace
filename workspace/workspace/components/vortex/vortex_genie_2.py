@@ -102,6 +102,6 @@ class VortexGenie2:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "vortex"},
-            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "vortex"},
+            {"label": "Enable",  "method": "enable",  "icon": "power",     "group": "Power"},
+            {"label": "Disable", "method": "disable", "icon": "power-off", "group": "Power"},
         ]
