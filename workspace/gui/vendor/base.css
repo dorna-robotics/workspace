@@ -25,6 +25,11 @@
      live violet — informational hues, apart from green/amber/red. */
   --sim:       #5ec8ff;
   --live:      #b98cff;
+  /* What a device handed back (an action's reply): a pale note paper,
+     apart from the white controls — a surface, never a state. */
+  --reply-bg:     #2a2717;
+  --reply-border: #454024;
+  --reply-text:   #f2ead0;
   --radius:    14px;             /* legacy alias — prefer the named scale below */
 
   /* ── Radius scale ─────────────────────────────────────────────────── */
@@ -89,6 +94,9 @@
   --amber:     #c77c0a;
   --sim:       #0c6cb3;
   --live:      #6b3fc4;
+  --reply-bg:     #fffbe6;
+  --reply-border: #f1e6b8;
+  --reply-text:   #3b3420;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
   --shadow:    0 2px 12px rgba(0,0,0,0.08);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);

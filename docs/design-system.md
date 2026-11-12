@@ -513,7 +513,9 @@ Things that look like they'd work but break the system:
 - **Adding a new colour.** Use the existing palette — `--green`,
   `--amber`, `--red`, `--accent`. The exceptions are a device's
   MODE, `--sim` (cyan) and `--live` (violet) — deliberately *not*
-  state colours (device-guide §16). If you need a new informational
+  state colours (device-guide §16) — and `--reply-*`, the pale yellow
+  note paper an action's reply sits on in the Devices tab (a surface,
+  not a state: success and failure are the ✓ / ✕ word on it). If you need a new informational
   hue, add it to `base.css` as a token with a comment explaining what
   it means.
 
