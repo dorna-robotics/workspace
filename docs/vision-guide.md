@@ -546,7 +546,8 @@ persist it, don't re-sweep in production.
 **Exposure & white balance** — the XS ISP owns both, and the platform
 reports what it verified on hardware instead of pretending:
 
-- Exposure: **auto only** (`camera_exposure` reads the live ms;
+- Exposure: **auto only** (`camera_exposure` reads the live value, in
+  µs like every camera;
   pinning raises with the explanation). Software brightness lives in
   the detection's `intensity`.
 - White balance: `camera_wb(auto=True)` or `camera_wb(hold=True)` —
