@@ -36,7 +36,9 @@ class Inspection:
             "server": "",
             "serial_number": "",
             # Camera driver on the vision server: "d405" (RealSense,
-            # depth+color) or "ueye_xs" (IDS uEye XS, color + autofocus).
+            # depth+color), "ueye_xs" (IDS uEye XS, color + autofocus),
+            # "hikrobot" (Hikrobot GigE, color) or "oak" (Luxonis OAK
+            # over USB, e.g. the OAK-1 W: color, factory intrinsics).
             "type": "d405",
             "stream": {"width":1280, "height":720, "fps":30},
             "mode": "bgrd",
