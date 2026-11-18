@@ -80,8 +80,6 @@ html.nav-expanded .app-nav ~ * { margin-left: 200px; transition: none; }
   background: var(--surface2);
 }
 .app-nav-link:focus-visible { outline: none; box-shadow: var(--glow); }
-/* an item whose address this unit does not declare: shown, its title says why (nav.js) */
-.app-nav-link.off { opacity: 0.5; cursor: default; }
 .app-nav-link.active {
   color: var(--accent);
   background: var(--accent-dim);
