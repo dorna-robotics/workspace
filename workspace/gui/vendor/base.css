@@ -560,6 +560,9 @@ a:hover { color: var(--accent-h); }
   border-bottom-color: var(--accent);
 }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
+/* the page's name — which app and page this is, at a glance (the vision
+   server's top bar has the same) */
+.topbar-title { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; color: var(--text); margin: 0; }
 
 @media (max-width: 768px) {
   .topbar, .ws-header, .sb-header {
