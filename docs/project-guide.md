@@ -192,7 +192,8 @@ when you make a project:
    {% set rail_offset   = -212.1 %}  {# the rail's measured zero, mm #}
    {% set robot_ip      = "10.0.3.10" %}
    {% set scale_ip      = "10.0.3.50" %}
-   {% set vision_ip     = "10.0.3.40" %}
+   {% set vision_ip     = "10.0.3.40" %}  {# the vision Pi; a Jetson: "127.0.0.1" #}
+   {% set vision_port   = 4001 %}         {# every vision server's port #}
    {% set camera_serial = "130322274110" %}
    {% set pump_port     = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0" %}
    ```

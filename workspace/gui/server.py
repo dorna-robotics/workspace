@@ -10,6 +10,7 @@ Usage:
     sudo python3 gui/server.py
 """
 
+import json
 import os
 import sys
 
@@ -161,6 +162,8 @@ LANDING_HTML = """<!DOCTYPE html>
     .card-text { min-width: 0; }
     .card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
     .card-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    /* a card whose address this unit does not declare: shown, with why */
+    .card.card-off { cursor: default; opacity: 0.6; }
     .cards-label {
       display: flex; align-items: center; gap: 5px;
       text-align: left; font-size: 11px; font-weight: 600;
@@ -261,19 +264,27 @@ LANDING_HTML = """<!DOCTYPE html>
       <script>
         var h = window.location.hostname;
         document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
-        // Dorna Lab / vision server live on fixed last-octet IPs of the
-        // bench subnet — derive from the page's own host. Hidden when
-        // the page isn't served from an IPv4 address (no subnet to derive).
+        // Dorna Lab / Vision: where this unit's upgrade declared them
+        // (/etc/dorna/links.json) — {host} is this page's own host,
+        // {subnet} its first three octets.
+        var links = __UNIT_LINKS__;
         var m = /^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}$/.exec(h);
-        var lab = document.getElementById("cardDornaLab");
-        var vis = document.getElementById("cardVision");
-        if (m) {
-          lab.href = "http://" + m[1] + ".10/";
-          vis.href = "http://" + m[1] + ".40/";
-        } else {
-          lab.style.display = "none";
-          vis.style.display = "none";
+        function place(id, key) {
+          var card = document.getElementById(id);
+          var tpl = links[key];
+          var why = !tpl ? "Not declared on this unit \u2014 run sudo upgrade"
+                  : (tpl.indexOf("{subnet}") >= 0 && !m) ? "Open this page by its IP address to reach it"
+                  : null;
+          if (why) {
+            card.removeAttribute("href");
+            card.classList.add("card-off");
+            card.querySelector(".card-hint").textContent = why;
+            return;
+          }
+          card.href = tpl.replace("{host}", h).replace("{subnet}", m ? m[1] : "");
         }
+        place("cardDornaLab", "dorna_lab");
+        place("cardVision", "vision");
 
         // Developer section — collapsible, collapsed by default,
         // choice persisted per browser.
@@ -298,10 +309,26 @@ LANDING_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+# Where the home page's Dorna Lab and Vision cards point: declared per unit
+# type by the upgrade (os/setup.sh), never guessed here. Read per request,
+# so an upgrade's new declaration needs no restart.
+_UNIT_LINKS = "/etc/dorna/links.json"
+
+
+def _unit_links():
+    """The unit's declared links, {} when the upgrade has not written them."""
+    try:
+        with open(_UNIT_LINKS) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
 class LandingHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/html")
-        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION))
+        links = json.dumps(_unit_links()).replace("</", "<\\/")   # inside a <script>
+        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION).replace("__UNIT_LINKS__", links))
 
 
 class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
