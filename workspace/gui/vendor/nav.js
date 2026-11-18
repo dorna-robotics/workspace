@@ -44,6 +44,50 @@
     if (e.key === "Escape") mobileClose();
   });
 
+  // ── The unit's declaration: the Vision item, the home page's cards ──
+  // /unit.json is /etc/dorna/unit.json as the upgrade wrote it for this
+  // unit type (gui/server.py). Its `links` say where Dorna Lab and the
+  // vision server are — {host} is this page's own host, {subnet} its first
+  // three octets. Nothing here guesses an address: one the unit does not
+  // declare, or one that needs {subnet} on a page opened by name, is shown
+  // with why, never hidden.
+  function unitLink(tpl) {
+    var h = window.location.hostname;
+    var m = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(h);
+    if (!tpl) return { why: "Not declared on this unit — run sudo upgrade" };
+    if (tpl.indexOf("{subnet}") >= 0 && !m) return { why: "Open this page by its IP address to reach it" };
+    return { href: tpl.replace("{host}", h).replace("{subnet}", m ? m[1] : "") };
+  }
+  var navLinks = nav.querySelector(".app-nav-links");
+  var visionItem = document.createElement("a");
+  visionItem.className = "app-nav-link";
+  visionItem.target = "_blank";
+  visionItem.rel = "noopener";
+  visionItem.title = "Vision";
+  visionItem.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>'
+    + '<circle cx="12" cy="12" r="3"/></svg><span>Vision</span>';
+  var systemItem = navLinks && navLinks.querySelector('a[href="/orchestrator/system.html"]');
+  if (navLinks) navLinks.insertBefore(visionItem, systemItem);   // null: at the end
+  fetch("/unit.json")
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .catch(function() { return {}; })
+    .then(function(unit) {
+      var links = unit.links || {};
+      var v = unitLink(links.vision);
+      if (v.href) visionItem.href = v.href;
+      else { visionItem.classList.add("off"); visionItem.title = "Vision — " + v.why; }
+      // the home page's Dorna Lab and Vision cards (gui/server.py LANDING_HTML)
+      [["cardDornaLab", "dorna_lab"], ["cardVision", "vision"]].forEach(function(c) {
+        var card = document.getElementById(c[0]);
+        if (!card) return;
+        var l = unitLink(links[c[1]]);
+        if (l.href) { card.href = l.href; return; }
+        card.classList.add("card-off");
+        card.querySelector(".card-hint").textContent = l.why;
+      });
+    });
+
   // ── System: parts to update ─────────────────────────────────────────
   // The System item's badge — how many parts of the bench's upgrade are
   // not up to date (gui/orchestrator/system.py: needs_update, cached, a

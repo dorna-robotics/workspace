@@ -264,27 +264,8 @@ LANDING_HTML = """<!DOCTYPE html>
       <script>
         var h = window.location.hostname;
         document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
-        // Dorna Lab / Vision: where this unit's upgrade declared them
-        // (/etc/dorna/links.json) — {host} is this page's own host,
-        // {subnet} its first three octets.
-        var links = __UNIT_LINKS__;
-        var m = /^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}$/.exec(h);
-        function place(id, key) {
-          var card = document.getElementById(id);
-          var tpl = links[key];
-          var why = !tpl ? "Not declared on this unit \u2014 run sudo upgrade"
-                  : (tpl.indexOf("{subnet}") >= 0 && !m) ? "Open this page by its IP address to reach it"
-                  : null;
-          if (why) {
-            card.removeAttribute("href");
-            card.classList.add("card-off");
-            card.querySelector(".card-hint").textContent = why;
-            return;
-          }
-          card.href = tpl.replace("{host}", h).replace("{subnet}", m ? m[1] : "");
-        }
-        place("cardDornaLab", "dorna_lab");
-        place("cardVision", "vision");
+        // Dorna Lab / Vision: their addresses are the unit's declaration,
+        // filled in by /vendor/nav.js (one owner for every page).
 
         // Developer section — collapsible, collapsed by default,
         // choice persisted per browser.
@@ -309,26 +290,29 @@ LANDING_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-# Where the home page's Dorna Lab and Vision cards point: declared per unit
-# type by the upgrade (os/setup.sh), never guessed here. Read per request,
-# so an upgrade's new declaration needs no restart.
-_UNIT_LINKS = "/etc/dorna/links.json"
-
-
-def _unit_links():
-    """The unit's declared links, {} when the upgrade has not written them."""
-    try:
-        with open(_UNIT_LINKS) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-
 class LandingHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/html")
-        links = json.dumps(_unit_links()).replace("</", "<\\/")   # inside a <script>
-        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION).replace("__UNIT_LINKS__", links))
+        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION))
+
+
+# What this unit is — /etc/dorna/unit.json, written per unit type by the
+# upgrade (os/setup.sh), never guessed here: `links` (where the Dorna Lab
+# and Vision cards and nav item point — vendor/nav.js) and `system` (the app
+# that owns the System page). Read per request, so an upgrade's new
+# declaration needs no restart; {} before the upgrade has written it.
+UNIT_DECLARATION = "/etc/dorna/unit.json"
+
+
+class UnitHandler(tornado.web.RequestHandler):
+    def get(self):
+        try:
+            with open(UNIT_DECLARATION) as f:
+                unit = json.load(f)
+        except FileNotFoundError:
+            unit = {}
+        self.set_header("Cache-Control", "no-store")
+        self.write(unit)
 
 
 class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
@@ -370,6 +354,7 @@ def make_app(port=5000):
     routes = [
         # ---- Landing ----
         (r"/", LandingHandler),
+        (r"/unit.json", UnitHandler),
 
         # ---- Orchestrator API (must be before catch-all) ----
         (r"/orchestrator/api/workspaces/status", WorkspacesStatusHandler, dict(orch=orch)),
