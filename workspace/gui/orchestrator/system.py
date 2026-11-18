@@ -70,15 +70,18 @@ def _uptime_s() -> Optional[float]:
 def needs_update(part: dict) -> bool:
     """THE rule for "this part is not up to date": its folder is missing
     (a new install), behind what the upgrade installs, or on another
-    branch. Unknown (no folder to compare, the remote not reachable) is
-    not counted. The System page's status and the nav's badge both read
-    it from here."""
+    branch. A part pinned to a release tag is at what the upgrade
+    installs until the upgrade itself pins another (it rebuilds that
+    folder only then), so it never counts here — off its tag is the
+    page's warning. Unknown (no folder to compare, the remote not
+    reachable) is not counted. The System page's status and the nav's
+    badge both read it from here."""
     if not part.get("dir"):
         return False
     n = part.get("now") or {}
     if not n.get("exists", True):
         return True
-    if not n.get("git") or n.get("reachable") is False:
+    if part.get("tag") or not n.get("git") or n.get("reachable") is False:
         return False
     return bool(n.get("behind") or n.get("switches"))
 
@@ -94,7 +97,8 @@ def state(fetch: bool = True) -> dict:
         e = dict(p)
         if p.get("dir"):
             try:
-                e["now"] = project_git.part_state(p["dir"], p.get("branch") or "", fetch)
+                e["now"] = (project_git.pinned_state(p["dir"], p["tag"]) if p.get("tag") else
+                            project_git.part_state(p["dir"], p.get("branch") or "", fetch))
             except project_git.GitError as ex:
                 e["now"] = {"exists": True, "git": False, "error": str(ex)}
         return e

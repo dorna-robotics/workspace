@@ -165,6 +165,26 @@ def part_state(path: str, branch: str, fetch: bool = True) -> dict:
     return out
 
 
+def pinned_state(path: str, tag: str) -> dict:
+    """One part of the bench's ``upgrade`` pinned to a release tag (its
+    record's ``tag``): a build folder, not a branch the upgrade resets. The
+    part's script clones the tag whole — and applies its own fixes to it —
+    when its pin changes, and otherwise never touches the folder. So the
+    one question is whether the folder is at the tag's commit
+    (``at_pin``); a tag does not move, there is nothing to fetch. Edits in
+    the folder are not listed: the upgrade never discards them by surprise
+    (a new pin replaces the folder whole, its fixes with it)."""
+    if not os.path.isdir(path):
+        return {"exists": False}
+    rc, repo, err = _git(path, "rev-parse", "--show-toplevel", check=False)
+    if rc != 0:
+        return {"exists": True, "git": False, "error": err or "not a git repository"}
+    rc, pin, _ = _git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}", check=False)
+    _, head, _ = _git(repo, "rev-parse", "HEAD")
+    return {"exists": True, "git": True, "tag": tag, "head": _commit(repo, "HEAD"),
+            "at_pin": rc == 0 and pin == head}
+
+
 def plan(info: dict, stamp: str) -> List[str]:
     """The exact commands Get latest runs for this state, in order."""
     if not info.get("git"):

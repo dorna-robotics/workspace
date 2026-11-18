@@ -68,8 +68,12 @@ function onFoot(handlers) {
 function partNow(p) {
   const n = p.now;
   if (!p.dir) return { runs: "—", installs: "re-applied every upgrade", pill: "" };
-  if (!n || !n.exists) return { runs: "not installed", installs: p.branch, pill: `<span class="pill off">new install</span>` };
-  if (!n.git) return { runs: "not a git folder", installs: p.branch, pill: `<span class="pill bad">replaced</span>` };
+  const ref = p.tag || p.branch;   // a part pinned to a release names its tag (gui/orchestrator/project_git.py: pinned_state)
+  if (!n || !n.exists) return { runs: "not installed", installs: ref, pill: `<span class="pill off">new install</span>` };
+  if (!n.git) return { runs: "not a git folder", installs: ref, pill: `<span class="pill bad">replaced</span>` };
+  if (p.tag) return {
+    runs: `${n.at_pin ? p.tag : "off " + p.tag} ${short(n.head && n.head.hash)}`, installs: `${p.tag} (pinned)`,
+    pill: n.at_pin ? `<span class="pill ok">up to date</span>` : `<span class="pill warn">off its tag</span>` };
   const runs = `${n.branch} ${short(n.head && n.head.hash)}`;
   let pill;
   if (n.reachable === false) pill = `<span class="pill off">can't check</span>`;
@@ -85,6 +89,10 @@ function partWarnings(p) {
   const out = [];
   if (!p.dir || !n || !n.exists) return out;
   if (!n.git) { out.push(warn(`${name} is not a git folder — the upgrade deletes it and clones it fresh.`, true)); return out; }
+  if (p.tag) {
+    if (!n.at_pin) out.push(warn(`${name} is not at its pinned tag <code>${esc(p.tag)}</code> (it is at <code>${esc(short(n.head && n.head.hash))}</code>) — the upgrade rebuilds this folder only when the pin changes.`));
+    return out;
+  }
   if (n.reachable === false) out.push(warn(`${name} can't be updated right now — no connection to its source.<div class="ver-sub">${esc(n.fetch_error)}</div>`, true));
   if (n.switches) out.push(warn(`${name} is on branch <code>${esc(n.branch)}</code> — the upgrade runs <code>${esc(n.target_branch)}</code> from now on (<code>${esc(n.branch)}</code> stays as a branch, not run).`));
   const c = n.changes || [], u = n.untracked || [];
