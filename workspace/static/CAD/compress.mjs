@@ -6,10 +6,8 @@
 //     values are the same: a name like "Steel_-_Satin" or "Glass_(Clear)" says what the part is made of;
 //   - no palette textures (the CLI's default packs all materials into one generated "PaletteMaterial").
 // Meshes are still joined where they share a material, so pieces of one material become one draw call.
-// Tuned for small files: simplification may move the surface by up to 0.005 of the mesh's size
-// (about 0.8 mm on a 150 mm part; SIMPLIFY_ERROR overrides it), positions are stored with 12 bits
-// (1/4096 of the mesh's size) and normals with 8. On a 140 000-triangle tool rack: 5 MB -> 60 KB
-// with no visible change.
+// Accuracy as the CLI's defaults: simplification may move the surface by at most 0.0001 of the mesh's
+// size (SIMPLIFY_ERROR overrides it), and Draco stores positions with 14 bits, normals with 10.
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { dedup, instance, flatten, join, weld, simplify, prune, draco } from "@gltf-transform/functions";
@@ -28,8 +26,8 @@ await doc.transform(
   flatten(),
   join(),
   weld(),
-  simplify({ simplifier: MeshoptSimplifier, error: Number(process.env.SIMPLIFY_ERROR || 0.005) }),
+  simplify({ simplifier: MeshoptSimplifier, error: Number(process.env.SIMPLIFY_ERROR || 0.0001) }),
   prune(),
-  draco({ quantizePosition: 12, quantizeNormal: 8 }),
+  draco(),
 );
 await io.write(OUT, doc);
