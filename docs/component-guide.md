@@ -41,6 +41,20 @@ behavioural change. The GLTFLoader handles both compressed and
 uncompressed transparently, so an uncompressed file works fine,
 just bigger over the wire.
 
+`compress.sh` runs `compress.mjs` on each file: gltf-transform's
+optimize pipeline (dedup, join, weld, a light simplification, prune,
+Draco). It keeps **material names**: materials with different names
+are never merged and no palette texture is made, so a name like
+`Glass_(Clear)` or `Powder_Coat_(Black)` stays in the file and can
+decide how the part is drawn. It is tuned for small files: the
+simplification may move the surface by up to 0.005 of the part's size
+(about 0.8 mm on a 150 mm part; `SIMPLIFY_ERROR` overrides it), and
+positions are stored at 1/4096 of the part's size. A 140 000-triangle
+tool rack goes from 5 MB to 60 KB with no visible change. Export
+models for display: threads and hidden parts cost the most and are
+never seen. The output is a `.glb` with its data beside it in
+`.glb.bin`; the sizes the script prints include both.
+
 **Adding a new model:**
 
 1. Drop the `.glb` in `workspace/static/CAD/` (a library component)
