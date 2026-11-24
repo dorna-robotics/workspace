@@ -5,7 +5,9 @@ scene and a quick scene check, the component registry (filtered to the
 components the account was given), the live runtime through the
 orchestrator's own HTTP routes on localhost (status, logs, launch / start /
 pause / resume / park / kill / replan, devices, run parameters), and the
-Workspace's own knowledge (docs/, .claude/skills/, examples/, the source).
+Workspace's own knowledge (docs/, .claude/skills/, examples/, the source),
+and the files the user attached (uploads.py): list / read them, make a 3D
+model a project component, install a vision model in vision/.
 
 ``run_tool(session, name, args) -> (text, ui_events)``; a ToolError is the
 model's mistake (shown to it as an error result, not a crash).
@@ -106,6 +108,41 @@ TOOLS = [
     _tool("search_docs", "Search the Workspace's documentation and code for a regular expression.",
           {"pattern": {"type": "string"}, "path": {"type": "string", "description": "Limit to this folder, e.g. 'docs'."}},
           ["pattern"]),
+    _tool("list_uploads", "The files the user attached in this conversation: id, name, kind, size, where it is saved "
+          "(and its copy in the project's uploads/ folder)."),
+    _tool("read_upload", "Read an attached file: a text file's lines, a PDF's text by page (first_page/last_page), "
+          "what a zip / tar holds, a 3D model's size and parts, or a vision model's type.",
+          {"upload": {"type": "string", "description": "The upload's id (or its file name)."},
+           "first_page": {"type": "integer"}, "last_page": {"type": "integer"},
+           "offset": {"type": "integer"}, "limit": {"type": "integer"}}, ["upload"]),
+    _tool("add_component_from_file", "Make an attached 3D model (.glb, .gltf or .stl) a component of the project: "
+          "creates components/<type>/<type>.glb + <type>.py (+ __init__.py), with the model's measured bounding box "
+          "as its first collision box and center / place / top anchors. Units: millimetres, Z up (the Workspace's "
+          "convention) — say units='m' for a model exported in metres and y_up=true for a Y-up export. "
+          "origin='base_center' moves the model so its footprint is centred on the origin and it stands on z=0. "
+          "It does not place it in the scene: add a scene entry after (write-scene-yaml skill).",
+          {"project": _P, "upload": {"type": "string", "description": "The upload's id (or its file name)."},
+           "type": {"type": "string", "description": "The new component type: lowercase letters, digits and _ "
+                                                     "(e.g. 'holder_falcon_6x'). The folder, file and @register name."},
+           "units": {"type": "string", "enum": ["auto", "mm", "m", "cm", "in"],
+                     "description": "The model's units (default auto: a model under 3 units across is taken as metres)."},
+           "y_up": {"type": "boolean", "description": "The model was exported Y-up (glTF's default): turn it Z-up."},
+           "origin": {"type": "string", "enum": ["keep", "base_center"]},
+           "description": {"type": "string", "description": "One line on what it is, for the class docstring."},
+           "overwrite": {"type": "boolean", "description": "Replace a project component of that type."}},
+          ["upload", "type"]),
+    _tool("install_vision_model", "Put an attached vision model (a dorna_vision .pkl from training, or .onnx / .pt …) "
+          "in the project's vision/ folder, where a detection config names it (vision-guide §5 'Config files': "
+          "detection.path is relative to the config's own folder). With config: point that config's detection.path "
+          "at the model (the config is created when it does not exist; cmd then says the detection kind). Without "
+          "config: copied only, and the configs in vision/ are listed.",
+          {"project": _P, "upload": {"type": "string", "description": "The upload's id (or its file name)."},
+           "config": {"type": "string", "description": "The detection config, e.g. 'vision/tube_od.yaml' (or 'tube_od')."},
+           "cmd": {"type": "string", "enum": ["od", "rod", "cls", "kp", "anom"],
+                   "description": "The detection kind, for a new config (read_upload tells a .pkl's own type)."},
+           "conf": {"type": "number", "description": "A new config's confidence threshold (default 0.5)."},
+           "name": {"type": "string", "description": "The model's file name in vision/ (default: the upload's)."}},
+          ["upload"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -626,6 +663,347 @@ def t_search_docs(session, a):
     return "\n".join(hits) or "no matches", []
 
 
+# ── uploads ──────────────────────────────────────────────────────────
+
+def _upload(session, ref):
+    from . import uploads
+    rec = uploads.find(session.id, ref)
+    if rec is None:
+        raise ToolError(f"no attached file {ref!r} in this conversation — list_uploads shows them")
+    if not Path(rec["path"]).is_file():
+        raise ToolError(f"{rec['name']}: the file is gone from the upload store")
+    return rec
+
+
+def t_list_uploads(session, a):
+    from . import uploads
+    recs = uploads.records(session.id)
+    if not recs:
+        return "no files attached in this conversation", []
+    return "\n".join(uploads.describe(r) for r in recs), []
+
+
+def _pkl_meta(path):
+    """A dorna_vision model pickle's meta, read WITHOUT running it: only
+    plain data (dicts, lists, strings, bytes, numbers) is accepted — any
+    class in the pickle stops the read."""
+    import pickle
+
+    class Plain(pickle.Unpickler):
+        def find_class(self, module, name):
+            raise pickle.UnpicklingError(f"{module}.{name}")
+    try:
+        with open(path, "rb") as f:
+            d = Plain(f).load()
+    except Exception as e:
+        return None, f"not plain data ({type(e).__name__}: {str(e)[:80]})"
+    if not isinstance(d, dict):
+        return None, "not a dorna_vision model dict"
+    meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+    return meta, "keys: " + ", ".join(sorted(str(k) for k in d)[:20])
+
+
+def _sidecar(session, rec):
+    """A .gltf's external buffer, from another upload of this conversation."""
+    from . import uploads
+
+    def get(uri):
+        name = os.path.basename(urllib.parse.unquote(uri))
+        other = uploads.find(session.id, name) or uploads.find(session.id, uploads.safe_name(name))
+        if other and Path(other["path"]).is_file():
+            return Path(other["path"]).read_bytes()
+        return None
+    return get
+
+
+def t_read_upload(session, a):
+    from . import uploads
+    rec = _upload(session, a["upload"])
+    path = Path(rec["path"])
+    head = uploads.describe(rec)
+    kind, ext, low = rec["kind"], path.suffix.lower(), path.name.lower()
+    if kind == "pdf":
+        first = max(1, int(a.get("first_page") or 1))
+        last = int(a.get("last_page") or first + 19)
+        txt = uploads.pdf_text(path, first, last)
+        if txt is None:
+            raise ToolError("the PDF's text could not be read on this robot (it was shown to you as a document "
+                            "when attached)")
+        return f"{head}\n{txt}", []
+    if ext == ".zip":
+        import zipfile
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = [f"{i.filename}  ({i.file_size} B)" for i in z.infolist()[:400]]
+        except zipfile.BadZipFile:
+            raise ToolError("not a valid zip file")
+        return head + "\n" + "\n".join(names), []
+    if low.endswith((".tar", ".tgz", ".tar.gz")):
+        import tarfile
+        try:
+            with tarfile.open(path) as t:
+                names = [f"{m.name}  ({m.size} B)" for m in t.getmembers()[:400]]
+        except tarfile.TarError:
+            raise ToolError("not a valid tar file")
+        return head + "\n" + "\n".join(names), []
+    if ext in (".glb", ".gltf"):
+        from . import gltf
+        try:
+            js, _ = gltf.load(path, _sidecar(session, rec))
+        except gltf.GltfError as e:
+            raise ToolError(str(e))
+        bb = gltf.bbox(js)
+        size = [round(bb[1][k] - bb[0][k], 3) for k in range(3)] if bb else None
+        mats = [str(m.get("name")) for m in js.get("materials") or []]
+        return (f"{head}\nnodes {len(js.get('nodes') or [])}, meshes {len(js.get('meshes') or [])}, "
+                f"materials: {', '.join(mats[:30]) or 'none'}; extensions: {', '.join(js.get('extensionsUsed') or []) or 'none'}\n"
+                f"bounding box (file units): min {bb and [round(v, 3) for v in bb[0]]} "
+                f"max {bb and [round(v, 3) for v in bb[1]]} — size {size}"), []
+    if ext == ".pkl":
+        meta, note = _pkl_meta(path)
+        shown = json.dumps(meta, default=str)[:1500] if meta is not None else "unknown"
+        return f"{head}\nvision model meta: {shown} ({note})", []
+    if kind == "text":
+        return _read_text(path, a.get("offset"), a.get("limit")), []
+    return f"{head}\n(a binary file — nothing to read as text)", []
+
+
+UNIT_SCALE = {"mm": 1.0, "m": 1000.0, "cm": 10.0, "in": 25.4}
+
+COMPONENT_PY = '''"""{doc}
+
+Made from the uploaded model {src} by the Workspace assistant. The first
+collision box is the model's measured bounding box ({sx} x {sy} x {sz} mm);
+refine the anchors and boxes to the real part (docs/component-guide.md
+sections 4-5).
+"""
+from copy import deepcopy
+
+from dorna2 import Solid
+from mergedeep import merge
+
+from workspace.components.factory import register
+
+
+@register("{type}")
+class {cls}:
+    DEFAULTS = dict(
+        anchors={{
+            "body": {{
+                "center": [0, 0, 0, 0, 0, 0],
+                "place": [{px}, {py}, {top}, 0, 0, 0],
+                "top": [{px}, {py}, {top}, 0, 0, 0],
+            }}
+        }},
+        collision_box={{
+            "body": [
+                {{"pose": [{cx}, {cy}, {cz}, 0, 0, 0], "scale": [{sx}, {sy}, {sz}]}},
+            ]
+        }},
+    )
+
+    def __init__(self, name: str, cfg: dict, workspace, **kwargs):
+        prm = deepcopy(self.DEFAULTS)
+        merge(prm, cfg)
+        merge(prm, kwargs)
+        prm.setdefault("type", getattr(self.__class__, "_registered_type", cfg.get("type")))
+
+        self.name = name
+        self.workspace = workspace
+        self.type = prm.get("type")
+
+        self.assembly = {{
+            k: Solid(
+                type=self.type,
+                anchors=prm["anchors"][k],
+                component=self.name,
+                **({{"collision_box": cb[k]}} if (cb := prm.get("collision_box")) and k in cb else {{}})
+            ) for k in prm["anchors"]
+        }}
+'''
+
+
+def _r(v):
+    v = round(float(v), 1)
+    return int(v) if v == int(v) else v
+
+
+def _model_json(session, rec):
+    """(gltf json, bin) of an uploaded .glb / .gltf / .stl."""
+    from . import gltf
+    src = Path(rec["path"])
+    ext = src.suffix.lower()
+    if ext in (".glb", ".gltf"):
+        try:
+            return gltf.load(src, _sidecar(session, rec))
+        except gltf.GltfError as e:
+            raise ToolError(str(e))
+    if ext in (".stl", ".obj", ".3mf"):
+        try:
+            import trimesh
+        except ImportError:
+            raise ToolError(f"{ext} files can't be converted on this robot — export the model as .glb")
+        tmp = src.with_name(src.stem + ".conv.glb")
+        try:
+            trimesh.load(str(src), force="mesh").export(str(tmp))
+            return gltf.load(tmp)
+        except Exception as e:
+            raise ToolError(f"the {ext} file could not be converted: {type(e).__name__}: {e}")
+        finally:
+            tmp.unlink(missing_ok=True)
+    if ext in (".step", ".stp", ".iges", ".igs"):
+        raise ToolError("STEP / IGES can't be converted on the robot — export the part as .glb (or .stl) from the "
+                        "CAD program and attach that")
+    raise ToolError(f"{rec['name']} is not a 3D model (.glb, .gltf or .stl)")
+
+
+def t_add_component_from_file(session, a):
+    from . import gltf
+    name = _name(session, a)
+    base = project_dir(name)
+    rec = _upload(session, a["upload"])
+    typ = str(a["type"]).strip()
+    if not re.fullmatch(r"[a-z][a-z0-9_]{1,60}", typ):
+        raise ToolError("type: lowercase letters, digits and _ only, starting with a letter (e.g. holder_falcon_6x)")
+    try:
+        import gui.scene_builder.server as sb
+        library = sb.COMPONENT_MAP
+    except Exception:
+        library = {}
+    if typ in library:
+        raise ToolError(f"{typ} is a library component type already — pick another name")
+    folder = base / "components" / typ
+    if folder.exists() and not a.get("overwrite"):
+        raise ToolError(f"the project already has a component {typ} (components/{typ}/) — pick another name or set overwrite")
+    js, binb = _model_json(session, rec)
+    bb = gltf.bbox(js)
+    if bb is None:
+        raise ToolError("the model has no mesh with a known size (no POSITION min/max)")
+    extent = max(bb[1][k] - bb[0][k] for k in range(3))
+    units = a.get("units") or "auto"
+    if units == "auto":
+        units = "m" if extent < 3 else "mm"
+    scale = UNIT_SCALE[units]
+    y_up = bool(a.get("y_up"))
+    origin = a.get("origin") or "keep"
+    notes = []
+    if scale != 1 or y_up or origin == "base_center":
+        off = (0.0, 0.0, 0.0)
+        if origin == "base_center":
+            b2 = gltf.bbox(gltf.wrap(json.loads(json.dumps(js)), scale, y_up))
+            off = (-(b2[0][0] + b2[1][0]) / 2, -(b2[0][1] + b2[1][1]) / 2, -b2[0][2])
+        js = gltf.wrap(js, scale, y_up, off)
+        bb = gltf.bbox(js)
+        if scale != 1:
+            notes.append(f"scaled x{scale:g} ({units} -> mm)")
+        if y_up:
+            notes.append("turned Y-up -> Z-up")
+        if origin == "base_center":
+            notes.append("moved so its footprint is centred on the origin, standing on z=0")
+    lo, hi = bb
+    size = [hi[k] - lo[k] for k in range(3)]
+    if max(size) > 3000:
+        notes.append(f"! {max(size):.0f} mm across — check the units")
+    if not (lo[0] <= 1 and hi[0] >= -1 and lo[1] <= 1 and hi[1] >= -1 and lo[2] <= 1 and hi[2] >= -1):
+        notes.append("! the origin is outside the model — its center anchor sits away from the part "
+                     "(origin='base_center' recentres it)")
+    folder.mkdir(parents=True, exist_ok=True)
+    (base / "components" / "__init__.py").touch()
+    (folder / "__init__.py").touch()
+    glb = folder / f"{typ}.glb"
+    gltf.save_glb(js, binb, glb)
+    (folder / f"{typ}.glb.bin").unlink(missing_ok=True)
+    cls = "".join(w.capitalize() for w in typ.split("_"))
+    doc = (a.get("description") or f"{typ} — a custom component").strip().replace('"""', "'''")
+    doc = (doc.splitlines() or [typ])[0][:200]
+    c = [_r((lo[k] + hi[k]) / 2) for k in range(3)]
+    sz = [_r(v) for v in size]
+    (folder / f"{typ}.py").write_text(COMPONENT_PY.format(
+        doc=doc, src=rec["name"], type=typ, cls=cls, cx=c[0], cy=c[1], cz=c[2], sx=sz[0], sy=sz[1], sz=sz[2],
+        px=c[0], py=c[1], top=_r(hi[2])))
+    rel = f"components/{typ}"
+    text = (f"created {rel}/{typ}.py, {rel}/{typ}.glb ({glb.stat().st_size} B) and {rel}/__init__.py\n"
+            f"bounding box (mm): min {[_r(v) for v in lo]} max {[_r(v) for v in hi]} — size {sz}\n"
+            f"collision box: pose [{c[0]}, {c[1]}, {c[2]}, 0, 0, 0] scale {sz}; anchors center, place/top at z={_r(hi[2])}\n"
+            + ("\n".join(notes) + "\n" if notes else "")
+            + f"Next: a scene entry with type: \"{typ}\" (it shows in the Scene builder once the project reloads).")
+    return text, [_ui_for(f"{rel}/{typ}.py", name)]
+
+
+def t_install_vision_model(session, a):
+    import shutil
+    from . import uploads
+    name = _name(session, a)
+    base = project_dir(name)
+    rec = _upload(session, a["upload"])
+    if rec["kind"] != "vision_model":
+        raise ToolError(f"{rec['name']} is not a vision model file (.pkl, .onnx, .pt, .engine, .blob …)")
+    vdir = base / "vision"
+    vdir.mkdir(exist_ok=True)
+    ext = Path(rec["file"]).suffix.lower()
+    fname = uploads.safe_name(a.get("name") or rec["file"])
+    if Path(fname).suffix.lower() != ext:
+        fname += ext
+    dest = vdir / fname
+    replaced = dest.exists()
+    shutil.copyfile(rec["path"], dest)
+    out = [f"{'replaced' if replaced else 'copied'} vision/{fname} ({uploads.human_size(rec['size'])})"]
+    meta = None
+    if ext == ".pkl":
+        meta, _ = _pkl_meta(dest)
+        if meta:
+            out.append(f"model meta: {json.dumps(meta, default=str)[:600]}")
+    else:
+        out.append("! dorna_vision's od / rod / cls / kp / anom detections load the .pkl their training exports; "
+                   "this file is kept in vision/, but a detection may need that .pkl instead")
+    events = [_ui_for(f"vision/{fname}", name)]
+    cfg = (a.get("config") or "").strip()
+    if cfg:
+        if "/" not in cfg:
+            cfg = "vision/" + cfg
+        if not cfg.endswith((".yaml", ".yml")):
+            cfg += ".yaml"
+        cpath = _inside(base, cfg)
+        rel_model = os.path.relpath(dest, cpath.parent)
+        if cpath.is_file():
+            try:
+                data = yaml.safe_load(cpath.read_text()) or {}
+            except yaml.YAMLError as e:
+                raise ToolError(f"{cfg} doesn't parse: {e}")
+            if not isinstance(data, dict):
+                raise ToolError(f"{cfg} is not a mapping")
+            det = data.get("detection")
+            if not isinstance(det, dict):
+                det = data["detection"] = {}
+            old = det.get("path")
+            det["path"] = rel_model
+            if a.get("cmd"):
+                det["cmd"] = a["cmd"]
+            cpath.write_text(yaml.safe_dump(data, sort_keys=False))
+            out.append(f"{cfg}: detection.path {old!r} -> {rel_model!r}")
+        else:
+            cmd = a.get("cmd") or str((meta or {}).get("type") or "").lower() or None
+            if cmd not in ("od", "rod", "cls", "kp", "anom"):
+                raise ToolError(f"vision/{fname} is copied; {cfg} does not exist yet — say the detection kind "
+                                "(cmd: od, rod, cls, kp or anom) to create it")
+            cpath.parent.mkdir(parents=True, exist_ok=True)
+            data = {"detection": {"cmd": cmd, "path": rel_model, "conf": float(a.get("conf") or 0.5)},
+                    "display": {"label": 1, "save_img": False, "client_save_img": False}}
+            cpath.write_text(yaml.safe_dump(data, sort_keys=False))
+            out.append(f"created {cfg}: {json.dumps(data)}")
+        out.append(f"A recipe uses it with detection_preset: {{config: {cfg}}} (relaunch the project to load it).")
+    else:
+        refs = []
+        for p in sorted(vdir.glob("*.y*ml")):
+            try:
+                d = yaml.safe_load(p.read_text()) or {}
+                refs.append(f"  vision/{p.name}: detection {json.dumps(d.get('detection') or {}, default=str)[:200]}")
+            except Exception:
+                refs.append(f"  vision/{p.name}: (doesn't parse)")
+        out.append("configs in vision/:\n" + ("\n".join(refs) if refs else "  none yet — name one with config to make it"))
+    return "\n".join(out), events
+
+
 HANDLERS = {n: globals()["t_" + n] for n in TOOL_NAMES}
 
 LABELS = {
@@ -652,6 +1030,10 @@ LABELS = {
     "read_hmi_spec": lambda a: "Reading the HMI pages",
     "read_docs": lambda a: f"Reading {a.get('path', '')}",
     "search_docs": lambda a: f"Searching for “{a.get('pattern', '')}”",
+    "list_uploads": lambda a: "Listing the attached files",
+    "read_upload": lambda a: "Reading the attached file",
+    "add_component_from_file": lambda a: f"Making the component {a.get('type', '')}",
+    "install_vision_model": lambda a: "Installing the vision model",
 }
 
 

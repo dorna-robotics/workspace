@@ -11,6 +11,7 @@ offline mode runs existing projects and nothing else).
     POST /dev/api/projects/<n>/simulation              {components: [..] | component, on}
     POST /dev/api/projects/<n>/scene/save              {files: {file: {component: cfg}}, base_sig}  (scene builder → files)
     GET  /dev/api/projects/<n>/camera/<c>.jpg          one live frame (JPEG), or JSON {image: false, reason} in sim
+    GET  /dev/api/projects/<n>/vision/<c>              {available, url, server, serial} of the camera's vision configurator, or {available: false, reason}
     GET  /dev/api/projects/<n>/hmi                     the HMI screens' specs + a change signature
     GET  /dev/api/projects/<n>/hmi/pendant/<file>      the Main screen's files, before launch
     GET  /dev/api/projects/<n>/calibration/plan        the calibration plan (gui/calibration/plan.py)
@@ -281,6 +282,22 @@ class CameraFrameHandler(_Base):
         self.finish(jpg)
 
 
+class VisionConfiguratorHandler(_Base):
+    """Where to open the vision configurator for one camera part."""
+    async def get(self, name, comp):
+        p = self.project(name)
+        if not p:
+            return
+        try:
+            scene = await _off_loop(scene_edit.merged, p[1])
+            where = camera.configurator(scene, comp)
+        except camera.NoImage as e:
+            return self.finish({"ok": True, "available": False, "reason": str(e)})
+        except Exception as e:
+            return self.fail(400, f"{type(e).__name__}: {e}")
+        self.finish({"ok": True, "available": True, **where})
+
+
 class HmiHandler(_Base):
     def get(self, name):
         p = self.project(name)
@@ -379,6 +396,7 @@ def routes(orch):
         (P + r"/simulation", SimulationHandler, o),
         (P + r"/scene/save", SceneSaveHandler, o),
         (P + r"/camera/([^/]+)\.jpg", CameraFrameHandler, o),
+        (P + r"/vision/([^/]+)", VisionConfiguratorHandler, o),
         (P + r"/hmi", HmiHandler, o),
         (P + r"/hmi/pendant/(.*)", PendantFileHandler, dict(orch=orch, key="pendant")),
         (P + r"/calibration/plan", CalibrationPlanHandler, o),

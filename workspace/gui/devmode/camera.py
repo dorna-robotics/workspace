@@ -104,3 +104,35 @@ def grab(host, port, serial, cam_cfg):
             raise RuntimeError("the vision server sent no image")
         _last[key] = (time.monotonic(), jpg)
         return jpg
+
+
+def configurator(scene, name):
+    """Where the vision configurator for camera ``name`` is: the vision
+    server's own web GUI (the dorna_vision server serves it at its port;
+    vision-guide §1), opened on its Playground page — where detections are
+    built for a camera. The GUI routes by path only (/cameras, /playground)
+    and takes no camera in the link, so the serial comes back to show
+    beside it. NoImage with the reason when there is nothing to open:
+    no vision server named, a simulated one, or no address."""
+    cfg = (scene or {}).get(name)
+    if not isinstance(cfg, dict):
+        raise NoImage(f"No component {name}")
+    cam = dict(cfg.get("camera_cfg") or {})
+    if cfg.get("type") == "vision_server":          # the server itself: its GUI
+        server, serial, srv = name, "", cfg
+    else:
+        server = cam.get("server")
+        serial = str(cam.get("serial_number") or "")
+        srv = (scene or {}).get(server) if server else None
+    if not isinstance(srv, dict) or srv.get("type") != "vision_server":
+        raise NoImage("No vision server is set for this camera. Set its Vision server in Parameters "
+                      "(a vision_server component in the scene, with the server's IP and port).")
+    if srv.get("simulation", True) is not False:
+        raise NoImage(f"The vision server {server} is in simulation — there is no configurator to open. "
+                      "Turn its simulation off (Workflow tab) and set its IP address to use the real one.")
+    host = str(srv.get("ip") or "")
+    if not host:
+        raise NoImage(f"The vision server {server} has no IP address — set it in its Parameters.")
+    port = int(srv.get("port") or 80)
+    return {"url": f"http://{host}:{port}/playground", "server": server, "host": host, "port": port,
+            "serial": serial, "camera_simulated": bool(serial) and cfg.get("simulation", True) is not False}

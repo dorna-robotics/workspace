@@ -24,6 +24,7 @@ from gui.account import account
 from gui.account.client import server_url
 from gui.data_home import data_path
 
+from . import uploads
 from .prompts import system_blocks
 from .tools import TOOLS, ToolError, run_tool, tool_label
 
@@ -83,7 +84,9 @@ class Session:
         return os.path.join(_sessions_dir(), f"{self.id}.json")
 
     def save(self):
-        data = {"id": self.id, "owner": self.owner, "project": self.project, "messages": self.messages,
+        # image / PDF data stays in the upload store, not in the session file
+        data = {"id": self.id, "owner": self.owner, "project": self.project,
+                "messages": uploads.strip_binary(self.messages),
                 "transcript": self.transcript, "saved": time.time()}
         tmp = self.path + ".tmp"
         # transcripts hold project content and the account email: owner-only
@@ -179,17 +182,28 @@ def _truncate(text):
     return text
 
 
-async def run_turn(session, user_text, emit, context=None):
+def user_content(session, user_text, context=None, attachments=None):
+    """The user message's content: the attached files first (image and
+    document blocks, or a note naming the saved file), then the text."""
+    text = user_text
+    if context:
+        text += f"\n\n<page_context>{json.dumps(context, default=str)[:4000]}</page_context>"
+    if not attachments:
+        return text
+    return uploads.content_blocks(session.id, attachments) + [{"type": "text", "text": text}]
+
+
+async def run_turn(session, user_text, emit, context=None, attachments=None):
     """One user turn to completion, streaming events through ``emit``."""
     if isinstance(context, dict) and context.get("project"):
         session.project = str(context["project"])
-    content = user_text
-    if context:
-        content += f"\n\n<page_context>{json.dumps(context, default=str)[:4000]}</page_context>"
+    loop = asyncio.get_running_loop()
+    content = await loop.run_in_executor(None, user_content, session, user_text, context, attachments)
     repair_history(session.messages)
     session.messages.append({"role": "user", "content": content})
     repair_history(session.messages)
-    session.transcript.append({"role": "user", "text": user_text})
+    files = [uploads.public(r) for r in (uploads.get(session.id, i) for i in attachments or []) if r]
+    session.transcript.append({"role": "user", "text": user_text, **({"files": files} if files else {})})
     reply = {"role": "assistant", "blocks": []}
     session.transcript.append(reply)
     session.cancel = False
@@ -200,7 +214,6 @@ async def run_turn(session, user_text, emit, context=None):
         else:
             reply["blocks"].append({"kind": "text", "text": delta})
 
-    loop = asyncio.get_running_loop()
     notes = _updates_display()
     json_retries = 0
     try:
