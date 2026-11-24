@@ -335,9 +335,17 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
             _close_dangling_tool_uses(session)
             add_text("\n\n(stopped)")
             await emit({"t": "text", "d": "\n\n(stopped)"})
-    except (anthropic.AuthenticationError, NotLoggedIn):
-        account.invalidate()
+    except NotLoggedIn:
         await _fail(session, emit, reply, "This robot is no longer logged in. Log in again (top right) to use the assistant.")
+    except anthropic.AuthenticationError:
+        # a 401 here can be the robot's sign-in OR the Dorna server's own AI key:
+        # only the account server says which (status() forgets a revoked token itself)
+        st = await asyncio.get_running_loop().run_in_executor(None, lambda: account.status(force=True))
+        if st.get("logged_in"):
+            await _fail(session, emit, reply, "Dorna AI isn't available right now — the problem is on Dorna's side, "
+                                              "not this robot. Try again later.")
+        else:
+            await _fail(session, emit, reply, "This robot is no longer logged in. Log in again (top right) to use the assistant.")
     except anthropic.PermissionDeniedError:
         await _fail(session, emit, reply, OUT_OF_CREDITS)
     except anthropic.RateLimitError:
