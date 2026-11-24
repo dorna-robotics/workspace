@@ -1127,6 +1127,5 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
 }
 
 /* Developer mode embeds the builder (?devmode=1): the host page carries
-   the nav, the project title and the New component button. */
-html.sb-dev .app-nav, html.sb-dev .app-nav-overlay, html.sb-dev .sb-header, html.sb-dev #btnInsert { display: none; }
-html.sb-dev .app-nav ~ * { margin-left: 0 !important; }
+   the project title and the New component button. */
+html.sb-dev .sb-header, html.sb-dev #btnInsert { display: none; }

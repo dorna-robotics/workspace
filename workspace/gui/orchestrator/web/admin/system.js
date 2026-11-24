@@ -324,7 +324,6 @@ async function refresh(fetchRemote) {
   try {
     S = await apiFetch(`/system?fetch=${fetchRemote ? 1 : 0}`);
     // A fresh check is the nav badge's news too (vendor/nav.js).
-    if (fetchRemote && window.__navSystemRefresh) window.__navSystemRefresh();
   } catch (e) {
     card("Installed", "", warn(esc(String(e.message || e)), true),
       `<div class="spacer"></div><button class="btn btn-primary" id="btnSysCheck">Check again</button>`);
