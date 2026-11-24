@@ -67,15 +67,38 @@ def merged(project_dir):
     return out
 
 
+BACKUPS_KEPT = 40           # per scene file; the oldest go first
+
+
 def _backup(path, text):
     """The file as it was before an edit, under
-    <project>/.workspace/scene_backup/ — an edit can always be undone."""
+    <project>/.workspace/scene_backup/ — an edit can always be undone.
+    Names are unique to the nanosecond (plus a counter), so two edits in
+    the same second never share one, and an existing backup is never
+    overwritten. The newest BACKUPS_KEPT per file are kept."""
     proj = path.parent
     while proj != proj.parent and not (proj / "launch.yaml").is_file():
         proj = proj.parent
     d = proj / ".workspace" / "scene_backup"
     d.mkdir(parents=True, exist_ok=True)
-    (d / f"{path.name}.{time.strftime('%Y%m%d-%H%M%S')}").write_text(text)
+    ns = time.time_ns()
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(ns // 1_000_000_000)) + f".{ns % 1_000_000_000:09d}"
+    n = 0
+    while True:
+        dest = d / (f"{path.name}.{stamp}" + (f"-{n}" if n else ""))
+        try:
+            with open(dest, "x") as f:          # never overwrite
+                f.write(text)
+            break
+        except FileExistsError:
+            n += 1
+    mine = sorted(q for q in d.iterdir() if q.is_file() and q.name.startswith(path.name + ".")
+                  and q.name[len(path.name) + 1:][:1].isdigit())
+    for old in mine[:-BACKUPS_KEPT]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
 
 
 # ── text blocks ──────────────────────────────────────────────────────
@@ -129,7 +152,19 @@ def _set_in(lines, lo, hi, ind, path, value):
         if "{{" in rest or "{%" in rest:
             raise SceneEditError(f"`{key}` is set by a template expression ({rest}) — edit the scene file itself")
         if len(path) == 1:
-            lines[i] = " " * ind + f"{key}: {_fmt(value)}"
+            # The value replaces the key's whole subtree (a nested block
+            # or a block list below it).
+            j = i + 1
+            while j < hi and (not lines[j].strip() or lines[j].lstrip().startswith("#")
+                              or _indent(lines[j]) > ind
+                              or (_indent(lines[j]) == ind and lines[j].lstrip().startswith("- "))):
+                j += 1
+            while j > i + 1 and (not lines[j - 1].strip() or lines[j - 1].lstrip().startswith("#")):
+                j -= 1
+            sub = "\n".join(lines[i + 1:j])
+            if "{{" in sub or "{%" in sub:
+                raise SceneEditError(f"`{key}` holds template expressions — edit the scene file itself")
+            lines[i:j] = [" " * ind + f"{key}: {_fmt(value)}"]
             return lines
         if rest and not rest.startswith("#"):
             # A flow mapping on one line: {type: "x", offset: 0}
@@ -263,22 +298,90 @@ def _block_text(name, cfg):
     return [f"{name}:"] + _emit(cfg, 2)
 
 
+NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _check_keys(value, where):
+    """Every mapping key written as text must be a plain name — a key
+    holding a newline or ``:`` could write top-level YAML."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if not isinstance(k, str) or not NAME_RE.match(k):
+                raise SceneEditError(f"{where}: `{k}` is not a valid name (letters, digits, _ . - only)")
+            _check_keys(v, f"{where}.{k}")
+    elif isinstance(value, list):
+        for v in value:
+            _check_keys(v, where)
+
+
+def _diff_paths(old, new, path=()):
+    """Leaf paths where ``new`` differs from ``old`` (``new`` only adds
+    or changes keys). A dict replaced by a non-dict is one leaf."""
+    out = []
+    for k, v in new.items():
+        o = old.get(k, KeyError) if isinstance(old, dict) else KeyError
+        if o == v:
+            continue
+        if isinstance(v, dict) and v and isinstance(o, dict):
+            out += _diff_paths(o, v, path + (k,))
+        else:
+            out.append(path + (k,))
+    return out
+
+
+def _patch_block(lines, name, old, patched):
+    """``name``'s block patched line by line to read ``patched``:
+    only the changed keys' lines move, so comments and template values
+    elsewhere in the block stay. Raises SceneEditError when a changed
+    key is itself written by a template."""
+    s, e = find_block(lines, name)
+    body = [ln for ln in lines[s + 1:e] if ln.strip() and not ln.lstrip().startswith("#")]
+    ind = _indent(body[0]) if body else 2
+    for path in _diff_paths(old, patched):
+        s, e = find_block(lines, name)
+        lines = _set_in(lines, s + 1, e, ind, list(path), _get(patched, list(path)))
+    return lines
+
+
+def _match_files(project_dir):
+    """Scene files by path relative to the project, plus by basename
+    when that basename is unique (the builder names files by basename)."""
+    project_dir = Path(project_dir).resolve()
+    files = scene_files(project_dir)
+    out, seen = {}, {}
+    for p in files:
+        try:
+            out[str(p.relative_to(project_dir))] = p
+        except ValueError:
+            out[str(p)] = p
+        seen.setdefault(p.name, []).append(p)
+    for base, ps in seen.items():
+        if base not in out:
+            out[base] = ps[0] if len(ps) == 1 else None      # None = ambiguous
+    return out
+
+
 def save_components(project_dir, by_file):
     """The scene builder's state → the project's files, minimally:
     a component the builder added is appended, one it deleted is cut,
-    one it changed gets its block rewritten from the file's own values
-    with the builder's keys laid over (never deleting a key, never
-    touching BUILDER_SKIPS). Untouched components keep their text,
-    comments and template expressions; a component a template loop
-    writes is left to the file (listed as skipped). Returns a summary."""
-    files = {p.name: p for p in scene_files(project_dir)}
+    one it changed gets only its changed lines rewritten (the builder's
+    keys laid over the file's values, never deleting a key, never
+    touching BUILDER_SKIPS). Everything else keeps its text, comments
+    and template expressions; a component a template loop writes, or a
+    change to a value a template computes, is left to the file (listed
+    as skipped). Files are named by path in the project, or by basename
+    when that is unique. Returns a summary."""
+    files = _match_files(project_dir)
     summary = {"added": [], "removed": [], "changed": [], "skipped": [], "files": []}
     originals = {}
     try:
         for fname, comps in (by_file or {}).items():
-            p = files.get(os.path.basename(fname))
-            if p is None:
+            key = os.path.normpath(str(fname))
+            if key not in files:
                 raise SceneEditError(f"{fname} is not one of this project's scene files")
+            p = files[key]
+            if p is None:
+                raise SceneEditError(f"{fname}: two scene files share that name — name it by its path in the project")
             if not isinstance(comps, dict):
                 raise SceneEditError(f"{fname}: components must be an object")
             text = p.read_text()
@@ -301,8 +404,11 @@ def save_components(project_dir, by_file):
             for name, cfg in comps.items():
                 if not isinstance(cfg, dict):
                     continue
+                if not isinstance(name, str) or not NAME_RE.match(name):
+                    raise SceneEditError(f"`{name}` is not a valid component name (letters, digits, _ . - only)")
                 if name not in cur:
-                    new = {k: v for k, v in cfg.items() if not k.startswith("__")}
+                    new = {k: v for k, v in cfg.items() if not str(k).startswith("__")}
+                    _check_keys(new, name)
                     while lines and not lines[-1].strip():
                         lines.pop()
                     lines += [""] + _block_text(name, new) + [""]
@@ -312,17 +418,27 @@ def save_components(project_dir, by_file):
                 old = cur[name] if isinstance(cur[name], dict) else {}
                 patched = copy.deepcopy(old)
                 for k, v in cfg.items():
-                    if k in BUILDER_SKIPS or k.startswith("__"):
+                    if k in BUILDER_SKIPS or str(k).startswith("__"):
                         continue
                     patched[k] = v
                 if patched == old:
                     continue
-                blk = find_block(lines, name)
-                if blk is None:
+                _check_keys(patched, name)
+                if find_block(lines, name) is None:
                     summary["skipped"].append(name)
                     continue
-                s, e = blk
-                lines[s:e] = _block_text(name, patched)
+                # Only the changed lines: the rest of the block (comments,
+                # {{ }} values) keeps its text. A changed key the file
+                # computes with a template is left to the file.
+                try:
+                    trial = _patch_block(list(lines), name, old, patched)
+                    ok = (render(p, "\n".join(trial)) or {}).get(name) == patched
+                except Exception:
+                    ok = False
+                if not ok:
+                    summary["skipped"].append(name)
+                    continue
+                lines = trial
                 summary["changed"].append(name)
                 changed = True
             if not changed:

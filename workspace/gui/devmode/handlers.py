@@ -94,6 +94,20 @@ class _Base(tornado.web.RequestHandler):
         return ws, d
 
 
+class DevStaticHandler(tornado.web.StaticFileHandler):
+    """The page's own files (css/js/html) — logged-in units only, like
+    the page itself (the path is matched after URL-decoding, so a gate
+    on the literal name alone could be walked around)."""
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "no-store")
+
+    def prepare(self):
+        if not access.logged_in():
+            self.set_status(401)
+            self.set_header("Content-Type", "application/json")
+            self.finish({"error": "login required"})
+
+
 class DevPageHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Cache-Control", "no-store")
@@ -184,7 +198,12 @@ class ParamsHandler(_Base):
             touched = await _off_loop(scene_edit.set_values, p[1], comp, typed) if typed else {}
         except (ValueError, scene_edit.SceneEditError) as e:
             return self.fail(400, str(e))
+        # Keys the scene builder also writes (rail, has_rail, critical…):
+        # a builder holding the old values would save them back, so the
+        # page must reload the builder before its next Save.
+        builder_keys = sorted(k for k in typed if k.split(".")[0] not in scene_edit.BUILDER_SKIPS)
         self.finish({"ok": True, "changed": sorted(typed), "files": touched,
+                     "builder_keys": builder_keys,
                      "scene_sig": scene_edit.files_sig(p[1]),
                      "relaunch": bool(typed) and self.orch.is_launched(name)})
 
@@ -230,7 +249,10 @@ class SceneSaveHandler(_Base):
             return self.fail(400, "{files: {scene file: {component: cfg}}}")
         # The builder loaded the files at base_sig; anything written since
         # (the AI, the Parameters window, an editor) would be undone.
-        if b.get("base_sig") and b["base_sig"] != scene_edit.files_sig(p[1]):
+        if not isinstance(b.get("base_sig"), str) or not b["base_sig"]:
+            return self.fail(400, "base_sig is required: the scene_sig the files had when you read them "
+                                  "(GET …/info) — a save without it could undo newer edits.")
+        if b["base_sig"] != scene_edit.files_sig(p[1]):
             return self.fail(409, "The scene files changed since the builder loaded them — "
                                   "reload the Scene builder, then make your change again.")
         try:
@@ -360,4 +382,5 @@ def routes(orch):
         (P + r"/hmi", HmiHandler, o),
         (P + r"/hmi/pendant/(.*)", PendantFileHandler, dict(orch=orch, key="pendant")),
         (P + r"/calibration/plan", CalibrationPlanHandler, o),
+        (r"/dev/(.*)", DevStaticHandler, {"path": WEB_DIR}),
     ]

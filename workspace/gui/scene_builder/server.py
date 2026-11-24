@@ -851,16 +851,15 @@ app = tornado.web.Application([
 
 
 def _devmode_filter(handler, types):
-    """Developer mode (``?devmode=1``) shows only the components the
-    unit's account was given (gui/devmode/access.py; admins see all).
+    """The catalog shows only the components the unit's account was
+    given (gui/devmode/access.py; admins see all; logged out = none but
+    what the scene already holds) — whatever the query string says.
     Never hidden: the project's own components and every type already
     in its scene — a part on the bench stays editable."""
-    if not handler.get_argument("devmode", ""):
-        return list(types)
     try:
         from gui.devmode.access import filter_types
     except Exception:
-        return list(types)
+        return []
     keep = set(_project_component_map.keys())
     if _project_path:
         try:
@@ -905,11 +904,10 @@ class CategoriesHandler(tornado.web.RequestHandler):
         # Add project-local components as a category
         if _project_component_map:
             categories.append({"name": "project", "items": sorted(_project_component_map.keys())})
-        if self.get_argument("devmode", ""):
-            shown = set(_devmode_filter(self, {t for c in categories for t in c["items"]}))
-            for c in categories:
-                c["items"] = [t for t in c["items"] if t in shown]
-            categories = [c for c in categories if c["items"]]
+        shown = set(_devmode_filter(self, {t for c in categories for t in c["items"]}))
+        for c in categories:
+            c["items"] = [t for t in c["items"] if t in shown]
+        categories = [c for c in categories if c["items"]]
         self.write({"ok": True, "categories": categories})
 
 class TypeMetaHandler(tornado.web.RequestHandler):

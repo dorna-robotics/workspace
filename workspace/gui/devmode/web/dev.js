@@ -106,12 +106,15 @@ async function loadScene() {
   const frame = $("#sbFrame");
   try {
     await fetch("/scene-builder/api/reset", { method: "POST" });
-    try {
-      for (const k of Object.keys(localStorage)) if (k.startsWith("sb_persist::")) localStorage.removeItem(k);
-      localStorage.setItem("sb_tab", "scene");
-    } catch (_) {}
     await loadInfo();
     baseSig = info.scene_sig;
+    // Only this project's remembered builder state (file slots, tags):
+    // other projects' unsaved work in the standalone builder stays.
+    try {
+      const dir = String(info.dir || "").replace(/\/+$/, "");
+      for (const k of [`sb_persist::${dir}`, `sb_persist::${dir}/`]) localStorage.removeItem(k);
+      localStorage.setItem("sb_tab", "scene");
+    } catch (_) {}
     const r = await fetch("/scene-builder/api/set_project", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: info.dir }),
@@ -188,7 +191,7 @@ $("#sbSave").onclick = async () => {
     if (r.changed.length) parts.push(`changed ${r.changed.length}`);
     if (r.removed.length) parts.push(`removed ${r.removed.length}`);
     const what = parts.length ? `Saved to ${r.files.join(", ")}: ${parts.join(", ")}.` : "Nothing to save — the files already match.";
-    const skip = r.skipped.length ? ` ${r.skipped.length} template-made component${r.skipped.length > 1 ? "s were" : " was"} left to the file.` : "";
+    const skip = r.skipped.length ? ` Not saved, because the scene file computes them with a template (edit the file itself): ${r.skipped.join(", ")}.` : "";
     banner(esc(what + skip) + (r.relaunch && parts.length ? " Relaunch the project to use it." : ""));
     saveThumb(true);
     loadInfo();
@@ -265,7 +268,15 @@ async function openParams(name) {
     msg.className = "dv-msg"; msg.textContent = "Saving…";
     try {
       const r = await post("/params", { component: name, values });
-      baseSig = r.scene_sig;                 // connection keys only: the builder never writes them
+      // Connection keys: the builder never writes them, so its copy is
+      // still current. Rail / critical: the builder writes those too and
+      // would save its old values back — it must reload first (baseSig
+      // stays old, so a Save before that is refused with a 409).
+      if (!(r.builder_keys || []).length) baseSig = r.scene_sig;
+      else {
+        banner(`Saved ${esc(r.builder_keys.join(", "))}. The Scene builder still shows the old value — reload it before you move anything (its unsaved changes are dropped). <button class="btn btn-sm" id="sbReload">Reload the Scene builder</button>`);
+        $("#sbReload")?.addEventListener("click", () => { banner(""); loadScene(); });
+      }
       msg.className = "dv-msg ok";
       msg.textContent = !r.changed.length ? "No changes." :
         `Saved to ${Object.keys(r.files).map(f => f.split("/").pop()).join(", ")}.` + (r.relaunch ? " Relaunch to apply." : "");

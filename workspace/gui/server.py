@@ -346,7 +346,7 @@ class ConfigVersionHandler(tornado.web.RequestHandler):
 
 
 # ---- Developer mode (builder D): /dev/ page + API ----
-from gui.devmode.handlers import routes as _devmode_routes, WEB_DIR as DEV_WEB_DIR
+from gui.devmode.handlers import routes as _devmode_routes
 
 
 # ---------------------------------------------------------------------------
@@ -420,8 +420,7 @@ def make_app(port=5000):
         (r"/scene-builder/(.*)", NoCacheStaticFileHandler, {"path": SB_WEB_DIR}),
 
         # ---- Developer mode (/dev/; builder D — gui/devmode/) ----
-        *_devmode_routes(orch),
-        (r"/dev/(.*)", NoCacheStaticFileHandler, {"path": DEV_WEB_DIR}),
+        *_devmode_routes(orch),          # page, API and its static files (all login-gated)
 
         # ---- Shared static (project CAD/ first, then library static/) ----
         (r"/static/(.*)", ProjectAwareStaticHandler, {"path": STATIC_DIR}),
