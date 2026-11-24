@@ -166,6 +166,14 @@
 
 .account-slot:empty { display: none; }
 
+/* ── GitHub panel (#verModal — home.js ghRender) ───────────────────── */
+.gh-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); font-size: var(--text-md); overflow-wrap: anywhere; }
+.gh-row .btn { min-height: 44px; flex-shrink: 0; }
+.gh-origin { padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.gh-vers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.gh-vers li { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-md); }
+.gh-msg { width: 100%; min-height: 160px; resize: vertical; font-family: var(--mono); font-size: var(--text-sm); }
+
 /* ── Phone ─────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .main { padding: var(--space-5) var(--space-5) var(--space-6); }

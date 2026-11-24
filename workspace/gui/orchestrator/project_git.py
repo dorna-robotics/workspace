@@ -43,17 +43,23 @@ def _owner(path: str) -> str:
     return pwd.getpwuid(os.stat(path).st_uid).pw_name
 
 
-def _git(cwd: str, *args: str, timeout: float = GIT_TIMEOUT_S, check: bool = True):
-    """``git -C cwd args…`` as the folder's owner. Returns (rc, stdout, stderr)."""
+def _git(cwd: str, *args: str, timeout: float = GIT_TIMEOUT_S, check: bool = True,
+         secret_env: Optional[dict] = None):
+    """``git -C cwd args…`` as the folder's owner. Returns (rc, stdout, stderr).
+
+    ``secret_env`` (a token's ``GIT_CONFIG_*``) reaches git through the
+    process environment only — never the command line, which ``ps`` shows."""
     env = ["GIT_TERMINAL_PROMPT=0",
            "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=10"]
     owner = _owner(cwd)
+    keep = [f"--preserve-env={','.join(secret_env)}"] if secret_env else []
     if os.geteuid() == 0 and owner != "root":
-        cmd = ["sudo", "-u", owner, "-H", "env", *env, "git", "-C", cwd, *args]
+        cmd = ["sudo", *keep, "-u", owner, "-H", "env", *env, "git", "-C", cwd, *args]
     else:
         cmd = ["env", *env, "git", "-C", cwd, *args]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                           env=dict(os.environ, **secret_env) if secret_env else None)
     except subprocess.TimeoutExpired:
         raise GitError(f"git {' '.join(args)}: no answer in {timeout:g} s")
     if check and p.returncode != 0:

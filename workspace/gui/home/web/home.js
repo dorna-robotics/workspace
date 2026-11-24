@@ -461,19 +461,24 @@ $("delGo").addEventListener("click", () => busy($("delGo"), "Deleting…", async
   } catch (e) { showErr("delErr", String(e.message || e)); }
 }));
 
-// ---- GitHub: the Version panel (project_git.py via /workspace/<n>/version) ----
-let verName = "";
-const verApi = () => `/workspace/${enc(verName)}/version`;
+// ---- GitHub: the project's repository, as on the website (gui/home/github.py) ----
+// One private repository per project in Dorna's organization (<account>_<project>),
+// reached with a token the account server hands out for it. Save version commits
+// everything; Push sends the versions; Check looks for changes made elsewhere (the
+// website, another robot); Pull merges them in — or, when both changed the same
+// lines, changes nothing and names the files. A project's own origin (where it was
+// imported from) keeps its Get latest.
+let verName = "", gh = null, ghBusy = "", ghConflicts = null;
+const ghApi = () => `/projects/${enc(verName)}/github`;
 const vWarn = (html, bad = false) => `<div class="ver-warn${bad ? " bad" : ""}"><span class="bang">!</span><div>${html}</div></div>`;
-const vCommit = (c) => c ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
-function vStatus(v) {
-  let cls = "ok", txt = "Up to date";
-  if (!v || !v.git) { cls = "bad"; txt = "No git"; }
-  else if (v.reachable === false) { cls = "off"; txt = "Unknown — no access"; }
-  else if (v.behind) { cls = "warn"; txt = `${v.behind} behind GitHub`; }
-  else if (v.ahead || (v.changes || []).length) { cls = "warn"; txt = "Local changes"; }
-  return `<span class="pill ${cls}">${esc(txt)}</span>`;
-}
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const ago = (t) => {
+  const sec = Math.max(0, Date.now() / 1000 - t);
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.round(sec / 60)} min ago`;
+  if (sec < 86400) return `${Math.round(sec / 3600)} h ago`;
+  return new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+};
 function vFoot(btns) {
   const f = $("verFoot");
   f.innerHTML = "";
@@ -486,32 +491,105 @@ function vFoot(btns) {
 }
 function vBusy(text) { $("verBody").innerHTML = `<div class="ver-busy">${esc(text)}</div>`; $("verFoot").querySelectorAll("button").forEach((b) => { b.disabled = true; }); }
 const vClose = () => hideModal("verModal");
-function vState(v) {
+
+function ghRender() {
+  const g = gh, n = (g.changes || []).length;
   $("verTitle").textContent = `GitHub — ${verName}`;
-  if (!v.git) {
-    $("verBody").innerHTML = vWarn(`This project is not a git repository${v.error ? `: ${esc(v.error)}` : ""}.`, true);
-    vFoot([["Close", "", vClose]]);
-    return;
-  }
-  const n = (v.changes || []).length, a = v.ahead || 0;
-  const local = !n && !a ? "no local changes" : [n && `${n} uncommitted change${n === 1 ? "" : "s"}`, a && `${a} local commit${a === 1 ? "" : "s"} not on GitHub`].filter(Boolean).join(" · ");
-  let html = `<dl class="ver-rows">
-    <dt>Status</dt><dd>${vStatus(v)}</dd>
-    <dt>Repository</dt><dd>${esc(v.url || "— no origin remote")}</dd>
-    <dt>Branch</dt><dd>${esc(v.detached ? "— detached HEAD" : v.branch)}</dd>
-    <dt>Running</dt><dd>${vCommit(v.head)}</dd>
-    <dt>GitHub</dt><dd>${v.remote ? vCommit(v.remote) : "—"}</dd>
-    <dt>This robot</dt><dd>${esc(local)}</dd>
-    ${(v.shared_with || []).length ? `<dt>Same repo</dt><dd>${esc(v.shared_with.join(", "))}<div class="ver-sub">updates with this project</div></dd>` : ""}
-  </dl>`;
-  if (v.reachable === false) html += vWarn("This robot cannot reach the repository — no read key, or no network.", true) + `<div class="ver-err">${esc(v.fetch_error)}</div>`;
-  $("verBody").innerHTML = html;
-  vFoot([["Check again", "", () => loadVersion()], ["Get latest…", "btn-primary", () => vConfirm(v)]]);
+  const link = g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">${esc(g.url.replace("https://github.com/", ""))} ↗</a>` : "—";
+  let line, btn = "";
+  if (g.github_error) line = `GitHub can't be reached: ${g.github_error}`;
+  else if (!g.git) line = "No versions yet — Save version starts this project's history.";
+  else if (g.behind) {
+    line = `GitHub has ${plural(g.behind, "newer change")}, made outside this robot.`;
+    btn = `<button class="btn btn-primary" data-gh="pull">${ghBusy === "pull" ? "Pulling…" : "Pull"}</button>`;
+  } else if (g.ahead || (!g.on_github && g.head)) {
+    line = g.ahead ? `${plural(g.ahead, "saved version")} not on GitHub yet.` : "The last version isn't on GitHub yet.";
+    btn = `<button class="btn btn-primary" data-gh="push">${ghBusy === "push" ? "Pushing…" : "Push"}</button>`;
+  } else line = g.head ? "Up to date with GitHub." : "Nothing saved yet.";
+  const vers = (g.versions || []).map((v) => `<li><b>${esc(v.title)}</b><span class="ver-sub">${esc(v.author)} · ${ago(v.at)} · <span class="ver-hash">${esc(v.short)}</span></span></li>`).join("");
+  $("verBody").innerHTML = `
+    <div class="gh-row"><span>${link}</span><button class="btn btn-ghost" data-gh="check" title="Look on GitHub for changes made outside this robot">${ghBusy === "check" ? "Checking…" : "Check"}</button></div>
+    <div class="gh-row"><span>${n ? `${plural(n, "change")} since the last version — not saved as a version yet.` : g.git ? "Everything is saved as a version." : "Nothing is saved as a version yet."}</span>
+      <button class="btn${btn ? "" : " btn-primary"}" data-gh="save"${n || !g.git ? "" : " disabled"}>Save version</button></div>
+    <div class="gh-row"><span>${esc(line)}</span>${btn}</div>
+    ${g.behind && g.ahead ? `<div class="ver-sub">Pull merges them with this project's own versions; then push the result.</div>` : ""}
+    ${g.behind && g.launched ? vWarn("The project is launched — after a pull it keeps the old files until you relaunch it.") : ""}
+    ${ghConflicts ? vWarn(ghConflicts.unsaved
+      ? `GitHub changed ${ghConflicts.files.map((f) => `<span class="mono">${esc(f)}</span>`).join(", ")}, which also ${ghConflicts.files.length === 1 ? "has" : "have"} unsaved changes here — nothing was changed. Save a version, then pull again.`
+      : `GitHub and this project changed the same lines in ${ghConflicts.files.map((f) => `<span class="mono">${esc(f)}</span>`).join(", ")} — nothing was changed. Edit one side so they agree, then pull again.`, true) : ""}
+    ${vers ? `<div class="ver-label">Saved versions</div><ul class="gh-vers">${vers}</ul>` : ""}
+    ${g.origin ? `<div class="gh-row gh-origin"><span class="ver-sub">Imported from ${esc(g.origin)}</span><button class="btn btn-ghost" data-gh="latest">Get latest…</button></div>` : ""}`;
+  const acts = { check: () => ghAct("check", () => ghLoad(true)), save: ghSave, push: () => ghAct("push", ghPush), pull: () => ghAct("pull", ghPull), latest: originLatest };
+  $("verBody").querySelectorAll("[data-gh]").forEach((b) => b.addEventListener("click", acts[b.dataset.gh]));
+  vFoot([["Close", "", vClose]]);
+}
+async function ghAct(what, fn) {
+  if (ghBusy) return;
+  ghBusy = what; ghRender();
+  try { await fn(); } catch (e) { toast(String(e.message || e), "bad"); } finally { ghBusy = ""; await ghLoad(false); }
+}
+async function ghPush() {
+  await home(ghApi(), { method: "POST", body: JSON.stringify({ cmd: "push" }) });
+  toast("Pushed to GitHub", "ok");
+}
+async function ghPull() {
+  const r = await home(ghApi(), { method: "POST", body: JSON.stringify({ cmd: "pull" }) });
+  ghConflicts = (r.conflicts || []).length ? { files: r.conflicts, unsaved: !!r.unsaved } : null;
+  if (ghConflicts) { toast(r.unsaved ? "Not pulled: save your changes first" : "Not pulled: GitHub and this project changed the same lines", "bad"); return; }
+  toast(r.pulled ? (r.merged ? "Pulled and merged with this project's versions — push the result" : "Pulled the changes from GitHub") : "Already up to date", "ok");
+}
+async function ghLoad(fetchIt) {
+  if (fetchIt) vBusy("Checking with GitHub…");
+  try { gh = await home(`${ghApi()}?fetch=${fetchIt ? 1 : 0}`); ghRender(); }
+  catch (e) { $("verBody").innerHTML = vWarn(esc(String(e.message || e)), true); vFoot([["Close", "", vClose], ["Check again", "btn-primary", () => ghLoad(true)]]); }
+}
+async function ghSave() {
+  let msg = "";
+  try { msg = (await home(ghApi(), { method: "POST", body: JSON.stringify({ cmd: "draft" }) })).message; }
+  catch (e) { toast(String(e.message || e), "bad"); return; }
+  if (!msg) { toast("Nothing changed since the last version", ""); return; }
+  $("verTitle").textContent = "Save version";
+  $("verBody").innerHTML = `<label class="ver-sub" for="ghMsg">What changed — written from the project's files; edit it as you like. The first line is its title.</label>
+    <textarea class="input gh-msg" id="ghMsg" rows="8" spellcheck="true">${esc(msg)}</textarea>`;
+  const submit = async (push) => {
+    $("verFoot").querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    try {
+      const r = await home(ghApi(), { method: "POST", body: JSON.stringify({ cmd: "save", message: $("ghMsg").value, push }) });
+      if (r.push_error) toast(`Saved version ${r.short}, but it isn't on GitHub yet: ${r.push_error}`, "bad");
+      else toast(r.github ? `Saved version ${r.short} and pushed it to GitHub` : `Saved version ${r.short}`, "ok");
+      ghConflicts = null;
+      await ghLoad(false);
+    } catch (e) { toast(String(e.message || e), "bad"); $("verFoot").querySelectorAll("button").forEach((b) => { b.disabled = false; }); }
+  };
+  vFoot([["Cancel", "", ghRender], ["Save only", "", () => submit(false)], ["Save & push", "btn-primary", () => submit(true)]]);
+  setTimeout(() => $("ghMsg").focus(), 50);
+}
+function ghLoggedOut() {
+  $("verTitle").textContent = `GitHub — ${verName}`;
+  $("verBody").innerHTML = `<div class="ver-sub">Log in to use GitHub. Each project gets a private repository in your Dorna account — save versions, push them, and pull the changes made on the website or another robot.</div>`;
+  vFoot([["Close", "", vClose], ...(window.dornaAccount ? [["Log in", "btn-primary", () => { vClose(); window.dornaAccount.login(); }]] : [])]);
+}
+
+// Get latest from the project's own origin (project_git.py via /workspace/<n>/version)
+const verApi = () => `/workspace/${enc(verName)}/version`;
+const vCommit = (c) => c ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}` : "?";
+async function originLatest() {
+  vBusy(`Checking ${gh.origin}…`);
+  try {
+    const v = await apiFetch(`${verApi()}?fetch=1`);
+    if (v.reachable === false) {
+      $("verBody").innerHTML = vWarn("This robot cannot reach that repository — no read key, or no network.", true) + `<div class="ver-err">${esc(v.fetch_error)}</div>`;
+      vFoot([["Back", "", ghRender]]);
+      return;
+    }
+    vConfirm(v);
+  } catch (e) { $("verBody").innerHTML = vWarn(esc(String(e)), true); vFoot([["Back", "", ghRender]]); }
 }
 function vConfirm(v) {
-  $("verTitle").textContent = "Get latest from GitHub";
+  $("verTitle").textContent = "Get latest";
   const n = (v.changes || []).length;
-  let html = `<div class="ver-sub">${esc(verName)}, branch <b>${esc(v.branch)}</b>: <span class="ver-hash">${esc(v.head && v.head.hash)}</span> → <span class="ver-hash">${esc(v.remote ? v.remote.hash : "?")}</span></div>`;
+  let html = `<div class="ver-sub">${esc(verName)}, branch <b>${esc(v.branch)}</b>: ${vCommit(v.head)} → ${vCommit(v.remote)}</div>`;
+  if (!v.behind && !v.plan_error) html += `<div class="ver-sub">Already the latest from ${esc(v.url)}.</div>`;
   if (v.platform) html += vWarn("This project lives inside the Workspace installation's own repository — Get latest resets the whole installation.", true);
   if (v.run_active) html += vWarn("A run is active — updating the code under it can crash the run.", true);
   else if (v.launched) html += vWarn("The project is launched — it keeps the old code until you relaunch it.");
@@ -520,28 +598,28 @@ function vConfirm(v) {
   if (v.plan_error) html += vWarn(`Cannot update: ${esc(v.plan_error)}`, true);
   else html += `<div class="ver-label">Will run, in this order</div><ul class="ver-cmds sh">${v.plan.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`;
   $("verBody").innerHTML = html;
-  const risky = v.platform || v.run_active || v.launched || n || v.ahead || v.reachable === false;
-  vFoot([["Cancel", "", () => vState(v)], ...(v.plan_error ? [] : [["Get latest", risky ? "btn-warn" : "btn-primary", () => vRun(v)]])]);
+  const risky = v.platform || v.run_active || v.launched || n || v.ahead;
+  vFoot([["Cancel", "", ghRender], ...(v.plan_error ? [] : [["Get latest", risky ? "btn-warn" : "btn-primary", () => vRun(v)]])]);
 }
 async function vRun(v) {
-  vBusy("Getting the latest from GitHub…");
+  vBusy("Getting the latest…");
   try {
     const r = await apiFetch(verApi(), { method: "POST", body: JSON.stringify({ confirmed: v.plan, stamp: v.stamp }) });
-    let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated <span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span> <span class="ver-sub">${esc(r.to ? r.to.subject : "")}</span></div></div>`;
+    let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated ${vCommit(r.from)} → ${vCommit(r.to)}</div></div>`;
     if (r.launched) html += vWarn("Relaunch the project to use the new code.");
     $("verBody").innerHTML = html;
-    vFoot([["Close", "btn-primary", vClose]]);
   } catch (e) {
     $("verBody").innerHTML = vWarn("Get latest failed — nothing after the failing step ran.", true) + `<div class="ver-err">${esc(String(e))}</div>`;
-    vFoot([["Close", "", vClose], ["Check again", "btn-primary", () => loadVersion()]]);
   }
+  vFoot([["Back", "btn-primary", () => ghLoad(true)]]);
 }
-async function loadVersion() {
-  vBusy("Checking with GitHub…");
-  try { vState(await apiFetch(`${verApi()}?fetch=1`)); }
-  catch (e) { $("verBody").innerHTML = vWarn(esc(String(e)), true); vFoot([["Close", "", vClose], ["Check again", "btn-primary", () => loadVersion()]]); }
+
+function openVersion(name) {
+  verName = name; gh = null; ghConflicts = null;
+  $("verTitle").textContent = `GitHub — ${name}`;
+  showModal("verModal");
+  if (loggedIn) ghLoad(true); else ghLoggedOut();
 }
-function openVersion(name) { verName = name; $("verTitle").textContent = `GitHub — ${name}`; showModal("verModal"); loadVersion(); }
 
 // ---- Parameters (as on the dashboard) ----
 async function openParams(name, frozen) {
