@@ -1,16 +1,13 @@
 // The projects page — image cards over the orchestrator registry.
 //
-// A card opens the project's HMI (the pendant). Its foot holds the run
-// controls the dashboard has (api.js wireCommand: Park and Kill are
-// hold-to-activate). The name renames on double-click; the ⋯ button and
+// A card opens the project's HMI (the pendant) — the card or its Open
+// button; launching and running happen there. The name renames on double-click; the ⋯ button and
 // a right-click open the card menu: Make a copy, Rename, GitHub, Delete.
 // Logged in (/account/api/status — gui/account) adds New project, Import
 // and the Developer button; logged out is the offline mode: run the
 // projects that are here.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart,
-         isStarted, isWaiting, fmtUptime, esc, connectStatusWS, deviceFaultGate,
-         wireCommand, toast, getToken } from "/orchestrator/api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, frozenValues, recordChip } from "/orchestrator/kwargs.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isWaiting, fmtUptime, esc,
+         connectStatusWS, toast, getToken } from "/orchestrator/api.js";
 
 const $ = (id) => document.getElementById(id);
 const grid = $("grid");
@@ -68,8 +65,7 @@ function loadProjects() {
     try {
       const j = await home("/projects");
       const prev = new Map(projects.map((p) => [p.name, p]));
-      projects = (j.projects || []).map((p) => ({ ...p, st: prev.get(p.name)?.st || { state: "unknown" },
-                                                 kwargs_values: prev.get(p.name)?.kwargs_values || {} }));
+      projects = (j.projects || []).map((p) => ({ ...p, st: prev.get(p.name)?.st || { state: "unknown" } }));
     } finally { projectsLoading = null; }
   })());
 }
@@ -119,25 +115,10 @@ function thumbHtml(p) {
   return `<div class="pc-thumb">${img}${pill}</div>`;
 }
 
+// One button: Open — the project's HMI, where it is launched, run and parked.
 function footHtml(p) {
-  const st = p.st || {};
-  const state = st.state || "unknown";
   if (p.node_url) return "";
-  if (!isLaunched(state)) {
-    return `<button class="btn btn-primary action-btn" data-cmd="launch">Launch</button>
-            <button class="btn params-btn">Parameters</button>`;
-  }
-  if (isBooting(state)) {
-    return `<span class="pc-starting">Starting…</span><div class="spacer"></div>
-            <button class="btn action-btn" data-cmd="kill">Kill</button>`;
-  }
-  const parking = state.toUpperCase() === "PARKING";
-  const active = isRunning(state) || parking;
-  return `<button class="btn btn-primary action-btn" data-cmd="start" ${canStart(state) ? "" : "disabled"}>${isStarted(state) ? "Resume" : "Start"}</button>
-          <button class="btn action-btn" data-cmd="pause" ${active ? "" : "disabled"}>Pause</button>
-          <button class="btn btn-warn action-btn" data-cmd="park" ${!active || parking ? "disabled" : ""}>Park</button>
-          <div class="spacer"></div>
-          <button class="btn btn-danger action-btn" data-cmd="kill">Kill</button>`;
+  return `<button class="btn btn-primary open-btn">Open</button>`;
 }
 
 function cardInner(p) {
@@ -247,19 +228,9 @@ function wireCardContent(el, p) {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu(el, { x: r.right, y: r.bottom + 4, alignRight: true });
   });
-  el.querySelector(".params-btn")?.addEventListener("click", () => openParams(p.name, false));
-  el.querySelectorAll(".action-btn").forEach((btn) => {
-    const cmd = btn.dataset.cmd;
-    wireCommand(btn, cmd, async () => {
-      if (cmd === "start") {
-        const action = (p.st?.state || "").toUpperCase() === "PAUSED" ? "Resume" : "Start";
-        if (!await deviceFaultGate(p.name, action)) return false;
-      }
-      const body = { cmd };
-      if (cmd === "start" && p.kwargs_values && Object.keys(p.kwargs_values).length) body.kwargs = p.kwargs_values;
-      await apiFetch(`/workspace/${enc(p.name)}/cmd`, { method: "POST", body: JSON.stringify(body) });
-      await refreshStatuses();
-    });
+  el.querySelector(".open-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.ctrlKey || e.metaKey) window.open(pendantUrl(p.name), "_blank"); else location.href = pendantUrl(p.name);
   });
 }
 
@@ -619,45 +590,6 @@ function openVersion(name) {
   $("verTitle").textContent = `GitHub — ${name}`;
   showModal("verModal");
   if (loggedIn) ghLoad(true); else ghLoggedOut();
-}
-
-// ---- Parameters (as on the dashboard) ----
-async function openParams(name, frozen) {
-  const p = projects.find((x) => x.name === name);
-  if (!p) return;
-  const form = $("paramsForm"), foot = $("paramsFoot");
-  let schema = {}, values = {}, record = "";
-  try {
-    const j = await apiFetch(`/workspace/${enc(name)}/launch_config`);
-    schema = j.kwargs_schema || {};
-    values = frozen ? frozenValues(j) : (j.kwargs_values || {});
-    record = frozen ? recordChip(j) : "";
-  } catch (e) { toast(`Parameters: ${e.message || e}`, "bad"); return; }
-  $("paramsTitle").textContent = `Parameters — ${name}`;
-  $("paramsRecord").innerHTML = record;
-  renderKwargsForm(form, schema, values, frozen, name);
-  foot.innerHTML = "";
-  const btn = (label, cls, fn) => { const b = document.createElement("button"); b.className = `btn ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn); foot.appendChild(b); return b; };
-  if (frozen || !Object.keys(schema).length) {
-    if (!Object.keys(schema).length) form.innerHTML = `<div class="kwargs-empty">This project has no parameters.</div>`;
-    btn("Close", "", () => hideModal("paramsModal"));
-  } else {
-    btn("Cancel", "", () => hideModal("paramsModal"));
-    btn("Reset all", "", () => renderKwargsForm(form, schema, {}, false, name));
-    btn("Set", "btn-primary", async (e) => {
-      const errs = validateKwargsForm(form, schema);
-      if (errs.length) { toast(errs[0].key ? `${errs[0].message} (${errs[0].key})` : errs[0].message, "bad"); return; }
-      const vals = readKwargsForm(form);
-      e.currentTarget.disabled = true;
-      try {
-        await apiFetch(`/workspace/${enc(name)}/kwargs`, { method: "POST", body: JSON.stringify({ kwargs_values: vals }) });
-        p.kwargs_values = vals;
-        hideModal("paramsModal");
-      } catch (err) { toast(String(err), "bad"); }
-      finally { e.currentTarget && (e.currentTarget.disabled = false); }
-    });
-  }
-  showModal("paramsModal");
 }
 
 // ---- live status ----

@@ -106,7 +106,6 @@
   margin-top: auto; cursor: default;
 }
 .pc-foot .btn { min-height: 44px; }
-.pc-starting { color: var(--muted); font-size: var(--text-sm); }
 
 /* Empty state */
 .home-empty {

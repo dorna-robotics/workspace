@@ -296,3 +296,7 @@
 .ai-head .ai-hist-btn:hover, .ai-head .ai-new:hover, .ai-head .ai-close:hover { background: var(--surface2); color: var(--text); }
 .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
 .ai-head-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 var(--space-1); }
+
+/* the pendant's bottom bar (Start … Kill) stays clear: the button and panel sit above it */
+html.pendant-open .ai-fab, html.pendant-boot .ai-fab { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
+html.pendant-open .ai-panel, html.pendant-boot .ai-panel { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
