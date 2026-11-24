@@ -60,6 +60,9 @@ def _updates_display():
     return any(MODEL.startswith(m) for m in UPDATES_MODELS)
 
 
+OUT_OF_CREDITS = "Out of AI credits. Contact the Dorna team to add more."
+
+
 def _sessions_dir():
     d = data_path("ai", "sessions", "x")
     return os.path.dirname(d)
@@ -336,7 +339,7 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
         account.invalidate()
         await _fail(session, emit, reply, "This robot is no longer logged in. Log in again (top right) to use the assistant.")
     except anthropic.PermissionDeniedError:
-        await _fail(session, emit, reply, "This account's AI usage has run out. Contact Dorna to add more.")
+        await _fail(session, emit, reply, OUT_OF_CREDITS)
     except anthropic.RateLimitError:
         await _fail(session, emit, reply, "The assistant is busy right now — wait a moment and try again.")
     except anthropic.APIStatusError as ex:

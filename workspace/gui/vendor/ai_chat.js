@@ -84,6 +84,7 @@
     <div class="ai-hist" role="menu" aria-label="Recent chats" hidden></div>
     <div class="ai-log" aria-live="polite"></div>
     <div class="ai-compose">
+      <div class="ai-out" role="status" hidden><b>Out of AI credits</b>Contact the Dorna team to add more. Your projects keep running as usual.</div>
       <div class="ai-atts" hidden></div>
       <div class="ai-compose-row">
         <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
@@ -327,7 +328,7 @@
   // ── chat ─────────────────────────────────────────────────────────
   async function send(text) {
     text = (text || "").trim();
-    if (busy) return;
+    if (busy || outOfCredits) return;
     if (atts.some((a) => a.state === "up")) { note("Wait for the files to finish uploading."); input.value = text; return; }
     const ready = atts.filter((a) => a.state === "ok");
     if (!text && !ready.length) return;
@@ -448,7 +449,18 @@
       setTimeout(() => input.focus(), 50);
     }
   }
+  // out of credits: the gateway refuses every request, so say it up front
+  // and turn the composer off rather than let a message fail
+  let outOfCredits = false;
+  function setOut(st) {
+    const u = st && st.usage;
+    outOfCredits = !!(st && st.logged_in && u && !u.unlimited && Number(u.percent) >= 100);
+    root.classList.toggle("out", outOfCredits);
+    $(".ai-out").hidden = !outOfCredits;
+    input.disabled = outOfCredits;
+  }
   function setEnabled(st) {
+    setOut(st);
     const on = !!(st && st.logged_in);
     if (on === enabled) return;
     enabled = on;
