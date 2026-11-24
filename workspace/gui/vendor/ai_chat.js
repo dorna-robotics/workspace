@@ -62,6 +62,9 @@
 
   const HISTORY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 103-6.7L3 8"/><polyline points="3 3 3 8 8 8"/><polyline points="12 7 12 12 15 14"/></svg>`;
 
+  const NEW_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`;
+  const CLOSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+
   // ── DOM ──────────────────────────────────────────────────────────
   const fab = document.createElement("button");
   fab.type = "button"; fab.className = "ai-fab"; fab.hidden = true;
@@ -78,8 +81,8 @@
       <span class="ai-proj" hidden></span>
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-hist-btn" type="button" title="Recent chats" aria-label="Recent chats" aria-expanded="false">${HISTORY_ICON}</button>
-      <button class="ai-iconbtn ai-new" type="button" title="Start a fresh conversation">New chat</button>
-      <button class="ai-iconbtn ai-close" type="button" title="Close" aria-label="Close Dorna AI">✕</button>
+      <button class="ai-iconbtn ai-new" type="button" title="New chat" aria-label="New chat">${NEW_ICON}</button>
+      <span class="ai-head-sep" aria-hidden="true"></span><button class="ai-iconbtn ai-close" type="button" title="Close" aria-label="Close Dorna AI">${CLOSE_ICON}</button>
     </div>
     <div class="ai-hist" role="menu" aria-label="Recent chats" hidden></div>
     <div class="ai-log" aria-live="polite"></div>

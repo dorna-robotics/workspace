@@ -288,3 +288,11 @@
 }
 .ai-out b { display: block; margin-bottom: 2px; }
 .ai-panel.out .ai-compose-row { opacity: .5; pointer-events: none; }
+
+/* the header's actions: three quiet icon buttons of one size, close set apart */
+.ai-head { gap: var(--space-1); }
+.ai-head .ai-title { margin-left: var(--space-2); }
+.ai-head .ai-hist-btn, .ai-head .ai-new, .ai-head .ai-close { width: 34px; padding: 0; color: var(--muted); }
+.ai-head .ai-hist-btn:hover, .ai-head .ai-new:hover, .ai-head .ai-close:hover { background: var(--surface2); color: var(--text); }
+.ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
+.ai-head-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 var(--space-1); }
