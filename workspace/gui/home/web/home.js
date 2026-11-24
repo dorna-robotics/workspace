@@ -60,11 +60,18 @@ window.addEventListener("account:change", refreshAccount);
 setInterval(refreshAccount, 30000);
 
 // ---- data ----
-async function loadProjects() {
-  const j = await home("/projects");
-  const prev = new Map(projects.map((p) => [p.name, p]));
-  projects = (j.projects || []).map((p) => ({ ...p, st: prev.get(p.name)?.st || { state: "unknown" },
-                                             kwargs_values: prev.get(p.name)?.kwargs_values || {} }));
+// One listing in flight at a time: the status push that lands before the
+// first listing (no cards yet → "the project set changed") joins it.
+let projectsLoading = null, listed = false;
+function loadProjects() {
+  return projectsLoading || (projectsLoading = (async () => {
+    try {
+      const j = await home("/projects");
+      const prev = new Map(projects.map((p) => [p.name, p]));
+      projects = (j.projects || []).map((p) => ({ ...p, st: prev.get(p.name)?.st || { state: "unknown" },
+                                                 kwargs_values: prev.get(p.name)?.kwargs_values || {} }));
+    } finally { projectsLoading = null; }
+  })());
 }
 
 async function refreshStatuses() {
@@ -164,6 +171,7 @@ function cardInner(p) {
 function render() {
   $("projCount").textContent = projects.length ? String(projects.length) : "";
   if (!projects.length) {
+    if (!listed) return;                 // not "No projects yet" before the first listing is in
     grid.innerHTML = loggedIn
       ? `<div class="home-empty"><h3>No projects yet</h3>
       <p>Start one for a Core 500 or Core 1000, or bring one in from GitHub, a zip or a folder with Import (top right).</p>
@@ -593,8 +601,12 @@ setInterval(() => {
 }, 4000);
 
 (async () => {
-  await refreshAccount();
+  // The account answers from the account server (up to seconds when it is
+  // slow or unreachable): the cards don't wait for it — they show in the
+  // offline mode and gain the logged-in buttons when it answers.
+  refreshAccount();
   try { await loadProjects(); } catch (e) { toast(String(e.message || e), "bad"); }
+  listed = true;
   render();
   await refreshStatuses();
   schedulePoll();

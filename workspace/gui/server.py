@@ -83,25 +83,38 @@ from gui.orchestrator.server import (
 # ---------------------------------------------------------------------------
 # Import scene builder (triggers dorna2 patches + component scanning)
 # ---------------------------------------------------------------------------
-from gui.scene_builder.server import (
-    SchedulePreviewHandler,
-    sio as sb_sio,
-    PerfHandler,
-    CatalogHandler,
-    CategoriesHandler,
-    TypeMetaHandler,
-    InstantiateHandler,
-    InstantiateBatchHandler,
-    RailsHandler,
-    SaveConfigHandler,
-    SetProjectHandler,
-    ProjectBundleHandler,
-    SolveRefHandler,
-    ResetHandler,
-    RecipeIKHandler,
-    ReplayListHandler,
-    ReplayFileHandler,
-)
+# Its standalone app is built at import with debug=True, which starts
+# tornado.autoreload on THIS IOLoop: a stat of every loaded module (~2800)
+# each 0.5 s on the loop (~12 ms a tick on a Pi 5), and a re-exec of the
+# whole GUI server whenever any of them changes. Off here, as in the
+# runtime (docs/project-guide.md "Autoreload is off"); WORKSPACE_AUTORELOAD=1
+# keeps it for a dev box.
+import tornado.autoreload as _autoreload
+_autoreload_start = _autoreload.start
+if os.environ.get("WORKSPACE_AUTORELOAD") != "1":
+    _autoreload.start = lambda *a, **kw: None
+try:
+    from gui.scene_builder.server import (
+        SchedulePreviewHandler,
+        sio as sb_sio,
+        PerfHandler,
+        CatalogHandler,
+        CategoriesHandler,
+        TypeMetaHandler,
+        InstantiateHandler,
+        InstantiateBatchHandler,
+        RailsHandler,
+        SaveConfigHandler,
+        SetProjectHandler,
+        ProjectBundleHandler,
+        SolveRefHandler,
+        ResetHandler,
+        RecipeIKHandler,
+        ReplayListHandler,
+        ReplayFileHandler,
+    )
+finally:
+    _autoreload.start = _autoreload_start
 import socketio as _socketio
 
 # Account (device-code login) + the on-device AI assistant (builder C)
@@ -248,7 +261,9 @@ def make_app(port=5000):
         (r"/vendor/(.*)", NoCacheStaticFileHandler, {"path": os.path.join(GUI_DIR, "vendor")}),
     ]
 
-    app = tornado.web.Application(routes)
+    # gzip text responses (scripts, styles, pages, JSON): ~4-5x smaller
+    # over the LAN / Wi-Fi to a pendant or a laptop.
+    app = tornado.web.Application(routes, compress_response=True)
     return app, orch
 
 

@@ -210,18 +210,36 @@ def _refuse_launched(orch, name: str, verb: str) -> None:
 
 # ---------------------------------------------------------------- listing
 
+_chassis_cache: Dict[str, tuple] = {}     # launch.yaml path → ((mtime_ns, size), chassis)
+
+
 def _chassis_of(d: str) -> str:
+    """The chassis launch.yaml's scene names. Parsed once per file version:
+    the cards are listed on every load of the page, on the IOLoop, and a
+    YAML parse per project was most of that request."""
+    f = os.path.join(d, "launch.yaml")
+    try:
+        st = os.stat(f)
+    except OSError:
+        return ""
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _chassis_cache.get(f)
+    if hit and hit[0] == key:
+        return hit[1]
+    out = ""
     try:
         import yaml
-        with open(os.path.join(d, "launch.yaml")) as f:
-            scene = (yaml.safe_load(f) or {}).get("scene") or []
+        with open(f) as fh:
+            scene = (yaml.safe_load(fh) or {}).get("scene") or []
         for s in scene if isinstance(scene, list) else [scene]:
             stem = os.path.splitext(os.path.basename(str(s)))[0]
             if stem.startswith("core_"):
-                return stem
+                out = stem
+                break
     except Exception:
         pass
-    return ""
+    _chassis_cache[f] = (key, out)
+    return out
 
 
 def listing(orch) -> Dict:
