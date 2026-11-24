@@ -51,18 +51,20 @@
   const EYE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const KIND_ICON = { cad: CUBE_ICON, vision_model: EYE_ICON };
   const KIND_WORD = { image: "Image", pdf: "PDF", cad: "3D model", vision_model: "Vision model", archive: "Archive", text: "Text", other: "File" };
-  const CHAT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.4A8 8 0 1121 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>`;
   const SUGGESTIONS = [
     "Why did the last run stop?",
     "Which devices are in simulation in this project?",
     "Add a field for the batch size to the Parameters page.",
   ];
 
+  const LOGO = `<svg viewBox="97.377763787 267.344743133 34.999991232 34.999995952" aria-hidden="true"><path d="m 115.01371,267.34517 c -2.29532,-0.0158 -4.53492,0.40708 -6.65544,1.25775 -2.19489,0.88047 -4.16317,2.18192 -5.85032,3.86819 -2.35312,2.35191 -3.979789,5.30207 -4.703869,8.53143 -0.70508,3.14428 -0.53303,6.41655 0.49727,9.46331 0.48483,1.4339 1.38431,2.57081 2.601019,3.28767 1.10797,0.65278 2.45406,0.93696 3.79026,0.80031 2.19193,-0.22429 6.15511,-1.56389 6.58127,-5.04159 0.48278,-3.93968 -2.17383,-8.42404 -2.63533,-9.84628 -0.0589,-0.18152 -0.10541,-0.32499 -0.13722,-0.43224 -0.42269,-1.42634 -0.23659,-2.7638 0.51077,-3.66951 0.52607,-0.63754 1.57248,-1.35704 3.57034,-1.16398 2.00419,0.19361 5.30108,1.78893 7.53799,2.98554 -1.01837,-0.0805 -2.06121,-0.0226 -3.02265,0.15239 -3.04696,0.55447 -4.70375,3.06534 -3.82983,5.71262 0.118,0.54878 0.2842,1.16531 0.47997,1.87022 0.54764,1.97214 1.38583,4.27011 1.28244,7.2277 -0.11004,3.1469 -1.23383,6.42864 -3.10793,9.67983 2.84216,0.5536 5.66007,0.38004 8.39122,-0.51869 3.18536,-1.04828 5.44222,-2.80977 6.77449,-4.10292 1.68759,-1.63817 3.00417,-3.56451 3.91339,-5.72523 0.87828,-2.08713 1.34074,-4.30153 1.37425,-6.5815 0.0335,-2.28031 -0.36367,-4.50665 -1.18044,-6.61755 -0.84579,-2.18579 -2.10613,-4.14869 -3.74598,-5.83394 -3.29609,-3.38728 -7.71247,-5.27066 -12.43567,-5.30353 z" fill="currentColor"/></svg>`;
+  const SPARK_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>`;
+
   // ── DOM ──────────────────────────────────────────────────────────
   const fab = document.createElement("button");
   fab.type = "button"; fab.className = "ai-fab"; fab.hidden = true;
   fab.title = "Dorna AI"; fab.setAttribute("aria-label", "Open Dorna AI");
-  fab.innerHTML = CHAT_ICON;
+  fab.innerHTML = `${SPARK_ICON}<span>Dorna AI</span>`;
 
   const root = document.createElement("aside");
   root.className = "ai-panel"; root.hidden = true;
@@ -70,7 +72,7 @@
   root.innerHTML = `
     <div class="ai-resize" title="Drag to resize"></div>
     <div class="ai-head">
-      <span class="ai-title">Dorna AI</span>
+      <span class="ai-logo">${LOGO}</span><span class="ai-title">Dorna AI</span>
       <span class="ai-proj" hidden></span>
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-new" type="button" title="Start a fresh conversation">New chat</button>
@@ -82,9 +84,9 @@
       <div class="ai-compose-row">
         <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
         <textarea rows="1" placeholder="Ask about this robot, a run, or a change to make…" aria-label="Message Dorna AI"></textarea>
-        <button class="btn btn-primary ai-send" type="button" title="Send (Enter)">Send</button>
+        <button class="btn btn-primary btn-sm ai-send" type="button" title="Send (Enter)" aria-label="Send">Send</button>
       </div>
-      <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send · Shift+Enter for a new line · drop or paste files</span>
+      <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send</span>
         <button class="btn btn-ghost btn-sm ai-stop" type="button" hidden>Stop</button></div>
       <input class="ai-file" type="file" multiple hidden/>
     </div>
@@ -177,8 +179,8 @@
     d.innerHTML = `<h3>How can I help?</h3>
       <div>I know this Workspace from running a project to developing one. I can check a run, recover a device,
       change the scene, the workflow or the HMI, and answer questions.</div>
-      <ul class="ai-examples">${SUGGESTIONS.map((s) => `<li><button type="button">${esc(s)}</button></li>`).join("")}</ul>`;
-    d.querySelectorAll(".ai-examples button").forEach((b) => { b.onclick = () => send(b.textContent); });
+      <div>For example:</div>
+      <ul class="ai-examples">${SUGGESTIONS.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`;
     log.appendChild(d);
   }
   // one file, as a chip: a thumbnail for an image, else the kind's icon
@@ -432,7 +434,7 @@
   // ── open / close ─────────────────────────────────────────────────
   function setOpen(open) {
     root.hidden = !open || !enabled;
-    fab.hidden = !enabled;
+    fab.hidden = !enabled || open;
     fab.setAttribute("aria-expanded", open && enabled ? "true" : "false");
     document.documentElement.classList.toggle("ai-open", open && enabled);
     ls.set(OPEN_KEY, open ? "1" : "0");
@@ -460,7 +462,7 @@
   });
   sendBtn.onclick = () => { const t = input.value; input.value = ""; send(t); };
   stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid }) });
-  fab.onclick = () => setOpen(root.hidden);
+  fab.onclick = () => setOpen(true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !root.hidden) setOpen(false); });
   $(".ai-close").onclick = () => setOpen(false);
   $(".ai-new").onclick = async () => {
