@@ -270,7 +270,7 @@ function snapshot() {
 }
 
 // models stream in after the import: wait until the mesh count is still
-async function meshesSettled(w, ms = 60000) {
+async function meshesSettled(w, ms = 180000) {
   const t0 = Date.now();
   let last = -1, quiet = 0;
   while (Date.now() - t0 < ms) {
