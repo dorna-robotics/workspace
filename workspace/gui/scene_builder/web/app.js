@@ -47,6 +47,11 @@
 
     // -------- API base path --------
     const SB_API = "/scene-builder/api";
+    // Developer mode embeds the builder (?devmode=1): the catalog is the
+    // account's components (server-filtered), the project is fixed by
+    // the host page, and "Insert" reads as "New component".
+    const SB_DEV = new URLSearchParams(location.search).has("devmode");
+    const SB_DEV_Q = SB_DEV ? "?devmode=1" : "";
 
     // -------- cache-busting --------
     function versioned(url) {
@@ -2620,6 +2625,11 @@ function ensureBuilderBar() {
   // Wire up static HTML sidebar controls (defined in index.html)
   const plus = document.getElementById("btnInsert");
   if (plus) plus.addEventListener("click", () => openInsertMenu());
+  if (SB_DEV) {
+    if (plus) plus.title = "New component";
+    const nb = document.getElementById("btnNew");
+    if (nb) nb.style.display = "none";      // the host page owns the project
+  }
 
   const save = document.getElementById("btnSave");
   if (save) save.addEventListener("click", () => saveConfig());
@@ -4303,6 +4313,8 @@ function setSelected(name) {
 
   const enabled = !!(name && (meta || sceneObj));
   if (window.__builderSetActionsEnabled) window.__builderSetActionsEnabled(enabled);
+  // A host page (Developer mode) opens its Parameters window from this.
+  try { window.dispatchEvent(new CustomEvent("sb-select", { detail: { name: enabled ? name : null, type: typeName || "" } })); } catch (e) {}
 
   try {
     const isPlate = (typeName && typeName.startsWith("plate_"));
@@ -5333,7 +5345,7 @@ function openInsertMenu() {
 
   const header = document.createElement("div");
   header.className = "sb-insert-title";
-  header.textContent = "Insert Component";
+  header.textContent = SB_DEV ? "New component" : "Insert Component";
   box.appendChild(header);
 
   // Search input with icon
@@ -5469,7 +5481,7 @@ function openInsertMenu() {
   (async () => {
     let items = [];
     try {
-      const res = await fetch(SB_API + "/categories", { cache: "no-store" });
+      const res = await fetch(SB_API + "/categories" + SB_DEV_Q, { cache: "no-store" });
       const js = await res.json();
       if (js && js.ok && Array.isArray(js.categories) && js.categories.length) {
         _serverCategories = js.categories;
@@ -5478,12 +5490,12 @@ function openInsertMenu() {
     } catch (e) {}
     if (!items.length) {
       try {
-        const res = await fetch(SB_API + "/catalog", { cache: "no-store" });
+        const res = await fetch(SB_API + "/catalog" + SB_DEV_Q, { cache: "no-store" });
         const js = await res.json();
         if (js && js.ok && Array.isArray(js.items)) items = js.items;
       } catch (e) {}
     }
-    if (!items.length) items = ["fixture_plate", "sbs_adapter"];
+    if (!items.length && !SB_DEV) items = ["fixture_plate", "sbs_adapter"];
 
     items = items.slice().sort((a,b) => {
       if (a === "fixture_plate") return -1;
@@ -7238,6 +7250,10 @@ function saveConfig() {
   showToast("Downloaded " + active);
 }
 
+// For a host page (Developer mode): open the catalog, and read the
+// scene per file the way Download writes it.
+window.__sbOpenInsert = () => openInsertMenu();
+window.__sbConfigByFile = () => { __assignUntaggedToActive(); return buildConfigByFile(); };
 
 ensureBuilderBar();
 

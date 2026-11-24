@@ -162,6 +162,10 @@ class ConfigVersionHandler(tornado.web.RequestHandler):
         self.write({"version": str(int(_time.time()))})
 
 
+# ---- Developer mode (builder D): /dev/ page + API ----
+from gui.devmode.handlers import routes as _devmode_routes
+
+
 # ---------------------------------------------------------------------------
 # Build unified Tornado app
 # ---------------------------------------------------------------------------
@@ -235,6 +239,9 @@ def make_app(port=5000):
         (r"/scene-builder/?", tornado.web.RedirectHandler, {"url": "/scene-builder/index.html"}),
         (r"/scene-builder/socket\.io/(.*)", _socketio.get_tornado_handler(sb_sio)),
         (r"/scene-builder/(.*)", NoCacheStaticFileHandler, {"path": SB_WEB_DIR}),
+
+        # ---- Developer mode (/dev/; builder D — gui/devmode/) ----
+        *_devmode_routes(orch),          # page, API and its static files (all login-gated)
 
         # ---- Shared static (project CAD/ first, then library static/) ----
         (r"/static/(.*)", ProjectAwareStaticHandler, {"path": STATIC_DIR}),

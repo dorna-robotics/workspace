@@ -1,0 +1,96 @@
+/* Developer mode — /dev/. Tokens only (vendor/base.css); 44 px targets. */
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--text-md); }
+
+.dv-shell { height: 100vh; display: flex; flex-direction: column; min-width: 0; }
+.dv-top { gap: var(--space-4); padding: 0 var(--space-4); min-height: 56px; border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: wrap; }
+.dv-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.dv-title #dvProject { font-size: var(--text-lg); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.dv-kicker { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+
+.dv-tabs { display: flex; gap: var(--space-1); background: var(--surface2); padding: var(--space-1); border-radius: var(--radius-sm); }
+.dv-tabs button, .dv-seg button {
+  min-height: 44px; padding: 0 var(--space-5); border: none; border-radius: var(--radius-xs);
+  background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer;
+}
+.dv-tabs button:hover, .dv-seg button:hover { color: var(--text); }
+.dv-tabs button.on, .dv-seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.dv-seg { display: flex; gap: var(--space-1); background: var(--surface2); padding: var(--space-1); border-radius: var(--radius-sm); }
+
+.dv-banner { padding: var(--space-3) var(--space-5); background: var(--accent-dim); color: var(--text); font-size: var(--text-md); display: flex; gap: var(--space-4); align-items: center; }
+.dv-banner.bad { background: var(--surface2); color: var(--red); }
+
+.dv-main { flex: 1; min-height: 0; position: relative; }
+.dv-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.dv-pane[hidden] { display: none; }
+.dv-toolbar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: wrap; }
+.dv-toolbar .btn { min-height: 44px; }
+.dv-sep { width: 1px; align-self: stretch; background: var(--border2); margin: 0 var(--space-2); }
+.dv-sel { max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
+.dv-small { font-size: var(--text-sm); }
+
+/* Workflow */
+.dv-wf { flex: 1; overflow: auto; display: flex; gap: var(--space-5); padding: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
+.dv-col { flex: 1 1 340px; display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.dv-col-wide { flex: 2 1 480px; }
+.dv-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+.dv-card-head { display: flex; align-items: center; gap: var(--space-3); }
+.dv-card-head h2 { font-size: var(--text-lg); margin: 0; }
+.dv-run { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.dv-run .btn { min-height: 44px; min-width: 96px; justify-content: center; }
+.dv-note { background: var(--accent-dim); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
+.dv-row { display: flex; align-items: center; gap: var(--space-3); min-height: 48px; border-bottom: 1px solid var(--border2); }
+.dv-row:last-child { border-bottom: none; }
+.dv-row .nm { flex: 1; min-width: 0; }
+.dv-row .nm b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-row .nm span { font-size: var(--text-sm); color: var(--muted); }
+
+/* a switch: 44 px target, sim = cyan (device-guide §16: mode, not state) */
+.dv-switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--muted); }
+.dv-switch input { appearance: none; width: 44px; height: 26px; border-radius: 13px; background: var(--live); position: relative; cursor: pointer; margin: 0; transition: background var(--motion-fast) var(--ease); }
+.dv-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); transition: transform var(--motion-fast) var(--ease); }
+.dv-switch input:checked { background: var(--sim); }
+.dv-switch input:checked::after { transform: translateX(18px); }
+.dv-switch input:disabled { opacity: 0.5; }
+
+.dv-dev { border: 1px solid var(--border2); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-3); }
+.dv-dev-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.dv-dev-head b { font-size: var(--text-lg); }
+.dv-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.dv-acts .btn { min-height: 44px; }
+.dv-act-arg { width: 90px; min-height: 44px; }
+.dv-reply { background: var(--reply-bg); border: 1px solid var(--reply-border); color: var(--reply-text); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--mono); font-size: var(--text-sm); white-space: pre-wrap; max-height: 160px; overflow: auto; }
+.dv-reply.bad { color: var(--red); }
+.dv-empty { color: var(--muted); padding: var(--space-5) 0; text-align: center; line-height: 1.5; }
+
+/* HMI */
+.dv-hmi { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-4); }
+.dv-hmi[data-v="main"], .dv-hmi[data-v="setup"] { grid-template-columns: 1fr; }
+.dv-hmi[data-v="main"] [data-screen="setup"], .dv-hmi[data-v="setup"] [data-screen="main"] { display: none; }
+.dv-hmi-col { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+.dv-hmi-col .section-label { padding: var(--space-3) var(--space-4); margin: 0; border-bottom: 1px solid var(--border2); }
+@media (max-width: 900px) { .dv-hmi { grid-template-columns: 1fr; } }
+
+/* floating windows */
+.dv-win { position: fixed; z-index: 9000; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 96px); display: flex; flex-direction: column;
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border2); }
+.dv-win-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); border-bottom: 1px solid var(--border2); cursor: move; user-select: none; }
+.dv-win-head h3 { font-size: var(--text-lg); margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-win-head .btn-icon { min-width: 44px; min-height: 44px; justify-content: center; }
+.dv-win-body { padding: var(--space-5); overflow: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.dv-win-foot { padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border2); display: flex; gap: var(--space-3); align-items: center; }
+.dv-win-foot .btn { min-height: 44px; }
+.dv-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.dv-field label { font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+.dv-field .input { min-height: 44px; box-sizing: border-box; width: 100%; }
+.dv-field .hint { font-size: var(--text-sm); color: var(--muted); line-height: 1.4; }
+.dv-msg { font-size: var(--text-sm); }
+.dv-msg.ok { color: var(--green); }
+.dv-msg.bad { color: var(--red); }
+.dv-cam { width: min(560px, calc(100vw - 32px)); }
+.dv-cam-view { aspect-ratio: 4 / 3; background: var(--surface2); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); text-align: center; padding: var(--space-4); box-sizing: border-box; }
+.dv-cam-view img { width: 100%; height: 100%; object-fit: contain; }
+
+[hidden] { display: none !important; }
