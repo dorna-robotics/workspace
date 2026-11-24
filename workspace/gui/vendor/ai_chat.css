@@ -163,7 +163,7 @@
   .ai-resize { display: none; }
 }
 
-/* ── The AI builder's skin (its ui.css chat rules), in Dorna black and yellow: the gradient on
+/* ── The AI builder's skin (its ui.css chat rules), in Dorna yellow (dorna.ai's #FFF617) and white: the gradient on
    the button, the user's bubbles and Send, gradient title, the composer
    as one rounded field ─────────────────────────────────────────────── */
 @font-face {
@@ -174,23 +174,23 @@
 .ai-panel, .ai-fab { font-family: "Inter", var(--font); }
 .ai-panel textarea, .ai-panel button { font-family: inherit; }
 .ai-panel, .ai-fab {
-  --grad: linear-gradient(135deg, #ffffff 0%, #fff1a8 45%, #f5c400 100%);
-  --grad-ink: #16140c;                                    /* text and icons on the gradient */
-  --grad-text: linear-gradient(100deg, #ffffff 0%, #fff1a8 50%, #f5c400 100%);
-  --grad-glow: rgba(245, 196, 0, .55);
+  --grad: linear-gradient(135deg, #ffffff 0%, #fffb9e 45%, #fff617 100%);
+  --grad-ink: #222222;                                    /* text and icons on the gradient */
+  --grad-text: linear-gradient(100deg, #ffffff 0%, #fffb9e 50%, #fff617 100%);
+  --grad-glow: rgba(255, 246, 23, .60);
   --ring: 0 0 0 1px rgba(255,255,255,.18) inset;
 }
 [data-theme="light"] .ai-panel, [data-theme="light"] .ai-fab {
-  --grad: linear-gradient(135deg, #ffffff 0%, #fff1a8 45%, #f5c400 100%);
-  --grad-ink: #16140c;
-  --grad-text: linear-gradient(100deg, #1c1a10 0%, #6b5300 55%, #c69c00 100%);
-  --grad-glow: rgba(200, 150, 0, .40);
+  --grad: linear-gradient(135deg, #ffffff 0%, #fffb9e 45%, #fff617 100%);
+  --grad-ink: #222222;
+  --grad-text: linear-gradient(100deg, #222222 0%, #6b6100 55%, #c8b400 100%);
+  --grad-glow: rgba(200, 180, 0, .45);
   --ring: 0 0 0 1px rgba(14,22,48,.08) inset;
 }
 .ai-fab {
   width: auto; height: 52px; border-radius: 26px; padding: 0 20px 0 16px; gap: 8px;
   font: 700 15px var(--font); background: var(--grad); color: var(--grad-ink);
-  box-shadow: 0 0 0 1px rgba(200,150,0,.35), 0 1px 0 rgba(255,255,255,.6) inset, 0 14px 30px -10px var(--grad-glow);
+  box-shadow: 0 0 0 1px rgba(200,180,0,.35), 0 1px 0 rgba(255,255,255,.6) inset, 0 14px 30px -10px var(--grad-glow);
 }
 .ai-fab:hover { background: var(--grad); filter: brightness(1.08); }
 .ai-fab:active { transform: scale(.95); }
@@ -199,7 +199,7 @@
 .ai-logo {
   flex: none; display: inline-flex; width: 30px; height: 30px; padding: 6px; border-radius: 10px; box-sizing: border-box;
   color: var(--grad-ink); background: var(--grad);
-  box-shadow: 0 0 0 1px rgba(200,150,0,.35), 0 6px 16px -6px var(--grad-glow), 0 1px 0 rgba(255,255,255,.35) inset;
+  box-shadow: 0 0 0 1px rgba(200,180,0,.35), 0 6px 16px -6px var(--grad-glow), 0 1px 0 rgba(255,255,255,.35) inset;
 }
 .ai-logo svg { width: 100%; height: 100%; }
 .ai-head .ai-title { font-weight: 750; letter-spacing: -0.02em; background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -209,7 +209,7 @@
 .ai-head .ai-new:hover { background: var(--accent-dim); color: var(--accent); }
 .ai-msg.user {
   background: var(--grad); color: var(--grad-ink); border-radius: 18px 18px 6px 18px;
-  box-shadow: 0 0 0 1px rgba(200,150,0,.30), 0 10px 24px -12px var(--grad-glow);
+  box-shadow: 0 0 0 1px rgba(200,180,0,.30), 0 10px 24px -12px var(--grad-glow);
 }
 .ai-note { border-radius: 12px; box-shadow: var(--ring); }
 .ai-text { font-size: 15px; line-height: 1.6; }
@@ -230,7 +230,7 @@
 .ai-panel .ai-send, [data-theme="light"] .ai-panel .ai-send {
   flex: none; width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 0; position: relative; overflow: hidden;
   background: var(--grad); color: var(--grad-ink); border: 0;
-  box-shadow: 0 0 0 1px rgba(200,150,0,.45), 0 2px 8px -2px var(--grad-glow);
+  box-shadow: 0 0 0 1px rgba(200,180,0,.45), 0 2px 8px -2px var(--grad-glow);
   transition: transform var(--motion-fast) var(--ease);
 }
 .ai-panel .ai-send:hover:not(:disabled) { background: var(--grad); transform: scale(1.05); filter: brightness(1.08); }
@@ -277,7 +277,7 @@
 .ai-head .ai-new:hover, .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
 .ai-panel .ai-attach { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; }
 .ai-panel .ai-attach svg { width: 16px; height: 16px; }
-.ai-compose-row:focus-within { border-color: color-mix(in srgb, #f2b705 70%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, #f2b705 22%, transparent); }
+.ai-compose-row:focus-within { border-color: #c8b400; box-shadow: 0 0 0 4px color-mix(in srgb, #fff617 45%, transparent); }
 .ai-compose .ai-compose-row textarea:focus { border: 0; }
 
 /* out of AI credits: the composer is off and says why */
