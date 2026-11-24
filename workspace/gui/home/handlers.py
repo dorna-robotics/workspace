@@ -25,6 +25,7 @@ import asyncio
 import json
 import os
 
+import tornado.ioloop
 import tornado.web
 
 from gui.orchestrator.handlers import AuthedHandler
@@ -114,15 +115,47 @@ class ProjectsListHandler(_Base):
         self.write(P.listing(self.orch))
 
 
+_CARD = {}           # the card-sized JPEG of each thumb: name → (the PNG's length + hash, bytes)
+
+
+def _card_jpeg(name, png):
+    """The thumb as a JPEG for the card (~30 KB, not the 130–300 KB PNG);
+    the PNG itself when PIL isn't there or can't read it."""
+    key = (len(png), hash(png))
+    hit = _CARD.get(name)
+    if hit and hit[0] == key:
+        return hit[1]
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(png))
+        im.load()
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            bg = Image.new("RGB", im.size, (255, 255, 255))
+            bg.paste(im, mask=im.split()[-1])
+            im = bg
+        else:
+            im = im.convert("RGB")
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=82, optimize=True, progressive=True)
+        data = out.getvalue()
+    except Exception:                  # noqa: BLE001 — no PIL, or an odd PNG: send it as it is
+        data = png
+    _CARD[name] = (key, data)
+    return data
+
+
 class ProjectThumbHandler(_Base):
-    def get(self, name):
+    async def get(self, name):
         try:
             data = P.read_thumb(self.orch, name)
         except P.ProjectError:
             data = None
         if not data or not data.startswith(b"\x89PNG\r\n\x1a\n"):
             raise tornado.web.HTTPError(404)
-        self.set_header("Content-Type", "image/png")
+        data = await tornado.ioloop.IOLoop.current().run_in_executor(None, _card_jpeg, name, data)
+        self.set_header("Content-Type", "image/jpeg" if data[:3] == b"\xff\xd8\xff" else "image/png")
         # The cards ask for ?v=<the file's mtime>: a new picture is a new
         # URL, so a versioned one never needs asking again.
         self.set_header("Cache-Control", "private, max-age=31536000, immutable"

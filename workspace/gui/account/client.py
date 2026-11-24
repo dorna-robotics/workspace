@@ -80,6 +80,7 @@ class Account:
         self._reported_hash = None
         self._reported_sent = 0.0
         self._reporting = False
+        self._refreshing = False       # a background status refresh in flight
         self._thumbs = {}              # thumb path → (mtime, size, base64 or None)
 
     # ── the stored token ─────────────────────────────────────────────
@@ -211,13 +212,33 @@ class Account:
 
     # ── status ───────────────────────────────────────────────────────
     def status(self, force=False):
+        """The account's status. Fresh within STATUS_TTL_S; once older, the last
+        one is answered at once and a single background call refreshes it (a page
+        never waits on the account server); force (and the first call) ask now."""
         d = self._load()
         base = {"server": server_url()}
         if not d:
             return {**base, "logged_in": False}
         with self._lock:
-            if not force and self._status and time.time() - self._status_at < STATUS_TTL_S:
+            if not force and self._status:
+                if time.time() - self._status_at >= STATUS_TTL_S and not self._refreshing:
+                    self._refreshing = True
+                    threading.Thread(target=self._refresh_bg, name="account-status", daemon=True).start()
                 return dict(self._status)
+        return self._refresh(d, base)
+
+    def _refresh_bg(self):
+        try:
+            d = self._load()
+            if d:
+                self._refresh(d, {"server": server_url()})
+        except Exception:               # noqa: BLE001 — the next stale read tries again
+            pass
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+    def _refresh(self, d, base):
         try:
             code, j = _http("GET", "/s/device/api/me", token=d["token"], timeout=5)
         except OSError:
