@@ -112,6 +112,7 @@ from gui.ai.handlers import routes as ai_routes
 # Main page — the projects page (gui/home)
 # ---------------------------------------------------------------------------
 from gui.home.handlers import home_routes
+from gui.home.github import github_routes
 
 
 # What this unit is — /etc/dorna/unit.json, written per unit type by the
@@ -174,6 +175,8 @@ def make_app(port=5000):
     orch.load_registry()
 
     routes = [
+        # ---- A project's GitHub, as on the website (gui/home/github.py; before /home/ static) ----
+        *github_routes(orch),
         # ---- Main page: projects (gui/home — builder B) ----
         *home_routes(orch, _WS_VERSION),
         (r"/unit.json", UnitHandler),
