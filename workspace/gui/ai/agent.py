@@ -351,7 +351,11 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
     except anthropic.RateLimitError:
         await _fail(session, emit, reply, "The assistant is busy right now — wait a moment and try again.")
     except anthropic.APIStatusError as ex:
-        await _fail(session, emit, reply, f"The assistant couldn't answer (error {ex.status_code}). Try again in a moment.")
+        if ex.status_code in (502, 503, 504):
+            await _fail(session, emit, reply, "Dorna AI isn't available right now — the problem is on Dorna's side, "
+                                              "not this robot. Try again later.")
+        else:
+            await _fail(session, emit, reply, f"Dorna AI couldn't answer (error {ex.status_code}). Try again in a moment.")
     except anthropic.APIConnectionError:
         await _fail(session, emit, reply, "Couldn't reach the Dorna server — check this robot's internet connection.")
     except Exception as ex:
