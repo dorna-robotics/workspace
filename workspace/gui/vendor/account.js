@@ -1,6 +1,8 @@
 // The top-right account area, the same on every page.
-//   offline   → a "Log in" button → a modal with the code, the link and a QR
-//               code; it polls until the account owner approves this robot
+//   offline   → a "Log in" button → Dorna's sign-in in a popup window (sign in,
+//               tap Connect); the modal behind it polls until approved, and offers
+//               the QR code + short code for a phone ("Use your phone instead",
+//               or straight away when the browser blocks the popup)
 //   logged in → an account icon → a menu: email, AI usage (a percent, never
 //               money), Log out
 // It mounts into every .topbar-actions on the page (desktop and pendant
@@ -142,19 +144,64 @@
     return `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img" aria-label="QR code for the login link"><rect width="${size}" height="${size}" class="qr-bg"/><path d="${d}" class="qr-fg"/></svg>`;
   }
 
+  // The sign-in window: Dorna's own sign-in, then one Connect tap, in a popup over this page.
+  // It must open inside the click (a popup opened after an await is blocked), so it opens
+  // blank and is pointed at the sign-in once the robot has its code. Blocked (a kiosk
+  // browser) → the phone way: the QR code and the short code.
+  let popup = null, popupWatch = null;
+  const POPUP_NAME = "dornaSignIn";
+  function popupFeatures() {
+    const w = 480, h = 720;
+    const x = Math.max(0, Math.round((window.screenX || 0) + ((window.outerWidth || w) - w) / 2));
+    const y = Math.max(0, Math.round((window.screenY || 0) + ((window.outerHeight || h) - h) / 2));
+    return `popup=yes,width=${w},height=${h},left=${x},top=${y}`;
+  }
+  function openPopup(url) {
+    let w = null;
+    try { w = window.open(url || "about:blank", POPUP_NAME, popupFeatures()); } catch (_) { w = null; }
+    if (!w) return null;
+    if (!url) {
+      try {
+        w.document.title = "Dorna sign-in";
+        w.document.body.style.cssText = "margin:0;display:grid;place-items:center;min-height:100vh;font:15px system-ui,sans-serif;color:GrayText;background:Canvas";
+        w.document.body.textContent = "Opening Dorna sign-in…";
+      } catch (_) {}
+    }
+    try { w.focus(); } catch (_) {}
+    return w;
+  }
+  function closePopup() {
+    clearInterval(popupWatch); popupWatch = null;
+    try { if (popup && !popup.closed) popup.close(); } catch (_) {}
+    popup = null;
+  }
+
   function closeLogin() {
     clearTimeout(pollTimer); pollTimer = null;
+    closePopup();
     document.getElementById("acctModal")?.remove();
+  }
+
+  function phoneHtml(j) {
+    return `<div class="acct-grid">
+        <div class="acct-qr" aria-hidden="false"></div>
+        <div class="acct-steps">
+          <div class="acct-code-label">Your code</div>
+          <div class="acct-code">${esc(j.user_code)}</div>
+          <a class="acct-link" href="${esc(j.verify_url)}" target="_blank" rel="noopener">${esc(j.verify_url)}</a>
+        </div>
+      </div>`;
   }
 
   async function openLogin() {
     closeLogin();
+    popup = openPopup(null);                       // now, while the click still counts
     const ov = document.createElement("div");
     ov.id = "acctModal"; ov.className = "acct-overlay";
     ov.innerHTML = `<div class="acct-modal" role="dialog" aria-modal="true" aria-labelledby="acctTitle">
       <div class="acct-modal-head"><h2 id="acctTitle">Log in to your Dorna account</h2>
         <button type="button" class="btn btn-ghost btn-sm btn-icon acct-x" aria-label="Close">✕</button></div>
-      <div class="acct-modal-body"><div class="acct-wait">Getting a login code…</div></div></div>`;
+      <div class="acct-modal-body"><div class="acct-state"><span class="acct-spin"></span>Opening Dorna sign-in…</div></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener("click", (e) => { if (e.target === ov) closeLogin(); });
     ov.querySelector(".acct-x").onclick = closeLogin;
@@ -165,26 +212,54 @@
       j = await r.json();
       if (!r.ok) throw new Error(j.error || `login failed (${r.status})`);
     } catch (e) {
+      closePopup();
       body.innerHTML = `<div class="acct-err">${esc(e.message)}</div>
         <button type="button" class="btn btn-primary acct-retry">Try again</button>`;
       body.querySelector(".acct-retry").onclick = openLogin;
       return;
     }
-    if (!document.body.contains(ov)) return;
-    body.innerHTML = `
-      <p class="acct-lead">On your phone or computer, open the link or scan the code, sign in, and approve this robot.</p>
-      <div class="acct-grid">
-        <div class="acct-qr" aria-hidden="false"></div>
-        <div class="acct-steps">
-          <div class="acct-code-label">Your code</div>
-          <div class="acct-code">${esc(j.user_code)}</div>
-          <a class="acct-link" href="${esc(j.verify_url)}" target="_blank" rel="noopener">${esc(j.verify_url)}</a>
-          <div class="acct-state"><span class="acct-spin"></span>Waiting for approval…</div>
-        </div>
+    if (!document.body.contains(ov)) { closePopup(); return; }
+    const signInUrl = j.verify_url + (j.verify_url.includes("?") ? "&" : "?") + "from=robot";
+    if (popup && !popup.closed) {
+      try { popup.location.href = signInUrl; } catch (_) { closePopup(); }
+    }
+    const popped = !!(popup && !popup.closed);
+    body.innerHTML = popped ? `
+      <div class="acct-popup">
+        <div class="acct-state acct-state-big"><span class="acct-spin"></span><span class="acct-popup-msg">Finish signing in in the window that opened.</span></div>
+        <button type="button" class="acct-textbtn acct-reopen">Reopen sign-in window</button>
       </div>
+      <details class="acct-phone">
+        <summary>Use your phone instead</summary>
+        <p class="acct-lead">On your phone or computer, open the link or scan the code, sign in, and approve this robot.</p>
+        ${phoneHtml(j)}
+      </details>
+      <p class="acct-foot">Without logging in, this robot still runs its projects (offline mode). Logging in adds the assistant and Developer mode.</p>`
+    : `
+      <p class="acct-lead">On your phone or computer, open the link or scan the code, sign in, and approve this robot.</p>
+      ${phoneHtml(j)}
+      <div class="acct-state"><span class="acct-spin"></span>Waiting for approval…</div>
       <p class="acct-foot">Without logging in, this robot still runs its projects (offline mode). Logging in adds the assistant and Developer mode.</p>`;
-    loadQr().then(() => { const q = body.querySelector(".acct-qr"); if (q) q.innerHTML = qrSvg(j.verify_url); })
-      .catch(() => { const q = body.querySelector(".acct-qr"); if (q) q.remove(); });
+    let qrDone = false;
+    const drawQr = () => {
+      if (qrDone) return; qrDone = true;
+      loadQr().then(() => { const q = body.querySelector(".acct-qr"); if (q) q.innerHTML = qrSvg(j.verify_url); })
+        .catch(() => { const q = body.querySelector(".acct-qr"); if (q) q.remove(); });
+    };
+    const phone = body.querySelector(".acct-phone");
+    if (phone) phone.addEventListener("toggle", () => { if (phone.open) drawQr(); }); else drawQr();
+    const msgEl = body.querySelector(".acct-popup-msg");
+    const reopen = body.querySelector(".acct-reopen");
+    if (reopen) reopen.onclick = () => {
+      const w = openPopup(signInUrl);
+      if (w) { popup = w; if (msgEl) msgEl.textContent = "Finish signing in in the window that opened."; }
+      else if (phone) { phone.open = true; }
+    };
+    if (popped) {
+      popupWatch = setInterval(() => {             // closed by hand: say so; the phone way still works
+        if (popup && popup.closed && msgEl) msgEl.textContent = "The sign-in window was closed. Reopen it, or use your phone.";
+      }, 700);
+    }
     const interval = Math.max(1, Number(j.interval) || 3) * 1000;
     const stateEl = body.querySelector(".acct-state");
     const poll = async () => {
@@ -198,8 +273,11 @@
         return;
       }
       if (p.status === "expired" || p.status === "denied" || p.status === "none") {
-        stateEl.innerHTML = `<span class="acct-err">${p.status === "denied" ? "The login was declined." : "The code expired."}</span>
-          <button type="button" class="btn btn-primary btn-sm acct-retry">Get a new code</button>`;
+        closePopup();
+        if (reopen) reopen.remove();
+        if (phone) phone.remove();                 // that code is spent
+        stateEl.innerHTML = `<span class="acct-err">${p.status === "denied" ? "The login was cancelled." : "The login expired."}</span>
+          <button type="button" class="btn btn-primary btn-sm acct-retry">Try again</button>`;
         stateEl.querySelector(".acct-retry").onclick = openLogin;
         return;
       }
