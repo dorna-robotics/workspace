@@ -41,10 +41,29 @@ reference of the good state and flag whatever does not match it.
   pins the height: forcing the camera 20 mm lower costs over 20 px.
 - A photo from a later session is refitted for position only, on its own
   holes. Between two days the camera had moved 3.7 px.
-- **Exposure is pinned, not automatic.** On this bench the automatic exposure
-  settles on a very dark picture. Used so far: 30 ms, ISO 540, 3500 K. About
-  5 % of that picture is burnt out to pure white, which is too much (see
-  sections 9 and 11).
+- **Exposure and white balance are automatic: the camera's own defaults**
+  (`camera_add` with no `exposure`, `iso` or `wb`). Nothing is chosen by hand;
+  a setting changes only after it is measured on the bench.
+  Measured 2026-11-24 on the emptied 2 ml rack with the doors open (daylight):
+
+  | Setting | White rack burnt out to pure white |
+  |---|---|
+  | auto exposure, auto white balance (settled) | 0.2 % |
+  | 30 ms, ISO 540, 3500 K (the old hand-picked pin) | 73 % |
+  | 30 ms, ISO 400, 3500 K | 50 % |
+  | 30 ms, ISO 300, 3500 K | 4 % |
+
+  Auto exposure keeps 30 ms and lowers the ISO itself. A fixed colour
+  temperature fits one kind of light only: at 3500 K daylight turns blue.
+  The old pin burnt the rack and the lit side of every hole to white, leaving
+  a small grey crescent; that is what made the empty corner place A1 read as a
+  vial with a cap (section 3). The 13 test photos and the check-B recording
+  were taken with that pin.
+- **Skip the first 5 s after the camera starts.** Exposure and white balance
+  settle over a few frames: the shot 4 s after `camera_add` was 17 % burnt
+  out, the next one 0.4 %. Once settled, two shots of a still bench differ by
+  about 4 grey levels of 255 (sensor noise), the same as with white balance
+  measured once and held.
 
 Why the factory lens matters: an earlier lens fitted on the plate holes alone
 had a focal length 8 % too short. It still aligned the plate, but put the
@@ -120,7 +139,7 @@ weakest real change above 0.88.
 
 | Tried | Result |
 |---|---|
-| A CAD render as the reference instead of a real photo | 5.1 % of good cases flagged against 0.4 % (one crop, pasted fakes included). The gap is how CAD looks, not alignment. |
+| A CAD render as the reference instead of a real photo | On the chosen method (box x 1.4, outline patches; 2026-11-23, `shadow_ref.py REF=real/cad/mat/skin`), every real change caught in all four. Good cases flagged: real 0, plain CAD 56, CAD with measured materials 163, photo skins on the 2 ml parts 175 (of 6,384), most of them in the tip rack. Shifted 1.2 mm: 0 / 364 / 603 / 133. The 2 ml rack and both cap holders stay at 0 with plain CAD. Pasted objects caught by the untrained distance: real 94 %, renders 4-14 %, because a render differs from a photo in every patch. More realistic renders did not help: materials and skins narrowed the margins on the 2 ml rack. (The first experiment's 5.1 % against 0.4 % came from the retired single-feature pipeline.) |
 | Greying out the neighbours in the picture | Worse than leaving the picture alone and selecting patches. |
 | A margin around the outline (1, 2, 4 mm) | Only hurts: at 4 mm, 40 good cases flagged. |
 | Box = shadow + 10 % | Too tight: under a 1.2 mm shift the tip-rack gap almost closes. |
@@ -132,6 +151,33 @@ from hand-arranged photos, with corrections by eye (7 tip labels were wrong
 at first: an empty hole next to a seated tip is half covered by that tip's
 rim). In a real run the plan gives the label of every place at every step,
 and the reference photos come from one good run of the same project.
+
+**Testing a change to check A.** These rules come from real mistakes; the
+reason is given with each.
+
+1. **Measure on the chosen method only:** `shadow_check.py` with
+   `SHADOW_PAD=1.4` (box, outline, patches, head and altered copies as
+   above). The first experiment's scripts (`build_train.py`,
+   `compare_ref.py`, `build_mat.py`, `build_group.py`) cut a box with no
+   margin and turn the whole crop into one feature, so neighbours count as
+   much as the item. On 2026-11-23 the materials and skin references were
+   first measured there by mistake, and those numbers said nothing about the
+   chosen method. The old scripts now say "RETIRED" at the top.
+2. **Reproduce before changing.** Rerun the unchanged method and check that
+   it gives the stored result (`out/shadow_p1.4.json`) before trusting a
+   variant.
+3. **Change one thing.** Add a switch to a copy of the script (for example
+   `REF=real|cad|mat|skin`), give every output its own name, and never
+   overwrite a stored result.
+4. **Look before trusting a number.** Draw the box and the outline on a few
+   photo crops and reference crops and look at them at full size. The
+   zero-margin crop above would have been seen at once.
+5. **Compare like with like.** A photo and a render are compared only in the
+   same bench state, with the photo carried into the reference camera's
+   pixels (`pairlib.to_photo`). A colour fit once measured a render with
+   every slot filled against a photo of another state.
+6. **Name the method next to every number** in a report, such as "chosen
+   method, real reference", so no number is read against the wrong method.
 
 ## 4. Check B: the difference sweep
 
@@ -410,7 +456,7 @@ network.
 
 | Date | Decision | Why |
 |---|---|---|
-| 2026-11-19 | Compare with real reference photos, not CAD renders | 0.4 % against 5.1 % false alarms |
+| 2026-11-19 | Compare with real reference photos, not CAD renders | 0.4 % against 5.1 % false alarms (retired pipeline); re-measured on the chosen method 2026-11-23: real 0 good flagged, renders 56-175, and pasted objects 94 % against 4-14 % |
 | 2026-11-19 | Bend the CAD into the camera's view; never resample the photo | The CAD is 3D and can be drawn from anywhere; the photo cannot |
 | 2026-11-20 | Lens from the camera's factory calibration | The fitted lens put the camera 71 mm too low and misaligned everything above the plate |
 | 2026-11-20 | Check A looks inside the CAD outline (the object's shadow), with the box also from the shadow | Works for any object with no per-object rule; matches the two-crop variant |
@@ -420,6 +466,7 @@ network.
 | 2026-11-20 | Only plates 1, 4, 7 count for check B, pulled 13 mm inside | The row the racks stand on; the edge raised the alarm level |
 | 2026-11-20 | Checks run on the raw picture inside the vision server; results go as messages; video (WebRTC, later) is for people only | Fetching a 12-megapixel JPEG per frame cost 350 to 600 ms; compressed video must never feed a decision |
 | 2026-11-20 | Light and shadow are handled by training on changes we create and label "same" (section 9), not by a relighting model | Free labels, exact, and the robot's shadow can be cast from its CAD; relighting models can alter small details |
+| 2026-11-24 | Camera on automatic exposure and white balance; frames from the first 5 s are not used | The hand-picked 30 ms / ISO 540 burnt 73 % of the white rack out and broke A1; auto: 0.2 %, stable once settled |
 
 ## 13. Where the experiment lives
 
@@ -429,6 +476,8 @@ Nothing below is platform code. It is the experiment, kept for re-running.
 |---|---|
 | `~/Downloads/scene_monitor/cad/` (this Pi) | Scene dump, render tool (`grab.py`, `serve/view.html`), alignment page (`serve/align.html`, `align_server.py`), camera calibration reader (`read_oak_calib.py`), photo tool (`vision_shot.py`) |
 | `~/Downloads/scene_monitor/cad/jetson/` (this Pi; copies run on the Jetson) | Every analysis script. Check A: `pairlib.py`, `label_states.py`, `relabel_tips.py`, `shadow_check.py`, `harden.py`. Check B: `stray_check.py`, `stray_scale.py`, `record.py`, `fast_prep2.py`, `fast_train2.py`, `fast_inset.py`, `live_demo.py` |
+| `~/Downloads/scene_monitor/cad/jetson/` (retired) | The first experiment's single-feature scripts: `build_train.py`, `compare_ref.py`, `build_mat.py`, `build_group.py`, `show_skin_fail*.py`. Kept for history, never for judging check A (section 3, "Testing a change to check A") |
+| `~/Downloads/scene_monitor/cad/serve/view_mat.html`, `grab_mat.py` | Renders with measured materials (`jude_super2/mats.json`, fitted by `jetson/mat_measure.py`) and, with `&skin=`, the photo skins |
 | `~/Downloads/scene_monitor/cad/jude/pairs2/`, `jude/show/` | Result files and pictures |
 | `~/scene_test2/` (Jetson) | Photos, recording (`rec/20261120_145910`), trained small models (`rec/fast/student_*.pt`) |
 | `~/train_venv/` (Jetson) | The separate PyTorch environment used for training |
