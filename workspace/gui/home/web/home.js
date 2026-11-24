@@ -50,7 +50,9 @@ async function refreshAccount() {
   if (next === loggedIn && document.body.dataset.account) return;
   loggedIn = next;
   document.body.dataset.account = loggedIn ? "in" : "out";
+  // Offline: run existing projects only — no new, import, copy, rename, delete.
   $("btnNew").hidden = !loggedIn;
+  $("btnImport").hidden = !loggedIn;
   document.querySelectorAll("[data-dev]").forEach((el) => { el.hidden = !loggedIn; });
   cardHtml.clear();
   render();
@@ -117,20 +119,20 @@ function footHtml(p) {
   const state = st.state || "unknown";
   if (p.node_url) return "";
   if (!isLaunched(state)) {
-    return `<button class="btn btn-sm btn-primary action-btn" data-cmd="launch">Launch</button>
-            <button class="btn btn-sm params-btn">Parameters</button>`;
+    return `<button class="btn btn-primary action-btn" data-cmd="launch">Launch</button>
+            <button class="btn params-btn">Parameters</button>`;
   }
   if (isBooting(state)) {
     return `<span class="pc-starting">Starting…</span><div class="spacer"></div>
-            <button class="btn btn-sm action-btn" data-cmd="kill">Kill</button>`;
+            <button class="btn action-btn" data-cmd="kill">Kill</button>`;
   }
   const parking = state.toUpperCase() === "PARKING";
   const active = isRunning(state) || parking;
-  return `<button class="btn btn-sm btn-primary action-btn" data-cmd="start" ${canStart(state) ? "" : "disabled"}>${isStarted(state) ? "Resume" : "Start"}</button>
-          <button class="btn btn-sm action-btn" data-cmd="pause" ${active ? "" : "disabled"}>Pause</button>
-          <button class="btn btn-sm btn-warn action-btn" data-cmd="park" ${!active || parking ? "disabled" : ""}>Park</button>
+  return `<button class="btn btn-primary action-btn" data-cmd="start" ${canStart(state) ? "" : "disabled"}>${isStarted(state) ? "Resume" : "Start"}</button>
+          <button class="btn action-btn" data-cmd="pause" ${active ? "" : "disabled"}>Pause</button>
+          <button class="btn btn-warn action-btn" data-cmd="park" ${!active || parking ? "disabled" : ""}>Park</button>
           <div class="spacer"></div>
-          <button class="btn btn-sm btn-danger action-btn" data-cmd="kill">Kill</button>`;
+          <button class="btn btn-danger action-btn" data-cmd="kill">Kill</button>`;
 }
 
 function cardInner(p) {
@@ -259,12 +261,14 @@ function openMenu(el, at) {
   const p = proj(el);
   if (!p) return;
   const launched = isLaunched(p.st?.state);
-  const items = [
+  const items = loggedIn ? [
     ["copy", I.copy, "Make a copy", () => copyProject(p.name), !!p.node_url],
     ["rename", I.rename, "Rename", () => startRename(el), !!p.node_url],
     ["github", I.git, "GitHub", () => openVersion(p.name), !!p.node_url],
     "hr",
     ["delete", I.trash, "Delete…", () => openDelete(p.name), false],
+  ] : [
+    ["github", I.git, "GitHub", () => openVersion(p.name), !!p.node_url],
   ];
   menu.innerHTML = "";
   for (const it of items) {
@@ -294,7 +298,7 @@ window.addEventListener("scroll", closeMenu, true);
 // ---- rename (inline) ----
 function startRename(el) {
   const p = proj(el);
-  if (!p || p.node_url) return;
+  if (!p || p.node_url || !loggedIn) return;
   if (isLaunched(p.st?.state)) { toast(`Kill ${p.name} before you rename it.`, "warn"); return; }
   const nameEl = el.querySelector(".pc-name");
   if (!nameEl || editing) return;
@@ -576,9 +580,15 @@ function schedulePoll() {
   const active = projects.some((p) => isLaunched(p.st?.state));
   pollTimer = setTimeout(async () => { await refreshStatuses(); schedulePoll(); }, active ? 2000 : 6000);
 }
+// The websocket pushes statuses; polling runs whenever no push came lately
+// (the socket dropped, or is reconnecting).
+let wsSeen = 0;
 try {
-  connectStatusWS((statuses) => { wsLive = true; clearTimeout(pollTimer); applyStatuses(statuses); });
+  connectStatusWS((statuses) => { wsLive = true; wsSeen = Date.now(); clearTimeout(pollTimer); applyStatuses(statuses); });
 } catch { /* polling covers it */ }
+setInterval(() => {
+  if (wsLive && Date.now() - wsSeen > 8000) { wsLive = false; schedulePoll(); }
+}, 4000);
 
 (async () => {
   await refreshAccount();

@@ -226,7 +226,25 @@ class Orchestrator:
             raise RuntimeError("Refuse to rename: the project is launched. Kill it first.")
         fresh = WorkspaceInfo(name=new, path_to_file=path_to_file or ws.path_to_file,
                               port=ws.port, node_url=None, label=ws.label)
-        fresh.kwargs_values = dict(ws.kwargs_values)
+        # File parameters stored under the old folder (<old>/_uploads/…)
+        # follow it to the new one.
+        old_dir = os.path.dirname(ws.path_to_file or "")
+        new_dir = os.path.dirname(path_to_file or "")
+        values = dict(ws.kwargs_values)
+        if old_dir and new_dir and old_dir != new_dir:
+            olds = {old_dir, os.path.realpath(old_dir)}
+
+            def moved(v):
+                for od in olds if isinstance(v, str) else ():
+                    if v == od or v.startswith(od + os.sep):
+                        return new_dir + v[len(od):]
+                if isinstance(v, list):
+                    return [moved(x) for x in v]
+                if isinstance(v, dict):
+                    return {k: moved(x) for k, x in v.items()}
+                return v
+            values = {k: moved(v) for k, v in values.items()}
+        fresh.kwargs_values = values
         self.workspaces = {(new if k == old else k): (fresh if k == old else v)
                            for k, v in self.workspaces.items()}
         self.save_registry()

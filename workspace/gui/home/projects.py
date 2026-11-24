@@ -23,10 +23,13 @@ import base64
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import threading
 import time
 import zipfile
+from concurrent.futures import Future
 from typing import Dict, List, Optional
 
 from gui.data_home import data_path, _invoker
@@ -49,6 +52,57 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 class ProjectError(ValueError):
     """A refusal the page shows as is."""
+
+
+# ---------------------------------------------------------------- registry access
+#
+# The handlers run these functions in an executor thread (git clone, copies
+# and moves block). The registry (orch.workspaces) belongs to the IOLoop —
+# its status and websocket code iterate it — so every registry change is
+# handed to the loop (on_loop), and one lock covers each whole mutation, so
+# two requests never pick the same name, folder or port.
+
+LOCK = threading.RLock()
+_LOOP = None
+
+
+def locked(fn):
+    """One mutation at a time: name, folder and port are picked and taken
+    under LOCK."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        with LOCK:
+            return fn(*a, **kw)
+    return run
+
+
+def set_loop(loop) -> None:
+    global _LOOP
+    _LOOP = loop
+
+
+def on_loop(fn, *args, **kwargs):
+    """``fn(*args)`` on the IOLoop, waited for from an executor thread."""
+    loop = _LOOP
+    if loop is None or loop.is_closed():
+        return fn(*args, **kwargs)
+    try:
+        import asyncio
+        if asyncio.get_running_loop() is loop:
+            return fn(*args, **kwargs)
+    except RuntimeError:
+        pass
+    fut: Future = Future()
+
+    def call():
+        try:
+            fut.set_result(fn(*args, **kwargs))
+        except BaseException as e:   # handed back to the caller's thread
+            fut.set_exception(e)
+    loop.call_soon_threadsafe(call)
+    return fut.result(timeout=60)
 
 
 # ---------------------------------------------------------------- folders
@@ -105,13 +159,20 @@ def _inside(child: str, parent: str) -> bool:
 
 
 def folder_owned(orch, name: str) -> Optional[str]:
-    """None when the project's folder is its own to move, else why not."""
+    """None when the project's folder is its own to move, else why not.
+
+    Only a folder directly in the projects folder is ever moved — what New,
+    Import (GitHub, zip) and Copy make. A project registered where it is
+    (Import → path, or a card of a larger repository like bna/_bna) stays
+    put: delete and rename change only the card."""
     ws = orch.workspaces[name]
     if ws.is_remote():
         return "a remote project"
     d = project_dir(ws)
     if _inside(d, REPO_ROOT):
         return "it is part of the Workspace installation"
+    if os.path.dirname(d) != os.path.realpath(projects_dir()):
+        return "it is outside the projects folder (registered where it is)"
     for other, ows in orch.workspaces.items():
         if other == name or ows.is_remote() or not ows.path_to_file:
             continue
@@ -171,7 +232,12 @@ def listing(orch) -> Dict:
         if not ws.is_remote() and ws.path_to_file:
             folder = os.path.dirname(ws.path_to_file)
             t = os.path.join(folder, THUMB_REL)
-            thumb_t = int(os.path.getmtime(t)) if os.path.isfile(t) else 0
+            try:
+                lt = os.lstat(t)
+                ok = stat.S_ISREG(lt.st_mode) and not os.path.islink(os.path.dirname(t))
+                thumb_t = int(lt.st_mtime) if ok else 0
+            except OSError:
+                thumb_t = 0
             chassis = _chassis_of(folder)
         row.update(dir=folder, thumb=thumb_t, chassis=chassis,
                    git=bool(folder) and os.path.isdir(os.path.join(folder, ".git")))
@@ -182,9 +248,34 @@ def listing(orch) -> Dict:
 # ---------------------------------------------------------------- thumbnails
 
 def thumb_path(orch, name: str) -> str:
+    """``<project>/.workspace/thumb.png`` — refused when ``.workspace`` is a
+    symbolic link (a cloned repository can carry one pointing anywhere).
+    The file itself is opened with O_NOFOLLOW (read_thumb / save_thumb)."""
     if name not in orch.workspaces:
         raise ProjectError(f"Unknown project: {name}")
-    return os.path.join(project_dir(orch.workspaces[name]), THUMB_REL)
+    d = project_dir(orch.workspaces[name])
+    meta = os.path.join(d, ".workspace")
+    try:
+        st = os.lstat(meta)
+        if not stat.S_ISDIR(st.st_mode):
+            raise ProjectError("The project's .workspace is not a folder.")
+    except FileNotFoundError:
+        pass
+    return os.path.join(meta, "thumb.png")
+
+
+def read_thumb(orch, name: str) -> Optional[bytes]:
+    """The PNG bytes, or None when there is no (regular, unlinked) thumb."""
+    path = thumb_path(orch, name)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None                        # missing, or a symbolic link (ELOOP)
+    with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            return None
+        data = f.read(THUMB_MAX_BYTES + 1)
+    return data if len(data) <= THUMB_MAX_BYTES else None
 
 
 def save_thumb(orch, name: str, data_url: str) -> Dict:
@@ -200,20 +291,43 @@ def save_thumb(orch, name: str, data_url: str) -> Dict:
     if len(png) > THUMB_MAX_BYTES:
         raise ProjectError("The image is larger than 4 MB.")
     path = thumb_path(orch, name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(png)
-    os.replace(tmp, path)
-    give_back(os.path.dirname(path))
-    return {"status": "ok", "thumb": int(os.path.getmtime(path))}
+    meta = os.path.dirname(path)
+    try:
+        os.mkdir(meta)
+    except FileExistsError:
+        pass
+    if not stat.S_ISDIR(os.lstat(meta).st_mode):
+        raise ProjectError("The project's .workspace is not a folder.")
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            raise ProjectError("The project's thumb.png is not a plain file.")
+    except FileNotFoundError:
+        pass
+    # A fresh temp file (O_EXCL never follows or reuses a planted link).
+    fd, tmp = tempfile.mkstemp(prefix=".thumb-", suffix=".png", dir=meta)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(png)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)            # replaces the name, never writes through it
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    give_back(meta)
+    return {"status": "ok", "thumb": int(os.lstat(path).st_mtime)}
 
 
 # ---------------------------------------------------------------- register
 
 def _register(orch, name: str, main_py: str, label: str = "") -> Dict:
-    port = orch.free_port()
-    orch.add_workspace(name, main_py, port, label=label, sync_remote=False, persist=True)
+    def add():
+        port = orch.free_port()
+        orch.add_workspace(name, main_py, port, label=label, sync_remote=False, persist=True)
+        return port
+    port = on_loop(add)
     return {"name": name, "path_to_file": main_py, "port": port}
 
 
@@ -255,6 +369,7 @@ def _set_launch_key(text: str, key: str, value: str) -> str:
     return text + f"\n{key}: {value}\n"
 
 
+@locked
 def new_project(orch, chassis: str, name: str = "") -> Dict:
     if chassis not in CHASSIS:
         raise ProjectError(f"Choose one of: {', '.join(CHASSIS.values())}.")
@@ -296,6 +411,7 @@ def new_project(orch, chassis: str, name: str = "") -> Dict:
 GIT_URL_RE = re.compile(r"^(https://[\w.-]+/[\w.~/-]+?|git@[\w.-]+:[\w.~/-]+?)(\.git)?/?$")
 
 
+@locked
 def import_git(orch, url: str, name: str = "") -> Dict:
     url = (url or "").strip()
     if not GIT_URL_RE.match(url):
@@ -324,6 +440,7 @@ def import_git(orch, url: str, name: str = "") -> Dict:
         raise
 
 
+@locked
 def import_zip(orch, filename: str, body: bytes, name: str = "") -> Dict:
     root = projects_dir()
     stage = tempfile.mkdtemp(prefix=".import-", dir=root)
@@ -364,6 +481,7 @@ def import_zip(orch, filename: str, body: bytes, name: str = "") -> Dict:
         shutil.rmtree(stage, ignore_errors=True)
 
 
+@locked
 def import_path(orch, path: str, name: str = "") -> Dict:
     path = os.path.realpath(os.path.expanduser((path or "").strip()))
     if os.path.isfile(path):
@@ -389,6 +507,7 @@ def import_path(orch, path: str, name: str = "") -> Dict:
 
 # ---------------------------------------------------------------- copy / rename / delete
 
+@locked
 def copy_project(orch, name: str, new: str = "") -> Dict:
     if name not in orch.workspaces:
         raise ProjectError(f"Unknown project: {name}")
@@ -409,6 +528,7 @@ def copy_project(orch, name: str, new: str = "") -> Dict:
     return {"status": "ok", "added": [out]}
 
 
+@locked
 def rename_project(orch, name: str, new: str) -> Dict:
     new = check_name(new)
     if new == name:
@@ -432,7 +552,7 @@ def rename_project(orch, name: str, new: str) -> Dict:
         else:
             why = "its folder is named differently from the project"
     try:
-        orch.rename_workspace(name, new, main_py)
+        on_loop(orch.rename_workspace, name, new, main_py)
     except Exception:
         if moved_to:
             os.rename(moved_to, moved_from)
@@ -441,6 +561,7 @@ def rename_project(orch, name: str, new: str) -> Dict:
             "path_to_file": main_py, "folder_kept_why": "" if moved_to else (why or "")}
 
 
+@locked
 def delete_project(orch, name: str, confirm: str) -> Dict:
     if (confirm or "").strip() != name:
         raise ProjectError("Type the project's name to delete it.")
@@ -456,7 +577,7 @@ def delete_project(orch, name: str, confirm: str) -> Dict:
             trashed = os.path.join(trash, f"{name}-{time.strftime('%Y%m%d-%H%M%S')}")
             shutil.move(d, trashed)
     try:
-        orch.remove_workspace(name)
+        on_loop(orch.remove_workspace, name)
     except Exception:
         if trashed:
             shutil.move(trashed, project_dir(ws))

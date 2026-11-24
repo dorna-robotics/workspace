@@ -14,6 +14,8 @@
     POST /home/api/import/path                {path, name?}
 
 Writes use the orchestrator's ``X-Orch-Token`` rule (AuthedHandler).
+Offline (no account login) the page only runs existing projects: new,
+import, copy, rename and delete answer 401 {error: "login required"}.
 The logic is projects.py; run controls stay on the orchestrator API.
 """
 from __future__ import annotations
@@ -43,21 +45,54 @@ class HomePageHandler(tornado.web.RequestHandler):
         self.write(html.replace("__WS_VERSION__", self.version))
 
 
+def logged_in() -> bool:
+    """The unit's account login (builder C's gui.account). Without that
+    module the unit is in the offline mode."""
+    try:
+        from gui.account import account
+    except ImportError:
+        return False
+    try:
+        return bool(account.logged_in())
+    except Exception:
+        return False
+
+
 class _Base(AuthedHandler):
     def initialize(self, orch):
         self.orch = orch
+        P.set_loop(asyncio.get_event_loop())
 
     def body(self) -> dict:
         try:
-            return json.loads(self.request.body.decode() or "{}")
-        except ValueError:
+            b = json.loads(self.request.body.decode() or "{}")
+        except (ValueError, UnicodeDecodeError):
             raise P.ProjectError("The request body is not JSON.")
+        if not isinstance(b, dict):
+            raise P.ProjectError("The request body is not a JSON object.")
+        return b
 
-    async def run(self, fn, *args):
-        """``fn(orch, *args)`` off the IOLoop; a refusal → 400 {error}."""
+    def refuse(self, status: int, msg: str) -> None:
+        self.set_status(status)
+        self.write({"error": msg})
+
+    def gate(self) -> bool:
+        """Project management needs a login; False once refused."""
         if not self.ensure_auth():
+            return False
+        if not logged_in():
+            self.refuse(401, "login required")
+            return False
+        return True
+
+    async def run(self, fn, *args, gated: bool = True):
+        """``fn(orch, *args)`` off the IOLoop; a refusal → 400 {error}.
+        ``args`` may be a callable returning them (the body, parsed here)."""
+        if not (self.gate() if gated else self.ensure_auth()):
             return
         try:
+            if len(args) == 1 and callable(args[0]):
+                args = args[0]()
             out = await asyncio.get_running_loop().run_in_executor(None, fn, self.orch, *args)
             self.write(out)
         except (P.ProjectError, ValueError, RuntimeError, FileNotFoundError, OSError) as e:
@@ -74,59 +109,55 @@ class ProjectsListHandler(_Base):
 class ProjectThumbHandler(_Base):
     def get(self, name):
         try:
-            path = P.thumb_path(self.orch, name)
-        except P.ProjectError as e:
-            raise tornado.web.HTTPError(404, reason=str(e))
-        if not os.path.isfile(path):
+            data = P.read_thumb(self.orch, name)
+        except P.ProjectError:
+            data = None
+        if not data or not data.startswith(b"\x89PNG\r\n\x1a\n"):
             raise tornado.web.HTTPError(404)
         self.set_header("Content-Type", "image/png")
         self.set_header("Cache-Control", "no-cache")
-        with open(path, "rb") as f:
-            self.write(f.read())
+        self.write(data)
 
     async def post(self, name):
-        b = self.body()
-        await self.run(P.save_thumb, name, b.get("image") or b.get("data_url") or "")
+        # The viewer saves the picture of the scene — not a paid feature.
+        def args():
+            b = self.body()
+            return (name, str(b.get("image") or b.get("data_url") or ""))
+        await self.run(P.save_thumb, args, gated=False)
 
 
 class ProjectActionHandler(_Base):
     async def post(self, name, action):
-        b = self.body()
-        if action == "rename":
-            await self.run(P.rename_project, name, str(b.get("name") or ""))
-        elif action == "copy":
-            await self.run(P.copy_project, name, str(b.get("name") or ""))
-        elif action == "delete":
-            await self.run(P.delete_project, name, str(b.get("confirm") or ""))
-        else:
-            raise tornado.web.HTTPError(404)
+        fn, key = {"rename": (P.rename_project, "name"), "copy": (P.copy_project, "name"),
+                   "delete": (P.delete_project, "confirm")}[action]
+        await self.run(fn, lambda: (name, str(self.body().get(key) or "")))
 
 
 class NewProjectHandler(_Base):
     async def post(self):
-        b = self.body()
-        await self.run(P.new_project, str(b.get("chassis") or ""), str(b.get("name") or ""))
+        def args():
+            b = self.body()
+            return (str(b.get("chassis") or ""), str(b.get("name") or ""))
+        await self.run(P.new_project, args)
 
 
 class ImportHandler(_Base):
     async def post(self, kind):
         if kind == "zip":
-            files = self.request.files.get("file") or []
-            if not files:
-                self.set_status(400)
-                self.write({"error": "No zip file uploaded."})
-                return
-            f = files[0]
-            name = self.get_body_argument("name", "")
-            await self.run(P.import_zip, f["filename"], f["body"], name)
+            def args():
+                files = self.request.files.get("file") or []
+                if not files:
+                    raise P.ProjectError("No zip file uploaded.")
+                f = files[0]
+                return (f["filename"], f["body"], self.get_body_argument("name", ""))
+            await self.run(P.import_zip, args)
             return
-        b = self.body()
-        if kind == "git":
-            await self.run(P.import_git, str(b.get("url") or ""), str(b.get("name") or ""))
-        elif kind == "path":
-            await self.run(P.import_path, str(b.get("path") or ""), str(b.get("name") or ""))
-        else:
-            raise tornado.web.HTTPError(404)
+        fn, key = {"git": (P.import_git, "url"), "path": (P.import_path, "path")}[kind]
+
+        def jargs():
+            b = self.body()
+            return (str(b.get(key) or ""), str(b.get("name") or ""))
+        await self.run(fn, jargs)
 
 
 def home_routes(orch, version: str = ""):
