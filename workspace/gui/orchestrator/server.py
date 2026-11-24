@@ -83,17 +83,26 @@ from gui.orchestrator.websockets import (  # noqa: F401
 
 
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
-    """Static handler that disables every layer of HTTP caching. Used
-    for the admin GUI assets so a fresh deploy is visible on the next
-    page load without operators having to hard-refresh."""
+    """Static handler whose files revalidate on every load, so a fresh
+    deploy is visible on the next page load without operators having to
+    hard-refresh. ``no-cache`` (not ``no-store``): the browser keeps the
+    file and asks once per load; an unchanged file answers 304 with no
+    body, and Chromium keeps its compiled-script cache for it (no-store
+    re-downloaded and re-parsed every script on every page). The ETag is
+    the file's mtime + size, read per request — Tornado's own content
+    hash is cached for the process's life, so it would hide an edit made
+    while this long-lived server runs (the runtime server restarts on
+    every launch; this one does not)."""
 
     def set_extra_headers(self, path):
-        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-        self.set_header("Pragma", "no-cache")
-        self.set_header("Expires", "0")
+        self.set_header("Cache-Control", "no-cache")
 
     def compute_etag(self):
-        return None
+        try:
+            st = os.stat(self.absolute_path)
+        except (OSError, TypeError):
+            return None
+        return '"%x-%x"' % (st.st_mtime_ns, st.st_size)
 
 
 class OrchestratorHTTPServer:
