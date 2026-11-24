@@ -8,6 +8,7 @@
 """
 import json
 
+import tornado.ioloop
 import tornado.iostream
 import tornado.web
 
@@ -96,6 +97,8 @@ class ChatHandler(_Json):
             await emit({"t": "session", "id": s.id})
             ctx = data.get("context") if isinstance(data.get("context"), dict) else None
             await agent.run_turn(s, text, emit, ctx)
+        # the turn used credits: the next status (the usage bar) asks the server again
+        await tornado.ioloop.IOLoop.current().run_in_executor(None, lambda: account.status(force=True))
 
 
 class AttachHandler(_Json):
