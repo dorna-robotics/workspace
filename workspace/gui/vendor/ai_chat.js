@@ -61,27 +61,27 @@
   // ── DOM ──────────────────────────────────────────────────────────
   const fab = document.createElement("button");
   fab.type = "button"; fab.className = "ai-fab"; fab.hidden = true;
-  fab.title = "Assistant"; fab.setAttribute("aria-label", "Open the assistant");
+  fab.title = "Dorna AI"; fab.setAttribute("aria-label", "Open Dorna AI");
   fab.innerHTML = CHAT_ICON;
 
   const root = document.createElement("aside");
   root.className = "ai-panel"; root.hidden = true;
-  root.setAttribute("aria-label", "Assistant");
+  root.setAttribute("aria-label", "Dorna AI");
   root.innerHTML = `
     <div class="ai-resize" title="Drag to resize"></div>
     <div class="ai-head">
-      <span class="ai-title">Assistant</span>
+      <span class="ai-title">Dorna AI</span>
       <span class="ai-proj" hidden></span>
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-new" type="button" title="Start a fresh conversation">New chat</button>
-      <button class="ai-iconbtn ai-close" type="button" title="Close" aria-label="Close the assistant">✕</button>
+      <button class="ai-iconbtn ai-close" type="button" title="Close" aria-label="Close Dorna AI">✕</button>
     </div>
     <div class="ai-log" aria-live="polite"></div>
     <div class="ai-compose">
       <div class="ai-atts" hidden></div>
       <div class="ai-compose-row">
         <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
-        <textarea rows="1" placeholder="Ask about this robot, a run, or a change to make…" aria-label="Message the assistant"></textarea>
+        <textarea rows="1" placeholder="Ask about this robot, a run, or a change to make…" aria-label="Message Dorna AI"></textarea>
         <button class="btn btn-primary ai-send" type="button" title="Send (Enter)">Send</button>
       </div>
       <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send · Shift+Enter for a new line · drop or paste files</span>
@@ -432,12 +432,13 @@
   // ── open / close ─────────────────────────────────────────────────
   function setOpen(open) {
     root.hidden = !open || !enabled;
-    fab.hidden = !enabled || open;
+    fab.hidden = !enabled;
+    fab.setAttribute("aria-expanded", open && enabled ? "true" : "false");
     document.documentElement.classList.toggle("ai-open", open && enabled);
     ls.set(OPEN_KEY, open ? "1" : "0");
     if (open && enabled) {
       showProject();
-      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach the assistant: " + e.message); });
+      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach Dorna AI: " + e.message); });
       setTimeout(() => input.focus(), 50);
     }
   }
@@ -459,7 +460,8 @@
   });
   sendBtn.onclick = () => { const t = input.value; input.value = ""; send(t); };
   stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid }) });
-  fab.onclick = () => setOpen(true);
+  fab.onclick = () => setOpen(root.hidden);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !root.hidden) setOpen(false); });
   $(".ai-close").onclick = () => setOpen(false);
   $(".ai-new").onclick = async () => {
     if (busy) return;
