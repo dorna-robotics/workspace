@@ -163,23 +163,25 @@
   .ai-resize { display: none; }
 }
 
-/* ── The AI builder's skin (its ui.css chat rules): the brand gradient on
+/* ── The AI builder's skin (its ui.css chat rules), in Dorna black and yellow: the gradient on
    the button, the user's bubbles and Send, gradient title, the composer
    as one rounded field ─────────────────────────────────────────────── */
 .ai-panel, .ai-fab {
-  --grad: linear-gradient(135deg, #3f7cff 0%, #6a5bff 52%, #a45cff 100%);
-  --grad-text: linear-gradient(100deg, #ffffff 0%, #c9d8ff 45%, #b9a6ff 100%);
+  --grad: linear-gradient(135deg, #0b0b0c 0%, #26210f 48%, #f2b705 100%);
+  --grad-text: linear-gradient(100deg, #ffffff 0%, #ffe27a 55%, #f2b705 100%);
+  --grad-glow: rgba(242, 183, 5, .55);
   --ring: 0 0 0 1px rgba(255,255,255,.18) inset;
 }
 [data-theme="light"] .ai-panel, [data-theme="light"] .ai-fab {
-  --grad: linear-gradient(135deg, #2f6bff 0%, #5b4dff 55%, #9447ff 100%);
-  --grad-text: linear-gradient(100deg, #0b1022 0%, #2f4fb8 55%, #6a3fd6 100%);
+  --grad: linear-gradient(135deg, #0b0b0c 0%, #26210f 48%, #f2b705 100%);
+  --grad-text: linear-gradient(100deg, #0b0b0c 0%, #3a2f05 50%, #b88600 100%);
+  --grad-glow: rgba(140, 105, 0, .45);
   --ring: 0 0 0 1px rgba(14,22,48,.08) inset;
 }
 .ai-fab {
   width: auto; height: 52px; border-radius: 26px; padding: 0 20px 0 16px; gap: 8px;
-  font: 700 15px var(--font); background: var(--grad);
-  box-shadow: 0 1px 0 rgba(255,255,255,.3) inset, 0 14px 30px -10px rgba(90,100,255,.95);
+  font: 700 15px var(--font); background: var(--grad); text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  box-shadow: 0 1px 0 rgba(255,255,255,.3) inset, 0 14px 30px -10px var(--grad-glow);
 }
 .ai-fab:hover { background: var(--grad); filter: brightness(1.08); }
 .ai-fab:active { transform: scale(.95); }
@@ -188,7 +190,7 @@
 .ai-logo {
   flex: none; display: inline-flex; width: 30px; height: 30px; padding: 6px; border-radius: 10px; box-sizing: border-box;
   color: white; background: var(--grad);
-  box-shadow: 0 6px 16px -6px rgba(80, 100, 255, .8), 0 1px 0 rgba(255,255,255,.35) inset;
+  box-shadow: 0 6px 16px -6px var(--grad-glow), 0 1px 0 rgba(255,255,255,.35) inset;
 }
 .ai-logo svg { width: 100%; height: 100%; }
 .ai-head .ai-title { font-weight: 750; letter-spacing: -0.02em; background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -197,8 +199,8 @@
 .ai-head .ai-new { color: var(--accent); }
 .ai-head .ai-new:hover { background: var(--accent-dim); color: var(--accent); }
 .ai-msg.user {
-  background: var(--grad); border-radius: 18px 18px 6px 18px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.22) inset, 0 10px 24px -12px rgba(90,100,255,.8);
+  background: var(--grad); text-shadow: 0 1px 2px rgba(0,0,0,.45); border-radius: 18px 18px 6px 18px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.22) inset, 0 10px 24px -12px var(--grad-glow);
 }
 .ai-note { border-radius: 12px; box-shadow: var(--ring); }
 .ai-text { font-size: 15px; line-height: 1.6; }
@@ -219,7 +221,7 @@
 .ai-panel .ai-send, [data-theme="light"] .ai-panel .ai-send {
   flex: none; width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 0; position: relative; overflow: hidden;
   background: var(--grad); color: white; border: 0;
-  box-shadow: 0 1px 0 rgba(255,255,255,.28) inset, 0 0 0 1px rgba(90,100,255,.18), 0 2px 8px -2px rgba(90,100,255,.55);
+  box-shadow: 0 1px 0 rgba(255,255,255,.28) inset, 0 0 0 1px var(--grad-glow), 0 2px 8px -2px var(--grad-glow);
   transition: transform var(--motion-fast) var(--ease);
 }
 .ai-panel .ai-send:hover:not(:disabled) { background: var(--grad); transform: scale(1.05); filter: brightness(1.08); }
@@ -233,3 +235,38 @@
 .ai-bar { min-height: 0; padding: 0 6px; }
 .ai-hint { font-size: 11px; color: var(--muted2); }
 @media (prefers-reduced-motion: reduce) { .ai-send, .ai-fab { transition: none; } }
+
+/* recent chats: a menu under the header */
+.ai-hist {
+  position: absolute; top: 56px; left: var(--space-3); right: var(--space-3); z-index: 12;
+  max-height: min(420px, calc(100% - 140px)); overflow-y: auto; padding: var(--space-2);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  display: grid; gap: 2px; align-content: start;
+}
+.ai-hist-head { padding: var(--space-2) var(--space-3); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted2); }
+.ai-hist-msg { padding: var(--space-2) var(--space-3) var(--space-3); font-size: var(--text-sm); color: var(--muted); }
+.ai-hist-msg.bad { color: var(--red); }
+.ai-hist-item {
+  display: grid; gap: 2px; text-align: left; width: 100%; min-height: 44px; cursor: pointer;
+  padding: var(--space-2) var(--space-3); border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit;
+}
+.ai-hist-item:hover { background: var(--surface2); }
+.ai-hist-item:focus-visible { outline: none; box-shadow: var(--glow); }
+.ai-hist-item.on { background: var(--accent-dim); }
+.ai-hist-item .t { font-size: var(--text-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-hist-item .m { font-size: var(--text-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-head .ai-hist-btn { display: inline-flex; align-items: center; }
+.ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--accent-dim); color: var(--accent); }
+
+/* one scale for the buttons: 34 px in the header and the composer, icons 16 px */
+.ai-head .ai-iconbtn {
+  height: 34px; min-width: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 13px; font-weight: 600; line-height: 1;
+}
+.ai-head .ai-hist-btn, .ai-head .ai-close { width: 34px; padding: 0; font-size: 14px; }
+.ai-head .ai-new { color: var(--text); }
+.ai-head .ai-new:hover, .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
+.ai-panel .ai-attach { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; }
+.ai-panel .ai-attach svg { width: 16px; height: 16px; }
+.ai-compose-row:focus-within { border-color: color-mix(in srgb, #f2b705 70%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, #f2b705 22%, transparent); }
+.ai-compose .ai-compose-row textarea:focus { border: 0; }

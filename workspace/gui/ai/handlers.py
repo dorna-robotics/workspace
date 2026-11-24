@@ -8,6 +8,7 @@
     GET  /ai/api/attach   ?id=&from=   → a running turn's events from `from` on (after a reload)
     POST /ai/api/cancel   {session}
     GET  /ai/api/session  ?id=         → {id, project, transcript, busy, live_seq} (a new one if unknown)
+    GET  /ai/api/sessions              → {sessions: [{id, title, project, saved}]} — the last 10 on this robot
     POST /ai/api/session               → a fresh conversation
 """
 import json
@@ -168,6 +169,14 @@ class SessionHandler(_Json):
         self.write(s.public())
 
 
+class SessionsHandler(_Json):
+    @login_required
+    async def get(self):
+        owner = _owner()
+        rows = await tornado.ioloop.IOLoop.current().run_in_executor(None, agent.recent_sessions, owner, 10)
+        self.write({"sessions": rows})
+
+
 def _project_dir(name):
     """The local folder of a project on this unit, or None."""
     if not name:
@@ -286,6 +295,7 @@ def routes(orch):
         (r"/ai/api/attach", AttachHandler),
         (r"/ai/api/cancel", CancelHandler),
         (r"/ai/api/session", SessionHandler),
+        (r"/ai/api/sessions", SessionsHandler),
         (r"/ai/api/upload", UploadHandler),
         (r"/ai/api/uploads", UploadsHandler),
         (r"/ai/api/upload_file", UploadFileHandler),

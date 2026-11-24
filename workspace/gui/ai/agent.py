@@ -155,6 +155,35 @@ def get_session(sid=None, owner=None, create=True):
     return s
 
 
+def recent_sessions(owner, limit=10):
+    """The account's last ``limit`` conversations on this robot, newest
+    first — the ones with at least one message: {id, title, project, saved}."""
+    d = _sessions_dir()
+    try:
+        names = [n for n in os.listdir(d) if n.endswith(".json") and _valid_sid(n[:-5])]
+    except OSError:
+        return []
+    names.sort(key=lambda n: os.path.getmtime(os.path.join(d, n)), reverse=True)
+    out = []
+    for n in names:
+        try:
+            with open(os.path.join(d, n)) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if data.get("owner") not in (None, owner):
+            continue
+        first = next((t.get("text") for t in data.get("transcript") or []
+                      if t.get("role") == "user" and t.get("text")), None)
+        if not first:
+            continue
+        out.append({"id": data.get("id") or n[:-5], "title": " ".join(str(first).split())[:80],
+                    "project": data.get("project"), "saved": data.get("saved")})
+        if len(out) >= limit:
+            break
+    return out
+
+
 # ── the loop ─────────────────────────────────────────────────────────
 
 def _request_kwargs(session):
