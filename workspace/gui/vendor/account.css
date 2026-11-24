@@ -74,6 +74,27 @@
 .acct-wait { color: var(--muted); font-size: var(--text-md); }
 .acct-foot { margin: 0; font-size: var(--text-sm); color: var(--muted); }
 
+/* The sign-in window is open: wait here, reopen it, or use a phone instead. */
+.acct-popup { display: grid; justify-items: start; gap: var(--space-2); }
+.acct-state-big { margin-top: 0; font-size: var(--text-lg); color: var(--text); }
+.acct-state-big .acct-spin { width: 18px; height: 18px; }
+.acct-textbtn {
+  min-height: 44px; padding: 0 var(--space-2); margin-left: calc(-1 * var(--space-2));
+  background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--accent);
+  font: inherit; font-size: var(--text-md); cursor: pointer;
+}
+.acct-textbtn:hover { background: var(--surface2); }
+.acct-phone { border-top: 1px solid var(--border2); padding-top: var(--space-2); }
+.acct-phone > summary {
+  min-height: 44px; display: flex; align-items: center; gap: var(--space-2); cursor: pointer;
+  font-size: var(--text-md); color: var(--muted); list-style: none; border-radius: var(--radius-sm);
+}
+.acct-phone > summary::-webkit-details-marker { display: none; }
+.acct-phone > summary::before { content: "▸"; transition: transform var(--motion-fast) var(--ease); }
+.acct-phone[open] > summary::before { transform: rotate(90deg); }
+.acct-phone > summary:hover { color: var(--text); }
+.acct-phone[open] { display: grid; gap: var(--space-3); }
+
 @media (max-width: 560px) {
   .acct-grid { grid-template-columns: 1fr; justify-items: center; text-align: center; }
 }
