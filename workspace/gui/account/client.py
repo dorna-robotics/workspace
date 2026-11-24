@@ -9,14 +9,21 @@ server, ``DORNA_ACCOUNT_SERVER``) turns on the AI chat and Developer mode.
     status()       → GET  /s/device/api/me       (cached ~30 s)
     components()   → GET  /s/device/api/components (cached; offline → last copy)
     logout()       → POST /s/device/api/logout   (and the token is forgotten)
+    report_projects() → POST /s/device/api/projects (after login, then at most
+                     every ~5 min on a status refresh, in its own thread; silent)
 
 The token lives in ``~/.workspace/account.json`` (mode 600) and is never
 handed to a page: only this module and the AI client read it. Everything
 here is synchronous (urllib) — handlers call it off the IOLoop.
 """
+import base64
+import hashlib
+import io
 import json
 import os
+import re
 import socket
+import stat
 import threading
 import time
 import urllib.error
@@ -28,6 +35,9 @@ DEFAULT_SERVER = "https://builder.developmenttest.online"
 STATUS_TTL_S = 30          # /api/me is asked at most this often
 COMPONENTS_TTL_S = 300
 HTTP_TIMEOUT_S = 8
+PROJECTS_EVERY_S = 300     # the project list goes to the server at most this often
+PROJECTS_SAME_S = 3600     # ... and an unchanged one only this often
+THUMB_MAX = 60 * 1024      # the server's cap on a project picture
 
 
 def server_url() -> str:
@@ -66,6 +76,11 @@ class Account:
         self._status_at = 0.0
         self._components = None
         self._components_at = 0.0
+        self._reported_at = 0.0        # the project list: when last sent, its hash, a run in flight
+        self._reported_hash = None
+        self._reported_sent = 0.0
+        self._reporting = False
+        self._thumbs = {}              # thumb path → (mtime, size, base64 or None)
 
     # ── the stored token ─────────────────────────────────────────────
     @property
@@ -101,6 +116,7 @@ class Account:
             pass
         self._status, self._status_at = None, 0.0
         self._components, self._components_at = None, 0.0
+        self._reported_at, self._reported_hash, self._reported_sent = 0.0, None, 0.0
         try:
             os.remove(data_path("account_components.json"))
         except OSError:
@@ -171,6 +187,7 @@ class Account:
                 self._save({"token": j["token"], "email": j.get("email"), "account": j.get("account"),
                             "is_admin": bool(j.get("is_admin")), "server": server_url(), "at": time.time()})
                 self._pending = None
+            self.report_projects_soon()      # outside the lock: it takes it
             return {"status": "ok", "email": j.get("email")}
         if code == 428:
             return {"status": "pending"}
@@ -234,6 +251,7 @@ class Account:
                     st["usage"][k] = usage[k]
         with self._lock:
             self._status, self._status_at = st, time.time()
+        self.report_projects_soon()
         return dict(st)
 
     # ── the account's components ─────────────────────────────────────
@@ -282,6 +300,135 @@ class Account:
         if c.get("all"):
             return None
         return set(c.get("types") or []) | {p.get("type") for p in c.get("library") or [] if p.get("type")}
+
+    # ── the project list (the admins' view of this account) ──────────
+    def report_projects_soon(self):
+        """Send the project list in a background thread when it is due. Never blocks."""
+        with self._lock:
+            if self._reporting or time.time() - self._reported_at < PROJECTS_EVERY_S:
+                return
+            self._reporting = True
+        threading.Thread(target=self._report, name="account-projects", daemon=True).start()
+
+    def _report(self):
+        try:
+            self.report_projects()
+        except Exception:               # noqa: BLE001 — failures are silent; the next refresh tries again
+            pass
+        finally:
+            with self._lock:
+                self._reporting = False
+
+    def report_projects(self):
+        """POST this unit's projects to the account server: [{name, title, core,
+        updated, git_remote, thumb}]. An unchanged list goes at most hourly."""
+        d = self._load()
+        if not d:
+            return
+        with self._lock:
+            self._reported_at = time.time()
+        projects = local_projects(self._thumbs)
+        h = hashlib.sha256(json.dumps(projects, sort_keys=True).encode()).hexdigest()
+        if h == self._reported_hash and time.time() - self._reported_sent < PROJECTS_SAME_S:
+            return
+        code, _ = _http("POST", "/s/device/api/projects", {"projects": projects}, token=d["token"], timeout=20)
+        if code == 200:
+            self._reported_hash, self._reported_sent = h, time.time()
+
+
+def _registry_path():
+    try:
+        from gui.orchestrator.orchestrator import REG_PATH
+        return REG_PATH
+    except Exception:                   # noqa: BLE001 — standalone tests
+        return os.environ.get("ORCH_REG_PATH", data_path("registry.json"))
+
+
+def _core_of(folder):
+    try:
+        with open(os.path.join(folder, "launch.yaml"), errors="ignore") as f:
+            text = "\n".join(line.split("#", 1)[0] for line in f.read(65536).splitlines())   # not the comments
+    except OSError:
+        return ""
+    m = re.search(r"\bcore_[0-9a-z]+", text)
+    return m.group(0) if m else ""
+
+
+def _git_remote(folder):
+    """origin's URL from .git/config, without any user:token@ in it."""
+    try:
+        with open(os.path.join(folder, ".git", "config"), errors="ignore") as f:
+            text = f.read(65536)
+    except OSError:
+        return ""
+    m = re.search(r'\[remote "origin"\][^\[]*?\burl\s*=\s*(\S+)', text)
+    return re.sub(r"//[^/@]*@", "//", m.group(1)) if m else ""
+
+
+def _thumb(folder, cache):
+    """The project's .workspace/thumb.png as base64 ≤ THUMB_MAX: as it is when
+    small enough, else a smaller JPEG (PIL), else none. Cached by mtime."""
+    path = os.path.join(folder, ".workspace", "thumb.png")
+    try:
+        if os.path.islink(os.path.dirname(path)):
+            return None
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_size > 8 * 1024 * 1024:
+            return None
+        key = (st.st_mtime, st.st_size)
+        if path in cache and cache[path][0] == key:
+            return cache[path][1]
+        raw = f.read()
+    out = None
+    if len(raw) <= THUMB_MAX:
+        out = raw
+    else:
+        try:
+            from PIL import Image
+            im = Image.open(io.BytesIO(raw)).convert("RGB")
+            for width, quality in ((480, 75), (360, 70), (240, 60)):
+                small = im.copy()
+                small.thumbnail((width, width))
+                buf = io.BytesIO()
+                small.save(buf, "JPEG", quality=quality)
+                if buf.tell() <= THUMB_MAX:
+                    out = buf.getvalue()
+                    break
+        except Exception:               # noqa: BLE001 — no PIL, or not an image: no picture
+            out = None
+    b64 = base64.b64encode(out).decode() if out else None
+    cache[path] = (key, b64)
+    return b64
+
+
+def local_projects(thumb_cache=None):
+    """This unit's projects as the home page lists them (the orchestrator's registry)."""
+    try:
+        with open(_registry_path(), encoding="utf-8") as f:
+            cards = json.load(f).get("workspaces") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    cache = {} if thumb_cache is None else thumb_cache
+    out = []
+    for c in cards if isinstance(cards, list) else []:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        row = {"name": str(c["name"]), "title": str(c.get("label") or "")}
+        folder = os.path.dirname(c.get("path_to_file") or "")
+        if folder and not c.get("node_url") and os.path.isdir(folder):
+            times = [os.path.getmtime(p) for p in (c["path_to_file"], os.path.join(folder, "launch.yaml"))
+                     if os.path.isfile(p)]
+            row.update(core=_core_of(folder), updated=max(times) if times else None,
+                       git_remote=_git_remote(folder))
+            t = _thumb(folder, cache)
+            if t:
+                row["thumb"] = t
+        out.append(row)
+    return out
 
 
 account = Account()
