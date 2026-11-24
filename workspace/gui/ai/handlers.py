@@ -12,6 +12,7 @@ import tornado.iostream
 import tornado.web
 
 from gui.account import account, login_required
+from gui.account.handlers import guard_post, same_origin, token_ok
 
 from . import agent, tools
 
@@ -27,14 +28,38 @@ def _owner():
 
 
 class _Json(tornado.web.RequestHandler):
+    """The assistant can launch projects and edit code, so every route needs
+    what the orchestrator's write routes need (X-Orch-Token when ORCH_TOKEN is
+    set), same-origin callers only, and JSON bodies for POSTs."""
+
     def set_default_headers(self):
         self.set_header("Cache-Control", "no-store")
 
+    def prepare(self):
+        if self.request.method == "POST":
+            guard_post(self)
+        else:
+            if not same_origin(self):
+                raise tornado.web.HTTPError(403, "cross-origin request refused")
+            if not token_ok(self):
+                raise tornado.web.HTTPError(403, "orchestrator token required")
+
+    def write_error(self, status_code, **kwargs):
+        reason = self._reason
+        exc = kwargs.get("exc_info")
+        if exc and isinstance(exc[1], tornado.web.HTTPError) and exc[1].log_message:
+            reason = exc[1].log_message
+        self.set_header("Content-Type", "application/json")
+        self.finish({"error": reason})
+
     def body(self):
         try:
-            return json.loads(self.request.body or b"{}") or {}
+            d = json.loads(self.request.body or b"{}") or {}
         except ValueError:
             raise tornado.web.HTTPError(400, "bad JSON")
+        if not isinstance(d, dict):
+            raise tornado.web.HTTPError(400, "bad JSON")
+        return d
 
 
 class ChatHandler(_Json):
@@ -81,7 +106,10 @@ class AttachHandler(_Json):
         if s is None:
             self.write(json.dumps({"t": "done"}) + "\n")
             return
-        i = int(self.get_argument("from", "0") or 0)
+        try:
+            i = max(0, int(self.get_argument("from", "0") or 0))
+        except ValueError:
+            i = 0
         try:
             while True:
                 while i < len(s.live):

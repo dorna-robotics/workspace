@@ -86,7 +86,13 @@ class Session:
         data = {"id": self.id, "owner": self.owner, "project": self.project, "messages": self.messages,
                 "transcript": self.transcript, "saved": time.time()}
         tmp = self.path + ".tmp"
-        with open(tmp, "w") as f:
+        # transcripts hold project content and the account email: owner-only
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, default=str)
         os.replace(tmp, self.path)
 

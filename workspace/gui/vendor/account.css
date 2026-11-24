@@ -3,8 +3,8 @@
 
 .acct { display: flex; align-items: center; margin-left: var(--space-1); }
 .acct-fixed { position: fixed; top: var(--space-3); right: var(--space-4); z-index: 60000; }
-.acct-login { white-space: nowrap; }
-.acct-icon { position: relative; }
+.acct-login { white-space: nowrap; min-height: 44px; }
+.acct-icon { position: relative; min-width: 44px; min-height: 44px; }
 .acct-offdot {
   position: absolute; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--amber); border: 2px solid var(--surface);

@@ -12,6 +12,12 @@
   if (window.__aiChatLoaded) return;
   window.__aiChatLoaded = true;
   const API = "/ai/api";
+  // the orchestrator token (when ORCH_TOKEN is on) — the assistant's routes need it too
+  const hdrs = (json) => {
+    const h = json ? { "Content-Type": "application/json" } : {};
+    try { const t = (localStorage.getItem("orch_token") || "").trim(); if (t) h["X-Orch-Token"] = t; } catch (_) {}
+    return h;
+  };
   const OPEN_KEY = "ws_ai_open", SID_KEY = "ws_ai_session", W_KEY = "ws_ai_width";
 
   function css(href) {
@@ -234,7 +240,7 @@
     let following = false;
     try {
       const res = await fetch(API + "/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: hdrs(true),
         body: JSON.stringify({ session: sid, text, context: pageContext() }),
       });
       if (res.status === 401) { bubble.error("This robot isn't logged in any more — log in again (top right)."); window.dornaAccount?.refresh(true); return; }
@@ -305,7 +311,7 @@
   async function follow(from, bubble) {
     setBusy(true);
     try {
-      const res = await fetch(API + "/attach?id=" + encodeURIComponent(sid) + "&from=" + from);
+      const res = await fetch(API + "/attach?id=" + encodeURIComponent(sid) + "&from=" + from, { headers: hdrs(false) });
       if (res.ok && res.body) await readEvents(res, bubble);
     } catch (e) {
       bubble.error("Connection lost: " + e.message);
@@ -317,8 +323,9 @@
   }
 
   async function loadSession() {
-    const r = await fetch(API + "/session" + (sid ? "?id=" + encodeURIComponent(sid) : ""));
+    const r = await fetch(API + "/session" + (sid ? "?id=" + encodeURIComponent(sid) : ""), { headers: hdrs(false) });
     if (r.status === 401) { window.dornaAccount?.refresh(true); return; }
+    if (r.status === 403) { loaded = true; log.innerHTML = ""; assistantBubble().error(((await r.json().catch(() => ({}))).error || "Not allowed") + " — set the orchestrator token in the admin page."); return; }
     const j = await r.json();
     sid = j.id; ls.set(SID_KEY, sid);
     loaded = true;
@@ -355,12 +362,12 @@
     }
   });
   sendBtn.onclick = () => { const t = input.value; input.value = ""; send(t); };
-  stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: sid }) });
+  stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid }) });
   fab.onclick = () => setOpen(true);
   $(".ai-close").onclick = () => setOpen(false);
   $(".ai-new").onclick = async () => {
     if (busy) return;
-    const r = await fetch(API + "/session", { method: "POST", headers: { "Content-Type": "application/json" },
+    const r = await fetch(API + "/session", { method: "POST", headers: hdrs(true),
       body: JSON.stringify({ project: pageContext().project || null }) });
     if (!r.ok) return;
     const j = await r.json();

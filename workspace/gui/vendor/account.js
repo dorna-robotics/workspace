@@ -21,7 +21,12 @@
   let status = null;
   const listeners = [];
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const post = (path, body) => fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" },
+  const hdrs = () => {
+    const h = { "Content-Type": "application/json" };
+    try { const t = (localStorage.getItem("orch_token") || "").trim(); if (t) h["X-Orch-Token"] = t; } catch (_) {}
+    return h;
+  };
+  const post = (path, body) => fetch(API + path, { method: "POST", headers: hdrs(),
     body: JSON.stringify(body || {}) }).then((r) => r.json());
   const toast = (msg, kind) => { try { window.showToast ? window.showToast(msg, kind || "") : console.log(msg); } catch (_) {} };
 
@@ -156,7 +161,7 @@
     const body = ov.querySelector(".acct-modal-body");
     let j;
     try {
-      const r = await fetch(API + "/login/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const r = await fetch(API + "/login/start", { method: "POST", headers: hdrs(), body: "{}" });
       j = await r.json();
       if (!r.ok) throw new Error(j.error || `login failed (${r.status})`);
     } catch (e) {

@@ -160,6 +160,12 @@ class Account:
             return {"status": "pending", "reachable": False}
         j = j if isinstance(j, dict) else {}
         if code == 200 and j.get("token"):
+            prev = self._load()
+            if prev and prev.get("token") and prev["token"] != j["token"]:
+                try:            # never leave a replaced token valid on the server
+                    _http("POST", "/s/device/api/logout", {}, token=prev["token"], timeout=4)
+                except OSError:
+                    pass
             with self._lock:
                 self._forget()
                 self._save({"token": j["token"], "email": j.get("email"), "account": j.get("account"),
@@ -210,8 +216,13 @@ class Account:
             self.invalidate()
             return {**base, "logged_in": False, "revoked": True}
         if code != 200 or not isinstance(j, dict):
-            return {**base, "logged_in": True, "reachable": False, "email": d.get("email"),
-                    "account": d.get("account"), "is_admin": bool(d.get("is_admin"))}
+            st = {**base, "logged_in": True, "reachable": False, "email": d.get("email"),
+                  "account": d.get("account"), "is_admin": bool(d.get("is_admin"))}
+            if self._status and self._status.get("usage"):
+                st["usage"] = self._status["usage"]
+            with self._lock:            # a server error: ask again in ~5 s, not on every call
+                self._status, self._status_at = st, time.time() - STATUS_TTL_S + 5
+            return dict(st)
         usage = j.get("usage") or {}
         st = {**base, "logged_in": True, "reachable": True, "email": j.get("email") or d.get("email"),
               "account": j.get("account") or d.get("account"), "is_admin": bool(j.get("is_admin")),
